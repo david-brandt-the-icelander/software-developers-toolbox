@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# Reclaim macOS disk space via a resumable compression scan and safe cleanups, using only stock Python 3.
+# Reclaim macOS disk space via a resumable scan, compression, clone dedupe and safe cleanups, on stock Python 3.
 from __future__ import annotations
 
 import argparse
 import bisect
+import ctypes
 import datetime
 import hashlib
 import json
@@ -17,7 +18,7 @@ import sys
 import time
 import zlib
 
-VERSION = "1.0"
+VERSION = "1.1"
 IS_TTY = sys.stdout.isatty()
 IS_MAC = sys.platform == "darwin"
 HOME = os.path.expanduser("~")
@@ -179,6 +180,9 @@ CREATE TABLE IF NOT EXISTS cands(
   path TEXT PRIMARY KEY, size INTEGER, alloc INTEGER, est_saved INTEGER,
   mtime_ns INTEGER, ino INTEGER, status TEXT DEFAULT 'pending', note TEXT, saved INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS cands_status ON cands(status, est_saved);
+CREATE TABLE IF NOT EXISTS files(
+  path TEXT PRIMARY KEY, name TEXT, size INTEGER, cloned INTEGER DEFAULT 0) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS files_name ON files(name, size);
 """
 
 SKIP_EXT = {
@@ -330,6 +334,8 @@ def run_scan(db: sqlite3.Connection, cfg: dict) -> bool:
                             stats["files"] += 1
                             stats["bytes"] += st.st_size
                             session_files += 1
+                            db.execute("INSERT OR IGNORE INTO files(path,name,size) VALUES(?,?,?)",
+                                       (e.path, e.name, st.st_size))
                             est = consider(e.path, st, cfg, cutoff)
                             if est:
                                 cur = db.execute(
@@ -340,7 +346,7 @@ def run_scan(db: sqlite3.Connection, cfg: dict) -> bool:
                                 if cur.rowcount:
                                     stats["cands"] += 1
                                     stats["est"] += est
-                    except OSError:
+                    except (OSError, UnicodeError):
                         stats["errors"] += 1
         except OSError:
             stats["errors"] += 1
@@ -404,7 +410,7 @@ def finish_scan(db, cfg) -> None:
     s = meta_get(db, "stats")
     if done:
         log(c("32", "Scan complete: ") + "%d candidates, ~%s estimated saveable." % (s["cands"], human(s["est"])))
-        log("Next: `list` to inspect, then `compress --sample 5` to verify on a few files.")
+        log("Next: `dedupe` to preview duplicate cloning, `list` then `compress --sample 5` to compress.")
     else:
         log(c("33", "Scan paused. ") + "Run `resume` to continue.")
 
@@ -439,6 +445,8 @@ def cmd_status(args) -> None:
         "SELECT status, COUNT(*), SUM(est_saved), SUM(saved) FROM cands GROUP BY status ORDER BY status"
     ):
         log("  %-8s %7d files   estimated %-10s verified saved %s" % (status, n, human(est or 0), human(saved or 0)))
+    names, cloned = db.execute("SELECT COUNT(*), SUM(cloned) FROM files").fetchone()
+    log(c("1", "File names") + ": %d recorded, %d replaced by clones" % (names, cloned or 0))
     report_free("Current")
 
 
@@ -1050,6 +1058,187 @@ def cmd_clean(args) -> None:
     log("Next: consider `new` + `compress` for transparent compression of inactive files.")
 
 
+# --------------------------------------------------------------------------- dedupe
+
+CLONE_NOFOLLOW = 0x1
+COPYFILE_METADATA = 0x7  # ACL | stat | xattrs
+COPYFILE_NOFOLLOW = 0xC0000
+SYSTEM_PREFIXES = SKIP_PREFIXES + ("/Library", "/Applications", "/private", "/etc", "/var", "/tmp")
+NO_CLONE_FLAGS = UF_COMPRESSED | UF_IMMUTABLE | UF_APPEND | SF_IMMUTABLE | SF_DATALESS
+
+
+# Tell whether a file is not one of the invoking user's own files.
+def is_system_file(path: str, st: os.stat_result) -> bool:
+    if st.st_uid == 0 or st.st_uid != os.getuid():
+        return True
+    return any(path == p or path.startswith(p + "/") for p in SYSTEM_PREFIXES)
+
+
+# Call a libc function that returns 0 on success, raising OSError otherwise.
+def libc_call(name: str, path: str, *call_args) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if getattr(libc, name)(*call_args) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, "%s: %s" % (name, os.strerror(err)), path)
+
+
+# Clone a file copy-on-write on APFS, failing instead of falling back to a full copy.
+def clone_file(src: str, dst: str) -> None:
+    libc_call("clonefile", dst, os.fsencode(src), os.fsencode(dst), CLONE_NOFOLLOW)
+
+
+# Make a file's ACL, mode, owner, flags, times and xattrs match another file's.
+def copy_metadata(src: str, dst: str) -> None:
+    libc_call("copyfile", dst, os.fsencode(src), os.fsencode(dst), None, COPYFILE_METADATA | COPYFILE_NOFOLLOW)
+    for name in xattr_names(dst) - xattr_names(src):
+        subprocess.run(["/usr/bin/xattr", "-d", name, dst], check=True, capture_output=True, timeout=60)
+
+
+# Return (path, stat, replaceable) for the files of one name group that still match the scan.
+def dedupe_members(rows, size: int, args, snap: Snapshot) -> list:
+    members = []
+    for path, cloned in rows:
+        try:
+            st = os.lstat(path)
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode) or st.st_size != size or getattr(st, "st_flags", 0) & NO_CLONE_FLAGS:
+            continue
+        if not args.include_system and is_system_file(path, st):
+            continue
+        replaceable = (
+            not cloned and st.st_nlink == 1 and os.access(path, os.W_OK)
+            and os.access(os.path.dirname(path), os.W_OK | os.X_OK)
+            and not snap._under(snap.paths, path)
+        )
+        members.append((path, st, replaceable))
+    return members
+
+
+# Hash a name group and return (digest, keeper path, targets) per set of identical files on one volume.
+def dedupe_plan(members: list) -> list:
+    if len(members) < 2 or not any(m[2] for m in members):
+        return []
+    by_content = {}
+    for member in members:
+        try:
+            digest = sha256(member[0])
+        except OSError:
+            continue
+        by_content.setdefault((member[1].st_dev, digest), []).append(member)
+    plans = []
+    for (_dev, digest), same in by_content.items():
+        # Keep a file that cannot be replaced if there is one, else the oldest.
+        same.sort(key=lambda m: (m[2], m[1].st_mtime_ns, m[0]))
+        targets = [m for m in same[1:] if m[2]]
+        if targets:
+            plans.append((digest, same[0][0], targets))
+    return plans
+
+
+# Swap one duplicate for a verified clone of the keeper and return (ok, note).
+def clone_over(keeper: str, target: str, st: os.stat_result, digest: str):
+    tmp = os.path.join(os.path.dirname(target), ".fds-%d-%s.tmp" % (os.getpid(), os.path.basename(target)[:80]))
+    try:
+        clone_file(keeper, tmp)
+        copy_metadata(target, tmp)
+        os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
+        t = os.lstat(tmp)
+        if (stat.S_IMODE(t.st_mode), t.st_uid, t.st_gid) != (stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid):
+            return False, "permissions/ownership differ"
+        if xattr_names(target) != xattr_names(tmp):
+            return False, "extended attributes differ"
+        if sha256(tmp) != digest:
+            return False, "content hash mismatch"
+        st2 = os.lstat(target)
+        if (st2.st_size, st2.st_mtime_ns, st2.st_ino, st2.st_nlink) != (st.st_size, st.st_mtime_ns, st.st_ino, 1):
+            return False, "changed during dedupe"
+        os.replace(tmp, target)
+        return True, ""
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, str(e)
+    finally:
+        if os.path.lexists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+# Clone or preview the duplicates of one name group, updating the tally, and return False to stop.
+def dedupe_group(db: sqlite3.Connection, members: list, args, tally: dict) -> bool:
+    for digest, keeper, targets in dedupe_plan(members):
+        for target, st, _replaceable in targets:
+            if STOP or (args.sample and tally["files"] >= args.sample):
+                return False
+            if not args.apply:
+                ok, note = True, ""
+            else:
+                ok, note = clone_over(keeper, target, st, digest)
+            if not ok:
+                tally["failed"] += 1
+                tally["streak"] += 1
+                log("%s %s: %s" % (c("31", "FAILED"), target, note))
+                if tally["streak"] >= 3:
+                    log(c("31", "3 consecutive failures - aborting for safety."))
+                    return False
+                continue
+            if args.apply:
+                db.execute("UPDATE files SET cloned=1 WHERE path=?", (target,))
+                db.commit()
+            tally["streak"] = 0
+            tally["files"] += 1
+            tally["bytes"] += st.st_blocks * 512
+            if args.apply or tally["files"] <= 50:
+                log("%s %10s  %s <- %s" % ("cloned" if args.apply else "~ would clone",
+                                           human(st.st_blocks * 512), target, keeper))
+    return True
+
+
+# Replace byte-identical same-named files with copy-on-write clones of one kept copy.
+def cmd_dedupe(args) -> None:
+    if args.apply and not IS_MAC and not os.environ.get("FDS_FORCE"):
+        die("dedupe --apply requires macOS (APFS clonefile)")
+    db = open_db(args.state, False)
+    if not db.execute("SELECT 1 FROM files LIMIT 1").fetchone():
+        die("no file names recorded in this scan state; run `new` to rescan")
+    if not meta_get(db, "finished"):
+        warn("scan is not complete; deduplicating from the file names found so far")
+    groups = db.execute(
+        "SELECT name, size FROM files WHERE size >= ? GROUP BY name, size HAVING COUNT(*) > 1 ORDER BY size DESC",
+        (max(parse_size(args.min_size), 1),),
+    ).fetchall()
+    log(c("1", "free_disk_space dedupe") + (" - APPLYING" if args.apply else " - DRY RUN (add --apply to clone)"))
+    log("%d groups of same-named, same-sized files to hash%s"
+        % (len(groups), "" if args.include_system else " (system files excluded)"))
+    install_sigint()
+    snap = Snapshot()
+    if args.apply and not snap.ok:
+        die("could not snapshot open files with lsof; nothing was changed")
+    free0 = report_free("Initial")
+    tk = Ticker()
+    tally = {"files": 0, "bytes": 0, "failed": 0, "streak": 0}
+    t0 = time.time()
+    for i, (name, size) in enumerate(groups, 1):
+        tk.tick("[%d/%d] %s %s | %d duplicates, %s | %s"
+                % (i, len(groups), human(size), name[-40:], tally["files"], human(tally["bytes"]),
+                   hms(time.time() - t0)))
+        rows = db.execute("SELECT path, cloned FROM files WHERE name=? AND size=?", (name, size)).fetchall()
+        tk.clear()
+        if not dedupe_group(db, dedupe_members(rows, size, args, snap), args, tally):
+            break
+    tk.clear()
+    free1 = report_free("Final  ")
+    log("%s %d duplicate files, failed %d in %s" % ("Cloned" if args.apply else "Would clone", tally["files"],
+                                                   tally["failed"], hms(time.time() - t0)))
+    log("Allocated size of the replaced duplicates (upper bound on savings): %s" % c("1", human(tally["bytes"])))
+    if not args.apply:
+        log("Nothing was changed. Re-run with --apply (try --sample 5 first).")
+        return
+    log("Overall free-space change on the volume: %s" % c("1", human(free1 - free0)))
+    log("(These can differ: files that already shared blocks, snapshots and other writers affect free space.)")
+
+
 # --------------------------------------------------------------------------- CLI
 
 
@@ -1058,13 +1247,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="free_disk_space.py",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="Reclaim disk space on macOS: resumable APFS compression scan + safe cleanups.",
+        description="Reclaim disk space on macOS: resumable scan, APFS compression, clone dedupe, cleanups.",
         epilog="""examples:
   free_disk_space.py clean all                    # dry run of cache/downloads/trash/dev/docker cleanup
   free_disk_space.py clean caches dev --apply     # actually clean just those
   free_disk_space.py new --root ~ --min-size 5M   # start a compression scan (Ctrl-C safe)
   free_disk_space.py resume                       # continue it later
   free_disk_space.py status                       # progress, candidates, free space
+  free_disk_space.py dedupe                       # dry run: same-named identical files to clone
+  free_disk_space.py dedupe --sample 5 --apply    # replace 5 duplicates with APFS clones
   free_disk_space.py compress --sample 5          # verify on 5 files first
   free_disk_space.py compress --limit 20G --yes   # then go bigger
 
@@ -1119,6 +1310,20 @@ state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3""",
     k.add_argument("--dry-run", action="store_true")
     k.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation")
     k.set_defaults(fn=cmd_compress)
+
+    d = sub.add_parser(
+        "dedupe", help="replace identical same-named files with APFS clones (dry run unless --apply)",
+        description="Files recorded by the scan that share a leaf name and size are SHA-256 hashed when at "
+                    "least one is writable. Identical ones are replaced by copy-on-write clones of one kept "
+                    "copy (like `cp -c`), keeping each file's own metadata. Skips system files (not owned by "
+                    "you, or under system paths), hard-linked, open, compressed and flagged files.")
+    common(d)
+    d.add_argument("--apply", action="store_true", help="actually replace duplicates (default is a dry run)")
+    d.add_argument("--include-system", action="store_true",
+                   help="also process files not owned by you or under system paths such as /Library")
+    d.add_argument("--min-size", default="1", help="smallest file to consider (default 1 byte)")
+    d.add_argument("--sample", type=int, metavar="N", help="only process N duplicates, then stop")
+    d.set_defaults(fn=cmd_dedupe)
 
     cl = sub.add_parser(
         "clean", help="delete regenerable files (dry run unless --apply)",
