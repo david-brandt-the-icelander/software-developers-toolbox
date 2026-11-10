@@ -25,6 +25,21 @@ Personal developer toolbox: small scripts, mostly stdlib Python.
 - Broad test coverage via stubs: `agents/skills/test-stub-then-fill/SKILL.md`
 - Keep a Mac responsive under load: `agents/skills/machine-load/SKILL.md`
 - Delegating to other agents and reviewing them: `agents/skills/delegate-and-review/SKILL.md`
+- Triage prod errors/alarms read-only, fix in worktree: `agents/skills/error-triage/SKILL.md`
+- Report what a branch promotion ships and its risks: `agents/skills/release-promotion-check/SKILL.md`
+- Merge without semantic conflicts; pick merge method: `agents/skills/safe-merge/SKILL.md`
+- Finish a change: CI, change note, commit, draft PR, report: `agents/skills/change-delivery/SKILL.md`
+- Did a branch land (squash-merge aware): `agents/skills/branch-landed-check/SKILL.md`
+- Audit and clean branches and worktrees: `agents/skills/branch-cleanup/SKILL.md`
+- Where and how to write an agent rule: `agents/skills/agent-rule-authoring/SKILL.md`
+- Per-audience status reports across repos: `agents/skills/status-report/SKILL.md`
+- Find why code is as it is from the record: `agents/skills/why-is-it-like-this/SKILL.md`
+- Verify beyond unit tests before merging: `agents/skills/verify-before-merge/SKILL.md`
+- Recover a node that fails at startup: `agents/skills/recover-failed-node/SKILL.md`
+- Ticket to verified PR with a human gate: `agents/skills/task-end-to-end/SKILL.md`
+- Personal TODO.md and WORKLOG.md: `agents/skills/todo-and-worklog/SKILL.md`
+- Database migration guardrails: `agents/skills/migration-safety/SKILL.md`
+- Second agent shadows a small spec in a worktree: `agents/skills/shadow-implementation/SKILL.md`
 
 ## Layout
 - `macos/python/` macOS scripts and Python guidance; `agents/` agent docs, skills, `hooks/` (wire via `settings-snippet.json`) and `agents/agents/` subagents.
