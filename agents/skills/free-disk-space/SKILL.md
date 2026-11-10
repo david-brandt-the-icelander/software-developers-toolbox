@@ -1,11 +1,11 @@
 ---
 name: free-disk-space
-description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, or find files to transparently compress. Wraps macos/python/free-disk-space/free_disk_space.py.
+description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, deduplicate identical files into APFS clones, or find files to transparently compress. Wraps macos/python/free-disk-space/free_disk_space.py.
 ---
 
 # free-disk-space
 
-Script: `macos/python/free-disk-space/free_disk_space.py` (stock Python 3, macOS only for compress/Finder/Docker steps).
+Script: `macos/python/free-disk-space/free_disk_space.py` (stock Python 3, macOS only for compress/dedupe/Finder/Docker steps).
 
 ## Cleanup (dry run by default)
 1. Preview: `python3 macos/python/free-disk-space/free_disk_space.py clean all`
@@ -20,8 +20,14 @@ Script: `macos/python/free-disk-space/free_disk_space.py` (stock Python 3, macOS
 3. Go wider: `... compress --limit 20G --yes`.
 4. State: `~/.local/state/free-disk-space/scan.sqlite3` (`--state` or `$FDS_STATE`).
 
+## Dedupe (after a scan, before compress)
+1. Preview: `... dedupe` hashes same-named, same-sized files and lists identical ones; nothing changes.
+2. Verify first: `... dedupe --sample 5 --apply`, check the files and the free-space change, then `... dedupe --apply`.
+3. Add `--include-system` only with explicit user authorization; default touches only files the user owns outside system paths.
+4. Scans made before version 1.1 hold no file names; rerun `new`.
+
 ## Rules
 - Report initial/final free space, what was deleted/compressed, protected entries, failures.
 - Never claim summed file sizes equal reclaimed space.
 - Leave uncertain items untouched and list them.
-- Compress is untested on real Macs beyond the sample step; stop on any failure.
+- Compress and dedupe are untested on real Macs beyond the sample step; stop on any failure.
