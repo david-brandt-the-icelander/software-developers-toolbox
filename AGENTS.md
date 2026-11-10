@@ -3,7 +3,7 @@
 Personal developer toolbox: small scripts, mostly stdlib Python.
 
 ## Rules
-- Python: follow `python/style.md`. Always use a venv for projects with dependencies.
+- Python: follow `macos/python/style.md`. Always use a venv for projects with dependencies.
 - Every code file, class and function has exactly one plain-sentence `#` comment; no docstrings or metadata.
 - Write code for low token use and easy agent comprehension.
 - Never commit `__pycache__`, `.venv`, or state/log files.
@@ -14,4 +14,4 @@ Personal developer toolbox: small scripts, mostly stdlib Python.
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
 
 ## Layout
-- `macos/python/` macOS scripts; `python/` Python guidance; `agents/` agent docs and skills.
+- `macos/python/` macOS scripts and Python guidance; `agents/` agent docs and skills.
