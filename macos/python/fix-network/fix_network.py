@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""fix_network.py - diagnose and progressively repair macOS Wi-Fi / DNS / routing / VPN.
-
-Uses only the stock Python 3 and tools that ship with macOS.
-
-  diagnose   read-only: find the failing layer, save a timestamped log
-  fix        diagnose, then repair from the failing layer upward, retesting after each step
-  recover    emergency: make sure Wi-Fi power is on (also what the staged watchdog runs)
-
-Safety model
-  * Everything is logged under ~/.local/state/fix-network/<timestamp>/ (never in a repo).
-  * Original settings are recorded in original.json before any change.
-  * Before Wi-Fi is cycled, a detached watchdog (recover.sh) is started that turns Wi-Fi back
-    on by itself, so a dropped session cannot strand the Mac offline.
-  * It never reboots, touches Docker, deletes network preferences/credentials/profiles,
-    substitutes public DNS, or alters routers. Broad steps are opt-in flags.
-"""
+# Diagnose and progressively repair macOS Wi-Fi, DNS, routing and VPN, using only stock Python 3.
 from __future__ import annotations
 
 import argparse
@@ -35,11 +20,14 @@ STATE_ROOT = os.environ.get("FIXNET_STATE", os.path.expanduser("~/.local/state/f
 SENSITIVE = re.compile(r"(pass(word)?|secret|token|psk|private.?key|shared.?secret)", re.I)
 
 
+# Wrap text in an ANSI color code when writing to a terminal.
 def c(code, s):
     return "\033[%sm%s\033[0m" % (code, s) if IS_TTY and not os.environ.get("NO_COLOR") else s
 
 
+# One run's log directory, saved original settings and list of changes.
 class Session:
+    # Create the timestamped private state directory.
     def __init__(self, create=True):
         self.dir = os.path.join(STATE_ROOT, datetime.now().strftime("%Y%m%d-%H%M%S"))
         os.makedirs(self.dir, exist_ok=True)
@@ -48,6 +36,7 @@ class Session:
         self.original = {}
         self.changes = []
 
+    # Append a line, minus sensitive-looking text, to the log and optionally print it.
     def log(self, msg="", show=True):
         line = "[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg)
         with open(self.logpath, "a") as f:
@@ -55,13 +44,14 @@ class Session:
         if show:
             print(msg, flush=True)
 
+    # Write the recorded original settings to original.json.
     def save_original(self):
         with open(os.path.join(self.dir, "original.json"), "w") as f:
             json.dump(self.original, f, indent=2)
 
 
+# Run a bounded command, optionally via sudo, and return (exit code, output).
 def sh(cmd, timeout=15, sudo=False):
-    """Run a command with a bound. Returns (rc, combined output)."""
     if sudo and os.geteuid() != 0:
         cmd = ["sudo"] + ([] if sys.stdin.isatty() else ["-n"]) + cmd
     try:
@@ -76,6 +66,7 @@ def sh(cmd, timeout=15, sudo=False):
 # ------------------------------------------------------------------ discovery
 
 
+# Find the macOS version, Wi-Fi device and service, default-route interface and VPN services.
 def discover(S):
     info = {}
     info["macos"] = sh(["sw_vers", "-productVersion"])[1]
@@ -100,6 +91,7 @@ def discover(S):
     return info
 
 
+# Save current network settings before any change.
 def record_original(S, info):
     o = S.original
     o["discover"] = info
@@ -124,10 +116,11 @@ def record_original(S, info):
 # ------------------------------------------------------------------ tests
 
 
+# Resolve a name through the system resolver with a time limit.
 def resolve(name, timeout=6):
-    """System resolver path (getaddrinfo -> mDNSResponder), bounded by a thread."""
     out = {}
 
+    # Resolve the name in a worker thread.
     def w():
         try:
             out["r"] = socket.getaddrinfo(name, None)[0][4][0]
@@ -140,6 +133,7 @@ def resolve(name, timeout=6):
     return out.get("r"), out.get("e", "timeout" if t.is_alive() else "")
 
 
+# Tell whether a TCP connection succeeds within the timeout.
 def tcp(host, port, timeout=5):
     try:
         with socket.create_connection((host, port), timeout):
@@ -148,8 +142,8 @@ def tcp(host, port, timeout=5):
         return False
 
 
+# Run layered connectivity tests and name the failing layer.
 def health(S, info, quiet=False):
-    """Run layered tests. Returns dict with per-layer results and a 'verdict' naming the failing layer."""
     dev, h = info["wifi_device"], {}
     pw = sh(["networksetup", "-getairportpower", dev])[1] if dev else ""
     h["wifi_on"] = "On" in pw
@@ -193,6 +187,7 @@ def health(S, info, quiet=False):
     return h
 
 
+# Print VPN and split-DNS state and return scoped DNS domains.
 def vpn_report(S, info):
     S.log(c("1", "VPN"))
     S.log("  default route interface: %s%s" % (info["default_route_if"],
@@ -208,6 +203,7 @@ def vpn_report(S, info):
     return doms
 
 
+# Check name resolution, route and TCP reachability of an internal host.
 def verify_internal(S, host_arg, doms):
     if not host_arg:
         S.log("  internal verification INCOMPLETE: pass --internal-host HOST[:PORT]"
@@ -230,8 +226,8 @@ def verify_internal(S, host_arg, doms):
 # ------------------------------------------------------------------ recovery
 
 
+# Write recover.sh and start a detached watchdog that turns Wi-Fi back on.
 def stage_recovery(S, dev, delay):
-    """Write recover.sh and start a detached watchdog that re-enables Wi-Fi regardless of this process."""
     path = os.path.join(S.dir, "recover.sh")
     with open(path, "w") as f:
         f.write("#!/bin/sh\n# Re-enable Wi-Fi no matter what. Log: %s\n" % S.logpath)
@@ -246,6 +242,7 @@ def stage_recovery(S, dev, delay):
     return p
 
 
+# Turn Wi-Fi off and on under watchdog protection and wait for an address.
 def cycle_wifi(S, dev):
     wd = stage_recovery(S, dev, 45)
     try:
@@ -266,10 +263,12 @@ def cycle_wifi(S, dev):
 # ------------------------------------------------------------------ repair
 
 
+# Tell whether the Wi-Fi service uses DHCP.
 def dhcp_configured(S):
     return "DHCP Configuration" in S.original.get("getinfo", "")
 
 
+# Apply repair steps from the failing layer upward, retesting after each.
 def fix(S, info, args):
     dev, svc = info["wifi_device"], info["wifi_service"]
     h = health(S, info)
@@ -341,6 +340,7 @@ def fix(S, info, args):
     return h
 
 
+# Disable system proxies whose server is unreachable.
 def stale_proxy(S, svc):
     for kind, get, setter in (("web", "-getwebproxy", "-setwebproxystate"),
                               ("secure", "-getsecurewebproxy", "-setsecurewebproxystate")):
@@ -357,6 +357,7 @@ def stale_proxy(S, svc):
 # ------------------------------------------------------------------ commands
 
 
+# Create the session, discover the network and record original settings.
 def prepare(args, label):
     if not IS_MAC:
         print("error: fix_network.py works on macOS only", file=sys.stderr)
@@ -374,6 +375,7 @@ def prepare(args, label):
     return S, info
 
 
+# Print the final summary and log locations.
 def finish(S, h, info, args):
     S.log(c("1", "Summary"))
     S.log("  layer verdict : %s" % h["verdict"])
@@ -384,6 +386,7 @@ def finish(S, h, info, args):
         S.log("  note: restored by the steps above; the step list is not proof of which one was the cause.")
 
 
+# Run the read-only diagnosis.
 def cmd_diagnose(args):
     S, info = prepare(args, "diagnose")
     h = health(S, info)
@@ -392,6 +395,7 @@ def cmd_diagnose(args):
     finish(S, h, info, args)
 
 
+# Diagnose, repair, wait, and verify again.
 def cmd_fix(args):
     S, info = prepare(args, "fix")
     h = fix(S, info, args)
@@ -406,6 +410,7 @@ def cmd_fix(args):
     sys.exit(0 if h["verdict"] == "healthy" else 1)
 
 
+# Force Wi-Fi power on.
 def cmd_recover(args):
     if not IS_MAC:
         sys.exit("macOS only")
@@ -415,6 +420,7 @@ def cmd_recover(args):
         print(sh(["networksetup", "-setairportpower", d, "on"])[1] or "Wi-Fi on (%s)" % d)
 
 
+# Parse arguments and dispatch to the chosen command.
 def main():
     p = argparse.ArgumentParser(
         description="Diagnose and repair macOS Wi-Fi/DNS/routing/VPN, layer by layer.",

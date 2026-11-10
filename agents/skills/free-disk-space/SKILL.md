@@ -1,0 +1,27 @@
+---
+name: free-disk-space
+description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, or find files to transparently compress. Wraps macos/python/free-disk-space/free_disk_space.py.
+---
+
+# free-disk-space
+
+Script: `macos/python/free-disk-space/free_disk_space.py` (stock Python 3, macOS only for compress/Finder/Docker steps).
+
+## Cleanup (dry run by default)
+1. Preview: `python3 macos/python/free-disk-space/free_disk_space.py clean all`
+2. Apply only what the user authorized: `... clean caches dev --apply` (targets: caches downloads trash dev docker brew xcode all).
+3. `downloads` empties ~/Downloads fully; apply only with explicit user authorization.
+4. `dev` keeps files modified today (Atlantic/Reykjavik), non-git-ignored, tracked, or in-use dirs; `--dev-root` sets the tree.
+5. Docker is never started; it is cleaned and shut down only if already running.
+
+## Compression (resumable)
+1. `... new --root ~ --min-size 5M` (Ctrl-C safe); continue with `resume`; inspect with `status`, `list --top 30`.
+2. Verify first: `... compress --sample 5`, then compare "verified saving" with "free-space change".
+3. Go wider: `... compress --limit 20G --yes`.
+4. State: `~/.local/state/free-disk-space/scan.sqlite3` (`--state` or `$FDS_STATE`).
+
+## Rules
+- Report initial/final free space, what was deleted/compressed, protected entries, failures.
+- Never claim summed file sizes equal reclaimed space.
+- Leave uncertain items untouched and list them.
+- Compress is untested on real Macs beyond the sample step; stop on any failure.

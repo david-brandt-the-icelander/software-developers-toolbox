@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""free_disk_space.py - reclaim disk space on macOS (APFS) using only the stock Python 3.
-
-Two groups of commands:
-
-  Compression (transparent APFS/HFS+ per-file compression, via the built-in `ditto`)
-      new       start a fresh, resumable scan for compression candidates
-      resume    continue an interrupted scan
-      status    show scan progress, candidate totals and free space
-      list      show the best candidates found so far
-      compress  compress candidates (verified, file by file, with hash checks)
-
-  Cleanup (dry-run unless --apply is given)
-      clean     caches, downloads, trash, dev artifacts, docker, brew, xcode
-
-Only the Python standard library and tools that ship with macOS are used.
-Run `free_disk_space.py <command> --help` for details.
-"""
+# Reclaim macOS disk space via a resumable compression scan and safe cleanups, using only stock Python 3.
 from __future__ import annotations
 
 import argparse
@@ -51,12 +35,14 @@ DEFAULT_STATE = os.environ.get(
 # --------------------------------------------------------------------------- output
 
 
+# Wrap text in an ANSI color code when writing to a terminal.
 def c(code: str, text: str) -> str:
     if IS_TTY and not os.environ.get("NO_COLOR"):
         return "\033[%sm%s\033[0m" % (code, text)
     return text
 
 
+# Format a byte count as a short human-readable size.
 def human(n: float) -> str:
     n = float(n)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
@@ -66,11 +52,13 @@ def human(n: float) -> str:
     return str(n)
 
 
+# Format seconds as H:MM:SS.
 def hms(sec: float) -> str:
     sec = int(sec)
     return "%d:%02d:%02d" % (sec // 3600, sec % 3600 // 60, sec % 60)
 
 
+# Parse sizes like 10M or 2G into bytes.
 def parse_size(text: str) -> int:
     t = text.strip().upper().rstrip("B")
     mult = {"K": 1 << 10, "M": 1 << 20, "G": 1 << 30, "T": 1 << 40}
@@ -79,27 +67,32 @@ def parse_size(text: str) -> int:
     return int(float(t))
 
 
+# Print a line immediately.
 def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+# Print a warning to stderr.
 def warn(msg: str) -> None:
     print(c("33", "warning: ") + msg, file=sys.stderr, flush=True)
 
 
+# Print an error to stderr and exit.
 def die(msg: str, code: int = 1) -> "None":
     print(c("31", "error: ") + msg, file=sys.stderr, flush=True)
     sys.exit(code)
 
 
+# Rate-limited progress line, in place on a terminal and periodic lines otherwise.
 class Ticker:
-    """Rate-limited progress line: in-place on a TTY, a fresh line every 15s otherwise."""
 
+    # Set the minimum interval between progress updates.
     def __init__(self, interval: float = 0.0):
         self.interval = interval or (0.4 if IS_TTY else 15.0)
         self.last = 0.0
         self.shown = False
 
+    # Show progress text if the interval has elapsed or force is set.
     def tick(self, text: str, force: bool = False) -> None:
         now = time.time()
         if force or now - self.last >= self.interval:
@@ -112,6 +105,7 @@ class Ticker:
             else:
                 print(text, flush=True)
 
+    # Erase the in-place progress line.
     def clear(self) -> None:
         if IS_TTY and self.shown:
             sys.stdout.write("\r\033[K")
@@ -122,6 +116,7 @@ class Ticker:
 STOP = False
 
 
+# Request a graceful stop on the first Ctrl-C and abort on the second.
 def _on_sigint(signum, frame):  # noqa: ANN001
     global STOP
     if STOP:
@@ -130,26 +125,30 @@ def _on_sigint(signum, frame):  # noqa: ANN001
     print("\n" + c("33", "Stopping after the current item (Ctrl-C again to abort)..."), flush=True)
 
 
+# Install the Ctrl-C handler.
 def install_sigint() -> None:
     signal.signal(signal.SIGINT, _on_sigint)
 
 
+# Return the volume holding user data.
 def data_volume() -> str:
     return "/System/Volumes/Data" if os.path.isdir("/System/Volumes/Data") else "/"
 
 
+# Return free bytes on the data volume.
 def free_bytes() -> int:
     return shutil.disk_usage(data_volume()).free
 
 
+# Print and return free space with a label.
 def report_free(label: str) -> int:
     f = free_bytes()
     log("%s free space on %s: %s" % (label, data_volume(), c("1", human(f))))
     return f
 
 
+# Run a subprocess, printing a heartbeat every 30 seconds so long jobs never go silent.
 def run_cmd(cmd, label: str, timeout: float = 3600, heartbeat: float = 30.0):
-    """Run a subprocess, printing a heartbeat so long jobs never go silent."""
     t0 = time.time()
     try:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -209,6 +208,7 @@ SKIP_PREFIXES = (
 )
 
 
+# Open (or create) the scan state database.
 def open_db(path: str, create: bool) -> sqlite3.Connection:
     if not create and not os.path.exists(path):
         die("no scan state at %s - start one with: %s new" % (path, os.path.basename(sys.argv[0])))
@@ -220,17 +220,19 @@ def open_db(path: str, create: bool) -> sqlite3.Connection:
     return db
 
 
+# Read a JSON value from the meta table.
 def meta_get(db, key, default=None):
     r = db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     return json.loads(r[0]) if r else default
 
 
+# Write a JSON value to the meta table.
 def meta_set(db, key, value) -> None:
     db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)", (key, json.dumps(value)))
 
 
+# Estimate compressed/raw size from head, middle and tail samples of a file.
 def sample_ratio(path: str, size: int):
-    """Compressed/raw ratio of up to three 64 KiB samples (head, middle, tail)."""
     chunk = 64 * 1024
     try:
         with open(path, "rb") as f:
@@ -249,8 +251,8 @@ def sample_ratio(path: str, size: int):
     return len(zlib.compress(data, 3)) / len(data)
 
 
+# Return estimated savings if a file is a compression candidate, else None.
 def consider(path: str, st: os.stat_result, cfg: dict, cutoff: float):
-    """Return (est_saved) if the file is a compression candidate else None."""
     if not stat.S_ISREG(st.st_mode) or st.st_size < cfg["min_size"] or st.st_nlink != 1:
         return None
     flags = getattr(st, "st_flags", 0)
@@ -277,6 +279,7 @@ def consider(path: str, st: os.stat_result, cfg: dict, cutoff: float):
     return est
 
 
+# Tell whether a directory must not be scanned.
 def dir_excluded(path: str, name: str, cfg: dict) -> bool:
     if name in SKIP_DIR_NAMES or name.endswith(SKIP_DIR_SUFFIX):
         return True
@@ -289,8 +292,8 @@ def dir_excluded(path: str, name: str, cfg: dict) -> bool:
     return False
 
 
+# Process pending directories until done or interrupted and return True if finished.
 def run_scan(db: sqlite3.Connection, cfg: dict) -> bool:
-    """Process pending directories until done or interrupted. Returns True if finished."""
     stats = meta_get(db, "stats", {"dirs": 0, "files": 0, "bytes": 0, "errors": 0, "cands": 0, "est": 0})
     prior_elapsed = meta_get(db, "elapsed", 0.0)
     cutoff = time.time() - cfg["min_age_days"] * 86400
@@ -299,6 +302,7 @@ def run_scan(db: sqlite3.Connection, cfg: dict) -> bool:
     last_commit = time.time()
     session_files = 0
 
+    # Persist scan statistics and commit the transaction.
     def commit():
         meta_set(db, "stats", stats)
         meta_set(db, "elapsed", prior_elapsed + time.time() - t0)
@@ -362,6 +366,7 @@ def run_scan(db: sqlite3.Connection, cfg: dict) -> bool:
     return False
 
 
+# Start a fresh scan and run it.
 def cmd_new(args) -> None:
     root = os.path.realpath(os.path.expanduser(args.root))
     if not os.path.isdir(root):
@@ -392,6 +397,7 @@ def cmd_new(args) -> None:
     finish_scan(db, cfg)
 
 
+# Run the scan loop and report whether it completed or paused.
 def finish_scan(db, cfg) -> None:
     install_sigint()
     done = run_scan(db, cfg)
@@ -403,6 +409,7 @@ def finish_scan(db, cfg) -> None:
         log(c("33", "Scan paused. ") + "Run `resume` to continue.")
 
 
+# Continue an interrupted scan.
 def cmd_resume(args) -> None:
     db = open_db(args.state, False)
     cfg = meta_get(db, "cfg")
@@ -416,6 +423,7 @@ def cmd_resume(args) -> None:
     finish_scan(db, cfg)
 
 
+# Show scan progress, candidate totals and free space.
 def cmd_status(args) -> None:
     db = open_db(args.state, False)
     cfg = meta_get(db, "cfg", {})
@@ -434,6 +442,7 @@ def cmd_status(args) -> None:
     report_free("Current")
 
 
+# List the best candidates by estimated savings.
 def cmd_list(args) -> None:
     db = open_db(args.state, False)
     rows = db.execute(
@@ -449,6 +458,7 @@ def cmd_list(args) -> None:
 # --------------------------------------------------------------------------- compress
 
 
+# Return the SHA-256 hex digest of a file.
 def sha256(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -457,6 +467,7 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
+# Return a file's extended attribute names, excluding compression internals.
 def xattr_names(path: str) -> set:
     r = subprocess.run(["/usr/bin/xattr", path], capture_output=True, text=True)
     if r.returncode != 0:
@@ -465,6 +476,7 @@ def xattr_names(path: str) -> set:
     return {x.strip() for x in r.stdout.splitlines() if x.strip()} - ignore
 
 
+# Tell whether any process has the file open, treating failures as in use.
 def in_use(path: str) -> bool:
     try:
         r = subprocess.run(["/usr/sbin/lsof", "-t", "--", path], capture_output=True, text=True, timeout=60)
@@ -473,8 +485,8 @@ def in_use(path: str) -> bool:
     return bool(r.stdout.strip())
 
 
+# Compress one file in place via a verified temp copy and return (status, note, saved bytes).
 def compress_one(path: str, row, args):
-    """Compress one file in place. Returns (status, note, saved_bytes)."""
     size, mtime_ns, ino = row
     try:
         st = os.lstat(path)
@@ -533,6 +545,7 @@ def compress_one(path: str, row, args):
                 pass
 
 
+# Compress planned candidates in place and report verified savings.
 def cmd_compress(args) -> None:
     if not IS_MAC and not os.environ.get("FDS_FORCE"):
         die("compress requires macOS (uses /usr/bin/ditto and APFS compression)")
@@ -608,8 +621,8 @@ def cmd_compress(args) -> None:
 # --------------------------------------------------------------------------- cleanup helpers
 
 
+# Return allocated bytes, newest mtime and item count of a tree without following symlinks.
 def tree_size(path: str):
-    """(allocated bytes, newest mtime, file count) without following symlinks."""
     total, newest, n = 0, 0.0, 0
     stack = [path]
     while stack:
@@ -630,8 +643,8 @@ def tree_size(path: str):
     return total, newest, n
 
 
+# Delete a path recursively without following symlinks or changing permissions.
 def rm_tree(path: str, res: dict, tk: Ticker, apply: bool) -> None:
-    """Delete path recursively without following symlinks or changing permissions."""
     try:
         st = os.lstat(path)
     except OSError:
@@ -666,8 +679,8 @@ def rm_tree(path: str, res: dict, tk: Ticker, apply: bool) -> None:
     tk.tick("  %s %d items, %s ..." % ("removed" if apply else "found", res["scanned"], human(res["bytes"])))
 
 
+# Remove a directory's contents but keep the directory itself.
 def empty_dir(path: str, apply: bool, label: str) -> dict:
-    """Remove the contents of path but keep path itself."""
     res = {"bytes": 0, "files": 0, "scanned": 0, "protected": []}
     path = os.path.expanduser(path)
     if not os.path.isdir(path) or os.path.islink(path):
@@ -700,6 +713,7 @@ CACHE_DIRS = [
 XCODE_DIRS = ["~/Library/Developer/Xcode/DerivedData"]
 
 
+# Empty each listed directory and accumulate totals.
 def clean_dirs(title: str, dirs, apply: bool, ctx: dict) -> None:
     log(c("1", title))
     for d in dirs:
@@ -708,6 +722,7 @@ def clean_dirs(title: str, dirs, apply: bool, ctx: dict) -> None:
         ctx["protected"].extend(r["protected"])
 
 
+# Empty the Trash through Finder.
 def clean_trash(apply: bool, ctx: dict) -> None:
     log(c("1", "Trash"))
     if not apply:
@@ -723,6 +738,7 @@ def clean_trash(apply: bool, ctx: dict) -> None:
         ctx["failures"].append("empty trash: " + out.strip()[:200])
 
 
+# Run Homebrew cleanup if installed.
 def clean_brew(apply: bool, ctx: dict) -> None:
     log(c("1", "Homebrew"))
     brew = shutil.which("brew")
@@ -757,6 +773,7 @@ ARTIFACTS = {
 }
 
 
+# Tell whether the directory contains any entry matching one of the glob patterns.
 def _has_any(parent: str, names) -> bool:
     import fnmatch
     try:
@@ -766,6 +783,7 @@ def _has_any(parent: str, names) -> bool:
     return any(fnmatch.fnmatch(x, pat) for pat in names for x in listing)
 
 
+# Return the timestamp of local midnight in Atlantic/Reykjavik.
 def today_start_ts() -> float:
     try:
         from zoneinfo import ZoneInfo
@@ -776,14 +794,16 @@ def today_start_ts() -> float:
     return now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+# Run a git command in a directory with optional locks disabled.
 def git(parent: str, *a):
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     return subprocess.run(["git", "-C", parent] + list(a), capture_output=True, env=env, timeout=60)
 
 
+# Open files, working directories and command lines of running processes.
 class Snapshot:
-    """Open files, process working directories and command lines of running processes."""
 
+    # Capture the process snapshot via lsof and ps.
     def __init__(self):
         self.ok = False
         self.paths, self.cwds, self.cmds = [], [], []
@@ -803,6 +823,7 @@ class Snapshot:
         self.ok = bool(paths or cwds)
 
     @staticmethod
+    # Tell whether a sorted path list contains the root or anything beneath it.
     def _under(sorted_list, root: str) -> bool:
         i = bisect.bisect_left(sorted_list, root)
         if i < len(sorted_list) and sorted_list[i] == root:
@@ -810,14 +831,15 @@ class Snapshot:
         j = bisect.bisect_left(sorted_list, root + "/")
         return j < len(sorted_list) and sorted_list[j].startswith(root + "/")
 
+    # Tell whether a running process uses the candidate or its project directory.
     def uses(self, cand: str) -> bool:
         parent = os.path.dirname(cand)
         return (self._under(self.paths, cand) or self._under(self.cwds, parent)
                 or any(parent + "/" in cmd or cmd.endswith(parent) for cmd in self.cmds))
 
 
+# Return (ok, reason) for whether a build artifact directory is safe to delete.
 def verify_artifact(cand: str, cutoff: float, snap: Snapshot):
-    """Return (ok, reason)."""
     name, parent = os.path.basename(cand), os.path.dirname(cand)
     if os.path.islink(cand) or not os.path.isdir(cand):
         return False, "not a real directory"
@@ -850,6 +872,7 @@ def verify_artifact(cand: str, cutoff: float, snap: Snapshot):
     return True, ""
 
 
+# Yield known build-artifact directories under a root without descending into them.
 def find_artifacts(root: str):
     for dp, dns, _fns in os.walk(root, followlinks=False):
         keep = []
@@ -862,6 +885,7 @@ def find_artifacts(root: str):
         dns[:] = keep
 
 
+# Delete verified, old, unused build artifacts under the dev root.
 def clean_dev(apply: bool, ctx: dict, dev_root: str) -> None:
     log(c("1", "Dev build artifacts under %s" % dev_root))
     root = os.path.realpath(os.path.expanduser(dev_root))
@@ -916,6 +940,7 @@ def clean_dev(apply: bool, ctx: dict, dev_root: str) -> None:
 # ---- docker
 
 
+# Tell whether Docker Desktop is already running and responding.
 def docker_running() -> bool:
     if not shutil.which("docker"):
         return False
@@ -928,6 +953,7 @@ def docker_running() -> bool:
         return False
 
 
+# Prune images and build cache, stop containers and quit Docker only if it is already running.
 def clean_docker(apply: bool, ctx: dict, stop_timeout: int) -> dict:
     status = {"state": "not running (left alone)"}
     log(c("1", "Docker"))
@@ -968,6 +994,7 @@ def clean_docker(apply: bool, ctx: dict, stop_timeout: int) -> dict:
     return status
 
 
+# Run the selected cleanup targets and print a summary.
 def cmd_clean(args) -> None:
     targets = list(args.targets)
     if "all" in targets:
@@ -1026,6 +1053,7 @@ def cmd_clean(args) -> None:
 # --------------------------------------------------------------------------- CLI
 
 
+# Build the command-line parser.
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="free_disk_space.py",
@@ -1046,6 +1074,7 @@ state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3""",
     sub = p.add_subparsers(dest="cmd", metavar="command")
     sub.required = True
 
+    # Add the shared --state option to a subcommand.
     def common(sp):
         sp.add_argument("--state", default=DEFAULT_STATE, help="scan state file (default: %(default)s)")
 
@@ -1103,6 +1132,7 @@ state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3""",
     return p
 
 
+# Parse arguments and dispatch to the chosen command.
 def main() -> None:
     args = build_parser().parse_args()
     try:
