@@ -1,14 +1,14 @@
 ---
 name: fix-network
-description: Diagnose and repair a Mac's Wi-Fi, internet, DNS, routing or VPN problems. Use when the user reports no internet, slow/failed DNS, captive portal, or a VPN that will not connect. Wraps macos/python/fix-network/fix_network.py.
+description: Diagnose and repair a Mac's Wi-Fi, internet, DNS, routing or VPN problems. Use when the user reports no internet, slow/failed DNS, captive portal, or a VPN that will not connect. Wraps the `fix-network` Rust binary in macos/rust/fix-network.
 ---
 
 # fix-network
 
-Script: `macos/python/fix-network/fix_network.py` (stock Python 3, macOS only).
+Binary: `macos/rust/target/release/fix-network` (build: `cd macos/rust && cargo build --release`; macOS only).
 
 ## Steps
-1. Read-only first: `python3 macos/python/fix-network/fix_network.py diagnose --internal-host HOST[:PORT]`; the verdict names the failing layer.
+1. Read-only first: `macos/rust/target/release/fix-network diagnose --internal-host HOST[:PORT]`; the verdict names the failing layer.
 2. Repair: `... fix` (flush DNS, clear gateway ARP, renew DHCP if DHCP, cycle Wi-Fi). Add flags only with evidence:
    - `--vpn` tests without scutil-managed VPNs then reconnects them.
    - `--fix-proxy` disables unreachable proxies.

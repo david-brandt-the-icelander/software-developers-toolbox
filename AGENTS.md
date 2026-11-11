@@ -1,17 +1,23 @@
 # AGENTS.md
 
-Personal developer toolbox: small scripts, mostly stdlib Python.
+Personal developer toolbox: small macOS command-line tools written in Rust.
 
 ## Rules
-- Python: follow `macos/python/style.md`. Always use a venv for projects with dependencies.
-- Every code file, class and function has exactly one plain-sentence `#` comment; no docstrings or metadata.
+- Rust: follow `macos/rust/style.md`. The Cargo workspace is `macos/rust/`.
+- Every code file, struct, enum and function has exactly one plain-sentence `//` comment; no rustdoc except clap `///` help text.
 - Write code for low token use and easy agent comprehension.
-- Never commit `__pycache__`, `.venv`, or state/log files.
+- Never commit `target/` or state/log files.
 - Editing AGENTS.md or skills: follow `agents/directives.md`.
+
+## Commands (run in `macos/rust/`)
+- Build: `cargo build --release`
+- Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+- Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
+- CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries (`release.yml`).
 
 ## Skills
 - Free disk space on macOS (compression scan, cache/dev/docker cleanup): `agents/skills/free-disk-space/SKILL.md`
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
 
 ## Layout
-- `macos/python/` macOS scripts and Python guidance; `agents/` agent docs and skills.
+- `macos/rust/<tool>/` one crate per tool; `agents/` agent docs and skills.

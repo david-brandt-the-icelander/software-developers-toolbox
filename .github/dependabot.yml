@@ -1,0 +1,11 @@
+# Weekly dependency updates for Cargo crates and GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /macos/rust
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

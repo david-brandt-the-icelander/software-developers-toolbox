@@ -1,14 +1,14 @@
 ---
 name: free-disk-space
-description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, deduplicate identical files into APFS clones, or find files to transparently compress. Wraps macos/python/free-disk-space/free_disk_space.py.
+description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, deduplicate identical files into APFS clones, or find files to transparently compress. Wraps the `free-disk-space` Rust binary in macos/rust/free-disk-space.
 ---
 
 # free-disk-space
 
-Script: `macos/python/free-disk-space/free_disk_space.py` (stock Python 3, macOS only for compress/dedupe/Finder/Docker steps).
+Binary: `macos/rust/target/release/free-disk-space` (build: `cd macos/rust && cargo build --release`; macOS only for compress/dedupe/Finder/Docker steps).
 
 ## Cleanup (dry run by default)
-1. Preview: `python3 macos/python/free-disk-space/free_disk_space.py clean all`
+1. Preview: `macos/rust/target/release/free-disk-space clean all`
 2. Apply only what the user authorized: `... clean caches dev --apply` (targets: caches downloads trash dev docker brew xcode all).
 3. `downloads` empties ~/Downloads fully; apply only with explicit user authorization.
 4. `dev` keeps files modified today (Atlantic/Reykjavik), non-git-ignored, tracked, or in-use dirs; `--dev-root` sets the tree.

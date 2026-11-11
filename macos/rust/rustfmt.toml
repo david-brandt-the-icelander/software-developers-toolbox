@@ -1,0 +1,3 @@
+# Compact formatting keeps files short for agents.
+use_small_heuristics = "Max"
+max_width = 110

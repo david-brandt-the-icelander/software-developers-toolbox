@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["fix-network", "free-disk-space"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "Unlicense"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
