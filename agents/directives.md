@@ -22,7 +22,7 @@ Sources: agents.md, Claude Code memory and best-practices docs. Applies to AGENT
 - Hard enforcement: use hooks/CI; the file is guidance only.
 
 ## Structure and pointers
-- Root file is an index: short rules plus links to detail files (`agents/skills/<name>/SKILL.md`, `macos/python/style.md`).
+- Root file is an index: short rules plus links to detail files (`agents/skills/<name>/SKILL.md`, `macos/rust/style.md`).
 - Reference files by path in backticks; the agent loads them on demand.
 - Closest AGENTS.md to the edited file wins; user chat overrides all files.
 - Claude Code reads CLAUDE.md, not AGENTS.md: add a CLAUDE.md containing `@AGENTS.md`.
