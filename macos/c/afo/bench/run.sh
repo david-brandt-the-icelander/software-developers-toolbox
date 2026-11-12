@@ -24,7 +24,6 @@ done
 sb=$bin/spawnbench
 "$sb" "$n" exit0 "$bin/exit0"
 "$sb" "$n" hello_libc "$bin/hello_libc"
-"$sb" "$n" /bin/true /bin/true
 "$sb" "$n" afo-fd-16 "$bin/afo" 16
 "$sb" "$n" afo-fd-4096 "$bin/afo" 4096
 "$sb" "$n" afo-relay-16 "$bin/afo-relay" 16

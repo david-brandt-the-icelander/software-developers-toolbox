@@ -12,11 +12,14 @@ else
 DARWIN_VARIANT ?= libsystem
 ifeq ($(DARWIN_VARIANT),static)
 LINK := -static -nostdlib -Wl,-e,__start
+SIGN = codesign -f -s - $@
 else
 FREE += -DAFO_LIBSYSTEM
 LINK := -Wl,-dead_strip
 endif
 endif
+
+SIGN ?= true
 
 all: $(B)/afo $(B)/afo-relay $(B)/exit0 $(B)/hello_libc $(B)/spawnbench
 
@@ -25,12 +28,15 @@ $(B):
 
 $(B)/afo: src/afo.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -o $@ src/afo.c $(LINK)
+	$(SIGN)
 
 $(B)/afo-relay: src/afo.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -DAFO_RELAY -o $@ src/afo.c $(LINK)
+	$(SIGN)
 
 $(B)/exit0: bench/exit0.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -o $@ bench/exit0.c $(LINK)
+	$(SIGN)
 
 $(B)/hello_libc: bench/hello_libc.c | $(B)
 	$(CC) -O2 -o $@ bench/hello_libc.c
