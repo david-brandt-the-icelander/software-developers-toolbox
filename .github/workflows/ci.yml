@@ -34,6 +34,12 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo fmt --all --check
+      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas)
+        working-directory: macos/release
+        run: |
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh
+          bash sign-and-notarize.test.sh
+          bash formula.test.sh
       - run: cargo clippy --workspace --all-targets --locked
 
   test:
@@ -82,6 +88,7 @@ jobs:
         working-directory: macos/c/afo
         run: make && make unit && sh test/smoke.sh
 
+  # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs and fix-network must keep 95% of branches and lines.
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -98,6 +105,11 @@ jobs:
           cargo llvm-cov -p agent-fs --branch --locked --fail-under-lines 95 --lcov --output-path lcov.info
           awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
             END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov.info
+      - name: fix-network needs 95% line and branch coverage
+        run: |
+          cargo llvm-cov -p fix-network --branch --locked --summary-only --json --output-path cov.json --fail-under-lines 95
+          jq -e '.data[0].totals.branches.percent >= 95' cov.json \
+            || { echo "::error::fix-network branch coverage is below 95%"; exit 1; }
       - name: Rust branch coverage (at least 95%)
         run: sh afod/coverage.sh 95
       - name: C invoker branch coverage (at least 95%)
