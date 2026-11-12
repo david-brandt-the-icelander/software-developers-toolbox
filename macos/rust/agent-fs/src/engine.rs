@@ -170,7 +170,7 @@ mod tests {
         let list = run(&mut e, json!({"op": "list", "path": root}));
         assert_eq!(list["total"], 2);
         let outline = run(&mut e, json!({"op": "outline", "paths": [root]}));
-        assert_eq!(outline["files"][0]["symbols"][0][2], "alpha");
+        assert_eq!(outline["files"][0]["symbols"][0][3], "alpha");
         let path = dir.path().join("b.txt").to_string_lossy().into_owned();
         let read = run(&mut e, json!({"op": "read", "path": path}));
         let etag = read["etag"].clone();

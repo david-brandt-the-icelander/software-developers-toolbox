@@ -51,7 +51,7 @@ fn tools() -> Value {
         ),
         tool(
             "afs_outline",
-            "Symbols ([line, kind, name]) per source file instead of reading it.",
+            "Symbols ([start_line, end_line, kind, name]) per source file; read just those ranges.",
             json!({"paths": paths, "max_symbols": {"type": "integer"}, "fresh": {"type": "boolean"}}),
             json!([])
         ),

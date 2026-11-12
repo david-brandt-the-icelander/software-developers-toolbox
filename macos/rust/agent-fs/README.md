@@ -22,7 +22,7 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 | `search` | grep -r, git grep, rg | `pattern`, `literal`, `ignore_case`, `paths`, `glob` (`!x` excludes), `context`, `max_matches` (100), `files_only`, `fields` (`line`,`col`,`text`), `hidden`, `no_ignore`, `fresh` |
 | `list` | ls, find | `path`, `glob`, `depth` (1 unless glob), `long`, `max_entries` (500), `cursor`, `hidden`, `no_ignore` |
 | `stat` | stat, shasum | `path`, `hash` |
-| `outline` | grep for definitions | `paths`, `max_symbols` (300); rs py js ts go java kt cs swift c cpp sh md |
+| `outline` | grep for definitions | `paths`, `max_symbols` (300); returns `[start, end, kind, name]` per symbol; tree-sitter for rs py js jsx mjs ts tsx go java c cpp (+ h hh hpp), line patterns for kt cs swift scala sh md |
 | `diff_since` | re-reading a changed file | `path`, `etag` (a version this session received) |
 
 ## Token savers
@@ -37,6 +37,10 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 - A file's etag is the first 64 bits of its BLAKE3 hash. Stamps (device, inode, size, mtime, ctime in ns) let a repeat skip hashing; a stamp younger than 2 seconds is never trusted (the "racy" rule git uses), so same-tick edits cannot serve stale data.
 - Search, list and outline results are cached with the stamp of every file and directory the walk visited, plus each directory's `.gitignore` and `.ignore`. A hit re-stats those paths (no reads, no regex work) and recomputes on any difference.
 - Session memory is bounded: 64 MiB of file versions kept as diff bases (files over 8 MiB are not kept), 256 cached results.
+
+## Outline
+
+`outline` parses with tree-sitter and returns every item with its exact line range, so an agent can `read` just `[start, end]` instead of the file. Names inside containers (impl/trait/mod, class, namespace, interface bodies) are dotted: `A.go`, `n.K.m`; Rust `impl` items read `Trait for Type`; JS/TS `const f = () => ...` counts as a function. Function bodies are not entered, so locals and nested functions are omitted. Broken syntax still yields the items that parse. Files over 2 MiB are skipped, and languages without a grammar (kt cs swift scala sh md) use line patterns where `end` equals `start`.
 
 ## Trigram index
 
@@ -54,11 +58,11 @@ Search loads files in chunks of 32 through `fsio::load_many`, which has two impl
 
 ## Not implemented
 
-Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), tree-sitter outlines (outlines are line regexes and can miss multi-line signatures), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
+Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
 
 ## Dependencies
 
-`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` read hints and the macOS AIO calls; `io-uring` (Linux only) the ring; `tempfile` (tests) fixture directories.
+`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `tree-sitter` and the per-language grammar crates the outline parser (they compile C at build time); `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` read hints and the macOS AIO calls; `io-uring` (Linux only) the ring; `tempfile` (tests) fixture directories.
 
 ## Use from an agent
 
