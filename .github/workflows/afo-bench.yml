@@ -32,16 +32,17 @@ jobs:
       - name: Build invoker (${{ matrix.variant }})
         working-directory: macos/c/afo
         run: make DARWIN_VARIANT=${{ matrix.variant }}
+      - name: Smoke test
+        working-directory: macos/c/afo
+        run: sh test/smoke.sh
       - name: Diagnose invoker
-        if: failure() && matrix.variant == 'static'
+        if: always() && matrix.variant == 'static'
         working-directory: macos/c/afo
         run: |
           otool -l build/exit0 | head -60 || true
           codesign -dv build/exit0 || true
-          ./build/exit0; echo "exit0 status $?"
-      - name: Smoke test
-        working-directory: macos/c/afo
-        run: sh test/smoke.sh
+          ./build/exit0 || echo "exit0 status $?"
       - name: Benchmark
+        if: success()
         working-directory: macos/c/afo
         run: sh bench/run.sh ${{ inputs.runs || '3000' }}
