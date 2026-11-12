@@ -13,7 +13,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Build: `cargo build --release`
 - Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
-- CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries (`release.yml`).
+- CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries to a GitHub release and to icelander.net/apps (`release.yml`; needs secret `CLOUDFLARE_R2_TOKEN`).
 
 ## Skills
 - Free disk space on macOS (compression scan, cache/dev/docker cleanup): `agents/skills/free-disk-space/SKILL.md`
