@@ -44,6 +44,10 @@ jobs:
           codesign -vvv build/exit0 || true
           ./build/exit0 || echo "exit0 status $?"
           sudo log show --last 1m --predicate 'eventMessage CONTAINS "exit0"' --style compact | tail -15 || true
+      - name: Probe Mach-O link configurations
+        if: always() && matrix.variant == 'static'
+        working-directory: macos/c/afo
+        run: sh test/probe_darwin.sh
       - name: Benchmark
         if: success()
         working-directory: macos/c/afo
