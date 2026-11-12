@@ -1,10 +1,11 @@
 // Entry point: parses the command line and starts the stdio MCP server.
 using CodeIndexd;
+using CodeIndexd.Daemon;
 using CodeIndexd.Mcp;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-    Console.Error.WriteLine("usage: codeindexd serve [--root name=path]... (default: current directory)");
+    Console.Error.WriteLine("usage: codeindexd serve [--no-daemon] [--root name=path]... (default: current directory)");
     return args.Length == 0 ? 2 : 0;
 }
 if (args[0] == "--version")
@@ -12,26 +13,61 @@ if (args[0] == "--version")
     Console.WriteLine(ToolVersion.Text);
     return 0;
 }
-if (args[0] != "serve")
+if (args[0] is not ("serve" or "daemon"))
 {
     Console.Error.WriteLine($"unknown command: {args[0]}");
     return 2;
 }
 
-var engine = Engine.Open();
-var roots = new List<Root>();
+var specs = new List<string>();
+var noDaemon = Environment.GetEnvironmentVariable("CODEINDEXD_NO_DAEMON") == "1";
 for (var i = 1; i < args.Length; i++)
 {
-    if (args[i] != "--root" || i + 1 >= args.Length)
+    if (args[i] == "--no-daemon")
+        noDaemon = true;
+    else if (args[i] == "--root" && i + 1 < args.Length)
+        specs.Add(args[++i]);
+    else
     {
         Console.Error.WriteLine($"bad argument: {args[i]}");
         return 2;
     }
-    roots.Add(Root.Parse(args[++i], engine));
 }
-if (roots.Count == 0)
-    roots.Add(Root.Parse(Directory.GetCurrentDirectory(), engine));
+if (specs.Count == 0)
+    specs.Add(Directory.GetCurrentDirectory());
+specs = specs.Select(Absolute).ToList();
 
-var server = new McpServer(roots, engine.Log);
-await server.RunAsync(Console.In, Console.Out);
+if (args[0] == "daemon")
+{
+    var stateDir = UsageLog.DefaultDir();
+    Directory.CreateDirectory(stateDir);
+    using var engine = Engine.Open(stateDir);
+    var idle = TimeSpan.FromMinutes(double.Parse(Environment.GetEnvironmentVariable("CODEINDEXD_IDLE_MINUTES") ?? "30"));
+    using var daemon = new DaemonServer(engine, Proxy.SocketPath(stateDir), idle);
+    daemon.Start();
+    await daemon.Done;
+    return 0;
+}
+
+if (!noDaemon)
+{
+    var socket = Proxy.Connect(UsageLog.DefaultDir(), specs, out var error);
+    if (socket is not null)
+    {
+        await Proxy.Pump(socket);
+        return 0;
+    }
+    Console.Error.WriteLine($"codeindexd: no daemon ({error}); serving in-process");
+}
+
+using var local = Engine.Open();
+var roots = specs.Select(s => Root.Parse(s, local)).ToList();
+await new McpServer(roots, local.Log).RunAsync(Console.In, Console.Out);
 return 0;
+
+// Makes a root spec absolute while keeping its optional name= prefix.
+static string Absolute(string spec)
+{
+    var eq = spec.IndexOf('=');
+    return eq < 0 ? Path.GetFullPath(spec) : spec[..eq] + "=" + Path.GetFullPath(spec[(eq + 1)..]);
+}
