@@ -52,6 +52,8 @@ jobs:
       - run: cargo build --workspace --release --locked
       - name: Smoke test CLIs
         run: |
+          ./target/release/afs --help
+          ./target/release/afs call '{"op":"stat","path":"."}'
           ./target/release/fix-network --help
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches

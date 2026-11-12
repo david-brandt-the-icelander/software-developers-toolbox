@@ -1,0 +1,24 @@
+[package]
+name = "agent-fs"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "afs"
+path = "src/main.rs"
+
+[dependencies]
+blake3 = "1"
+clap = { version = "4", features = ["derive"] }
+ignore = "0.4"
+libc = "0.2"
+memchr = "2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+similar = "2"
+
+[dev-dependencies]
+tempfile = "3"
