@@ -16,7 +16,16 @@ The `homebrew` job runs `formula.sh TAG SHA256 Formula` and commits `Formula/fix
   ```bash
   brew install david-brandt-the-icelander/toolbox/fix-network
   ```
-- The job pushes with the workflow's own token. If `main` gets branch protection, allow GitHub Actions to push, or change the job to open a pull request.
+- `main` only accepts pull requests (a repository rule), so the job publishes the formulas in one of two ways:
+  - **Pull request (the default).** It pushes a `homebrew/<tag>` branch and opens a PR. Merge the PR, and `brew upgrade` sees the release. This needs Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests".
+  - **Direct to `main` (fully automatic).** Create an SSH key pair:
+    ```bash
+    ssh-keygen -t ed25519 -N "" -f homebrew_deploy_key
+    ```
+    Then:
+    - add `homebrew_deploy_key.pub` as a deploy key with write access (Settings → Deploy keys);
+    - add that deploy key to the bypass list of the ruleset on `main` (Settings → Rules);
+    - store the private key as the secret `HOMEBREW_DEPLOY_KEY`.
 - `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class: every DSL value, the installed binary, the `--version` name each crate prints, and that `release.yml` builds each binary. CI runs it.
 
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
