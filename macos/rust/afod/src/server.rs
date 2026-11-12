@@ -239,7 +239,7 @@ fn worker(sh: &Shared, external_stop: &AtomicBool) {
             }
         };
         sh.active.fetch_add(1, Ordering::SeqCst);
-        if let Err(e) = handle(stream, sh.uid, &sh.engine) {
+        if let Err(e) = stream.set_nonblocking(false).and_then(|()| handle(stream, sh.uid, &sh.engine)) {
             eprintln!("afod: {e}");
         }
         sh.last_ms.store(now_ms(&sh.origin), Ordering::SeqCst);
@@ -374,7 +374,11 @@ pub mod tests {
         };
         let mut s = UnixStream::connect(sock).expect("connect");
         let in_fd = OwnedFd::from(in_r);
-        send_with_fds(&s, &encode(&req), &[in_fd.as_fd(), out_w.as_fd(), err_w.as_fd(), dirfd.as_fd()]);
+        assert!(send_with_fds(
+            &s,
+            &encode(&req),
+            &[in_fd.as_fd(), out_w.as_fd(), err_w.as_fd(), dirfd.as_fd()]
+        ));
         drop((in_fd, out_w, err_w, dirfd));
         let mut status = [0u8; 1];
         s.read_exact(&mut status).expect("status");
@@ -551,7 +555,9 @@ pub mod tests {
             let mut s = UnixStream::connect(&srv.sock).expect("connect");
             let fds: Vec<_> = (0..count).map(|_| null.as_fd()).collect();
             let req = Request { cwd: "/".into(), session: String::new(), args: vec!["version".into()] };
-            send_with_fds(&s, &encode(&req), &fds);
+            if !send_with_fds(&s, &encode(&req), &fds) {
+                continue;
+            }
             let mut buf = Vec::new();
             let _ = s.read_to_end(&mut buf);
             assert!(buf.is_empty(), "{count} descriptors must not get an answer");

@@ -67,7 +67,11 @@ pub fn run_cmd_with(
 }
 
 // Sends bytes plus file descriptors over a unix socket with SCM_RIGHTS.
-pub fn send_with_fds(sock: &std::os::unix::net::UnixStream, bytes: &[u8], fds: &[std::os::fd::BorrowedFd]) {
+pub fn send_with_fds(
+    sock: &std::os::unix::net::UnixStream,
+    bytes: &[u8],
+    fds: &[std::os::fd::BorrowedFd],
+) -> bool {
     use std::os::fd::AsRawFd;
     let raw: Vec<i32> = fds.iter().map(|f| f.as_raw_fd()).collect();
     let space = unsafe { libc::CMSG_SPACE((raw.len() * 4) as u32) } as usize;
@@ -85,7 +89,7 @@ pub fn send_with_fds(sock: &std::os::unix::net::UnixStream, bytes: &[u8], fds: &
         (*c).cmsg_type = libc::SCM_RIGHTS;
         (*c).cmsg_len = libc::CMSG_LEN((raw.len() * 4) as u32) as _;
         std::ptr::copy_nonoverlapping(raw.as_ptr(), libc::CMSG_DATA(c).cast(), raw.len());
-        assert!(libc::sendmsg(sock.as_raw_fd(), &msg, 0) >= 0);
+        libc::sendmsg(sock.as_raw_fd(), &msg, 0) >= 0
     }
 }
 

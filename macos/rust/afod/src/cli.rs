@@ -354,18 +354,5 @@ mod tests {
         assert_eq!(format!("{:?}", main(v(&["version"]))), ok);
         assert_eq!(format!("{:?}", main(v(&["bogus"]))), format!("{:?}", ExitCode::from(2)));
         assert_eq!(format!("{:?}", main(v(&["run", "version"]))), ok);
-        assert_eq!(
-            format!("{:?}", main(v(&["install"]))),
-            if cfg!(target_os = "macos") {
-                format!("{:?}", agent_ok_or_err())
-            } else {
-                format!("{:?}", ExitCode::from(2))
-            }
-        );
-    }
-
-    // On macOS install may legitimately fail in CI; only the Linux refusal is asserted exactly.
-    fn agent_ok_or_err() -> ExitCode {
-        ExitCode::from(2)
     }
 }

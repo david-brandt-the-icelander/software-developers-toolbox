@@ -34,6 +34,24 @@ static __attribute__((noreturn)) void die(const char *m, int code)
 	sys_exit(code);
 }
 
+/* Prints a one-line error with a decimal error number and exits with code. */
+static __attribute__((noreturn)) void die_errno(const char *m, long err, int code)
+{
+	char digits[24];
+	size_t n = 0;
+	sys_write(2, "afo: ", 5);
+	sys_write(2, m, str_len(m));
+	sys_write(2, " (error ", 8);
+	do {
+		digits[n++] = (char)('0' + err % 10);
+		err /= 10;
+	} while (err > 0);
+	while (n > 0)
+		sys_write(2, &digits[--n], 1);
+	sys_write(2, ")\n", 2);
+	sys_exit(code);
+}
+
 /* Returns the value of NAME in envp, or 0. */
 static const char *env_get(char **envp, const char *name)
 {
@@ -151,8 +169,9 @@ static int connect_daemon(size_t pathlen, char **envp)
 		die("cannot connect to daemon", 69);
 	if (fd < 0) {
 		pick_daemon(envp);
-		if (sys_spawn_daemon(daemon_path, envp) < 0)
-			die("cannot start daemon", 69);
+		long pid = sys_spawn_daemon(daemon_path, envp);
+		if (pid < 0)
+			die_errno("cannot start daemon", -pid, 69);
 	}
 	long waited = 0, step = 2;
 	while (fd < 0 && waited < START_WAIT_MS) {

@@ -192,7 +192,11 @@ static void test_autostart_failures(void)
 	reset();
 	M.connect_rc[0] = -SYS_ENOENT;
 	M.spawn_rc = -12;
-	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("cannot start daemon"));
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("cannot start daemon (error 12)"));
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.spawn_rc = -100;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("(error 100)"));
 	reset();
 	M.connect_rc[0] = -SYS_ENOENT;
 	memset(M.self_exe, 'e', 511);
