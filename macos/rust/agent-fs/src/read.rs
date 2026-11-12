@@ -82,9 +82,7 @@ fn slice_lines(bytes: &[u8], spans: &[(usize, usize)], total: usize, caps: (usiz
             pos = (end + 1).min(bytes.len());
             ln += 1;
         }
-        if !text.is_empty() {
-            out.chunks.push(json!({"start": a, "end": b, "text": text}));
-        }
+        out.chunks.push(json!({"start": a, "end": b, "text": text}));
     }
     out
 }
@@ -207,7 +205,8 @@ mod tests {
     #[test]
     fn test_slice_lines_past_end() {
         let s = slice_lines(b"a\n", &[(5, 9)], 1, (10, 1000));
-        assert!(s.chunks.is_empty() && s.next.is_empty());
+        assert!(s.chunks.is_empty());
+        assert!(s.next.is_empty());
     }
 
     // Overlong lines are cut and counted.
@@ -217,5 +216,97 @@ mod tests {
         let text = clip_line(&vec![b'x'; 2500], &mut cuts);
         assert_eq!(cuts, 1);
         assert!(text.ends_with("(+500 bytes)"));
+    }
+
+    // Build read arguments from JSON.
+    fn args(v: serde_json::Value) -> ReadArgs {
+        serde_json::from_value(v).unwrap()
+    }
+
+    // Write a file and return its path text with the directory guard.
+    fn file(body: &[u8]) -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        std::fs::write(&p, body).unwrap();
+        (dir, p.to_string_lossy().into_owned())
+    }
+
+    // The byte cap stops a chunk but a single oversized line is still shown.
+    #[test]
+    fn test_slice_lines_byte_cap() {
+        let data = b"aaaa\naaaa\naaaa\naaaa\n";
+        let s = slice_lines(data, &[(1, 4)], 4, (100, 12));
+        assert_eq!((s.chunks[0]["end"].as_u64(), s.next.clone()), (Some(2), vec![[3, 4]]));
+        let one = slice_lines(data, &[(1, 4)], 4, (100, 1));
+        assert_eq!((one.chunks[0]["end"].as_u64(), one.next), (Some(1), vec![[2, 4]]));
+    }
+
+    // Stopping exactly at a span boundary emits no empty chunk and keeps later spans, skipping those past the end.
+    #[test]
+    fn test_slice_lines_span_boundaries() {
+        let data = b"1\n2\n3\n4\n";
+        let s = slice_lines(data, &[(1, 2), (3, 4)], 4, (2, 1000));
+        assert_eq!((s.chunks.len(), s.next), (1, vec![[3, 4]]));
+        let t = slice_lines(data, &[(1, 4), (100, 200)], 4, (1, 1000));
+        assert_eq!((t.next, t.omitted), (vec![[2, 4]], 6));
+        let u = slice_lines(data, &[(1, 2), (3, 3), (100, 200)], 4, (2, 1000));
+        assert_eq!(u.next, vec![[3, 3]]);
+        let v = slice_lines(data, &[(1, 4), (2, 3)], 4, (1, 1000));
+        assert_eq!(v.next, vec![[2, 4], [2, 3]]);
+    }
+
+    // Reads fail on directories and missing files, and reject bad ranges.
+    #[test]
+    fn test_run_errors() {
+        let (dir, path) = file(b"a\nb\n");
+        let mut st = State::new();
+        let on_dir = run(&mut st, args(json!({"path": dir.path()}))).unwrap_err();
+        assert!(on_dir.contains("not a regular file"));
+        assert!(run(&mut st, args(json!({"path": "/no/such/file"}))).is_err());
+        assert!(run(&mut st, args(json!({"path": path, "ranges": [[3, 2]]}))).is_err());
+    }
+
+    // Binary files, long lines and byte caps are reported in the reply.
+    #[test]
+    fn test_run_binary_long_and_caps() {
+        let (_d, bin) = file(b"ab\0cd");
+        let mut st = State::new();
+        assert_eq!(run(&mut st, args(json!({"path": bin}))).unwrap()["binary"], true);
+        let long = format!("{}\nshort\n", "x".repeat(MAX_LINE_BYTES + 50));
+        let (_d2, path) = file(long.as_bytes());
+        let out = run(&mut st, args(json!({"path": path}))).unwrap();
+        assert_eq!(out["long_lines_cut"], 1);
+        let (_d3, many) = file("0123456789\n".repeat(100).as_bytes());
+        let capped = run(&mut st, args(json!({"path": many, "max_bytes": 50}))).unwrap();
+        assert_eq!(capped["truncated"], true);
+        assert!(capped["bytes_omitted"].as_u64().unwrap() > 900);
+    }
+
+    // Once a file is old enough to trust its stamp, repeats are answered without reloading it.
+    #[test]
+    fn test_run_trusted_etag_path() {
+        let (_d, path) = file("line\n".repeat(500).as_bytes());
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        let mut st = State::new();
+        let first = run(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
+        assert_eq!(first["truncated"], true);
+        let same = run(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
+        assert_eq!(same["unchanged"], true);
+        let other = run(&mut st, args(json!({"path": path, "max_lines": 50}))).unwrap();
+        assert!(other.get("chunks").is_some());
+        let tag = run(&mut st, args(json!({"path": path, "if_none_match": first["etag"]}))).unwrap();
+        assert_eq!(tag["unchanged"], true);
+    }
+
+    // A diff that is not smaller than the file falls back to full content.
+    #[test]
+    fn test_run_large_diff_falls_back() {
+        let (_d, path) = file(b"one\ntwo\nthree\n");
+        let mut st = State::new();
+        run(&mut st, args(json!({"path": path}))).unwrap();
+        std::fs::write(&path, "completely\ndifferent\ncontent\n").unwrap();
+        let out = run(&mut st, args(json!({"path": path}))).unwrap();
+        assert!(out.get("chunks").is_some());
+        assert!(out.get("hunks").is_none());
     }
 }

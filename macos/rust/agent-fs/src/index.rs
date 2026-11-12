@@ -51,6 +51,7 @@ pub struct TriIndex {
     dead: usize,
     generation: u64,
     queries: u32,
+    max_entries: usize,
     disabled: bool,
 }
 
@@ -99,7 +100,7 @@ fn alternatives(hir: &Hir, kind: ExtractKind) -> Option<Vec<Vec<u32>>> {
     extractor.kind(kind);
     let seq = extractor.extract(hir);
     let literals = seq.literals()?;
-    if literals.is_empty() || literals.len() > MAX_ALTERNATIVES {
+    if literals.is_empty() {
         return None;
     }
     let mut out = vec![];
@@ -111,7 +112,7 @@ fn alternatives(hir: &Hir, kind: ExtractKind) -> Option<Vec<Vec<u32>>> {
     }
     out.sort();
     out.dedup();
-    Some(out)
+    (out.len() <= MAX_ALTERNATIVES).then_some(out)
 }
 
 // Build a prefilter: a match requires all trigrams of at least one returned alternative.
@@ -123,9 +124,15 @@ pub fn plan(hir: &Hir) -> Option<Vec<Vec<u32>>> {
 }
 
 impl TriIndex {
-    // Create an empty, usable index.
+    // Create an empty, usable index with the default memory budget.
     pub fn new() -> TriIndex {
+        TriIndex::with_limit(MAX_ENTRIES)
+    }
+
+    // Create an empty index that disables itself above the given number of posting entries.
+    pub fn with_limit(max_entries: usize) -> TriIndex {
         TriIndex {
+            max_entries,
             paths: vec![],
             kinds: vec![],
             alive: vec![],
@@ -165,10 +172,8 @@ impl TriIndex {
 
     // Mark an id dead; its postings are dropped at the next compaction.
     fn retire(&mut self, id: u32) {
-        if self.alive[id as usize] {
-            self.alive[id as usize] = false;
-            self.dead += 1;
-        }
+        self.alive[id as usize] = false;
+        self.dead += 1;
     }
 
     // Record what was learned about a file, replacing any older entry.
@@ -196,19 +201,19 @@ impl TriIndex {
 
     // Drop files that left the walk, compact when many entries are dead, and enforce the memory budget.
     pub fn finish(&mut self) {
-        let gone: Vec<PathBuf> = self
-            .by_path
-            .iter()
-            .filter(|(_, r)| r.generation != self.generation)
-            .map(|(p, _)| p.clone())
-            .collect();
-        for path in gone {
-            if let Some(r) = self.by_path.remove(&path) {
-                self.retire(r.id);
+        let (generation, mut gone) = (self.generation, vec![]);
+        self.by_path.retain(|_, r| {
+            let keep = r.generation == generation;
+            if !keep {
+                gone.push(r.id);
             }
+            keep
+        });
+        for id in gone {
+            self.retire(id);
         }
-        if self.entries > MAX_ENTRIES {
-            *self = TriIndex { disabled: true, ..TriIndex::new() };
+        if self.entries > self.max_entries {
+            *self = TriIndex { disabled: true, ..TriIndex::with_limit(self.max_entries) };
         } else if self.dead > (self.paths.len() - self.dead) / 2 + 1024 {
             self.compact();
         }
@@ -357,5 +362,55 @@ mod tests {
         assert_eq!(idx.candidates(Some(&p)).len(), 10);
         let stale = idx.begin(&files[..11]);
         assert_eq!(stale, vec![10]);
+    }
+
+    // Classification covers text, big, too-recent and binary files.
+    #[test]
+    fn test_classify_cases() {
+        let id = ident();
+        let later = crate::fsio::now_ns() + 10_000_000_000;
+        assert!(matches!(Update::classify(b"hello", &id, later, false), Update::Trigrams(_)));
+        assert!(matches!(Update::classify(&vec![b'a'; MAX_FILE + 1], &id, later, false), Update::Always));
+        assert!(matches!(Update::classify(b"hello", &id, 0, false), Update::Always));
+        assert!(matches!(Update::classify(b"hello", &id, later, true), Update::Binary));
+    }
+
+    // Empty literal sets, too many alternatives and folded case variants are handled.
+    #[test]
+    fn test_plan_limits() {
+        assert!(plan(&hir(r"[^\s\S]", false)).is_none());
+        assert_eq!(plan(&hir("(?i)abcdefg", true)).unwrap().len(), 1);
+        let many = (0..70).map(|i| format!("w{i:03}x")).collect::<Vec<_>>().join("|");
+        assert!(plan(&hir(&many, false)).is_none());
+    }
+
+    // A trigram nobody has yields no candidates.
+    #[test]
+    fn test_candidates_missing_trigram() {
+        let mut idx = TriIndex::new();
+        idx.begin(&[]);
+        idx.apply(Path::new("a"), ident(), 0, Update::Trigrams(trigrams(b"hello")));
+        idx.finish();
+        assert!(idx.candidates(Some(&plan(&hir("zzzz", false)).unwrap())).is_empty());
+    }
+
+    // Exceeding the entry budget drops the index and marks it unusable.
+    #[test]
+    fn test_budget_disables_index() {
+        let mut idx = TriIndex::with_limit(2);
+        assert!(idx.usable());
+        idx.begin(&[]);
+        idx.apply(Path::new("a"), ident(), 0, Update::Trigrams(trigrams(b"hello world")));
+        idx.finish();
+        assert!(!idx.usable());
+        assert!(idx.candidates(None).is_empty());
+    }
+
+    // The index only asks to be built from the second search on.
+    #[test]
+    fn test_warm_after_first_query() {
+        let mut idx = TriIndex::new();
+        assert!(!idx.warm());
+        assert!(idx.warm());
     }
 }

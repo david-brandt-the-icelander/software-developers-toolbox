@@ -97,9 +97,9 @@ fn build_blocks(bytes: &[u8], hits: &[Hit], radius: usize) -> Vec<Block> {
 // Scan file bytes and return the hits, or None when there are none.
 fn scan_bytes(path: &Path, bytes: &[u8], re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
     let (mut count, mut hits, mut line, mut counted_to, mut at) = (0, vec![], 1usize, 0usize, 0usize);
-    while at <= bytes.len() {
+    while at < bytes.len() {
         let Some(m) = re.find_at(bytes, at) else { break };
-        if m.start() >= bytes.len() && !bytes.is_empty() {
+        if m.start() >= bytes.len() {
             break;
         }
         let ls = memrchr(b'\n', &bytes[..m.start()]).map_or(0, |i| i + 1);
@@ -201,8 +201,9 @@ fn walk_files(a: &SearchArgs) -> Res<(Vec<Walked>, Vec<Dep>)> {
     let deps: Mutex<Vec<Dep>> = Mutex::new(vec![]);
     walker.build_parallel().run(|| {
         Box::new(|entry| {
-            let Ok(entry) = entry else { return WalkState::Continue };
-            let Ok(md) = entry.metadata() else { return WalkState::Continue };
+            let Some((entry, md)) = entry.ok().and_then(|e| e.metadata().ok().map(|m| (e, m))) else {
+                return WalkState::Continue;
+            };
             let ident = Ident::of(&md);
             let mut mine: Vec<Dep> = vec![(entry.path().to_path_buf(), Some(ident))];
             if md.is_dir() {
@@ -371,5 +372,153 @@ mod tests {
         let b = dir.path().join("b.bin");
         std::fs::write(&b, b"foo\0bar").unwrap();
         assert!(scan(&b, fsio::load(&b), &re, 0, 10).is_none());
+    }
+
+    // Build search arguments from JSON.
+    fn args(v: serde_json::Value) -> SearchArgs {
+        serde_json::from_value(v).unwrap()
+    }
+
+    // Compile a multi-line byte regex.
+    fn re(p: &str) -> Regex {
+        RegexBuilder::new(p).multi_line(true).build().unwrap()
+    }
+
+    // Overlong matching lines are cut for display.
+    #[test]
+    fn test_clip_long_line() {
+        assert_eq!(clip(b"short"), "short");
+        let cut = clip(&vec![b'a'; MAX_TEXT + 10]);
+        assert!(cut.ends_with('…'));
+        assert!(cut.len() < MAX_TEXT + 10);
+    }
+
+    // An empty field list is rejected whether given directly or as only path.
+    #[test]
+    fn test_parse_fields_empty() {
+        let mut a = args(json!({"pattern": "x", "fields": []}));
+        assert!(parse_fields(&a).is_err());
+        a.fields = Some(vec!["path".into()]);
+        assert!(parse_fields(&a).is_err());
+    }
+
+    // Context blocks work for hits on an unterminated last line.
+    #[test]
+    fn test_build_blocks_without_trailing_newline() {
+        let hits = vec![Hit { line: 3, col: 1, text: "c".into() }];
+        let blocks = build_blocks(b"a\nb\nc", &hits, 5);
+        assert_eq!((blocks[0].start, blocks[0].lines.join("")), (1, "abc".to_string()));
+    }
+
+    // Scanning handles an unterminated last line, EOF-anchored matches, the hit cap and empty input.
+    #[test]
+    fn test_scan_bytes_edges() {
+        let p = Path::new("f");
+        let last = scan_bytes(p, b"x\nfoo", &re("foo"), 0, 10).unwrap();
+        assert_eq!((last.count, last.hits[0].line), (1, 2));
+        let eof = scan_bytes(p, b"a\n", &re("$"), 0, 10).unwrap();
+        assert_eq!(eof.count, 1);
+        let capped = scan_bytes(p, b"foo\nfoo\nfoo\n", &re("foo"), 0, 1).unwrap();
+        assert_eq!((capped.count, capped.hits.len()), (3, 1));
+        assert!(scan_bytes(p, b"", &re("x*"), 0, 10).is_none());
+        assert!(scan_bytes(p, b"ab", &re("$"), 0, 10).is_none());
+        assert!(scan_bytes(p, b"abc", &re("zzz"), 0, 10).is_none());
+    }
+
+    // A failed load still tells the index to always scan the file.
+    #[test]
+    fn test_read_and_scan_failed_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = fsio::ident_of(dir.path()).unwrap();
+        let seen = read_and_scan(Path::new("x"), id, Err(std::io::Error::other("boom")), &re("x"), 0, 5);
+        assert!(seen.hits.is_none());
+        assert!(matches!(seen.update, Update::Always));
+    }
+
+    // Build a FileHits with the given number of plain hits.
+    fn file_hits(path: &str, n: usize) -> FileHits {
+        let hits = (0..n).map(|i| Hit { line: i + 1, col: 1, text: "t".into() }).collect();
+        FileHits { path: path.into(), count: n, hits, blocks: vec![] }
+    }
+
+    // Rendering stops at the budget and says it truncated, across files and across blocks.
+    #[test]
+    fn test_render_budget() {
+        let fields = vec!["line".to_string()];
+        let (items, truncated) = render(vec![file_hits("a", 1), file_hits("b", 1)], &fields, 1);
+        assert_eq!((items.len(), truncated), (1, true));
+        let (items, truncated) = render(vec![file_hits("a", 3)], &fields, 2);
+        assert_eq!((items[0]["hits"].as_array().unwrap().len(), truncated), (2, true));
+        let block = |start: usize| Block { start, lines: vec!["l".into()], hits: vec![start] };
+        let two_blocks =
+            FileHits { path: "a".into(), count: 2, hits: vec![], blocks: vec![block(1), block(5)] };
+        let (items, truncated) = render(vec![two_blocks], &fields, 1);
+        assert_eq!((items[0]["blocks"].as_array().unwrap().len(), truncated), (1, true));
+        let (_, fine) = render(vec![file_hits("a", 2)], &fields, 5);
+        assert!(!fine);
+    }
+
+    // Hits render as objects when several fields are asked for.
+    #[test]
+    fn test_render_hit_objects() {
+        let h = Hit { line: 4, col: 2, text: "t".into() };
+        let all = ["line", "col", "text"].map(String::from);
+        assert_eq!(render_hit(&h, &all), json!({"line": 4, "col": 2, "text": "t"}));
+    }
+
+    // Create a small project with a few source files.
+    fn project() -> (tempfile::TempDir, Vec<Walked>) {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..6 {
+            std::fs::write(dir.path().join(format!("f{i}.txt")), format!("alpha {i}\nneedle here\n"))
+                .unwrap();
+        }
+        let a = args(json!({"pattern": "x", "paths": [dir.path()]}));
+        let (files, _) = walk_files(&a).unwrap();
+        (dir, files)
+    }
+
+    // A disabled index and an index that overflows mid-search both fall back to a full scan.
+    #[test]
+    fn test_find_hits_with_unusable_index() {
+        let (dir, files) = project();
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        let a = args(json!({"pattern": "needle", "paths": [dir.path()]}));
+        let regex = build_regex(&a).unwrap();
+        let mut tiny = TriIndex::with_limit(1);
+        tiny.warm();
+        assert_eq!(find_hits(&a, &regex, &files, &mut tiny, 10).len(), 6);
+        assert!(!tiny.usable());
+        assert_eq!(find_hits(&a, &regex, &files, &mut tiny, 10).len(), 6);
+    }
+
+    // The first search skips the index and later ones use it with equal results.
+    #[test]
+    fn test_find_hits_cold_then_warm() {
+        let (dir, files) = project();
+        let a = args(json!({"pattern": "needle", "paths": [dir.path()]}));
+        let regex = build_regex(&a).unwrap();
+        let mut idx = TriIndex::new();
+        let cold = find_hits(&a, &regex, &files, &mut idx, 10);
+        let warm = find_hits(&a, &regex, &files, &mut idx, 10);
+        assert_eq!((cold.len(), warm.len()), (6, 6));
+    }
+
+    // Literal patterns are escaped and bad regexes are reported.
+    #[test]
+    fn test_regex_pattern_and_errors() {
+        assert_eq!(regex_pattern(&args(json!({"pattern": "a.b", "literal": true}))), "a\\.b");
+        let bad = run(&mut State::new(), args(json!({"pattern": "(", "paths": ["."]})));
+        assert!(bad.unwrap_err().contains("bad pattern"));
+        let missing = run(&mut State::new(), args(json!({"pattern": "x", "paths": ["/no/such"]})));
+        assert!(missing.is_err());
+    }
+
+    // Searching with no paths uses the current directory and a glob narrows the files.
+    #[test]
+    fn test_run_default_paths_and_glob() {
+        let a = args(json!({"pattern": "fn main", "glob": ["main.rs"], "files_only": true}));
+        let out = run(&mut State::new(), a).unwrap();
+        assert_eq!(out["files"], json!(["src/main.rs"]));
     }
 }

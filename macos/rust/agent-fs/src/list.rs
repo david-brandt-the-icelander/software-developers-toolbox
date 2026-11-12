@@ -23,8 +23,7 @@ fn compute(a: &ListArgs) -> Res<(Value, Vec<Dep>)> {
     let depth = a.depth.or(if a.glob.is_empty() { Some(1) } else { None });
     let walker = walk::builder(&[root], &a.glob, a.hidden, a.no_ignore, depth)?;
     let (mut deps, mut rows) = (vec![], vec![]);
-    for entry in walker.build().flatten() {
-        let Ok(md) = entry.metadata() else { continue };
+    for (entry, md) in walker.build().flatten().filter_map(|e| e.metadata().ok().map(|m| (e, m))) {
         deps.push((entry.path().to_path_buf(), Some(Ident::of(&md))));
         if md.is_dir() {
             deps.extend(walk::ignore_file_deps(entry.path()));
@@ -115,5 +114,90 @@ mod tests {
         let row = Row { path: "src".into(), dir: true, size: 0, mtime: 0 };
         assert_eq!(render(&row, false), "src/");
         assert_eq!(render(&row, true)[1], 0);
+    }
+
+    // Build list arguments from JSON.
+    fn args(v: serde_json::Value) -> ListArgs {
+        serde_json::from_value(v).unwrap()
+    }
+
+    // Create a small project tree.
+    fn tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        for f in ["a.rs", "b.txt", "sub/c.rs"] {
+            std::fs::write(dir.path().join(f), "x").unwrap();
+        }
+        dir
+    }
+
+    // A glob lists matching files at any depth and no directories.
+    #[test]
+    fn test_list_glob_walks_deep() {
+        let dir = tree();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = list(&mut State::new(), args(json!({"path": root, "glob": ["*.rs"]}))).unwrap();
+        let names: Vec<&str> =
+            out["entries"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.iter().all(|n| n.ends_with(".rs")));
+    }
+
+    // Plain listings are one level deep with directories marked, and long mode adds sizes.
+    #[test]
+    fn test_list_default_depth_and_long() {
+        let dir = tree();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = list(&mut State::new(), args(json!({"path": root}))).unwrap();
+        assert_eq!(out["total"], 3);
+        assert!(out["entries"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().ends_with("sub/")));
+        let long = list(&mut State::new(), args(json!({"path": root, "long": true}))).unwrap();
+        assert_eq!(long["entries"][0][1], 1);
+    }
+
+    // Paging reports where to continue and the last page has no cursor.
+    #[test]
+    fn test_list_paging() {
+        let dir = tree();
+        let root = dir.path().to_string_lossy().into_owned();
+        let first = list(&mut State::new(), args(json!({"path": root, "max_entries": 2}))).unwrap();
+        assert_eq!((first["truncated"].as_bool(), first["next_cursor"].as_u64()), (Some(true), Some(2)));
+        let rest =
+            list(&mut State::new(), args(json!({"path": root, "max_entries": 2, "cursor": 2}))).unwrap();
+        assert_eq!(rest["entries"].as_array().unwrap().len(), 1);
+        assert!(rest.get("truncated").is_none());
+    }
+
+    // A missing root is an error.
+    #[test]
+    fn test_list_missing_root() {
+        assert!(list(&mut State::new(), args(json!({"path": "/no/such/dir"}))).is_err());
+    }
+
+    // Symlinks and device files get their own kinds.
+    #[test]
+    fn test_stat_symlink_and_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("l");
+        std::os::unix::fs::symlink("/nonexistent", &link).unwrap();
+        let kind = |p: &str| stat(StatArgs { path: p.to_string(), hash: false }).unwrap()["kind"].clone();
+        assert_eq!(kind(&link.to_string_lossy()), "symlink");
+        assert_eq!(kind("/dev/null"), "other");
+    }
+
+    // Hashing adds an etag for regular files and not for other kinds.
+    #[test]
+    fn test_stat_hash_only_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("f");
+        std::fs::write(&f, "x").unwrap();
+        let ok = stat(StatArgs { path: f.to_string_lossy().into_owned(), hash: true }).unwrap();
+        assert!(ok["etag"].is_string());
+        let fifo = dir.path().join("fifo");
+        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: the path is a valid NUL-terminated string and mkfifo only creates a file.
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        let other = stat(StatArgs { path: fifo.to_string_lossy().into_owned(), hash: true }).unwrap();
+        assert!(other.get("etag").is_none());
     }
 }

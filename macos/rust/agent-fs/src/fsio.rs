@@ -63,7 +63,16 @@ pub fn ident_of(path: &Path) -> Option<Ident> {
 #[cfg(target_os = "linux")]
 fn open(path: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
-    match std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOATIME).open(path) {
+    retry_without_noatime(
+        std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOATIME).open(path),
+        path,
+    )
+}
+
+// Reopen a file normally when the O_NOATIME open was refused because the caller does not own it.
+#[cfg(target_os = "linux")]
+fn retry_without_noatime(first: io::Result<File>, path: &Path) -> io::Result<File> {
+    match first {
         Err(e) if e.raw_os_error() == Some(libc::EPERM) => File::open(path),
         other => other,
     }
@@ -111,11 +120,16 @@ enum Mode {
 // Read the AFS_BATCH_IO setting once.
 fn mode() -> Mode {
     static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("AFS_BATCH_IO").as_deref() {
-        Ok("always") => Mode::Always,
-        Ok("never") => Mode::Never,
+    *MODE.get_or_init(|| parse_mode(std::env::var("AFS_BATCH_IO").ok().as_deref()))
+}
+
+// Map the AFS_BATCH_IO value to a mode; anything but always or never means auto.
+fn parse_mode(value: Option<&str>) -> Mode {
+    match value {
+        Some("always") => Mode::Always,
+        Some("never") => Mode::Never,
         _ => Mode::Auto,
-    })
+    }
 }
 
 // Files and nanoseconds measured for batched loading, then for plain loading.
@@ -123,19 +137,19 @@ static TRIAL: [AtomicU64; 4] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64:
 
 // Decide whether the next call should use batched loading: alternate during the trial, then pick the faster.
 fn prefer_batch() -> bool {
-    match mode() {
+    decide(mode(), [0, 1, 2, 3].map(|i| TRIAL[i].load(Ordering::Relaxed)))
+}
+
+// Choose batching from the mode and the trial totals [batch files, batch ns, plain files, plain ns].
+fn decide(mode: Mode, totals: [u64; 4]) -> bool {
+    let [batch_files, batch_ns, plain_files, plain_ns] = totals;
+    match mode {
         Mode::Never => false,
         Mode::Always => true,
+        Mode::Auto if batch_files < TRIAL_FILES && batch_files <= plain_files => true,
+        Mode::Auto if plain_files < TRIAL_FILES => false,
         Mode::Auto => {
-            let t = |i: usize| TRIAL[i].load(Ordering::Relaxed);
-            let (batch_files, plain_files) = (t(0), t(2));
-            if batch_files < TRIAL_FILES && batch_files <= plain_files {
-                return true;
-            }
-            if plain_files < TRIAL_FILES {
-                return false;
-            }
-            u128::from(t(1)) * u128::from(plain_files) <= u128::from(t(3)) * u128::from(batch_files)
+            u128::from(batch_ns) * u128::from(plain_files) <= u128::from(plain_ns) * u128::from(batch_files)
         }
     }
 }
@@ -164,12 +178,19 @@ fn load_batched(paths: &[&Path]) -> Option<Vec<Loaded>> {
 
 // Load many files with io_uring (Linux) or POSIX AIO (macOS) when that is faster than plain reads here.
 pub fn load_many(paths: &[&Path]) -> Vec<Loaded> {
+    load_with(paths, prefer_batch(), load_batched)
+}
+
+// Load with the batched loader when preferred and available, else one file at a time, recording the timing.
+fn load_with(
+    paths: &[&Path],
+    batch: bool,
+    batched: impl FnOnce(&[&Path]) -> Option<Vec<Loaded>>,
+) -> Vec<Loaded> {
     let started = Instant::now();
-    if prefer_batch() {
-        if let Some(done) = load_batched(paths) {
-            record_trial(true, paths.len(), started);
-            return done;
-        }
+    if let Some(done) = batch.then(|| batched(paths)).flatten() {
+        record_trial(true, paths.len(), started);
+        return done;
     }
     let done = paths.iter().map(|p| load(p)).collect();
     record_trial(false, paths.len(), started);
@@ -257,5 +278,55 @@ mod tests {
         let id = ident_of(&p).unwrap();
         assert!(id.racy(now_ns()));
         assert!(!id.racy(now_ns() + 10_000_000_000));
+    }
+
+    // An EPERM from the no-atime open is retried normally and other results pass through.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_retry_without_noatime() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("f");
+        std::fs::write(&f, "x").unwrap();
+        assert!(retry_without_noatime(Err(io::Error::from_raw_os_error(libc::EPERM)), &f).is_ok());
+        let other = retry_without_noatime(Err(io::Error::from_raw_os_error(libc::ENOENT)), &f);
+        assert_eq!(other.unwrap_err().raw_os_error(), Some(libc::ENOENT));
+        assert!(retry_without_noatime(File::open(&f), &f).is_ok());
+    }
+
+    // The environment value maps to a mode.
+    #[test]
+    fn test_parse_mode_values() {
+        assert!(parse_mode(Some("always")) == Mode::Always);
+        assert!(parse_mode(Some("never")) == Mode::Never);
+        assert!(parse_mode(Some("other")) == Mode::Auto);
+        assert!(parse_mode(None) == Mode::Auto);
+    }
+
+    // Auto mode alternates during the trial, then picks the faster method.
+    #[test]
+    fn test_decide_modes() {
+        assert!(!decide(Mode::Never, [0; 4]));
+        assert!(decide(Mode::Always, [0; 4]));
+        assert!(decide(Mode::Auto, [0, 0, 0, 0]));
+        assert!(!decide(Mode::Auto, [10, 5, 5, 5]));
+        let done = TRIAL_FILES;
+        assert!(decide(Mode::Auto, [done, 100, done, 200]));
+        assert!(!decide(Mode::Auto, [done, 300, done, 200]));
+        assert!(!decide(Mode::Auto, [done, 1, 3, 1]));
+    }
+
+    // The batched loader is used when preferred and present, and plain loading covers every other case.
+    #[test]
+    fn test_load_with_fallbacks() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("f");
+        std::fs::write(&f, "abc").unwrap();
+        let paths = [f.as_path()];
+        let batched = load_with(&paths, true, |_| Some(vec![Err(io::Error::other("marker"))]));
+        assert_eq!(batched[0].as_ref().unwrap_err().to_string(), "marker");
+        let unavailable = load_with(&paths, true, |_| None);
+        assert_eq!(unavailable[0].as_ref().unwrap().1, b"abc");
+        let skipped = load_with(&paths, false, |_| panic!("batched loader must not run"));
+        assert_eq!(skipped[0].as_ref().unwrap().1, b"abc");
     }
 }

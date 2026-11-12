@@ -56,6 +56,10 @@ Search loads files in chunks of 32 through `fsio::load_many`, which has two impl
 - **macOS, POSIX AIO** (`aio.rs`): files are opened and stamped one by one (macOS has no async open), then each batch of 16 is read with a single `lio_listio(LIO_WAIT)` after `F_RDAHEAD`. Empty and over-4 MiB files use plain reads. Type-checked against the Apple `libc` bindings and unit-tested in macOS CI, but not benchmarked on a Mac.
 - **Choice**: batching is not always faster (on a 4-core VM with a hot page cache io_uring was about 1.6x *slower* than plain reads for 7k small files, because cached opens and reads are punted to kernel worker threads). So each process times both methods on its first 128 files each and keeps the faster. `AFS_BATCH_IO=always|never` forces it; the default is `auto`.
 
+## Testing
+
+`cargo test -p agent-fs` runs unit tests beside the code and `tests/cli.rs`, which drives the real binary (arguments, stdin, exit codes, `jsonl`, MCP). CI gates `agent-fs` at 95% line and 95% branch coverage on Linux (`cargo +nightly llvm-cov -p agent-fs --branch`); measured at the time of writing: 99.0% lines, 98.7% branches (294 of 298), 98 unit tests plus 9 CLI tests. The macOS-only `aio.rs` is not compiled on Linux, so it is covered only by the macOS test job. The few uncovered branches are walker errors and io_uring ring failures, which cannot be provoked from a test. Mutation spot-checks (inverting the intersection, racy window, line counting, diff offsets) fail the suite.
+
 ## Not implemented
 
 Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.

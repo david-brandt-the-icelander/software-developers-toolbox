@@ -324,8 +324,7 @@ fn compute(a: &OutlineArgs) -> Res<(Value, Vec<Dep>)> {
     let walker = walk::builder(&a.paths, &[], false, false, None)?;
     let cap = a.max_symbols.unwrap_or(MAX_SYMBOLS);
     let (mut deps, mut files): (Vec<Dep>, Vec<PathBuf>) = (vec![], vec![]);
-    for entry in walker.build().flatten() {
-        let Ok(md) = entry.metadata() else { continue };
+    for (entry, md) in walker.build().flatten().filter_map(|e| e.metadata().ok().map(|m| (e, m))) {
         deps.push((entry.path().to_path_buf(), Some(Ident::of(&md))));
         if md.is_dir() {
             deps.extend(walk::ignore_file_deps(entry.path()));
@@ -462,7 +461,8 @@ mod tests {
             ["1-1 class P", "2-2 fun main"]
         );
         assert!(file_symbols(Path::new("x.xyz"), b"abc").is_none());
-        assert!(!supported(Path::new("a.xyz")) && supported(Path::new("a.rs")));
+        assert!(!supported(Path::new("a.xyz")));
+        assert!(supported(Path::new("a.rs")));
     }
 
     // Broken syntax still yields the parts that parse instead of failing.
@@ -470,5 +470,53 @@ mod tests {
     fn test_outline_tolerates_syntax_errors() {
         let got = outline("rs", "fn ok() {}\nfn broken( {\nstruct After;\n");
         assert!(got.iter().any(|s| s.ends_with("fn ok")));
+    }
+
+    // Build outline arguments from JSON.
+    fn args(v: serde_json::Value) -> OutlineArgs {
+        serde_json::from_value(v).unwrap()
+    }
+
+    // Oversized sources are skipped and binary files are never outlined.
+    #[test]
+    fn test_outline_skips_big_and_binary() {
+        assert!(file_symbols(Path::new("x.rs"), &vec![b' '; MAX_PARSE_BYTES + 1]).is_none());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bin.rs"), b"fn a() {}\0").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = run(&mut State::new(), args(json!({"paths": [root]}))).unwrap();
+        assert_eq!(out["files"].as_array().unwrap().len(), 0);
+    }
+
+    // The symbol cap truncates, drops files past it and still reports the true total.
+    #[test]
+    fn test_outline_cap_and_total() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "fn c() {}\n").unwrap();
+        std::fs::write(dir.path().join("empty.rs"), "// nothing\n").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = run(&mut State::new(), args(json!({"paths": [root], "max_symbols": 1}))).unwrap();
+        assert_eq!((out["total_symbols"].as_u64(), out["truncated"].as_bool()), (Some(3), Some(true)));
+        assert_eq!(out["files"].as_array().unwrap().len(), 1);
+        let all = run(&mut State::new(), args(json!({"paths": [root]}))).unwrap();
+        assert!(all.get("truncated").is_none());
+    }
+
+    // Declarators without an identifier yield no name.
+    #[test]
+    fn test_outline_c_odd_declarators() {
+        assert_eq!(outline("c", "int (*fp(int a))(int);\nvoid (*h(void))(void) { }\n").len(), 1);
+        assert!(outline("c", "typedef int (*cb)(int);\n").iter().any(|s| s.ends_with("typedef cb")));
+    }
+
+    // Unsupported extensions and extensionless files have no outline.
+    #[test]
+    fn test_supported_paths() {
+        assert!(supported(Path::new("a.rs")));
+        assert!(supported(Path::new("a.md")));
+        assert!(!supported(Path::new("a.xyz")));
+        assert!(!supported(Path::new("Makefile")));
+        assert!(file_symbols(Path::new("Makefile"), b"x").is_none());
     }
 }

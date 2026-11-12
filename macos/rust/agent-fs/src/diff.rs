@@ -65,4 +65,34 @@ mod tests {
         assert!(hunks(b"a\n", b"a\n").unwrap().is_empty());
         assert!(hunks(&[0xff, 0xfe], b"a").is_none());
     }
+
+    // A pure deletion has no inserted text.
+    #[test]
+    fn test_hunks_pure_deletion() {
+        let h = hunks(b"a\nb\n", b"a\n").unwrap();
+        assert_eq!((h[0]["del"].as_u64(), h[0].get("ins")), (Some(1), None));
+    }
+
+    // diff_since reports unchanged, a diff and each failure.
+    #[test]
+    fn test_since_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        std::fs::write(&p, "a\nb\n").unwrap();
+        let path = p.to_string_lossy().into_owned();
+        let mut st = State::new();
+        let (id, bytes) = fsio::load(&p).unwrap();
+        let etag = st.record(&p, id, &bytes);
+        st.put_content(&etag, Arc::new(bytes));
+        let ask =
+            |st: &mut State, etag: &str| since(st, DiffArgs { path: path.clone(), etag: etag.to_string() });
+        assert_eq!(ask(&mut st, &etag).unwrap()["unchanged"], true);
+        std::fs::write(&p, "a\nB\n").unwrap();
+        assert_eq!(ask(&mut st, &etag).unwrap()["hunks"][0]["ins"], "B\n");
+        assert!(ask(&mut st, "b3:unknown").unwrap_err().contains("base_unavailable"));
+        std::fs::write(&p, [0xff, 0xfe, b'\n']).unwrap();
+        assert!(ask(&mut st, &etag).unwrap_err().contains("non-UTF-8"));
+        std::fs::remove_file(&p).unwrap();
+        assert!(ask(&mut st, &etag).unwrap_err().contains("f.txt"));
+    }
 }

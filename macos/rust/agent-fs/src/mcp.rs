@@ -155,4 +155,19 @@ mod tests {
         let failed = call_tool(&mut e, &json!({"name": "afs_read", "arguments": {"path": "/no/such"}}));
         assert_eq!(failed["isError"], true);
     }
+
+    // A tool call without arguments uses an empty argument object.
+    #[test]
+    fn test_call_tool_without_arguments() {
+        let mut e = Engine::new();
+        let reply = call_tool(&mut e, &json!({"name": "afs_list"}));
+        assert_eq!(reply["isError"], false);
+    }
+
+    // The JSON-RPC error helper builds the standard error shape.
+    #[test]
+    fn test_rpc_error_shape() {
+        let err = rpc_error(Value::Null, -32700, "bad");
+        assert_eq!((err["error"]["code"].as_i64(), err["id"].is_null()), (Some(-32700), true));
+    }
 }

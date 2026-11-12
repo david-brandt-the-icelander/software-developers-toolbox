@@ -71,4 +71,38 @@ mod tests {
     fn test_builder_missing_root() {
         assert!(builder(&["/definitely/not/here".to_string()], &[], false, false, None).is_err());
     }
+
+    // Empty roots default to the current directory and globs are applied.
+    #[test]
+    fn test_builder_defaults_and_globs() {
+        assert!(builder(&[], &[], false, false, None).is_ok());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let wb = builder(&[root], &["*.rs".to_string()], false, false, None).unwrap();
+        let names: Vec<String> =
+            wb.build().flatten().filter(|e| e.path().is_file()).map(|e| walk_name(e.path())).collect();
+        assert_eq!(names, ["a.rs"]);
+    }
+
+    // A malformed glob is reported.
+    #[test]
+    fn test_builder_bad_glob() {
+        assert!(builder(&[".".to_string()], &["[".to_string()], false, false, None).is_err());
+    }
+
+    // Return a path's file name as text.
+    fn walk_name(p: &Path) -> String {
+        p.file_name().unwrap().to_string_lossy().into_owned()
+    }
+
+    // Ignore-file stamps cover both names and see a present file.
+    #[test]
+    fn test_ignore_file_deps() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "x").unwrap();
+        let deps = ignore_file_deps(dir.path());
+        assert_eq!((deps.len(), deps[0].1.is_some(), deps[1].1.is_none()), (2, true, true));
+    }
 }

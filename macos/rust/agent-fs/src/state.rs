@@ -137,10 +137,9 @@ impl State {
         self.store.insert(etag.to_string(), bytes);
         self.order.push_back(etag.to_string());
         while self.store_bytes > STORE_BUDGET {
-            let Some(old) = self.order.pop_front() else { break };
-            if let Some(b) = self.store.remove(&old) {
-                self.store_bytes -= b.len();
-            }
+            let old = self.order.pop_front().expect("stored bytes imply queued etags");
+            let bytes = self.store.remove(&old).expect("the queue only holds stored etags");
+            self.store_bytes -= bytes.len();
         }
     }
 
@@ -217,5 +216,113 @@ mod tests {
         }
         assert!(st.content("e0").is_none());
         assert!(st.content("e11").is_some());
+    }
+
+    // Run a cacheable query whose dependencies and result are given.
+    fn serve(st: &mut State, key: &str, fresh: bool, deps: Vec<Dep>) -> Value {
+        st.serve_cached(key, fresh, || Ok((json!({"v": 1}), deps))).unwrap()
+    }
+
+    // Only a stamp that is old enough, and still equal, makes a cached result a hit.
+    #[test]
+    fn test_cached_trust_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f");
+        std::fs::write(&p, "x").unwrap();
+        let mut st = State::new();
+        let fresh_dep = vec![(p.clone(), fsio::ident_of(&p))];
+        assert_eq!(serve(&mut st, "racy", true, fresh_dep.clone())["cached"], false);
+        assert_eq!(serve(&mut st, "racy", true, fresh_dep)["cached"], false);
+        let absent = dir.path().join("absent");
+        let deps = vec![(absent.clone(), None)];
+        assert_eq!(serve(&mut st, "stable", true, deps.clone())["cached"], false);
+        assert_eq!(serve(&mut st, "stable", true, deps.clone())["cached"], true);
+        std::fs::write(&absent, "now exists").unwrap();
+        assert_eq!(serve(&mut st, "stable", true, deps)["cached"], false);
+    }
+
+    // A repeat of a delivered reply is only a marker until the content changes or fresh is asked.
+    #[test]
+    fn test_serve_cached_unchanged_marker() {
+        let mut st = State::new();
+        assert!(serve(&mut st, "q", false, vec![]).get("v").is_some());
+        assert_eq!(serve(&mut st, "q", false, vec![])["unchanged"], true);
+        assert!(serve(&mut st, "q", true, vec![]).get("v").is_some());
+    }
+
+    // The result cache is cleared when it reaches its size limit.
+    #[test]
+    fn test_cache_limit() {
+        let mut st = State::new();
+        serve(&mut st, "first", true, vec![]);
+        assert_eq!(serve(&mut st, "first", true, vec![])["cached"], true);
+        for i in 0..CACHE_MAX {
+            serve(&mut st, &format!("k{i}"), true, vec![]);
+        }
+        assert_eq!(serve(&mut st, "first", true, vec![])["cached"], false);
+    }
+
+    // Indexes are kept per configuration and dropped when too many accumulate.
+    #[test]
+    fn test_index_table_limit() {
+        let mut st = State::new();
+        let mut idx = st.take_index("k0");
+        idx.warm();
+        st.put_index("k0".into(), idx);
+        assert!(st.take_index("k0").warm());
+        st.put_index("k0".into(), TriIndex::new());
+        for i in 1..=INDEX_MAX {
+            st.put_index(format!("k{i}"), TriIndex::new());
+        }
+        assert!(!st.take_index("k0").warm());
+    }
+
+    // Oversized and duplicate contents are not stored twice or at all.
+    #[test]
+    fn test_put_content_rules() {
+        let mut st = State::new();
+        st.put_content("big", Arc::new(vec![0u8; STORE_MAX_FILE + 1]));
+        assert!(st.content("big").is_none());
+        st.put_content("a", Arc::new(vec![1]));
+        st.put_content("a", Arc::new(vec![2]));
+        assert_eq!(st.content("a").unwrap().as_slice(), [1]);
+    }
+
+    // The stamp and sent tables reset when they grow past their limit.
+    #[test]
+    fn test_table_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f");
+        std::fs::write(&p, "x").unwrap();
+        let id = fsio::ident_of(&p).unwrap();
+        let mut st = State::new();
+        st.record(Path::new("first"), id, b"");
+        for i in 0..=TABLE_MAX {
+            st.record(Path::new(&format!("p{i}")), id, b"");
+        }
+        assert!(!st.idx.contains_key(Path::new("first")));
+        st.mark_sent("first", "e", "k", true);
+        for i in 0..=TABLE_MAX {
+            st.mark_sent(&format!("s{i}"), "e", "k", true);
+        }
+        assert!(st.already_sent("first", "e", "k").is_none());
+    }
+
+    // A stamp is trusted for skipping a re-read only after it is older than the racy window.
+    #[test]
+    fn test_trusted_etag_requires_old_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f");
+        std::fs::write(&p, "same-size-1").unwrap();
+        let mut st = State::new();
+        let id = fsio::ident_of(&p).unwrap();
+        let etag = st.record(&p, id, b"same-size-1");
+        assert!(st.trusted_etag(&p, &id).is_none());
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        st.record(&p, id, b"same-size-1");
+        assert_eq!(st.trusted_etag(&p, &id), Some(etag));
+        let other = fsio::Ident::of(&std::fs::metadata(dir.path()).unwrap());
+        assert!(st.trusted_etag(&p, &other).is_none());
+        assert!(st.trusted_etag(Path::new("unknown"), &id).is_none());
     }
 }
