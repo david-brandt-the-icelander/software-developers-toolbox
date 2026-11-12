@@ -18,6 +18,7 @@ if (args[0] != "serve")
     return 2;
 }
 
+var engine = Engine.Open();
 var roots = new List<Root>();
 for (var i = 1; i < args.Length; i++)
 {
@@ -26,12 +27,11 @@ for (var i = 1; i < args.Length; i++)
         Console.Error.WriteLine($"bad argument: {args[i]}");
         return 2;
     }
-    roots.Add(Root.Parse(args[++i]));
+    roots.Add(Root.Parse(args[++i], engine));
 }
 if (roots.Count == 0)
-    roots.Add(Root.Parse(Directory.GetCurrentDirectory()));
+    roots.Add(Root.Parse(Directory.GetCurrentDirectory(), engine));
 
-var log = UsageLog.Open();
-var server = new McpServer(roots, log);
+var server = new McpServer(roots, engine.Log);
 await server.RunAsync(Console.In, Console.Out);
 return 0;

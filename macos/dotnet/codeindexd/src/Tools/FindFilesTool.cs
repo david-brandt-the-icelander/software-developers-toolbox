@@ -22,11 +22,10 @@ public sealed class FindFilesTool(RootSet roots) : ITool
         var glob = Args.OptStr(args, "glob") is { } g ? Glob.ToRegex(g) : null;
         var limit = Args.Int(args, "limit", 100);
         var offset = Args.Int(args, "offset", 0);
-        info.Path = "scan";
-        info.Reason = "index_not_built";
+        info.Path = "index";
         var matches = new List<string>();
         foreach (var root in roots.Select(Args.OptStr(args, "root")))
-            foreach (var f in root.ListFiles())
+            foreach (var f in root.Listing(info))
                 if ((query is null || f.Contains(query, StringComparison.OrdinalIgnoreCase)) && (glob is null || glob.IsMatch(f)))
                     matches.Add($"{root.Name}:{f}");
         var page = matches.Skip(offset).Take(limit).ToList();

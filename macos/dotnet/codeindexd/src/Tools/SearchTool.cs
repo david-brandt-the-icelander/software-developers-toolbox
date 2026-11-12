@@ -36,7 +36,7 @@ public sealed class SearchTool(RootSet roots) : ITool
         info.Path = "scan";
         info.Reason = "index_not_built";
         var files = roots.Select(Args.OptStr(args, "root"))
-            .SelectMany(r => r.ListFiles().Where(f => glob is null || glob.IsMatch(f)).Select(f => (root: r, rel: f)))
+            .SelectMany(r => r.Listing(info).Where(f => glob is null || glob.IsMatch(f)).Select(f => (root: r, rel: f)))
             .ToList();
         var output = new Output(Args.Int(args, "max_tokens", 4000));
         var seen = 0;
@@ -97,9 +97,12 @@ public sealed class SearchTool(RootSet roots) : ITool
     private static FileHits? ScanFile(Root root, string rel, Regex regex)
     {
         var full = root.Resolve(rel);
-        if (full is null || new FileInfo(full).Length > MaxFileBytes || Root.IsBinary(full))
+        if (full is null || !File.Exists(full) || new FileInfo(full).Length > MaxFileBytes)
             return null;
-        var text = Root.ReadText(full).Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+        var bytes = File.ReadAllBytes(full);
+        if (Analysis.BlobAnalyzer.LooksBinary(bytes))
+            return null;
+        var text = Root.Decode(bytes).Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
         var matched = new List<int>();
         for (var i = 0; i < text.Length; i++)
         {

@@ -1,40 +1,48 @@
-// A directory inside a git repository that the server answers questions about.
+// A named directory inside a git repository that a session asks questions about.
 using System.Text;
+using CodeIndexd.Index;
+using CodeIndexd.Tools;
 
 namespace CodeIndexd;
 
-// A named root: tool paths are written as relative paths inside it.
+// A session's alias for a root; tool paths are written root:relative/path.
 public sealed class Root
 {
     public string Name { get; }
     public string Path { get; }
+    public RootIndex Index { get; }
 
-    // Creates a root from an already validated name and absolute path.
-    private Root(string name, string path)
+    // Creates a root from a validated name, real path and its index.
+    private Root(string name, string path, RootIndex index)
     {
         Name = name;
         Path = path;
+        Index = index;
     }
 
-    // Parses "name=path" or a bare path and checks that it is inside a git work tree.
-    public static Root Parse(string spec)
+    // Parses "name=path" or a bare path, checks it is inside a git work tree and attaches its index.
+    public static Root Parse(string spec, Engine engine)
     {
         var eq = spec.IndexOf('=');
-        var path = System.IO.Path.GetFullPath(eq < 0 ? spec : spec[(eq + 1)..]);
+        var path = Native.RealPath(System.IO.Path.GetFullPath(eq < 0 ? spec : spec[(eq + 1)..]));
         var name = eq < 0 ? System.IO.Path.GetFileName(path.TrimEnd('/')) : spec[..eq];
         if (!Directory.Exists(path))
             throw new ArgumentException($"not a directory: {path}");
         var inside = Proc.Run("git", ["-C", path, "rev-parse", "--is-inside-work-tree"], 10);
         if (inside.ExitCode != 0 || inside.Stdout.Trim() != "true")
             throw new ArgumentException($"not inside a git work tree: {path}");
-        return new Root(name, path);
+        return new Root(name, path, engine.Attach(path));
     }
 
-    // Lists tracked and untracked-but-not-ignored files, relative to the root, sorted.
-    public List<string> ListFiles()
+    // Lists relative paths: from the index when it is ready, else straight from git (and says so in info).
+    public List<string> Listing(CallInfo info)
     {
-        var r = Proc.Run("git", ["-C", Path, "ls-files", "-co", "--exclude-standard", "-z"], 60);
-        var files = r.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries).Where(f => File.Exists(Full(f))).ToList();
+        if (Index.WaitReady(Engine.ReadyTimeoutMs))
+            return Index.Files().Select(f => f.Path).ToList();
+        info.Path = "scan";
+        info.Reason = "index_cold";
+        var r = Proc.Run("git", ["-C", Path, "ls-files", "-co", "--exclude-standard", "-z"], 120);
+        var files = r.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
         files.Sort(StringComparer.Ordinal);
         return files;
     }
@@ -50,18 +58,6 @@ public sealed class Root
         return real.StartsWith(prefix, StringComparison.Ordinal) ? full : null;
     }
 
-    // Joins a relative path onto the root path without validation.
-    private string Full(string relative) => System.IO.Path.Combine(Path, relative);
-
-    // Reports whether a file looks binary by looking for a NUL byte in its first 8 KiB.
-    public static bool IsBinary(string fullPath)
-    {
-        using var s = File.OpenRead(fullPath);
-        var buf = new byte[8192];
-        var n = s.Read(buf, 0, buf.Length);
-        return Array.IndexOf(buf, (byte)0, 0, n) >= 0;
-    }
-
     // Decodes file bytes as UTF-8.
-    public static string ReadText(string fullPath) => Encoding.UTF8.GetString(File.ReadAllBytes(fullPath));
+    public static string Decode(byte[] bytes) => Encoding.UTF8.GetString(bytes);
 }

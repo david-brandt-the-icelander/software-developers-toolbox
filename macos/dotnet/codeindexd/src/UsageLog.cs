@@ -28,7 +28,7 @@ public sealed class UsageLog
     // Opens the log in the state directory (CODEINDEXD_STATE_DIR overrides it).
     public static UsageLog Open()
     {
-        var dir = Environment.GetEnvironmentVariable("CODEINDEXD_STATE_DIR") ?? DefaultDir();
+        var dir = DefaultDir();
         try
         {
             Directory.CreateDirectory(dir);
@@ -40,9 +40,11 @@ public sealed class UsageLog
         }
     }
 
-    // Picks the platform state directory.
-    private static string DefaultDir()
+    // Picks the state directory: CODEINDEXD_STATE_DIR, else the platform default.
+    public static string DefaultDir()
     {
+        if (Environment.GetEnvironmentVariable("CODEINDEXD_STATE_DIR") is { Length: > 0 } over)
+            return over;
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (OperatingSystem.IsMacOS())
             return System.IO.Path.Combine(home, "Library", "Application Support", "codeindexd");
