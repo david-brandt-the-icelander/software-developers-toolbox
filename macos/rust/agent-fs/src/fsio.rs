@@ -3,10 +3,16 @@ use std::fs::{File, Metadata};
 use std::io::{self, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const RACY_NS: i128 = 2_000_000_000;
 const SNIFF_BYTES: usize = 8000;
+const TRIAL_FILES: u64 = 128;
+
+// A file's stamp and bytes, or the error that stopped loading it.
+pub type Loaded = io::Result<(Ident, Vec<u8>)>;
 
 // Cheap stamp that proves a file unchanged when it matches and is old enough to trust.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,6 +35,12 @@ impl Ident {
             mtime_ns: ns(md.mtime(), md.mtime_nsec()),
             ctime_ns: ns(md.ctime(), md.ctime_nsec()),
         }
+    }
+
+    // Build a stamp from raw file attributes, for loaders that do not go through std metadata.
+    #[cfg(target_os = "linux")]
+    pub fn from_parts(dev: u64, ino: u64, size: u64, mtime_ns: i128, ctime_ns: i128) -> Ident {
+        Ident { dev, ino, size, mtime_ns, ctime_ns }
     }
 
     // Return true when the stamp is too recent to prove anything at the given time.
@@ -88,6 +100,82 @@ pub fn load(path: &Path) -> io::Result<(Ident, Vec<u8>)> {
     Ok((Ident::of(&md), buf))
 }
 
+// How batched loading is chosen: by timing both methods, or forced either way by AFS_BATCH_IO.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Auto,
+    Always,
+    Never,
+}
+
+// Read the AFS_BATCH_IO setting once.
+fn mode() -> Mode {
+    static MODE: OnceLock<Mode> = OnceLock::new();
+    *MODE.get_or_init(|| match std::env::var("AFS_BATCH_IO").as_deref() {
+        Ok("always") => Mode::Always,
+        Ok("never") => Mode::Never,
+        _ => Mode::Auto,
+    })
+}
+
+// Files and nanoseconds measured for batched loading, then for plain loading.
+static TRIAL: [AtomicU64; 4] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+// Decide whether the next call should use batched loading: alternate during the trial, then pick the faster.
+fn prefer_batch() -> bool {
+    match mode() {
+        Mode::Never => false,
+        Mode::Always => true,
+        Mode::Auto => {
+            let t = |i: usize| TRIAL[i].load(Ordering::Relaxed);
+            let (batch_files, plain_files) = (t(0), t(2));
+            if batch_files < TRIAL_FILES && batch_files <= plain_files {
+                return true;
+            }
+            if plain_files < TRIAL_FILES {
+                return false;
+            }
+            u128::from(t(1)) * u128::from(plain_files) <= u128::from(t(3)) * u128::from(batch_files)
+        }
+    }
+}
+
+// Add a measurement for one method while its trial is still running.
+fn record_trial(batched: bool, files: usize, started: Instant) {
+    let slot = if batched { 0 } else { 2 };
+    if TRIAL[slot].load(Ordering::Relaxed) < TRIAL_FILES {
+        TRIAL[slot].fetch_add(files as u64, Ordering::Relaxed);
+        TRIAL[slot + 1].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
+
+// Load files with the platform's batched I/O, or None when it does not exist or is unusable here.
+fn load_batched(paths: &[&Path]) -> Option<Vec<Loaded>> {
+    #[cfg(target_os = "linux")]
+    return crate::uring::load_many(paths);
+    #[cfg(target_os = "macos")]
+    return Some(crate::aio::load_many(paths));
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    return {
+        let _ = paths;
+        None
+    };
+}
+
+// Load many files with io_uring (Linux) or POSIX AIO (macOS) when that is faster than plain reads here.
+pub fn load_many(paths: &[&Path]) -> Vec<Loaded> {
+    let started = Instant::now();
+    if prefer_batch() {
+        if let Some(done) = load_batched(paths) {
+            record_trial(true, paths.len(), started);
+            return done;
+        }
+    }
+    let done = paths.iter().map(|p| load(p)).collect();
+    record_trial(false, paths.len(), started);
+    done
+}
+
 // Return a short content hash used as an etag.
 pub fn etag(bytes: &[u8]) -> String {
     let hash = blake3::hash(bytes);
@@ -108,6 +196,49 @@ mod tests {
     fn test_etag_content_sensitive() {
         assert_eq!(etag(b"a"), etag(b"a"));
         assert_ne!(etag(b"a"), etag(b"b"));
+    }
+
+    // Batched loading returns exactly what one-by-one loading returns, including errors.
+    #[test]
+    fn test_load_many_matches_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = vec![];
+        for (name, len) in
+            [("empty", 0usize), ("small", 10), ("edge", 65536), ("over", 65537), ("big", 300_000)]
+        {
+            let p = dir.path().join(name);
+            std::fs::write(&p, (0..len).map(|i| (i % 251) as u8).collect::<Vec<u8>>()).unwrap();
+            paths.push(p);
+        }
+        paths.push(dir.path().join("missing"));
+        paths.push(dir.path().to_path_buf());
+        let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        let many = load_many(&refs);
+        assert_eq!(many.len(), refs.len());
+        for (p, got) in refs.iter().zip(many) {
+            match (load(p), got) {
+                (Ok(a), Ok(b)) => assert_eq!(a, b, "{p:?}"),
+                (Err(_), Err(_)) => {}
+                (a, b) => panic!("{p:?}: {a:?} vs {b:?}"),
+            }
+        }
+    }
+
+    // Many more files than one batch still load in order.
+    #[test]
+    fn test_load_many_large_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths: Vec<_> = (0..200)
+            .map(|i| {
+                let p = dir.path().join(format!("f{i}"));
+                std::fs::write(&p, format!("content {i}")).unwrap();
+                p
+            })
+            .collect();
+        let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        for (i, got) in load_many(&refs).into_iter().enumerate() {
+            assert_eq!(got.unwrap().1, format!("content {i}").into_bytes());
+        }
     }
 
     // A NUL in the head marks data binary and text is not binary.

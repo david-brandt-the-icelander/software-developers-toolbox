@@ -1,5 +1,5 @@
 // The search operation: parallel, ignore-aware regex search with grouped, capped, cached results.
-use crate::fsio::{self, Ident};
+use crate::fsio::{self, Ident, Loaded};
 use crate::index::{self, TriIndex, Update};
 use crate::par;
 use crate::req::SearchArgs;
@@ -119,9 +119,9 @@ fn scan_bytes(path: &Path, bytes: &[u8], re: &Regex, radius: usize, cap: usize) 
     Some(FileHits { path: walk::display(path), count, hits, blocks })
 }
 
-// Read and scan one file, skipping binary and unreadable files.
-fn scan(path: &Path, re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
-    let (_, bytes) = fsio::load(path).ok()?;
+// Scan a loaded file, skipping binary and unreadable files.
+fn scan(path: &Path, loaded: Loaded, re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
+    let (_, bytes) = loaded.ok()?;
     if fsio::is_binary(&bytes) {
         return None;
     }
@@ -136,9 +136,9 @@ struct Seen {
     hits: Option<FileHits>,
 }
 
-// Read a file once, classify it for the index and scan it.
-fn read_and_scan(path: &Path, walked: Ident, re: &Regex, radius: usize, cap: usize) -> Seen {
-    let Ok((ident, bytes)) = fsio::load(path) else {
+// Classify a loaded file for the index and scan it.
+fn read_and_scan(path: &Path, walked: Ident, loaded: Loaded, re: &Regex, radius: usize, cap: usize) -> Seen {
+    let Ok((ident, bytes)) = loaded else {
         return Seen { ident: walked, at: fsio::now_ns(), update: Update::Always, hits: None };
     };
     let at = fsio::now_ns();
@@ -220,6 +220,16 @@ fn walk_files(a: &SearchArgs) -> Res<(Vec<Walked>, Vec<Dep>)> {
     Ok((files, deps.into_inner().expect("deps lock")))
 }
 
+// Load and scan files on all cores, batching the reads, and return the files with hits.
+fn scan_all(paths: &[&PathBuf], re: &Regex, radius: usize, cap: usize) -> Vec<FileHits> {
+    let scanned = par::map_chunks(paths, CHUNK, |chunk| {
+        let refs: Vec<&Path> = chunk.iter().map(|p| p.as_path()).collect();
+        let loaded = fsio::load_many(&refs);
+        chunk.iter().zip(loaded).map(|(p, l)| scan(p, l, re, radius, cap)).collect()
+    });
+    scanned.into_iter().flatten().collect()
+}
+
 // Find the hits in all files, reading only index candidates plus files the index has not seen.
 fn find_hits(
     a: &SearchArgs,
@@ -237,15 +247,14 @@ fn find_hits(
     let mut found: Vec<FileHits> = vec![];
     if !index.usable() || !index.warm() {
         let paths: Vec<&PathBuf> = files.iter().map(|f| &f.0).collect();
-        return par::map_chunks(&paths, CHUNK, |c| c.iter().map(|p| scan(p, re, a.context, cap)).collect())
-            .into_iter()
-            .flatten()
-            .collect();
+        return scan_all(&paths, re, a.context, cap);
     }
     let stale = index.begin(files);
     let todo: Vec<&Walked> = stale.iter().map(|&i| &files[i]).collect();
     let seen = par::map_chunks(&todo, CHUNK, |c| {
-        c.iter().map(|(p, id)| read_and_scan(p, *id, re, a.context, cap)).collect()
+        let paths: Vec<&Path> = c.iter().map(|f| f.0.as_path()).collect();
+        let loaded = fsio::load_many(&paths);
+        c.iter().zip(loaded).map(|((p, id), l)| read_and_scan(p, *id, l, re, a.context, cap)).collect()
     });
     let processed: HashSet<&PathBuf> = todo.iter().map(|f| &f.0).collect();
     for ((path, _), s) in todo.iter().zip(seen) {
@@ -258,9 +267,8 @@ fn find_hits(
     }
     let candidates: Vec<PathBuf> =
         index.candidates(plan.as_deref()).into_iter().filter(|p| !processed.contains(p)).collect();
-    let scanned =
-        par::map_chunks(&candidates, CHUNK, |c| c.iter().map(|p| scan(p, re, a.context, cap)).collect());
-    found.extend(scanned.into_iter().flatten());
+    let candidates: Vec<&PathBuf> = candidates.iter().collect();
+    found.extend(scan_all(&candidates, re, a.context, cap));
     found
 }
 
@@ -358,10 +366,10 @@ mod tests {
         let f = dir.path().join("a.txt");
         std::fs::write(&f, "one\ntwo foo\nthree\nfoo foo\n").unwrap();
         let re = RegexBuilder::new("foo").multi_line(true).build().unwrap();
-        let r = scan(&f, &re, 0, 10).unwrap();
+        let r = scan(&f, fsio::load(&f), &re, 0, 10).unwrap();
         assert_eq!((r.count, r.hits[0].line, r.hits[0].col, r.hits[1].line), (2, 2, 5, 4));
         let b = dir.path().join("b.bin");
         std::fs::write(&b, b"foo\0bar").unwrap();
-        assert!(scan(&b, &re, 0, 10).is_none());
+        assert!(scan(&b, fsio::load(&b), &re, 0, 10).is_none());
     }
 }

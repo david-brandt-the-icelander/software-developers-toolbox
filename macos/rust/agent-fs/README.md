@@ -46,13 +46,19 @@ From the second `search` on a given set of paths/globs/flags, `afs` builds an in
 
 Whole-file reads through `read(2)` with `O_NOATIME` and `posix_fadvise(SEQUENTIAL)` on Linux; ripgrep's regex and `memchr` (runtime-detected SIMD) for matching; the `ignore` crate's parallel walker. `mmap` is deliberately not used: truncating a mapped file raises SIGBUS and would kill a long-lived server.
 
+Search loads files in chunks of 32 through `fsio::load_many`, which has two implementations of the same contract:
+
+- **Linux, io_uring** (`uring.rs`): per chunk, one round opens every file (`OpenAt`), one round stats and reads them (`Statx` linked before `Read` so the stamp is taken before the bytes, 64 KiB first read, `pread` for the remainder of bigger files), one round closes them. Rings are pooled and probed for the needed opcodes; any ring failure disables it for the process.
+- **macOS, POSIX AIO** (`aio.rs`): files are opened and stamped one by one (macOS has no async open), then each batch of 16 is read with a single `lio_listio(LIO_WAIT)` after `F_RDAHEAD`. Empty and over-4 MiB files use plain reads. Type-checked against the Apple `libc` bindings and unit-tested in macOS CI, but not benchmarked on a Mac.
+- **Choice**: batching is not always faster (on a 4-core VM with a hot page cache io_uring was about 1.6x *slower* than plain reads for 7k small files, because cached opens and reads are punted to kernel worker threads). So each process times both methods on its first 128 files each and keeps the faster. `AFS_BATCH_IO=always|never` forces it; the default is `auto`.
+
 ## Not implemented
 
-Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), `io_uring` batching, tree-sitter outlines (outlines are line regexes and can miss multi-line signatures), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
+Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), tree-sitter outlines (outlines are line regexes and can miss multi-line signatures), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
 
 ## Dependencies
 
-`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` Linux read hints; `tempfile` (tests) fixture directories.
+`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` read hints and the macOS AIO calls; `io-uring` (Linux only) the ring; `tempfile` (tests) fixture directories.
 
 ## Use from an agent
 

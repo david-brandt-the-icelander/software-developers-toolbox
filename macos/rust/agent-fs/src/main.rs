@@ -1,4 +1,6 @@
 // afs: a JSON-in, JSON-out file read and search tool for agents, with session caching and an MCP server.
+#[cfg(target_os = "macos")]
+mod aio;
 mod diff;
 mod engine;
 mod fsio;
@@ -11,6 +13,8 @@ mod read;
 mod req;
 mod search;
 mod state;
+#[cfg(target_os = "linux")]
+mod uring;
 mod walk;
 
 use clap::{Parser, Subcommand};
