@@ -13,6 +13,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Build: `cargo build --release`
 - Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
+- Coverage: `cargo +nightly llvm-cov -p fix-network --branch --summary-only` (needs `cargo-llvm-cov` and nightly `llvm-tools-preview`); CI fails fix-network below 95% of branches or lines.
 - CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries to a GitHub release and to icelander.net/apps (`release.yml`; needs secret `CLOUDFLARE_R2_TOKEN`).
 
 ## Skills

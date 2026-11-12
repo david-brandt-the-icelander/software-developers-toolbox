@@ -69,7 +69,7 @@ Both modes take `--internal-host HOST[:PORT]` (repeatable; `[v6]:port` works), `
 
 ## Limitations
 - VPN control covers only VPNs listed by `scutil --nc` (built-in IKEv2/IPSec/L2TP and Network-Extension VPNs such as WireGuard). Other clients, including Cisco Secure Client/AnyConnect (deferred), are only observed through their tunnel routes. Reconnect them yourself; `--vpn` cannot sign in for you when MFA or SSO is required.
-- Parsers are tested against fixtures written from documented macOS output formats, not captured from a real Mac. CI runs the tests on macOS and Linux, but the repair steps have not been run on a real Mac yet.
+- Every command, lookup and connection goes through one `Sys` trait (`src/sys.rs`). The tests drive the whole tool (gathering, diagnosis, each repair step, both commands) against a scripted Mac, and the real implementation against localhost. Branch coverage is above 99%, and CI fails below 95%. The scripted output follows documented macOS formats; it was not captured from a real Mac, and the repair steps have not yet run on one.
 - `networksetup -getairportnetwork` is unreliable on recent macOS, so Wi-Fi association is judged by the address, not the SSID.
 
 ## Troubleshooting examples

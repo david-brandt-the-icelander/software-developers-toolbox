@@ -1,20 +1,14 @@
-// Repair planning, the adaptive fix loop, the steps themselves and the Wi-Fi watchdog.
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::CommandExt;
+// Repair planning, the adaptive fix loop and the repair steps themselves.
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
 
 use crate::assess::{assess, Remedy, Report, Step};
-use crate::facts::{tcp, Facts};
+use crate::facts::{tcp_host, Facts};
 use crate::parse::parse_vpn_status;
-use crate::run::{capture, shell_quote};
+use crate::run::capture;
+use crate::sys::Sys;
 
 // Executes one repair step against a snapshot.
 pub type StepFn<'a> = dyn FnMut(&Step, &Facts) -> Result<String, String> + 'a;
-
-// Runs a command line with a timeout and optional sudo, returning (exit code, output).
-pub type RunFn<'a> = dyn Fn(&[&str], u64, bool) -> (i32, String) + 'a;
 
 // Upper bound on repair rounds so a flapping network cannot loop forever.
 const MAX_ROUNDS: usize = 12;
@@ -137,18 +131,17 @@ pub fn fix_loop(
     (facts, done)
 }
 
-// Commands, waits and logging used by the real steps; faked in tests.
+// The machine, the log and the state directory the real steps work with.
 pub struct Exec<'a> {
-    pub run: &'a RunFn<'a>,
-    pub pause: &'a dyn Fn(u64),
+    pub sys: &'a dyn Sys,
     pub log: &'a dyn Fn(&str),
-    pub state_dir: &'a Path,
+    pub dir: &'a Path,
 }
 
 impl Exec<'_> {
     // Run a command and turn a non-zero exit or a networksetup error into Err.
     fn ok(&self, cmd: &[&str], timeout: u64, sudo: bool) -> Result<String, String> {
-        let (rc, out) = (self.run)(cmd, timeout, sudo);
+        let (rc, out) = self.sys.run(cmd, timeout, sudo);
         if rc == 0 && !out.contains("** Error") {
             return Ok(out);
         }
@@ -158,19 +151,19 @@ impl Exec<'_> {
 
     // Tell whether the Wi-Fi radio reports power on.
     fn wifi_on(&self, dev: &str) -> bool {
-        (self.run)(&["networksetup", "-getairportpower", dev], 15, false).1.trim_end().ends_with("On")
+        self.sys.run(&["networksetup", "-getairportpower", dev], 15, false).1.trim_end().ends_with("On")
     }
 
     // Return the current state line of a scutil VPN.
     fn vpn_state(&self, name: &str) -> String {
-        parse_vpn_status(&(self.run)(&["scutil", "--nc", "status", name], 15, false).1).0
+        parse_vpn_status(&self.sys.run(&["scutil", "--nc", "status", name], 15, false).1).0
     }
 
     // Poll until a scutil VPN reaches a state or the attempts run out.
     fn wait_vpn(&self, name: &str, want: &str, tries: u32) -> Result<(), String> {
         let mut last = String::new();
         for _ in 0..tries {
-            (self.pause)(2);
+            self.sys.pause(2);
             last = self.vpn_state(name);
             if last == want {
                 return Ok(());
@@ -180,44 +173,20 @@ impl Exec<'_> {
     }
 }
 
-// Write recover.sh and start a detached watchdog that turns Wi-Fi back on.
-fn stage_recovery(dir: &Path, dev: &str, delay: u64) -> std::io::Result<Child> {
-    let path = dir.join("recover.sh");
-    let log = dir.join("diagnostic.log");
-    let script = format!(
-        "#!/bin/sh\n# Re-enable Wi-Fi no matter what. Log: {}\nsleep {delay}\n\
-         /usr/sbin/networksetup -setairportpower {} on\n\
-         echo \"$(date) watchdog ensured Wi-Fi on\" >> {}\n",
-        log.display(),
-        shell_quote(dev),
-        shell_quote(&log.to_string_lossy())
-    );
-    fs::write(&path, script)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))?;
-    Command::new("/bin/sh")
-        .arg(&path)
-        .process_group(0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-}
-
 // Turn Wi-Fi off and on under watchdog protection and wait for an address.
 fn cycle_wifi(x: &Exec, dev: &str) -> Result<String, String> {
-    let mut watchdog =
-        stage_recovery(x.state_dir, dev, 45).map_err(|e| format!("watchdog not started: {e}"))?;
+    let mut watchdog = x.sys.watchdog(x.dir, dev, 45).map_err(|e| format!("watchdog not started: {e}"))?;
     (x.log)(&format!(
         "   watchdog pid {} forces Wi-Fi on in 45s; manual rescue: networksetup -setairportpower {dev} on",
         watchdog.id()
     ));
     x.ok(&["networksetup", "-setairportpower", dev, "off"], 15, false)?;
-    (x.pause)(3);
+    x.sys.pause(3);
     let on = x.ok(&["networksetup", "-setairportpower", dev, "on"], 15, false);
     let mut addr = String::new();
     for _ in 0..20 {
-        (x.pause)(2);
-        addr = (x.run)(&["ipconfig", "getifaddr", dev], 15, false).1;
+        x.sys.pause(2);
+        addr = x.sys.run(&["ipconfig", "getifaddr", dev], 15, false).1;
         if addr.matches('.').count() == 3 {
             break;
         }
@@ -229,6 +198,7 @@ fn cycle_wifi(x: &Exec, dev: &str) -> Result<String, String> {
     if matches!(watchdog.try_wait(), Ok(None)) {
         let _ = watchdog.kill();
     }
+    let _ = watchdog.wait();
     Ok(if addr.is_empty() {
         "radio back on, no address yet".into()
     } else {
@@ -239,17 +209,18 @@ fn cycle_wifi(x: &Exec, dev: &str) -> Result<String, String> {
 // Disable web and secure-web proxies on the service whose server is unreachable.
 fn fix_proxy(x: &Exec, svc: &str) -> Result<String, String> {
     let mut disabled = Vec::new();
-    for (kind, get, set) in [
+    let kinds = [
         ("web", "-getwebproxy", "-setwebproxystate"),
         ("secure", "-getsecurewebproxy", "-setsecurewebproxystate"),
-    ] {
-        let out = (x.run)(&["networksetup", get, svc], 15, false).1;
+    ];
+    for (kind, get, set) in kinds {
+        let out = x.sys.run(&["networksetup", get, svc], 15, false).1;
         if !out.contains("Enabled: Yes") {
             continue;
         }
         let host = capture(r"Server:\s*(\S+)", &out).unwrap_or_default();
         let port = capture(r"Port:\s*(\d+)", &out).and_then(|p| p.parse().ok()).unwrap_or(0);
-        if tcp(&host, port, 3) {
+        if tcp_host(x.sys, &host, port, 3) {
             continue;
         }
         x.ok(&["networksetup", set, svc, "off"], 15, true)?;
@@ -277,27 +248,28 @@ fn reconnect_vpn(x: &Exec, name: &str) -> Result<String, String> {
     Ok(format!("\"{name}\" connected"))
 }
 
+// Turn the Wi-Fi radio on and confirm it reports On.
+fn wifi_on(x: &Exec, dev: &str) -> Result<String, String> {
+    x.ok(&["networksetup", "-setairportpower", dev, "on"], 15, false)?;
+    x.sys.pause(3);
+    if x.wifi_on(dev) {
+        return Ok("Wi-Fi on".to_string());
+    }
+    Err("the radio still reports Off".to_string())
+}
+
 // Execute one repair step, checking every command's exit status, then let the network settle.
 pub fn exec_step(x: &Exec, step: &Step, f: &Facts) -> Result<String, String> {
     let dev = f.phys.as_ref().map(|p| p.device.clone()).unwrap_or_default();
     let svc = f.phys.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+    let gw = f.gateway.clone().unwrap_or_default();
     let result = match step {
-        Step::WifiOn => x.ok(&["networksetup", "-setairportpower", &dev, "on"], 15, false).and_then(|_| {
-            (x.pause)(3);
-            if x.wifi_on(&dev) {
-                Ok("Wi-Fi on".to_string())
-            } else {
-                Err("the radio still reports Off".to_string())
-            }
-        }),
+        Step::WifiOn => wifi_on(x, &dev),
         Step::FlushDns => x
             .ok(&["dscacheutil", "-flushcache"], 15, true)
             .and_then(|_| x.ok(&["killall", "-HUP", "mDNSResponder"], 15, true))
             .map(|_| "DNS cache flushed".to_string()),
-        Step::ClearArp => {
-            let gw = f.gateway.clone().unwrap_or_default();
-            x.ok(&["arp", "-d", &gw], 15, true).map(|_| format!("ARP entry for {gw} cleared"))
-        }
+        Step::ClearArp => x.ok(&["arp", "-d", &gw], 15, true).map(|_| format!("ARP entry for {gw} cleared")),
         Step::FixProxy => fix_proxy(x, &svc),
         Step::ReconnectVpn(name) => reconnect_vpn(x, name),
         Step::RenewDhcp => {
@@ -308,34 +280,26 @@ pub fn exec_step(x: &Exec, step: &Step, f: &Facts) -> Result<String, String> {
             x.ok(&["route", "-n", "flush"], 15, true).map(|_| "routing table flushed".to_string())
         }
     };
-    (x.pause)(4);
+    x.sys.pause(4);
     result
 }
 
-// Tests for gating, planning, the fix loop and step execution with fake commands.
+// Tests for gating, planning, the fix loop and every step against a scripted Mac.
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::cell::RefCell;
 
     use super::*;
     use crate::assess::tests::{healthy, internal, with_vpn};
+    use crate::facts::tests::mac;
+    use crate::sys::fake::Fake;
 
-    // Build a fake executor whose commands answer from a closure and are recorded.
-    fn with_exec<R>(
-        answer: &dyn Fn(&[&str]) -> (i32, String),
-        body: impl FnOnce(&Exec) -> R,
-    ) -> (R, Vec<String>) {
-        let calls = RefCell::new(Vec::new());
-        let run = |cmd: &[&str], _t: u64, sudo: bool| {
-            calls.borrow_mut().push(format!("{}{}", if sudo { "sudo " } else { "" }, cmd.join(" ")));
-            answer(cmd)
-        };
-        let pause = |_s: u64| {};
-        let log = |_m: &str| {};
+    // Run one step against a scripted Mac and return the result and the commands run.
+    fn step(sys: &Fake, s: Step) -> Result<String, String> {
         let dir = std::env::temp_dir();
-        let x = Exec { run: &run, pause: &pause, log: &log, state_dir: &dir };
-        let out = body(&x);
-        (out, calls.into_inner())
+        let log = |_: &str| {};
+        exec_step(&Exec { sys, log: &log, dir: &dir }, &s, &healthy())
     }
 
     // Check that gated steps need their flag and disruptive steps need --allow-remote over SSH.
@@ -343,11 +307,53 @@ mod tests {
     fn test_gates_blocked() {
         let g = Gates::default();
         assert_eq!(g.blocked(&Step::ReconnectVpn("W".into())), Some("--vpn"));
+        assert_eq!(g.blocked(&Step::FixProxy), Some("--fix-proxy"));
+        assert_eq!(g.blocked(&Step::FlushRoutes), Some("--allow-route-flush"));
         assert_eq!(g.blocked(&Step::FlushDns), None);
-        let ssh = Gates { over_ssh: true, vpn: true, ..Gates::default() };
+        let all = Gates { vpn: true, fix_proxy: true, allow_route_flush: true, ..Gates::default() };
+        assert_eq!(all.blocked(&Step::FixProxy), None);
+        assert_eq!(all.blocked(&Step::FlushRoutes), None);
+        let ssh = Gates { over_ssh: true, ..all.clone() };
         assert_eq!(ssh.blocked(&Step::ReconnectVpn("W".into())), Some("--allow-remote"));
         assert_eq!(ssh.blocked(&Step::CycleWifi), Some("--allow-remote"));
         assert_eq!(ssh.blocked(&Step::FlushDns), None);
+        assert_eq!(Gates { allow_remote: true, ..ssh }.blocked(&Step::CycleWifi), None);
+    }
+
+    // Check that plans dedupe, sort by disruption and skip manual remedies.
+    #[test]
+    fn test_plan_dedupes_and_sorts() {
+        let finding = |remedy| crate::assess::Finding { code: "x", summary: String::new(), remedy };
+        let report = Report {
+            checks: vec![],
+            findings: vec![
+                finding(Remedy::Steps(vec![Step::CycleWifi, Step::FlushDns])),
+                finding(Remedy::Manual("call the ISP".into())),
+                finding(Remedy::Steps(vec![Step::FlushDns, Step::FixProxy])),
+            ],
+        };
+        let p = plan(&report, &Gates::default());
+        assert_eq!(
+            p,
+            vec![(Step::FlushDns, None), (Step::FixProxy, Some("--fix-proxy")), (Step::CycleWifi, None)]
+        );
+    }
+
+    // Check the --force ladder for Wi-Fi, wired-manual and interface-less snapshots.
+    #[test]
+    fn test_force_steps_variants() {
+        assert_eq!(
+            force_steps(&healthy()),
+            vec![Step::FlushDns, Step::ClearArp, Step::RenewDhcp, Step::CycleWifi]
+        );
+        let mut wired = healthy();
+        wired.phys.as_mut().unwrap().port = "Ethernet".into();
+        wired.dhcp = false;
+        wired.gateway = None;
+        assert_eq!(force_steps(&wired), vec![Step::FlushDns]);
+        let mut none = healthy();
+        none.phys = None;
+        assert_eq!(force_steps(&none), vec![Step::FlushDns, Step::ClearArp]);
     }
 
     // Check that a healthy network runs no steps without --force.
@@ -367,13 +373,19 @@ mod tests {
         assert!(done.is_empty() && ran.is_empty());
     }
 
-    // Check that --force runs the full ladder even when healthy.
+    // Check that --force runs the full ladder even when healthy, and skips what SSH blocks.
     #[test]
     fn test_fix_loop_force_runs_ladder() {
         let (_, done) =
-            fix_loop(&Gates::default(), true, &mut healthy, &mut |_, _| Ok(String::new()), &|_| {});
+            fix_loop(&Gates::default(), true, &mut healthy, &mut |_, _| Ok("done".into()), &|_| {});
         let steps: Vec<Step> = done.into_iter().map(|a| a.step).collect();
         assert_eq!(steps, vec![Step::FlushDns, Step::ClearArp, Step::RenewDhcp, Step::CycleWifi]);
+        let lines = RefCell::new(Vec::new());
+        let ssh = Gates { over_ssh: true, ..Gates::default() };
+        let log = |m: &str| lines.borrow_mut().push(m.to_string());
+        let (_, done) = fix_loop(&ssh, true, &mut healthy, &mut |_, _| Ok(String::new()), &log);
+        assert_eq!(done.len(), 2);
+        assert!(lines.borrow().iter().any(|l| l.contains("skipped (needs --allow-remote)")));
     }
 
     // Check that a VPN-only fault reconnects the VPN and never cycles Wi-Fi.
@@ -382,8 +394,7 @@ mod tests {
         let fixed = RefCell::new(false);
         let mut gather = || {
             let mut f = with_vpn(healthy());
-            let ok = *fixed.borrow();
-            f.internal = vec![internal(Ok(vec!["10.1.2.3"]), "utun4", Some(ok))];
+            f.internal = vec![internal(Ok(vec!["10.1.2.3"]), "utun4", Some(*fixed.borrow()))];
             f
         };
         let gates = Gates { vpn: true, ..Gates::default() };
@@ -417,7 +428,7 @@ mod tests {
         assert_eq!(p, vec![(Step::ReconnectVpn("Work".into()), Some("--vpn"))]);
     }
 
-    // Check that a failed step is recorded as failed and the ladder moves on.
+    // Check that a failed step is logged as failed and the ladder moves on.
     #[test]
     fn test_fix_loop_failed_step_recorded() {
         let mut gather = || {
@@ -425,70 +436,134 @@ mod tests {
             f.link.ipv4 = None;
             f
         };
+        let lines = RefCell::new(Vec::new());
+        let log = |m: &str| lines.borrow_mut().push(m.to_string());
         let (_, done) = fix_loop(
             &Gates::default(),
             false,
             &mut gather,
             &mut |s, _| match s {
                 Step::RenewDhcp => Err("sudo: a password is required".into()),
-                _ => Ok(String::new()),
+                _ => Ok("ok".into()),
             },
-            &|_| {},
+            &log,
         );
         assert_eq!(done.len(), 2);
         assert!(done[0].result.is_err());
         assert_eq!(done[1].step, Step::CycleWifi);
+        assert!(lines.borrow().iter().any(|l| l.contains("FAILED: sudo")));
     }
 
-    // Check that a failing privileged command fails the step.
+    // Check the simple privileged steps succeed and report failures with the command.
     #[test]
-    fn test_exec_step_privileged_failure() {
-        let answer = |cmd: &[&str]| {
-            if cmd[0] == "killall" {
-                (1, "sudo: a password is required".into())
-            } else {
-                (0, String::new())
-            }
-        };
-        let (r, calls) = with_exec(&answer, |x| exec_step(x, &Step::FlushDns, &healthy()));
-        assert!(r.unwrap_err().contains("killall -HUP mDNSResponder` exited 1"));
-        assert_eq!(calls, vec!["sudo dscacheutil -flushcache", "sudo killall -HUP mDNSResponder"]);
+    fn test_exec_simple_steps() {
+        let sys = mac();
+        sys.on("dscacheutil -flushcache", &[(0, "")])
+            .on("killall -HUP mDNSResponder", &[(1, "No matching processes")]);
+        assert!(step(&sys, Step::FlushDns).unwrap_err().contains("killall -HUP mDNSResponder` exited 1"));
+        sys.on("killall -HUP mDNSResponder", &[(0, "")]);
+        assert_eq!(step(&sys, Step::FlushDns).unwrap(), "DNS cache flushed");
+        sys.on("dscacheutil -flushcache", &[(1, "sudo: a password is required")]);
+        assert!(step(&sys, Step::FlushDns).is_err());
+        assert_eq!(sys.count("sudo killall -HUP mDNSResponder"), 2);
+        sys.on("arp -d 192.168.1.1", &[(0, "")])
+            .on("ipconfig set en0 DHCP", &[(0, "")])
+            .on("route -n flush", &[(0, "")]);
+        assert!(step(&sys, Step::ClearArp).unwrap().contains("192.168.1.1"));
+        assert!(step(&sys, Step::RenewDhcp).unwrap().contains("en0"));
+        assert!(step(&sys, Step::FlushRoutes).is_ok());
+        sys.on("ipconfig set en0 DHCP", &[(1, "")]);
+        assert!(step(&sys, Step::RenewDhcp).is_err());
     }
 
-    // Check that networksetup errors printed with exit 0 still count as failures.
+    // Check turning Wi-Fi on: success, a radio that stays off, and networksetup error text.
     #[test]
-    fn test_exec_step_networksetup_error_text() {
-        let answer = |_: &[&str]| (0, "** Error: Unable to find item in network database.".to_string());
-        let (r, _) = with_exec(&answer, |x| exec_step(x, &Step::WifiOn, &healthy()));
-        assert!(r.is_err());
+    fn test_exec_wifi_on() {
+        let sys = mac();
+        sys.on("networksetup -setairportpower en0 on", &[(0, "")]);
+        assert_eq!(step(&sys, Step::WifiOn).unwrap(), "Wi-Fi on");
+        sys.on("networksetup -getairportpower en0", &[(0, "Wi-Fi Power (en0): Off")]);
+        assert_eq!(step(&sys, Step::WifiOn).unwrap_err(), "the radio still reports Off");
+        sys.on(
+            "networksetup -setairportpower en0 on",
+            &[(0, "** Error: Unable to find item in network database.")],
+        );
+        assert!(step(&sys, Step::WifiOn).unwrap_err().contains("exited 0: ** Error"));
     }
 
-    // Check that a VPN that never reaches Connected fails the reconnect with an MFA hint.
+    // Check the Wi-Fi cycle: address found, no address, radio stuck off, off failing, watchdog failing.
     #[test]
-    fn test_exec_step_vpn_reconnect_failure() {
-        let answer = |cmd: &[&str]| match cmd.get(2) {
-            Some(&"status") => (0, "Disconnected".to_string()),
-            _ => (0, String::new()),
-        };
-        let (r, calls) = with_exec(&answer, |x| exec_step(x, &Step::ReconnectVpn("Work".into()), &healthy()));
-        assert!(r.unwrap_err().contains("MFA"));
-        assert!(calls.contains(&"scutil --nc start Work".to_string()));
-        assert!(!calls.contains(&"scutil --nc stop Work".to_string()));
+    fn test_exec_cycle_wifi() {
+        let sys = mac();
+        sys.on("networksetup -setairportpower en0 off", &[(0, "")])
+            .on("networksetup -setairportpower en0 on", &[(0, "")])
+            .on("ipconfig getifaddr en0", &[(0, ""), (0, "192.168.1.5")]);
+        assert_eq!(step(&sys, Step::CycleWifi).unwrap(), "radio back on, address 192.168.1.5");
+        assert_eq!(sys.count("watchdog en0"), 1);
+        sys.on("ipconfig getifaddr en0", &[(1, "")]);
+        assert_eq!(step(&sys, Step::CycleWifi).unwrap(), "radio back on, no address yet");
+        sys.on("networksetup -getairportpower en0", &[(0, "Wi-Fi Power (en0): Off")])
+            .on("networksetup -setairportpower en0 on", &[(1, "failed")]);
+        assert!(step(&sys, Step::CycleWifi).unwrap_err().contains("did not power back on"));
+        sys.on("networksetup -setairportpower en0 off", &[(1, "")]);
+        assert!(step(&sys, Step::CycleWifi).unwrap_err().contains("setairportpower en0 off"));
+        let broken = Fake { watchdog_fails: true, ..mac() };
+        assert!(step(&broken, Step::CycleWifi).unwrap_err().starts_with("watchdog not started"));
+        assert_eq!(broken.count("networksetup -setairportpower en0 off"), 0);
+        let done = Fake { watchdog_done: true, ..mac() };
+        done.on("networksetup -setairportpower en0 off", &[(0, "")])
+            .on("networksetup -setairportpower en0 on", &[(0, "")]);
+        done.on("ipconfig getifaddr en0", &[(0, "192.168.1.5")]);
+        assert!(step(&done, Step::CycleWifi).is_ok());
     }
 
-    // Check a successful stop-then-start reconnect.
+    // Check disabling proxies: unreachable disabled, reachable kept, nothing to do, and sudo failing.
     #[test]
-    fn test_exec_step_vpn_reconnect_success() {
-        let state = RefCell::new("Connected");
-        let answer = |cmd: &[&str]| {
-            match cmd.get(2) {
-                Some(&"stop") => *state.borrow_mut() = "Disconnected",
-                Some(&"start") => *state.borrow_mut() = "Connected",
-                _ => {}
-            }
-            (0, state.borrow().to_string())
-        };
-        let (r, _) = with_exec(&answer, |x| exec_step(x, &Step::ReconnectVpn("Work".into()), &healthy()));
-        assert_eq!(r.unwrap(), "\"Work\" connected");
+    fn test_exec_fix_proxy() {
+        let sys = mac();
+        sys.on("networksetup -getwebproxy Wi-Fi", &[(0, "Enabled: Yes\nServer: dead.corp\nPort: 8080")])
+            .on(
+                "networksetup -getsecurewebproxy Wi-Fi",
+                &[(0, "Enabled: Yes\nServer: live.corp\nPort: 8443")],
+            )
+            .on("networksetup -setwebproxystate Wi-Fi off", &[(0, "")])
+            .name("live.corp", &["10.9.9.9"])
+            .listen("10.9.9.9", 8443);
+        let ok = step(&sys, Step::FixProxy).unwrap();
+        assert!(ok.contains("web proxy dead.corp:8080") && !ok.contains("live.corp"));
+        assert_eq!(sys.count("sudo networksetup -setwebproxystate Wi-Fi off"), 1);
+        sys.on("networksetup -setwebproxystate Wi-Fi off", &[(1, "")]);
+        assert!(step(&sys, Step::FixProxy).unwrap_err().contains("-setwebproxystate"));
+        sys.on("networksetup -getwebproxy Wi-Fi", &[(0, "Enabled: No")]);
+        assert!(step(&sys, Step::FixProxy).unwrap_err().contains("no unreachable proxy"));
+    }
+
+    // Check reconnecting a connected VPN through stop and start.
+    #[test]
+    fn test_exec_vpn_reconnect_success() {
+        let sys = mac();
+        sys.on(
+            "scutil --nc status Work",
+            &[(0, "Connected"), (0, "Disconnected"), (0, "Connecting"), (0, "Connected")],
+        )
+        .on("scutil --nc stop Work", &[(0, "")])
+        .on("scutil --nc start Work", &[(0, "")]);
+        assert_eq!(step(&sys, Step::ReconnectVpn("Work".into())).unwrap(), "\"Work\" connected");
+    }
+
+    // Check VPN reconnect failures: never connects, never disconnects, stop or start failing.
+    #[test]
+    fn test_exec_vpn_reconnect_failures() {
+        let sys = mac();
+        sys.on("scutil --nc status Work", &[(0, "Disconnected")]).on("scutil --nc start Work", &[(0, "")]);
+        let err = step(&sys, Step::ReconnectVpn("Work".into())).unwrap_err();
+        assert!(err.contains("MFA") && err.contains("state Disconnected"));
+        assert_eq!(sys.count("scutil --nc stop Work"), 0);
+        sys.on("scutil --nc start Work", &[(1, "No service")]);
+        assert!(step(&sys, Step::ReconnectVpn("Work".into())).unwrap_err().contains("start Work"));
+        sys.on("scutil --nc status Work", &[(0, "Connected")]).on("scutil --nc stop Work", &[(0, "")]);
+        assert!(step(&sys, Step::ReconnectVpn("Work".into())).unwrap_err().contains("did not disconnect"));
+        sys.on("scutil --nc stop Work", &[(1, "")]);
+        assert!(step(&sys, Step::ReconnectVpn("Work".into())).unwrap_err().contains("stop Work"));
     }
 }

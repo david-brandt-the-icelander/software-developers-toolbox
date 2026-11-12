@@ -1,31 +1,45 @@
-// Bounded subprocess execution, colors and the per-run log session.
+// Colors, small text helpers and the per-run log session.
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
-use std::io::{IsTerminal, Read, Write};
+use std::io::{IsTerminal, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::{Map, Value};
 
-const SENSITIVE: &str = r"(?i)(pass(word)?|secret|token|psk|private.?key|shared.?secret)";
+// A line that assigns a secret-looking key, such as "password: x", "psk = x" or "token=x".
+const SENSITIVE: &str = r"(?i)(pass(word|wd|phrase)?|secret|token|psk|private.?key)\s*[:=]";
 
-// Wrap text in an ANSI color code when writing to a terminal.
-pub fn c(code: &str, text: &str) -> String {
-    if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() {
+// Wrap text in an ANSI color code when enabled.
+pub fn paint(code: &str, text: &str, enabled: bool) -> String {
+    if enabled {
         return format!("\x1b[{code}m{text}\x1b[0m");
     }
     text.to_string()
 }
 
-// Return the root directory for per-run state.
-fn state_root() -> PathBuf {
-    if let Some(root) = std::env::var_os("FIXNET_STATE") {
-        return PathBuf::from(root);
+// Tell whether to color: only on a terminal and without NO_COLOR.
+pub fn color_enabled(tty: bool, no_color: Option<OsString>) -> bool {
+    tty && no_color.is_none()
+}
+
+// Wrap text in an ANSI color code when writing to a terminal without NO_COLOR.
+pub fn c(code: &str, text: &str) -> String {
+    paint(code, text, color_enabled(std::io::stdout().is_terminal(), std::env::var_os("NO_COLOR")))
+}
+
+// Return the state root from FIXNET_STATE, else ~/.local/state/fix-network.
+pub fn state_root_from(fixnet: Option<OsString>, home: Option<OsString>) -> PathBuf {
+    match fixnet {
+        Some(root) => PathBuf::from(root),
+        None => PathBuf::from(home.unwrap_or_default()).join(".local/state/fix-network"),
     }
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state/fix-network")
+}
+
+// Return the state root from the environment.
+pub fn state_root() -> PathBuf {
+    state_root_from(std::env::var_os("FIXNET_STATE"), std::env::var_os("HOME"))
 }
 
 // Return the first capture group of a pattern in text.
@@ -49,9 +63,10 @@ pub struct Session {
 }
 
 impl Session {
-    // Create the timestamped private state directory.
-    pub fn new(quiet: bool) -> std::io::Result<Self> {
-        let dir = state_root().join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string());
+    // Create a fresh private, timestamped state directory under the root.
+    pub fn at(root: &Path, quiet: bool) -> std::io::Result<Self> {
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+        let dir = root.join(stamp);
         fs::create_dir_all(&dir)?;
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         Ok(Self {
@@ -91,72 +106,24 @@ impl Session {
     }
 }
 
-// Read a child pipe to a string in a background thread.
-fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<String> {
-    thread::spawn(move || {
-        let mut out = String::new();
-        if let Some(mut p) = pipe {
-            let mut buf = Vec::new();
-            let _ = p.read_to_end(&mut buf);
-            out = String::from_utf8_lossy(&buf).into_owned();
-        }
-        out
-    })
-}
-
-// Run a bounded command, optionally via sudo, and return (exit code, output).
-pub fn sh_opts(cmd: &[&str], timeout: u64, sudo: bool) -> (i32, String) {
-    let mut argv: Vec<String> = cmd.iter().map(|s| s.to_string()).collect();
-    // SAFETY: geteuid has no preconditions.
-    if sudo && unsafe { libc::geteuid() } != 0 {
-        let mut prefix = vec!["sudo".to_string()];
-        if !std::io::stdin().is_terminal() {
-            prefix.push("-n".to_string());
-        }
-        argv.splice(0..0, prefix);
-    }
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]).stdout(Stdio::piped()).stderr(Stdio::piped());
-    if !sudo {
-        command.stdin(Stdio::null());
-    }
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) => return (127, e.to_string()),
-    };
-    let out = drain(child.stdout.take());
-    let err = drain(child.stderr.take());
-    let deadline = Instant::now() + Duration::from_secs(timeout);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let text = out.join().unwrap_or_default() + &err.join().unwrap_or_default();
-                return (status.code().unwrap_or(-1), text.trim().to_string());
-            }
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return (124, format!("(timed out after {timeout}s)"));
-            }
-        }
-    }
-}
-
-// Run a command with a 15 second limit and return (exit code, output).
-pub fn sh(cmd: &[&str]) -> (i32, String) {
-    sh_opts(cmd, 15, false)
-}
-
-// Pause for a number of seconds.
-pub fn sleep(secs: u64) {
-    thread::sleep(Duration::from_secs(secs));
-}
-
-// Unit tests for the runner helpers.
+// Unit tests for the helpers and the session.
 #[cfg(test)]
-mod tests {
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub mod tests {
     use super::*;
+
+    // Create a quiet or printing session in a fresh temporary root of its own.
+    pub fn session(quiet: bool) -> Session {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let root = std::env::temp_dir().join(format!("fixnet-test-{}-{n}", std::process::id()));
+        Session::at(&root, quiet).expect("temp session")
+    }
+
+    // Return everything a session logged.
+    pub fn logged(s: &Session) -> String {
+        fs::read_to_string(&s.log_path).unwrap_or_default()
+    }
 
     // Check shell quoting of embedded single quotes.
     #[test]
@@ -164,10 +131,46 @@ mod tests {
         assert_eq!(shell_quote("a'b"), r"'a'\''b'");
     }
 
-    // Check that a timed-out command reports 124 and a missing one 127.
+    // Check coloring on and off.
     #[test]
-    fn test_sh_timeout() {
-        assert_eq!(sh_opts(&["sleep", "5"], 1, false).0, 124);
-        assert_eq!(sh(&["no-such-binary-xyz"]).0, 127);
+    fn test_paint() {
+        assert_eq!(paint("31", "x", true), "\x1b[31mx\x1b[0m");
+        assert_eq!(paint("31", "x", false), "x");
+        assert_eq!(c("31", "x"), "x");
+        assert!(color_enabled(true, None));
+        assert!(!color_enabled(true, Some("1".into())) && !color_enabled(false, None));
+    }
+
+    // Check the state root from FIXNET_STATE and from HOME.
+    #[test]
+    fn test_state_root_from() {
+        assert_eq!(state_root_from(Some("/s".into()), Some("/h".into())), PathBuf::from("/s"));
+        assert_eq!(state_root_from(None, Some("/h".into())), PathBuf::from("/h/.local/state/fix-network"));
+        let _ = state_root();
+    }
+
+    // Check that logs drop secret-looking lines, quiet mode prints nothing, and originals are saved.
+    #[test]
+    fn test_session_log_redact_save() {
+        let mut s = session(true);
+        s.log("visible line");
+        s.log("psk = hunter2");
+        s.log_to("file only", false);
+        s.log("Password: hunter3");
+        s.log("token=abc123");
+        s.log("sudo: a password is required; wiki bypasses tunnel; pass --internal-host");
+        let text = logged(&s);
+        assert!(text.contains("visible line") && text.contains("file only"));
+        assert!(!text.contains("hunter2") && !text.contains("hunter3") && !text.contains("abc123"));
+        assert!(text.contains("a password is required") && text.contains("bypasses tunnel"));
+        s.original.insert("k".into(), Value::String("v".into()));
+        s.save_original();
+        assert!(fs::read_to_string(s.dir.join("original.json")).unwrap().contains("\"k\""));
+        assert_eq!(fs::metadata(&s.dir).unwrap().permissions().mode() & 0o777, 0o700);
+        session(false).log("printed to stdout");
+        assert!(Session::at(Path::new("/proc/no-such/dir"), true).is_err());
+        fs::remove_dir_all(&s.dir).unwrap();
+        s.log("written nowhere: the directory is gone");
+        assert!(!s.log_path.exists());
     }
 }

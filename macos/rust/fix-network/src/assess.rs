@@ -177,6 +177,9 @@ fn public(cx: &mut Ctx, local_ok: bool) -> Check {
         dns_finding(cx);
         return check(name, State::Failed, "DNS lookups fail");
     }
+    if p.https_ok {
+        return check(name, State::Healthy, "DNS and HTTPS ok; the raw-IP probe to 1.1.1.1:443 is blocked");
+    }
     let text = "Something blocks HTTPS: a firewall, TLS-inspecting security software, a wrong clock, \
                 or network filtering (not fixable here).";
     let remedy = cx.steps(vec![Step::FlushDns], Remedy::Manual(text.into()));
@@ -366,6 +369,7 @@ pub fn assess(f: &Facts, tried: &[Step]) -> Report {
 
 // Scenario tests over hand-built snapshots.
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod tests {
     use super::*;
     use crate::facts::Public;
@@ -698,5 +702,118 @@ pub mod tests {
         let mut f = with_vpn(healthy());
         f.internal = vec![internal(Ok(vec!["0.0.0.0"]), "lo0", Some(false))];
         assert!(codes(&assess(&f, &[])).contains(&"corp-dns-blocked"));
+    }
+
+    // Check a wired Mac with no gateway or DHCP: an upstream outage has no tool steps, only advice.
+    #[test]
+    fn test_assess_wired_upstream_manual() {
+        let mut f = healthy();
+        f.phys.as_mut().unwrap().port = "Ethernet".into();
+        (f.gateway, f.gateway_ok, f.dhcp) = (None, None, false);
+        f.public = Public { ip_ok: false, https_ok: false, ..f.public };
+        assert!(matches!(assess(&f, &[]).findings[0].remedy, Remedy::Manual(_)));
+    }
+
+    // Check missing hardware, missing Wi-Fi and an unreachable router.
+    #[test]
+    fn test_assess_local_failures() {
+        assert_eq!(codes(&assess(&Facts { phys: None, ..healthy() }, &[])), vec!["no-interface"]);
+        assert_eq!(codes(&assess(&Facts { wifi_missing: true, ..healthy() }, &[])), vec!["wifi-missing"]);
+        let mut f = healthy();
+        (f.gateway_ok, f.public.ip_ok, f.public.https_ok) = (Some(false), false, false);
+        let r = assess(&f, &[]);
+        assert_eq!(codes(&r), vec!["gateway-unreachable"]);
+        assert_eq!(r.checks[1].detail, "unreachable: local network failed");
+        assert_eq!(
+            r.findings[0].remedy,
+            Remedy::Steps(vec![Step::ClearArp, Step::RenewDhcp, Step::CycleWifi])
+        );
+    }
+
+    // Check a healthy full tunnel, and a blocked raw-IP probe while HTTPS works.
+    #[test]
+    fn test_assess_public_details() {
+        let mut f = with_vpn(healthy());
+        f.public_if = Some("utun4".into());
+        assert!(assess(&f, &[]).checks[1].detail.ends_with("via tunnel utun4"));
+        let mut f = healthy();
+        f.public.ip_ok = false;
+        let r = assess(&f, &[]);
+        assert!(r.healthy());
+        assert!(r.checks[1].detail.contains("raw-IP probe"));
+    }
+
+    // Check public DNS failures: resolver at fault, full-tunnel VPN DNS, and no DHCP to renew.
+    #[test]
+    fn test_assess_public_dns_variants() {
+        let mut f = healthy();
+        (f.public.dns_ok, f.public.direct_dns_ok) = (false, Some(true));
+        assert_eq!(codes(&assess(&f, &[])), vec!["dns-resolver"]);
+        let mut f = with_vpn(healthy());
+        (f.public.dns_ok, f.public_if) = (false, Some("utun4".into()));
+        let want = Remedy::Steps(vec![Step::FlushDns, Step::ReconnectVpn("Work".into())]);
+        assert_eq!(assess(&f, &[]).findings[0].remedy, want);
+        let mut f = healthy();
+        (f.public.dns_ok, f.dhcp) = (false, false);
+        assert_eq!(assess(&f, &[]).findings[0].remedy, Remedy::Steps(vec![Step::FlushDns]));
+    }
+
+    // Check VPN states: stuck connecting, extra tunnels, and an unrecognized state.
+    #[test]
+    fn test_assess_vpn_states() {
+        let mut f = with_vpn(healthy());
+        f.vpns[0].state = "Connecting".into();
+        assert_eq!(codes(&assess(&f, &[])), vec!["vpn-stuck"]);
+        let mut f = with_vpn(healthy());
+        f.routes.push(route("172.16/12", "UCS", "utun7"));
+        f.up_ifaces.push("utun7".into());
+        assert!(assess(&f, &[]).checks[2].detail.ends_with("other tunnels: utun7"));
+        let mut f = healthy();
+        f.vpns = vec![VpnService { name: "Odd".into(), state: "Invalid".into(), iface: None }];
+        assert_eq!(st(&assess(&f, &[]), "VPN connection"), Some(State::Unknown));
+    }
+
+    // Check routing: a public internal address via Wi-Fi, a missing default route, stale routes without a VPN.
+    #[test]
+    fn test_assess_routing_variants() {
+        let mut f = with_vpn(healthy());
+        f.internal = vec![internal(Ok(vec!["93.184.216.34"]), "en0", Some(true))];
+        assert!(assess(&f, &[]).healthy());
+        let mut f = healthy();
+        f.default_if = None;
+        assert_eq!(assess(&f, &[]).findings[0].remedy, Remedy::Steps(vec![Step::RenewDhcp]));
+        f.dhcp = false;
+        assert!(matches!(assess(&f, &[]).findings[0].remedy, Remedy::Manual(_)));
+        let mut f = healthy();
+        f.routes.push(route("10/8", "UCS", "utun9"));
+        let r = assess(&f, &[]);
+        assert_eq!(r.findings[0].remedy, Remedy::Steps(vec![Step::FlushRoutes]));
+        assert!(matches!(assess(&f, &[Step::FlushRoutes]).findings[0].remedy, Remedy::Reboot(_)));
+    }
+
+    // Check that a third-party tunnel bypass gets manual advice, as no scutil VPN can be reconnected.
+    #[test]
+    fn test_assess_vpn_fix_manual_without_scutil() {
+        let mut f = healthy();
+        f.up_ifaces.push("utun7".into());
+        f.routes.push(route("10/8", "UCS", "utun7"));
+        f.internal = vec![internal(Ok(vec!["10.1.2.3"]), "en0", Some(false))];
+        let r = assess(&f, &[]);
+        assert_eq!(codes(&r), vec!["internal-route"]);
+        assert!(matches!(r.findings[0].remedy, Remedy::Manual(_)));
+    }
+
+    // Check the remaining branches: a router that ignores ping, split-tunnel DNS, no address and no route.
+    #[test]
+    fn test_assess_quiet_router_split_dns_no_route() {
+        let mut f = healthy();
+        f.gateway_ok = Some(false);
+        assert!(assess(&f, &[]).healthy());
+        let mut f = with_vpn(healthy());
+        f.public.dns_ok = false;
+        assert_eq!(assess(&f, &[]).findings[0].remedy, Remedy::Steps(vec![Step::FlushDns, Step::RenewDhcp]));
+        let mut f = healthy();
+        (f.default_if, f.link.ipv4) = (None, None);
+        assert_eq!(codes(&assess(&f, &[])), vec!["no-address"]);
     }
 }
