@@ -13,7 +13,7 @@ curl -fLO https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal
 curl -fLO https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz.sha256
 shasum -a 256 -c toolbox-macos-universal.tar.gz.sha256
 tar xzf toolbox-macos-universal.tar.gz
-xattr -d com.apple.quarantine fix-network free-disk-space   # unsigned, not notarized
+xattr -d com.apple.quarantine afs fix-network free-disk-space   # unsigned, not notarized
 ```
 
 A specific version is at `https://icelander.net/downloads/toolbox/<tag>/`. The GitHub releases carry the same files.
