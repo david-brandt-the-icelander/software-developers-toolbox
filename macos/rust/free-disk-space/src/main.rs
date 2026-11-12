@@ -3,6 +3,8 @@ mod clean;
 mod compress;
 mod dedupe;
 mod scan;
+#[cfg(test)]
+mod testkit;
 mod util;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -213,7 +215,12 @@ fn value_name<T: ValueEnum>(v: T) -> String {
 
 // Parse arguments and dispatch to the chosen command.
 fn main() {
-    match Cli::parse().command {
+    run(Cli::parse());
+}
+
+// Dispatch a parsed command line to the chosen command.
+fn run(cli: Cli) {
+    match cli.command {
         Cmd::New(a) => scan::cmd_new(&scan::NewOpts {
             state: a.state.state,
             root: a.root,
@@ -249,5 +256,75 @@ fn main() {
             let targets: Vec<String> = a.targets.into_iter().map(value_name).collect();
             clean::cmd_clean(&targets, a.apply, &a.dev_root, a.docker_stop_timeout);
         }
+    }
+}
+
+// Unit tests for argument parsing and dispatch.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::Sandbox;
+
+    // Parse a command line and run it.
+    fn go(args: &[&str]) {
+        let mut full = vec!["free-disk-space"];
+        full.extend_from_slice(args);
+        run(Cli::try_parse_from(full).expect("valid arguments"));
+    }
+
+    // Check the default state path honours FDS_STATE and falls back to the home directory.
+    #[test]
+    fn test_default_state_paths() {
+        let sb = Sandbox::new();
+        assert_eq!(default_state(), sb.state());
+        std::env::remove_var("FDS_STATE");
+        assert!(default_state().ends_with("/.local/state/free-disk-space/scan.sqlite3"));
+    }
+
+    // Check size and value-name helpers.
+    #[test]
+    fn test_size_arg_and_value_name() {
+        assert_eq!(size_arg("2K"), Ok(2048));
+        assert!(size_arg("nope").is_err());
+        assert_eq!(value_name(Target::Docker), "docker");
+        assert_eq!(value_name(Status::Pending), "pending");
+    }
+
+    // Check invalid command lines are rejected by the parser.
+    #[test]
+    fn test_cli_rejects_bad_arguments() {
+        let _sb = Sandbox::new();
+        assert!(Cli::try_parse_from(["fds"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "clean"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "compress", "--min-gain", "x"]).is_err());
+    }
+
+    // Check every subcommand dispatches to its implementation.
+    #[test]
+    fn test_run_dispatches_every_command() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        let root = sb.dir("root");
+        sb.write("root/a/f", &vec![b'a'; 1 << 20]);
+        let root = root.to_str().unwrap();
+        go(&[
+            "new",
+            "--root",
+            root,
+            "--min-size",
+            "1K",
+            "--min-age-days",
+            "0",
+            "--exclude",
+            "/nowhere",
+            "--force",
+        ]);
+        go(&["resume"]);
+        go(&["status"]);
+        go(&["list", "--top", "3", "--status", "done"]);
+        go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
+        go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);
+        let home = sb.home().to_string_lossy().into_owned();
+        go(&["clean", "caches", "trash", "--dev-root", &home]);
     }
 }
