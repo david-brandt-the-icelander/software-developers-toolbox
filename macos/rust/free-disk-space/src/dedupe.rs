@@ -380,6 +380,7 @@ mod tests {
         sb.tool("ps", "echo idle");
     }
 
+    #[cfg(not(target_os = "macos"))]
     // Install a fake xattr that lists the given names for the source and temp paths and removes with an exit code.
     fn fake_xattr(sb: &Sandbox, source: &str, temp: &str, delete_exit: i32) {
         sb.tool(

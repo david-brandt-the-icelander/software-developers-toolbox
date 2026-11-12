@@ -311,6 +311,7 @@ mod tests {
         paths
     }
 
+    #[cfg(not(target_os = "macos"))]
     // Install a fake ditto that copies the file and then runs an extra shell step on the copy.
     fn fake_ditto(sb: &Sandbox, after: &str) {
         sb.tool("ditto", &format!("cp \"$2\" \"$3\" || exit 1\n{after}"));
