@@ -52,6 +52,8 @@ jobs:
       - run: cargo build --workspace --release --locked
       - name: Smoke test CLIs
         run: |
+          ./target/release/afs --help
+          ./target/release/afs call '{"op":"stat","path":"."}'
           ./target/release/fix-network --help
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches
@@ -63,7 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85
       - run: cargo check --workspace --locked
 
-  # Branch coverage needs nightly (cargo llvm-cov --branch); fix-network must keep 95% of branches and lines.
+  # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs and fix-network must keep 95% of branches and lines.
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -71,10 +73,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
         with:
-          tool: cargo-llvm-cov
-      - name: Branch coverage of fix-network
+          workspaces: macos/rust
+      - name: agent-fs needs 95% line and branch coverage
+        run: |
+          cargo llvm-cov -p agent-fs --branch --locked --fail-under-lines 95 --lcov --output-path lcov.info
+          awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
+            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov.info
+      - name: fix-network needs 95% line and branch coverage
         run: |
           cargo llvm-cov -p fix-network --branch --locked --summary-only --json --output-path cov.json --fail-under-lines 95
           jq -e '.data[0].totals.branches.percent >= 95' cov.json \
