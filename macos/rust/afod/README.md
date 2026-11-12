@@ -40,7 +40,7 @@ With `AFO_SESSION` set (or over MCP, where each connection is a session) every r
 
 ## Measurements
 
-Linux x86_64 VM, p50 per process spawn, microseconds (`macos/c/afo/bench/run.sh`): floor (`_exit`) 119, `afo version` 222, `afo read` 196 vs `cat` 1088, libc hello 1058. On a 111 MB tree of 6,751 files: `find` 25-35 ms vs `grep -rn` 150 ms; `ls` with line counts 1088 ms cold, 52 ms after a daemon restart; walk share of `find` fell from 33 ms to 10 ms with the validated listing cache, so no file watcher was added. On macOS the floor is dyld plus libSystem (a freestanding Mach-O is killed by the kernel), so the invoker can match but not beat a libSystem hello; the MCP front end avoids the spawn entirely.
+Linux x86_64 VM, p50 per process spawn over 3000 runs, microseconds (`macos/c/afo/bench/run.sh`): floor (`_exit`) 120, `afo version` 209, `afo read` 228 vs `cat` 1057, `afo find` on a small tree 554 vs `grep -rn` 1278, libc hello 941. On a 111 MB tree of 6,751 files: `find` 25-35 ms vs `grep -rn` 150 ms; `ls` with line counts 1088 ms cold, 52 ms after a daemon restart; walk share of `find` fell from 33 ms to 10 ms with the validated listing cache, so no file watcher was added. On macOS the floor is dyld plus libSystem (a freestanding Mach-O is killed by the kernel), so the invoker can match but not beat a libSystem hello; the MCP front end avoids the spawn entirely.
 
 ## Safety
 
