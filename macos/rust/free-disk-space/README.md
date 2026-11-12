@@ -2,7 +2,7 @@
 
 `free-disk-space` — single Rust binary for reclaiming space on macOS/APFS.
 
-Build: `cargo build --release -p free-disk-space` in `macos/rust`, or download a release.
+Build: `cargo build --release -p free-disk-space` in `macos/rust`, or download a release: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). The binaries are unsigned and not notarized, so run `xattr -d com.apple.quarantine afs fix-network free-disk-space` after unpacking.
 
 ```bash
 free-disk-space clean all                 # dry run: caches, downloads, trash, dev artifacts, docker

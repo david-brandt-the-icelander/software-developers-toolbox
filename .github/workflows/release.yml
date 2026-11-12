@@ -1,4 +1,4 @@
-# Build universal macOS binaries and publish them to a GitHub release on version tags.
+# Build universal macOS binaries and publish them to a GitHub release and to icelander.net/downloads on version tags.
 name: Release
 
 on:
@@ -32,11 +32,11 @@ jobs:
       - name: Package universal binaries
         run: |
           mkdir -p dist
-          for bin in fix-network free-disk-space; do
+          for bin in afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
-          tar -C dist -czf toolbox-macos-universal.tar.gz fix-network free-disk-space
+          tar -C dist -czf toolbox-macos-universal.tar.gz afs fix-network free-disk-space
           shasum -a 256 toolbox-macos-universal.tar.gz > toolbox-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
@@ -51,3 +51,15 @@ jobs:
         run: >
           gh release create "$GITHUB_REF_NAME" --generate-notes
           toolbox-macos-universal.tar.gz toolbox-macos-universal.tar.gz.sha256
+      - name: Publish to icelander.net
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
+        run: |
+          for dir in "$GITHUB_REF_NAME" latest; do
+            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-macos-universal.tar.gz" \
+              --file toolbox-macos-universal.tar.gz --content-type application/gzip --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-macos-universal.tar.gz.sha256" \
+              --file toolbox-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+          done
