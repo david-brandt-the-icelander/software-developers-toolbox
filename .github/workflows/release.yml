@@ -1,4 +1,4 @@
-# Build universal macOS binaries and publish them to a GitHub release and to icelander.net/downloads on version tags.
+# Build universal macOS binaries and Linux afo/afod tarballs; publish them to a GitHub release and to icelander.net/downloads on version tags.
 name: Release
 
 on:
@@ -29,14 +29,22 @@ jobs:
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --workspace --release --locked --target "$t"
           done
+      - name: Build and smoke test the afo invoker (arm64 only; Intel Macs use afod mcp or afod run)
+        env:
+          AFOD: target/aarch64-apple-darwin/release/afod
+        run: |
+          make -C ../c/afo
+          make -C ../c/afo unit
+          sh ../c/afo/test/smoke.sh
       - name: Package universal binaries
         run: |
           mkdir -p dist
-          for bin in afs fix-network free-disk-space; do
+          for bin in afod afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
-          tar -C dist -czf toolbox-macos-universal.tar.gz afs fix-network free-disk-space
+          cp ../c/afo/build/afo dist/afo
+          tar -C dist -czf toolbox-macos-universal.tar.gz afo afod afs fix-network free-disk-space
           shasum -a 256 toolbox-macos-universal.tar.gz > toolbox-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
@@ -62,4 +70,58 @@ jobs:
               --file toolbox-macos-universal.tar.gz --content-type application/gzip --remote
             npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-macos-universal.tar.gz.sha256" \
               --file toolbox-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+          done
+
+  linux:
+    needs: macos
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build afod
+        working-directory: macos/rust
+        run: |
+          cargo test -p afod --locked
+          cargo build --release -p afod --locked
+      - name: Build and smoke test the afo invoker
+        working-directory: macos/c/afo
+        run: |
+          make
+          make unit
+          sh test/smoke.sh
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp macos/rust/target/release/afod macos/c/afo/build/afo dist/
+          tar -C dist -czf toolbox-linux-${{ matrix.arch }}.tar.gz afo afod
+          sha256sum toolbox-linux-${{ matrix.arch }}.tar.gz > toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolbox-linux-${{ matrix.arch }}
+          path: |
+            toolbox-linux-${{ matrix.arch }}.tar.gz
+            toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload "$GITHUB_REF_NAME" --clobber
+          toolbox-linux-${{ matrix.arch }}.tar.gz toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+      - name: Publish to icelander.net
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
+        run: |
+          for dir in "$GITHUB_REF_NAME" latest; do
+            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-linux-${{ matrix.arch }}.tar.gz" \
+              --file toolbox-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-linux-${{ matrix.arch }}.tar.gz.sha256" \
+              --file toolbox-linux-${{ matrix.arch }}.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
           done
