@@ -258,3 +258,295 @@ pub fn cmd_compress(o: &CompressOpts) {
         println!("Sample finished. If it looks right, run `compress` without --sample.");
     }
 }
+
+// Unit tests for verified compression.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::{age_tree, chmod, is_root, with_stdin, Sandbox};
+    use std::path::PathBuf;
+
+    // Build compress options for the sandbox state with permissive limits.
+    fn opts(sb: &Sandbox) -> CompressOpts {
+        CompressOpts {
+            state: sb.state(),
+            sample: None,
+            max_files: None,
+            limit: None,
+            min_age_days: 14,
+            min_gain: -1_000_000,
+            reserve: 0,
+            dry_run: false,
+            yes: true,
+        }
+    }
+
+    // Describe an existing file as a scan candidate.
+    fn cand(path: &Path) -> Cand {
+        let md = fs::symlink_metadata(path).unwrap();
+        Cand {
+            path: path.to_string_lossy().into_owned(),
+            size: md.len() as i64,
+            mtime_ns: util::mtime_ns(&md),
+            ino: md.ino() as i64,
+            est: md.len() as i64 / 2,
+        }
+    }
+
+    // Write aged files and record them as pending candidates, largest estimate first.
+    fn seed(sb: &Sandbox, names: &[&str]) -> Vec<PathBuf> {
+        let db = open_db(&sb.state(), true);
+        let mut paths = Vec::new();
+        for (i, name) in names.iter().enumerate() {
+            let path = sb.write(&format!("data/{name}"), &vec![b'a'; 4096 * (names.len() - i + 1)]);
+            age_tree(&path);
+            let c = cand(&path);
+            db.execute(
+                "INSERT INTO cands(path,size,alloc,est_saved,mtime_ns,ino) VALUES(?,?,?,?,?,?)",
+                params![c.path, c.size, c.size, c.est, c.mtime_ns, c.ino],
+            )
+            .unwrap();
+            paths.push(path);
+        }
+        paths
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    // Install a fake ditto that copies the file and then runs an extra shell step on the copy.
+    fn fake_ditto(sb: &Sandbox, after: &str) {
+        sb.tool("ditto", &format!("cp \"$2\" \"$3\" || exit 1\n{after}"));
+    }
+
+    // Read a candidate's recorded status and note.
+    fn status_of(sb: &Sandbox, path: &Path) -> (String, String, i64) {
+        let db = open_db(&sb.state(), false);
+        db.query_row(
+            "SELECT status, COALESCE(note,''), saved FROM cands WHERE path=?",
+            [path.to_str().unwrap()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+    }
+
+    // Check the open-file probe reads lsof output and treats failures as in use.
+    #[test]
+    fn test_in_use_probe() {
+        let sb = Sandbox::new();
+        sb.tool("lsof", "exit 1");
+        assert!(!in_use("/x"));
+        sb.tool("lsof", "echo 123");
+        assert!(in_use("/x"));
+        std::fs::remove_file(sb.bin.join("lsof")).unwrap();
+        assert!(in_use("/x"));
+    }
+
+    // Check every reason a candidate is skipped before compression.
+    #[test]
+    fn test_precheck_reasons() {
+        let sb = Sandbox::new();
+        sb.tool("lsof", "exit 1");
+        let file = seed(&sb, &["a"]).remove(0);
+        let o = opts(&sb);
+        let check = |c: &Cand, o: &CompressOpts| precheck(c, &fs::symlink_metadata(&c.path).unwrap(), o);
+        let good = cand(&file);
+        assert_eq!(check(&good, &o), None);
+        let dir = sb.dir("data/adir");
+        assert_eq!(check(&cand(&dir), &o).unwrap(), "not a plain single-link file");
+        fs::hard_link(&file, sb.path("data/link")).unwrap();
+        assert_eq!(check(&good, &o).unwrap(), "not a plain single-link file");
+        fs::remove_file(sb.path("data/link")).unwrap();
+        assert_eq!(check(&Cand { size: 1, ..cand(&file) }, &o).unwrap(), "changed since scan");
+        #[cfg(not(target_os = "macos"))]
+        {
+            util::set_flags(&[util::UF_COMPRESSED]);
+            assert_eq!(check(&good, &o).unwrap(), "already compressed / flagged");
+            util::set_flags(&[]);
+        }
+        let recent = CompressOpts { min_age_days: 100_000, ..opts(&sb) };
+        assert_eq!(check(&good, &recent).unwrap(), "modified recently");
+        let greedy = CompressOpts { reserve: i64::MAX / 2, ..opts(&sb) };
+        assert!(check(&good, &greedy).unwrap().starts_with("not enough free space"));
+        sb.tool("lsof", "echo 1");
+        assert_eq!(check(&good, &o).unwrap(), "file is open by a process");
+    }
+
+    // Check a candidate in an unwritable directory is skipped.
+    #[test]
+    fn test_precheck_unwritable_dir() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        let file = seed(&sb, &["a"]).remove(0);
+        chmod(&sb.path("data"), 0o555);
+        let md = fs::symlink_metadata(&file).unwrap();
+        assert_eq!(precheck(&cand(&file), &md, &opts(&sb)).unwrap(), "directory not writable");
+        chmod(&sb.path("data"), 0o755);
+    }
+
+    // Check the verified copy reports each failure and succeeds when everything matches.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_compress_verified_outcomes() {
+        let sb = Sandbox::new();
+        let file = seed(&sb, &["a"]).remove(0);
+        chmod(&file, 0o644);
+        let tmp = util::temp_beside(&file);
+        let o = opts(&sb);
+        let run = |o: &CompressOpts| {
+            let st = fs::symlink_metadata(&file).unwrap();
+            let r = compress_verified(&file, &tmp, &st, o);
+            util::remove_temp(&tmp);
+            r
+        };
+        std::env::set_var("PATH", &sb.bin);
+        assert!(run(&o).unwrap_err().to_string().contains("cannot run ditto"));
+        std::env::set_var("PATH", format!("{}:/usr/bin:/bin", sb.bin.display()));
+        fake_ditto(&sb, "echo oops >&2; exit 1");
+        assert_eq!(run(&o).unwrap().0, "failed");
+        sb.tool("ditto", "echo 'bad thing' >&2; exit 4");
+        assert_eq!(run(&o).unwrap().1, "ditto: bad thing");
+        fake_ditto(&sb, "true");
+        util::set_flags(&[0]);
+        assert_eq!(run(&o).unwrap().0, "skipped");
+        util::set_flags(&[util::UF_COMPRESSED]);
+        let stingy = CompressOpts { min_gain: 1 << 40, ..opts(&sb) };
+        assert!(run(&stingy).unwrap().1.starts_with("gain too small"));
+        fake_ditto(&sb, "head -c 10 \"$2\" > \"$3\"");
+        assert_eq!(run(&o).unwrap().1, "size mismatch");
+        fake_ditto(&sb, "chmod 600 \"$3\"");
+        assert_eq!(run(&o).unwrap().1, "permissions/ownership differ");
+        fake_ditto(&sb, "chmod 644 \"$3\"");
+        sb.tool("xattr", "case \"$1\" in *.tmp) ;; *) echo user.keep;; esac");
+        assert_eq!(run(&o).unwrap().1, "extended attributes lost");
+        sb.tool("xattr", "exit 0");
+        let len = fs::metadata(&file).unwrap().len() as usize;
+        fake_ditto(&sb, &format!("head -c {len} /dev/zero | tr '\\0' 'z' > \"$3\"; chmod 644 \"$3\""));
+        assert_eq!(run(&o).unwrap().1, "content hash mismatch");
+        fake_ditto(&sb, "chmod 644 \"$3\"");
+        let stale = fs::symlink_metadata(&file).unwrap();
+        util::set_times(&file, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
+        let r = compress_verified(&file, &tmp, &stale, &o).unwrap();
+        util::remove_temp(&tmp);
+        assert_eq!(r.1, "changed during compression");
+        util::set_times(&file, 1_000_000_000_000_000_000, 1_000_000_000_000_000_000).unwrap();
+        let (status, note, saved) = run(&o).unwrap();
+        assert_eq!((status, note.as_str()), ("done", ""));
+        assert!(saved >= 0);
+    }
+
+    // Check compress_one handles a vanished file, a skip, a failure and a success.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_compress_one_outcomes() {
+        let sb = Sandbox::new();
+        sb.tool("lsof", "exit 1");
+        let file = seed(&sb, &["a"]).remove(0);
+        let o = opts(&sb);
+        let missing = Cand { path: sb.path("gone").to_string_lossy().into_owned(), ..cand(&file) };
+        assert_eq!(compress_one(&missing, &o).0, "skipped");
+        assert_eq!(compress_one(&Cand { size: 1, ..cand(&file) }, &o).1, "changed since scan");
+        fake_ditto(&sb, "exit 1");
+        util::set_flags(&[0, util::UF_COMPRESSED]);
+        assert_eq!(compress_one(&cand(&file), &o).0, "failed");
+        fake_ditto(&sb, "chmod 644 \"$3\"");
+        chmod(&file, 0o644);
+        sb.tool("xattr", "exit 0");
+        util::set_flags(&[0, util::UF_COMPRESSED]);
+        assert_eq!(compress_one(&cand(&file), &o).0, "done");
+    }
+
+    // Check candidate planning honours file and size limits and warns about unfinished scans.
+    #[test]
+    fn test_plan_limits() {
+        let sb = Sandbox::new();
+        seed(&sb, &["a", "b", "c"]);
+        let (_db, all, total) = plan(&opts(&sb));
+        assert_eq!(all.len(), 3);
+        assert_eq!(total, all.iter().map(|c| c.est).sum::<i64>());
+        assert!(all[0].est >= all[1].est);
+        let (_db, some, _) = plan(&CompressOpts { sample: Some(2), ..opts(&sb) });
+        assert_eq!(some.len(), 2);
+        let (_db, some, _) = plan(&CompressOpts { max_files: Some(1), ..opts(&sb) });
+        assert_eq!(some.len(), 1);
+        let (_db, some, _) = plan(&CompressOpts { limit: Some("1".into()), ..opts(&sb) });
+        assert_eq!(some.len(), 1);
+        let bad = CompressOpts { limit: Some("lots".into()), ..opts(&sb) };
+        assert!(std::panic::catch_unwind(|| plan(&bad)).is_err());
+        let missing = CompressOpts { state: sb.path("none").to_string_lossy().into_owned(), ..opts(&sb) };
+        assert!(std::panic::catch_unwind(|| plan(&missing)).is_err());
+    }
+
+    // Check the confirmation prompt accepts only a yes answer.
+    #[test]
+    fn test_confirm_answers() {
+        let _sb = Sandbox::new();
+        assert!(with_stdin("y\n", || confirm("ok? ")));
+        assert!(with_stdin("  Y  \n", || confirm("ok? ")));
+        assert!(!with_stdin("n\n", || confirm("ok? ")));
+        assert!(!with_stdin("", || confirm("ok? ")));
+    }
+
+    // Check the compress command refuses to run off macOS without the override.
+    #[test]
+    fn test_cmd_compress_requires_macos() {
+        let sb = Sandbox::new();
+        let o = opts(&sb);
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        assert!(std::panic::catch_unwind(|| cmd_compress(&o)).is_err());
+    }
+
+    // Check the compress command with no candidates, a dry run, a declined prompt and a sample note.
+    #[test]
+    fn test_cmd_compress_planning_modes() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        drop(open_db(&sb.state(), true));
+        cmd_compress(&opts(&sb));
+        seed(&sb, &["a", "b"]);
+        let dry = CompressOpts { dry_run: true, sample: Some(1), ..opts(&sb) };
+        cmd_compress(&dry);
+        util::set_tty(true);
+        let ask = CompressOpts { yes: false, ..opts(&sb) };
+        with_stdin("n\n", || cmd_compress(&ask));
+        assert_eq!(status_of(&sb, &sb.path("data/a")).0, "pending");
+        sb.tool("ditto", "exit 1");
+        sb.tool("lsof", "exit 1");
+        with_stdin("y\n", || cmd_compress(&CompressOpts { sample: Some(1), yes: false, ..opts(&sb) }));
+        assert_eq!(status_of(&sb, &sb.path("data/a")).0, "failed");
+    }
+
+    // Check a full compress run records done, skipped and failed files and aborts after repeated failures.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_cmd_compress_run() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        sb.tool("lsof", "exit 1");
+        sb.tool("xattr", "exit 0");
+        let files = seed(&sb, &["a", "b", "c", "d", "e", "f", "g"]);
+        chmod(&files[0], 0o644);
+        chmod(&files[1], 0o644);
+        fake_ditto(&sb, "chmod 644 \"$3\"");
+        fs::hard_link(&files[1], sb.path("data/b-link")).unwrap();
+        util::set_flags(&[0, util::UF_COMPRESSED]);
+        let o = CompressOpts { sample: Some(2), ..opts(&sb) };
+        cmd_compress(&o);
+        assert_eq!(status_of(&sb, &files[0]).0, "done");
+        assert_eq!(status_of(&sb, &files[1]).0, "skipped");
+        fake_ditto(&sb, "exit 1");
+        util::set_flags(&[0]);
+        cmd_compress(&opts(&sb));
+        let failed = files[2..].iter().filter(|f| status_of(&sb, f).0 == "failed").count();
+        assert_eq!(failed, 3);
+        assert_eq!(status_of(&sb, &files[5]).0, "pending");
+        util::set_stop(true);
+        cmd_compress(&opts(&sb));
+        assert_eq!(status_of(&sb, &files[5]).0, "pending");
+    }
+}
