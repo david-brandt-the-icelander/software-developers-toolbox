@@ -1,4 +1,4 @@
-/* Process entry point: raw _start without libc, or main() when built against libSystem on macOS. */
+/* Process entry point: raw _start without libc on Linux, or main() on macOS where libSystem is mandatory. */
 #pragma once
 #include "sys.h"
 
@@ -14,11 +14,9 @@ __attribute__((used, noreturn)) void afo_start_c(long *sp)
 	sys_exit(afo_main(argc, argv, argv + argc + 1));
 }
 
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__x86_64__)
 __asm__(".text\n.globl _start\n_start:\n\txor %ebp, %ebp\n\tmov %rsp, %rdi\n\tand $-16, %rsp\n\tcall afo_start_c\n");
-#elif defined(__linux__) && defined(__aarch64__)
-__asm__(".text\n.globl _start\n_start:\n\tmov x0, sp\n\tbl afo_start_c\n");
 #else
-__asm__(".text\n.globl __start\n__start:\n\tmov x0, sp\n\tbl _afo_start_c\n");
+__asm__(".text\n.globl _start\n_start:\n\tmov x0, sp\n\tbl afo_start_c\n");
 #endif
 #endif

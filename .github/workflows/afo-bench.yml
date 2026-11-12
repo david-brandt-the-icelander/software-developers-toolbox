@@ -18,10 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: macos-latest, variant: libsystem }
-          - { os: macos-latest, variant: static }
-          - { os: ubuntu-latest, variant: native }
+        os:
+          - macos-latest
+          - ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,26 +28,12 @@ jobs:
       - name: Build daemon
         working-directory: macos/rust
         run: cargo build --release -p afod
-      - name: Build invoker (${{ matrix.variant }})
+      - name: Build invoker
         working-directory: macos/c/afo
-        run: make DARWIN_VARIANT=${{ matrix.variant }}
+        run: make
       - name: Smoke test
         working-directory: macos/c/afo
         run: sh test/smoke.sh
-      - name: Diagnose invoker
-        if: always() && matrix.variant == 'static'
-        working-directory: macos/c/afo
-        run: |
-          otool -hv build/exit0 || true
-          otool -l build/exit0 | grep -E "^Load command|cmd |segname|entry|pc |vmaddr|dylinker|platform|minos" || true
-          codesign -vvv build/exit0 || true
-          ./build/exit0 || echo "exit0 status $?"
-          sudo log show --last 1m --predicate 'eventMessage CONTAINS "exit0"' --style compact | tail -15 || true
-      - name: Probe Mach-O link configurations
-        if: always() && matrix.variant == 'static'
-        working-directory: macos/c/afo
-        run: sh test/probe_darwin.sh
       - name: Benchmark
-        if: success()
         working-directory: macos/c/afo
         run: sh bench/run.sh ${{ inputs.runs || '3000' }}

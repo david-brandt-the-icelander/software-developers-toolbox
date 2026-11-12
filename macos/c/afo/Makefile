@@ -8,18 +8,10 @@ ifeq ($(UNAME_S),Linux)
 FREE += -fno-pie
 LINK := -static -nostdlib -no-pie -Wl,--gc-sections -Wl,-z,norelro -Wl,--build-id=none -s
 else
-# libsystem keeps dyld and libSystem; static tries a Mach-O with no dynamic linker.
-DARWIN_VARIANT ?= libsystem
-ifeq ($(DARWIN_VARIANT),static)
-LINK := -static -nostdlib -Wl,-e,__start
-SIGN = codesign -f -s - $@
-else
+# macOS rejects Mach-O executables without dyld/libSystem, so the entry is main() and only the syscalls are raw.
 FREE += -DAFO_LIBSYSTEM
 LINK := -Wl,-dead_strip
 endif
-endif
-
-SIGN ?= true
 
 all: $(B)/afo $(B)/afo-relay $(B)/exit0 $(B)/hello_libc $(B)/spawnbench
 
@@ -28,15 +20,12 @@ $(B):
 
 $(B)/afo: src/afo.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -o $@ src/afo.c $(LINK)
-	$(SIGN)
 
 $(B)/afo-relay: src/afo.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -DAFO_RELAY -o $@ src/afo.c $(LINK)
-	$(SIGN)
 
 $(B)/exit0: bench/exit0.c src/*.h | $(B)
 	$(CC) $(WARN) $(FREE) -o $@ bench/exit0.c $(LINK)
-	$(SIGN)
 
 $(B)/hello_libc: bench/hello_libc.c | $(B)
 	$(CC) -O2 -o $@ bench/hello_libc.c
