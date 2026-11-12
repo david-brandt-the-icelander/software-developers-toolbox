@@ -1,9 +1,32 @@
 [package]
 name = "afod"
-version = "0.0.1"
+version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[lib]
+name = "afod"
+path = "src/lib.rs"
+
+[[bin]]
+name = "afod"
+path = "src/main.rs"
+
+# Each dependency has one reason; std covers everything else.
 [dependencies]
+# Content hashing: NEON-accelerated and fast enough to hash every file lazily.
+blake3 = "1"
+# gitignore-aware directory walking.
+ignore = "0.4"
+# Raw socket calls, SCM_RIGHTS, getpeereid and launchd activation.
 libc = "0.2"
+# Fast newline and substring scans (NEON on Apple Silicon).
+memchr = "2"
+# Regular-expression search; std has none.
+regex = "1"
+# MCP JSON-RPC messages.
+serde_json = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

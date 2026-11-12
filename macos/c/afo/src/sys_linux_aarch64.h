@@ -11,6 +11,12 @@
 #define SYS_getuid 174
 #define SYS_openat 56
 #define SYS_exit_group 94
+#define SYS_clone 220
+#define SYS_execve 221
+#define SYS_setsid 157
+#define SYS_nanosleep 101
+#define SYS_readlinkat 78
+#define SYS_dup3 24
 #define AFO_O_DIRECTORY 0x4000
 
 /* Issues one syscall with up to five arguments; errors come back as -errno. */

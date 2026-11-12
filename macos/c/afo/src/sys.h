@@ -1,8 +1,11 @@
-/* Picks the syscall backend for this OS and architecture and adds the thin wrappers afo uses. */
+/* Picks the syscall backend for this OS and architecture, or the test mock, and adds the thin wrappers afo uses. */
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(AFO_TEST)
+#include "../test/sys_mock.h"
+#else
 #if defined(__linux__) && defined(__x86_64__)
 #include "sys_linux_x86_64.h"
 #elif defined(__linux__) && defined(__aarch64__)
@@ -26,6 +29,9 @@ static inline long sys_read(int fd, void *buf, size_t n) { return sys_call(SYS_r
 /* Writes up to n bytes to fd. */
 static inline long sys_write(int fd, const void *buf, size_t n) { return sys_call(SYS_write, fd, (long)buf, (long)n, 0, 0); }
 
+/* Closes a descriptor. */
+static inline long sys_close(int fd) { return sys_call(SYS_close, fd, 0, 0, 0, 0); }
+
 /* Creates a unix stream socket. */
 static inline long sys_socket_unix(void) { return sys_call(SYS_socket, 1, 1, 0, 0, 0); }
 
@@ -37,3 +43,4 @@ static inline long sys_sendmsg(int fd, const struct afo_msghdr *m) { return sys_
 
 /* Returns the real uid of this process. */
 static inline long sys_getuid(void) { return sys_call(SYS_getuid, 0, 0, 0, 0, 0); }
+#endif

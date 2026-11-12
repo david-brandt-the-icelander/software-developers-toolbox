@@ -1,27 +1,63 @@
 #!/bin/sh
-# Checks that both invoker variants get the daemon's payload and that a missing daemon fails cleanly.
+# End-to-end check of the invoker against the real daemon: output, status, errors and autostart.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$here/..
+afo=$root/build/afo
 afod=${AFOD:-$root/../../rust/target/release/afod}
 tmp=$(mktemp -d)
 dpid=
-trap '[ -n "$dpid" ] && kill "$dpid" 2>/dev/null; rm -rf "$tmp"' EXIT
+cleanup() {
+	[ -n "$dpid" ] && kill "$dpid" 2>/dev/null
+	[ -f "$tmp/auto.pid" ] && kill "$(cat "$tmp/auto.pid")" 2>/dev/null
+	rm -rf "$tmp"
+	return 0
+}
+trap cleanup EXIT
+fail() { echo "smoke: $*" >&2; exit 1; }
 
-AFO_SOCK=$tmp/none "$root/build/afo" 5 2>"$tmp/err" && { echo "expected failure without daemon" >&2; exit 1; }
-grep -q "daemon not running" "$tmp/err"
+# A daemon that never listens: the invoker must give up with a clear message.
+if AFO_SOCK=$tmp/none AFO_DAEMON=/bin/true "$afo" version 2>"$tmp/err"; then fail "expected failure without daemon"; fi
+grep -q "daemon did not start" "$tmp/err" || fail "missing 'daemon did not start': $(cat "$tmp/err")"
 
 export AFO_SOCK=$tmp/sock
-"$afod" &
+"$afod" serve --socket "$AFO_SOCK" &
 dpid=$!
 i=0
 while [ ! -S "$AFO_SOCK" ] && [ "$i" -lt 100 ]; do
 	sleep 0.05
 	i=$((i + 1))
 done
+[ -S "$AFO_SOCK" ] || fail "afod did not start"
 
-for v in afo afo-relay; do
-	out=$("$root/build/$v" 5)
-	[ "$out" = "xxxx" ] || { echo "$v: unexpected output '$out'" >&2; exit 1; }
-done
+mkdir -p "$tmp/work/src"
+printf 'alpha one\nbeta two\nalpha three\n' > "$tmp/work/src/a.txt"
+cd "$tmp/work"
+
+out=$("$afo" version)
+[ "$out" = "afo 0.1.0" ] || fail "version: '$out'"
+
+out=$("$afo" find alpha)
+want="src/a.txt
+1: alpha one
+3: alpha three
+-- 2 matches in 1 files (1 searched)"
+[ "$out" = "$want" ] || fail "find output: '$out'"
+
+out=$("$afo" read src/a.txt:2-2)
+case $out in "src/a.txt 3 lines, sha "*"[2-2]"*"2	beta two") ;; *) fail "read output: '$out'" ;; esac
+
+if "$afo" bogus 2>"$tmp/err"; then fail "expected nonzero status"; fi
+grep -q "error: unknown command 'bogus'" "$tmp/err" || fail "stderr: $(cat "$tmp/err")"
+"$afo" bogus 2>/dev/null && fail "status" || [ $? -eq 2 ] || fail "exit status was not 2"
+
+kill "$dpid"; dpid=
+
+# Autostart: no daemon is running; the invoker starts one that does not keep our stdout open.
+export AFO_SOCK=$tmp/auto.sock AFO_DAEMON=$afod AFO_IDLE_SECS=30
+out=$(timeout 10 "$afo" find beta) || fail "autostart find failed or hung"
+case $out in *"2: beta two"*) ;; *) fail "autostart output: '$out'" ;; esac
+status=$("$afo" status)
+echo "$status" | sed -n 's/^afod [^ ]* pid \([0-9]*\) .*/\1/p' > "$tmp/auto.pid"
+[ -s "$tmp/auto.pid" ] || fail "no pid in status: $status"
 echo "smoke ok"

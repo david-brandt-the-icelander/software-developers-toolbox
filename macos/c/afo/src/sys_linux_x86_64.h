@@ -11,6 +11,12 @@
 #define SYS_getuid 102
 #define SYS_openat 257
 #define SYS_exit_group 231
+#define SYS_clone 56
+#define SYS_execve 59
+#define SYS_setsid 112
+#define SYS_nanosleep 35
+#define SYS_readlinkat 267
+#define SYS_dup3 292
 #define AFO_O_DIRECTORY 0x10000
 
 /* Issues one syscall with up to five arguments; errors come back as -errno. */
