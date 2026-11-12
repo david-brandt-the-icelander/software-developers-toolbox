@@ -12,7 +12,7 @@ public static class Proc
     private const int MaxOutputBytes = 8 * 1024 * 1024;
 
     // Runs a program and returns its output; kills it after the timeout in seconds.
-    public static ProcResult Run(string file, IEnumerable<string> args, int timeoutSeconds)
+    public static ProcResult Run(string file, IEnumerable<string> args, int timeoutSeconds, string? workingDir = null)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -21,10 +21,21 @@ public static class Proc
             RedirectStandardInput = true,
             UseShellExecute = false,
         };
+        if (workingDir is not null)
+            psi.WorkingDirectory = workingDir;
         foreach (var a in args)
             psi.ArgumentList.Add(a);
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
-        using var p = Process.Start(psi) ?? throw new InvalidOperationException($"cannot start {file}");
+        Process p;
+        try
+        {
+            p = Process.Start(psi) ?? throw new InvalidOperationException($"cannot start {file}");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return new ProcResult(127, "", $"{file}: command not found", false);
+        }
+        using var _ = p;
         p.StandardInput.Close();
         var outTask = ReadCapped(p.StandardOutput);
         var errTask = ReadCapped(p.StandardError);

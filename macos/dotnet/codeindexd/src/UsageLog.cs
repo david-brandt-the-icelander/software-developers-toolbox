@@ -14,6 +14,7 @@ public sealed class CallInfo
     public bool Truncated;
     public int Candidates = -1;
     public int TotalFiles = -1;
+    public string? Note;
 }
 
 // Thread-safe JSONL writer; a null path disables logging.
@@ -75,6 +76,7 @@ public sealed class UsageLog
             ["truncated"] = info.Truncated,
             ["candidates"] = info.Candidates,
             ["files"] = info.TotalFiles,
+            ["note"] = info.Note is { Length: > 500 } n ? n[..500] : info.Note,
             ["error"] = error,
         };
         lock (_lock)
@@ -101,10 +103,20 @@ public sealed class UsageLog
         {
             if (value is JsonValue v && v.TryGetValue<string>(out var s))
                 shape[key] = _plain ? s : Hash(s);
+            else if (value is JsonArray arr)
+                shape[key] = new JsonArray(arr.Select((e, i) => ShapeElement(e, i)).ToArray());
             else
                 shape[key] = value?.DeepClone();
         }
         return shape;
+    }
+
+    // Keeps the first array element and flags (so command patterns stay readable) and hashes other strings.
+    private JsonNode? ShapeElement(JsonNode? e, int index)
+    {
+        if (e is JsonValue v && v.TryGetValue<string>(out var s))
+            return _plain || index == 0 || s.StartsWith('-') ? s : Hash(s);
+        return e?.DeepClone();
     }
 
     // Returns the first 12 hex digits of a SHA-256 hash.

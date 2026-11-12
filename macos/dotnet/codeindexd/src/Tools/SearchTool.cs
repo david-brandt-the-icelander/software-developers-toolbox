@@ -30,7 +30,16 @@ public sealed class SearchTool(RootSet roots) : ITool
     {
         var pattern = Args.Str(args, "pattern");
         var literal = Args.Bool(args, "literal", false);
-        var regex = Compile(pattern, literal, Args.Bool(args, "ignore_case", false));
+        Regex regex;
+        try
+        {
+            regex = Compile(pattern, literal, Args.Bool(args, "ignore_case", false));
+        }
+        catch (ToolException) when (!literal)
+        {
+            var external = ExternalSearch.Try(roots.Select(Args.OptStr(args, "root")), pattern, Args.Bool(args, "ignore_case", false), Args.OptStr(args, "glob"), Args.Int(args, "max_results", 50), Args.Int(args, "offset", 0), Args.Int(args, "max_tokens", 4000), info);
+            return external ?? throw new ToolException("bad_regex", $"pattern not accepted by .NET or the external engine\n{Cheatsheet}");
+        }
         var glob = Args.OptStr(args, "glob") is { } g ? Glob.ToRegex(g) : null;
         var mode = Args.OptStr(args, "mode") ?? "lines";
         var context = Math.Max(0, Args.Int(args, "context", 0));

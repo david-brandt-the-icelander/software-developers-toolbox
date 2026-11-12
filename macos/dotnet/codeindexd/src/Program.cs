@@ -1,11 +1,13 @@
 // Entry point: parses the command line and starts the stdio MCP server.
 using CodeIndexd;
+using System.Text.Json.Nodes;
+using CodeIndexd.Cli;
 using CodeIndexd.Daemon;
 using CodeIndexd.Mcp;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-    Console.Error.WriteLine("usage: codeindexd serve [--no-daemon] [--root name=path]... (default: current directory)");
+    Console.Error.WriteLine("usage: codeindexd serve [--no-daemon] [--root name=path]... | daemon | report | init [--dir path] | hook");
     return args.Length == 0 ? 2 : 0;
 }
 if (args[0] == "--version")
@@ -13,6 +15,32 @@ if (args[0] == "--version")
     Console.WriteLine(ToolVersion.Text);
     return 0;
 }
+if (args[0] == "report")
+{
+    Console.WriteLine(Report.FromDir(UsageLog.DefaultDir()));
+    return 0;
+}
+if (args[0] == "init")
+{
+    var dir = args.Length > 2 && args[1] == "--dir" ? args[2] : Directory.GetCurrentDirectory();
+    foreach (var line in Init.Apply(Path.GetFullPath(dir), Environment.ProcessPath!))
+        Console.WriteLine(line);
+    Console.WriteLine("\nAdd this to AGENTS.md or CLAUDE.md:\n\n" + Init.AgentsSnippet);
+    return 0;
+}
+if (args[0] == "hook")
+{
+    var input = JsonNode.Parse(Console.In.ReadToEnd());
+    var tool = input?["tool_name"]?.GetValue<string>() ?? "";
+    var decision = HookPolicy.Decide(tool, input?["tool_input"]?["command"]?.GetValue<string>());
+    if (decision.Program != "")
+        UsageLog.Open().Record(input?["session_id"]?.GetValue<string>() ?? "", "hook", new JsonObject { ["tool"] = tool, ["program"] = decision.Program }, new CallInfo { Path = "hook", Reason = (decision.Block ? "blocked:" : "allowed_raw:") + decision.Program.Replace("allow-raw:", "") }, 0, 0, null);
+    if (!decision.Block)
+        return 0;
+    Console.Error.WriteLine(decision.Message);
+    return 2;
+}
+
 if (args[0] is not ("serve" or "daemon"))
 {
     Console.Error.WriteLine($"unknown command: {args[0]}");
