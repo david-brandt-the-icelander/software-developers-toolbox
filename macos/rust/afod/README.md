@@ -5,6 +5,17 @@ A file tool for agents: `afo` replaces `grep`, `cat`, `sed -n`, `find`, `ls` and
 - `afo` (`macos/c/afo/`): a tiny C program with no libc on Linux (raw syscalls); on macOS it links libSystem but still uses raw syscalls for all I/O. It sends its arguments, working-directory descriptor and standard streams to the daemon and exits with the daemon's status byte.
 - `afod` (this crate): the long-lived daemon. `afod serve` listens on `~/.agent-file-operations/sock`; `afod mcp` is an MCP stdio server in front of the same daemon (no process spawn per call); `afod run CMD..` runs one command in-process; `afod install` / `uninstall` manage the macOS LaunchAgent.
 
+## Setup
+
+```bash
+cd macos/rust && cargo build --release -p afod && cd ../c/afo && make     # or download the release tarball
+afod install                       # macOS: launchd starts the daemon on demand (elsewhere afo starts it itself)
+export AFO_SESSION=$(date +%s)     # optional: ids and dedupe for CLI use
+claude mcp add afo -- afod mcp     # MCP: tools afo_find, afo_read, afo_ls, afo_outline, afo_refs, afo_edit
+```
+
+Any MCP client works with `{"mcpServers":{"afo":{"command":"afod","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write.
+
 ## Commands
 
 | command | output |
