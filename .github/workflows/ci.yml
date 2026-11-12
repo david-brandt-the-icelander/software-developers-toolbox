@@ -34,10 +34,10 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo fmt --all --check
-      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas)
+      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles)
         working-directory: macos/release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
       - run: cargo clippy --workspace --all-targets --locked

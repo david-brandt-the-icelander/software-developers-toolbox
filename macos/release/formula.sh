@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Write one Homebrew formula per tool for a release: formula.sh TAG SHA256 DIR (normally DIR=Formula).
+# Write one Homebrew formula per tool for a release: formula.sh TAG SHA256 DIR [BOTTLE_DIR]
 #
 # Each formula installs its prebuilt universal binary from the release tarball of TAG on GitHub.
+# With BOTTLE_DIR (bottle.sh output, uploaded to the same release) each also gets a bottle block, so
+# brew pours the bottle and skips its build-from-source checks, such as up-to-date Command Line Tools.
 # Homebrew does not quarantine what a formula installs, so Gatekeeper lets unsigned binaries run.
 # Every formula takes the release tag as its version, so each release is an upgrade for all of them.
 set -euo pipefail
@@ -10,14 +12,30 @@ repo="david-brandt-the-icelander/software-developers-toolbox"
 tag=${1:-}
 sha=${2:-}
 dir=${3:-}
+bottles=${4:-}
 if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]] || ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || [ -z "$dir" ]; then
-  echo "usage: $0 vX.Y.Z SHA256 DIR   (tag like v2.0.0, lowercase 64-hex sha256)" >&2
+  echo "usage: $0 vX.Y.Z SHA256 DIR [BOTTLE_DIR]   (tag like v2.0.0, lowercase 64-hex sha256)" >&2
+  exit 2
+fi
+if [ -n "$bottles" ] && [ ! -d "$bottles" ]; then
+  echo "no bottle directory: $bottles" >&2
   exit 2
 fi
 mkdir -p "$dir"
 
+# Print the bottle block for a formula, or nothing without bottles; fails if its bottle is missing.
+bottle_block() {
+  [ -n "$bottles" ] || return 0
+  local file="$bottles/$1-${tag#v}.all.bottle.tar.gz"
+  [ -f "$file" ] || { echo "missing bottle: $file" >&2; return 1; }
+  printf '\n\n  bottle do\n    root_url "https://github.com/%s/releases/download/%s"\n' "$repo" "$tag"
+  printf '    sha256 cellar: :any_skip_relocation, all: "%s"\n  end\n' "$(sha256sum "$file" | cut -d' ' -f1)"
+}
+
 # Write one formula: name, Ruby class, binary, version-output name, description, source folder.
 formula() {
+  local block
+  block=$(bottle_block "$1")
   cat >"$dir/$1.rb" <<EOF
 # Homebrew formula for $1; written by macos/release/formula.sh on each release.
 class $2 < Formula
@@ -26,7 +44,7 @@ class $2 < Formula
   url "https://github.com/$repo/releases/download/$tag/toolbox-macos-universal.tar.gz"
   version "${tag#v}"
   sha256 "$sha"
-  license "Unlicense"
+  license "Unlicense"$block
 
   depends_on :macos
 

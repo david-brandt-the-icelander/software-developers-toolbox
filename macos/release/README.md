@@ -6,7 +6,7 @@ On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and
 
 The `homebrew` job runs `formula.sh TAG SHA256 Formula` and commits `Formula/fix-network.rb`, `Formula/free-disk-space.rb` and `Formula/agent-fs.rb` to `main`.
 
-- Each formula installs one binary from the release tarball.
+- Each formula installs one binary. `bottle.sh` packs each binary as a Homebrew bottle (`<name>-<version>.all.bottle.tar.gz`, one per tool, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
 - Each takes the release tag as its version, so every release is an upgrade for all three.
 - Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.
 - Users install with:
@@ -26,7 +26,14 @@ The `homebrew` job runs `formula.sh TAG SHA256 Formula` and commits `Formula/fix
     - add `homebrew_deploy_key.pub` as a deploy key with write access (Settings → Deploy keys);
     - add that deploy key to the bypass list of the ruleset on `main` (Settings → Rules);
     - store the private key as the secret `HOMEBREW_DEPLOY_KEY`.
-- `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class: every DSL value, the installed binary, the `--version` name each crate prints, and that `release.yml` builds each binary. CI runs it.
+- `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class:
+  - every DSL value, the installed binary, and the `--version` name each crate prints;
+  - that `release.yml` builds each binary;
+  - the bottle block: `root_url`, the `all` tag, `:any_skip_relocation`, and a checksum matching the bottle;
+  - that each bottle exists under the name Homebrew downloads (`Bottle::Filename#url_encode`);
+  - that each bottle holds exactly `NAME/VERSION/bin/BINARY` (Homebrew's `Bottle#extract_snapshot` check), mode 0755, and is reproducible.
+
+  CI runs it.
 
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
 
