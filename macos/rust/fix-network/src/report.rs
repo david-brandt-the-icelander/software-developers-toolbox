@@ -200,3 +200,142 @@ pub fn to_json(
         "facts": facts_json(f), "log": s.log_path, "state_dir": s.dir,
     })
 }
+
+// Tests for the text and JSON renderings.
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::assess::tests::{healthy, internal, route, with_vpn};
+    use crate::assess::{assess, Finding};
+    use crate::parse::Resolver;
+    use crate::run::tests::{logged, session};
+
+    // Build a finding with a remedy.
+    fn finding(remedy: Remedy) -> Finding {
+        Finding { code: "x", summary: "something".into(), remedy }
+    }
+
+    // Check every remedy wording in diagnose and fix mode.
+    #[test]
+    fn test_remedy_text_variants() {
+        let mut f = healthy();
+        let vpn = Remedy::Steps(vec![
+            Step::ReconnectVpn("W".into()),
+            Step::FlushRoutes,
+            Step::ReconnectVpn("X".into()),
+        ]);
+        assert_eq!(
+            remedy_text(&vpn, &f, None),
+            "fixable: reconnect VPN \"W\", then route -n flush (broad), then reconnect VPN \"X\"  ->  \
+             fix-network fix --vpn --allow-route-flush"
+        );
+        f.internal = vec![internal(Ok(vec!["10.1.2.3"]), "en0", None)];
+        assert!(remedy_text(&vpn, &f, None).ends_with("(repeat your --internal-host)"));
+        let all = Gates { vpn: true, allow_route_flush: true, ..Gates::default() };
+        assert_eq!(
+            remedy_text(&vpn, &f, Some(&all)),
+            "fixable but not run: reconnect VPN \"W\", then route -n flush (broad), then reconnect VPN \"X\""
+        );
+        assert!(remedy_text(&vpn, &f, Some(&Gates::default())).ends_with("(add --vpn --allow-route-flush)"));
+        assert_eq!(remedy_text(&Remedy::Manual("call".into()), &f, None), "not fixable by this tool: call");
+        assert_eq!(remedy_text(&Remedy::Reboot("now".into()), &f, None), "reboot needed: now");
+    }
+
+    // Check the report text: checks, findings, untested hint, Wi-Fi reset and details.
+    #[test]
+    fn test_print_report_and_details() {
+        let s = session(true);
+        let mut f = with_vpn(healthy());
+        f.wake_age = None;
+        f.routes.push(route("169.254", "UCS", "utun4"));
+        f.routes.push(route("10.9/16", "UCS", "utun9"));
+        f.resolvers.push(Resolver {
+            domain: Some("lab.example".into()),
+            nameservers: vec!["10.0.0.9".into()],
+            iface: Some("utun4".into()),
+            reachable: Some(false),
+            ..Resolver::default()
+        });
+        f.link.ipv4 = None;
+        f.link.ipv6_global = false;
+        let r = assess(&f, &[]);
+        print_report(&s, &r, &f, None, true);
+        let text = logged(&s);
+        assert!(text.contains("Local network      FAILED"));
+        assert!(text.contains("Wi-Fi reset: REQUIRED by a remedy above"));
+        assert!(text.contains("tunnel utun4: 1 routes") && text.contains("(not reachable)"));
+        assert!(text.contains("stale route 10.9/16 -> x via utun9"));
+        assert!(text.contains("not verified: Corporate service (pass --internal-host HOST:PORT)"));
+        assert!(!text.contains("last wake"));
+        let s = session(true);
+        let mut f = healthy();
+        f.internal = vec![internal(Ok(vec!["10.1.2.3"]), "en0", None)];
+        f.internal[0].target.port = None;
+        f.wake_age = Some(600);
+        print_report(&s, &assess(&f, &[]), &f, None, true);
+        let text = logged(&s);
+        assert!(
+            text.contains("  not verified: Corporate service\n")
+                && text.contains("last wake from sleep 10 min ago")
+        );
+        assert!(text.contains("no problems found") && text.contains("interface en0 (Wi-Fi, Wi-Fi)"));
+        let s = session(true);
+        print_details(&s, &crate::facts::Facts::default());
+        assert!(logged(&s).contains("interface - |"));
+    }
+
+    // Check the plan and actions listings, empty and filled.
+    #[test]
+    fn test_print_plan_and_actions() {
+        let s = session(true);
+        print_plan(&s, &[]);
+        print_plan(&s, &[(Step::FlushDns, None), (Step::FixProxy, Some("--fix-proxy"))]);
+        print_actions(&s, &[]);
+        let actions = [
+            Action { step: Step::FlushDns, result: Ok("DNS cache flushed".into()) },
+            Action { step: Step::RenewDhcp, result: Err("sudo: a password is required".into()) },
+        ];
+        print_actions(&s, &actions);
+        let text = logged(&s);
+        assert!(
+            text.contains("nothing to run")
+                && text.contains("- disable unreachable proxies  [skipped: needs --fix-proxy]")
+        );
+        assert!(text.contains("  none") && text.contains("ok      flush DNS cache: DNS cache flushed"));
+        assert!(text.contains("FAILED  renew DHCP lease: sudo: a password is required"));
+    }
+
+    // Check the JSON rendering of checks, every remedy kind, plan, actions and facts.
+    #[test]
+    fn test_to_json_shapes() {
+        let s = session(true);
+        let f = with_vpn(healthy());
+        let mut r = assess(&f, &[]);
+        r.findings = vec![
+            finding(Remedy::Steps(vec![Step::FlushDns])),
+            finding(Remedy::Manual("m".into())),
+            finding(Remedy::Reboot("r".into())),
+        ];
+        let plan = [(Step::FixProxy, Some("--fix-proxy"))];
+        let actions = [
+            Action { step: Step::FlushDns, result: Ok("done".into()) },
+            Action { step: Step::RenewDhcp, result: Err("no".into()) },
+        ];
+        let j = to_json(&r, &f, &plan, &actions, &s);
+        assert_eq!(j["healthy"], true);
+        assert_eq!(j["findings"][0]["remedy"]["steps"][0], "flush DNS cache");
+        assert_eq!(
+            (j["findings"][1]["remedy"]["kind"].as_str(), j["findings"][2]["remedy"]["kind"].as_str()),
+            (Some("manual"), Some("reboot"))
+        );
+        assert_eq!(j["plan"][0]["blocked_by"], "--fix-proxy");
+        assert_eq!(
+            (j["actions"][0]["ok"].as_bool(), j["actions"][1]["ok"].as_bool()),
+            (Some(true), Some(false))
+        );
+        assert_eq!(j["facts"]["vpns"][0]["interface"], "utun4");
+        assert_eq!(j["facts"]["split_dns"][0]["domain"], "corp.example");
+        assert_eq!(colored(State::NotTested).trim_end(), "NOT TESTED");
+    }
+}

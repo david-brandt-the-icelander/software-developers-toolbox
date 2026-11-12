@@ -2,7 +2,7 @@
 
 JSON-in, JSON-out replacement for the `cat`, `sed -n`, `grep -r`, `git grep` and `find` calls agents repeat. Most of an agent's context cost is re-reading the same output, so `afs` remembers what each session has already received and sends only what changed.
 
-Build: `cargo build --release -p agent-fs` in `macos/rust` (Linux and macOS), or download the universal macOS binary: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). The binary is unsigned and not notarized, so run `xattr -d com.apple.quarantine afs` after unpacking.
+Build: `cargo build --release -p agent-fs` in `macos/rust` (Linux and macOS), or download the universal macOS binary: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). Or with Homebrew: `brew tap david-brandt-the-icelander/toolbox https://github.com/david-brandt-the-icelander/software-developers-toolbox`, then `brew install david-brandt-the-icelander/toolbox/agent-fs`. A browser download of an unsigned build makes macOS say it "could not verify" the binary; run `xattr -d com.apple.quarantine afs` after unpacking.
 
 ```bash
 afs call '{"op":"read","path":"src/main.rs","ranges":[[1,40]]}'
