@@ -1,7 +1,9 @@
-# Manually run the afo phase 0 latency benchmark on macOS and Linux runners.
+# Run the afo phase 0 latency benchmark on macOS and Linux runners, on demand and on changes to the C invoker.
 name: afo bench
 
 on:
+  pull_request:
+    paths: ["macos/c/afo/**", ".github/workflows/afo-bench.yml"]
   workflow_dispatch:
     inputs:
       runs:
@@ -35,4 +37,4 @@ jobs:
         run: sh test/smoke.sh
       - name: Benchmark
         working-directory: macos/c/afo
-        run: sh bench/run.sh ${{ inputs.runs }}
+        run: sh bench/run.sh ${{ inputs.runs || '3000' }}
