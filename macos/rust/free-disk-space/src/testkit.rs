@@ -25,7 +25,8 @@ impl Sandbox {
     pub fn new() -> Self {
         let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!("fds-test-{}-{n}", std::process::id()));
+        let base = fs::canonicalize(std::env::temp_dir()).expect("canonical temp dir");
+        let root = base.join(format!("fds-test-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("create bin");

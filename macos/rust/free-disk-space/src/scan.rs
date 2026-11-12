@@ -639,6 +639,11 @@ mod tests {
         }
     }
 
+    // Create a file with a non-UTF-8 name and report whether the filesystem allowed it.
+    fn write_non_utf8(dir: &Path) -> bool {
+        fs::write(dir.join(OsStr::from_bytes(b"bad\xff")), b"x").is_ok()
+    }
+
     // Find one directory entry by name.
     fn entry(dir: &Path, name: &str) -> fs::DirEntry {
         fs::read_dir(dir).unwrap().flatten().find(|e| e.file_name() == name).expect("entry")
@@ -811,11 +816,14 @@ mod tests {
         scan_entry(&db, &entry(&root, "sub"), &other_dev, cutoff, &mut stats).unwrap();
         let cross = Cfg { cross: true, ..other_dev };
         scan_entry(&db, &entry(&root, "sub"), &cross, cutoff, &mut stats).unwrap();
-        fs::write(root.join(OsStr::from_bytes(b"bad\xff")), b"x").unwrap();
-        assert!(scan_entry(&db, &entry(&root, "good.txt"), &c, cutoff, &mut stats).is_ok());
-        let bad =
-            fs::read_dir(&root).unwrap().flatten().find(|e| e.file_name().as_bytes() == b"bad\xff").unwrap();
-        assert!(scan_entry(&db, &bad, &c, cutoff, &mut stats).is_err());
+        if write_non_utf8(&root) {
+            let bad = fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .find(|e| e.file_name().as_bytes() == b"bad\xff")
+                .unwrap();
+            assert!(scan_entry(&db, &bad, &c, cutoff, &mut stats).is_err());
+        }
         db.execute_batch("DROP TABLE dirs; DROP TABLE files; DROP TABLE cands").unwrap();
         assert!(scan_entry(&db, &entry(&root, "sub"), &c, cutoff, &mut stats).is_err());
         assert!(scan_entry(&db, &entry(&root, "small.txt"), &c, cutoff, &mut stats).is_err());
@@ -902,14 +910,14 @@ mod tests {
         let root = sb.dir("root");
         sb.write("root/a/f", &vec![b'a'; 1 << 20]);
         sb.dir("root/gone");
-        fs::write(root.join(OsStr::from_bytes(b"bad\xff")), b"x").unwrap();
+        let bad_name = write_non_utf8(&root) as i64;
         let db = open_db(&sb.state(), true);
         db.execute("INSERT INTO dirs(path) VALUES(?)", [root.to_str().unwrap()]).unwrap();
         db.execute("INSERT INTO dirs(path) VALUES(?)", [sb.path("nonexistent").to_str().unwrap()]).unwrap();
         util::set_tty(true);
         assert!(run_scan(&db, &cfg(&root), -1.0));
         let stats = Stats::from_json(&meta_get(&db, "stats").unwrap());
-        assert_eq!((stats.dirs, stats.errors), (4, 2));
+        assert_eq!((stats.dirs, stats.errors), (4, 1 + bad_name));
         util::set_tty(false);
         assert!(run_scan(&db, &cfg(&root), 2.0));
     }
