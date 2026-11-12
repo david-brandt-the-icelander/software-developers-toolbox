@@ -12,6 +12,8 @@ public sealed class CallInfo
     public string? Reason;
     public int Results;
     public bool Truncated;
+    public int Candidates = -1;
+    public int TotalFiles = -1;
 }
 
 // Thread-safe JSONL writer; a null path disables logging.
@@ -71,6 +73,8 @@ public sealed class UsageLog
             ["est_tokens"] = bytesOut / 4,
             ["results"] = info.Results,
             ["truncated"] = info.Truncated,
+            ["candidates"] = info.Candidates,
+            ["files"] = info.TotalFiles,
             ["error"] = error,
         };
         lock (_lock)

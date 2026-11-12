@@ -7,7 +7,7 @@ namespace CodeIndexd;
 // Thread-safe store; every operation opens a pooled connection and writes are serialised.
 public sealed class Store
 {
-    public const int ExtractorVersion = 1;
+    public const int ExtractorVersion = 2;
     private readonly string _cs;
     private readonly object _write = new();
 

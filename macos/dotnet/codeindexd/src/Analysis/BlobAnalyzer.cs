@@ -51,6 +51,6 @@ public static class BlobAnalyzer
         if (LooksBinary(bytes))
             return new BlobData(oid, bytes.Length, true, lang, 0, [], "binary", null, null);
         var lines = CountLines(bytes);
-        return new BlobData(oid, bytes.Length, false, lang, lines, [], $"{lang}, {lines} lines", null, null);
+        return new BlobData(oid, bytes.Length, false, lang, lines, Bloom.Build(bytes), $"{lang}, {lines} lines", null, null);
     }
 }

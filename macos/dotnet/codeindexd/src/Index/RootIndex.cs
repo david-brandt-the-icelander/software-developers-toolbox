@@ -24,6 +24,7 @@ public sealed class RootIndex : IDisposable
 
     public string Path { get; }
     public int Id { get; }
+    public Engine Engine => _engine;
     public Task Ready { get; private set; } = Task.CompletedTask;
 
     // Creates the index and loads stored file records; call Start to begin tracking.
@@ -95,6 +96,13 @@ public sealed class RootIndex : IDisposable
             expired = gen < _logBase;
             return _log.Where(l => l.gen > gen).GroupBy(l => l.path).Select(g => (g.Key, g.Last().kind)).ToList();
         }
+    }
+
+    // Applies queued watcher events now and re-checks the stat key of every given file, so a query sees edits made a moment ago.
+    public void Barrier(IEnumerable<string> paths)
+    {
+        Drain();
+        Parallel.ForEach(paths, p => Safely(() => Analyze(p)));
     }
 
     // Runs a full reconcile now (used by tests and as the safety net).
