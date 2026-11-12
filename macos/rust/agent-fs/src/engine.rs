@@ -181,6 +181,48 @@ mod tests {
         assert_eq!(run(&mut e, json!({"op": "read", "path": path, "extra": 1}))["ok"], false);
     }
 
+    // Run a search on a warm engine and on a cold one and require equal results.
+    fn same_as_cold(warm: &mut Engine, root: &str, pattern: &str, extra: Value) {
+        let mut q = json!({"op": "search", "pattern": pattern, "paths": [root], "fresh": true});
+        for (k, v) in extra.as_object().unwrap() {
+            q[k] = v.clone();
+        }
+        let (a, b) = (warm.call(q.clone()), Engine::new().call(q));
+        assert_eq!(a["results"], b["results"], "pattern {pattern}");
+        assert_eq!(a["total_matches"], b["total_matches"], "pattern {pattern}");
+    }
+
+    // Indexed searches equal full scans across edits, additions and deletions.
+    #[test]
+    fn test_indexed_search_matches_full_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..40 {
+            let body = format!("fn item_{i}() {{}}\nlet Needle{} = {i};\nUPPER_{i} lower_{i}\n", i % 5);
+            std::fs::write(dir.path().join(format!("f{i}.rs")), body).unwrap();
+        }
+        std::fs::write(dir.path().join("bin.dat"), b"Needle0\0binary").unwrap();
+        std::thread::sleep(Duration::from_millis(2300));
+        let root = dir.path().to_string_lossy().into_owned();
+        let mut warm = Engine::new();
+        let patterns =
+            ["Needle3", "needle3", r"item_1\d", "UPPER_7|lower_9", r"\w+_12", "ne", "(?i)upper_2", "zzzz"];
+        for round in 0..3 {
+            for p in patterns {
+                same_as_cold(&mut warm, &root, p, json!({}));
+                same_as_cold(&mut warm, &root, p, json!({"ignore_case": true, "context": 1}));
+            }
+            match round {
+                0 => std::fs::write(dir.path().join("f3.rs"), "brand new Needle3 text\n").unwrap(),
+                1 => {
+                    std::fs::remove_file(dir.path().join("f4.rs")).unwrap();
+                    std::fs::write(dir.path().join("added.rs"), "Needle3 added\n").unwrap();
+                }
+                _ => {}
+            }
+            std::thread::sleep(Duration::from_millis(2300));
+        }
+    }
+
     // Batches return one reply per request and all_ok reflects failures.
     #[test]
     fn test_batch_and_all_ok() {

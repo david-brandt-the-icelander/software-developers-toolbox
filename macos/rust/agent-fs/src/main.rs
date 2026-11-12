@@ -2,9 +2,11 @@
 mod diff;
 mod engine;
 mod fsio;
+mod index;
 mod list;
 mod mcp;
 mod outline;
+mod par;
 mod read;
 mod req;
 mod search;

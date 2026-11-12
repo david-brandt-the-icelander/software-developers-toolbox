@@ -18,6 +18,7 @@ dependencies = [
  "libc",
  "memchr",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "similar",

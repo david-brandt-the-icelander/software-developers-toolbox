@@ -1,5 +1,7 @@
 // The search operation: parallel, ignore-aware regex search with grouped, capped, cached results.
 use crate::fsio::{self, Ident};
+use crate::index::{self, TriIndex, Update};
+use crate::par;
 use crate::req::SearchArgs;
 use crate::state::{Dep, Res, State};
 use crate::walk;
@@ -7,11 +9,13 @@ use ignore::WalkState;
 use memchr::{memchr, memchr_iter, memrchr};
 use regex::bytes::{Regex, RegexBuilder};
 use serde_json::{json, Value};
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const MAX_MATCHES: usize = 100;
 const MAX_TEXT: usize = 300;
+const CHUNK: usize = 32;
 
 // One matching line.
 struct Hit {
@@ -45,8 +49,7 @@ fn clip(line: &[u8]) -> String {
 
 // Compile the pattern as a line-anchored byte regex.
 fn build_regex(a: &SearchArgs) -> Res<Regex> {
-    let pattern = if a.literal { regex::escape(&a.pattern) } else { a.pattern.clone() };
-    RegexBuilder::new(&pattern)
+    RegexBuilder::new(&regex_pattern(a))
         .case_insensitive(a.ignore_case)
         .multi_line(true)
         .build()
@@ -91,15 +94,11 @@ fn build_blocks(bytes: &[u8], hits: &[Hit], radius: usize) -> Vec<Block> {
         .collect()
 }
 
-// Scan one file and return its hits, or None when it is binary, unreadable or has none.
-fn scan(path: &Path, re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
-    let (_, bytes) = fsio::load(path).ok()?;
-    if fsio::is_binary(&bytes) {
-        return None;
-    }
+// Scan file bytes and return the hits, or None when there are none.
+fn scan_bytes(path: &Path, bytes: &[u8], re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
     let (mut count, mut hits, mut line, mut counted_to, mut at) = (0, vec![], 1usize, 0usize, 0usize);
     while at <= bytes.len() {
-        let Some(m) = re.find_at(&bytes, at) else { break };
+        let Some(m) = re.find_at(bytes, at) else { break };
         if m.start() >= bytes.len() && !bytes.is_empty() {
             break;
         }
@@ -116,8 +115,37 @@ fn scan(path: &Path, re: &Regex, radius: usize, cap: usize) -> Option<FileHits> 
     if count == 0 {
         return None;
     }
-    let blocks = if radius > 0 { build_blocks(&bytes, &hits, radius) } else { vec![] };
+    let blocks = if radius > 0 { build_blocks(bytes, &hits, radius) } else { vec![] };
     Some(FileHits { path: walk::display(path), count, hits, blocks })
+}
+
+// Read and scan one file, skipping binary and unreadable files.
+fn scan(path: &Path, re: &Regex, radius: usize, cap: usize) -> Option<FileHits> {
+    let (_, bytes) = fsio::load(path).ok()?;
+    if fsio::is_binary(&bytes) {
+        return None;
+    }
+    scan_bytes(path, &bytes, re, radius, cap)
+}
+
+// What reading a new or changed file produced: its index update and any hits.
+struct Seen {
+    ident: Ident,
+    at: i128,
+    update: Update,
+    hits: Option<FileHits>,
+}
+
+// Read a file once, classify it for the index and scan it.
+fn read_and_scan(path: &Path, walked: Ident, re: &Regex, radius: usize, cap: usize) -> Seen {
+    let Ok((ident, bytes)) = fsio::load(path) else {
+        return Seen { ident: walked, at: fsio::now_ns(), update: Update::Always, hits: None };
+    };
+    let at = fsio::now_ns();
+    let binary = fsio::is_binary(&bytes);
+    let update = Update::classify(&bytes, &ident, at, binary);
+    let hits = if binary { None } else { scan_bytes(path, &bytes, re, radius, cap) };
+    Seen { ident, at, update, hits }
 }
 
 // Render one hit with the chosen fields.
@@ -163,32 +191,95 @@ fn render(files: Vec<FileHits>, fields: &[String], budget: usize) -> (Vec<Value>
     (items, truncated)
 }
 
-// Walk the roots, scan every file in parallel and build the reply with its dependencies.
-fn compute(a: &SearchArgs) -> Res<(Value, Vec<Dep>)> {
-    let re = build_regex(a)?;
-    let fields = parse_fields(a)?;
-    let cap = a.max_matches.unwrap_or(MAX_MATCHES);
+// A walked file path with its stamp.
+type Walked = (PathBuf, Ident);
+
+// Walk the roots in parallel and return the files with stamps, plus every stamp the result depends on.
+fn walk_files(a: &SearchArgs) -> Res<(Vec<Walked>, Vec<Dep>)> {
     let walker = walk::builder(&a.paths, &a.glob, a.hidden, a.no_ignore, None)?;
-    let found: Mutex<Vec<FileHits>> = Mutex::new(vec![]);
+    let files: Mutex<Vec<Walked>> = Mutex::new(vec![]);
     let deps: Mutex<Vec<Dep>> = Mutex::new(vec![]);
     walker.build_parallel().run(|| {
         Box::new(|entry| {
             let Ok(entry) = entry else { return WalkState::Continue };
             let Ok(md) = entry.metadata() else { return WalkState::Continue };
-            let mut mine: Vec<Dep> = vec![(entry.path().to_path_buf(), Some(Ident::of(&md)))];
+            let ident = Ident::of(&md);
+            let mut mine: Vec<Dep> = vec![(entry.path().to_path_buf(), Some(ident))];
             if md.is_dir() {
                 mine.extend(walk::ignore_file_deps(entry.path()));
             }
             deps.lock().expect("deps lock").extend(mine);
             if md.is_file() {
-                if let Some(f) = scan(entry.path(), &re, a.context, cap) {
-                    found.lock().expect("found lock").push(f);
-                }
+                files.lock().expect("files lock").push((entry.path().to_path_buf(), ident));
             }
             WalkState::Continue
         })
     });
-    let mut files = found.into_inner().expect("found lock");
+    let mut files = files.into_inner().expect("files lock");
+    files.sort_by(|x, y| x.0.cmp(&y.0));
+    Ok((files, deps.into_inner().expect("deps lock")))
+}
+
+// Find the hits in all files, reading only index candidates plus files the index has not seen.
+fn find_hits(
+    a: &SearchArgs,
+    re: &Regex,
+    files: &[Walked],
+    index: &mut TriIndex,
+    cap: usize,
+) -> Vec<FileHits> {
+    let hir = regex_syntax::ParserBuilder::new()
+        .case_insensitive(a.ignore_case)
+        .multi_line(true)
+        .build()
+        .parse(&regex_pattern(a));
+    let plan = hir.ok().and_then(|h| index::plan(&h));
+    let mut found: Vec<FileHits> = vec![];
+    if !index.usable() || !index.warm() {
+        let paths: Vec<&PathBuf> = files.iter().map(|f| &f.0).collect();
+        return par::map_chunks(&paths, CHUNK, |c| c.iter().map(|p| scan(p, re, a.context, cap)).collect())
+            .into_iter()
+            .flatten()
+            .collect();
+    }
+    let stale = index.begin(files);
+    let todo: Vec<&Walked> = stale.iter().map(|&i| &files[i]).collect();
+    let seen = par::map_chunks(&todo, CHUNK, |c| {
+        c.iter().map(|(p, id)| read_and_scan(p, *id, re, a.context, cap)).collect()
+    });
+    let processed: HashSet<&PathBuf> = todo.iter().map(|f| &f.0).collect();
+    for ((path, _), s) in todo.iter().zip(seen) {
+        found.extend(s.hits);
+        index.apply(path, s.ident, s.at, s.update);
+    }
+    index.finish();
+    if !index.usable() {
+        return find_hits(a, re, files, index, cap);
+    }
+    let candidates: Vec<PathBuf> =
+        index.candidates(plan.as_deref()).into_iter().filter(|p| !processed.contains(p)).collect();
+    let scanned =
+        par::map_chunks(&candidates, CHUNK, |c| c.iter().map(|p| scan(p, re, a.context, cap)).collect());
+    found.extend(scanned.into_iter().flatten());
+    found
+}
+
+// Return the pattern text as a regex, escaping it when literal.
+fn regex_pattern(a: &SearchArgs) -> String {
+    if a.literal {
+        regex::escape(&a.pattern)
+    } else {
+        a.pattern.clone()
+    }
+}
+
+// Walk, find hits through the index and build the reply with its dependencies.
+fn compute(a: &SearchArgs, index: &mut TriIndex) -> Res<(Value, Vec<Dep>)> {
+    let re = build_regex(a)?;
+    let fields = parse_fields(a)?;
+    let cap = a.max_matches.unwrap_or(MAX_MATCHES);
+    let (walked, deps) = walk_files(a)?;
+    let mut files = find_hits(a, &re, &walked, index, cap);
     files.sort_by(|x, y| x.path.cmp(&y.path));
     let total: usize = files.iter().map(|f| f.count).sum();
     let matched = files.len();
@@ -203,14 +294,18 @@ fn compute(a: &SearchArgs) -> Res<(Value, Vec<Dep>)> {
         }
         v
     };
-    Ok((value, deps.into_inner().expect("deps lock")))
+    Ok((value, deps))
 }
 
 // Run a search request through the session cache.
 pub fn run(st: &mut State, a: SearchArgs) -> Res<Value> {
     let mut keyed = a.clone();
     keyed.fresh = false;
-    st.serve_cached(&format!("search|{keyed:?}"), a.fresh, || compute(&a))
+    let config = format!("{:?}|{:?}|{}|{}", a.paths, a.glob, a.hidden, a.no_ignore);
+    let mut index = st.take_index(&config);
+    let reply = st.serve_cached(&format!("search|{keyed:?}"), a.fresh, || compute(&a, &mut index));
+    st.put_index(config, index);
+    reply
 }
 
 #[cfg(test)]

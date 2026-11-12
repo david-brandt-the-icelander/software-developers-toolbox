@@ -1,5 +1,6 @@
 // Session state shared by all operations: what was sent, file stamps, stored contents and cached results.
 use crate::fsio::{self, Ident};
+use crate::index::TriIndex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ const STORE_BUDGET: usize = 64 << 20;
 const STORE_MAX_FILE: usize = 8 << 20;
 const CACHE_MAX: usize = 256;
 const TABLE_MAX: usize = 200_000;
+const INDEX_MAX: usize = 8;
 
 // Result type used by every operation; the error is a plain message for the agent.
 pub type Res<T> = Result<T, String>;
@@ -40,6 +42,7 @@ pub struct State {
     store_bytes: usize,
     idx: HashMap<PathBuf, (Ident, String, i128)>,
     cache: HashMap<String, Entry>,
+    indexes: HashMap<String, TriIndex>,
 }
 
 impl State {
@@ -53,7 +56,21 @@ impl State {
             store_bytes: 0,
             idx: HashMap::new(),
             cache: HashMap::new(),
+            indexes: HashMap::new(),
         }
+    }
+
+    // Take the trigram index for a walk configuration out of the session, or start a new one.
+    pub fn take_index(&mut self, config: &str) -> TriIndex {
+        self.indexes.remove(config).unwrap_or_else(TriIndex::new)
+    }
+
+    // Return a trigram index to the session, keeping only a few configurations.
+    pub fn put_index(&mut self, config: String, index: TriIndex) {
+        if self.indexes.len() >= INDEX_MAX {
+            self.indexes.clear();
+        }
+        self.indexes.insert(config, index);
     }
 
     // Return a fresh reference id for a reply.

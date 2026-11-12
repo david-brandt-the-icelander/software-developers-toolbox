@@ -38,17 +38,21 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 - Search, list and outline results are cached with the stamp of every file and directory the walk visited, plus each directory's `.gitignore` and `.ignore`. A hit re-stats those paths (no reads, no regex work) and recomputes on any difference.
 - Session memory is bounded: 64 MiB of file versions kept as diff bases (files over 8 MiB are not kept), 256 cached results.
 
+## Trigram index
+
+From the second `search` on a given set of paths/globs/flags, `afs` builds an in-memory trigram index (ASCII-case-folded 3-byte sequences, posting lists of file ids). The regex is parsed and the literals every match must start or end with are extracted (`regex-syntax`); only files containing all trigrams of at least one literal are read. Patterns with no literal of 3+ bytes (`\w+`, `a*`, `ab`) scan everything. Binary files are skipped, files over 2 MiB and files younger than the 2 s racy window are always scanned, and changed, new and deleted files are re-read or dropped on the next walk (stamps decide), so results equal a full scan (tested). The first indexed query reads each file once, indexing and scanning in the same pass. The index is dropped above ~30M posting entries. It lives in the session (`serve`/`jsonl`), not on disk.
+
 ## I/O
 
 Whole-file reads through `read(2)` with `O_NOATIME` and `posix_fadvise(SEQUENTIAL)` on Linux; ripgrep's regex and `memchr` (runtime-detected SIMD) for matching; the `ignore` crate's parallel walker. `mmap` is deliberately not used: truncating a mapped file raises SIGBUS and would kill a long-lived server.
 
 ## Not implemented
 
-Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), a trigram index, `io_uring` batching, tree-sitter outlines (outlines are line regexes and can miss multi-line signatures), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
+Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), `io_uring` batching, tree-sitter outlines (outlines are line regexes and can miss multi-line signatures), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
 
 ## Dependencies
 
-`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` Linux read hints; `tempfile` (tests) fixture directories.
+`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` Linux read hints; `tempfile` (tests) fixture directories.
 
 ## Use from an agent
 
