@@ -115,3 +115,28 @@ jobs:
       - name: C invoker branch coverage (at least 95%)
         working-directory: macos/c/afo
         run: make coverage
+
+  dotnet:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: macos/dotnet/codeindexd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test tests
+      - run: dotnet publish src -c Release -o out
+      - name: Smoke test server and daemon
+        env:
+          CODEINDEXD_STATE_DIR: ${{ runner.temp }}/codeindexd-state
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/codeindexd serve --root repo=../../.. | tee smoke.txt
+          grep -q '"isError":false' smoke.txt
+          ./out/codeindexd report
+          pkill -f "codeindexd daemon" || true
