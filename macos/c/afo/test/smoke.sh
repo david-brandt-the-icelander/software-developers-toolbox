@@ -71,7 +71,16 @@ kill "$dpid"; dpid=
 
 # Autostart: no daemon is running; the invoker starts one that does not keep our stdout open.
 export AFO_SOCK=$tmp/auto.sock AFO_DAEMON=$afod AFO_IDLE_SECS=30
-out=$(timeout 10 "$afo" find beta) || fail "autostart find failed or hung"
+# A pipe to cat only closes when every holder of the write end is gone, so a daemon that kept our stdout would hang here.
+( "$afo" find beta | cat > "$tmp/auto.out" ) &
+waiter=$!
+i=0
+while kill -0 "$waiter" 2>/dev/null && [ "$i" -lt 100 ]; do
+	sleep 0.1
+	i=$((i + 1))
+done
+if kill -0 "$waiter" 2>/dev/null; then kill "$waiter" 2>/dev/null; fail "autostart find hung: the daemon kept the caller's stdout open"; fi
+out=$(cat "$tmp/auto.out")
 case $out in *"2: beta two"*) ;; *) fail "autostart output: '$out'" ;; esac
 status=$("$afo" status)
 echo "$status" | sed -n 's/^afod [^ ]* pid \([0-9]*\) .*/\1/p' > "$tmp/auto.pid"
