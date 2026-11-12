@@ -95,3 +95,9 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
+
+// Backdates a file's mtime by an hour so caches will trust it.
+pub fn age(path: &Path) {
+    let f = std::fs::File::open(path).expect("open for age");
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600)).expect("set mtime");
+}

@@ -1,6 +1,7 @@
 // The find command: regex search over many files with grouped, capped, token-lean output.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::engine::Engine;
 use crate::meta::{line_starts, looks_binary};
 use crate::util::{clip, display, resolve, MAX_LINE};
 use crate::walk::{self, WalkOpts};
@@ -53,7 +54,8 @@ struct FileResult {
 }
 
 // Parsed search settings.
-struct Plan {
+struct Plan<'a> {
+    engine: &'a Engine,
     re: Regex,
     max: usize,
     context: usize,
@@ -108,23 +110,26 @@ fn search_bytes(data: &[u8], plan: &Plan) -> (usize, Vec<Hit>) {
     (total, hits)
 }
 
-// Reads a file for searching, or says why it is skipped.
-fn read_searchable(path: &Path) -> Result<Vec<u8>, Skip> {
-    let len = std::fs::metadata(path).map_err(|_| Skip::Unreadable)?.len();
-    if len > MAX_FILE {
+// Reads a file for searching, or says why it is skipped; binary files are remembered so later searches skip them unread.
+fn read_searchable(path: &Path, engine: &Engine) -> Result<Vec<u8>, Skip> {
+    let md = std::fs::metadata(path).map_err(|_| Skip::Unreadable)?;
+    if md.len() > MAX_FILE {
         return Err(Skip::Large);
     }
-    let data = std::fs::read(path).map_err(|_| Skip::Unreadable)?;
-    if looks_binary(&data) {
-        Err(Skip::Binary)
-    } else {
-        Ok(data)
+    if engine.stored_info(path, &md).is_some_and(|i| i.binary) {
+        return Err(Skip::Binary);
     }
+    let data = std::fs::read(path).map_err(|_| Skip::Unreadable)?;
+    if !looks_binary(&data) {
+        return Ok(data);
+    }
+    engine.remember(path, &md, &data);
+    Err(Skip::Binary)
 }
 
 // Reads and searches one file, classifying files that cannot be searched.
 fn search_file(idx: usize, path: &Path, plan: &Plan) -> FileResult {
-    let (total, hits, skip) = match read_searchable(path) {
+    let (total, hits, skip) = match read_searchable(path, plan.engine) {
         Ok(data) => {
             let (total, hits) = search_bytes(&data, plan);
             (total, hits, Skip::No)
@@ -283,9 +288,9 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         no_ignore: p.has("no-ignore"),
         globs: p.values("glob").iter().map(|s| s.to_string()).collect(),
     };
-    let files = walk::collect(&roots, &opts)?;
+    let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
     let list_mode = p.has("files") || p.has("count");
-    let plan = Plan { re, max, context, files_only: p.has("files") };
+    let plan = Plan { engine: ctx.engine, re, max, context, files_only: p.has("files") };
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
     let results = search_all(&files, &plan, cpus);
     if !results.iter().any(|r| r.total > 0) {
@@ -515,7 +520,9 @@ mod tests {
     #[test]
     fn test_search_file_unreadable_cases() {
         let t = TempDir::new();
+        let e = Engine::new();
         let plan = Plan {
+            engine: &e,
             re: build_regex("x", false, false, false).expect("regex"),
             max: 5,
             context: 0,
@@ -529,7 +536,9 @@ mod tests {
     #[test]
     fn test_render_matches_skips_vanished_file() {
         let t = TempDir::new();
+        let e = Engine::new();
         let plan = Plan {
+            engine: &e,
             re: build_regex("x", false, false, false).expect("regex"),
             max: 5,
             context: 0,
@@ -548,8 +557,10 @@ mod tests {
     #[test]
     fn test_search_all_single_cpu() {
         let t = TempDir::new();
+        let e = Engine::new();
         let files: Vec<PathBuf> = (0..12).map(|i| t.write(&format!("f{i:02}.txt"), b"needle\n")).collect();
         let plan = Plan {
+            engine: &e,
             re: build_regex("needle", false, false, false).expect("regex"),
             max: 5,
             context: 0,
@@ -560,5 +571,23 @@ mod tests {
         let idx = |r: &[FileResult]| r.iter().map(|x| x.idx).collect::<Vec<_>>();
         assert_eq!(idx(&one), idx(&many));
         assert_eq!(one.len(), 12);
+    }
+
+    // Checks binary files are remembered in the store and skipped unread on later searches.
+    #[test]
+    fn test_find_remembers_binary_files() {
+        use crate::store::Store;
+        use crate::testutil::{age, run_cmd_with};
+        let t = TempDir::new();
+        let cache = TempDir::new();
+        let bin = t.write("bin.dat", b"needle\0x");
+        t.write("a.txt", b"needle\n");
+        age(&bin);
+        let e = Engine::with_store(Store::open(cache.path()).expect("store"));
+        let first = run_cmd_with(&e, t.path(), "", &["find", "needle"]).text;
+        assert_eq!(e.stored_records(), 1);
+        let second = run_cmd_with(&e, t.path(), "", &["find", "needle"]).text;
+        assert_eq!(first, second);
+        assert!(second.ends_with("(2 searched, skipped 1 binary)"));
     }
 }

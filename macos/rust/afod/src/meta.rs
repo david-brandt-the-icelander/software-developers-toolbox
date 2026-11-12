@@ -6,6 +6,17 @@ const BINARY_SNIFF: usize = 8000;
 const MINIFIED_LINE: usize = 5000;
 const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
+// The light, persistable summary of a file's content.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Info {
+    pub size: u64,
+    pub hash: [u8; 32],
+    pub binary: bool,
+    pub minified: bool,
+    pub crlf: bool,
+    pub lines: u32,
+}
+
 // Everything the commands need to know about a file's content without re-scanning it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Meta {
@@ -88,6 +99,18 @@ impl Meta {
     // Returns the number of lines.
     pub fn lines(&self) -> usize {
         self.starts.len()
+    }
+
+    // Returns the light summary that is persisted in the cache.
+    pub fn info(&self) -> Info {
+        Info {
+            size: self.size,
+            hash: self.hash,
+            binary: self.binary,
+            minified: self.minified,
+            crlf: self.crlf,
+            lines: self.starts.len() as u32,
+        }
     }
 }
 
@@ -179,6 +202,15 @@ mod tests {
         assert_eq!(anchor_str(0), "000");
         assert_eq!(anchor_str(0x7fff), "zzz");
         assert_eq!(anchor_str(anchor_of(b"hello")).len(), 3);
+    }
+
+    // Checks the persisted summary mirrors the metadata.
+    #[test]
+    fn test_info_mirrors_meta() {
+        let m = Meta::compute(b"a\r\nb\r\n");
+        let i = m.info();
+        assert_eq!((i.lines, i.size, i.crlf, i.binary, i.minified), (2, 6, true, false, false));
+        assert_eq!(i.hash, m.hash);
     }
 
     // Checks the empty file has no lines.

@@ -89,12 +89,15 @@ fn status(ctx: &Ctx) -> String {
     use std::sync::atomic::Ordering::Relaxed;
     let e = ctx.engine;
     format!(
-        "afod {VERSION} pid {} up {}s cache {} entries ({} hits, {} misses)",
+        "afod {VERSION} pid {} up {}s cache {} hot + {} stored ({} hits, {} misses); walks {} scanned, {} reused",
         std::process::id(),
         e.started.elapsed().as_secs(),
         e.cached_entries(),
+        e.stored_records(),
         e.hits.load(Relaxed),
-        e.misses.load(Relaxed)
+        e.misses.load(Relaxed),
+        e.walks.scans.load(Relaxed),
+        e.walks.reuses.load(Relaxed)
     )
 }
 
@@ -122,7 +125,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["version"]).text.starts_with("afo 0."));
         assert!(run_cmd(t.path(), &["--version"]).text.starts_with("afo 0."));
         let s = run_cmd(t.path(), &["status"]).text;
-        assert!(s.starts_with("afod 0.") && s.contains("cache 0 entries"));
+        assert!(s.starts_with("afod 0.") && s.contains("cache 0 hot + 0 stored"));
     }
 
     // Checks the unknown command error is one line and lists commands.

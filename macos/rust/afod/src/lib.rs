@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod meta;
 pub mod proto;
 pub mod server;
+pub mod store;
 pub mod tokens;
 pub mod util;
 pub mod walk;

@@ -247,6 +247,13 @@ fn worker(sh: &Shared, external_stop: &AtomicBool) {
     }
 }
 
+// Writes pending cache records, reporting failures on stderr.
+fn flush_quietly(engine: &Engine) {
+    if let Err(e) = engine.flush() {
+        eprintln!("afod: cache write failed: {e}");
+    }
+}
+
 // Answers connections on a pool of workers that accept directly, until stopped or idle.
 pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &AtomicBool) -> io::Result<()> {
     listener.set_nonblocking(true)?;
@@ -269,6 +276,7 @@ pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &A
         let idle_ms = cfg.idle.as_millis() as u64;
         while !stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(TICK_MS as u64));
+            flush_quietly(&sh.engine);
             let quiet = now_ms(&sh.origin).saturating_sub(sh.last_ms.load(Ordering::SeqCst));
             if sh.active.load(Ordering::SeqCst) == 0 && quiet >= idle_ms {
                 break;
@@ -276,6 +284,7 @@ pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &A
         }
         sh.stop.store(true, Ordering::SeqCst);
     });
+    flush_quietly(&sh.engine);
     Ok(())
 }
 
@@ -307,6 +316,7 @@ pub fn bind(path: &Path) -> io::Result<UnixListener> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod tests {
     use super::*;
+    use crate::meta::Meta;
     use crate::proto::encode;
     use crate::testutil::{send_with_fds, TempDir};
     use std::os::fd::AsFd;
@@ -494,6 +504,22 @@ pub mod tests {
         b.write_all(b"x").expect("write");
         assert!(wait_readable(a.as_raw_fd(), 1000));
         assert!(!wait_readable(-1, 1));
+    }
+
+    // Checks a failing cache write is reported without stopping anything.
+    #[test]
+    fn test_flush_failure_is_reported_not_fatal() {
+        let dir = TempDir::new();
+        let store = crate::store::Store::open(dir.path()).expect("store");
+        store.put(
+            Path::new("/f"),
+            crate::store::StatKey { dev: 1, ino: 1, size: 1, mtime_ns: 1 },
+            Meta::compute(b"x").info(),
+        );
+        store.break_log();
+        let engine = Engine::with_store(store);
+        flush_quietly(&engine);
+        assert_eq!(engine.stored_records(), 1);
     }
 
     // Checks control messages of other types yield no descriptors.

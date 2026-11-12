@@ -5,6 +5,7 @@ use crate::engine::Engine;
 use crate::launchd;
 use crate::mcp::{self, DaemonBackend};
 use crate::server::{self, Config};
+use crate::store::{self, Store};
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -84,6 +85,17 @@ pub fn run_in_process(
     o.status
 }
 
+// Builds the engine with the persistent cache, or without it if the cache cannot be opened.
+fn open_engine() -> Engine {
+    match store::default_dir().and_then(|d| Store::open(&d)) {
+        Ok(s) => Engine::with_store(s),
+        Err(e) => {
+            eprintln!("afod: cache disabled: {e}");
+            Engine::new()
+        }
+    }
+}
+
 // Binds the socket, serves until idle and removes the socket afterwards.
 pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String> {
     let io = |e: std::io::Error| e.to_string();
@@ -97,7 +109,7 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
             }
         },
     };
-    let result = server::serve(listener, Arc::new(Engine::new()), &Config { idle }, &AtomicBool::new(false));
+    let result = server::serve(listener, Arc::new(open_engine()), &Config { idle }, &AtomicBool::new(false));
     bound.iter().for_each(|p| {
         let _ = std::fs::remove_file(p);
     });
@@ -261,10 +273,14 @@ mod tests {
     // Checks serve_main binds, serves, idles out and removes its socket.
     #[test]
     fn test_serve_main_lifecycle() {
+        let _g = crate::testutil::env_lock();
         let dir = TempDir::new();
+        std::env::set_var("AFO_CACHE_DIR", dir.path().join("cache"));
         let sock = dir.path().join("s");
         serve_main(Some(sock.clone()), Duration::from_millis(200)).expect("serve");
+        std::env::remove_var("AFO_CACHE_DIR");
         assert!(!sock.exists());
+        assert!(dir.path().join("cache/paths.log").exists());
     }
 
     // Checks serve_main falls back to the default socket path when none is given.
@@ -274,8 +290,10 @@ mod tests {
         let dir = TempDir::new();
         let sock = dir.path().join("d/sock");
         std::env::set_var("AFO_SOCK", &sock);
+        std::env::set_var("AFO_CACHE_DIR", dir.path().join("cache"));
         let r = serve_main(None, Duration::from_millis(200));
         std::env::remove_var("AFO_SOCK");
+        std::env::remove_var("AFO_CACHE_DIR");
         r.expect("serve");
         assert!(!sock.exists());
     }
@@ -283,9 +301,25 @@ mod tests {
     // Checks serve_main reports a bind failure.
     #[test]
     fn test_serve_main_bind_error() {
+        let _g = crate::testutil::env_lock();
+        let dir = TempDir::new();
+        std::env::set_var("AFO_CACHE_DIR", dir.path().join("cache"));
+        let file = dir.write("f", b"x");
+        let r = serve_main(Some(file.join("sub/s")), Duration::from_millis(100));
+        std::env::remove_var("AFO_CACHE_DIR");
+        assert!(r.is_err());
+    }
+
+    // Checks the daemon runs without a cache when the cache directory cannot be created.
+    #[test]
+    fn test_open_engine_without_cache() {
+        let _g = crate::testutil::env_lock();
         let dir = TempDir::new();
         let file = dir.write("f", b"x");
-        assert!(serve_main(Some(file.join("sub/s")), Duration::from_millis(100)).is_err());
+        std::env::set_var("AFO_CACHE_DIR", file.join("sub"));
+        let e = open_engine();
+        std::env::remove_var("AFO_CACHE_DIR");
+        assert_eq!(e.stored_records(), 0);
     }
 
     // Checks the agent command refuses off macOS and delegates on macOS.

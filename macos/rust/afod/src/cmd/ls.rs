@@ -31,9 +31,9 @@ fn insert(node: &mut Node, parts: &[&str]) {
 
 // Summarises one file as a line count, "bin" or a size.
 fn summary(ctx: &Ctx, path: &Path) -> String {
-    match ctx.engine.meta(path) {
-        Ok(m) if m.binary => format!("bin {}B", m.size),
-        Ok(m) => m.lines().to_string(),
+    match ctx.engine.info(path) {
+        Ok(i) if i.binary => format!("bin {}B", i.size),
+        Ok(i) => i.lines.to_string(),
         Err(_) => "?".into(),
     }
 }
@@ -98,6 +98,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let files = walk::collect(
         std::slice::from_ref(&root),
         &WalkOpts { no_ignore: p.has("no-ignore"), globs: vec![] },
+        &ctx.engine.walks,
     )?;
     let mut top = Node::default();
     for f in &files {

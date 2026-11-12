@@ -1,7 +1,9 @@
-// The engine: shared state behind every command, including the stat-validated metadata cache.
-use crate::meta::{Meta, MAX_META_SIZE};
+// The engine: shared state behind every command, including the metadata caches.
+use crate::meta::{Info, Meta, MAX_META_SIZE};
+use crate::store::{StatKey, Store};
 use std::collections::HashMap;
 use std::fs::Metadata;
+use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,32 +11,21 @@ use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_ENTRIES: usize = 4096;
-const RACY_NS: i128 = 2_000_000_000;
+const RACY_NS: i64 = 2_000_000_000;
 
-// The identity of a file's content as far as stat can tell.
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct Stat {
-    dev: u64,
-    ino: u64,
-    size: u64,
-    mtime_ns: i128,
-}
-
-impl Stat {
-    // Reads the identifying fields from file metadata.
-    fn of(md: &Metadata) -> Stat {
-        Stat {
-            dev: md.dev(),
-            ino: md.ino(),
-            size: md.size(),
-            mtime_ns: i128::from(md.mtime()) * 1_000_000_000 + i128::from(md.mtime_nsec()),
-        }
+// Reads the identifying fields from file metadata.
+pub fn key_of(md: &Metadata) -> StatKey {
+    StatKey {
+        dev: md.dev(),
+        ino: md.ino(),
+        size: md.size(),
+        mtime_ns: md.mtime() * 1_000_000_000 + md.mtime_nsec(),
     }
 }
 
-// A cached metadata record and whether it was computed too close to the file's mtime to trust.
+// A hot cached record and whether it was computed too close to the file's mtime to trust.
 struct Entry {
-    stat: Stat,
+    key: StatKey,
     meta: Arc<Meta>,
     racy: bool,
 }
@@ -49,48 +40,61 @@ pub struct Loaded {
 pub struct Engine {
     pub started: Instant,
     cache: Mutex<HashMap<PathBuf, Entry>>,
+    store: Option<Store>,
+    pub walks: crate::walk::WalkCache,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
 }
 
 impl Default for Engine {
-    // Creates an engine with an empty cache.
+    // Creates an engine with no persistent store.
     fn default() -> Engine {
         Engine::new()
     }
 }
 
 // Returns the current time in nanoseconds since the epoch.
-fn now_ns() -> i128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i128)
+fn now_ns() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i64)
 }
 
 impl Engine {
-    // Creates an engine with an empty cache.
+    // Creates an engine with only the in-memory cache.
     pub fn new() -> Engine {
         Engine {
             started: Instant::now(),
             cache: Mutex::new(HashMap::new()),
+            store: None,
+            walks: crate::walk::WalkCache::default(),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
     }
 
-    // Returns the cached metadata when the stat still matches and the entry is trustworthy.
-    fn cached(&self, path: &Path, stat: Stat) -> Option<Arc<Meta>> {
-        let cache = self.cache.lock().expect("cache lock");
-        let e = cache.get(path)?;
-        (e.stat == stat && !e.racy).then(|| Arc::clone(&e.meta))
+    // Creates an engine backed by a persistent store.
+    pub fn with_store(store: Store) -> Engine {
+        Engine { store: Some(store), ..Engine::new() }
     }
 
-    // Stores metadata for a path, clearing the cache first if it is full.
-    fn store(&self, path: &Path, stat: Stat, meta: &Arc<Meta>) {
+    // Returns the hot cached metadata when the stat still matches and the entry is trustworthy.
+    fn cached(&self, path: &Path, key: StatKey) -> Option<Arc<Meta>> {
+        let cache = self.cache.lock().expect("cache lock");
+        let e = cache.get(path)?;
+        (e.key == key && !e.racy).then(|| Arc::clone(&e.meta))
+    }
+
+    // Remembers metadata in the hot cache and the store, clearing the hot cache first if it is full.
+    fn store_meta(&self, path: &Path, key: StatKey, meta: &Arc<Meta>) {
         let mut cache = self.cache.lock().expect("cache lock");
         if cache.len() >= MAX_ENTRIES {
             cache.clear();
         }
-        let racy = now_ns() - stat.mtime_ns < RACY_NS;
-        cache.insert(path.to_path_buf(), Entry { stat, meta: Arc::clone(meta), racy });
+        let racy = now_ns() - key.mtime_ns < RACY_NS;
+        cache.insert(path.to_path_buf(), Entry { key, meta: Arc::clone(meta), racy });
+        drop(cache);
+        if let Some(s) = &self.store {
+            s.put(path, key, meta.info());
+        }
     }
 
     // Drops any cached record for a path, for example after an edit.
@@ -98,13 +102,23 @@ impl Engine {
         self.cache.lock().expect("cache lock").remove(path);
     }
 
-    // Returns the number of cached records.
+    // Returns the number of hot cached records.
     pub fn cached_entries(&self) -> usize {
         self.cache.lock().expect("cache lock").len()
     }
 
+    // Returns the number of persisted records.
+    pub fn stored_records(&self) -> usize {
+        self.store.as_ref().map_or(0, Store::len)
+    }
+
+    // Writes pending persistent records to disk.
+    pub fn flush(&self) -> io::Result<bool> {
+        self.store.as_ref().map_or(Ok(false), Store::flush)
+    }
+
     // Stats a path and checks it is a readable regular file of supported size.
-    fn stat_file(path: &Path) -> Result<Stat, String> {
+    fn stat_file(path: &Path) -> Result<StatKey, String> {
         let md = std::fs::metadata(path).map_err(|e| crate::walk::reason(&e))?;
         if !md.is_file() {
             return Err("not a regular file".into());
@@ -112,40 +126,60 @@ impl Engine {
         if md.len() > MAX_META_SIZE {
             return Err(format!("file too large ({} MB)", md.len() >> 20));
         }
-        Ok(Stat::of(&md))
+        Ok(key_of(&md))
     }
 
-    // Reads a file and its metadata, using the cache when the stat is unchanged.
+    // Reads a file and its metadata, using the hot cache when the stat is unchanged.
     pub fn load(&self, path: &Path) -> Result<Loaded, String> {
         self.load_with(path, &Engine::stat_file)
     }
 
     // Loads a file using the given stat function, which tests replace to simulate concurrent changes.
-    fn load_with(&self, path: &Path, stat: &dyn Fn(&Path) -> Result<Stat, String>) -> Result<Loaded, String> {
-        let st = stat(path)?;
-        let cached = self.cached(path, st);
+    fn load_with(
+        &self,
+        path: &Path,
+        stat: &dyn Fn(&Path) -> Result<StatKey, String>,
+    ) -> Result<Loaded, String> {
+        let key = stat(path)?;
+        let cached = self.cached(path, key);
         let data = std::fs::read(path).map_err(|e| crate::walk::reason(&e))?;
-        let st_after = stat(path)?;
-        if let Some(meta) = cached.filter(|_| st_after == st) {
+        let key_after = stat(path)?;
+        if let Some(meta) = cached.filter(|_| key_after == key) {
             self.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(Loaded { data, meta });
         }
         self.misses.fetch_add(1, Ordering::Relaxed);
         let meta = Arc::new(Meta::compute(&data));
-        if st_after == st {
-            self.store(path, st, &meta);
+        if key_after == key {
+            self.store_meta(path, key, &meta);
         }
         Ok(Loaded { data, meta })
     }
 
-    // Returns a file's metadata, reading the file only on a cache miss.
-    pub fn meta(&self, path: &Path) -> Result<Arc<Meta>, String> {
-        let st = Engine::stat_file(path)?;
-        if let Some(m) = self.cached(path, st) {
+    // Returns a file's summary, reading the file only when neither cache has a valid record.
+    pub fn info(&self, path: &Path) -> Result<Info, String> {
+        let key = Engine::stat_file(path)?;
+        if let Some(m) = self.cached(path, key) {
             self.hits.fetch_add(1, Ordering::Relaxed);
-            return Ok(m);
+            return Ok(m.info());
         }
-        Ok(self.load(path)?.meta)
+        if let Some(i) = self.store.as_ref().and_then(|s| s.get(path, &key)) {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            return Ok(i);
+        }
+        Ok(self.load(path)?.meta.info())
+    }
+
+    // Returns the persisted summary for a file whose metadata the caller already has, without reading it.
+    pub fn stored_info(&self, path: &Path, md: &Metadata) -> Option<Info> {
+        self.store.as_ref()?.get(path, &key_of(md))
+    }
+
+    // Persists the summary of content the caller already read.
+    pub fn remember(&self, path: &Path, md: &Metadata, data: &[u8]) {
+        if let Some(s) = &self.store {
+            s.put(path, key_of(md), Meta::compute(data).info());
+        }
     }
 }
 
@@ -153,15 +187,8 @@ impl Engine {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use crate::testutil::TempDir;
+    use crate::testutil::{age, TempDir};
     use std::cell::Cell;
-    use std::time::Duration;
-
-    // Backdates a file's mtime so the cache will trust it.
-    fn age(path: &Path) {
-        let f = std::fs::OpenOptions::new().write(true).open(path).expect("open");
-        f.set_modified(SystemTime::now() - Duration::from_secs(3600)).expect("set mtime");
-    }
 
     // Checks a miss then a hit for an old file, and that the data matches.
     #[test]
@@ -196,22 +223,22 @@ mod tests {
         let p = t.write("a.txt", b"x\n");
         age(&p);
         let e = Engine::new();
-        let first = e.meta(&p).expect("meta");
+        let first = e.info(&p).expect("info");
         std::fs::write(&p, b"x\ny\n").expect("rewrite");
         age(&p);
-        let second = e.meta(&p).expect("meta");
-        assert_eq!((first.lines(), second.lines()), (1, 2));
+        let second = e.info(&p).expect("info");
+        assert_eq!((first.lines, second.lines), (1, 2));
     }
 
-    // Checks meta() hits without reading when the entry is trusted.
+    // Checks info() answers from the hot cache without reading.
     #[test]
-    fn test_meta_hit_path() {
+    fn test_info_hot_cache_hit() {
         let t = TempDir::new();
         let p = t.write("a.txt", b"x\n");
         age(&p);
         let e = Engine::new();
-        e.meta(&p).expect("meta");
-        e.meta(&p).expect("meta");
+        e.info(&p).expect("info");
+        e.info(&p).expect("info");
         assert_eq!(e.hits.load(Ordering::Relaxed), 1);
     }
 
@@ -222,21 +249,21 @@ mod tests {
         let p = t.write("a.txt", b"x\n");
         age(&p);
         let e = Engine::new();
-        e.meta(&p).expect("meta");
+        e.info(&p).expect("info");
         e.forget(&p);
         assert_eq!(e.cached_entries(), 0);
     }
 
-    // Checks error cases: missing, directory and oversize.
+    // Checks error cases: missing and directory.
     #[test]
     fn test_load_errors() {
         let t = TempDir::new();
         let e = Engine::new();
         assert_eq!(e.load(&t.path().join("none")).err().as_deref(), Some("no such file or directory"));
-        assert_eq!(e.meta(t.path()).err().as_deref(), Some("not a regular file"));
+        assert_eq!(e.info(t.path()).err().as_deref(), Some("not a regular file"));
     }
 
-    // Checks the cache clears when full.
+    // Checks the hot cache clears when full.
     #[test]
     fn test_cache_clears_when_full() {
         let t = TempDir::new();
@@ -249,18 +276,20 @@ mod tests {
                 let m = Arc::new(Meta::compute(b"q"));
                 c.insert(
                     PathBuf::from(format!("/fake/{i}")),
-                    Entry { stat: Stat { dev: 0, ino: 0, size: 0, mtime_ns: 0 }, meta: m, racy: false },
+                    Entry { key: StatKey { dev: 0, ino: 0, size: 0, mtime_ns: 0 }, meta: m, racy: false },
                 );
             }
         }
-        e.meta(&p).expect("meta");
+        e.info(&p).expect("info");
         assert_eq!(e.cached_entries(), 1);
     }
 
     // Checks the default constructor.
     #[test]
     fn test_default_is_empty() {
-        assert_eq!(Engine::default().cached_entries(), 0);
+        let e = Engine::default();
+        assert_eq!((e.cached_entries(), e.stored_records()), (0, 0));
+        assert!(!e.flush().expect("flush without store"));
     }
 
     // Checks the file-modified-during-read path does not cache.
@@ -271,9 +300,9 @@ mod tests {
         age(&p);
         let e = Engine::new();
         let st = Engine::stat_file(&p).expect("stat");
-        let fake = Stat { size: st.size + 1, ..st };
+        let fake = StatKey { size: st.size + 1, ..st };
         let meta = Arc::new(Meta::compute(b"x\n"));
-        e.store(&p, fake, &meta);
+        e.store_meta(&p, fake, &meta);
         assert!(e.cached(&p, st).is_none());
     }
 
@@ -304,5 +333,46 @@ mod tests {
         let loaded = e.load_with(&p, &stat).expect("load");
         assert_eq!(loaded.data, b"x\n");
         assert_eq!(e.cached_entries(), 0);
+    }
+
+    // Builds an engine with a store in a temp directory.
+    fn stored(dir: &TempDir) -> Engine {
+        Engine::with_store(Store::open(&dir.path().join("cache")).expect("open store"))
+    }
+
+    // Checks info() answers from the persistent store after a restart without reading the file.
+    #[test]
+    fn test_info_served_from_store_after_restart() {
+        let t = TempDir::new();
+        let p = t.write("src/a.txt", b"one\ntwo\nthree\n");
+        age(&p);
+        let first = stored(&t);
+        assert_eq!(first.info(&p).expect("info").lines, 3);
+        assert!(first.flush().expect("flush"));
+        drop(first);
+        let second = stored(&t);
+        assert_eq!(second.stored_records(), 1);
+        let i = second.info(&p).expect("info");
+        assert_eq!(i.lines, 3);
+        assert_eq!((second.hits.load(Ordering::Relaxed), second.misses.load(Ordering::Relaxed)), (1, 0));
+    }
+
+    // Checks stored_info and remember cooperate and respect changes.
+    #[test]
+    fn test_remember_and_stored_info() {
+        let t = TempDir::new();
+        let p = t.write("bin.dat", b"a\0b");
+        age(&p);
+        let e = stored(&t);
+        let md = std::fs::metadata(&p).expect("meta");
+        assert!(e.stored_info(&p, &md).is_none());
+        e.remember(&p, &md, b"a\0b");
+        assert!(e.stored_info(&p, &md).expect("stored").binary);
+        std::fs::write(&p, b"text now\n").expect("rewrite");
+        age(&p);
+        assert!(e.stored_info(&p, &std::fs::metadata(&p).expect("meta")).is_none());
+        let plain = Engine::new();
+        plain.remember(&p, &md, b"x");
+        assert!(plain.stored_info(&p, &md).is_none());
     }
 }
