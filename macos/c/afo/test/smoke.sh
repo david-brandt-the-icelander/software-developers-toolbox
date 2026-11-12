@@ -51,6 +51,22 @@ if "$afo" bogus 2>"$tmp/err"; then fail "expected nonzero status"; fi
 grep -q "error: unknown command 'bogus'" "$tmp/err" || fail "stderr: $(cat "$tmp/err")"
 "$afo" bogus 2>/dev/null && fail "status" || [ $? -eq 2 ] || fail "exit status was not 2"
 
+# Session ids and dedupe: the second identical read in one session is a short notice.
+first=$(AFO_SESSION=smoke "$afo" read src/a.txt)
+case $first in "[r:"*"]
+src/a.txt 3 lines"*) ;; *) fail "session read: '$first'" ;; esac
+second=$(AFO_SESSION=smoke "$afo" read src/a.txt)
+case $second in "[r:"*"] already sent: afo read src/a.txt, unchanged. Re-run with --disable-session-deduping to resend.") ;; *) fail "dedupe notice: '$second'" ;; esac
+again=$(AFO_SESSION=smoke "$afo" read src/a.txt --disable-session-deduping)
+[ "$again" = "$first" ] || fail "resend differs"
+
+# Edit through the invoker with the new text on standard input, inside the working directory only.
+printf 'beta from stdin' | "$afo" edit src/a.txt --old 'beta two' --new - >/dev/null || fail "edit with stdin"
+grep -q 'beta from stdin' src/a.txt || fail "edit did not write: $(cat src/a.txt)"
+if "$afo" edit /etc/hosts --old a --new b 2>"$tmp/err"; then fail "edit outside cwd must fail"; fi
+grep -q "refusing to write outside" "$tmp/err" || fail "confinement message: $(cat "$tmp/err")"
+printf 'alpha one\nbeta two\nalpha three\n' > "$tmp/work/src/a.txt"
+
 kill "$dpid"; dpid=
 
 # Autostart: no daemon is running; the invoker starts one that does not keep our stdout open.

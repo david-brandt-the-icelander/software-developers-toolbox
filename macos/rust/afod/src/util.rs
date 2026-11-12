@@ -27,6 +27,17 @@ pub fn hex8(hash: &[u8; 32]) -> String {
     hash[..4].iter().map(|b| format!("{b:02x}")).collect()
 }
 
+// Ranks a path for display: ordinary files before tests, then shallower before deeper.
+pub fn rank(path: &Path) -> (bool, usize) {
+    const TEST_DIRS: [&str; 6] = ["test", "tests", "spec", "specs", "__tests__", "testdata"];
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let in_test_dir =
+        path.components().any(|c| c.as_os_str().to_str().is_some_and(|s| TEST_DIRS.contains(&s)));
+    let test_name =
+        name.starts_with("test_") || ["_test.", ".test.", ".spec."].iter().any(|m| name.contains(m));
+    (in_test_dir || test_name, path.components().count())
+}
+
 // Moves an index down to the nearest UTF-8 character boundary.
 fn floor_boundary(s: &str, mut i: usize) -> usize {
     while i > 0 && !s.is_char_boundary(i) {
@@ -114,5 +125,26 @@ mod tests {
     fn test_clip_moves_end_to_boundary() {
         let line = "é".repeat(60);
         assert_eq!(clip(&line, 0, 31), format!("{}…", "é".repeat(16)));
+    }
+
+    // Checks test files and directories rank after ordinary files, and deeper after shallower.
+    #[test]
+    fn test_rank() {
+        assert_eq!(rank(Path::new("src/a.rs")), (false, 2));
+        assert_eq!(rank(Path::new("src/deep/er/a.rs")), (false, 4));
+        for t in [
+            "tests/a.rs",
+            "src/test/a.rs",
+            "src/__tests__/a.js",
+            "a_test.go",
+            "a.test.ts",
+            "b.spec.js",
+            "test_a.py",
+            "x/testdata/y.txt",
+        ] {
+            assert!(rank(Path::new(t)).0, "{t}");
+        }
+        assert!(!rank(Path::new("src/latest.rs")).0);
+        assert_eq!(rank(Path::new("/")), (false, 1));
     }
 }

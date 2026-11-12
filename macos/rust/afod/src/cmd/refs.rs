@@ -25,6 +25,14 @@ fn declares(s: &Symbol, name: &str) -> bool {
     s.name == name || s.name.ends_with(&format!(" for {name}"))
 }
 
+// One file's definitions and uses of the symbol, with its display rank.
+struct FileRefs {
+    path: String,
+    rank: (bool, usize),
+    defs: Vec<Symbol>,
+    uses: Vec<Occurrence>,
+}
+
 // Splits a file's hits into definitions (declaration lines) and plain uses.
 fn classify(file: &FileResult, data: &[u8], syms: &[Symbol], name: &str) -> (Vec<Symbol>, Vec<Occurrence>) {
     let starts = crate::meta::line_starts(data);
@@ -60,27 +68,32 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let plan = Plan { engine: ctx.engine, re, max: PER_FILE, context: 0, files_only: false };
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
     let results = search_all(&files, &plan, cpus);
-    let (mut def_lines, mut use_blocks) = (Vec::new(), Vec::new());
-    let (mut n_defs, mut n_uses, mut shown, mut matched_files) = (0, 0, 0, 0);
     let loaded_hits = results
         .iter()
         .filter(|r| r.total > 0)
         .filter_map(|r| ctx.engine.load(&files[r.idx]).ok().map(|l| (r, l)));
-    for (r, loaded) in loaded_hits {
-        let path = &files[r.idx];
-        let syms = ctx.engine.outline(path, &loaded);
-        let (defs, uses) = classify(r, &loaded.data, &syms, name);
-        matched_files += 1;
-        let shown_path = display(path, &ctx.cwd);
-        n_defs += defs.len();
-        n_uses += uses.len();
-        for d in defs.iter().take(DEF_CAP.saturating_sub(def_lines.len())) {
-            def_lines.push(format!("{shown_path}:{}-{} {} {}", d.start, d.end, d.kind, d.name));
+    let mut found: Vec<FileRefs> = loaded_hits
+        .map(|(r, loaded)| {
+            let path = &files[r.idx];
+            let syms = ctx.engine.outline(path, &loaded);
+            let (defs, uses) = classify(r, &loaded.data, &syms, name);
+            FileRefs { path: display(path, &ctx.cwd), rank: crate::util::rank(path), defs, uses }
+        })
+        .collect();
+    found.sort_by_key(|f| (f.defs.is_empty(), f.rank));
+    let (mut def_lines, mut use_blocks) = (Vec::new(), Vec::new());
+    let (mut n_defs, mut n_uses, mut shown) = (0, 0, 0);
+    let matched_files = found.len();
+    for f in &found {
+        n_defs += f.defs.len();
+        n_uses += f.uses.len();
+        for d in f.defs.iter().take(DEF_CAP.saturating_sub(def_lines.len())) {
+            def_lines.push(format!("{}:{}-{} {} {}", f.path, d.start, d.end, d.kind, d.name));
         }
-        let take = uses.len().min(max - shown);
+        let take = f.uses.len().min(max - shown);
         if take > 0 {
-            let mut block = format!("{shown_path}\n");
-            for u in &uses[..take] {
+            let mut block = format!("{}\n", f.path);
+            for u in &f.uses[..take] {
                 let scope = u.scope.as_ref().map_or(String::new(), |s| format!(" [{s}]"));
                 block.push_str(&format!("{}{scope} {}\n", u.line, u.text));
             }
@@ -132,7 +145,7 @@ mod tests {
         let o = run_cmd(t.path(), &["refs", "parse"]);
         assert_eq!(
             o.text,
-            "defs\nsrc/lib.rs:1-3 fn parse\nrefs\nREADME.md\n1 call parse often\nsrc/lib.rs\n6 [other]     parse(1);\nsrc/main.rs\n2 [main]     let a = parse(2);\n3 [main]     let b = parse(3);\n-- 1 defs, 4 refs in 3 files (3 searched)"
+            "defs\nsrc/lib.rs:1-3 fn parse\nrefs\nsrc/lib.rs\n6 [other]     parse(1);\nREADME.md\n1 call parse often\nsrc/main.rs\n2 [main]     let a = parse(2);\n3 [main]     let b = parse(3);\n-- 1 defs, 4 refs in 3 files (3 searched)"
         );
         assert!(o.idable);
     }

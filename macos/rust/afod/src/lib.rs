@@ -12,6 +12,7 @@ pub mod meta;
 pub mod outline;
 pub mod proto;
 pub mod server;
+pub mod session;
 pub mod store;
 pub mod tokens;
 pub mod util;

@@ -297,7 +297,8 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let list_mode = p.has("files") || p.has("count");
     let plan = Plan { engine: ctx.engine, re, max, context, files_only: p.has("files") };
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let results = search_all(&files, &plan, cpus);
+    let mut results = search_all(&files, &plan, cpus);
+    results.sort_by_key(|r| crate::util::rank(&files[r.idx]));
     if !results.iter().any(|r| r.total > 0) {
         return Ok(Output::ok(format!("no matches in {} files{}", files.len(), skipped_note(&results))));
     }
@@ -594,5 +595,18 @@ mod tests {
         let second = run_cmd_with(&e, t.path(), "", &["find", "needle"]).text;
         assert_eq!(first, second);
         assert!(second.ends_with("(2 searched, skipped 1 binary)"));
+    }
+
+    // Checks results are ordered with ordinary shallow files before deeper ones and tests last.
+    #[test]
+    fn test_find_ranks_tests_last() {
+        let t = TempDir::new();
+        t.write("tests/a.rs", b"needle\n");
+        t.write("src/deep/er/b.rs", b"needle\n");
+        t.write("src/c.rs", b"needle\n");
+        t.write("top.rs", b"needle\n");
+        let o = run_cmd(t.path(), &["find", "needle", "-l"]).text;
+        let order: Vec<&str> = o.lines().take(4).collect();
+        assert_eq!(order, ["top.rs", "src/c.rs", "src/deep/er/b.rs", "tests/a.rs"]);
     }
 }
