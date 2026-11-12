@@ -5,6 +5,7 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 - [`fix-network`](macos/rust/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN.
 - [`agent-fs`](macos/rust/agent-fs/README.md): JSON read/search/list/outline tool and MCP server for agents, with session caching (`afs`).
 - [`free-disk-space`](macos/rust/free-disk-space/README.md): scan, compress, dedupe and clean up disk space.
+- [`codeindexd`](macos/dotnet/codeindexd/README.md) (C#): MCP server that answers code questions for agents instead of grep and cat.
 
 Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 

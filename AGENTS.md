@@ -1,9 +1,10 @@
 # AGENTS.md
 
-Personal developer toolbox: small macOS command-line tools written in Rust.
+Personal developer toolbox: small macOS command-line tools written in Rust, plus the C# tool `codeindexd`.
 
 ## Rules
 - Rust: follow `macos/rust/style.md`. The Cargo workspace is `macos/rust/`.
+- C#: follow `macos/dotnet/style.md`. The tool is `macos/dotnet/codeindexd/` (commands in its README).
 - Every code file, struct, enum and function has exactly one plain-sentence `//` comment; no rustdoc except clap `///` help text.
 - Write code for low token use and easy agent comprehension.
 - Never commit `target/` or state/log files.
@@ -23,4 +24,4 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 
 ## Layout
-- `macos/rust/<tool>/` one crate per tool; `agents/` agent docs and skills.
+- `macos/rust/<tool>/` one crate per tool; `macos/dotnet/<tool>/` one .NET project per C# tool; `agents/` agent docs and skills.

@@ -241,17 +241,56 @@ pub fn data_volume() -> &'static str {
     }
 }
 
-// Return free bytes on the volume holding a path, or 0 if it cannot be read.
-fn free_bytes_at(volume: &str) -> i64 {
-    let Ok(path) = std::ffi::CString::new(volume) else {
-        return 0;
-    };
+// Return (total, free) bytes of the volume holding a path, or None if it cannot be read.
+fn volume_at(volume: &str) -> Option<(i64, i64)> {
+    let path = std::ffi::CString::new(volume).ok()?;
     // SAFETY: statvfs fills a zeroed struct we own from a valid C string.
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statvfs(path.as_ptr(), &mut st) } != 0 {
-        return 0;
+        return None;
     }
-    st.f_bavail as i64 * st.f_frsize as i64
+    let unit = st.f_frsize as i64;
+    Some((st.f_blocks as i64 * unit, st.f_bavail as i64 * unit))
+}
+
+// Return free bytes on the volume holding a path, or 0 if it cannot be read.
+fn free_bytes_at(volume: &str) -> i64 {
+    volume_at(volume).map_or(0, |(_, free)| free)
+}
+
+// Return (total, free) bytes of the data volume, or None if it cannot be read.
+pub fn data_volume_space() -> Option<(i64, i64)> {
+    volume_at(data_volume())
+}
+
+// Return seconds the machine has been awake; the clock stops while it sleeps.
+pub fn awake_secs() -> f64 {
+    #[cfg(target_os = "macos")]
+    let clock = libc::CLOCK_UPTIME_RAW;
+    #[cfg(not(target_os = "macos"))]
+    let clock = libc::CLOCK_MONOTONIC;
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: clock_gettime writes into a timespec we own.
+    unsafe { libc::clock_gettime(clock, &mut ts) };
+    ts.tv_sec as f64 + ts.tv_nsec as f64 / 1e9
+}
+
+// Tell whether the main display is awake, which is false during background maintenance wakes.
+#[cfg(target_os = "macos")]
+pub fn display_awake() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGMainDisplayID() -> u32;
+        fn CGDisplayIsAsleep(display: u32) -> u32;
+    }
+    // SAFETY: both CoreGraphics calls take and return plain integers.
+    unsafe { CGDisplayIsAsleep(CGMainDisplayID()) == 0 }
+}
+
+// Tell whether the main display is awake; always true where there is no display check.
+#[cfg(not(target_os = "macos"))]
+pub fn display_awake() -> bool {
+    true
 }
 
 // Return free bytes on the data volume.
@@ -605,6 +644,12 @@ mod tests {
     fn test_free_space_helpers() {
         let _sb = Sandbox::new();
         assert!(free_bytes() > 0);
+        let (total, free) = data_volume_space().unwrap();
+        assert!(total >= free && free > 0);
+        assert!(volume_at("/no/such/volume").is_none());
+        let a = awake_secs();
+        assert!(a > 0.0 && awake_secs() >= a);
+        assert!(display_awake() || cfg!(target_os = "macos"));
         assert_eq!(free_bytes_at("/no/such/volume"), 0);
         assert_eq!(free_bytes_at("bad\0path"), 0);
         assert!(report_free("Test") > 0);
