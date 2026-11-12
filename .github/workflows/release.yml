@@ -158,12 +158,20 @@ jobs:
         with:
           name: toolbox-macos-universal
           path: dist
+      # Bottles let brew pour the binaries without its build-from-source checks (Command Line Tools).
+      - name: Build bottles and add them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -xzf dist/toolbox-macos-universal.tar.gz -C dist
+          bash macos/release/bottle.sh "$GITHUB_REF_NAME" dist bottles
+          gh release upload "$GITHUB_REF_NAME" bottles/*.bottle.tar.gz --clobber
       - name: Write and publish the formulas
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha=$(cut -d' ' -f1 dist/toolbox-macos-universal.tar.gz.sha256)
-          bash macos/release/formula.sh "$GITHUB_REF_NAME" "$sha" Formula
+          bash macos/release/formula.sh "$GITHUB_REF_NAME" "$sha" Formula bottles
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula

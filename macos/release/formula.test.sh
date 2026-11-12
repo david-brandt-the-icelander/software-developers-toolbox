@@ -38,6 +38,14 @@ class Formula
     end
     def respond_to_missing?(*) = true
     def test(&block) = @test_block = block
+    def bottle(&block) = (@bottle = BottleSpec.new).instance_eval(&block)
+    def bottle_spec = @bottle
+  end
+  # Records a bottle block's root_url and sha256 entries.
+  class BottleSpec
+    attr_reader :url, :checksums
+    def root_url(url) = @url = url
+    def sha256(**tags) = (@checksums ||= []) << tags
   end
   # Records installed file names.
   class Bin
@@ -69,6 +77,23 @@ raise "installed #{inst.bin.installed}" unless inst.bin.installed == [binary]
 ENV["VERSION_NAME"] = version_name
 inst.instance_eval(&f.test_block)
 raise "test ran #{inst.commands}" unless inst.commands == ["/opt/homebrew/bin/#{binary} --version"]
+bottles = ENV.fetch("BOTTLES", "")
+spec = f.bottle_spec
+if bottles.empty?
+  raise "unexpected bottle block" if spec
+else
+  raise "no bottle block" unless spec
+  raise "root_url #{spec.url}" unless spec.url == "#{repo}/releases/download/v2.1.0"
+  raise "bottle entries #{spec.checksums}" unless spec.checksums.length == 1
+  entry = spec.checksums.first
+  raise "cellar #{entry}" unless entry[:cellar] == :any_skip_relocation && entry.keys.sort == [:all, :cellar]
+  # Homebrew downloads root_url/NAME-VERSION.TAG.bottle.tar.gz for a plain root_url (Bottle::Filename#url_encode).
+  name = File.basename(file, ".rb")
+  path = File.join(bottles, "#{name}-#{v[:version]}.all.bottle.tar.gz")
+  raise "Homebrew would fetch #{File.basename(path)}, which bottle.sh did not write" unless File.exist?(path)
+  require "digest"
+  raise "bottle sha256 mismatch" unless entry[:all] == Digest::SHA256.file(path).hexdigest
+end
 puts "ok #{klass}"
 RUBY
 
@@ -77,7 +102,7 @@ check() {
   local file="$tmp/Formula/$1.rb" crate_name
   ruby -c "$file" >/dev/null || fail "$1.rb is not valid Ruby"
   crate_name=$(sed -n 's/^name = "\(.*\)"/\1/p' "$root/macos/rust/$4/Cargo.toml" | head -1)
-  VERSION_NAME=x ruby "$tmp/check.rb" "$file" "$2" "$3" "$crate_name" "$sha" >/dev/null || fail "$1.rb failed the DSL check"
+  BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$2" "$3" "$crate_name" "$sha" >/dev/null || fail "$1.rb failed the DSL check"
   grep -q "for bin in .*\b$3\b" "$root/.github/workflows/release.yml" || fail "release.yml does not build $3"
   grep -q "tree/main/macos/rust/$4\"" "$file" || fail "$1.rb homepage is not macos/rust/$4"
 }
@@ -85,7 +110,43 @@ check fix-network FixNetwork fix-network fix-network
 check free-disk-space FreeDiskSpace free-disk-space free-disk-space
 check agent-fs AgentFs afs agent-fs
 
-# 4. A wrong --version name must be caught by the formula's own test block.
+# 4. Bottles: bad input, then one reproducible bottle per tool in exactly the layout Homebrew pours.
+for args in "" "2.1.0 $tmp/bins $tmp/b" "v2.1.0 $tmp/none $tmp/b"; do
+  # shellcheck disable=SC2086
+  if bash "$here/bottle.sh" $args >/dev/null 2>&1; then fail "bottle.sh accepted bad input: '$args'"; fi
+done
+mkdir -p "$tmp/bins"
+printf '#!/bin/sh\n' >"$tmp/bins/fix-network"
+if bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/partial" >/dev/null 2>&1; then fail "bottle.sh accepted a missing binary"; fi
+for b in afs free-disk-space; do printf '#!/bin/sh\n' >"$tmp/bins/$b"; done
+chmod 0644 "$tmp/bins/afs"
+bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/bottles" >"$tmp/bottle.out"
+bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/again" >/dev/null
+for pair in fix-network:fix-network free-disk-space:free-disk-space agent-fs:afs; do
+  name=${pair%%:*} binary=${pair##*:} file="$tmp/bottles/${pair%%:*}-2.1.0.all.bottle.tar.gz"
+  [ -f "$file" ] || { fail "no bottle for $name"; continue; }
+  grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  $name-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "$name: printed sha256"
+  cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "$name: bottle is not reproducible"
+  listing=$(tar tzf "$file" | tr '\n' ' ')
+  [ "$listing" = "$name/ $name/2.1.0/ $name/2.1.0/bin/ $name/2.1.0/bin/$binary " ] || fail "$name: contents $listing"
+  tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* $name/2.1.0/bin/$binary$" || fail "$name: binary not 0755 root-owned"
+  # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
+  rm -rf "$tmp/x" && mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
+  [ "$(ls -A "$tmp/x")" = "$name" ] && [ "$(ls -A "$tmp/x/$name")" = "2.1.0" ] || fail "$name: not NAME/VERSION only"
+done
+
+# 5. Formulas with bottles: each gets a bottle block pointing at its file, checked under the stand-in Formula.
+bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/Formula" "$tmp/bottles" >/dev/null
+bottles="$tmp/bottles"
+check fix-network FixNetwork fix-network fix-network
+check free-disk-space FreeDiskSpace free-disk-space free-disk-space
+check agent-fs AgentFs afs agent-fs
+bottles=""
+mv "$tmp/bottles/agent-fs-2.1.0.all.bottle.tar.gz" "$tmp/agent-fs.bottle"
+if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F2" "$tmp/bottles" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle"; fi
+if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F3" "$tmp/no-such-dir" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle dir"; fi
+
+# 6. A wrong --version name must be caught by the formula's own test block.
 if VERSION_NAME=x ruby "$tmp/check.rb" "$tmp/Formula/agent-fs.rb" AgentFs afs afs "$sha" >/dev/null 2>&1; then
   fail "the agent-fs test block accepted 'afs 2.1.0' though the binary prints 'agent-fs'"
 fi
