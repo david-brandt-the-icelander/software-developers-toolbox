@@ -1,12 +1,32 @@
-# Release signing and notarization
+# Release: Homebrew formulas and optional signing
 
-On every `v*` tag, `.github/workflows/release.yml` builds universal binaries. `sign-and-notarize.sh` then signs them with a Developer ID (hardened runtime, secure timestamp) and has Apple notarize them, before they are packed and published. Gatekeeper then opens them without the "could not verify" warning.
+On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and publishes them to a GitHub release and icelander.net/downloads. Two scripts here take part.
 
-- A tag without the secrets below fails rather than publishing unsigned binaries.
-- A manual "Run workflow" without them builds unsigned binaries, with a warning.
-- `sign-and-notarize.test.sh` checks the script against stand-in Apple tools; CI runs it with shellcheck. Nothing here has signed a real binary until the first tag with the secrets in place.
+## Homebrew formulas (`formula.sh`)
 
-## One-time setup
+The `homebrew` job runs `formula.sh TAG SHA256 Formula` and commits `Formula/fix-network.rb`, `Formula/free-disk-space.rb` and `Formula/agent-fs.rb` to `main`.
+
+- Each formula installs one binary from the release tarball.
+- Each takes the release tag as its version, so every release is an upgrade for all three.
+- Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.
+- Users install with:
+  ```bash
+  brew tap david-brandt-the-icelander/toolbox https://github.com/david-brandt-the-icelander/software-developers-toolbox
+  ```
+  ```bash
+  brew install david-brandt-the-icelander/toolbox/fix-network
+  ```
+- The job pushes with the workflow's own token. If `main` gets branch protection, allow GitHub Actions to push, or change the job to open a pull request.
+- `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class: every DSL value, the installed binary, the `--version` name each crate prints, and that `release.yml` builds each binary. CI runs it.
+
+## Signing and notarization (`sign-and-notarize.sh`, optional)
+
+Only browser downloads need signing, since Homebrew installs don't. With the Apple secrets below, the release signs every binary with a Developer ID (hardened runtime, secure timestamp) and has Apple notarize them before packing. Without them, it releases unsigned binaries with a warning.
+
+- To make a missing secret fail the release instead, set the repository variable `REQUIRE_SIGNING` to `true`.
+- `sign-and-notarize.test.sh` checks the script against stand-in Apple tools; CI runs it with shellcheck. Nothing has signed a real binary until a tag runs with the secrets in place.
+
+### One-time signing setup
 
 You need a paid [Apple Developer Program](https://developer.apple.com/programs/) membership. The Account Holder does steps 1 and 3.
 
@@ -39,7 +59,7 @@ You need a paid [Apple Developer Program](https://developer.apple.com/programs/)
    ```
 5. Delete the local `.p12` and the base64 copy. Keep the `.p8` somewhere safe, or revoke it and make a new one if it leaks.
 
-## Checking a release
+### Checking a signed release
 
 ```bash
 codesign -dv --verbose=2 fix-network 2>&1 | grep -E "Authority=Developer ID Application|flags=.*runtime|Timestamp"

@@ -9,7 +9,7 @@
 #   APPLE_API_KEY_P8             contents of the App Store Connect API key (AuthKey_XXXX.p8)
 #   APPLE_API_KEY_ID             that key's ID
 #   APPLE_API_ISSUER_ID          the issuer ID shown above the keys in App Store Connect
-# Without them it skips with a warning, unless REQUIRE_SIGNING=true (version tags), where it fails.
+# Without them it skips with a warning, unless REQUIRE_SIGNING=true (the repository variable), where it fails.
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then
