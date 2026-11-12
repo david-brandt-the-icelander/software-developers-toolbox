@@ -50,7 +50,17 @@ public sealed class RootIndex : IDisposable
         {
             _source.Changed += OnChanged;
             _source.NeedsFullScan += () => _debounce.Change(100, Timeout.Infinite);
-            _source.Start(Path, replay ? eventId : null);
+            try
+            {
+                _source.Start(Path, replay ? eventId : null);
+            }
+            catch (Exception e) when (e is InvalidOperationException or IOException or DllNotFoundException or EntryPointNotFoundException)
+            {
+                Console.Error.WriteLine($"codeindexd: change tracking unavailable for {Path} ({e.Message}); relying on periodic reconcile");
+                _source.Dispose();
+                _source = null;
+                replay = false;
+            }
         }
         Ready = Task.Run(() =>
         {
@@ -59,8 +69,7 @@ public sealed class RootIndex : IDisposable
                 Drain();
             else
                 Reconcile();
-            if (_source is not null)
-                _periodic.Change(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+            _periodic.Change(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         });
     }
 

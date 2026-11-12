@@ -68,6 +68,21 @@ public class ToolTests
     }
 
     [Fact]
+    // read refuses a path that goes through a symlinked directory pointing outside the root.
+    public void test_read_rejects_symlink_escape()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        using var repo = new TempRepo(Files);
+        var outside = Directory.CreateTempSubdirectory("outside").FullName;
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "secret\n");
+        Directory.CreateSymbolicLink(Path.Combine(repo.Dir, "link"), outside);
+        var tool = new ReadTool(new RootSet([repo.Root()]));
+        Assert.Equal("outside_root", Assert.Throws<ToolException>(() => Call(tool, "{\"path\":\"r:link/secret.txt\"}")).Code);
+        Directory.Delete(outside, true);
+    }
+
+    [Fact]
     // search finds matches in path order with context and pages with offset.
     public void test_search_context_and_offset()
     {

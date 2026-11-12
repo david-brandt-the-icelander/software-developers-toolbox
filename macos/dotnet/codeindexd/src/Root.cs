@@ -47,15 +47,14 @@ public sealed class Root
         return files;
     }
 
-    // Returns the absolute path for a relative path, or null if it escapes the root or is a symlink out of it.
+    // Returns the absolute path for a relative path, or null if it (after resolving symlinks) is outside the root.
     public string? Resolve(string relative)
     {
         var full = System.IO.Path.GetFullPath(System.IO.Path.Combine(Path, relative));
         var prefix = Path.TrimEnd('/') + "/";
         if (!full.StartsWith(prefix, StringComparison.Ordinal))
             return null;
-        var real = new FileInfo(full).ResolveLinkTarget(true)?.FullName ?? full;
-        return real.StartsWith(prefix, StringComparison.Ordinal) ? full : null;
+        return Native.RealPath(full).StartsWith(prefix, StringComparison.Ordinal) ? full : null;
     }
 
     // Decodes file bytes as UTF-8.

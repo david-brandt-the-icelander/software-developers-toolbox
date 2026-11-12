@@ -113,7 +113,7 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
             await Reply(writer, new JsonObject { ["ok"] = true });
             return roots;
         }
-        catch (ArgumentException e)
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException)
         {
             await Reply(writer, new JsonObject { ["ok"] = false, ["error"] = e.Message });
             return null;

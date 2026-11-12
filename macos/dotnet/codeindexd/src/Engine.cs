@@ -11,7 +11,7 @@ public sealed class Engine : IDisposable
     public const long MaxIndexBytes = 16 * 1024 * 1024;
     public static int ReadyTimeoutMs = 30000;
 
-    private readonly ConcurrentDictionary<string, RootIndex> _roots = new();
+    private readonly ConcurrentDictionary<string, Lazy<RootIndex>> _roots = new();
     private readonly ConcurrentDictionary<string, BlobMeta> _byOid = new();
     private readonly ConcurrentDictionary<int, BlobMeta> _byId = new();
     private readonly object _blobLock = new();
@@ -67,12 +67,12 @@ public sealed class Engine : IDisposable
     public RootIndex Attach(string path)
     {
         var real = Native.RealPath(path);
-        return _roots.GetOrAdd(real, p =>
+        return _roots.GetOrAdd(real, p => new Lazy<RootIndex>(() =>
         {
             var idx = new RootIndex(this, p);
             idx.Start();
             return idx;
-        });
+        })).Value;
     }
 
     // Returns blob facts by id.
@@ -107,7 +107,7 @@ public sealed class Engine : IDisposable
     // Stops every root.
     public void Dispose()
     {
-        foreach (var r in _roots.Values)
-            r.Dispose();
+        foreach (var r in _roots.Values.Where(l => l.IsValueCreated))
+            r.Value.Dispose();
     }
 }
