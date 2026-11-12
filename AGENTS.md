@@ -18,6 +18,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 ## Skills
 - Free disk space on macOS (compression scan, cache/dev/docker cleanup): `agents/skills/free-disk-space/SKILL.md`
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
+- Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 
 ## Layout
 - `macos/rust/<tool>/` one crate per tool; `agents/` agent docs and skills.

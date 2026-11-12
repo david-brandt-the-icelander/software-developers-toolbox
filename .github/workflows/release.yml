@@ -32,11 +32,11 @@ jobs:
       - name: Package universal binaries
         run: |
           mkdir -p dist
-          for bin in fix-network free-disk-space; do
+          for bin in afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
-          tar -C dist -czf toolbox-macos-universal.tar.gz fix-network free-disk-space
+          tar -C dist -czf toolbox-macos-universal.tar.gz afs fix-network free-disk-space
           shasum -a 256 toolbox-macos-universal.tar.gz > toolbox-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
