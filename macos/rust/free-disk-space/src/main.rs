@@ -1,6 +1,7 @@
 // Reclaim macOS disk space via a resumable scan, compression, clone dedupe and safe cleanups.
 mod clean;
 mod compress;
+mod daemon;
 mod dedupe;
 mod scan;
 #[cfg(test)]
@@ -30,6 +31,8 @@ const EXAMPLES: &str = "examples:
   free-disk-space dedupe --sample 5 --apply    # replace 5 duplicates with APFS clones
   free-disk-space compress --sample 5          # verify on 5 files first
   free-disk-space compress --limit 20G --yes   # then go bigger
+  free-disk-space daemon install               # clean caches+dev below 30G free, checked every 15m awake
+  free-disk-space daemon install --threshold 10% --cadence 1h --targets caches dev trash
 
 state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3";
 
@@ -81,6 +84,50 @@ enum Cmd {
     ///
     /// Targets: caches, downloads, trash, dev, docker (all of these = `all`), plus opt-in brew, xcode.
     Clean(CleanArgs),
+    /// run cleanups in the background on a cadence (macOS login item)
+    ///
+    /// Every cadence of awake time (the clock stops while the Mac sleeps; nothing wakes it, and checks
+    /// are skipped while the display is asleep) free space on the data volume is compared with the
+    /// threshold; below it, `clean --apply` runs on the chosen targets. `install` registers a launchd
+    /// login item (~/Library/LaunchAgents) that starts now and at every login.
+    Daemon(DaemonArgs),
+}
+
+// Daemon actions.
+#[derive(Args)]
+struct DaemonArgs {
+    #[command(subcommand)]
+    action: DaemonAction,
+}
+
+// What to do with the daemon.
+#[derive(Subcommand)]
+enum DaemonAction {
+    /// run in the foreground (what the login item executes)
+    Run(DaemonOpts),
+    /// install and start the login item
+    Install(DaemonOpts),
+    /// stop and remove the login item
+    Uninstall,
+    /// show whether the login item is installed and running
+    Status,
+}
+
+// Options shared by daemon run and install.
+#[derive(Args)]
+struct DaemonOpts {
+    /// clean when free space falls below this: a size such as 30G or a percentage such as 10%
+    #[arg(long, default_value = "30G")]
+    threshold: String,
+    /// time between checks, in awake time: 90s, 15m or 2h (bare number = minutes)
+    #[arg(long, default_value = "15m")]
+    cadence: String,
+    /// what to clean when below the threshold
+    #[arg(long, value_enum, num_args = 1.., default_values_t = [Target::Caches, Target::Dev])]
+    targets: Vec<Target>,
+    /// project tree for `dev`
+    #[arg(long, default_value = "~/dev")]
+    dev_root: String,
 }
 
 // Options for new.
@@ -208,6 +255,12 @@ struct CleanArgs {
     docker_stop_timeout: u64,
 }
 
+// Validate daemon options into settings or exit with the problem.
+fn daemon_settings(o: DaemonOpts) -> daemon::Settings {
+    let targets = o.targets.into_iter().map(value_name).collect();
+    daemon::Settings::parse(&o.threshold, &o.cadence, targets, &o.dev_root).unwrap_or_else(|e| util::die(&e))
+}
+
 // Return the lowercase name of a clap value.
 fn value_name<T: ValueEnum>(v: T) -> String {
     v.to_possible_value().map(|p| p.get_name().to_string()).unwrap_or_default()
@@ -252,6 +305,16 @@ fn run(cli: Cli) {
             min_size: a.min_size,
             sample: a.sample,
         }),
+        Cmd::Daemon(a) => match a.action {
+            DaemonAction::Run(o) => daemon::cmd_run(&daemon_settings(o)),
+            DaemonAction::Install(o) => {
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|e| util::die(&format!("cannot find myself: {e}")));
+                daemon::cmd_install(&daemon_settings(o), &exe);
+            }
+            DaemonAction::Uninstall => daemon::cmd_uninstall(),
+            DaemonAction::Status => daemon::cmd_status(),
+        },
         Cmd::Clean(a) => {
             let targets: Vec<String> = a.targets.into_iter().map(value_name).collect();
             clean::cmd_clean(&targets, a.apply, &a.dev_root, a.docker_stop_timeout);
@@ -326,5 +389,14 @@ mod tests {
         go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);
         let home = sb.home().to_string_lossy().into_owned();
         go(&["clean", "caches", "trash", "--dev-root", &home]);
+        sb.tool("launchctl", "exit 0");
+        go(&["daemon", "install", "--threshold", "10%", "--cadence", "1h", "--targets", "caches", "trash"]);
+        go(&["daemon", "status"]);
+        go(&["daemon", "uninstall"]);
+        util::set_stop(true);
+        go(&["daemon", "run"]);
+        util::set_stop(false);
+        let bad = std::panic::catch_unwind(|| go(&["daemon", "run", "--threshold", "nope"]));
+        assert!(bad.is_err());
     }
 }
