@@ -30,14 +30,14 @@ const PARALLEL_MIN: usize = 8;
 
 // A matching line: its number and where the match starts within it.
 #[derive(Debug)]
-struct Hit {
-    line: usize,
-    col: usize,
+pub(super) struct Hit {
+    pub(super) line: usize,
+    pub(super) col: usize,
 }
 
 // Why a file produced no search results.
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum Skip {
+pub(super) enum Skip {
     No,
     Binary,
     Large,
@@ -46,20 +46,20 @@ enum Skip {
 
 // The outcome of searching one file.
 #[derive(Debug)]
-struct FileResult {
-    idx: usize,
-    total: usize,
-    hits: Vec<Hit>,
-    skip: Skip,
+pub(super) struct FileResult {
+    pub(super) idx: usize,
+    pub(super) total: usize,
+    pub(super) hits: Vec<Hit>,
+    pub(super) skip: Skip,
 }
 
 // Parsed search settings.
-struct Plan<'a> {
-    engine: &'a Engine,
-    re: Regex,
-    max: usize,
-    context: usize,
-    files_only: bool,
+pub(super) struct Plan<'a> {
+    pub(super) engine: &'a Engine,
+    pub(super) re: Regex,
+    pub(super) max: usize,
+    pub(super) context: usize,
+    pub(super) files_only: bool,
 }
 
 // Turns a regex library error into one short line.
@@ -79,7 +79,12 @@ fn friendly(e: &regex::Error) -> String {
 }
 
 // Builds the search regex from the pattern and flags.
-fn build_regex(pattern: &str, ignore_case: bool, fixed: bool, word: bool) -> Result<Regex, String> {
+pub(super) fn build_regex(
+    pattern: &str,
+    ignore_case: bool,
+    fixed: bool,
+    word: bool,
+) -> Result<Regex, String> {
     let mut pat = if fixed { regex::escape(pattern) } else { pattern.to_string() };
     if word {
         pat = format!(r"\b(?:{pat})\b");
@@ -140,7 +145,7 @@ fn search_file(idx: usize, path: &Path, plan: &Plan) -> FileResult {
 }
 
 // Searches all files, in parallel when there are enough, and returns results in file order.
-fn search_all(files: &[PathBuf], plan: &Plan, cpus: usize) -> Vec<FileResult> {
+pub(super) fn search_all(files: &[PathBuf], plan: &Plan, cpus: usize) -> Vec<FileResult> {
     let results = Mutex::new(Vec::new());
     let next = AtomicUsize::new(0);
     let work = || loop {
@@ -204,7 +209,7 @@ fn render_file(out: &mut String, data: &[u8], hits: &[Hit], context: usize) {
 }
 
 // Describes skipped files for the footer.
-fn skipped_note(results: &[FileResult]) -> String {
+pub(super) fn skipped_note(results: &[FileResult]) -> String {
     let count = |s| results.iter().filter(|r| r.skip == s).count();
     let parts: Vec<String> =
         [(Skip::Binary, "binary"), (Skip::Large, "large"), (Skip::Unreadable, "unreadable")]

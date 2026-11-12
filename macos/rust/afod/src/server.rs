@@ -223,6 +223,13 @@ struct Shared {
     uid: u32,
 }
 
+// Reports an accept failure unless it only means another worker took the connection.
+fn report_accept_error(e: &io::Error) {
+    if e.kind() != io::ErrorKind::WouldBlock {
+        eprintln!("afod: accept: {e}");
+    }
+}
+
 // One worker: waits for the listener, accepts directly and serves the connection.
 fn worker(sh: &Shared, external_stop: &AtomicBool) {
     let stopped = || sh.stop.load(Ordering::SeqCst) || external_stop.load(Ordering::SeqCst);
@@ -232,9 +239,8 @@ fn worker(sh: &Shared, external_stop: &AtomicBool) {
         }
         let stream = match sh.listener.accept() {
             Ok((stream, _)) => stream,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
             Err(e) => {
-                eprintln!("afod: accept: {e}");
+                report_accept_error(&e);
                 continue;
             }
         };
@@ -524,6 +530,13 @@ pub mod tests {
         let engine = Engine::with_store(store);
         flush_quietly(&engine);
         assert_eq!(engine.stored_records(), 1);
+    }
+
+    // Checks accept errors are reported except the benign would-block case.
+    #[test]
+    fn test_report_accept_error() {
+        report_accept_error(&io::Error::from(io::ErrorKind::WouldBlock));
+        report_accept_error(&io::Error::other("emfile"));
     }
 
     // Checks control messages of other types yield no descriptors.

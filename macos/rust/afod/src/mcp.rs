@@ -51,6 +51,24 @@ const TOOLS: &[Tool] = &[
         map: read_args,
     },
     Tool { name: "afo_ls", description: "Compact directory tree with file counts and line counts.", schema: ls_schema, map: ls_args },
+    Tool {
+        name: "afo_outline",
+        description: "Symbols (functions, types, headings) with line ranges for files or directories; read big files in pieces with afo_read.",
+        schema: outline_schema,
+        map: outline_args,
+    },
+    Tool {
+        name: "afo_refs",
+        description: "Where a symbol is defined and used: definitions first, each use with its enclosing symbol.",
+        schema: refs_schema,
+        map: refs_args,
+    },
+    Tool {
+        name: "afo_edit",
+        description: "Edit one file safely: replace unique text, replace lines (needs expect sha or anchors from afo_read), insert after a line, or create a file. Writes are confined to the working directory.",
+        schema: edit_schema,
+        map: edit_args,
+    },
 ];
 
 // Builds a JSON schema object from properties and required names.
@@ -97,6 +115,46 @@ fn ls_schema() -> Value {
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
         }),
         &[],
+    )
+}
+
+// Schema for afo_outline.
+fn outline_schema() -> Value {
+    object(
+        json!({
+            "paths": {"type": "array", "items": {"type": "string"}}, "depth": {"type": "integer", "description": "Maximum nesting shown (default 3)"},
+            "max": {"type": "integer"}, "disable_session_deduping": {"type": "boolean"}
+        }),
+        &["paths"],
+    )
+}
+
+// Schema for afo_refs.
+fn refs_schema() -> Value {
+    object(
+        json!({
+            "symbol": {"type": "string"}, "paths": {"type": "array", "items": {"type": "string"}},
+            "glob": {"type": "array", "items": {"type": "string"}}, "max": {"type": "integer"},
+            "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
+        }),
+        &["symbol"],
+    )
+}
+
+// Schema for afo_edit.
+fn edit_schema() -> Value {
+    object(
+        json!({
+            "path": {"type": "string"},
+            "old": {"type": "string", "description": "Exact text to replace; must be unique unless all is true"},
+            "new": {"type": "string", "description": "Replacement or inserted text"},
+            "all": {"type": "boolean"}, "create": {"type": "boolean", "description": "Create the file with new as its content"},
+            "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
+            "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from afo_read with anchors"},
+            "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
+            "expect": {"type": "string", "description": "The sha from afo_read's header"}
+        }),
+        &["path", "new"],
     )
 }
 
@@ -217,6 +275,52 @@ fn ls_args(v: &Value) -> Result<Vec<String>, String> {
     if let Some(p) = get_str(v, "path")? {
         a.push("--".into());
         a.push(p);
+    }
+    Ok(a)
+}
+
+// Maps afo_outline arguments to a command line.
+fn outline_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["outline".to_string()];
+    push_flag(&mut a, v, "disable_session_deduping", "--disable-session-deduping")?;
+    push_num(&mut a, v, "depth", "-d")?;
+    push_num(&mut a, v, "max", "-m")?;
+    let paths = get_list(v, "paths")?;
+    if paths.is_empty() {
+        return Err("'paths' is required".into());
+    }
+    a.push("--".into());
+    a.extend(paths);
+    Ok(a)
+}
+
+// Maps afo_refs arguments to a command line.
+fn refs_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["refs".to_string()];
+    push_flag(&mut a, v, "no_ignore", "-u")?;
+    push_flag(&mut a, v, "disable_session_deduping", "--disable-session-deduping")?;
+    push_num(&mut a, v, "max", "-m")?;
+    for g in get_list(v, "glob")? {
+        a.push("-g".into());
+        a.push(g);
+    }
+    a.push("--".into());
+    a.push(need_str(v, "symbol")?);
+    a.extend(get_list(v, "paths")?);
+    Ok(a)
+}
+
+// Maps afo_edit arguments to a command line.
+fn edit_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["edit".to_string(), need_str(v, "path")?];
+    push_flag(&mut a, v, "all", "--all")?;
+    push_flag(&mut a, v, "create", "--create")?;
+    push_num(&mut a, v, "after", "--after")?;
+    for key in ["old", "new", "lines", "at", "expect"] {
+        if let Some(s) = get_str(v, key)? {
+            a.push(format!("--{key}"));
+            a.push(s);
+        }
     }
     Ok(a)
 }
@@ -594,5 +698,68 @@ mod tests {
         assert_ne!(random_bytes().expect("urandom"), random_bytes().expect("urandom"));
         assert_eq!(fallback_bytes(0x0102_0304_0506, 0), [6, 5, 4, 3, 2, 1]);
         assert_eq!(fallback_bytes(1, 3)[0], 2);
+    }
+
+    // Checks outline, refs and edit argument mapping.
+    #[test]
+    fn test_call_outline_refs_edit_map_arguments() {
+        let b = fake(0, "ok");
+        ask(
+            &b,
+            json!({"id":1,"method":"tools/call","params":{"name":"afo_outline","arguments":{"paths":["src"],"depth":1,"max":9,"disable_session_deduping":true}}}),
+        );
+        ask(
+            &b,
+            json!({"id":2,"method":"tools/call","params":{"name":"afo_refs","arguments":{"symbol":"-x","paths":["a"],"glob":["*.rs"],"max":3,"no_ignore":true,"disable_session_deduping":true}}}),
+        );
+        ask(
+            &b,
+            json!({"id":3,"method":"tools/call","params":{"name":"afo_edit","arguments":{
+            "path":"a.rs","old":"x","new":"y","all":true,"create":true,"after":2,"lines":"1-2","at":"1#a-2#b","expect":"abcd"}}}),
+        );
+        ask(
+            &b,
+            json!({"id":4,"method":"tools/call","params":{"name":"afo_edit","arguments":{"path":"b.rs","new":"z"}}}),
+        );
+        let calls = b.calls.borrow();
+        assert_eq!(calls[3], ["edit", "b.rs", "--new", "z"]);
+        assert_eq!(calls[0], ["outline", "--disable-session-deduping", "-d", "1", "-m", "9", "--", "src"]);
+        assert_eq!(
+            calls[1],
+            ["refs", "-u", "--disable-session-deduping", "-m", "3", "-g", "*.rs", "--", "-x", "a"]
+        );
+        assert_eq!(
+            calls[2],
+            [
+                "edit", "a.rs", "--all", "--create", "--after", "2", "--old", "x", "--new", "y", "--lines",
+                "1-2", "--at", "1#a-2#b", "--expect", "abcd"
+            ]
+        );
+    }
+
+    // Checks argument validation for the new tools.
+    #[test]
+    fn test_new_tool_argument_errors() {
+        let b = fake(0, "ok");
+        let text = |name: &str, args: Value| {
+            let r = ask(&b, json!({"id":1,"method":"tools/call","params":{"name":name,"arguments":args}}));
+            r["result"]["content"][0]["text"].as_str().expect("text").to_string()
+        };
+        assert_eq!(text("afo_outline", json!({})), "error: 'paths' is required");
+        assert_eq!(text("afo_refs", json!({})), "error: 'symbol' is required");
+        assert_eq!(text("afo_edit", json!({"new": "x"})), "error: 'path' is required");
+        assert_eq!(text("afo_edit", json!({"path": "a", "old": 5})), "error: 'old' must be a string");
+        assert!(b.calls.borrow().is_empty());
+    }
+
+    // Checks every tool has a schema object with its required list.
+    #[test]
+    fn test_all_tool_schemas() {
+        let l = list_tools();
+        for t in l["tools"].as_array().expect("tools") {
+            assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
+            assert!(t["inputSchema"]["required"].is_array());
+        }
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 6);
     }
 }

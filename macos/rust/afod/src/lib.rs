@@ -9,6 +9,7 @@ pub mod engine;
 pub mod launchd;
 pub mod mcp;
 pub mod meta;
+pub mod outline;
 pub mod proto;
 pub mod server;
 pub mod store;

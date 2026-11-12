@@ -1,5 +1,6 @@
 // The engine: shared state behind every command, including the metadata caches.
 use crate::meta::{Info, Meta, MAX_META_SIZE};
+use crate::outline::{self, Lang, Symbol};
 use crate::store::{StatKey, Store};
 use std::collections::HashMap;
 use std::fs::Metadata;
@@ -11,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_ENTRIES: usize = 4096;
+const MAX_OUTLINES: usize = 2048;
 const RACY_NS: i64 = 2_000_000_000;
 
 // Reads the identifying fields from file metadata.
@@ -22,6 +24,9 @@ pub fn key_of(md: &Metadata) -> StatKey {
         mtime_ns: md.mtime() * 1_000_000_000 + md.mtime_nsec(),
     }
 }
+
+// Cached outlines keyed by content hash and language.
+type OutlineMap = HashMap<([u8; 32], Lang), Arc<Vec<Symbol>>>;
 
 // A hot cached record and whether it was computed too close to the file's mtime to trust.
 struct Entry {
@@ -42,6 +47,8 @@ pub struct Engine {
     cache: Mutex<HashMap<PathBuf, Entry>>,
     store: Option<Store>,
     pub walks: crate::walk::WalkCache,
+    outlines: Mutex<OutlineMap>,
+    edit_lock: Mutex<()>,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
 }
@@ -66,6 +73,8 @@ impl Engine {
             cache: Mutex::new(HashMap::new()),
             store: None,
             walks: crate::walk::WalkCache::default(),
+            outlines: Mutex::new(HashMap::new()),
+            edit_lock: Mutex::new(()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
@@ -95,6 +104,26 @@ impl Engine {
         if let Some(s) = &self.store {
             s.put(path, key, meta.info());
         }
+    }
+
+    // Returns the symbol outline of loaded content, cached by content hash and language.
+    pub fn outline(&self, path: &Path, loaded: &Loaded) -> Arc<Vec<Symbol>> {
+        let key = (loaded.meta.hash, outline::lang_of(path));
+        if let Some(o) = self.outlines.lock().expect("outline lock").get(&key) {
+            return Arc::clone(o);
+        }
+        let syms = Arc::new(outline::outline(path, &loaded.data, &loaded.meta.starts));
+        let mut cache = self.outlines.lock().expect("outline lock");
+        if cache.len() >= MAX_OUTLINES {
+            cache.clear();
+        }
+        cache.insert(key, Arc::clone(&syms));
+        syms
+    }
+
+    // Takes the lock that serialises edits to files.
+    pub fn edit_guard(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.edit_lock.lock().expect("edit lock")
     }
 
     // Drops any cached record for a path, for example after an edit.
@@ -282,6 +311,38 @@ mod tests {
         }
         e.info(&p).expect("info");
         assert_eq!(e.cached_entries(), 1);
+    }
+
+    // Checks outlines are cached by content and cleared when the cache is full.
+    #[test]
+    fn test_outline_cache() {
+        let t = TempDir::new();
+        let p = t.write("a.rs", b"fn f() {}\n");
+        let e = Engine::new();
+        let loaded = e.load(&p).expect("load");
+        let a = e.outline(&p, &loaded);
+        let b = e.outline(&p, &loaded);
+        assert!(Arc::ptr_eq(&a, &b));
+        assert_eq!(a[0].name, "f");
+        {
+            let mut c = e.outlines.lock().expect("lock");
+            for i in 0..MAX_OUTLINES {
+                let mut key = [0u8; 32];
+                key[..8].copy_from_slice(&(i as u64).to_le_bytes());
+                c.insert((key, Lang::Generic), Arc::new(vec![]));
+            }
+        }
+        let other = t.write("b.rs", b"fn g() {}\n");
+        e.outline(&other, &e.load(&other).expect("load"));
+        assert_eq!(e.outlines.lock().expect("lock").len(), 1);
+    }
+
+    // Checks the edit guard can be taken repeatedly.
+    #[test]
+    fn test_edit_guard() {
+        let e = Engine::new();
+        drop(e.edit_guard());
+        drop(e.edit_guard());
     }
 
     // Checks the default constructor.

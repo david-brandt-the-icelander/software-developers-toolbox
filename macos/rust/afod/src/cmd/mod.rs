@@ -4,9 +4,12 @@ use std::cell::RefCell;
 use std::io::Read;
 use std::path::PathBuf;
 
+pub mod edit;
 pub mod find;
 pub mod ls;
+pub mod outline;
 pub mod read;
+pub mod refs;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -14,6 +17,9 @@ const HELP: &str = "afo: file tool for agents
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
 read PATH[:A-B].. [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
+outline PATH.. [-d N] [-m N]  symbols with line ranges
+refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
+edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 status  daemon info
 Any command: --disable-session-deduping resends output already sent in this session.";
 
@@ -77,10 +83,13 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Output, String> {
         "find" | "grep" => find::run(ctx, rest),
         "read" | "cat" => read::run(ctx, rest),
         "ls" => ls::run(ctx, rest),
+        "outline" => outline::run(ctx, rest),
+        "refs" => refs::run(ctx, rest),
+        "edit" => edit::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("afo {VERSION}"))),
-        other => Err(format!("unknown command '{other}'; try: find read ls status help")),
+        other => Err(format!("unknown command '{other}'; try: find read ls outline refs edit status help")),
     }
 }
 
@@ -134,7 +143,10 @@ mod tests {
         let t = TempDir::new();
         let o = run_cmd(t.path(), &["frobnicate"]);
         assert_eq!(o.status, 2);
-        assert_eq!(o.text, "error: unknown command 'frobnicate'; try: find read ls status help");
+        assert_eq!(
+            o.text,
+            "error: unknown command 'frobnicate'; try: find read ls outline refs edit status help"
+        );
         assert!(!o.idable);
     }
 

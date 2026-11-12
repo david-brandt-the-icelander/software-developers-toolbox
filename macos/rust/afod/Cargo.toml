@@ -27,6 +27,18 @@ memchr = "2"
 regex = "1"
 # MCP JSON-RPC messages.
 serde_json = "1"
+# Exact syntax trees for symbol outlines.
+tree-sitter = "0.26"
+# C grammar for outlines.
+tree-sitter-c = "0.24.2"
+# JavaScript grammar for outlines.
+tree-sitter-javascript = "0.25.0"
+# Python grammar for outlines.
+tree-sitter-python = "0.25.0"
+# Rust grammar for outlines.
+tree-sitter-rust = "0.24.2"
+# TypeScript and TSX grammars for outlines.
+tree-sitter-typescript = "0.23.2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
