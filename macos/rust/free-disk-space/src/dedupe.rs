@@ -90,17 +90,17 @@ mod apfs {
 
 #[cfg(not(target_os = "macos"))]
 mod apfs {
-    // Stand-ins that fail on systems without APFS clones.
+    // Plain-copy stand-ins so the dedupe flow can run under FDS_FORCE on systems without APFS clones.
     use std::path::Path;
 
-    // Report that cloning is unsupported here.
-    pub fn clone_file(_src: &Path, _dst: &Path) -> std::io::Result<()> {
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "clonefile requires macOS"))
+    // Copy a file's bytes, since there is no copy-on-write clone here.
+    pub fn clone_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+        std::fs::copy(src, dst).map(|_| ())
     }
 
-    // Report that metadata copying is unsupported here.
-    pub fn copy_metadata(_src: &Path, _dst: &Path) -> std::io::Result<()> {
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "copyfile requires macOS"))
+    // Copy a file's permission bits.
+    pub fn copy_metadata(src: &Path, dst: &Path) -> std::io::Result<()> {
+        std::fs::set_permissions(dst, std::fs::metadata(src)?.permissions())
     }
 }
 
@@ -335,4 +335,345 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
     }
     println!("Overall free-space change on the volume: {}", c("1", &human_i(free1 - free0)));
     println!("(These can differ: files that already shared blocks, snapshots and other writers affect free space.)");
+}
+
+// Unit tests for clone dedupe.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::{age_tree, chmod, is_root, Sandbox};
+    use std::path::PathBuf;
+
+    // Build dedupe options for the sandbox state that include temp-dir files.
+    fn opts(sb: &Sandbox, apply: bool) -> DedupeOpts {
+        DedupeOpts { state: sb.state(), apply, include_system: true, min_size: "1".into(), sample: None }
+    }
+
+    // Write n identical same-named files in separate directories and record them in the state file.
+    fn dups(sb: &Sandbox, n: usize) -> Vec<PathBuf> {
+        let db = open_db(&sb.state(), true);
+        let mut out = Vec::new();
+        for i in 0..n {
+            let path = sb.write(&format!("data/d{i}/same.txt"), &[b'q'; 6000]);
+            age_tree(&path);
+            crate::util::set_times(
+                &path,
+                1_000_000_000_000_000_000,
+                1_000_000_000_000_000_000 + i as i64 * 1_000_000_000,
+            )
+            .unwrap();
+            chmod(&path, 0o644);
+            db.execute(
+                "INSERT INTO files(path,name,size) VALUES(?,?,?)",
+                params![path.to_str().unwrap(), "same.txt", 6000],
+            )
+            .unwrap();
+            out.push(path);
+        }
+        out
+    }
+
+    // Install fake lsof and ps tools whose output makes the snapshot usable, listing the given open paths.
+    fn fake_procs(sb: &Sandbox, open: &[&Path]) {
+        let lines: String = open.iter().map(|p| format!("n{}\\n", p.display())).collect();
+        sb.tool("lsof", &format!("printf 'fcwd\\nn/nowhere\\nf3\\n{lines}'"));
+        sb.tool("ps", "echo idle");
+    }
+
+    // Install a fake xattr that lists the given names for the source and temp paths and removes with an exit code.
+    fn fake_xattr(sb: &Sandbox, source: &str, temp: &str, delete_exit: i32) {
+        sb.tool(
+            "xattr",
+            &format!(
+                "if [ \"$1\" = \"-d\" ]; then exit {delete_exit}; fi\ncase \"$1\" in *.tmp) echo '{temp}';; *) echo '{source}';; esac"
+            ),
+        );
+    }
+
+    // Check the system-file test by owner and by path prefix.
+    #[test]
+    fn test_is_system_file_rules() {
+        let sb = Sandbox::new();
+        let own = sb.write("mine", b"x");
+        let md = fs::symlink_metadata(&own).unwrap();
+        assert_eq!(is_system_file("/home/me/f", &md), is_root());
+        assert!(is_system_file("/Library/x", &md));
+        assert!(is_system_file("/usr/lib/x", &md));
+        let etc = fs::symlink_metadata("/etc").unwrap();
+        assert!(is_system_file("/home/me/f", &etc));
+    }
+
+    // Check metadata syncing removes extra attributes and reports failures.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_sync_metadata_cases() {
+        let sb = Sandbox::new();
+        let (src, dst) = (sb.write("src", b"x"), sb.write("dst.tmp", b"y"));
+        chmod(&src, 0o640);
+        fake_xattr(&sb, "a", "a", 0);
+        sync_metadata(&src, &dst).unwrap();
+        assert_eq!(fs::metadata(&dst).unwrap().mode() & 0o777, 0o640);
+        fake_xattr(&sb, "a", "a\nextra", 0);
+        sync_metadata(&src, &dst).unwrap();
+        fake_xattr(&sb, "a", "a\nextra", 1);
+        assert!(sync_metadata(&src, &dst).unwrap_err().to_string().contains("cannot remove xattr extra"));
+        sb.tool("xattr", "exit 1");
+        assert!(sync_metadata(&src, &dst).is_err());
+        assert!(sync_metadata(&sb.path("none"), &dst).is_err());
+    }
+
+    // Check which recorded files are kept and which are replaceable.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_members_filters() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 6);
+        fake_procs(&sb, &[&files[4]]);
+        let snap = Snapshot::capture();
+        fs::hard_link(&files[2], sb.path("data/link")).unwrap();
+        fs::remove_file(&files[5]).unwrap();
+        sb.dir("data/adir");
+        let mut rows: Vec<(String, bool)> =
+            files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+        rows[1].1 = true;
+        rows.push((sb.path("data/adir").to_string_lossy().into_owned(), false));
+        let out = members(rows.clone(), 6000, &opts(&sb, true), &snap);
+        let flags: Vec<(String, bool)> = out
+            .iter()
+            .map(|m| {
+                (
+                    Path::new(&m.path).parent().unwrap().file_name().unwrap().to_string_lossy().into_owned(),
+                    m.replaceable,
+                )
+            })
+            .collect();
+        assert_eq!(
+            flags,
+            [
+                ("d0".into(), true),
+                ("d1".into(), false),
+                ("d2".into(), false),
+                ("d3".into(), true),
+                ("d4".into(), false)
+            ]
+        );
+        assert!(members(rows.clone(), 1, &opts(&sb, true), &snap).is_empty());
+        let strict = DedupeOpts { include_system: false, ..opts(&sb, true) };
+        assert!(members(rows.clone(), 6000, &strict, &snap).is_empty());
+        util::set_flags(&[util::UF_IMMUTABLE]);
+        assert!(members(rows, 6000, &opts(&sb, true), &snap).is_empty());
+    }
+
+    // Check unwritable files and directories are kept but not replaced.
+    #[test]
+    fn test_members_unwritable() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        let files = dups(&sb, 2);
+        fake_procs(&sb, &[]);
+        chmod(&files[0], 0o444);
+        chmod(files[1].parent().unwrap(), 0o555);
+        let rows = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+        let out = members(rows, 6000, &opts(&sb, true), &Snapshot::capture());
+        assert_eq!(out.iter().map(|m| m.replaceable).collect::<Vec<_>>(), [false, false]);
+        chmod(files[1].parent().unwrap(), 0o755);
+    }
+
+    // Check planning picks keepers and targets and ignores unusable groups.
+    #[test]
+    fn test_plan_groups() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 3);
+        fake_procs(&sb, &[]);
+        let snap = Snapshot::capture();
+        let build = |paths: &[&PathBuf], cloned: bool| {
+            let rows = paths.iter().map(|p| (p.to_string_lossy().into_owned(), cloned)).collect();
+            members(rows, 6000, &opts(&sb, true), &snap)
+        };
+        let plans = plan(build(&[&files[0], &files[1], &files[2]], false));
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].1, files[0].to_string_lossy());
+        assert_eq!(plans[0].2.len(), 2);
+        assert!(plan(build(&[&files[0]], false)).is_empty());
+        assert!(plan(build(&[&files[0], &files[1]], true)).is_empty());
+        let mut mixed = build(&[&files[0], &files[1]], false);
+        mixed[0].replaceable = false;
+        let plans = plan(mixed);
+        assert_eq!((plans[0].1.as_str(), plans[0].2.len()), (files[0].to_str().unwrap(), 1));
+        let odd = sb.write("data/odd/same.txt", &[b'z'; 6000]);
+        let mut group = build(&[&files[0], &files[1], &odd], false);
+        group[0].replaceable = false;
+        group[1].replaceable = false;
+        let plans = plan(group);
+        assert!(plans.is_empty());
+        let mut gone = build(&[&files[0], &files[1]], false);
+        fs::remove_file(&files[0]).unwrap();
+        gone.truncate(2);
+        assert!(plan(gone).is_empty());
+    }
+
+    // Check every outcome of the verified clone swap.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_clone_verified_outcomes() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 2);
+        let (keeper, target) = (&files[0], &files[1]);
+        let tmp = util::temp_beside(target);
+        let digest = util::sha256(keeper).unwrap();
+        let other = sb.write("data/other", b"o");
+        chmod(&other, 0o600);
+        let st = || fs::symlink_metadata(target).unwrap();
+        let go = |st: &Metadata, digest: &str| {
+            let r = clone_verified(keeper, target, &tmp, st, digest);
+            util::remove_temp(&tmp);
+            r
+        };
+        fake_xattr(&sb, "", "", 0);
+        assert_eq!(
+            go(&fs::symlink_metadata(&other).unwrap(), &digest).unwrap(),
+            Some("permissions/ownership differ")
+        );
+        assert_eq!(go(&st(), "wrong").unwrap(), Some("content hash mismatch"));
+        let stale = st();
+        util::set_times(target, 1_000_000_000_000_000_000, 1_500_000_000_000_000_000).unwrap();
+        assert_eq!(go(&stale, &digest).unwrap(), Some("changed during dedupe"));
+        fake_xattr(&sb, "keep", "", 0);
+        assert_eq!(go(&st(), &digest).unwrap(), Some("extended attributes differ"));
+        fake_xattr(&sb, "", "", 0);
+        assert_eq!(go(&st(), &digest).unwrap(), None);
+        assert_eq!(fs::read(target).unwrap(), fs::read(keeper).unwrap());
+        assert!(!tmp.exists());
+        assert!(go(&st(), &digest).is_ok());
+        assert!(clone_verified(&sb.path("none"), target, &tmp, &st(), &digest).is_err());
+    }
+
+    // Check swapping a duplicate reports success and both failure kinds.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_clone_over_results() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 2);
+        fake_procs(&sb, &[]);
+        fake_xattr(&sb, "", "", 0);
+        let snap = Snapshot::capture();
+        let rows = vec![(files[1].to_string_lossy().into_owned(), false)];
+        let target = members(rows, 6000, &opts(&sb, true), &snap).remove(0);
+        let keeper = files[0].to_string_lossy().into_owned();
+        let digest = util::sha256(&files[0]).unwrap();
+        assert_eq!(clone_over(&keeper, &target, "bad"), Err("content hash mismatch".to_string()));
+        assert_eq!(clone_over(&keeper, &target, &digest), Ok(()));
+        sb.tool("xattr", "exit 1");
+        assert!(clone_over(&keeper, &target, &digest).unwrap_err().contains("xattr failed"));
+    }
+
+    // Check group handling in a dry run, an applied run, failures, sampling and interruption.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_dedupe_group_modes() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 5);
+        fake_procs(&sb, &[]);
+        fake_xattr(&sb, "", "", 0);
+        let snap = Snapshot::capture();
+        let group = |o: &DedupeOpts| {
+            let rows = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+            members(rows, 6000, o, &snap)
+        };
+        let db = open_db(&sb.state(), false);
+        let dry = opts(&sb, false);
+        let mut tally = Tally::default();
+        assert!(dedupe_group(&db, group(&dry), &dry, &mut tally));
+        assert_eq!((tally.files, tally.failed), (4, 0));
+        let sampled = DedupeOpts { sample: Some(2), ..opts(&sb, true) };
+        let mut tally = Tally::default();
+        assert!(!dedupe_group(&db, group(&sampled), &sampled, &mut tally));
+        assert_eq!(tally.files, 2);
+        let cloned: i64 = db.query_row("SELECT SUM(cloned) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(cloned, 2);
+        sb.tool("xattr", "exit 1");
+        let apply = opts(&sb, true);
+        let mut tally = Tally::default();
+        assert!(!dedupe_group(&db, group(&apply), &apply, &mut tally));
+        assert_eq!((tally.failed, tally.files), (3, 0));
+        util::set_stop(true);
+        assert!(!dedupe_group(&db, group(&dry), &dry, &mut Tally::default()));
+    }
+
+    // Check a dry run past fifty duplicates stops printing but keeps counting.
+    #[test]
+    fn test_dedupe_group_many_dry_run() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 53);
+        fake_procs(&sb, &[]);
+        let snap = Snapshot::capture();
+        let rows = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+        let dry = opts(&sb, false);
+        let group = members(rows, 6000, &dry, &snap);
+        let db = open_db(&sb.state(), false);
+        let mut tally = Tally::default();
+        assert!(dedupe_group(&db, group, &dry, &mut tally));
+        assert_eq!(tally.files, 52);
+    }
+
+    // Check name groups and group rows from the state file, including a broken schema.
+    #[test]
+    fn test_groups_and_rows() {
+        let sb = Sandbox::new();
+        dups(&sb, 3);
+        let db = open_db(&sb.state(), false);
+        db.execute("INSERT INTO files(path,name,size,cloned) VALUES('/solo','solo',9,0)", []).unwrap();
+        assert_eq!(groups(&db, 1), [("same.txt".to_string(), 6000)]);
+        assert!(groups(&db, 7000).is_empty());
+        assert_eq!(groups(&db, 0).len(), 1);
+        assert_eq!(group_rows(&db, "same.txt", 6000).len(), 3);
+        db.execute_batch(
+            "DROP INDEX files_name; DROP TABLE files; CREATE TABLE files(path TEXT PRIMARY KEY, x INT);
+             CREATE INDEX files_name ON files(path);",
+        )
+        .unwrap();
+        assert!(groups(&db, 1).is_empty());
+        assert!(group_rows(&db, "same.txt", 6000).is_empty());
+    }
+
+    // Check the dedupe command refuses bad states and options.
+    #[test]
+    fn test_cmd_dedupe_guards() {
+        let sb = Sandbox::new();
+        let fails = |o: DedupeOpts| std::panic::catch_unwind(|| cmd_dedupe(&o)).is_err();
+        assert!(fails(opts(&sb, true)));
+        std::env::set_var("FDS_FORCE", "1");
+        assert!(fails(opts(&sb, false)));
+        drop(open_db(&sb.state(), true));
+        assert!(fails(opts(&sb, false)));
+        dups(&sb, 2);
+        assert!(fails(DedupeOpts { min_size: "big".into(), ..opts(&sb, false) }));
+        fake_procs(&sb, &[]);
+        sb.tool("lsof", "true");
+        assert!(fails(opts(&sb, true)));
+    }
+
+    // Check the dedupe command end to end in dry-run and applied modes.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_cmd_dedupe_runs() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        let files = dups(&sb, 3);
+        fake_procs(&sb, &[]);
+        fake_xattr(&sb, "", "", 0);
+        util::set_tty(true);
+        cmd_dedupe(&opts(&sb, false));
+        cmd_dedupe(&DedupeOpts { include_system: false, ..opts(&sb, false) });
+        assert!(fs::metadata(&files[1]).unwrap().ino() != fs::metadata(&files[0]).unwrap().ino());
+        util::set_tty(false);
+        cmd_dedupe(&opts(&sb, true));
+        let db = open_db(&sb.state(), false);
+        let cloned: i64 = db.query_row("SELECT SUM(cloned) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(cloned, 2);
+        sb.tool("xattr", "exit 1");
+        cmd_dedupe(&DedupeOpts { sample: Some(1), ..opts(&sb, true) });
+    }
 }

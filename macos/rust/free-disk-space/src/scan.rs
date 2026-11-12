@@ -11,6 +11,9 @@ use serde_json::{json, Value};
 
 use crate::util::{self, c, die, hms, human_i, now};
 
+// Seconds between progress commits during a scan.
+const COMMIT_EVERY: f64 = 2.0;
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS dirs(id INTEGER PRIMARY KEY, path TEXT UNIQUE, done INTEGER DEFAULT 0);
@@ -374,7 +377,7 @@ fn scan_entry(
 }
 
 // Process pending directories until done or interrupted and return true if finished.
-fn run_scan(db: &Connection, cfg: &Cfg) -> bool {
+fn run_scan(db: &Connection, cfg: &Cfg, commit_every: f64) -> bool {
     let mut stats = meta_get(db, "stats").map(|v| Stats::from_json(&v)).unwrap_or_default();
     let prior = meta_get(db, "elapsed").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let cutoff = now() - cfg.min_age_days as f64 * 86400.0;
@@ -410,7 +413,7 @@ fn run_scan(db: &Connection, cfg: &Cfg) -> bool {
         }
         let _ = db.execute("UPDATE dirs SET done=1 WHERE id=?", [id]);
         stats.dirs += 1;
-        if now() - last_commit > 2.0 {
+        if now() - last_commit > commit_every {
             commit(&stats);
             last_commit = now();
         }
@@ -507,7 +510,7 @@ pub fn cmd_new(o: &NewOpts) {
 // Run the scan loop and report whether it completed or paused.
 fn finish_scan(db: &Connection, cfg: &Cfg) {
     util::install_sigint();
-    let done = run_scan(db, cfg);
+    let done = run_scan(db, cfg, COMMIT_EVERY);
     if !done {
         println!("{}Run `resume` to continue.", c("33", "Scan paused. "));
         return;
@@ -600,10 +603,46 @@ pub fn cmd_list(state: &str, status: &str, top: i64) {
     }
 }
 
-// Unit tests for scan filtering.
+// Unit tests for scan filtering and the scan commands.
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit::{chmod, is_root, Sandbox};
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    // Build scan settings rooted at a path that accept any small old file.
+    fn cfg(root: &Path) -> Cfg {
+        let dev = fs::metadata(root).map(|m| m.dev()).unwrap_or(0);
+        Cfg {
+            root: root.to_string_lossy().into_owned(),
+            dev,
+            min_size: 1,
+            min_age_days: 0,
+            min_pct: 25,
+            cross: false,
+            exclude: Vec::new(),
+        }
+    }
+
+    // Build options for a new scan of a root with the sandbox state file.
+    fn new_opts(sb: &Sandbox, root: &Path) -> NewOpts {
+        NewOpts {
+            state: sb.state(),
+            root: root.to_string_lossy().into_owned(),
+            min_size: "1".into(),
+            min_age_days: 0,
+            min_savings_pct: 25,
+            cross_devices: false,
+            exclude: Vec::new(),
+            force: false,
+        }
+    }
+
+    // Find one directory entry by name.
+    fn entry(dir: &Path, name: &str) -> fs::DirEntry {
+        fs::read_dir(dir).unwrap().flatten().find(|e| e.file_name() == name).expect("entry")
+    }
 
     // Check prefix matching respects path boundaries.
     #[test]
@@ -613,13 +652,304 @@ mod tests {
         assert!(!under("/usrlocal", "/usr"));
     }
 
-    // Check that highly compressible data gets a low ratio.
+    // Check that highly compressible data gets a low ratio and bad inputs give none.
     #[test]
     fn test_sample_ratio_compressible() {
-        let path = std::env::temp_dir().join(format!("fds-ratio-{}", std::process::id()));
-        fs::write(&path, vec![b'a'; 1 << 20]).unwrap();
-        let ratio = sample_ratio(&path, 1 << 20).unwrap();
-        fs::remove_file(&path).unwrap();
-        assert!(ratio < 0.05);
+        let sb = Sandbox::new();
+        let small = sb.write("small", &vec![b'a'; 1 << 20]);
+        assert!(sample_ratio(&small, 1 << 20).unwrap() < 0.05);
+        let tiny = sb.write("tiny", b"hello hello hello hello");
+        assert!(sample_ratio(&tiny, 23).unwrap() > 0.0);
+        let mut noise = vec![0u8; 1 << 19];
+        let mut x = 12345u32;
+        for b in noise.iter_mut() {
+            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+            *b = (x >> 24) as u8;
+        }
+        let big = sb.write("big", &noise);
+        assert!(sample_ratio(&big, noise.len() as u64).unwrap() > 0.9);
+        let empty = sb.write("empty", b"");
+        assert!(sample_ratio(&empty, 0).is_none());
+        assert!(sample_ratio(&sb.path("missing"), 10).is_none());
+        let dir = sb.dir("adir");
+        assert!(sample_ratio(&dir, 10).is_none());
+    }
+
+    // Check settings and totals survive a JSON round trip and reject partial settings.
+    #[test]
+    fn test_cfg_stats_json() {
+        let sb = Sandbox::new();
+        let mut c = cfg(&sb.root);
+        c.exclude = vec!["/x".into()];
+        let back = Cfg::from_json(&c.to_json()).unwrap();
+        assert_eq!((back.root, back.min_size, back.exclude), (c.root.clone(), 1, vec!["/x".to_string()]));
+        assert!(Cfg::from_json(&json!({"root": "/"})).is_none());
+        let stats = Stats { dirs: 1, files: 2, bytes: 3, errors: 4, cands: 5, est: 6 };
+        let back = Stats::from_json(&stats.to_json());
+        assert_eq!(
+            (back.dirs, back.files, back.bytes, back.errors, back.cands, back.est),
+            (1, 2, 3, 4, 5, 6)
+        );
+        assert_eq!(Stats::from_json(&json!({})).files, 0);
+    }
+
+    // Check opening the state database creates, reuses and rejects paths.
+    #[test]
+    fn test_open_db_cases() {
+        let sb = Sandbox::new();
+        let path = sb.path("nested/dir/state.sqlite3").to_string_lossy().into_owned();
+        drop(open_db(&path, true));
+        drop(open_db("", true));
+        let db = open_db(&path, false);
+        meta_set(&db, "k", &json!({"a": 1}));
+        assert_eq!(meta_get(&db, "k"), Some(json!({"a": 1})));
+        assert_eq!(meta_get(&db, "absent"), None);
+        assert!(!finished(&db));
+        meta_set(&db, "finished", &Value::Null);
+        assert!(!finished(&db));
+        meta_set(&db, "finished", &json!(5));
+        assert!(finished(&db));
+        db.execute("INSERT INTO meta(key,value) VALUES('bad','{')", []).unwrap();
+        assert_eq!(meta_get(&db, "bad"), None);
+        let missing = sb.path("missing.sqlite3").to_string_lossy().into_owned();
+        assert!(std::panic::catch_unwind(|| open_db(&missing, false)).is_err());
+        let as_dir = sb.dir("isdir").to_string_lossy().into_owned();
+        assert!(std::panic::catch_unwind(|| open_db(&as_dir, true)).is_err());
+    }
+
+    // Check every reason a file is rejected as a candidate, and the accepted case.
+    #[test]
+    fn test_consider_decisions() {
+        let sb = Sandbox::new();
+        let c = cfg(&sb.root);
+        let cutoff = util::now() + 100.0;
+        let check = |name: &str, c: &Cfg, cutoff: f64| {
+            let p = sb.path(name);
+            consider(&p, name, &fs::symlink_metadata(&p).unwrap(), c, cutoff)
+        };
+        sb.write("good.txt", &vec![b'a'; 1 << 20]);
+        assert!(check("good.txt", &c, cutoff).unwrap() > 128 * 1024);
+        assert!(check("good.txt", &c, 1.0).is_none());
+        sb.dir("adir");
+        assert!(check("adir", &c, cutoff).is_none());
+        let big_min = Cfg { min_size: 1 << 30, ..cfg(&sb.root) };
+        assert!(check("good.txt", &big_min, cutoff).is_none());
+        fs::hard_link(sb.path("good.txt"), sb.path("linked.txt")).unwrap();
+        assert!(check("linked.txt", &c, cutoff).is_none());
+        sb.write("pic.JPG", &vec![b'a'; 1 << 20]);
+        assert!(check("pic.JPG", &c, cutoff).is_none());
+        sb.write("id_rsa", &vec![b'a'; 1 << 20]);
+        sb.write("id_other", &vec![b'a'; 1 << 20]);
+        sb.write(".DS_Store", &vec![b'a'; 1 << 20]);
+        assert!(check("id_rsa", &c, cutoff).is_none());
+        assert!(check("id_other", &c, cutoff).is_none());
+        assert!(check(".DS_Store", &c, cutoff).is_none());
+        sb.write("noext", &vec![b'a'; 1 << 20]);
+        assert!(check("noext", &c, cutoff).is_some());
+        let sparse = fs::File::create(sb.path("sparse.txt")).unwrap();
+        sparse.set_len(1 << 24).unwrap();
+        assert!(check("sparse.txt", &c, cutoff).is_none());
+        sb.write("empty.txt", b"");
+        assert!(check("empty.txt", &c, cutoff).is_none());
+        let picky = Cfg { min_pct: 99, ..cfg(&sb.root) };
+        let mut noise = vec![0u8; 1 << 19];
+        let mut x = 7u32;
+        for b in noise.iter_mut() {
+            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+            *b = (x >> 24) as u8;
+        }
+        sb.write("noise.txt", &noise);
+        assert!(check("noise.txt", &picky, cutoff).is_none());
+        sb.write("small.txt", &vec![b'a'; 4000]);
+        assert!(check("small.txt", &c, cutoff).is_none());
+        #[cfg(not(target_os = "macos"))]
+        {
+            sb.write("flagged.txt", &vec![b'a'; 1 << 20]);
+            assert!(check("flagged.txt", &c, cutoff).is_some());
+            util::set_flags(&[util::UF_COMPRESSED]);
+            assert!(check("flagged.txt", &c, cutoff).is_none());
+        }
+    }
+
+    // Check directory exclusion by name, suffix, prefix and user exclude list.
+    #[test]
+    fn test_dir_excluded_rules() {
+        let c = Cfg { exclude: vec!["/work/skip".into()], ..cfg(Path::new("/")) };
+        assert!(dir_excluded("/a/.ssh", ".ssh", &c));
+        assert!(dir_excluded("/a/My.app", "My.app", &c));
+        assert!(dir_excluded("/usr/lib", "lib", &c));
+        assert!(dir_excluded("/work/skip/x", "x", &c));
+        assert!(!dir_excluded("/work/ok", "ok", &c));
+    }
+
+    // Check each kind of directory entry is handled by scan_entry.
+    #[test]
+    fn test_scan_entry_kinds() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        let db = open_db(&sb.state(), true);
+        let c = cfg(&root);
+        let cutoff = util::now() + 100.0;
+        let mut stats = Stats::default();
+        sb.write("root/good.txt", &vec![b'a'; 1 << 20]);
+        sb.write("root/small.txt", b"tiny");
+        sb.dir("root/sub");
+        sb.dir("root/.ssh");
+        std::os::unix::fs::symlink(&root, root.join("link")).unwrap();
+        let fifo = std::ffi::CString::new(root.join("fifo").to_str().unwrap()).unwrap();
+        // SAFETY: valid C path and mode.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        for name in ["good.txt", "small.txt", "sub", ".ssh", "link", "fifo"] {
+            assert!(scan_entry(&db, &entry(&root, name), &c, cutoff, &mut stats).is_ok());
+        }
+        assert_eq!((stats.files, stats.cands), (2, 1));
+        let dirs: i64 = db.query_row("SELECT COUNT(*) FROM dirs", [], |r| r.get(0)).unwrap();
+        assert_eq!(dirs, 1);
+        scan_entry(&db, &entry(&root, "good.txt"), &c, cutoff, &mut stats).unwrap();
+        assert_eq!(stats.cands, 1);
+        let other_dev = Cfg { dev: c.dev + 1, ..cfg(&root) };
+        scan_entry(&db, &entry(&root, "sub"), &other_dev, cutoff, &mut stats).unwrap();
+        let cross = Cfg { cross: true, ..other_dev };
+        scan_entry(&db, &entry(&root, "sub"), &cross, cutoff, &mut stats).unwrap();
+        fs::write(root.join(OsStr::from_bytes(b"bad\xff")), b"x").unwrap();
+        assert!(scan_entry(&db, &entry(&root, "good.txt"), &c, cutoff, &mut stats).is_ok());
+        let bad =
+            fs::read_dir(&root).unwrap().flatten().find(|e| e.file_name().as_bytes() == b"bad\xff").unwrap();
+        assert!(scan_entry(&db, &bad, &c, cutoff, &mut stats).is_err());
+        db.execute_batch("DROP TABLE dirs; DROP TABLE files; DROP TABLE cands").unwrap();
+        assert!(scan_entry(&db, &entry(&root, "sub"), &c, cutoff, &mut stats).is_err());
+        assert!(scan_entry(&db, &entry(&root, "small.txt"), &c, cutoff, &mut stats).is_err());
+    }
+
+    // Check a candidate insert failure after recording the file is reported.
+    #[test]
+    fn test_scan_entry_candidate_insert_fails() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        sb.write("root/good.txt", &vec![b'a'; 1 << 20]);
+        let db = open_db(&sb.state(), true);
+        db.execute_batch("DROP TABLE cands").unwrap();
+        let mut stats = Stats::default();
+        let result = scan_entry(&db, &entry(&root, "good.txt"), &cfg(&root), util::now() + 100.0, &mut stats);
+        assert!(result.is_err());
+    }
+
+    // Check a full scan finds candidates, skips excluded paths and can run again over the same state.
+    #[test]
+    fn test_cmd_new_full_scan() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        sb.write("root/a/good.txt", &vec![b'a'; 1 << 20]);
+        sb.write("root/skip/also.txt", &vec![b'a'; 1 << 20]);
+        sb.write("root/b/tiny", b"x");
+        let mut o = new_opts(&sb, &root);
+        o.exclude = vec![sb.path("root/skip").to_string_lossy().into_owned()];
+        cmd_new(&o);
+        let db = open_db(&sb.state(), false);
+        let cands: i64 = db.query_row("SELECT COUNT(*) FROM cands", [], |r| r.get(0)).unwrap();
+        assert_eq!(cands, 1);
+        assert!(finished(&db));
+        drop(db);
+        cmd_new(&o);
+        cmd_status(&sb.state());
+        cmd_list(&sb.state(), "pending", 10);
+        cmd_list(&sb.state(), "done", 10);
+        cmd_resume(&sb.state());
+    }
+
+    // Check new refuses bad roots and unfinished scans unless forced.
+    #[test]
+    fn test_cmd_new_guards() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        sb.write("root/f", b"x");
+        let file = sb.write("afile", b"x");
+        let bad = |o: NewOpts| std::panic::catch_unwind(|| cmd_new(&o)).is_err();
+        assert!(bad(new_opts(&sb, &sb.path("missing"))));
+        assert!(bad(new_opts(&sb, &file)));
+        let mut o = new_opts(&sb, &root);
+        util::set_stop(true);
+        cmd_new(&o);
+        assert!(bad(new_opts(&sb, &root)));
+        o.force = true;
+        util::set_stop(false);
+        cmd_new(&o);
+        assert!(finished(&open_db(&sb.state(), false)));
+    }
+
+    // Check resume continues a paused scan and rejects missing configuration.
+    #[test]
+    fn test_cmd_resume_cases() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        sb.write("root/f", &vec![b'a'; 1 << 20]);
+        drop(open_db(&sb.state(), true));
+        let state = sb.state();
+        assert!(std::panic::catch_unwind(|| cmd_resume(&state)).is_err());
+        util::set_stop(true);
+        cmd_new(&new_opts(&sb, &root));
+        cmd_status(&sb.state());
+        util::set_stop(false);
+        cmd_resume(&sb.state());
+        assert!(finished(&open_db(&sb.state(), false)));
+        cmd_resume(&sb.state());
+    }
+
+    // Check the scan loop commits on its interval, reports unreadable directories and shows tty progress.
+    #[test]
+    fn test_run_scan_commit_errors_and_tty() {
+        let sb = Sandbox::new();
+        let root = sb.dir("root");
+        sb.write("root/a/f", &vec![b'a'; 1 << 20]);
+        sb.dir("root/gone");
+        fs::write(root.join(OsStr::from_bytes(b"bad\xff")), b"x").unwrap();
+        let db = open_db(&sb.state(), true);
+        db.execute("INSERT INTO dirs(path) VALUES(?)", [root.to_str().unwrap()]).unwrap();
+        db.execute("INSERT INTO dirs(path) VALUES(?)", [sb.path("nonexistent").to_str().unwrap()]).unwrap();
+        util::set_tty(true);
+        assert!(run_scan(&db, &cfg(&root), -1.0));
+        let stats = Stats::from_json(&meta_get(&db, "stats").unwrap());
+        assert_eq!((stats.dirs, stats.errors), (4, 2));
+        util::set_tty(false);
+        assert!(run_scan(&db, &cfg(&root), 2.0));
+    }
+
+    // Check unreadable directories are counted as scan errors.
+    #[test]
+    fn test_run_scan_unreadable_dir() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        let root = sb.dir("root");
+        sb.dir("root/locked");
+        chmod(&sb.path("root/locked"), 0o000);
+        let db = open_db(&sb.state(), true);
+        db.execute("INSERT INTO dirs(path) VALUES(?)", [root.to_str().unwrap()]).unwrap();
+        assert!(run_scan(&db, &cfg(&root), 2.0));
+        assert_eq!(Stats::from_json(&meta_get(&db, "stats").unwrap()).errors, 1);
+        chmod(&sb.path("root/locked"), 0o755);
+    }
+
+    // Check status and list output for populated and empty state files.
+    #[test]
+    fn test_status_and_list_output() {
+        let sb = Sandbox::new();
+        let db = open_db(&sb.state(), true);
+        cmd_status(&sb.state());
+        cmd_list(&sb.state(), "pending", 5);
+        meta_set(&db, "cfg", &cfg(&sb.root).to_json());
+        db.execute_batch(
+            "INSERT INTO cands(path,size,est_saved,status,note,saved) VALUES
+              ('/a',100,50,'pending',NULL,0),('/b',200,90,'pending','',0),
+              ('/c',300,80,'done','ok note',70),('/d',10,5,'failed',NULL,0);
+             INSERT INTO files(path,name,size,cloned) VALUES ('/a','a',1,1),('/b','b',1,0);
+             INSERT INTO dirs(path) VALUES ('/x');",
+        )
+        .unwrap();
+        drop(db);
+        cmd_status(&sb.state());
+        cmd_list(&sb.state(), "pending", 5);
+        cmd_list(&sb.state(), "done", 1);
     }
 }

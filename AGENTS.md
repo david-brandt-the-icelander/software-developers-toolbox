@@ -13,6 +13,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Build: `cargo build --release`
 - Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
+- Branch coverage (nightly + cargo-llvm-cov; run as non-root so permission tests execute; target 95% of non-test code): `cargo +nightly llvm-cov --branch -p free-disk-space`
 - CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries (`release.yml`).
 
 ## Skills
