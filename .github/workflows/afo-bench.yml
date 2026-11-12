@@ -39,9 +39,11 @@ jobs:
         if: always() && matrix.variant == 'static'
         working-directory: macos/c/afo
         run: |
-          otool -l build/exit0 | head -60 || true
-          codesign -dv build/exit0 || true
+          otool -hv build/exit0 || true
+          otool -l build/exit0 | grep -E "^Load command|cmd |segname|entry|pc |vmaddr|dylinker|platform|minos" || true
+          codesign -vvv build/exit0 || true
           ./build/exit0 || echo "exit0 status $?"
+          sudo log show --last 1m --predicate 'eventMessage CONTAINS "exit0"' --style compact | tail -15 || true
       - name: Benchmark
         if: success()
         working-directory: macos/c/afo
