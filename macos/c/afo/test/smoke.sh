@@ -5,6 +5,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$here/..
 afo=$root/build/afo
 afod=${AFOD:-$root/../../rust/target/release/afod}
+# Absolute, because the checks below cd into a work directory and autostart runs it from there.
+case $afod in /*) ;; *) afod=$(pwd)/$afod ;; esac
 tmp=$(mktemp -d)
 dpid=
 cleanup() {
