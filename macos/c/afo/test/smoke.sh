@@ -17,7 +17,7 @@ trap cleanup EXIT
 fail() { echo "smoke: $*" >&2; exit 1; }
 
 # A daemon that never listens: the invoker must give up with a clear message.
-if AFO_SOCK=$tmp/none AFO_DAEMON=/bin/true "$afo" version 2>"$tmp/err"; then fail "expected failure without daemon"; fi
+if AFO_SOCK=$tmp/none AFO_DAEMON=/usr/bin/true "$afo" version 2>"$tmp/err"; then fail "expected failure without daemon"; fi
 grep -q "daemon did not start" "$tmp/err" || fail "missing 'daemon did not start': $(cat "$tmp/err")"
 
 export AFO_SOCK=$tmp/sock

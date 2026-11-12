@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 const MAX_FDS: usize = 4;
 const TICK_MS: i32 = 100;
 const FIRST_READ: usize = 4096;
+const CTL_WORDS: usize = 256;
 
 // Daemon settings.
 pub struct Config {
@@ -63,7 +64,7 @@ fn take_fds(msg: &libc::msghdr) -> Vec<OwnedFd> {
 // Receives bytes and any passed descriptors with one recvmsg call.
 fn recv_with_fds(sock: RawFd, buf: &mut [u8]) -> io::Result<(usize, Vec<OwnedFd>)> {
     let mut iov = libc::iovec { iov_base: buf.as_mut_ptr().cast(), iov_len: buf.len() };
-    let mut ctl = [0u64; 16];
+    let mut ctl = [0u64; CTL_WORDS];
     // SAFETY: msghdr is plain data for which all-zero is a valid value.
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
     msg.msg_iov = &mut iov;
@@ -76,7 +77,8 @@ fn recv_with_fds(sock: RawFd, buf: &mut [u8]) -> io::Result<(usize, Vec<OwnedFd>
         return Err(io::Error::last_os_error());
     }
     let fds = take_fds(&msg);
-    if msg.msg_flags & libc::MSG_CTRUNC != 0 || fds.len() > MAX_FDS {
+    let truncated = msg.msg_flags & libc::MSG_CTRUNC != 0;
+    if truncated | (fds.len() > MAX_FDS) {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "too many descriptors"));
     }
     Ok((n as usize, fds))
