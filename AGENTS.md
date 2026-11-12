@@ -13,6 +13,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Build: `cargo build --release`
 - Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
+- C invoker (`macos/c/afo/`): build the daemon first, then in that folder `make && sh test/smoke.sh`; `sh bench/run.sh` measures latency.
 - CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries (`release.yml`).
 
 ## Skills
@@ -20,4 +21,4 @@ Personal developer toolbox: small macOS command-line tools written in Rust.
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
 
 ## Layout
-- `macos/rust/<tool>/` one crate per tool; `agents/` agent docs and skills.
+- `macos/rust/<tool>/` one crate per tool; `macos/c/afo/` is the freestanding C invoker for `afod`; `agents/` agent docs and skills.

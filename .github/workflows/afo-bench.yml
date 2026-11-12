@@ -1,0 +1,38 @@
+# Manually run the afo phase 0 latency benchmark on macOS and Linux runners.
+name: afo bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Spawns per row
+        default: "3000"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, variant: libsystem }
+          - { os: macos-latest, variant: static }
+          - { os: ubuntu-latest, variant: native }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build daemon
+        working-directory: macos/rust
+        run: cargo build --release -p afod
+      - name: Build invoker (${{ matrix.variant }})
+        working-directory: macos/c/afo
+        run: make DARWIN_VARIANT=${{ matrix.variant }}
+      - name: Smoke test
+        working-directory: macos/c/afo
+        run: sh test/smoke.sh
+      - name: Benchmark
+        working-directory: macos/c/afo
+        run: sh bench/run.sh ${{ inputs.runs }}

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["fix-network", "free-disk-space"]
+members = ["afod", "fix-network", "free-disk-space"]
 
 [workspace.package]
 edition = "2021"

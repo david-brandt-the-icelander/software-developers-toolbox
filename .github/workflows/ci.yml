@@ -62,3 +62,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85
       - run: cargo check --workspace --locked
+
+  afo-c:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p afod --locked
+      - name: Build and smoke test the C invoker
+        working-directory: macos/c/afo
+        run: make && sh test/smoke.sh
