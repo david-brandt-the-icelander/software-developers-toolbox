@@ -5,7 +5,9 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 - [`fix-network`](macos/rust/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN.
 - [`free-disk-space`](macos/rust/free-disk-space/README.md): scan, compress, dedupe and clean up disk space.
 
-Build with `cd macos/rust && cargo build --release`, or download the universal binaries:
+- [`codeindexd`](macos/dotnet/codeindexd/README.md) (C#): MCP server that answers code questions for agents instead of grep and cat.
+
+Build the Rust tools with `cd macos/rust && cargo build --release`, or download the universal binaries:
 
 ```bash
 curl -fLO https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz
