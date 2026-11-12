@@ -10,6 +10,8 @@ public sealed record BlobData(string Oid, long Size, bool Binary, string Lang, i
 // Static analyser; results depend only on the bytes and the file extension.
 public static class BlobAnalyzer
 {
+    private const int MaxSymbolBytes = 2 * 1024 * 1024;
+
     private static readonly Dictionary<string, string> Langs = new(StringComparer.OrdinalIgnoreCase)
     {
         [".cs"] = "csharp", [".rs"] = "rust", [".ts"] = "typescript", [".tsx"] = "typescript", [".js"] = "javascript",
@@ -43,7 +45,7 @@ public static class BlobAnalyzer
         return bytes.Length > 0 && bytes[^1] != (byte)'\n' ? n + 1 : n;
     }
 
-    // Analyses a file's bytes; binary files get only an id and size.
+    // Analyses a file's bytes; binary files get only an id and size, oversized text skips symbols.
     public static BlobData Analyze(byte[] bytes, string path)
     {
         var oid = GitOid(bytes);
@@ -51,6 +53,25 @@ public static class BlobAnalyzer
         if (LooksBinary(bytes))
             return new BlobData(oid, bytes.Length, true, lang, 0, [], "binary", null, null);
         var lines = CountLines(bytes);
-        return new BlobData(oid, bytes.Length, false, lang, lines, Bloom.Build(bytes), $"{lang}, {lines} lines", null, null);
+        var bloom = Bloom.Build(bytes);
+        if (bytes.Length > MaxSymbolBytes)
+            return new BlobData(oid, bytes.Length, false, lang, lines, bloom, $"{lang}, {lines} lines (too large for symbols)", null, null);
+        var text = Encoding.UTF8.GetString(bytes);
+        var (syms, idents) = lang == "csharp" ? CSharpSymbols.Extract(text) : HeuristicSymbols.Extract(text, lang);
+        return new BlobData(oid, bytes.Length, false, lang, lines, bloom, Digest(lang, lines, syms), Sym.ToJson(syms), Sym.IdentsToJson(idents));
+    }
+
+    // Summarises a file in one line: language, size, its type or heading names, and a member count.
+    private static string Digest(string lang, int lines, List<Sym> syms)
+    {
+        var top = syms.Where(s => s.Kind is "class" or "struct" or "interface" or "record" or "enum" or "type" or "heading" && (s.Container == "" || lang == "csharp")).Select(s => s.Name).Distinct().Take(8).ToList();
+        var members = syms.Count(s => s.Kind is not ("namespace" or "class" or "struct" or "interface" or "record" or "enum" or "type" or "heading" or "impl" or "mod"));
+        var head = $"{lang}, {lines} lines";
+        var parts = new List<string>();
+        if (top.Count > 0)
+            parts.Add(string.Join(", ", top));
+        if (members > 0)
+            parts.Add($"{members} members");
+        return parts.Count == 0 ? head : $"{head}; {string.Join("; ", parts)}";
     }
 }

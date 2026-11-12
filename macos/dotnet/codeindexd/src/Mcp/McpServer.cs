@@ -21,7 +21,7 @@ public sealed class McpServer
     {
         _log = log;
         var set = new RootSet(roots);
-        ITool[] tools = [new FindFilesTool(set), new ReadTool(set), new SearchTool(set)];
+        ITool[] tools = [new FindFilesTool(set), new ReadTool(set), new SearchTool(set), new OutlineTool(set), new FindSymbolTool(set), new FindReferencesTool(set), new OverviewTool(set), new ChangedSinceTool(set)];
         _tools = tools.ToDictionary(t => t.Name);
     }
 

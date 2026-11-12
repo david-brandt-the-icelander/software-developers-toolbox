@@ -7,7 +7,7 @@ namespace CodeIndexd;
 // Thread-safe store; every operation opens a pooled connection and writes are serialised.
 public sealed class Store
 {
-    public const int ExtractorVersion = 2;
+    public const int ExtractorVersion = 3;
     private readonly string _cs;
     private readonly object _write = new();
 
@@ -146,6 +146,18 @@ public sealed class Store
         using var r = cmd.ExecuteReader();
         while (r.Read())
             list.Add(new BlobMeta(r.GetInt32(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3) == 1, r.GetString(4), r.GetInt32(5), (byte[])r["bloom"], r.GetString(7)));
+        return list;
+    }
+
+    // Yields every blob's id and symbols JSON, for building the in-memory name index.
+    public List<(int id, string json)> AllSymbols()
+    {
+        var list = new List<(int, string)>();
+        using var c = Open();
+        using var cmd = Bind(c, "SELECT id, symbols FROM blob WHERE symbols IS NOT NULL", []);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            list.Add((r.GetInt32(0), r.GetString(1)));
         return list;
     }
 

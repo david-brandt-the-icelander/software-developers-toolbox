@@ -95,14 +95,14 @@ public class ToolTests
     }
 
     [Fact]
-    // The server lists three tools and writes a log record that hides the pattern text.
+    // The server lists its tools and writes a log record that hides the pattern text.
     public void test_server_lists_tools_and_logs()
     {
         using var repo = new TempRepo(Files);
         var logFile = Path.Combine(repo.Dir, "..", $"log-{Guid.NewGuid():N}.jsonl");
         var server = new McpServer([repo.Root()], new UsageLog(logFile));
         var list = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}")!;
-        Assert.Equal(3, list["result"]!["tools"]!.AsArray().Count);
+        Assert.Equal(8, list["result"]!["tools"]!.AsArray().Count);
         var call = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search\",\"arguments\":{\"pattern\":\"needle\"}}}")!;
         Assert.False(call["result"]!["isError"]!.GetValue<bool>());
         var record = File.ReadAllText(logFile);

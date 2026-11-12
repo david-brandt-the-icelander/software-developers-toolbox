@@ -15,6 +15,7 @@ public sealed class Engine : IDisposable
     private readonly ConcurrentDictionary<string, BlobMeta> _byOid = new();
     private readonly ConcurrentDictionary<int, BlobMeta> _byId = new();
     private readonly object _blobLock = new();
+    private readonly ConcurrentDictionary<string, HashSet<int>> _symbolNames = new();
 
     public Store Store { get; }
     public bool Watch { get; }
@@ -32,6 +33,31 @@ public sealed class Engine : IDisposable
         Log = new UsageLog(System.IO.Path.Combine(stateDir, "usage.jsonl"));
         foreach (var b in Store.LoadBlobs())
             Add(b);
+        foreach (var (id, json) in Store.AllSymbols())
+            IndexSymbols(id, Sym.FromJson(json));
+    }
+
+    // Finds blob ids declaring a symbol whose lowercase name equals (exact) or contains the query.
+    public HashSet<int> BlobsDeclaring(string name, bool exact)
+    {
+        var q = name.ToLowerInvariant();
+        var result = new HashSet<int>();
+        foreach (var (k, ids) in _symbolNames)
+            if (exact ? k == q : k.Contains(q))
+                lock (ids)
+                    result.UnionWith(ids);
+        return result;
+    }
+
+    // Adds a blob's symbol names to the name index.
+    private void IndexSymbols(int blobId, List<Sym> syms)
+    {
+        foreach (var s in syms)
+        {
+            var set = _symbolNames.GetOrAdd(s.Name.ToLowerInvariant(), _ => []);
+            lock (set)
+                set.Add(blobId);
+        }
     }
 
     // Opens an engine; the state directory defaults to the platform location.
@@ -66,6 +92,7 @@ public sealed class Engine : IDisposable
             var id = Store.InsertBlob(d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Bloom, d.Digest, d.Symbols, d.Idents);
             var meta = new BlobMeta(id, d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Bloom, d.Digest);
             Add(meta);
+            IndexSymbols(id, Sym.FromJson(d.Symbols));
             return meta;
         }
     }
