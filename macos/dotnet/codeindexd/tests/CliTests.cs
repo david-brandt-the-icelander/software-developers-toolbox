@@ -145,7 +145,7 @@ public class CliTests
         Assert.Contains("search: 2, 30, 50", text);
         Assert.Contains("fallback:rg: 1 (25%)", text);
         Assert.Contains("awk -F: 1", text);
-        Assert.Contains("blocked grep: 1", text);
+        Assert.Contains("blocked:grep: 1", text);
         Assert.Contains("retries (same tool within 10 s, different arguments): 1", text);
         Assert.Contains("need call graph", text);
         Assert.Contains("kept on average 2.0% of files", text);
