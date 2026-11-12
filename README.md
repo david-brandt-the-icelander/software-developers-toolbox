@@ -13,7 +13,8 @@ curl -fLO https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal
 curl -fLO https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz.sha256
 shasum -a 256 -c toolbox-macos-universal.tar.gz.sha256
 tar xzf toolbox-macos-universal.tar.gz
-xattr -d com.apple.quarantine afs fix-network free-disk-space   # unsigned, not notarized
 ```
+
+Releases are signed with a Developer ID and notarized by Apple ([`macos/release/`](macos/release/README.md)). A build released before signing was set up makes macOS say it "could not verify" the binary; after checking the checksum, run `xattr -d com.apple.quarantine afs fix-network free-disk-space`.
 
 A specific version is at `https://icelander.net/downloads/toolbox/<tag>/`. The GitHub releases carry the same files.

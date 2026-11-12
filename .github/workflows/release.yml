@@ -1,4 +1,4 @@
-# Build universal macOS binaries and publish them to a GitHub release and to icelander.net/downloads on version tags.
+# Build universal macOS binaries, sign and notarize them, and publish them to a GitHub release and to icelander.net/downloads on version tags.
 name: Release
 
 on:
@@ -29,13 +29,26 @@ jobs:
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --workspace --release --locked --target "$t"
           done
-      - name: Package universal binaries
+      - name: Make universal binaries
         run: |
           mkdir -p dist
           for bin in afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
+      # Developer ID signature and Apple notarization, so Gatekeeper opens the binaries
+      # (macos/release/README.md). Required on version tags; manual runs without secrets stay unsigned.
+      - name: Sign and notarize
+        env:
+          REQUIRE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/') }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: ../release/sign-and-notarize.sh dist afs fix-network free-disk-space
+      - name: Package
+        run: |
           tar -C dist -czf toolbox-macos-universal.tar.gz afs fix-network free-disk-space
           shasum -a 256 toolbox-macos-universal.tar.gz > toolbox-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v4

@@ -79,4 +79,4 @@ fix-network fix --vpn --internal-host wiki.corp.example:443     # reconnect the 
 fix-network diagnose --json | jq '.findings'                     # machine-readable
 ```
 
-Build: `cargo build --release -p fix-network` in `macos/rust` (binary in `target/release/`), or download a release: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). The binaries are unsigned and not notarized, so run `xattr -d com.apple.quarantine afs fix-network free-disk-space` after unpacking.
+Build: `cargo build --release -p fix-network` in `macos/rust` (binary in `target/release/`), or download a release: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). Releases are signed and notarized; if macOS says it "could not verify" the binary (an older, unsigned build), run `xattr -d com.apple.quarantine afs fix-network free-disk-space` after unpacking.

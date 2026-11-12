@@ -34,6 +34,11 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo fmt --all --check
+      - name: Release signing script (shellcheck and test with stand-in Apple tools)
+        working-directory: macos/release
+        run: |
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh
+          bash sign-and-notarize.test.sh
       - run: cargo clippy --workspace --all-targets --locked
 
   test:
