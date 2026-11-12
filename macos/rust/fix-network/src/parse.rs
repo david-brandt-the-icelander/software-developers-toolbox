@@ -273,6 +273,7 @@ pub fn parse_dig(text: &str) -> Vec<IpAddr> {
 
 // Fixture-based parser tests; fixtures follow documented macOS output formats.
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
 
@@ -411,5 +412,38 @@ fe80::%utun0/64                         fe80::abcd%utun0                        
         assert!(is_private(&"fd12::1".parse().unwrap()));
         assert!(!is_private(&"8.8.8.8".parse().unwrap()));
         assert!(is_tunnel("utun4") && !is_tunnel("en0"));
+    }
+
+    // Check link-local, multicast and broadcast detection in both families, and split-DNS exclusions.
+    #[test]
+    fn test_route_and_resolver_edges() {
+        let r = |v6: bool, dest: &str| Route { v6, dest: dest.into(), ..Route::default() };
+        assert!(r(true, "ff02::%utun0/32").link_local() && !r(true, "2001:db8::/32").link_local());
+        assert!(r(false, "169.254").link_local() && r(false, "255.255.255.255/32").link_local());
+        assert!(!r(false, "10/8").link_local());
+        let res = |domain: &str, scoped: bool| Resolver {
+            domain: Some(domain.into()),
+            scoped,
+            nameservers: vec!["10.0.0.53".into()],
+            ..Resolver::default()
+        };
+        assert!(!res("1.10.in-addr.arpa", false).supplemental());
+        assert!(!res("local", false).supplemental() && !res("corp.example", true).supplemental());
+        assert!(!Resolver { nameservers: vec![], ..res("corp.example", false) }.supplemental());
+    }
+
+    // Check bracketed targets without a port, junk after the bracket, and empty targets.
+    #[test]
+    fn test_parse_target_edges() {
+        assert_eq!(parse_target("[fd00::1]").unwrap(), Target { host: "fd00::1".into(), port: None });
+        assert!(parse_target("[fd00::1]x").is_err() && parse_target("[fd00::1").is_err());
+        assert!(parse_target("").is_err());
+    }
+
+    // Check that only the first usable IPv4 address of an interface is kept.
+    #[test]
+    fn test_parse_ifconfig_first_address() {
+        let text = "en0:\n\tinet 10.0.0.2 netmask 0xff000000\n\tinet 10.0.0.3 netmask 0xff000000\n";
+        assert_eq!(parse_ifconfig(text).ipv4.as_deref(), Some("10.0.0.2"));
     }
 }

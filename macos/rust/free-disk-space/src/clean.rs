@@ -2,6 +2,7 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::util::{self, c, hms, human_i, now};
 
@@ -204,7 +205,7 @@ fn clean_trash(apply: bool, ctx: &mut Ctx) {
         ctx.bytes += empty_dir("~/.Trash", false, "~/.Trash (via Finder when applied)").bytes;
         return;
     }
-    if !cfg!(target_os = "macos") {
+    if !cfg!(target_os = "macos") && std::env::var_os("FDS_FORCE").is_none() {
         println!("  - skipped: Finder is macOS only");
         return;
     }
@@ -477,8 +478,17 @@ fn docker_running() -> bool {
     util::run(&["docker", "info", "--format", "{{.ServerVersion}}"], 20.0, &[]).is_some_and(|o| o.code == 0)
 }
 
+// Poll until Docker stops responding and return false if it still runs after the wait in seconds.
+fn wait_for_quit(wait: f64, poll: Duration) -> bool {
+    let deadline = now() + wait;
+    while now() < deadline && docker_running() {
+        std::thread::sleep(poll);
+    }
+    !docker_running()
+}
+
 // Prune images and build cache, stop containers and quit Docker only if it is already running.
-fn clean_docker(apply: bool, ctx: &mut Ctx, stop_timeout: u64) -> String {
+fn clean_docker(apply: bool, ctx: &mut Ctx, stop_timeout: u64, quit_wait: f64) -> String {
     println!("{}", c("1", "Docker"));
     if !docker_running() {
         println!("  - Docker is not running; not starting it. Nothing done.");
@@ -522,15 +532,11 @@ fn clean_docker(apply: bool, ctx: &mut Ctx, stop_timeout: u64) -> String {
     }
     let quit = r#"tell application "Docker" to quit"#;
     util::run_cmd(&["/usr/bin/osascript", "-e", quit], "quit Docker Desktop", 120.0);
-    let deadline = now() + 180.0;
-    while now() < deadline && docker_running() {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-    }
-    let state = if docker_running() {
+    let state = if wait_for_quit(quit_wait, Duration::from_secs(3)) {
+        "shut down"
+    } else {
         ctx.failures.push("docker did not shut down".into());
         "STILL RUNNING after quit request"
-    } else {
-        "shut down"
     };
     println!("  - Docker Desktop: {state}");
     state.into()
@@ -585,7 +591,7 @@ pub fn cmd_clean(targets: &[String], apply: bool, dev_root: &str, docker_stop_ti
             "trash" => clean_trash(apply, &mut ctx),
             "dev" => clean_dev(apply, &mut ctx, dev_root),
             "brew" => clean_brew(apply),
-            _ => docker_status = Some(clean_docker(apply, &mut ctx, docker_stop_timeout)),
+            _ => docker_status = Some(clean_docker(apply, &mut ctx, docker_stop_timeout, 180.0)),
         }
         println!("  [elapsed {} | free now {}]", hms(now() - t0), human_i(util::free_bytes()));
     }
@@ -616,12 +622,32 @@ pub fn cmd_clean(targets: &[String], apply: bool, dev_root: &str, docker_stop_ti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit::{age_tree, chmod, git_init, is_root, Sandbox};
+
+    // Build a snapshot from literal lists.
+    fn snap(ok: bool, paths: &[&str], cwds: &[&str], cmds: &[&str]) -> Snapshot {
+        let own = |l: &[&str]| l.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        Snapshot { ok, paths: own(paths), cwds: own(cwds), cmds: own(cmds) }
+    }
+
+    // Create an old git project with an ignored, regenerable node_modules and return the artifact path.
+    fn project(sb: &Sandbox, name: &str) -> PathBuf {
+        let root = sb.dir(&format!("dev/{name}"));
+        git_init(&root);
+        sb.write(&format!("dev/{name}/package.json"), b"{}");
+        sb.write(&format!("dev/{name}/package-lock.json"), b"{}");
+        sb.write(&format!("dev/{name}/.gitignore"), b"node_modules\n");
+        sb.write(&format!("dev/{name}/node_modules/x.js"), &[7u8; 5000]);
+        age_tree(&root);
+        root.join("node_modules")
+    }
 
     // Check that `all` expands to the default targets in fixed order.
     #[test]
     fn test_ordered_targets_all() {
         let req = vec!["brew".to_string(), "all".to_string()];
         assert_eq!(ordered_targets(&req), ["caches", "downloads", "trash", "dev", "brew", "docker"]);
+        assert_eq!(ordered_targets(&["xcode".to_string()]), ["xcode"]);
     }
 
     // Check exact and suffix name patterns.
@@ -639,19 +665,502 @@ mod tests {
         assert!(Snapshot::under(&list, "/a/b"));
         assert!(Snapshot::under(&list, "/x/y"));
         assert!(!Snapshot::under(&list, "/x/yy"));
+        assert!(!Snapshot::under(&[], "/a"));
+        assert!(snap(true, &["/a/b"], &[], &[]).has_open("/a/b"));
+    }
+
+    // Check which process facts mark a candidate as in use.
+    #[test]
+    fn test_snapshot_uses() {
+        let cand = Path::new("/p/proj/node_modules");
+        assert!(snap(true, &["/p/proj/node_modules/x"], &[], &[]).uses(cand));
+        assert!(snap(true, &[], &["/p/proj"], &[]).uses(cand));
+        assert!(snap(true, &[], &[], &["node /p/proj/server.js"]).uses(cand));
+        assert!(snap(true, &[], &[], &["vim /p/proj"]).uses(cand));
+        assert!(!snap(true, &["/other"], &["/other"], &["ls /other"]).uses(cand));
+        assert!(!snap(true, &[], &[], &[]).uses(Path::new("/")));
+    }
+
+    // Check the process snapshot parses lsof and ps output.
+    #[test]
+    fn test_snapshot_capture() {
+        let sb = Sandbox::new();
+        sb.tool(
+            "lsof",
+            "printf 'p1\\nfcwd\\nn/work/dir\\nftxt\\nn/work/bin\\nn/work/bin\\nnrelative\\nf3\\nn/z/open\\n'",
+        );
+        sb.tool("ps", "echo 'cmd one'; echo 'cmd two'");
+        let s = Snapshot::capture();
+        assert!(s.ok);
+        assert_eq!(s.cwds, ["/work/dir"]);
+        assert_eq!(s.paths, ["/work/bin", "/z/open"]);
+        assert_eq!(s.cmds, ["cmd one", "cmd two"]);
+        sb.tool("lsof", "true");
+        assert!(!Snapshot::capture().ok);
+        std::fs::remove_file(sb.bin.join("ps")).unwrap();
+        std::env::set_var("PATH", &sb.bin);
+        assert!(!Snapshot::capture().ok);
+    }
+
+    // Check error text formatting and clipping.
+    #[test]
+    fn test_strerror_and_clip() {
+        let err = std::io::Error::from_raw_os_error(13);
+        assert_eq!(strerror(&err), "Permission denied");
+        assert_eq!(clip("  abcdef  ", 3, false), "abc");
+        assert_eq!(clip("abcdef", 3, true), "def");
+        assert_eq!(clip("ab", 5, true), "ab");
+    }
+
+    // Check tree sizing skips symlinks and unreadable or missing paths.
+    #[test]
+    fn test_tree_size_cases() {
+        let sb = Sandbox::new();
+        sb.write("t/a/f", &[1u8; 9000]);
+        std::os::unix::fs::symlink(sb.path("t"), sb.path("t/a/loop")).unwrap();
+        let (bytes, newest, n) = tree_size(&sb.path("t"));
+        assert!(bytes >= 9000 && newest > 1e9);
+        assert_eq!(n, 4);
+        assert_eq!(tree_size(&sb.path("missing")).2, 0);
+        if is_root() {
+            return;
+        }
+        chmod(&sb.path("t/a"), 0o000);
+        assert_eq!(tree_size(&sb.path("t")).2, 2);
+        chmod(&sb.path("t/a"), 0o755);
     }
 
     // Check a dry-run tree removal counts files without deleting them.
     #[test]
     fn test_rm_tree_dry_run() {
-        let dir = std::env::temp_dir().join(format!("fds-rm-{}", std::process::id()));
-        fs::create_dir_all(dir.join("sub")).unwrap();
-        fs::write(dir.join("sub/f"), vec![1u8; 10000]).unwrap();
+        let sb = Sandbox::new();
+        sb.write("d/sub/f", &vec![1u8; 10000]);
+        let dir = sb.path("d");
         let mut res = Removal::default();
         rm_tree(&dir, &mut res, &mut util::Ticker::new(), false);
         assert!(dir.join("sub/f").exists());
+        assert_eq!(res.scanned, 3);
+        assert!(res.bytes >= 10000);
         rm_tree(&dir, &mut Removal::default(), &mut util::Ticker::new(), true);
         assert!(!dir.exists());
-        assert_eq!(res.scanned, 3);
+    }
+
+    // Check removal never follows symlinks and ignores missing paths.
+    #[test]
+    fn test_rm_tree_symlink_and_missing() {
+        let sb = Sandbox::new();
+        sb.write("keep/f", b"data");
+        sb.dir("d");
+        std::os::unix::fs::symlink(sb.path("keep"), sb.path("d/link")).unwrap();
+        let mut res = Removal::default();
+        rm_tree(&sb.path("d"), &mut res, &mut util::Ticker::new(), true);
+        assert!(!sb.path("d").exists());
+        assert!(sb.path("keep/f").exists());
+        rm_tree(&sb.path("gone"), &mut res, &mut util::Ticker::new(), true);
+        assert!(res.protected.is_empty());
+    }
+
+    // Check removal stops early when interrupted.
+    #[test]
+    fn test_rm_tree_stops_on_interrupt() {
+        let sb = Sandbox::new();
+        sb.write("d/a", b"1");
+        sb.write("d/b", b"2");
+        util::set_stop(true);
+        rm_tree(&sb.path("d"), &mut Removal::default(), &mut util::Ticker::new(), true);
+        assert!(sb.path("d").exists());
+        assert_eq!(fs::read_dir(sb.path("d")).unwrap().count(), 1);
+    }
+
+    // Check protected files and directories are reported rather than removed.
+    #[test]
+    fn test_rm_tree_protected_entries() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        sb.write("d/locked/f", b"x");
+        sb.write("d/ro/f", b"x");
+        chmod(&sb.path("d/locked"), 0o000);
+        chmod(&sb.path("d/ro"), 0o555);
+        let mut res = Removal::default();
+        rm_tree(&sb.path("d"), &mut res, &mut util::Ticker::new(), true);
+        assert_eq!(res.protected.len(), 2);
+        assert!(sb.path("d/ro/f").exists());
+        chmod(&sb.path("d/locked"), 0o755);
+        chmod(&sb.path("d/ro"), 0o755);
+    }
+
+    // Check emptying a directory handles absent, non-directory and protected cases.
+    #[test]
+    fn test_empty_dir_cases() {
+        let sb = Sandbox::new();
+        sb.write("file", b"x");
+        assert_eq!(empty_dir("~/nothing", true, "n").bytes, 0);
+        assert_eq!(empty_dir(&sb.path("file").to_string_lossy(), true, "f").bytes, 0);
+        sb.write("home/c/a", &[1u8; 5000]);
+        sb.write("home/c/b/x", &[1u8; 5000]);
+        let dry = empty_dir("~/c", false, "c");
+        assert!(dry.bytes >= 10000 && sb.path("home/c/a").exists());
+        let done = empty_dir("~/c", true, "c");
+        assert_eq!(done.bytes, dry.bytes);
+        assert!(sb.path("home/c").is_dir() && fs::read_dir(sb.path("home/c")).unwrap().count() == 0);
+        std::os::unix::fs::symlink(sb.path("home/c"), sb.path("home/link")).unwrap();
+        assert_eq!(empty_dir("~/link", true, "l").bytes, 0);
+        util::set_stop(true);
+        sb.write("home/s/a", b"1");
+        sb.write("home/s/b", b"1");
+        empty_dir("~/s", true, "s");
+        assert_eq!(fs::read_dir(sb.path("home/s")).unwrap().count(), 1);
+    }
+
+    // Check protected and unreadable entries are summarised by emptying.
+    #[test]
+    fn test_empty_dir_protected() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        sb.write("home/p/ro/f", b"x");
+        chmod(&sb.path("home/p/ro"), 0o555);
+        assert_eq!(empty_dir("~/p", true, "p").protected.len(), 1);
+        chmod(&sb.path("home/p/ro"), 0o755);
+        chmod(&sb.path("home/p"), 0o000);
+        assert_eq!(empty_dir("~/p", true, "p").bytes, 0);
+        chmod(&sb.path("home/p"), 0o755);
+    }
+
+    // Check directory cleaning accumulates totals.
+    #[test]
+    fn test_clean_dirs_totals() {
+        let sb = Sandbox::new();
+        sb.write("home/d/f", &[1u8; 5000]);
+        let mut ctx = Ctx::default();
+        clean_dirs("T", &["~/d", "~/absent"], false, &mut ctx);
+        assert!(ctx.bytes >= 5000);
+    }
+
+    // Check the trash dry run, forced Finder success, failure and skip.
+    #[test]
+    fn test_clean_trash_paths() {
+        let sb = Sandbox::new();
+        sb.tool("osascript", "exit 0");
+        sb.write("home/.Trash/f", &[1u8; 5000]);
+        let mut ctx = Ctx::default();
+        clean_trash(false, &mut ctx);
+        assert!(ctx.bytes >= 5000);
+        clean_trash(true, &mut ctx);
+        assert!(ctx.failures.is_empty());
+        std::env::set_var("FDS_FORCE", "1");
+        clean_trash(true, &mut ctx);
+        assert!(ctx.failures.is_empty());
+        sb.tool("osascript", "echo no finder; exit 1");
+        clean_trash(true, &mut ctx);
+        assert_eq!(ctx.failures.len(), 1);
+    }
+
+    // Check Homebrew cleanup when absent, dry-run, successful and failing.
+    #[test]
+    fn test_clean_brew_paths() {
+        let sb = Sandbox::new();
+        clean_brew(true);
+        sb.tool("brew", "echo cleaned");
+        clean_brew(false);
+        clean_brew(true);
+        sb.tool("brew", "echo bad >&2; exit 1");
+        clean_brew(true);
+    }
+
+    // Check manifest detection with patterns and unreadable parents.
+    #[test]
+    fn test_has_any_patterns() {
+        let sb = Sandbox::new();
+        sb.write("p/App.csproj", b"x");
+        assert!(has_any(&sb.path("p"), &["*.csproj"]));
+        assert!(!has_any(&sb.path("p"), &["package.json"]));
+        assert!(!has_any(&sb.path("missing"), &["package.json"]));
+        assert_eq!(today_start_ts() % 86400.0, 0.0);
+    }
+
+    // Check git helper returns output and fails for missing directories gracefully.
+    #[test]
+    fn test_git_helper() {
+        let sb = Sandbox::new();
+        git_init(&sb.path("repo"));
+        assert_eq!(git(&sb.path("repo"), &["rev-parse", "--is-inside-work-tree"]).unwrap().code, 0);
+        assert_ne!(git(&sb.path("nowhere"), &["status"]).unwrap().code, 0);
+    }
+
+    // Check every reason an artifact directory is kept, and the approved case.
+    #[test]
+    fn test_verify_artifact_decisions() {
+        let sb = Sandbox::new();
+        let nm = project(&sb, "web");
+        let ok_snap = snap(true, &[], &[], &[]);
+        let why = |p: &Path, cutoff: f64, s: &Snapshot| verify_artifact(p, cutoff, s).unwrap_err();
+        assert_eq!(why(&sb.path("nothing"), 0.0, &ok_snap), "not a real directory");
+        assert_eq!(why(&sb.dir("dev/web/other"), 0.0, &ok_snap), "unknown artifact");
+        assert_eq!(verify_artifact(&nm, util::now(), &ok_snap), Ok(()));
+        assert_eq!(why(&nm, 1.0, &ok_snap), KEEP_TODAY);
+        assert_eq!(
+            why(&nm, util::now(), &snap(false, &[], &[], &[])),
+            "could not snapshot running processes"
+        );
+        let busy = snap(true, &[], &[], &[&format!("run {}/", nm.parent().unwrap().display())]);
+        assert_eq!(why(&nm, util::now(), &busy), KEEP_IN_USE);
+    }
+
+    // Check artifact rules for manifests, lockfiles, markers and pycache contents.
+    #[test]
+    fn test_verify_artifact_rules() {
+        let sb = Sandbox::new();
+        let s = snap(true, &[], &[], &[]);
+        let now = util::now() + 100.0;
+        sb.dir("a/node_modules");
+        assert_eq!(
+            verify_artifact(&sb.path("a/node_modules"), now, &s).unwrap_err(),
+            "no package.json next to it"
+        );
+        sb.write("a/package.json", b"{}");
+        assert!(verify_artifact(&sb.path("a/node_modules"), now, &s).unwrap_err().starts_with("no lockfile"));
+        sb.dir("b/target");
+        sb.write("b/Cargo.toml", b"");
+        assert!(verify_artifact(&sb.path("b/target"), now, &s)
+            .unwrap_err()
+            .starts_with("contents not recognised"));
+        sb.dir("c/__pycache__");
+        sb.write("c/__pycache__/a.pyc", b"");
+        sb.write("c/__pycache__/notes.txt", b"");
+        assert_eq!(
+            verify_artifact(&sb.path("c/__pycache__"), now, &s).unwrap_err(),
+            "contains non-.pyc file"
+        );
+        std::fs::remove_file(sb.path("c/__pycache__/notes.txt")).unwrap();
+        sb.write("c/__pycache__/b.pyo", b"");
+        assert_eq!(
+            verify_artifact(&sb.path("c/__pycache__"), now, &s).unwrap_err(),
+            "not inside a git work tree"
+        );
+        git_init(&sb.path("c"));
+        assert_eq!(verify_artifact(&sb.path("c/__pycache__"), now, &s).unwrap_err(), "not ignored by git");
+        sb.write("c/.gitignore", b"__pycache__\n");
+        assert_eq!(verify_artifact(&sb.path("c/__pycache__"), now, &s), Ok(()));
+        if is_root() {
+            return;
+        }
+        chmod(&sb.path("c/__pycache__"), 0o000);
+        assert_eq!(
+            verify_artifact(&sb.path("c/__pycache__"), now, &s).unwrap_err(),
+            "contains non-.pyc file"
+        );
+        chmod(&sb.path("c/__pycache__"), 0o755);
+    }
+
+    // Check files tracked by git inside an ignored directory keep it.
+    #[test]
+    fn test_verify_artifact_tracked_files() {
+        let sb = Sandbox::new();
+        let nm = project(&sb, "web");
+        sb.tool("git", "[ \"$3\" = ls-files ] && echo tracked; exit 0");
+        let s = snap(true, &[], &[], &[]);
+        assert_eq!(verify_artifact(&nm, util::now(), &s).unwrap_err(), "git tracks files inside");
+        sb.tool("git", "[ \"$3\" = ls-files ] && exit 1; exit 0");
+        assert_eq!(verify_artifact(&nm, util::now(), &s).unwrap_err(), "git tracks files inside");
+    }
+
+    // Check artifact discovery skips .git and does not descend into artifacts.
+    #[test]
+    fn test_find_artifacts_walk() {
+        let sb = Sandbox::new();
+        sb.dir("dev/a/node_modules/node_modules");
+        sb.dir("dev/b/src/target");
+        sb.dir("dev/b/.git/node_modules");
+        sb.write("dev/b/file", b"x");
+        let mut found = find_artifacts(&sb.path("dev"), &mut util::Ticker::new());
+        found.sort();
+        assert_eq!(found, [sb.path("dev/a/node_modules"), sb.path("dev/b/src/target")]);
+        assert!(find_artifacts(&sb.path("missing"), &mut util::Ticker::new()).is_empty());
+    }
+
+    // Check dev cleaning when the root or git is missing.
+    #[test]
+    fn test_clean_dev_preconditions() {
+        let sb = Sandbox::new();
+        let mut ctx = Ctx::default();
+        clean_dev(false, &mut ctx, "~/missing");
+        sb.dir("home/dev");
+        std::env::set_var("PATH", &sb.bin);
+        clean_dev(false, &mut ctx, "~/dev");
+        assert_eq!(ctx.bytes, 0);
+    }
+
+    // Check dev cleaning dry run, keep reasons and real deletion.
+    #[test]
+    fn test_clean_dev_dry_and_apply() {
+        let sb = Sandbox::new();
+        sb.tool("lsof", "printf 'fcwd\\nn/elsewhere\\n'");
+        sb.tool("ps", "echo idle");
+        let nm = project(&sb, "web");
+        let busy = project(&sb, "busy");
+        let fresh = project(&sb, "fresh");
+        sb.write("dev/fresh/node_modules/new.js", b"new");
+        sb.dir("dev/bare/node_modules");
+        sb.tool("lsof", &format!("printf 'fcwd\\nn{}\\n'", busy.parent().unwrap().display()));
+        let mut ctx = Ctx::default();
+        clean_dev(false, &mut ctx, &sb.path("dev").to_string_lossy());
+        assert!(ctx.bytes >= 5000 && nm.exists());
+        assert_eq!(ctx.uncertain.len(), 1);
+        let mut ctx = Ctx::default();
+        clean_dev(true, &mut ctx, &sb.path("dev").to_string_lossy());
+        assert!(!nm.exists() && busy.exists() && fresh.exists());
+        assert!(ctx.bytes >= 5000);
+        util::set_stop(true);
+        clean_dev(true, &mut Ctx::default(), &sb.path("dev").to_string_lossy());
+    }
+
+    // Check an artifact that stops qualifying between checks is left in place with a note.
+    #[test]
+    fn test_clean_dev_changed_before_delete() {
+        let sb = Sandbox::new();
+        sb.tool("lsof", "printf 'fcwd\\nn/elsewhere\\n'");
+        sb.tool("ps", "echo idle");
+        let nm = project(&sb, "web");
+        let counter = sb.path("count");
+        std::fs::write(&counter, "0").unwrap();
+        sb.tool(
+            "git",
+            &format!(
+                "read n < {c}; echo $((n+1)) > {c}; [ \"$n\" -lt 3 ] && exit 0; exit 1",
+                c = counter.display()
+            ),
+        );
+        let mut ctx = Ctx::default();
+        clean_dev(true, &mut ctx, &sb.path("dev").to_string_lossy());
+        assert!(nm.exists());
+        assert!(ctx.uncertain[0].contains("changed before delete"));
+    }
+
+    // Check the deletion of an artifact with a protected child is reported.
+    #[test]
+    fn test_clean_dev_protected_child() {
+        let sb = Sandbox::new();
+        if is_root() {
+            return;
+        }
+        sb.tool("lsof", "printf 'fcwd\\nn/elsewhere\\n'");
+        sb.tool("ps", "echo idle");
+        let nm = project(&sb, "web");
+        sb.write("dev/web/node_modules/ro/f", b"x");
+        age_tree(&nm);
+        chmod(&nm.join("ro"), 0o555);
+        let mut ctx = Ctx::default();
+        clean_dev(true, &mut ctx, &sb.path("dev").to_string_lossy());
+        assert_eq!(ctx.protected.len(), 1);
+        chmod(&nm.join("ro"), 0o755);
+    }
+
+    // Check Docker detection needs the CLI, a Desktop process and a responding server.
+    #[test]
+    fn test_docker_running_checks() {
+        let sb = Sandbox::new();
+        std::env::set_var("PATH", &sb.bin);
+        assert!(!docker_running());
+        sb.tool("docker", "exit 0");
+        sb.tool("pgrep", "exit 1");
+        assert!(!docker_running());
+        sb.tool("pgrep", "exit 0");
+        assert!(docker_running());
+        sb.tool("docker", "exit 1");
+        assert!(!docker_running());
+    }
+
+    // Check waiting for Docker to quit succeeds, loops and times out.
+    #[test]
+    fn test_wait_for_quit_outcomes() {
+        let sb = Sandbox::new();
+        std::env::set_var("PATH", &sb.bin);
+        sb.tool("docker", "exit 0");
+        sb.tool("pgrep", "exit 1");
+        assert!(wait_for_quit(1.0, Duration::from_millis(10)));
+        let counter = sb.path("count");
+        std::fs::write(&counter, "0").unwrap();
+        sb.tool(
+            "pgrep",
+            &format!("read n < {c}; echo $((n+1)) > {c}; [ \"$n\" -lt 3 ]", c = counter.display()),
+        );
+        assert!(wait_for_quit(5.0, Duration::from_millis(10)));
+        sb.tool("pgrep", "exit 0");
+        assert!(!wait_for_quit(0.05, Duration::from_millis(10)));
+    }
+
+    // Install fake Docker tools whose containers and prune results are configurable.
+    fn fake_docker(sb: &Sandbox, prune: i32, ids: &str, stop: i32, quit_leaves_running: bool) {
+        let marker = sb.path("quit");
+        std::env::set_var("PATH", &sb.bin);
+        sb.tool(
+            "docker",
+            &format!(
+                "case \"$1\" in info) exit 0;; image|builder) echo 'reclaimed'; exit {prune};; \
+                 ps) echo '{ids}';; stop) exit {stop};; esac"
+            ),
+        );
+        let leave = if quit_leaves_running { "true" } else { "false" };
+        sb.tool("pgrep", &format!("[ ! -e {m} ] || {leave}", m = marker.display()));
+        sb.tool("osascript", &format!("/usr/bin/touch {}", marker.display()));
+        let _ = std::fs::remove_file(&marker);
+    }
+
+    // Check Docker cleaning when stopped, dry-running and applying with each failure.
+    #[test]
+    fn test_clean_docker_paths() {
+        let sb = Sandbox::new();
+        let mut ctx = Ctx::default();
+        std::env::set_var("PATH", &sb.bin);
+        assert_eq!(clean_docker(true, &mut ctx, 5, 1.0), "not running (left alone)");
+        fake_docker(&sb, 0, "", 0, false);
+        assert_eq!(clean_docker(false, &mut ctx, 5, 1.0), "running (dry run)");
+        assert_eq!(clean_docker(true, &mut ctx, 5, 1.0), "shut down");
+        assert!(ctx.failures.is_empty());
+        fake_docker(&sb, 1, "c1 c2", 0, false);
+        assert_eq!(clean_docker(true, &mut ctx, 5, 1.0), "shut down");
+        assert_eq!(ctx.failures.len(), 2);
+        fake_docker(&sb, 0, "c1", 1, false);
+        assert!(clean_docker(true, &mut ctx, 5, 1.0).starts_with("still running"));
+        assert_eq!(ctx.failures.len(), 3);
+        fake_docker(&sb, 0, "c1", 0, true);
+        assert_eq!(clean_docker(true, &mut ctx, 5, 0.0), "STILL RUNNING after quit request");
+        assert_eq!(ctx.failures.len(), 4);
+    }
+
+    // Check summary lists truncate long output.
+    #[test]
+    fn test_print_list_truncation() {
+        print_list("none", &[]);
+        let items: Vec<String> = (0..31).map(|i| i.to_string()).collect();
+        print_list("many", &items);
+        print_list("few", &items[..2]);
+    }
+
+    // Check the whole clean command in dry-run and apply modes across every target.
+    #[test]
+    fn test_cmd_clean_all_targets() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        sb.write("home/Downloads/a", &[1u8; 5000]);
+        sb.write("home/.cache/b", &[1u8; 5000]);
+        sb.write("home/Library/Developer/Xcode/DerivedData/c", &[1u8; 5000]);
+        sb.write("home/.Trash/d", &[1u8; 5000]);
+        sb.tool("brew", "exit 0");
+        let all: Vec<String> = ["all", "xcode", "brew"].iter().map(|s| s.to_string()).collect();
+        let dev = sb.dir("home/dev").to_string_lossy().into_owned();
+        cmd_clean(&all, false, &dev, 5);
+        assert!(sb.path("home/Downloads/a").exists());
+        fake_docker(&sb, 0, "", 0, false);
+        cmd_clean(&all, true, &dev, 5);
+        assert!(!sb.path("home/Downloads/a").exists());
+        assert!(!sb.path("home/.cache/b").exists());
+        cmd_clean(&["trash".to_string()], true, &dev, 5);
+        util::set_stop(true);
+        cmd_clean(&all, true, &dev, 5);
     }
 }

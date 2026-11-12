@@ -1,8 +1,11 @@
 // Reclaim macOS disk space via a resumable scan, compression, clone dedupe and safe cleanups.
 mod clean;
 mod compress;
+mod daemon;
 mod dedupe;
 mod scan;
+#[cfg(test)]
+mod testkit;
 mod util;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -28,6 +31,8 @@ const EXAMPLES: &str = "examples:
   free-disk-space dedupe --sample 5 --apply    # replace 5 duplicates with APFS clones
   free-disk-space compress --sample 5          # verify on 5 files first
   free-disk-space compress --limit 20G --yes   # then go bigger
+  free-disk-space daemon install               # clean caches+dev below 30G free, checked every 15m awake
+  free-disk-space daemon install --threshold 10% --cadence 1h --targets caches dev trash
 
 state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3";
 
@@ -79,6 +84,50 @@ enum Cmd {
     ///
     /// Targets: caches, downloads, trash, dev, docker (all of these = `all`), plus opt-in brew, xcode.
     Clean(CleanArgs),
+    /// run cleanups in the background on a cadence (macOS login item)
+    ///
+    /// Every cadence of awake time (the clock stops while the Mac sleeps; nothing wakes it, and checks
+    /// are skipped while the display is asleep) free space on the data volume is compared with the
+    /// threshold; below it, `clean --apply` runs on the chosen targets. `install` registers a launchd
+    /// login item (~/Library/LaunchAgents) that starts now and at every login.
+    Daemon(DaemonArgs),
+}
+
+// Daemon actions.
+#[derive(Args)]
+struct DaemonArgs {
+    #[command(subcommand)]
+    action: DaemonAction,
+}
+
+// What to do with the daemon.
+#[derive(Subcommand)]
+enum DaemonAction {
+    /// run in the foreground (what the login item executes)
+    Run(DaemonOpts),
+    /// install and start the login item
+    Install(DaemonOpts),
+    /// stop and remove the login item
+    Uninstall,
+    /// show whether the login item is installed and running
+    Status,
+}
+
+// Options shared by daemon run and install.
+#[derive(Args)]
+struct DaemonOpts {
+    /// clean when free space falls below this: a size such as 30G or a percentage such as 10%
+    #[arg(long, default_value = "30G")]
+    threshold: String,
+    /// time between checks, in awake time: 90s, 15m or 2h (bare number = minutes)
+    #[arg(long, default_value = "15m")]
+    cadence: String,
+    /// what to clean when below the threshold
+    #[arg(long, value_enum, num_args = 1.., default_values_t = [Target::Caches, Target::Dev])]
+    targets: Vec<Target>,
+    /// project tree for `dev`
+    #[arg(long, default_value = "~/dev")]
+    dev_root: String,
 }
 
 // Options for new.
@@ -206,6 +255,12 @@ struct CleanArgs {
     docker_stop_timeout: u64,
 }
 
+// Validate daemon options into settings or exit with the problem.
+fn daemon_settings(o: DaemonOpts) -> daemon::Settings {
+    let targets = o.targets.into_iter().map(value_name).collect();
+    daemon::Settings::parse(&o.threshold, &o.cadence, targets, &o.dev_root).unwrap_or_else(|e| util::die(&e))
+}
+
 // Return the lowercase name of a clap value.
 fn value_name<T: ValueEnum>(v: T) -> String {
     v.to_possible_value().map(|p| p.get_name().to_string()).unwrap_or_default()
@@ -213,7 +268,12 @@ fn value_name<T: ValueEnum>(v: T) -> String {
 
 // Parse arguments and dispatch to the chosen command.
 fn main() {
-    match Cli::parse().command {
+    run(Cli::parse());
+}
+
+// Dispatch a parsed command line to the chosen command.
+fn run(cli: Cli) {
+    match cli.command {
         Cmd::New(a) => scan::cmd_new(&scan::NewOpts {
             state: a.state.state,
             root: a.root,
@@ -245,9 +305,98 @@ fn main() {
             min_size: a.min_size,
             sample: a.sample,
         }),
+        Cmd::Daemon(a) => match a.action {
+            DaemonAction::Run(o) => daemon::cmd_run(&daemon_settings(o)),
+            DaemonAction::Install(o) => {
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|e| util::die(&format!("cannot find myself: {e}")));
+                daemon::cmd_install(&daemon_settings(o), &exe);
+            }
+            DaemonAction::Uninstall => daemon::cmd_uninstall(),
+            DaemonAction::Status => daemon::cmd_status(),
+        },
         Cmd::Clean(a) => {
             let targets: Vec<String> = a.targets.into_iter().map(value_name).collect();
             clean::cmd_clean(&targets, a.apply, &a.dev_root, a.docker_stop_timeout);
         }
+    }
+}
+
+// Unit tests for argument parsing and dispatch.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::Sandbox;
+
+    // Parse a command line and run it.
+    fn go(args: &[&str]) {
+        let mut full = vec!["free-disk-space"];
+        full.extend_from_slice(args);
+        run(Cli::try_parse_from(full).expect("valid arguments"));
+    }
+
+    // Check the default state path honours FDS_STATE and falls back to the home directory.
+    #[test]
+    fn test_default_state_paths() {
+        let sb = Sandbox::new();
+        assert_eq!(default_state(), sb.state());
+        std::env::remove_var("FDS_STATE");
+        assert!(default_state().ends_with("/.local/state/free-disk-space/scan.sqlite3"));
+    }
+
+    // Check size and value-name helpers.
+    #[test]
+    fn test_size_arg_and_value_name() {
+        assert_eq!(size_arg("2K"), Ok(2048));
+        assert!(size_arg("nope").is_err());
+        assert_eq!(value_name(Target::Docker), "docker");
+        assert_eq!(value_name(Status::Pending), "pending");
+    }
+
+    // Check invalid command lines are rejected by the parser.
+    #[test]
+    fn test_cli_rejects_bad_arguments() {
+        let _sb = Sandbox::new();
+        assert!(Cli::try_parse_from(["fds"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "clean"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "compress", "--min-gain", "x"]).is_err());
+    }
+
+    // Check every subcommand dispatches to its implementation.
+    #[test]
+    fn test_run_dispatches_every_command() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        let root = sb.dir("root");
+        sb.write("root/a/f", &vec![b'a'; 1 << 20]);
+        let root = root.to_str().unwrap();
+        go(&[
+            "new",
+            "--root",
+            root,
+            "--min-size",
+            "1K",
+            "--min-age-days",
+            "0",
+            "--exclude",
+            "/nowhere",
+            "--force",
+        ]);
+        go(&["resume"]);
+        go(&["status"]);
+        go(&["list", "--top", "3", "--status", "done"]);
+        go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
+        go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);
+        let home = sb.home().to_string_lossy().into_owned();
+        go(&["clean", "caches", "trash", "--dev-root", &home]);
+        sb.tool("launchctl", "exit 0");
+        go(&["daemon", "install", "--threshold", "10%", "--cadence", "1h", "--targets", "caches", "trash"]);
+        go(&["daemon", "status"]);
+        go(&["daemon", "uninstall"]);
+        util::set_stop(true);
+        go(&["daemon", "run"]);
+        util::set_stop(false);
+        let bad = std::panic::catch_unwind(|| go(&["daemon", "run", "--threshold", "nope"]));
+        assert!(bad.is_err());
     }
 }

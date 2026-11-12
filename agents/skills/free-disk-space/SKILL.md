@@ -26,6 +26,11 @@ Binary: `macos/rust/target/release/free-disk-space` (build: `cd macos/rust && ca
 3. Add `--include-system` only with explicit user authorization; default touches only files the user owns outside system paths.
 4. Scans made before version 1.1 hold no file names; rerun `new`.
 
+## Background daemon (launchd login item)
+1. Install only with the user's explicit authorization, since it deletes on its own: `... daemon install [--threshold 30G|10%] [--cadence 15m] [--targets caches dev]` (defaults: 30G, 15m, caches dev).
+2. `... daemon status`; `... daemon uninstall`; foreground test: `... daemon run`. Log: `~/Library/Logs/free-disk-space.log`.
+3. Cadence is awake time only and skipped while the display sleeps; it never wakes the Mac. Add `trash`, `downloads` or `docker` to `--targets` only with explicit authorization.
+
 ## Rules
 - Report initial/final free space, what was deleted/compressed, protected entries, failures.
 - Never claim summed file sizes equal reclaimed space.
