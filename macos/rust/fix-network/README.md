@@ -12,4 +12,4 @@ Finds the Wi-Fi device/service (not assuming `en0`), tests gateway, captive port
 
 Logs and original settings go to `~/.local/state/fix-network/<timestamp>/` (`diagnostic.log`, `original.json`, `recover.sh`). Before the Wi-Fi radio is cycled, a detached watchdog is started that turns Wi-Fi back on by itself. No reboot, Docker, preference deletion, public-DNS substitution or router changes. Privileged steps use `sudo` (prompts in your terminal; never in chat).
 
-Build: `cargo build --release -p fix-network` in `macos/rust` (binary in `target/release/`), or download a release. Unit-tested in CI on macOS and Linux; repair steps are untested on a real Mac.
+Build: `cargo build --release -p fix-network` in `macos/rust` (binary in `target/release/`), or download a release: `https://icelander.net/downloads/toolbox/latest/toolbox-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). The binaries are unsigned and not notarized, so run `xattr -d com.apple.quarantine fix-network free-disk-space` after unpacking. Unit-tested in CI on macOS and Linux; repair steps are untested on a real Mac.
