@@ -46,9 +46,15 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read",
-        description: "Read files or line ranges (PATH or PATH:A-B) with numbered lines; long output is elided to a token budget.",
+        description: "Read files, line ranges (PATH or PATH:A-B) or one named symbol with its docs, as numbered lines; long output is elided to a token budget.",
         schema: read_schema,
         map: read_args,
+    },
+    Tool {
+        name: "zazzle_read_again",
+        description: "Get a response this session already sent, by its r:ID: the same text if nothing changed, else the current version under a new id. Use it instead of repeating a request whose result you no longer have.",
+        schema: read_again_schema,
+        map: read_again_args,
     },
     Tool { name: "zazzle_ls", description: "Compact directory tree with file counts and line counts.", schema: ls_schema, map: ls_args },
     Tool {
@@ -65,7 +71,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_edit",
-        description: "Edit one file safely: replace unique text, replace lines (needs expect sha or anchors from zazzle_read), insert after a line, or create a file. Writes are confined to the working directory.",
+        description: "Edit one file safely: replace unique text, replace lines or insert after a line (each needs expect, the sha from zazzle_read with source=true, or anchors), or create a file. Writes are confined to the working directory.",
         schema: edit_schema,
         map: edit_args,
     },
@@ -98,6 +104,8 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
+            "source": {"type": "boolean", "description": "C# files come as a terse view without a sha; true gives the code and its sha, which edits need"},
+            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; #N picks among duplicates) with its doc comments and attributes"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
@@ -105,6 +113,11 @@ fn read_schema() -> Value {
         }),
         &["paths"],
     )
+}
+
+// Schema for zazzle_read_again.
+fn read_again_schema() -> Value {
+    object(json!({"id": {"type": "string", "description": "The id from a response's [r:ID] tag"}}), &["id"])
 }
 
 // Schema for zazzle_ls.
@@ -152,7 +165,7 @@ fn edit_schema() -> Value {
             "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
             "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from zazzle_read with anchors"},
             "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
-            "expect": {"type": "string", "description": "The sha from zazzle_read's header"}
+            "expect": {"type": "string", "description": "The sha from zazzle_read's header (source=true for C#); needed by every edit except create"}
         }),
         &["path", "new"],
     )
@@ -242,6 +255,7 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["read".to_string()];
     for (k, f) in [
         ("anchors", "--anchors"),
+        ("source", "--source"),
         ("full", "--full"),
         ("disable_session_deduping", "--disable-session-deduping"),
     ] {
@@ -255,6 +269,10 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
         ("budget", "--budget"),
     ] {
         push_num(&mut a, v, k, f)?;
+    }
+    if let Some(sym) = get_str(v, "symbol")? {
+        a.push("--symbol".into());
+        a.push(sym);
     }
     let paths = get_list(v, "paths")?;
     if paths.is_empty() {
@@ -292,6 +310,11 @@ fn outline_args(v: &Value) -> Result<Vec<String>, String> {
     a.push("--".into());
     a.extend(paths);
     Ok(a)
+}
+
+// Maps zazzle_read_again arguments to a command line.
+fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
+    Ok(vec!["read-again".to_string(), need_str(v, "id")?])
 }
 
 // Maps zazzle_refs arguments to a command line.
@@ -502,6 +525,12 @@ mod tests {
         assert!(
             names.contains(&"zazzle_find") && names.contains(&"zazzle_read") && names.contains(&"zazzle_ls")
         );
+        assert!(names.contains(&"zazzle_read_again"));
+        ask(
+            &b,
+            json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"r:abcde"}}}),
+        );
+        assert_eq!(b.calls.borrow().last().expect("call"), &["read-again", "r:abcde"]);
         assert_eq!(ask(&b, json!({"id":3,"method":"nope"}))["error"]["code"], -32601);
     }
 
@@ -556,7 +585,7 @@ mod tests {
         ask(
             &b,
             json!({"id":1,"method":"tools/call","params":{"name":"zazzle_read","arguments":{
-            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "full":true}}}),
+            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "source":true, "full":true, "symbol":"A.b"}}}),
         );
         ask(
             &b,
@@ -569,6 +598,7 @@ mod tests {
             [
                 "read",
                 "--anchors",
+                "--source",
                 "--full",
                 "--around",
                 "5",
@@ -580,6 +610,8 @@ mod tests {
                 "3",
                 "--budget",
                 "100",
+                "--symbol",
+                "A.b",
                 "--",
                 "a:1-2"
             ]
@@ -750,6 +782,7 @@ mod tests {
         };
         assert_eq!(text("zazzle_outline", json!({})), "error: 'paths' is required");
         assert_eq!(text("zazzle_refs", json!({})), "error: 'symbol' is required");
+        assert_eq!(text("zazzle_read_again", json!({})), "error: 'id' is required");
         assert_eq!(text("zazzle_edit", json!({"new": "x"})), "error: 'path' is required");
         assert_eq!(text("zazzle_edit", json!({"path": "a", "old": 5})), "error: 'old' must be a string");
         assert!(b.calls.borrow().is_empty());
@@ -763,6 +796,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 6);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 7);
     }
 }
