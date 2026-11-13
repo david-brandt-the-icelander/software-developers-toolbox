@@ -24,10 +24,10 @@ runtime_flags() {
 		echo "-C link-arg=-fprofile-instr-generate"
 		return
 	fi
-	# rustc links with -nodefaultlibs, so name the runtime archive and put libc (for atexit) after it.
+	# rustc links with -nodefaultlibs: force in the runtime hook that writes the profile at exit, name the archive, and put libc (for atexit) after it.
 	dir=$(clang -print-runtime-dir)
 	for rt in "$dir/libclang_rt.profile-$(uname -m).a" "$dir/libclang_rt.profile.a"; do
-		[ -f "$rt" ] && { echo "-C link-arg=$rt -C link-arg=-lc"; return; }
+		[ -f "$rt" ] && { echo "-C link-arg=-Wl,-u,__llvm_profile_runtime -C link-arg=$rt -C link-arg=-lc"; return; }
 	done
 	echo "pgo.sh: no clang profile runtime in $dir (install libclang-rt-<version>-dev)" >&2
 	exit 1
