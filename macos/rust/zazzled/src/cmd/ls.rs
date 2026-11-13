@@ -1,10 +1,12 @@
 // The ls command: a compact tree with recursive file counts and per-file line counts.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::engine::Engine;
+use crate::pool::{cpus, par_map};
 use crate::util::{display, resolve};
 use crate::walk::{self, WalkOpts};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm'), flag("no-ignore", 'u')];
 const USAGE: &str = "usage: ls [DIR] [-d N] [-m N] [-u]";
@@ -30,32 +32,38 @@ fn insert(node: &mut Node, parts: &[&str]) {
 }
 
 // Summarises one file as a line count, "bin" or a size.
-fn summary(ctx: &Ctx, path: &Path) -> String {
-    match ctx.engine.info(path) {
+fn summary(engine: &Engine, path: &Path) -> String {
+    match engine.info(path) {
         Ok(i) if i.binary => format!("bin {}B", i.size),
         Ok(i) => i.lines.to_string(),
         Err(_) => "?".into(),
     }
 }
 
-// Printing state: output text, entry budget and what was dropped.
-struct Printer<'a> {
-    ctx: &'a Ctx<'a>,
-    out: String,
+// One output line: its indent and text, plus the file whose summary follows the text, if any.
+struct Row {
+    indent: usize,
+    text: String,
+    file: Option<PathBuf>,
+}
+
+// Collecting state: the rows to print, the entry budget and what was dropped.
+struct Printer {
+    rows: Vec<Row>,
     left: usize,
     dropped: usize,
     depth: usize,
 }
 
-impl Printer<'_> {
-    // Prints one entry line if the budget allows, else counts it as dropped.
-    fn line(&mut self, indent: usize, text: String) -> bool {
+impl Printer {
+    // Keeps one entry row if the budget allows, else counts it as dropped.
+    fn line(&mut self, indent: usize, text: String, file: Option<PathBuf>) -> bool {
         if self.left == 0 {
             self.dropped += 1;
             return false;
         }
         self.left -= 1;
-        self.out.push_str(&format!("{}{text}\n", "  ".repeat(indent)));
+        self.rows.push(Row { indent, text, file });
         true
     }
 
@@ -63,7 +71,7 @@ impl Printer<'_> {
     fn tree(&mut self, node: &Node, dir: &Path, level: usize) {
         for (name, child) in &node.dirs {
             let files = if child.count == 1 { "file" } else { "files" };
-            if !self.line(level, format!("{name}/ {} {files}", child.count)) {
+            if !self.line(level, format!("{name}/ {} {files}", child.count), None) {
                 continue;
             }
             if level < self.depth {
@@ -74,9 +82,22 @@ impl Printer<'_> {
             return;
         }
         for name in &node.files {
-            let s = summary(self.ctx, &dir.join(name));
-            self.line(level, format!("{name} {s}"));
+            self.line(level, name.clone(), Some(dir.join(name)));
         }
+    }
+}
+
+// Appends the rows to out, computing the file summaries in parallel on the pool.
+fn render(engine: &Engine, rows: &[Row], out: &mut String) {
+    let sums = par_map(rows, cpus(), |_, r| r.file.as_ref().map(|p| summary(engine, p)));
+    for (r, s) in rows.iter().zip(sums) {
+        out.push_str(&"  ".repeat(r.indent));
+        out.push_str(&r.text);
+        if let Some(s) = s {
+            out.push(' ');
+            out.push_str(&s);
+        }
+        out.push('\n');
     }
 }
 
@@ -93,7 +114,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         .map_err(|e| format!("{}: {}", display(&root, &ctx.cwd), walk::reason(&e)))?;
     if md.is_file() {
         let name = display(&root, &ctx.cwd);
-        return Ok(Output::ok(format!("{name} {}", summary(ctx, &root))));
+        return Ok(Output::ok(format!("{name} {}", summary(ctx.engine, &root))));
     }
     let files = walk::collect(
         std::slice::from_ref(&root),
@@ -108,19 +129,15 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         insert(&mut top, &parts.iter().map(String::as_str).collect::<Vec<_>>());
     }
     let word = if top.count == 1 { "file" } else { "files" };
-    let mut pr = Printer {
-        ctx,
-        out: format!("{}/ {} {word}\n", display(&root, &ctx.cwd), top.count),
-        left: max,
-        dropped: 0,
-        depth,
-    };
+    let mut pr = Printer { rows: Vec::new(), left: max, dropped: 0, depth };
     pr.tree(&top, &root, 1);
+    let mut out = format!("{}/ {} {word}\n", display(&root, &ctx.cwd), top.count);
+    render(ctx.engine, &pr.rows, &mut out);
     if pr.dropped > 0 {
-        pr.out.push_str(&format!("… {} more entries (raise -m, or list a subdirectory)\n", pr.dropped));
+        out.push_str(&format!("… {} more entries (raise -m, or list a subdirectory)\n", pr.dropped));
     }
-    pr.out.pop();
-    Ok(Output::ok(pr.out))
+    out.pop();
+    Ok(Output::ok(out))
 }
 
 #[cfg(test)]

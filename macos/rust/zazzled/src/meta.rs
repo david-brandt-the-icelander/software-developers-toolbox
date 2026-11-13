@@ -1,4 +1,4 @@
-// Derived per-file data: hash, line index, edit anchors and content flags.
+// Derived per-file data: hash, line index, content flags and per-line edit anchors.
 use memchr::memchr;
 
 pub const MAX_META_SIZE: u64 = 256 << 20;
@@ -26,7 +26,6 @@ pub struct Meta {
     pub minified: bool,
     pub crlf: bool,
     pub starts: Vec<u32>,
-    pub anchors: Vec<u16>,
 }
 
 // Returns the byte offset where each line starts; a trailing newline adds no empty line.
@@ -53,6 +52,11 @@ fn anchor_of(line: &[u8]) -> u16 {
     ((h ^ (h >> 15)) & 0x7fff) as u16
 }
 
+// Returns line n's (1-based) anchor, computed on demand because only read --anchors and edit --at need it.
+pub fn line_anchor(data: &[u8], starts: &[u32], n: usize) -> u16 {
+    anchor_of(line_bytes(data, starts, n))
+}
+
 // Renders an anchor as three base-32 characters.
 pub fn anchor_str(a: u16) -> String {
     [(a >> 10) & 31, (a >> 5) & 31, a & 31].iter().map(|i| ALPHABET[usize::from(*i)] as char).collect()
@@ -69,31 +73,21 @@ impl Meta {
         let hash = *blake3::hash(data).as_bytes();
         let size = data.len() as u64;
         if looks_binary(data) {
-            return Meta {
-                size,
-                hash,
-                binary: true,
-                minified: false,
-                crlf: false,
-                starts: vec![],
-                anchors: vec![],
-            };
+            return Meta { size, hash, binary: true, minified: false, crlf: false, starts: vec![] };
         }
         let starts = line_starts(data);
-        let mut anchors = Vec::with_capacity(starts.len());
         let mut longest = 0;
         let mut crlf_lines = 0;
         for n in 1..=starts.len() {
             let line = line_bytes(data, &starts, n);
             longest = longest.max(line.len());
-            anchors.push(anchor_of(line));
             let end = line_end(data, &starts, n);
             if end < data.len() && end > 0 && data[end - 1] == b'\r' {
                 crlf_lines += 1;
             }
         }
         let crlf = crlf_lines * 2 > starts.len();
-        Meta { size, hash, binary: false, minified: longest > MINIFIED_LINE, crlf, starts, anchors }
+        Meta { size, hash, binary: false, minified: longest > MINIFIED_LINE, crlf, starts }
     }
 
     // Returns the number of lines.
@@ -165,8 +159,8 @@ mod tests {
     fn test_compute_text() {
         let m = Meta::compute(b"fn a() {}\nfn b() {}\n");
         assert_eq!((m.lines(), m.binary, m.minified, m.crlf), (2, false, false, false));
-        assert_eq!(m.anchors.len(), 2);
-        assert_ne!(m.anchors[0], m.anchors[1]);
+        let data = b"fn a() {}\nfn b() {}\n";
+        assert_ne!(line_anchor(data, &m.starts, 1), line_anchor(data, &m.starts, 2));
         assert_eq!(m.size, 20);
     }
 
@@ -174,7 +168,7 @@ mod tests {
     #[test]
     fn test_compute_binary() {
         let m = Meta::compute(b"ab\0cd");
-        assert!(m.binary && m.starts.is_empty() && m.anchors.is_empty());
+        assert!(m.binary && m.starts.is_empty());
         assert!(looks_binary(b"\0"));
         assert!(!looks_binary(b"text"));
     }
@@ -202,6 +196,7 @@ mod tests {
         assert_eq!(anchor_str(0), "000");
         assert_eq!(anchor_str(0x7fff), "zzz");
         assert_eq!(anchor_str(anchor_of(b"hello")).len(), 3);
+        assert_eq!(line_anchor(b"x\r\nhello\n", &line_starts(b"x\r\nhello\n"), 2), anchor_of(b"hello"));
     }
 
     // Checks the persisted summary mirrors the metadata.

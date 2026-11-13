@@ -8,8 +8,6 @@ use crate::walk::{self, WalkOpts};
 use memchr::{memchr_iter, memrchr};
 use regex::bytes::{Regex, RegexBuilder};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 const SPEC: &[Flag] = &[
     flag("ignore-case", 'i'),
@@ -144,31 +142,13 @@ fn search_file(idx: usize, path: &Path, plan: &Plan) -> FileResult {
     FileResult { idx, total, hits, skip }
 }
 
-// Searches all files, in parallel when there are enough, and returns results in file order.
+// Searches all files, on the pool when there are enough, and returns the results worth reporting in file order.
 pub(super) fn search_all(files: &[PathBuf], plan: &Plan, cpus: usize) -> Vec<FileResult> {
-    let results = Mutex::new(Vec::new());
-    let next = AtomicUsize::new(0);
-    let work = || loop {
-        let i = next.fetch_add(1, Ordering::Relaxed);
-        let Some(path) = files.get(i) else { break };
-        let r = search_file(i, path, plan);
-        if r.total > 0 || r.skip != Skip::No {
-            results.lock().expect("results lock").push(r);
-        }
-    };
-    let workers = cpus.min(files.len());
-    if files.len() < PARALLEL_MIN || workers < 2 {
-        work();
-    } else {
-        std::thread::scope(|s| {
-            for _ in 0..workers {
-                s.spawn(work);
-            }
-        });
-    }
-    let mut out = results.into_inner().expect("results lock");
-    out.sort_by_key(|r| r.idx);
-    out
+    let workers = if files.len() < PARALLEL_MIN { 1 } else { cpus };
+    crate::pool::par_map(files, workers, |i, path| search_file(i, path, plan))
+        .into_iter()
+        .filter(|r| r.total > 0 || r.skip != Skip::No)
+        .collect()
 }
 
 // Renders one line as text, clipped around the match column.
@@ -296,8 +276,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
     let list_mode = p.has("files") || p.has("count");
     let plan = Plan { engine: ctx.engine, re, max, context, files_only: p.has("files") };
-    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let mut results = search_all(&files, &plan, cpus);
+    let mut results = search_all(&files, &plan, crate::pool::cpus());
     results.sort_by_key(|r| crate::util::rank(&files[r.idx]));
     if !results.iter().any(|r| r.total > 0) {
         return Ok(Output::ok(format!("no matches in {} files{}", files.len(), skipped_note(&results))));
