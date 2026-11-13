@@ -2,7 +2,8 @@
 # Write the zazzle Homebrew formula for a release: formula.sh TAG SHA256 DIR [BOTTLE_DIR]
 #
 # The formula installs the prebuilt universal binaries from the release tarball of TAG on GitHub, and the
-# compressed C# indexer for both CPU types; post_install expands the one that matches this Mac.
+# compressed C# indexer for both CPU types; post_install_steps expands the one that matches this Mac over a
+# placeholder bin/zazzle-csharp-indexer, which brew links before post-install runs.
 # With BOTTLE_DIR (bottle.sh output, uploaded to the same release) it also gets a bottle block, so brew
 # pours the bottle and skips its build-from-source checks, such as up-to-date Command Line Tools.
 # Homebrew does not quarantine what a formula installs, so Gatekeeper lets unsigned binaries run.
@@ -48,13 +49,21 @@ class Zazzle < Formula
   def install
     bin.install "zazzle", "zazzled", "afs", "fix-network", "free-disk-space"
     (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
+    (bin/"zazzle-csharp-indexer").write <<~SH
+      #!/bin/sh
+      echo "zazzle-csharp-indexer is not set up yet; run: brew postinstall zazzle" >&2
+      exit 1
+    SH
+    chmod 0755, bin/"zazzle-csharp-indexer"
   end
 
-  # Expand the C# indexer for this CPU (compressed to keep the download and the bottle small).
-  def post_install
-    arch = Hardware::CPU.arm? ? "arm64" : "x64"
-    system "sh", "-c", 'gunzip -c "\$1" > "\$2" && chmod 755 "\$2"', "sh",
-           libexec/"indexer/zazzle-csharp-indexer-#{arch}.gz", bin/"zazzle-csharp-indexer"
+  # Expand the C# indexer for this CPU over the placeholder, which brew linked before post-install ran.
+  post_install_steps do
+    run "/bin/sh",
+        args:           ["-c", 'set -e; a=x64; [ "\$(uname -m)" = arm64 ] && a=arm64; gunzip -c "\$1/zazzle-csharp-indexer-\$a.gz" > "\$2.tmp"; chmod 755 "\$2.tmp"; mv -f "\$2.tmp" "\$2"',
+                         "sh", "{{libexec}}/indexer", "{{bin}}/zazzle-csharp-indexer"],
+        writable_paths: ["zazzle-csharp-indexer", "zazzle-csharp-indexer.tmp"],
+        writable_base:  :bin
   end
 
   test do
