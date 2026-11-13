@@ -95,7 +95,8 @@ public class ViewTests
         Assert.Contains("8~\tsealed class InvoiceService", v);
         Assert.Contains("11~\t    readonly IRepo _repo;", v);
         Assert.Contains("20~\t    decimal Total(int id)", v);
-        Assert.Contains("~\t        var invoice = (Invoice)_repo.Get(id);", v);
+        Assert.Contains("~\t        var inv = (Invoice)_repo.Get(id);", v);
+        Assert.Contains("29~\t            return inv.Sum();", v);
         Assert.Contains("~\t        var seen = new List<int>();", v);
         Assert.Contains("\t        IRepo other = new Repo();", v);
         Assert.Contains("\t        long big = 1;", v);
@@ -190,5 +191,66 @@ public class ViewTests
         Assert.Contains("\n1-2\t⋯ 2 using(s)\n", text);
         Assert.Equal("not a C# file: r:notes.txt", Assert.Throws<ToolException>(() => tool.Run(JsonNode.Parse("""{"path":"r:notes.txt"}"""), new CallInfo())).Message);
         Assert.Equal("no such file: r:gone.cs", Assert.Throws<ToolException>(() => tool.Run(JsonNode.Parse("""{"path":"r:gone.cs"}"""), new CallInfo())).Message);
+    }
+
+    [Theory]
+    // Long names become the initials of their words, or three letters of one word; short names stay.
+    [InlineData("invoiceRepository", "ir")]
+    [InlineData("customers", "cus")]
+    [InlineData("HTTPClientFactory", "hcf")]
+    [InlineData("total", null)]
+    [InlineData("item2Count", "ic")]
+    public void test_view_abbreviate(string name, string? expected) => Assert.Equal(expected, TerseView.Abbreviate(name));
+
+    [Fact]
+    // Only the local's own uses change: a field, a member and a parameter with the same name stay, captures in lambdas follow.
+    public void test_view_shortens_locals_by_binding()
+    {
+        var v = TerseView.Format(TerseView.Build("""
+            class C
+            {
+                int invoiceCount;
+                int M(int customers, Other other)
+                {
+                    int invoiceCount = this.invoiceCount + other.invoiceCount;
+                    foreach (var lineItem in Items()) { invoiceCount += lineItem; }
+                    Func<int> f = () => invoiceCount + customers;
+                    if (Try(out var resultValue)) return resultValue;
+                    try { } catch (Exception exception) { Log(exception); }
+                    return f();
+                }
+            }
+            """).Lines);
+        Assert.Contains("int ic = this.invoiceCount + other.invoiceCount;", v);
+        Assert.Contains("foreach (var li in Items()) { ic += li; }", v);
+        Assert.Contains("Func<int> f = () => ic + customers;", v);
+        Assert.Contains("if (Try(out var rv)) return rv;", v);
+        Assert.Contains("catch (Exception exc) { Log(exc); }", v);
+        Assert.Contains("int invoiceCount;", v);
+        Assert.Contains("M(int customers, Other other)", v);
+    }
+
+    [Fact]
+    // A short name already used in the member, or a keyword, gets a number; a local used in nameof keeps its name.
+    public void test_view_shortens_locals_without_clashes()
+    {
+        var v = TerseView.Format(TerseView.Build("""
+            class C
+            {
+                void M()
+                {
+                    var ic = 1;
+                    var invoiceCount = ic;
+                    var integerValue = 2;
+                    var asyncState = 3;
+                    var renamedLater = 4;
+                    Use(nameof(renamedLater), integerValue, asyncState);
+                }
+            }
+            """).Lines);
+        Assert.Contains("var ic2 = ic;", v);
+        Assert.Contains("var iv = 2;", v);
+        Assert.Contains("var as2 = 3;", v);
+        Assert.Contains("var renamedLater = 4;", v);
     }
 }

@@ -17,7 +17,7 @@ Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`
 - Pipe noisy command output through `zazzle clean` (`cargo test 2>&1 | zazzle clean`, `grep -rn x . | zazzle clean`): it strips colours and redraws, groups grep output by file, minifies JSON, collapses repeats, progress bars and blobs, and keeps head and tail within `--budget`. Every cut is marked; add `--lossless` to keep progress lines, blobs and long lines. `set -o pipefail` keeps the command's exit status.
 - Regex is Rust syntax (no look-around or backreferences); use `-F` for literal text.
 
-- C# files read as a terse behavioural view with source line numbers and no sha (`N~` lines are changed, `A-B ⋯` lines are hidden); use it to understand code, and `zazzle read FILE --source` before editing.
+- C# files read as a terse behavioural view with source line numbers and no sha (`N~` lines are changed, `A-B ⋯` lines are hidden, long locals have short names); use it to understand code, and `zazzle read FILE --source` before editing.
 
 ## Edit
 - Every edit except `--create` needs `--expect SHA` from `zazzle read FILE --source` (or `--at` anchors from `--source --anchors`); a refusal means read the source again.

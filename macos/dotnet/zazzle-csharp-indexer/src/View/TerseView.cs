@@ -1,8 +1,9 @@
-// Terse behavioural view of a C# file: hides usings, logging, regions, trivial constructors and log-and-rethrow catches, and shortens declarations, keeping source line numbers.
+// Terse behavioural view of a C# file: hides usings, logging, regions, trivial constructors and log-and-rethrow catches, and shortens declarations and long local names, keeping source line numbers.
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
+using System.Text.RegularExpressions;
 
 namespace ZazzleIndexer.View;
 
@@ -14,6 +15,7 @@ public static class TerseView
 {
     private static readonly string[] LogMethods = ["Debug", "Info", "Information", "Warn", "Warning", "Error", "Fatal", "Trace", "Verbose", "Critical"];
     private static readonly string[] TelemetryMethods = ["SetTag", "AddTag", "AddEvent", "SetStatus", "SetBaggage", "AddBaggage", "RecordException", "AddException"];
+    private const int MinShortened = 6;
     private static readonly SyntaxKind[] Access = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.InternalKeyword];
 
     // Returns the view lines and, per step, how many places it changed.
@@ -29,6 +31,7 @@ public static class TerseView
         HideRegions(root, plan);
         DropAccessModifiers(root, plan);
         UseVar(root, plan);
+        ShortenLocals(tree, root, plan);
         return (plan.Render(), plan.Steps);
     }
 
@@ -169,6 +172,54 @@ public static class TerseView
         }
     }
 
+    // Returns a short name for a long local: the initials of its camelCase words, or the first three letters of a single word; null when not worth it.
+    public static string? Abbreviate(string name)
+    {
+        if (name.Length < MinShortened)
+            return null;
+        var words = Regex.Matches(name, "[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])").Select(m => m.Value).ToList();
+        var shortName = words.Count > 1 ? string.Concat(words.Select(w => char.ToLowerInvariant(w[0]))) : name[..3].ToLowerInvariant();
+        return shortName.Length < name.Length && char.IsLetter(shortName[0]) ? shortName : null;
+    }
+
+    // True when a name cannot stand for a local: a keyword or contextual keyword such as `var`.
+    private static bool Reserved(string name) =>
+        SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None;
+
+    // Shortens long local variable names, binding with a compilation of this file alone so only the local's own uses change; parameters keep their names.
+    private static void ShortenLocals(SyntaxTree tree, CompilationUnitSyntax root, Plan plan)
+    {
+        var model = CSharpCompilation.Create("view", [tree]).GetSemanticModel(tree);
+        var declarators = root.DescendantNodes().Where(n => n is VariableDeclaratorSyntax { Parent.Parent: LocalDeclarationStatementSyntax } or ForEachStatementSyntax or CatchDeclarationSyntax or SingleVariableDesignationSyntax);
+        var taken = new Dictionary<SyntaxNode, HashSet<string>>();
+        foreach (var node in declarators)
+        {
+            if (model.GetDeclaredSymbol(node) is not ILocalSymbol local || Abbreviate(local.Name) is not { } wanted)
+                continue;
+            var scope = (SyntaxNode?)node.FirstAncestorOrSelf<MemberDeclarationSyntax>() ?? root;
+            var uses = scope.DescendantNodes().OfType<IdentifierNameSyntax>()
+                .Where(id => id.Identifier.ValueText == local.Name && SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(id).Symbol, local)).ToList();
+            if (uses.Any(u => u.Ancestors().OfType<InvocationExpressionSyntax>().Any(i => i.Expression is IdentifierNameSyntax { Identifier.ValueText: "nameof" })))
+                continue;
+            if (!taken.TryGetValue(scope, out var names))
+                taken[scope] = names = scope.DescendantTokens().Where(t => t.IsKind(SyntaxKind.IdentifierToken)).Select(t => t.ValueText).ToHashSet();
+            var shortName = wanted;
+            for (var n = 2; names.Contains(shortName) || Reserved(shortName); n++)
+                shortName = wanted + n;
+            names.Add(shortName);
+            var declared = node switch
+            {
+                VariableDeclaratorSyntax v => v.Identifier,
+                ForEachStatementSyntax f => f.Identifier,
+                CatchDeclarationSyntax c => c.Identifier,
+                _ => ((SingleVariableDesignationSyntax)node).Identifier,
+            };
+            plan.Change(declared.Span, shortName, "locals shortened");
+            foreach (var u in uses)
+                plan.Change(u.Identifier.Span, shortName, null);
+        }
+    }
+
     // Collects hidden ranges and single-line text changes, then renders the view.
     private sealed class Plan(SourceText text)
     {
@@ -215,12 +266,13 @@ public static class TerseView
         }
 
         // Records a change that stays within one line.
-        public void Change(TextSpan span, string replacement, string step)
+        public void Change(TextSpan span, string replacement, string? step)
         {
             if (text.Lines.GetLineFromPosition(span.Start).LineNumber != text.Lines.GetLineFromPosition(span.End).LineNumber)
                 return;
             _changes.Add(new TextChange(span, replacement));
-            Count(step);
+            if (step is not null)
+                Count(step);
         }
 
         // Produces the view: hidden ranges become notes or gaps, changed lines are marked, and blank runs shrink to one.
