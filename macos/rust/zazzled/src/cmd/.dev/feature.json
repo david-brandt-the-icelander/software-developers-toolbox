@@ -365,8 +365,8 @@
     },
     {
       "id": "code-terse-view",
-      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ view",
-      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh or .hxx file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
+      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala view",
+      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala or .sc file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/terse.rs",
@@ -378,11 +378,11 @@
         },
         {
           "path": "macos/rust/zazzled/README.md",
-          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ terse view"
+          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala terse view"
         }
       ],
       "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) catch clauses that only log and rethrow the caught exception, Go `if err != nil` blocks that only log and return the error (kept on one line), and `if` blocks that only check a log level and log; it drops public, private and protected from TypeScript class members and Java declarations, and Rust pub except on pub use, and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
-      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ code from fewer tokens, and still has to read the real code before it can edit it.",
+      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala code from fewer tokens, and still has to read the real code before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
@@ -430,6 +430,10 @@
         {
           "path": "macos/rust/zazzled/src/terse.rs",
           "symbol": "stream_log"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "scala_rethrow"
         }
       ]
     },

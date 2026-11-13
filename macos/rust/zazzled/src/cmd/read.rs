@@ -174,7 +174,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C or C++ file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP or Scala file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
