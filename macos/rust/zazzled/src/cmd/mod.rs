@@ -27,7 +27,7 @@ outline PATH.. [-d N] [-m N]  symbols with line ranges
 refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
 edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
-proxy [--lossless] [--budget T] [--skip TOOL].. [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
+proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
 status  daemon info

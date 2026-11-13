@@ -77,7 +77,14 @@ mod tests {
 
     // A filter with the default settings.
     fn filter() -> Filter {
-        Filter { lossy: true, budget: 8000, skip: Vec::new(), log: false, store: None }
+        Filter {
+            lossy: true,
+            budget: 8000,
+            skip: Vec::new(),
+            log: false,
+            store: None,
+            config: crate::proxy::config::Config::default(),
+        }
     }
 
     // A writer that always fails.
