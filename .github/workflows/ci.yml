@@ -69,6 +69,20 @@ jobs:
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches
 
+  # Releases build with the tag's version (macos/release/set-version.sh), so run the tests at a release-like version too.
+  release-version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: macos/rust
+      - name: Set version 9.8.7, as a release would
+        working-directory: .
+        run: bash macos/release/set-version.sh 9.8.7
+      - run: cargo test --workspace --locked
+
   msrv:
     runs-on: ubuntu-24.04
     steps:
