@@ -112,9 +112,10 @@ pub fn worker(bin: &Path, mounts: &[Value], tmp: PathBuf, network: bool) -> (Vec
             .filter_map(|p| p["host"].as_str().map(PathBuf::from))
             .collect::<Vec<_>>()
     };
-    let mut policy =
-        Policy::for_program(bin).reading(host(false)).writing(host(true).into_iter().chain([tmp]));
-    policy.network = network;
+    let policy = Policy::for_program(bin)
+        .reading(host(false))
+        .writing(host(true).into_iter().chain([tmp]))
+        .networked(network);
     (vec![bin.to_string_lossy().into_owned()], policy)
 }
 

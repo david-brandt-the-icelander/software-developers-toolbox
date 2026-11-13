@@ -167,10 +167,10 @@ fn spec(
             .filter_map(|p| p["host"].as_str().map(PathBuf::from))
             .collect::<Vec<_>>()
     };
-    let mut policy = super::sandbox::Policy::for_program(&worker)
+    let policy = super::sandbox::Policy::for_program(&worker)
         .reading(host(false))
-        .writing(host(true).into_iter().chain([tmp]));
-    policy.network = hello["network"] != "none";
+        .writing(host(true).into_iter().chain([tmp]))
+        .networked(hello["network"] != "none");
     let key = format!("{hex}\n{}\n{hello}", cwd.display());
     let program = vec![worker.to_string_lossy().into_owned(), "serve".into()];
     Ok(Spec {

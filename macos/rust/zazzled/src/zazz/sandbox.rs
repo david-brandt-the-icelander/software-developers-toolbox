@@ -20,6 +20,7 @@ const SYSTEM_READ: [&str; 12] = [
     "/dev/null",
 ];
 const SYSTEM_WRITE: [&str; 1] = ["/dev/null"];
+const DNS_FILES: [&str; 4] = ["/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/gai.conf"];
 const LOADERS: [&str; 4] = ["/lib", "/lib64", "/usr/lib", "/usr/lib64"];
 
 // What a sandboxed process may touch: files to read, to write, programs to execute, and whether it has a network.
@@ -50,6 +51,15 @@ impl Policy {
     // Adds paths to read and write, skipping missing ones.
     pub fn writing(mut self, paths: impl IntoIterator<Item = PathBuf>) -> Policy {
         self.write.extend(paths.into_iter().filter(|p| p.exists()));
+        self
+    }
+
+    // Allows or denies the network; with it come the files the system resolver reads for DNS.
+    pub fn networked(mut self, on: bool) -> Policy {
+        self.network = on;
+        if on {
+            self = self.reading(DNS_FILES.iter().map(PathBuf::from));
+        }
         self
     }
 
@@ -364,8 +374,11 @@ mod tests {
             !text.contains("network-outbound") && !text.contains(&t.path().to_string_lossy().into_owned())
         );
         assert_eq!(params[0], ("R0".to_string(), t.path().to_string_lossy().into_owned()));
-        let (net, _) = sbpl(&Policy { network: true, ..p });
+        let (net, _) = sbpl(&Policy { network: true, ..p.clone() });
         assert!(net.contains("(allow network-outbound)"));
+        let dns = Policy::default().networked(true);
+        assert!(dns.network && dns.read.iter().all(|r| DNS_FILES.iter().any(|d| r == Path::new(d))));
+        assert_eq!(Policy::default().networked(false), Policy::default());
         let link = t.path().join("link");
         std::os::unix::fs::symlink(&f, &link).expect("symlink");
         let (text, params) = sbpl(&Policy { exec: vec![link.clone()], ..Policy::default() });

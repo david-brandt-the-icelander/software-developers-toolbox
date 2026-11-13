@@ -1,0 +1,323 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazz command operations",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "The zazz subcommands. Each is reached as `zazz SUB ...` (the invoker run under the name zazz sends `zazz` first), as `zazzle zazz SUB ...`, or in-process as `zazzled run zazz SUB ...`; an installed shim NAME sends `zazz exec-name NAME ARGS`. Seven are also MCP tools of `zazzled mcp` (zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe, zazz_ls); keygen, sign, trust, install, run, uninstall, list, rm and doctor are not. Agent-facing commands reply with one JSON value, or `{\"error\": {\"code\", \"message\", ...}}` with exit status 2; pack's own failures are `error: ...` lines; the human commands (run, install, uninstall, list) reply in plain text. help only prints text and is left out.",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" },
+    { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "reply" },
+    { "path": "macos/rust/zazzled/src/zazz/mcptools.rs", "symbol": "TOOLS" },
+    { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "build_request" },
+    { "path": "macos/rust/zazzled/src/server.rs", "symbol": "check_peer" }
+  ],
+  "entities": [
+    {
+      "id": "new",
+      "name": "zazz new",
+      "description": "Creates a Rust script directory to start from.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "new" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "new" },
+      "action": "command",
+      "transport": "zazz new NAME; MCP tool zazz_new",
+      "authorization": "Callers of the daemon's own uid (checked by the socket server); writes NAME/ in the caller's working directory.",
+      "result": "{dir, files: [zazz.json, src/main.rs, tests/basic.rs], next}: a manifest, a json-command handler that counts lines and words, and tests using zazz::test.",
+      "failures": [
+        "No name or more than one: usage.",
+        "A name that is not lowercase letters, digits and '-' or is one of zazz's own words: bad_input.",
+        "The directory exists: exists."
+      ]
+    },
+    {
+      "id": "pack",
+      "name": "zazz pack",
+      "description": "Packs a script directory into a deterministic .zazz.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/pack.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "output_path" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/pack.rs", "symbol": "run" },
+      "action": "command",
+      "transport": "zazz pack DIR [-o FILE]; MCP tool zazz_pack",
+      "authorization": "Callers of the daemon's own uid; the output must lie under the working directory or a temp directory.",
+      "result": "{path, hash: b3:..., name, bytes}; the default output is DIR.zazz beside DIR, written atomically.",
+      "failures": [
+        "No directory: `usage: zazz pack DIR [-o FILE]`.",
+        "A directory that does not pack (no valid manifest, over the archive limits).",
+        "An output outside the working directory or a temp directory: `refusing to write ... outside the working directory or a temp directory`."
+      ]
+    },
+    {
+      "id": "test",
+      "name": "zazz test",
+      "description": "Builds a script and runs its tests without registering it.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/testcmd.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "build_and_test" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/testcmd.rs", "symbol": "run" },
+      "action": "query",
+      "transport": "zazz test DIR|FILE [--update]; MCP tool zazz_test",
+      "authorization": "Callers of the daemon's own uid; the build and tests run in the OS sandbox with no network but the test replay file.",
+      "result": "{name, build: \"ok\", tests: {passed, ignored, failed, duration_ms} or null, warnings}; nothing is published (scratch space is removed). With --update (directories only) snapshots under tests/snapshots are rewritten, which makes it a write.",
+      "failures": [
+        "--update with a .zazz file: usage.",
+        "No toolchain or no wasm32-wasip1 target for a Rust script: no_toolchain, saying how to install it.",
+        "Compile errors: build_failed with up to 20 condensed diagnostics {level, file, line, col, msg, hint}.",
+        "A module zazz-worker refuses: invalid_wasm.",
+        "Failing tests: tests_failed with the report.",
+        "No OS sandbox: sandbox_unavailable; no zazz-worker: no_worker.",
+        "kind native-bin: unsupported."
+      ]
+    },
+    {
+      "id": "add",
+      "name": "zazz add",
+      "description": "Builds, tests and registers a .zazz by the hash of its bytes.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "read_once" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+      "action": "command",
+      "transport": "zazz add FILE.zazz; MCP tool zazz_add",
+      "authorization": "Callers of the daemon's own uid; the file is opened without following symlinks and must be a regular file within the archive size limit. A signature is checked, and trust is decided by root-owned anchors or the Keychain, not by the caller.",
+      "result": "{hash: b3:..., name, status: compiled|cached, runtime: wasm|native, tests, warnings, signer, trusted}; `cached` when the id is registered already. Warnings say when there are no tests, the signer is not trusted here, or native was asked for but not granted.",
+      "failures": [
+        "Not one argument: usage.",
+        "Unreadable, a symlink, not a regular file: unreadable; too large or a bad archive: invalid_archive; a bad manifest: invalid_manifest; a bad signature: invalid_signature.",
+        "Build and test failures as for zazz test (build_failed, invalid_wasm, tests_failed, no_toolchain, sandbox_unavailable, no_worker, unsupported).",
+        "No tests while the root-owned policy sets require_tests: tests_missing.",
+        "A script declaring openapi that does not return a document: invalid_openapi, and the script is removed again.",
+        "Registry errors: store."
+      ]
+    },
+    {
+      "id": "call",
+      "name": "zazz call",
+      "description": "Runs a registered script's json-command, or one service-call operation, in a warm worker.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "agent_reply" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "run" },
+      "action": "command",
+      "transport": "zazz call ID [JSON|-] or zazz call ID OPERATION [--params JSON] [--body JSON|-]; MCP tool zazz_call (input, or operation with params and body)",
+      "authorization": "Callers of the daemon's own uid. The script touches only its manifest's paths (relative to the caller's directory, $TMP and $HOME), narrowed by its signer's grants; it gets network only when its signer is trusted with it here and the root-owned policy allows network.",
+      "result": "The script's output JSON; when it also wrote to captured streams (over MCP), {output, stdout, stderr}. Through the invoker the script reads and writes the caller's own streams (stdin is /dev/null when the input came from `-`).",
+      "failures": [
+        "Bad arguments or input that is not JSON: usage, bad_input.",
+        "An unknown id, a prefix shorter than 12 hex digits or matching several scripts: not_found.",
+        "No OS sandbox for a WASM worker: sandbox_unavailable; no zazz-worker: no_worker.",
+        "The worker fails to start or stops: script_crashed.",
+        "The call runs past the manifest's call_ms (plus 5 s): timeout; the caller hangs up: cancelled (a cancel is sent, then the worker is killed).",
+        "The script's own error result: its error object (codes such as timeout, out_of_memory, network_denied, sandbox_denied from the worker or SDK)."
+      ]
+    },
+    {
+      "id": "ls",
+      "name": "zazz ls",
+      "description": "Lists registered scripts.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "ls" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "ls" },
+      "action": "query",
+      "transport": "zazz ls; MCP tool zazz_ls",
+      "authorization": "Callers of the daemon's own uid.",
+      "result": "[{id (b3: and 12 hex digits), name, version, runtime, tests, added_at}], newest first.",
+      "failures": ["Registry errors: store."]
+    },
+    {
+      "id": "describe",
+      "name": "zazz describe",
+      "description": "Says what a registered script is, how it runs and what it may touch.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "describe" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "describe" },
+      "action": "query",
+      "transport": "zazz describe ID|PREFIX|NAME; MCP tool zazz_describe",
+      "authorization": "Callers of the daemon's own uid.",
+      "result": "{id, name, version, description, runtime, messages, sandbox, cli (whether it has a cli spec), operations (OpenAPI operation ids), tests, signer}.",
+      "failures": ["Not one argument: usage.", "An id that resolves to no script: not_found."]
+    },
+    {
+      "id": "rm",
+      "name": "zazz rm",
+      "description": "Removes a registered script and every name installed for it.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "rm" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "rm" },
+      "action": "command",
+      "transport": "zazz rm ID|PREFIX|NAME",
+      "authorization": "Callers of the daemon's own uid.",
+      "result": "{removed: b3:...}; its modules, native binary, metadata, lock, names and shims are gone.",
+      "failures": ["Not one argument: usage.", "An id that resolves to no script: not_found."]
+    },
+    {
+      "id": "keygen",
+      "name": "zazz keygen",
+      "description": "Makes a signing authority: a P-256 key and a self-signed certificate with the zazz signing purpose and grants.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "keygen" },
+        { "path": "macos/rust/zazzled/src/zazz/crypto.rs", "symbol": "self_signed" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "keygen" },
+      "action": "command",
+      "transport": "zazz keygen NAME [--native] [--network none|all|HOST,...] [--read P,...] [--write P,...] [--days N]",
+      "authorization": "Callers of the daemon's own uid; writes NAME.key (0600, refused if it exists) and NAME.crt in ~/.zazzle/keys (0700).",
+      "result": "{key, cert, grants, next}: the grants default to no native code and no network; validity defaults to 365 days; next says how to trust it.",
+      "failures": [
+        "A bad option, no name or a bad --days: usage.",
+        "A bad name or host pattern: bad_input.",
+        "The key exists: exists."
+      ]
+    },
+    {
+      "id": "sign",
+      "name": "zazz sign",
+      "description": "Signs a .zazz with a key from the keys directory.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "sign" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "pick_key" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "sign" },
+      "action": "command",
+      "transport": "zazz sign FILE.zazz [--key NAME] [-o OUT]",
+      "authorization": "Callers of the daemon's own uid; the output must lie under the working directory or a temp directory.",
+      "result": "{path, hash, signer}: a copy of the archive with zazz.sig (the digest, an ECDSA P-256 signature and the signer's chain), written to OUT or over FILE; the signed file has a new id.",
+      "failures": [
+        "Bad arguments: usage; several keys and no --key: usage.",
+        "No key, or an unreadable key or certificate: no_key.",
+        "An unreadable file, bad archive or manifest: unreadable, invalid_archive, invalid_manifest.",
+        "An output outside the allowed directories: io."
+      ]
+    },
+    {
+      "id": "trust",
+      "name": "zazz trust",
+      "description": "Lists, adds and removes the authorities this machine trusts.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "trust_cmd" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "anchors" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "trust_cmd" },
+      "action": "command",
+      "transport": "zazz trust ls | add CERT | rm NAME",
+      "authorization": "ls: callers of the daemon's own uid, listing only anchors in a root-owned /etc/zazzle/trust.d. add and rm write that directory, which needs root; on macOS add also sets Keychain trust, for which macOS asks the person to authenticate. Not offered over MCP.",
+      "result": "ls: [{authority, grants}]; add: {trusted, path} (the certificate as NAME.pem); rm: {removed}.",
+      "failures": [
+        "Anything else: `usage: zazz trust ls | add CERT | rm NAME`.",
+        "An unreadable certificate file: io; no certificate in it: bad_input.",
+        "No permission to write or remove in the trust directory: permission, suggesting sudo."
+      ]
+    },
+    {
+      "id": "doctor",
+      "name": "zazz doctor",
+      "description": "Checks everything zazz needs.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "doctor" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "doctor" },
+      "action": "query",
+      "transport": "zazz doctor",
+      "authorization": "Callers of the daemon's own uid.",
+      "result": "One check each for rustc, the wasm32-wasip1 target, zazz-worker, the OS sandbox, the registry and the shim directory: ok, or the problem and how to fix it.",
+      "failures": []
+    },
+    {
+      "id": "install",
+      "name": "zazz install",
+      "description": "Makes a script a command a person can run.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "make_shim" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" },
+      "action": "command",
+      "transport": "zazz install FILE.zazz|ID [--as NAME]",
+      "authorization": "Callers of the daemon's own uid; writes a name in the registry and a symlink in $ZAZZ_BIN or ~/.zazzle/bin, replacing only an existing symlink.",
+      "result": "`installed NAME (b3:...) as PATH`, with a reminder to put the shim directory on PATH when it is not; a file is added first (as zazz add).",
+      "failures": [
+        "Bad arguments: exit 2.",
+        "An add failure or an unknown id: exit 1 with its code and message.",
+        "A name that is invalid or reserved: exit 2.",
+        "No invoker beside zazzled, or a non-symlink file where the shim goes: exit 1."
+      ]
+    },
+    {
+      "id": "run",
+      "name": "zazz run and installed shims",
+      "description": "Runs a script as a person would: flags parsed from its manifest, plain output.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "input_for" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "render" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" },
+      "action": "command",
+      "transport": "zazz run NAME|ID [ARGS...]; NAME [ARGS...] through a shim (zazz exec-name NAME ARGS)",
+      "authorization": "As zazz call.",
+      "result": "What the script wrote to the caller's stdout, then its returned output rendered (strings raw, tables on a terminal, JSON otherwise; raw JSON with --json unless the script defines --json); the script's exit code. --help prints the usage generated from the cli spec.",
+      "failures": [
+        "No name: `usage: zazz run NAME|ID [ARGS...]`.",
+        "No such script: `NAME: not_found: ...`, exit 127.",
+        "Arguments the cli spec rejects: the parser's message, exit 2.",
+        "A call failure or the script's error: `NAME: CODE: message`, exit 1 or the script's exit code."
+      ]
+    },
+    {
+      "id": "uninstall",
+      "name": "zazz uninstall",
+      "description": "Removes an installed command; the script stays registered.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "uninstall" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "uninstall" },
+      "action": "command",
+      "transport": "zazz uninstall NAME",
+      "authorization": "Callers of the daemon's own uid; removes the shim only if it is a symlink.",
+      "result": "`uninstalled NAME`.",
+      "failures": ["Not one name: usage, exit 2.", "A name that is not installed: exit 1."]
+    },
+    {
+      "id": "list",
+      "name": "zazz list",
+      "description": "Lists installed commands.",
+      "sources": [{ "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "list" }],
+      "entrypoint": { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "list" },
+      "action": "query",
+      "transport": "zazz list",
+      "authorization": "Callers of the daemon's own uid.",
+      "result": "Installed names with their script ids, one per line.",
+      "failures": []
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/capability.json",
+      "relationship": "The capability these operations belong to."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/feature.json",
+      "relationship": "The behavior they carry."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/use-case.json",
+      "relationship": "The use cases that call them."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazz-worker/src",
+      "path": "macos/rust/zazz-worker/src/.dev/operation.json",
+      "relationship": "The worker subcommands add, test, call and run start."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The zazzle commands, whose dispatcher hands `zazz` here."
+    }
+  ]
+}

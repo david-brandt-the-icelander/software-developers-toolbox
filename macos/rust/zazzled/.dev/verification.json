@@ -20,6 +20,9 @@
         },
         {
           "path": "macos/rust/zazzled/src/wrap/.dev/verification.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/.dev/verification.json"
         }
       ],
       "criteria": [

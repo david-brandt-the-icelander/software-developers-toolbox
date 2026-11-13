@@ -101,13 +101,18 @@ pub fn spawn(spec: &Spec) -> Result<(Worker, Value), String> {
         spec.module.as_ref().map(File::open).transpose().map_err(|e| format!("opening the module: {e}"))?;
     let (sock_fd, module_fd) = (theirs.as_raw_fd(), module.as_ref().map(AsRawFd::as_raw_fd));
     let (prog, args) = spec.program.split_first().ok_or("no program to start")?;
-    let mut cmd = Command::new(prog);
-    cmd.args(args)
-        .current_dir(&spec.cwd)
-        .env_clear()
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    let mut cmd = match &spec.sandbox {
+        Some(policy) => {
+            let args: Vec<std::ffi::OsString> = args.iter().map(Into::into).collect();
+            super::sandbox::command(Path::new(prog), &args, policy)?
+        }
+        None => {
+            let mut c = Command::new(prog);
+            c.args(args);
+            c
+        }
+    };
+    cmd.current_dir(&spec.cwd).env_clear().stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     // SAFETY: the closure only calls async-signal-safe syscalls on descriptors owned by this process.
     unsafe {
         cmd.pre_exec(move || {
@@ -243,6 +248,25 @@ mod tests {
         let mut s = spec(&["true"], t.path());
         s.module = Some(t.path().join("missing.cwasm"));
         assert!(spawn(&s).unwrap_err().contains("opening the module"));
+    }
+
+    // Checks spawn applies the spec's sandbox: a worker that must read a file outside its policy to answer never does.
+    #[test]
+    fn test_spawn_applies_sandbox() {
+        let t = TempDir::new();
+        let secret = t.write("secret.txt", b"x");
+        let script = format!(
+            r#"cat {} >/dev/null && printf '\015\000\000\000{{"t":"ready"}}' >&3 && sleep 5"#,
+            secret.display()
+        );
+        let s = spec(&["/bin/sh", "-c", &script], t.path());
+        let (w, ready) = spawn(&s).expect("unsandboxed, the worker reads the file and answers");
+        assert_eq!(ready["t"], "ready");
+        w.kill();
+        let policy = super::super::sandbox::Policy::for_program(Path::new("/bin/sh"))
+            .executing([PathBuf::from("/bin"), PathBuf::from("/usr/bin")]);
+        let boxed = Spec { sandbox: Some(policy), ..s };
+        assert!(spawn(&boxed).unwrap_err().contains("did not answer"));
     }
 
     // Checks the descriptor mover, including moving a descriptor onto itself.
