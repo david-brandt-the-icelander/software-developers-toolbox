@@ -1,6 +1,7 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::indexer::Indexer;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::outline;
 use crate::symbols::{self, Miss};
@@ -15,9 +16,10 @@ const SPEC: &[Flag] = &[
     opt("budget", 'b'),
     opt("symbol", 's'),
     flag("anchors", '\0'),
+    flag("source", '\0'),
     flag("full", '\0'),
 ];
-const USAGE: &str = "usage: read PATH[:A-B].. [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]";
+const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]";
 const DEFAULT_BUDGET: usize = 3000;
 const DEFAULT_CTX: usize = 20;
 const MINIFIED_CLIP: usize = 400;
@@ -114,6 +116,7 @@ struct Opts {
     ctx: usize,
     budget: usize,
     anchors: bool,
+    terse: bool,
 }
 
 // Renders one file according to the options; the label names a symbol in the header.
@@ -137,11 +140,18 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
         return Ok(format!("{shown}: empty, sha {sha}"));
     }
     let (a, b) = bounds(sel, nl, o.ctx).map_err(|e| format!("{shown}: {e}"))?;
+    let mut unavailable = String::new();
+    if o.terse && outline::lang_of(&path) == outline::Lang::CSharp {
+        match Indexer::locate().and_then(|ix| ix.view(&path)) {
+            Ok(view) => return Ok(render_terse(&shown, &view, (a, b), nl, o, label)),
+            Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
+        }
+    }
     let costs: Vec<usize> =
         (a..=b).map(|n| tokens::from_bytes(line_bytes(data, &meta.starts, n).len() + 8)).collect();
     let (head, tail_start) = fit(&costs, o.budget);
     let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
-    let mut out = format!("{shown} {nl} lines, sha {sha}{partial}\n");
+    let mut out = format!("{shown} {nl} lines, sha {sha}{partial}\n{unavailable}");
     for i in 0..head {
         out.push_str(&format_line(data, meta, a + i, o.anchors));
         out.push('\n');
@@ -156,6 +166,45 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     }
     out.pop();
     Ok(out)
+}
+
+// Returns the source lines a terse view line covers, from its key: `N`, `N~` or `A-B`.
+fn view_key(key: &str) -> Option<(usize, usize)> {
+    let k = key.trim_end_matches('~');
+    match k.split_once('-') {
+        Some((a, b)) => Some((a.parse().ok()?, b.parse().ok()?)),
+        None => k.parse().ok().map(|n| (n, n)),
+    }
+}
+
+// Renders the indexer's terse view of a C# file for a line range under the budget; it has no sha, so edits need --source.
+fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &Opts, label: &str) -> String {
+    let (head, body) = view.split_once('\n').unwrap_or((view, ""));
+    let steps = head.split_once("terse: ").map_or("nothing to shorten", |(_, s)| s);
+    let lines: Vec<(usize, usize, &str)> = body
+        .lines()
+        .filter_map(|l| view_key(l.split_once('\t')?.0).map(|(s, e)| (s, e, l)))
+        .filter(|(s, e, _)| *e >= a && *s <= b)
+        .collect();
+    let costs: Vec<usize> = lines.iter().map(|(_, _, l)| tokens::from_bytes(l.len() + 1)).collect();
+    let (keep, tail_start) = fit(&costs, o.budget);
+    let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
+    let mut out =
+        format!("{shown} {nl} lines, terse view{partial}: {steps}; read --source for the code and its sha\n");
+    for (_, _, l) in &lines[..keep] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    if tail_start > keep {
+        let (x, y) = (lines[keep].0, lines[tail_start - 1].1);
+        out.push_str(&format!("… lines {x}-{y} elided; read {shown}:{x}-{y} or --full\n"));
+    }
+    for (_, _, l) in &lines[tail_start.max(keep)..] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out.pop();
+    out
 }
 
 // Explains a symbol name that did not resolve, listing what can be asked for instead.
@@ -226,6 +275,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         ctx: p.number("ctx")?.unwrap_or(DEFAULT_CTX),
         budget,
         anchors: p.has("anchors"),
+        terse: !p.has("source") && !p.has("anchors"),
     };
     let symbol = p.value("symbol");
     if symbol.is_some() && opts.sel != Select::Whole {
@@ -459,5 +509,92 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "nope.rs", "-s", "A"]).text.starts_with("error: nope.rs: "));
         t.write("b.bin", b"\0\x01\x02");
         assert!(run_cmd(t.path(), &["read", "b.bin", "-s", "A"]).text.starts_with("b.bin: binary, 3 bytes"));
+    }
+
+    // Points the indexer bridge at a fake daemon while a test runs, and writes a C# file in a git work tree.
+    fn csharp(
+        fake: &crate::indexer::tests::FakeIndexer,
+    ) -> (TempDir, Vec<(&'static str, Option<std::ffi::OsString>)>) {
+        let saved = ["ZAZZLE_INDEXER", "ZAZZLE_INDEXER_STATE_DIR"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        std::env::set_var("ZAZZLE_INDEXER", &fake.exe);
+        std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", fake.dir.path());
+        let t = TempDir::new();
+        std::fs::create_dir_all(t.path().join(".git")).expect("git dir");
+        t.write("C.cs", b"using A;\nusing B;\n\npublic class C\n{\n}\n");
+        (t, saved)
+    }
+
+    // Puts back the environment a test changed.
+    fn restore(saved: Vec<(&'static str, Option<std::ffi::OsString>)>) {
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+
+    // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.
+    #[test]
+    fn test_csharp_terse_view() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(crate::indexer::tests::viewing);
+        let (t, saved) = csharp(&fake);
+        let whole = run_cmd(t.path(), &["read", "C.cs"]).text;
+        assert_eq!(
+            whole,
+            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers; read --source for the code and its sha\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
+        );
+        let part = run_cmd(t.path(), &["read", "C.cs:4-5"]).text;
+        assert!(
+            part.starts_with("C.cs 6 lines, terse view [4-5]: ") && part.ends_with("\n4~\tclass C\n5\t{"),
+            "{part}"
+        );
+        let sym = run_cmd(t.path(), &["read", "C.cs", "--symbol", "C"]).text;
+        assert!(sym.contains("[4-6 class C]") && sym.ends_with("4~\tclass C\n5\t{\n6\t}"), "{sym}");
+        let source = run_cmd(t.path(), &["read", "C.cs", "--source"]).text;
+        assert!(source.starts_with("C.cs 6 lines, sha ") && source.contains("4\tpublic class C"));
+        assert!(run_cmd(t.path(), &["read", "C.cs", "--anchors"]).text.starts_with("C.cs 6 lines, sha "));
+        let small = run_cmd(t.path(), &["read", "C.cs", "--budget", "8"]).text;
+        assert!(small.contains("… lines ") && small.contains(" elided; read C.cs:"), "{small}");
+        restore(saved);
+    }
+
+    // Checks the source comes back, saying why, when the indexer cannot give a view.
+    #[test]
+    fn test_csharp_view_unavailable() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(crate::indexer::tests::viewing);
+        let (t, saved) = csharp(&fake);
+        std::env::set_var("ZAZZLE_INDEXER", t.path().join("missing-indexer"));
+        let out = run_cmd(t.path(), &["read", "C.cs"]).text;
+        assert!(out.starts_with("C.cs 6 lines, sha "), "{out}");
+        assert!(out.contains("\n(no terse view: zazzle-csharp-indexer --version: "), "{out}");
+        assert!(out.contains("4\tpublic class C"));
+        restore(saved);
+    }
+
+    // Checks view line keys parse into the source lines they cover.
+    #[test]
+    fn test_view_key() {
+        assert_eq!(view_key("12"), Some((12, 12)));
+        assert_eq!(view_key("12~"), Some((12, 12)));
+        assert_eq!(view_key("3-9"), Some((3, 9)));
+        assert_eq!(view_key("x"), None);
+        assert_eq!(view_key("3-x"), None);
+        assert_eq!(
+            render_terse(
+                "f.cs",
+                "f.cs 1 lines",
+                (1, 1),
+                1,
+                &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true },
+                ""
+            ),
+            "f.cs 1 lines, terse view: nothing to shorten; read --source for the code and its sha"
+        );
     }
 }

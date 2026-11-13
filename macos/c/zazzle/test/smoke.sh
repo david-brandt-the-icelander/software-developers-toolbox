@@ -62,8 +62,11 @@ case $second in "[r:"*"] already sent: zazzle read src/a.txt, unchanged. Re-run 
 again=$(ZAZZLE_SESSION=smoke "$zazzle" read src/a.txt --disable-session-deduping)
 [ "$again" = "$first" ] || fail "resend differs"
 
-# Edit through the invoker with the new text on standard input, inside the working directory only.
-printf 'beta from stdin' | "$zazzle" edit src/a.txt --old 'beta two' --new - >/dev/null || fail "edit with stdin"
+# Edit through the invoker with the new text on standard input, inside the working directory only; edits need the sha from read.
+if "$zazzle" edit src/a.txt --old 'beta two' --new x 2>"$tmp/err"; then fail "edit without sha must fail"; fi
+grep -q "edits need --expect SHA" "$tmp/err" || fail "missing-sha message: $(cat "$tmp/err")"
+sha=$("$zazzle" read src/a.txt --source | sed -n '1s/.*sha \([0-9a-f]*\).*/\1/p')
+printf 'beta from stdin' | "$zazzle" edit src/a.txt --old 'beta two' --new - --expect "$sha" >/dev/null || fail "edit with stdin"
 grep -q 'beta from stdin' src/a.txt || fail "edit did not write: $(cat src/a.txt)"
 if "$zazzle" edit /etc/hosts --old a --new b 2>"$tmp/err"; then fail "edit outside cwd must fail"; fi
 grep -q "refusing to write outside" "$tmp/err" || fail "confinement message: $(cat "$tmp/err")"

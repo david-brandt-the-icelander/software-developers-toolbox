@@ -20,6 +20,7 @@ zazzle-csharp-indexer report          # after some use: what to improve next
 - `read`: line ranges with numbers and a token budget; an unchanged repeat read returns a one-line note.
 - `find_files`, `changed_since` (cursor-based, valid within one daemon run), `git_log`, `git_blame`.
 - `run`: argv passthrough for read-only commands (grep, rg, sed, awk, find, cat, head, tail, wc, ls, git log/blame/show/diff/status ...). Best-effort guard against edits; `run.unrestricted: true` in `config.json` (or `ZAZZLE_INDEXER_RUN_UNRESTRICTED=1`) lifts it.
+- `view`: terse behavioural view of a C# file (usings, logging, regions, field-assigning constructors and log-and-rethrow catches hidden or collapsed; access modifiers dropped; `var` where the type is spelled out), keeping source line numbers and giving no hash. `zazzle read` uses it for `.cs` files through the daemon socket.
 - `report_gap`: the agent says what it could not get; stored in the log.
 
 Paths are `root:relative/path`. Every root must be inside a git work tree.

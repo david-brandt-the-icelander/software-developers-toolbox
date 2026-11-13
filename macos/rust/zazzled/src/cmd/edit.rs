@@ -19,7 +19,7 @@ const SPEC: &[Flag] = &[
     opt("expect", '\0'),
     opt("at", '\0'),
 ];
-const USAGE: &str = "usage: edit PATH --old TEXT --new TEXT [--all] | PATH --lines A-B --new TEXT (--expect SHA | --at A#xyz-B#xyz) | PATH --after N --new TEXT --expect SHA | PATH --create --new TEXT; TEXT '-' reads stdin";
+const USAGE: &str = "usage: edit PATH --old TEXT --new TEXT [--all] --expect SHA | PATH --lines A-B --new TEXT (--expect SHA | --at A#xyz-B#xyz) | PATH --after N --new TEXT --expect SHA | PATH --create --new TEXT; SHA and anchors come from read --source; TEXT '-' reads stdin";
 const MAX_LISTED: usize = 5;
 
 // One end of a line range: the line number and its optional anchor.
@@ -143,12 +143,20 @@ fn hint(old: &str, data: &[u8], meta: &Meta) -> String {
     }
 }
 
-// Replaces exact text, which must be unique unless all occurrences are wanted.
-fn replace_text(ctx: &Ctx, arg: &str, old: &str, new: &str, all: bool) -> Result<Output, String> {
+// Replaces exact text, which must be unique unless all occurrences are wanted, in a file whose current hash the caller gives.
+fn replace_text(
+    ctx: &Ctx,
+    arg: &str,
+    old: &str,
+    new: &str,
+    all: bool,
+    expect: Option<&str>,
+) -> Result<Output, String> {
     if old.is_empty() {
         return Err("--old must not be empty".into());
     }
     let t = open_target(ctx, arg)?;
+    check_precondition(&t, expect, &[])?;
     let (old_b, new_b) = (to_eol(old, t.meta.crlf), to_eol(new, t.meta.crlf));
     let found: Vec<usize> = memchr::memmem::find_iter(&t.data, old_b.as_bytes()).collect();
     if found.is_empty() {
@@ -193,7 +201,7 @@ fn parse_span(spec: &str) -> Result<(SpanEnd, SpanEnd), String> {
     Ok((end(a)?, end(b)?))
 }
 
-// Checks the file is still what the caller saw, by whole-file hash or by line anchors.
+// Checks the caller read this version of the file, by whole-file hash or line anchors from read --source; refusals never reveal the current values.
 fn check_precondition(
     t: &Target,
     expect: Option<&str>,
@@ -202,20 +210,23 @@ fn check_precondition(
     let anchored = anchors.iter().any(|(_, a)| a.is_some());
     if expect.is_none() && !anchored {
         return Err(
-            "line edits need --expect SHA (from read's header) or --at A#xyz-B#xyz (from read --anchors)"
+            "edits need --expect SHA (from read --source) or --at A#xyz-B#xyz (from read --source --anchors)"
                 .into(),
         );
     }
     if let Some(want) = expect {
         let now = hex8(&t.meta.hash);
         if want.len() < 4 || !now.starts_with(want) {
-            return Err(format!("{}: file changed since read (sha now {now}, expected {want})", t.shown));
+            return Err(format!(
+                "{}: the file is not the version you read; read it again with --source",
+                t.shown
+            ));
         }
     }
     for (n, want) in anchors {
         let now = anchor_str(line_anchor(&t.data, &t.meta.starts, *n));
         if want.as_deref().is_some_and(|w| w != now) {
-            return Err(format!("{}: anchor mismatch at line {n}: now #{now}; read it again", t.shown));
+            return Err(format!("{}: line {n} is not what you read; read it again with --source", t.shown));
         }
     }
     Ok(())
@@ -337,7 +348,14 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         return create_file(ctx, path, &new("--create")?);
     }
     if let Some(old) = p.value("old") {
-        return replace_text(ctx, path, &value_of(ctx, old)?, &new("--old")?, p.has("all"));
+        return replace_text(
+            ctx,
+            path,
+            &value_of(ctx, old)?,
+            &new("--old")?,
+            p.has("all"),
+            p.value("expect"),
+        );
     }
     if let Some(span) = p.value("at").or(p.value("lines")) {
         return replace_lines(ctx, path, span, &new("--lines")?, p.value("expect"));
@@ -355,11 +373,29 @@ mod tests {
     use crate::meta::{anchor_str, line_anchor, Meta};
     use crate::testutil::{run_cmd, run_cmd_with, TempDir};
 
-    // Runs edit in a directory and returns the output text.
+    // Adds --expect with the file's current hash to a text edit that lacks one, as a caller who read the source would.
+    fn signed(cwd: &std::path::Path, args: &[&str]) -> Vec<String> {
+        let mut out: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let path = args.iter().skip_while(|a| **a != "edit").nth(1).copied().unwrap_or("");
+        if args.contains(&"--old") && !args.contains(&"--expect") {
+            if let Ok(data) = std::fs::read(cwd.join(path)) {
+                out.extend(["--expect".to_string(), hex8(&Meta::compute(&data).hash)]);
+            }
+        }
+        out
+    }
+
+    // Runs a command line in a directory with signed text edits.
+    fn run_signed(cwd: &std::path::Path, args: &[&str]) -> crate::cmd::Output {
+        let args = signed(cwd, args);
+        run_cmd(cwd, &args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
+    // Runs edit in a directory and returns the output text; text edits carry the current hash.
     fn edit(t: &TempDir, args: &[&str]) -> String {
         let mut full = vec!["edit"];
         full.extend_from_slice(args);
-        run_cmd(t.path(), &full).text
+        run_signed(t.path(), &full).text
     }
 
     // Reads a file in the temp directory as text.
@@ -434,7 +470,8 @@ mod tests {
         let span = format!("2#{a2}-3#{a3}");
         let bad = format!("2#zzz-3#{a3}");
         let err = edit(&t, &["a.txt", "--at", &bad, "--new", "X"]);
-        assert_eq!(err, format!("error: a.txt: anchor mismatch at line 2: now #{a2}; read it again"));
+        assert_eq!(err, "error: a.txt: line 2 is not what you read; read it again with --source");
+        assert!(!err.contains(&a2));
         assert!(edit(&t, &["a.txt", "--at", &span, "--new", "X"])
             .starts_with("ok a.txt: lines 2-3 replaced by 1 (now 2-2)"));
         assert_eq!(cat(&t, "a.txt"), "one\nX\n");
@@ -462,7 +499,7 @@ mod tests {
         t.write("a.txt", b"one\ntwo\n");
         let s = sha(&t, "a.txt");
         assert!(edit(&t, &["a.txt", "--lines", "1-1", "--new", "x"])
-            .starts_with("error: line edits need --expect SHA"));
+            .starts_with("error: edits need --expect SHA (from read --source)"));
         assert_eq!(
             edit(&t, &["a.txt", "--lines", "1-9", "--new", "x", "--expect", &s]),
             "error: a.txt: lines 1-9 are outside the file (2 lines)"
@@ -475,10 +512,11 @@ mod tests {
             edit(&t, &["a.txt", "--lines", "2-1", "--new", "x", "--expect", &s]),
             "error: a.txt: lines 2-1 are outside the file (2 lines)"
         );
-        assert!(edit(&t, &["a.txt", "--lines", "1-1", "--new", "x", "--expect", "deadbeef"])
-            .contains("file changed since read"));
+        let stale = edit(&t, &["a.txt", "--lines", "1-1", "--new", "x", "--expect", "deadbeef"]);
+        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again with --source");
+        assert!(!stale.contains(&s));
         assert!(edit(&t, &["a.txt", "--lines", "1-1", "--new", "x", "--expect", "de"])
-            .contains("file changed since read"));
+            .contains("not the version you read"));
         assert!(edit(&t, &["a.txt", "--lines", "a-b", "--new", "x", "--expect", &s])
             .starts_with("error: bad line range 'a-b'"));
         assert!(edit(&t, &["a.txt", "--lines", "1-b", "--new", "x", "--expect", &s])
@@ -509,9 +547,7 @@ mod tests {
             edit(&t, &["b.txt", "--after", "9", "--new", "z", "--expect", "abcd"]),
             "error: b.txt: line 9 is past the end (3 lines)"
         );
-        assert!(
-            edit(&t, &["b.txt", "--after", "1", "--new", "z"]).starts_with("error: line edits need --expect")
-        );
+        assert!(edit(&t, &["b.txt", "--after", "1", "--new", "z"]).starts_with("error: edits need --expect"));
     }
 
     // Checks CRLF files keep their line endings.
@@ -541,13 +577,11 @@ mod tests {
             session: String::new(),
             stdin: std::cell::RefCell::new(Some(Box::new(&b"from stdin"[..]))),
         };
-        let args: Vec<String> =
-            ["edit", "a.txt", "--old", "old", "--new", "-"].iter().map(|s| s.to_string()).collect();
+        let args = signed(t.path(), &["edit", "a.txt", "--old", "old", "--new", "-"]);
         assert!(crate::cmd::run(&ctx, &args).text.starts_with("ok a.txt"));
         assert_eq!(cat(&t, "a.txt"), "from stdin\n");
         let ctx2 = Ctx { stdin: std::cell::RefCell::new(Some(Box::new(&b"\xff"[..]))), ..ctx };
-        let args: Vec<String> =
-            ["edit", "a.txt", "--old", "from", "--new", "-"].iter().map(|s| s.to_string()).collect();
+        let args = signed(t.path(), &["edit", "a.txt", "--old", "from", "--new", "-"]);
         assert_eq!(crate::cmd::run(&ctx2, &args).text, "error: standard input is not valid UTF-8");
         assert_eq!(edit(&t, &["a.txt", "--old", "from", "--new", "-"]), "error: no standard input available");
     }
@@ -580,7 +614,7 @@ mod tests {
         std::fs::create_dir_all(&work).expect("mkdir");
         std::fs::write(work.join("in.txt"), b"in\n").expect("write");
         std::os::unix::fs::symlink(outer.path().join("secret.txt"), work.join("link.txt")).expect("symlink");
-        let run = |args: &[&str]| run_cmd(&work, args).text;
+        let run = |args: &[&str]| run_signed(&work, args).text;
         let refused = |s: String| s.starts_with("error: refusing to write outside ");
         assert!(refused(run(&["edit", "../secret.txt", "--old", "s", "--new", "x"])));
         assert!(refused(run(&["edit", "link.txt", "--old", "s", "--new", "x"])));
@@ -723,10 +757,28 @@ mod tests {
         let t = TempDir::new();
         t.write("a.txt", b"one\n");
         let e = crate::engine::Engine::new();
-        let r = |args: &[&str]| run_cmd_with(&e, t.path(), "", args).text;
+        let r = |args: &[&str]| {
+            let args = signed(t.path(), args);
+            run_cmd_with(&e, t.path(), "", &args.iter().map(String::as_str).collect::<Vec<_>>()).text
+        };
         assert!(r(&["read", "a.txt"]).contains("1 lines"));
         r(&["edit", "a.txt", "--old", "one", "--new", "one\ntwo"]);
         assert!(r(&["read", "a.txt"]).contains("2 lines"));
+    }
+
+    // Checks a text edit without the hash, or with a stale one, is refused without revealing the current hash.
+    #[test]
+    fn test_replace_text_needs_current_hash() {
+        let t = TempDir::new();
+        t.write("a.txt", b"one\ntwo\n");
+        let now = sha(&t, "a.txt");
+        let bare = run_cmd(t.path(), &["edit", "a.txt", "--old", "two", "--new", "2"]).text;
+        assert!(bare.starts_with("error: edits need --expect SHA (from read --source)"), "{bare}");
+        let stale =
+            run_cmd(t.path(), &["edit", "a.txt", "--old", "two", "--new", "2", "--expect", "0000"]).text;
+        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again with --source");
+        assert!(!stale.contains(&now));
+        assert_eq!(cat(&t, "a.txt"), "one\ntwo\n");
     }
 
     // Checks a whitespace-only old text gets an empty hint.

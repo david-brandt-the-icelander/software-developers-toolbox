@@ -19,15 +19,16 @@ const MAX_DESC: usize = 100;
 
 const HELP: &str = "zazzle: file tool for agents
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
-read PATH[:A-B].. [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
+read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
 outline PATH.. [-d N] [-m N]  symbols with line ranges
 refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
-edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
+edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 proxy [--lossless] [--budget T] [--skip TOOL].. [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 status  daemon info
+C# files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // Where a command runs and who asked.
@@ -393,7 +394,8 @@ mod tests {
             "already sent: zazzle read a.txt, unchanged. Re-run with --disable-session-deduping to resend."
         ));
         assert_eq!(go(&["read", "a.txt", "--disable-session-deduping"]), first);
-        let edited = go(&["edit", "a.txt", "--old", "hello", "--new", "bye"]);
+        let sha = first[first.find("sha ").expect("sha") + 4..][..8].to_string();
+        let edited = go(&["edit", "a.txt", "--old", "hello", "--new", "bye", "--expect", &sha]);
         assert!(edited.starts_with("ok a.txt") && !edited.starts_with("[r:"));
         assert!(go(&["read", "a.txt"]).contains("1\tbye"));
         assert!(go(&["status"]).contains("1 sessions"));

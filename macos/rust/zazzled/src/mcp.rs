@@ -65,7 +65,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_edit",
-        description: "Edit one file safely: replace unique text, replace lines (needs expect sha or anchors from zazzle_read), insert after a line, or create a file. Writes are confined to the working directory.",
+        description: "Edit one file safely: replace unique text, replace lines or insert after a line (each needs expect, the sha from zazzle_read with source=true, or anchors), or create a file. Writes are confined to the working directory.",
         schema: edit_schema,
         map: edit_args,
     },
@@ -98,6 +98,7 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
+            "source": {"type": "boolean", "description": "C# files come as a terse view without a sha; true gives the code and its sha, which edits need"},
             "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; #N picks among duplicates) with its doc comments and attributes"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
@@ -153,7 +154,7 @@ fn edit_schema() -> Value {
             "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
             "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from zazzle_read with anchors"},
             "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
-            "expect": {"type": "string", "description": "The sha from zazzle_read's header"}
+            "expect": {"type": "string", "description": "The sha from zazzle_read's header (source=true for C#); needed by every edit except create"}
         }),
         &["path", "new"],
     )
@@ -243,6 +244,7 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["read".to_string()];
     for (k, f) in [
         ("anchors", "--anchors"),
+        ("source", "--source"),
         ("full", "--full"),
         ("disable_session_deduping", "--disable-session-deduping"),
     ] {
@@ -561,7 +563,7 @@ mod tests {
         ask(
             &b,
             json!({"id":1,"method":"tools/call","params":{"name":"zazzle_read","arguments":{
-            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "full":true, "symbol":"A.b"}}}),
+            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "source":true, "full":true, "symbol":"A.b"}}}),
         );
         ask(
             &b,
@@ -574,6 +576,7 @@ mod tests {
             [
                 "read",
                 "--anchors",
+                "--source",
                 "--full",
                 "--around",
                 "5",

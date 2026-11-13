@@ -21,17 +21,30 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | command | output |
 |---|---|
 | `find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]` | grouped by file, `N:` match and `N-` context lines, long lines clipped around the match, capped (50) with a footer saying how to narrow; ordinary files before deep files before tests |
-| `read PATH[:A-B].. [--symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full]` | header with line count and sha, then `N<TAB>text`; elides the middle beyond ~3000 tokens with the exact range to read next; `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)) |
+| `read PATH[:A-B].. [--source --symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full]` | header with line count and sha, then `N<TAB>text`; elides the middle beyond ~3000 tokens with the exact range to read next; `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)); C# files come as a terse view (see [C# terse view](#c-terse-view)) unless `--source` |
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
 | `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol |
-| `edit PATH ...` | `--old/--new` unique replace, `--lines` with `--expect SHA` or `--at` anchors, `--after`, `--create`; atomic, CRLF-preserving, confined to the working directory |
+| `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read --source`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
 | `status` | daemon, cache and session counters |
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
+
+## C# terse view
+
+`zazzle read FILE.cs` returns a terse behavioural view from `zazzle-csharp-indexer` (Roslyn) instead of the code, and no sha. `--source` (or `--anchors`) returns the code and its sha, which every edit needs.
+
+- Hidden or collapsed: using blocks (`1-12 ⋯ 12 using(s)`), logging and tracing statements on loggers, `Debug`/`Trace` and spans with no side effects in their arguments, `if (logger.IsEnabled(..))` blocks that only log, `#region` lines, constructors that only assign fields (`13-18 ⋯ ctor(ILogger<X> logger, IRepo repo): only assigns fields`), and catch clauses that only log and `throw;`.
+- Shortened: `public`/`private`/`protected`/`internal` on declarations, and `var` where the type is spelled out on the right (`new T(..)`, `(T)x`, `x as T`).
+- Kept: everything else, including catches that return or convert, constructors with logic, and logging that shares a line with other code. Lines keep their source numbers: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden. Ranges, `--symbol` and the budget work on the view.
+- The bridge: `zazzled` connects to the indexer daemon's socket (in `$ZAZZLE_INDEXER_STATE_DIR` or the indexer's default state directory), starting `zazzle-csharp-indexer daemon` when nothing listens, and asks its `view` tool. The indexer is `$ZAZZLE_INDEXER`, else beside `zazzled`, else on `PATH`. The file must be inside a git work tree. When there is no view (no indexer, not in git, an error), the source is returned with a line saying why. The first read starts the daemon (about 0.5 s); later ones take a few milliseconds.
+
+## Edits need the sha
+
+Every edit except `--create` needs proof that the caller read the current code: `--expect SHA` from `read --source`, or `--at` anchors from `read --source --anchors`. A refusal never reveals the current sha or anchors (`the file is not the version you read; read it again with --source`). A successful edit returns the new sha, since the caller wrote the change.
 
 ## Symbols
 
