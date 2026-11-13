@@ -7,6 +7,7 @@ use std::path::Path;
 
 use rusqlite::params;
 
+use crate::decmpfs;
 use crate::scan::{finished, open_db};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
@@ -68,23 +69,29 @@ fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts) -> Option<String> 
     None
 }
 
-// Copy with compression to the temp file, verify it and swap it in; return (status, note, saved).
+// Copy to the temp file, compress the copy, verify it and swap it in; return (status, note, saved).
 fn compress_verified(
     path: &Path,
     tmp: &Path,
     st: &fs::Metadata,
     o: &CompressOpts,
 ) -> std::io::Result<(&'static str, String, i64)> {
+    let fork = decmpfs::build_fork(fs::File::open(path)?)?;
+    let expected = util::alloc(st) - (fork.len() as i64 + 4095) / 4096 * 4096;
+    if expected < o.min_gain {
+        return Ok(("skipped", format!("gain too small ({})", human_i(expected.max(0))), 0));
+    }
     let (p, t) = (path.to_string_lossy(), tmp.to_string_lossy());
-    let out = util::run(&["/usr/bin/ditto", "--hfsCompression", &p, &t], 3600.0, &[])
+    let out = util::run(&["/usr/bin/ditto", &p, &t], 3600.0, &[])
         .ok_or_else(|| std::io::Error::other("cannot run ditto"))?;
     if out.code != 0 {
         let msg: String = out.stderr.trim().chars().take(200).collect();
         return Ok(("failed", format!("ditto: {msg}"), 0));
     }
+    decmpfs::apply(tmp, st.len(), &fork)?;
     let tm = fs::symlink_metadata(tmp)?;
     if util::flags(&tm) & util::UF_COMPRESSED == 0 {
-        return Ok(("skipped", "APFS declined to compress (no gain)".into(), 0));
+        return Ok(("failed", "compressed flag not set".into(), 0));
     }
     let saved = util::alloc(st) - util::alloc(&tm);
     if saved < o.min_gain {
@@ -335,7 +342,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     // Install a fake ditto that copies the file and then runs an extra shell step on the copy.
     fn fake_ditto(sb: &Sandbox, after: &str) {
-        sb.tool("ditto", &format!("cp \"$2\" \"$3\" || exit 1\n{after}"));
+        sb.tool("ditto", &format!("cp \"$1\" \"$2\" || exit 1\n{after}"));
     }
 
     // Read a candidate's recorded status and note.
@@ -429,22 +436,22 @@ mod tests {
         assert_eq!(run(&o).unwrap().1, "ditto: bad thing");
         fake_ditto(&sb, "true");
         util::set_flags(&[0]);
-        assert_eq!(run(&o).unwrap().0, "skipped");
+        assert_eq!(run(&o).unwrap().1, "compressed flag not set");
         util::set_flags(&[util::UF_COMPRESSED]);
         let stingy = CompressOpts { min_gain: 1 << 40, ..opts(&sb) };
         assert!(run(&stingy).unwrap().1.starts_with("gain too small"));
-        fake_ditto(&sb, "head -c 10 \"$2\" > \"$3\"");
+        fake_ditto(&sb, "head -c 10 \"$1\" > \"$2\"");
         assert_eq!(run(&o).unwrap().1, "size mismatch");
-        fake_ditto(&sb, "chmod 600 \"$3\"");
+        fake_ditto(&sb, "chmod 600 \"$2\"");
         assert_eq!(run(&o).unwrap().1, "permissions/ownership differ");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        fake_ditto(&sb, "chmod 644 \"$2\"");
         sb.tool("xattr", "case \"$1\" in *.tmp) ;; *) echo user.keep;; esac");
         assert_eq!(run(&o).unwrap().1, "extended attributes lost");
         sb.tool("xattr", "exit 0");
         let len = fs::metadata(&file).unwrap().len() as usize;
-        fake_ditto(&sb, &format!("head -c {len} /dev/zero | tr '\\0' 'z' > \"$3\"; chmod 644 \"$3\""));
+        fake_ditto(&sb, &format!("head -c {len} /dev/zero | tr '\\0' 'z' > \"$2\"; chmod 644 \"$2\""));
         assert_eq!(run(&o).unwrap().1, "content hash mismatch");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        fake_ditto(&sb, "chmod 644 \"$2\"");
         let stale = fs::symlink_metadata(&file).unwrap();
         util::set_times(&file, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
         let r = compress_verified(&file, &tmp, &stale, &o).unwrap();
@@ -470,7 +477,7 @@ mod tests {
         fake_ditto(&sb, "exit 1");
         util::set_flags(&[0, util::UF_COMPRESSED]);
         assert_eq!(compress_one(&cand(&file), &o).0, "failed");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        fake_ditto(&sb, "chmod 644 \"$2\"");
         chmod(&file, 0o644);
         sb.tool("xattr", "exit 0");
         util::set_flags(&[0, util::UF_COMPRESSED]);
@@ -553,7 +560,7 @@ mod tests {
         let files = seed(&sb, &["a", "b", "c", "d", "e", "f", "g"]);
         chmod(&files[0], 0o644);
         chmod(&files[1], 0o644);
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        fake_ditto(&sb, "chmod 644 \"$2\"");
         fs::hard_link(&files[1], sb.path("data/b-link")).unwrap();
         util::set_flags(&[0, util::UF_COMPRESSED]);
         let o = CompressOpts { sample: Some(2), ..opts(&sb) };

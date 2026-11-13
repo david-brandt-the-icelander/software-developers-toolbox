@@ -2,6 +2,7 @@
 mod clean;
 mod compress;
 mod daemon;
+mod decmpfs;
 mod dedupe;
 mod scan;
 #[cfg(test)]
@@ -69,8 +70,8 @@ enum Cmd {
     List(ListArgs),
     /// compress candidates in place (verified)
     ///
-    /// Each file is recompressed via `ditto --hfsCompression` into a temp file in the same directory,
-    /// checked (flags, size, mode, owner, xattrs, SHA-256, allocated size), then atomically swapped
+    /// Each file is copied with `ditto` to a temp file in the same directory, APFS-compressed (zlib)
+    /// there, checked (flags, size, mode, owner, xattrs, SHA-256, allocated size), then atomically swapped
     /// in. Skips hard-linked, open, recently changed and flagged files.
     Compress(CompressArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
