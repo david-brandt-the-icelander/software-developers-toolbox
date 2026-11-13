@@ -1,0 +1,147 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzle-csharp-indexer decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer",
+  "entities": [
+    {
+      "id": "single-file-self-contained",
+      "title": "Ship one self-contained, ReadyToRun executable",
+      "summary": "The project publishes as a single self-contained file with ReadyToRun code and its native libraries inside, untrimmed.",
+      "status": "accepted",
+      "context": "zazzle-csharp-indexer is installed as one file, by the zazzle Homebrew formula or from a release tarball; an MCP client starts it for every session.",
+      "decision": "zazzle-csharp-indexer.csproj sets SelfContained, PublishSingleFile, PublishReadyToRun and IncludeNativeLibrariesForSelfExtract; Directory.Build.props targets net8.0 with invariant globalization. The release publishes one file per runtime identifier.",
+      "rationale": "Self-contained means no .NET runtime is needed on the machine, and a single file is all there is to install. The README lists the resulting size as a known limit.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "PublishSingleFile"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "InvariantGlobalization"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "trim-binary"
+        }
+      ]
+    },
+    {
+      "id": "tool-version-source",
+      "title": "ToolVersion.Text comes from the release tag",
+      "summary": "Release builds pass the tag's version to dotnet publish and ToolVersion.Text reads it back from the assembly; every other build says 0.0.0-dev.",
+      "status": "accepted",
+      "context": "ToolVersion.Text is what --version prints after the tool name, what MCP initialize reports as serverInfo.version and the only thing the daemon handshake compares, for serve and for zazzled, which learns the version from --version. It used to be a hand-written constant that release.yml neither set nor checked, so a release that changed behaviour without changing it left a daemon from the previous binary serving new clients until it idled out.",
+      "options": [
+        {
+          "title": "Bump ToolVersion.Text by hand in every release",
+          "consequences": "No build change; relies on remembering, and nothing checks it matches the tag."
+        },
+        {
+          "title": "Derive it from the tag at build time and check it in the release workflow",
+          "consequences": "Version and tag cannot drift; needs a build property and a workflow step."
+        },
+        {
+          "title": "Compare a build identity (for example a hash of the executable) in the handshake instead",
+          "consequences": "Any new binary replaces an idle daemon, even without a version change."
+        }
+      ],
+      "decision": "Directory.Build.props sets Version to 0.0.0-dev and keeps the source revision out of the informational version. Both indexer builds in release.yml (macOS and Linux) run dotnet publish with -p:Version set to the version the version job derives from the tag with macos/release/version.sh. ToolVersion.Text is the assembly's informational version up to any +, or 0.0.0-dev when it has none. No step compares the built version with the tag afterwards; the tag is passed in, so they cannot drift.",
+      "rationale": "The git tag is the only source of version numbers for every binary in the release, so each release's indexer reports a version of its own and an idle daemon from the previous release is replaced (src/Daemon/.dev/decisions.json, version-restart).",
+      "consequences": "Every build made outside the release workflow reports 0.0.0-dev, so the handshake cannot tell two such builds apart (limitations.json, dev-builds-share-version).",
+      "origin": {
+        "kind": "agent",
+        "description": "Raised while documenting the folder, when ToolVersion.Text was a constant release.yml did not refer to; taken by the owner in commit 5ea503c, which made the release tag the only version source."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "Version"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "--version"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "-p:Version"
+        },
+        {
+          "path": "macos/release/version.sh",
+          "symbol": "version"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Version numbers"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "version-restart"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/limitations.json",
+          "entityId": "dev-builds-share-version"
+        }
+      ]
+    },
+    {
+      "id": "trim-binary",
+      "title": "Whether to trim the published binary",
+      "summary": "The README lists the binary's size (Roslyn, ReadyToRun, untrimmed) as a known limit, and the C# rules keep the code trim-safe, but the project does not trim.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "macos/dotnet/style.md asks for JsonNode instead of reflection-based JSON \"so trimming stays safe\"; zazzle-csharp-indexer.csproj does not set PublishTrimmed; the README's Known limits name the untrimmed single file as large. Roslyn and Microsoft.Data.Sqlite would have to survive trimming.",
+      "options": [
+        {
+          "title": "Keep it untrimmed",
+          "consequences": "Size stays as it is; the trim-safe rule only keeps the option open."
+        },
+        {
+          "title": "Trim it",
+          "consequences": "A smaller download; needs the dependencies checked under trimming, and possibly trimming warnings handled, since warnings are errors."
+        }
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Raised while documenting the folder, from the README's Known limits and macos/dotnet/style.md."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "PropertyGroup"
+        },
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Token-lean, agent-readable code"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,673 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "free-disk-space source class diagram",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The structs and enums the binary declares. main.rs holds the clap argument types; each command module converts them into its own options struct, so the command modules do not depend on clap. Sandbox in testkit.rs is compiled for tests only.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "Cli"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "Cfg"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/daemon.rs",
+      "symbol": "Settings"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/clean.rs",
+      "symbol": "Snapshot"
+    }
+  ],
+  "types": [
+    {
+      "id": "main::Cli",
+      "name": "Cli",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "command: Cmd"
+      ]
+    },
+    {
+      "id": "main::Cmd",
+      "name": "Cmd",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "New(NewArgs)",
+        "Resume(StateArg)",
+        "Status(StateArg)",
+        "List(ListArgs)",
+        "Compress(CompressArgs)",
+        "Dedupe(DedupeArgs)",
+        "Clean(CleanArgs)",
+        "Daemon(DaemonArgs)"
+      ]
+    },
+    {
+      "id": "main::StateArg",
+      "name": "StateArg",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: String"
+      ]
+    },
+    {
+      "id": "main::NewArgs",
+      "name": "NewArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "root: String",
+        "min_size: String",
+        "min_age_days: i64",
+        "min_savings_pct: i64",
+        "cross_devices: bool",
+        "exclude: Vec<String>",
+        "force: bool"
+      ]
+    },
+    {
+      "id": "main::Status",
+      "name": "Status",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "Pending",
+        "Done",
+        "Skipped",
+        "Failed"
+      ]
+    },
+    {
+      "id": "main::ListArgs",
+      "name": "ListArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "top: i64",
+        "status: Status"
+      ]
+    },
+    {
+      "id": "main::CompressArgs",
+      "name": "CompressArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "sample: Option<usize>",
+        "max_files: Option<usize>",
+        "limit: Option<String>",
+        "min_age_days: i64",
+        "min_gain: i64",
+        "reserve: i64",
+        "dry_run: bool",
+        "yes: bool"
+      ]
+    },
+    {
+      "id": "main::DedupeArgs",
+      "name": "DedupeArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "apply: bool",
+        "include_system: bool",
+        "min_size: String",
+        "sample: Option<u64>"
+      ]
+    },
+    {
+      "id": "main::Target",
+      "name": "Target",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "All",
+        "Caches",
+        "Downloads",
+        "Trash",
+        "Dev",
+        "Docker",
+        "Brew",
+        "Xcode"
+      ]
+    },
+    {
+      "id": "main::CleanArgs",
+      "name": "CleanArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "targets: Vec<Target>",
+        "apply: bool",
+        "dev_root: String",
+        "docker_stop_timeout: u64"
+      ]
+    },
+    {
+      "id": "main::DaemonArgs",
+      "name": "DaemonArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "action: DaemonAction"
+      ]
+    },
+    {
+      "id": "main::DaemonAction",
+      "name": "DaemonAction",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "Run(DaemonOpts)",
+        "Install(DaemonOpts)",
+        "Uninstall",
+        "Status"
+      ]
+    },
+    {
+      "id": "main::DaemonOpts",
+      "name": "DaemonOpts",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "threshold: String",
+        "cadence: String",
+        "targets: Vec<Target>",
+        "dev_root: String"
+      ]
+    },
+    {
+      "id": "scan::NewOpts",
+      "name": "NewOpts",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/scan.rs"
+      ],
+      "members": [
+        "pub state: String",
+        "pub root: String",
+        "pub min_size: String",
+        "pub min_age_days: i64",
+        "pub min_savings_pct: i64",
+        "pub cross_devices: bool",
+        "pub exclude: Vec<String>",
+        "pub force: bool"
+      ]
+    },
+    {
+      "id": "scan::Cfg",
+      "name": "Cfg",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/scan.rs"
+      ],
+      "members": [
+        "pub root: String",
+        "dev: u64",
+        "min_size: i64",
+        "min_age_days: i64",
+        "min_pct: i64",
+        "cross: bool",
+        "exclude: Vec<String>",
+        "fn to_json(&self) -> Value",
+        "fn from_json(v: &Value) -> Option<Self>"
+      ]
+    },
+    {
+      "id": "scan::Stats",
+      "name": "Stats",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/scan.rs"
+      ],
+      "members": [
+        "dirs: i64",
+        "files: i64",
+        "bytes: i64",
+        "errors: i64",
+        "cands: i64",
+        "est: i64",
+        "fn to_json(&self) -> Value",
+        "fn from_json(v: &Value) -> Self"
+      ]
+    },
+    {
+      "id": "compress::CompressOpts",
+      "name": "CompressOpts",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/compress.rs"
+      ],
+      "members": [
+        "pub state: String",
+        "pub sample: Option<usize>",
+        "pub max_files: Option<usize>",
+        "pub limit: Option<String>",
+        "pub min_age_days: i64",
+        "pub min_gain: i64",
+        "pub reserve: i64",
+        "pub dry_run: bool",
+        "pub yes: bool"
+      ]
+    },
+    {
+      "id": "compress::Cand",
+      "name": "Cand",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/compress.rs"
+      ],
+      "members": [
+        "path: String",
+        "size: i64",
+        "mtime_ns: i64",
+        "ino: i64",
+        "est: i64"
+      ]
+    },
+    {
+      "id": "dedupe::DedupeOpts",
+      "name": "DedupeOpts",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/dedupe.rs"
+      ],
+      "members": [
+        "pub state: String",
+        "pub apply: bool",
+        "pub include_system: bool",
+        "pub min_size: String",
+        "pub sample: Option<u64>"
+      ]
+    },
+    {
+      "id": "dedupe::Member",
+      "name": "Member",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/dedupe.rs"
+      ],
+      "members": [
+        "path: String",
+        "md: Metadata",
+        "replaceable: bool"
+      ]
+    },
+    {
+      "id": "dedupe::Tally",
+      "name": "Tally",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/dedupe.rs"
+      ],
+      "members": [
+        "files: u64",
+        "bytes: i64",
+        "failed: u64",
+        "streak: u64"
+      ]
+    },
+    {
+      "id": "clean::Artifact",
+      "name": "Artifact",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/clean.rs"
+      ],
+      "members": [
+        "name: &'static str",
+        "manifests: &'static [&'static str]",
+        "locks: &'static [&'static str]",
+        "markers: &'static [&'static str]"
+      ]
+    },
+    {
+      "id": "clean::Progress",
+      "name": "Progress",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/clean.rs"
+      ],
+      "members": [
+        "path: Option<PathBuf>",
+        "done: HashSet<String>",
+        "fn load(apply: bool) -> Self",
+        "fn is_done(&self, key: &str) -> bool",
+        "fn mark(&mut self, key: String)",
+        "fn finish(&self)"
+      ]
+    },
+    {
+      "id": "clean::Ctx",
+      "name": "Ctx",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/clean.rs"
+      ],
+      "members": [
+        "progress: Progress",
+        "bytes: i64",
+        "protected: Vec<String>",
+        "failures: Vec<String>",
+        "uncertain: Vec<String>"
+      ]
+    },
+    {
+      "id": "clean::Removal",
+      "name": "Removal",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/clean.rs"
+      ],
+      "members": [
+        "bytes: i64",
+        "scanned: u64",
+        "protected: Vec<String>"
+      ]
+    },
+    {
+      "id": "clean::Snapshot",
+      "name": "Snapshot",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/clean.rs"
+      ],
+      "members": [
+        "pub ok: bool",
+        "paths: Vec<String>",
+        "cwds: Vec<String>",
+        "cmds: Vec<String>",
+        "pub fn capture() -> Self",
+        "fn under(sorted: &[String], root: &str) -> bool",
+        "pub fn has_open(&self, path: &str) -> bool",
+        "fn uses(&self, cand: &Path) -> bool"
+      ]
+    },
+    {
+      "id": "daemon::Threshold",
+      "name": "Threshold",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/daemon.rs"
+      ],
+      "members": [
+        "Bytes(i64)",
+        "Percent(f64)",
+        "fn limit(self, total: i64) -> i64"
+      ]
+    },
+    {
+      "id": "daemon::Settings",
+      "name": "Settings",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/daemon.rs"
+      ],
+      "members": [
+        "pub threshold: Threshold",
+        "pub cadence: Duration",
+        "pub targets: Vec<String>",
+        "pub dev_root: String",
+        "threshold_text: String",
+        "cadence_text: String",
+        "pub fn parse(threshold: &str, cadence: &str, targets: Vec<String>, dev_root: &str) -> Result<Self, String>"
+      ]
+    },
+    {
+      "id": "util::Ticker",
+      "name": "Ticker",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/util.rs"
+      ],
+      "members": [
+        "interval: f64",
+        "pub last: f64",
+        "shown: bool",
+        "pub fn new() -> Self",
+        "pub fn tick(&mut self, text: &str, force: bool)",
+        "pub fn clear(&mut self)"
+      ]
+    },
+    {
+      "id": "util::Output",
+      "name": "Output",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/util.rs"
+      ],
+      "members": [
+        "pub code: i32",
+        "pub stdout: String",
+        "pub stderr: String"
+      ]
+    },
+    {
+      "id": "testkit::Sandbox",
+      "name": "Sandbox",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/testkit.rs"
+      ],
+      "members": [
+        "pub root: PathBuf",
+        "pub bin: PathBuf",
+        "saved: Vec<(&'static str, Option<OsString>)>",
+        "_guard: MutexGuard<'static, ()>",
+        "pub fn new() -> Self",
+        "pub fn path(&self, rel: &str) -> PathBuf",
+        "pub fn home(&self) -> PathBuf",
+        "pub fn state(&self) -> String",
+        "pub fn write(&self, rel: &str, data: &[u8]) -> PathBuf",
+        "pub fn dir(&self, rel: &str) -> PathBuf",
+        "pub fn tool(&self, name: &str, body: &str)",
+        "fn drop(&mut self)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "main::Cli",
+      "to": "main::Cmd",
+      "kind": "depends-on",
+      "description": "The chosen subcommand."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::NewArgs",
+      "kind": "depends-on",
+      "description": "Arguments of new."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::StateArg",
+      "kind": "depends-on",
+      "description": "resume and status take only the state path."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::ListArgs",
+      "kind": "depends-on",
+      "description": "Arguments of list."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::CompressArgs",
+      "kind": "depends-on",
+      "description": "Arguments of compress."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::DedupeArgs",
+      "kind": "depends-on",
+      "description": "Arguments of dedupe."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::CleanArgs",
+      "kind": "depends-on",
+      "description": "Arguments of clean."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::DaemonArgs",
+      "kind": "depends-on",
+      "description": "Arguments of daemon."
+    },
+    {
+      "from": "main::NewArgs",
+      "to": "main::StateArg",
+      "kind": "depends-on",
+      "description": "Flattened --state option; ListArgs, CompressArgs and DedupeArgs flatten it the same way."
+    },
+    {
+      "from": "main::ListArgs",
+      "to": "main::Status",
+      "kind": "depends-on",
+      "description": "Which candidates to list."
+    },
+    {
+      "from": "main::CleanArgs",
+      "to": "main::Target",
+      "kind": "depends-on",
+      "description": "The targets to clean."
+    },
+    {
+      "from": "main::DaemonArgs",
+      "to": "main::DaemonAction",
+      "kind": "depends-on",
+      "description": "run, install, uninstall or status."
+    },
+    {
+      "from": "main::DaemonAction",
+      "to": "main::DaemonOpts",
+      "kind": "depends-on",
+      "description": "run and install take the threshold, cadence, targets and dev root."
+    },
+    {
+      "from": "main::DaemonOpts",
+      "to": "main::Target",
+      "kind": "depends-on",
+      "description": "The targets to clean when below the threshold."
+    },
+    {
+      "from": "main::NewArgs",
+      "to": "scan::NewOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into NewOpts for scan::cmd_new."
+    },
+    {
+      "from": "main::CompressArgs",
+      "to": "compress::CompressOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into CompressOpts."
+    },
+    {
+      "from": "main::DedupeArgs",
+      "to": "dedupe::DedupeOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into DedupeOpts."
+    },
+    {
+      "from": "main::DaemonOpts",
+      "to": "daemon::Settings",
+      "kind": "depends-on",
+      "description": "daemon_settings validates the options into Settings, or exits with the problem."
+    },
+    {
+      "from": "scan::NewOpts",
+      "to": "scan::Cfg",
+      "kind": "depends-on",
+      "description": "cmd_new resolves the root, its device and the excludes into the Cfg stored in the meta table."
+    },
+    {
+      "from": "daemon::Settings",
+      "to": "daemon::Threshold",
+      "kind": "depends-on",
+      "description": "A size or a percentage of the volume."
+    },
+    {
+      "from": "compress::CompressOpts",
+      "to": "compress::Cand",
+      "kind": "depends-on",
+      "description": "plan picks pending candidates up to the sample, file and size limits."
+    },
+    {
+      "from": "dedupe::DedupeOpts",
+      "to": "dedupe::Member",
+      "kind": "depends-on",
+      "description": "members keeps a group's files that still match the scan, leaving out system files unless include_system."
+    },
+    {
+      "from": "dedupe::Member",
+      "to": "clean::Snapshot",
+      "kind": "depends-on",
+      "description": "A member is replaceable only if Snapshot::has_open says no process has it open."
+    },
+    {
+      "from": "dedupe::DedupeOpts",
+      "to": "dedupe::Tally",
+      "kind": "depends-on",
+      "description": "dedupe_group counts files, bytes, failures and the failure streak against the sample limit."
+    },
+    {
+      "from": "clean::Ctx",
+      "to": "clean::Progress",
+      "kind": "depends-on",
+      "description": "The run's record of finished steps: loaded for an applying run, consulted before each folder, artifact and target, marked after each."
+    },
+    {
+      "from": "clean::Ctx",
+      "to": "clean::Removal",
+      "kind": "depends-on",
+      "description": "Each tree removal's bytes and protected entries are added to the run's totals."
+    },
+    {
+      "from": "clean::Snapshot",
+      "to": "util::Output",
+      "kind": "depends-on",
+      "description": "Built from the output of lsof and ps."
+    }
+  ]
+}

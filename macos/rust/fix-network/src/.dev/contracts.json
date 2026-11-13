@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "fix-network contracts",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "json-report",
+      "title": "The --json report",
+      "summary": "One pretty-printed JSON object on stdout for the whole run, which the skill tells agents to parse.",
+      "contractType": "file-format",
+      "consumers": [
+        "Coding agents following agents/skills/fix-network/SKILL.md",
+        "Scripts, for example with jq '.findings'"
+      ],
+      "definition": "Top-level keys: healthy (bool); checks [{name, state, detail}] with state one of HEALTHY, FAILED, NONE, UNKNOWN, NOT TESTED, UNSUPPORTED; findings [{code, summary, remedy}] with remedy {kind: fix, steps: [names]} or {kind: manual|reboot, text}; wifi_reset_required (bool); plan [{step, blocked_by}]; actions [{step, ok, message}]; facts {macos, interface, service, ipv4, ipv6_global, gateway, default_route_if, public_route_if, tunnels, vpns [{name, state, interface}], split_dns [{domain, nameservers, interface, reachable}], wake_age_secs, over_ssh}; log and state_dir (paths).",
+      "guarantees": [
+        "The key names and the state labels are the ones above.",
+        "A finding's code is a fixed string per kind of problem (for example vpn-stale, corp-dns-server, proxy-down)."
+      ],
+      "compatibility": "Nothing in the code or README promises stability or versions the format; the step names in steps, plan and actions are display names (Step::name) and change with them.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/report.rs", "symbol": "to_json" },
+        { "path": "macos/rust/fix-network/src/report.rs", "symbol": "facts_json" },
+        { "path": "macos/rust/fix-network/src/model.rs", "symbol": "State::label" },
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+      ]
+    },
+    {
+      "id": "exit-status",
+      "title": "Exit statuses",
+      "summary": "0 healthy, 1 problems remain, 2 not macOS, as the --help text and the README say.",
+      "contractType": "cli",
+      "consumers": ["Scripts and agents that run diagnose or fix"],
+      "guarantees": [
+        "0 only when no dimension is FAILED in the final report.",
+        "1 when a dimension is FAILED, and also when the state directory cannot be created.",
+        "2 when the OS is not macOS."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "finish" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "run" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "Cli" }
+      ]
+    },
+    {
+      "id": "state-directory",
+      "title": "The run's state directory",
+      "summary": "<state root>/<YYYYmmdd-HHMMSS>/ holds diagnostic.log, original.json and, after a Wi-Fi cycle, recover.sh.",
+      "contractType": "file-format",
+      "consumers": ["The person or agent reading the log or the original settings after a run"],
+      "definition": "original.json is an object of the raw, redacted output of the commands run before any change, keyed getinfo, dns, search, web_proxy, secure_proxy, pac, ifconfig and wifi_power (when a network service is in use), and routes, scutil_dns, scutil_proxy and vpn_list, plus facts (the same summary as the JSON report's facts). recover.sh is a /bin/sh script that sleeps, turns Wi-Fi on for the device and appends a line to diagnostic.log.",
+      "guarantees": [
+        "The directory is private to the user (mode 0700); recover.sh is mode 0700.",
+        "Secret-looking lines are dropped from diagnostic.log and from each command's output in original.json."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "Session::at" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "record_original" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Real::watchdog" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "recover_script" }
+      ]
+    }
+  ]
+}

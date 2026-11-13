@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "MCP tools",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "MCP tools",
+      "summary": "The thirteen tools an agent calls: navigation and search answered from the index, git history, a guarded command passthrough, a terse view of a C# file and a way to report what was missing.",
+      "purpose": "Holds one class per tool behind the ITool contract, with the helpers they share: argument parsing and schemas (Args), root:path references (RootSet), globs, the token-budgeted output builder, the run allowlist and the external regex fallback. Each tool returns compact text and fills in a CallInfo for the usage log.",
+      "boundaries": [
+        "The tools read the index (src/Index/) and the stored analysis (src/Analysis/, through Engine and Store); they never write the store except through RootIndex.",
+        "Dispatch, timing and logging of a call are src/Mcp/; the tools only fill in CallInfo.",
+        "The view tool reads its file from disk and builds the view with src/View/; it does not use the index.",
+        "Paths an agent passes are resolved through Root.Resolve (src/Root.cs), except where backlog.json says otherwise."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs",
+          "symbol": "ITool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RootSet.cs",
+          "symbol": "RootSet.Split"
+        }
+      ]
+    }
+  ]
+}

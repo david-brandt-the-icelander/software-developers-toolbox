@@ -1,0 +1,130 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle commands component diagram",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "description": "One file per command behind a common dispatcher. refs reuses find's parallel search; read-again reruns a command through the dispatcher or returns a stored output; clean's steps are also used by the MCP proxy and `zazzle run`; every command runs on the engine, walker, outliner and pool of the parent folder.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cmd/mod.rs",
+      "symbol": "dispatch"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/refs.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/read.rs",
+      "symbol": "render"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/again.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/clean.rs",
+      "symbol": "store"
+    }
+  ],
+  "components": [
+    {
+      "id": "cmd",
+      "name": "zazzle commands",
+      "responsibility": "Runs one zazzle command line and shapes its output for the caller.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "dispatch",
+      "name": "Dispatcher (mod.rs)",
+      "responsibility": "Strips the global options, routes the command (with the aliases grep and cat), hands read-again to again.rs, answers status, help and version, refuses proxy and run with a pointer to their own processes, cuts output to the token budget and applies session ids, dedupe and replay records.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "find",
+      "name": "find (find.rs)",
+      "responsibility": "Regex search over the walked files, on the pool, each file opened once into a reused per-thread buffer; grouped by file, ranked and capped; skips binary and large files.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "read",
+      "name": "read (read.rs)",
+      "responsibility": "Numbered lines of files, ranges or one named symbol with a header (line count, sha), the middle elided beyond the token budget; optional line anchors; C# files as the indexer's terse view unless --source.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "ls",
+      "name": "ls (ls.rs)",
+      "responsibility": "A directory tree with recursive file counts and per-file line counts, to a depth and an entry cap; the summaries are computed on the pool.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "outline",
+      "name": "outline (outline.rs)",
+      "responsibility": "Symbols with line ranges for files, or for the outlinable files of a directory.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "refs",
+      "name": "refs (refs.rs)",
+      "responsibility": "Whole-word occurrences of a symbol, split into definitions and uses, each use with its enclosing symbol; matching files are loaded and outlined on the pool.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "edit",
+      "name": "edit (edit.rs)",
+      "responsibility": "Text replacement, line replacement, insertion and file creation, checked against the sha or anchors the caller read, confined to the working directory and written atomically.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "clean",
+      "name": "clean (clean.rs)",
+      "responsibility": "Shrinks text read from standard input: terminal escapes, redraws, whitespace, JSON, grep output, repeats, progress bars, blobs, long lines and a token budget, each removal marked; stores the answer with its input under an output id when the engine has an output store.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "again",
+      "name": "read-again (again.rs)",
+      "responsibility": "Gives an answer back by its id: reruns a session response's request in its original working directory, or returns a stored clean, run or proxy output as it was shown, or with --full its uncut text as numbered lines for a range within a budget.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "src",
+      "name": "zazzled library",
+      "responsibility": "The engine, walker, outliner, symbol finder, pool, indexer bridge, session table and helpers the commands run on.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "cmd", "to": "dispatch", "kind": "contains", "description": "The entry point, run." },
+    { "from": "cmd", "to": "find", "kind": "contains", "description": "Search." },
+    { "from": "cmd", "to": "read", "kind": "contains", "description": "Reading." },
+    { "from": "cmd", "to": "ls", "kind": "contains", "description": "Listing." },
+    { "from": "cmd", "to": "outline", "kind": "contains", "description": "Outlines." },
+    { "from": "cmd", "to": "refs", "kind": "contains", "description": "References." },
+    { "from": "cmd", "to": "edit", "kind": "contains", "description": "Editing." },
+    { "from": "cmd", "to": "clean", "kind": "contains", "description": "Cleaning piped output." },
+    { "from": "cmd", "to": "again", "kind": "contains", "description": "Answers again by id." },
+    { "from": "dispatch", "to": "find", "kind": "depends-on", "description": "find and grep." },
+    { "from": "dispatch", "to": "read", "kind": "depends-on", "description": "read and cat; read keeps its own --budget." },
+    { "from": "dispatch", "to": "ls", "kind": "depends-on", "description": "ls." },
+    { "from": "dispatch", "to": "outline", "kind": "depends-on", "description": "outline." },
+    { "from": "dispatch", "to": "refs", "kind": "depends-on", "description": "refs." },
+    { "from": "dispatch", "to": "edit", "kind": "depends-on", "description": "edit." },
+    { "from": "dispatch", "to": "clean", "kind": "depends-on", "description": "clean, which keeps its own --budget." },
+    { "from": "dispatch", "to": "again", "kind": "depends-on", "description": "read-again, before any global option is taken out." },
+    { "from": "again", "to": "dispatch", "kind": "depends-on", "description": "produce, to run a session response's request again." },
+    { "from": "again", "to": "read", "kind": "depends-on", "description": "parse_range for --lines and fit for the head and tail within the budget." },
+    { "from": "again", "to": "clean", "kind": "depends-on", "description": "plain_lines: the stored input without terminal escapes and redraws, one row per original line." },
+    { "from": "again", "to": "src", "kind": "depends-on", "description": "Sessions.replay and resend for session responses; outputs::load from the engine's output store." },
+    { "from": "refs", "to": "find", "kind": "depends-on", "description": "build_regex and search_all, with a literal whole-word pattern." },
+    { "from": "dispatch", "to": "src", "kind": "depends-on", "description": "Sessions.apply_with for ids, dedupe and replay records; token estimates for the budget cut; engine counters for status." },
+    { "from": "find", "to": "src", "kind": "depends-on", "description": "walk::collect for the file list; pool::par_map; the engine's stored info to skip known binary files, and remember to record new ones." },
+    { "from": "read", "to": "src", "kind": "depends-on", "description": "Engine.load for content, line starts and the sha; Engine.outline and symbols::find for --symbol; Indexer.view for the C# terse view." },
+    { "from": "ls", "to": "src", "kind": "depends-on", "description": "walk::collect, and Engine.info for line counts on the pool." },
+    { "from": "outline", "to": "src", "kind": "depends-on", "description": "Engine.outline, cached by content hash." },
+    { "from": "refs", "to": "src", "kind": "depends-on", "description": "Engine.outline on the pool to tell definitions from uses and find the enclosing symbol." },
+    { "from": "edit", "to": "src", "kind": "depends-on", "description": "Engine.load, the edit lock and Engine.forget after a write." },
+    { "from": "clean", "to": "src", "kind": "depends-on", "description": "Token estimates and flag parsing; outputs::id_of, save and limit to store an answer in the engine's output store." }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/backlog.schema.json",
+  "title": "Backlog",
+  "description": "Work somebody wants done: features, defects, debt and the rest. An item is deleted once a view describes it as true; git keeps the history. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "backlog"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually feature, defect, debt, improvement, research or chore."
+          },
+          "priority": {
+            "type": "string",
+            "minLength": 1
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "expected": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a defect: what should happen."
+          },
+          "observed": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For a defect: what happens instead."
+          },
+          "reproduction": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "compromise": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For debt: the shortcut that was taken."
+          },
+          "cost": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For debt: what leaving it costs."
+          }
+        },
+        "required": [
+          "type",
+          "origin"
+        ]
+      }
+    }
+  }
+}

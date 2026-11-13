@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "fix-network capability",
+  "folder": "macos/rust/fix-network/src",
+  "description": "What the tool can do for the person at the Mac, and the rules that limit who may make it change things.",
+  "sources": [
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "Cli" }
+  ],
+  "entities": [
+    {
+      "id": "mac-network-diagnosis-and-repair",
+      "name": "Mac network diagnosis and repair",
+      "description": "Diagnoses the Mac's link, public internet, VPN, routing, corporate DNS, corporate services and proxies, and repairs what it safely can.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "assess" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" }
+      ],
+      "responsibility": "Tell the person what is wrong with the Mac's network, dimension by dimension, and what it takes to fix each problem, then run the allowed repairs and verify again.",
+      "operations": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "dry_run" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" }
+      ],
+      "access": [
+        "Anyone who can run the binary on macOS may diagnose; on any other OS every command is refused with exit status 2 (run).",
+        "Repairs that need root go through sudo with the caller's own password; without a terminal sudo -n fails instead of prompting (sys::argv).",
+        "Reconnecting a VPN, disabling proxies and flushing routes need --vpn, --fix-proxy and --allow-route-flush (Step::gate, Gates::blocked).",
+        "Inside an SSH session, steps that can cut it (VPN reconnect, DHCP renew, Wi-Fi cycle, route flush) need --allow-remote (Step::disruptive, Gates::blocked)."
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "operation", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/operation.json", "relationship": "The commands that expose it." },
+    { "kind": "feature", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/feature.json", "relationship": "The features that make it up." },
+    { "kind": "use-case", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/use-case.json", "relationship": "The use cases that use it." }
+  ]
+}

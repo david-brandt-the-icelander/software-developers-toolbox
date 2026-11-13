@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "Terse C# view limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "entities": [
+    {
+      "id": "logging-by-name",
+      "title": "Logging is recognised by names, and calls in its arguments are not side effects",
+      "summary": "A statement counts as logging when its receiver and method names look like a logger, Debug, Trace or a span; only assignments, increments, decrements and awaits in it count as side effects.",
+      "impact": "A logging call whose arguments call a method that changes state (for example _logger.LogInformation(\"{N}\", Next())) is hidden with that call, and a non-logging object named like a logger with a Log… method is hidden too. Logging through other names stays visible.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.IsLogCall"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.HasSideEffects"
+        }
+      ]
+    }
+  ]
+}

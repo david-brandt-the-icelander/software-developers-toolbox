@@ -1,0 +1,552 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle command verification",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "entities": [
+    {
+      "id": "edit-safety",
+      "title": "Checked, confined, atomic edits",
+      "summary": "Unit tests in edit.rs check every refusal and the write path; the invoker's smoke test repeats the sha requirement, confinement and stdin end to end.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "safe-edits"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+          "entityId": "edit-a-file-safely"
+        }
+      ],
+      "criteria": [
+        "Paths outside the working directory are refused, whether given directly, through .. or through a symlink; a symlink to a file inside is edited on the real file.",
+        "Every edit except --create needs --expect or --at, and a stale sha or anchor is refused without writing or revealing the current one.",
+        "A file changed between loading and writing is not overwritten.",
+        "CRLF files stay CRLF; permissions and hard links are kept; a failed write leaves no temporary file.",
+        "An edit drops the cached record, so the next read shows the new content."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_confinement",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_symlink_inside_is_followed",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_replace_text_needs_current_hash",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_line_edit_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_replace_lines_with_anchors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_concurrent_change_is_detected",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_crlf_is_preserved",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_hard_links_are_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_permissions_are_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_write_failure_cleans_up",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "test_edit_updates_cache",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
+          "description": "Through the invoker: an edit without the sha is refused, an edit with the sha from `read --source` and the new text on standard input lands, and an edit of /etc/hosts is refused."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "output-caps",
+      "title": "Capped, ranked output",
+      "summary": "Each command's cap, footer and ordering has a unit test, as has the global budget cut.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "capped-output"
+        }
+      ],
+      "criteria": [
+        "find stops at its cap with a footer saying how to narrow, clips long lines and lists tests last.",
+        "read elides the middle beyond its budget and names the range to read next.",
+        "ls, outline and refs stop at their caps with a note of what was left out.",
+        "Any other answer is cut at a line boundary at the --budget estimate."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_cap_and_footer",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_clips_long_lines",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_ranks_tests_last",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_read_budget_elides_middle",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_read_default_budget",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/ls.rs",
+          "symbol": "test_ls_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/outline.rs",
+          "symbol": "test_outline_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "test_refs_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "test_refs_definition_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_cut_to_budget",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_budget_applies_to_find",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "commands",
+      "title": "Command answers and errors",
+      "summary": "Each command's normal output and its one-line errors have unit tests, including the parallel paths; the smoke test checks find, read and an unknown command through the real invoker.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "find groups by file, merges context windows, counts a line once however many matches it has, and keeps file order when searching on the pool.",
+        "read selects ranges, --around, --head and --tail, and summarises binary and empty files.",
+        "refs lists definitions before uses, with each use's enclosing symbol.",
+        "An unknown command is one `error:` line with status 2 that lists the commands; proxy and run point at their own processes."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_groups_by_file",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_counts_each_line_once",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_parallel_ordering",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "test_find_remembers_binary_files",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_read_around_head_tail",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_read_special_files",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "test_refs_defs_then_uses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_unknown_command",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_proxy_points_to_own_process",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_run_points_to_own_process",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
+          "description": "Runs version, find, read and an unknown command through the invoker against a real daemon and compares the output and exit status."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "symbol-read",
+      "title": "Reading one symbol",
+      "summary": "Unit tests resolve names, qualified names, case, parameter types and #N picks, list candidates for misses, take doc comments and attributes with the symbol, and refuse conflicting flags.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "symbol-read"
+        }
+      ],
+      "criteria": [
+        "A name or the last parts of a qualified name resolve to one symbol, exact case first; parameter types, then #N, pick among several.",
+        "Parameter types match declarations as written, ignoring spaces, defaults, attributes, modifiers and receivers, in both `Type name` and `name: Type` forms; untyped parameters match by name; a list that fits no overload lists the overloads.",
+        "No match lists similar names; several matches are listed numbered.",
+        "Doc comments, comments and attributes directly above the symbol are included.",
+        "--symbol with a range, --around, --head or --tail is refused."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "test_find_resolves",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "test_find_misses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "test_lead_start",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_symbol_reads_with_docs",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_symbol_misses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_symbol_conflicts_and_files",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "test_find_by_parameter_types",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "test_parse_query",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "test_split",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "test_split_query",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "test_declared",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "test_parts",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "test_matches",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "csharp-terse-view",
+      "title": "Terse C# view",
+      "summary": "read is tested against a stand-in indexer that answers the version check and the view call, and without one, where the source comes back with the reason; the bridge itself is tested in indexer.rs.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "csharp-terse-view"
+        }
+      ],
+      "criteria": [
+        "A C# file read without --source shows the view's lines for the range, with no sha, under a header that names --source.",
+        "Without a view the source is shown with a line saying why.",
+        "View keys `N`, `N~` and `A-B` map to the source lines they cover."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_csharp_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_csharp_view_unavailable",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_view_key",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/verification.json",
+          "entityId": "indexer-bridge"
+        }
+      ]
+    },
+    {
+      "id": "clean",
+      "title": "Cleaning piped output",
+      "summary": "Each cleaning step has a unit test, and run is tested end to end for grep output with --stats, JSON, --lossless, the budget, the input cap and its errors.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "clean-output"
+        }
+      ],
+      "criteria": [
+        "Escapes, redraws, whitespace, JSON, grep output, repeats, progress bars, blobs and long lines are each handled and marked.",
+        "--lossless keeps progress lines, blobs and long lines.",
+        "The output is never longer than the input before the budget, and the budget keeps head and tail.",
+        "Input past 64 MiB is cut with a note."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_strip_ansi",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_group_grep_numbered",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_minify_json",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_run_grep_with_stats",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_run_lossless",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_clean_never_larger",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_run_budget_empty_and_never_larger",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_run_input_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "test_run_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "read-again",
+      "title": "read-again",
+      "summary": "again.rs's tests rerun session responses, return stored clean outputs as shown and in full, and check misses, usage errors and a store that cannot be written; the smoke test reads a response again through the invoker.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+          "entityId": "read-again"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "read-again"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+          "entityId": "get-a-cut-output-in-full"
+        }
+      ],
+      "criteria": [
+        "An unchanged session response comes back identical under its id, written `r:ID` or `[r:ID]`; a changed one comes back current under a new id naming the old.",
+        "--full on a session response says it was not cut; an unknown id, with or without a session, and a bad option are refused with one line.",
+        "A clean answer is stored under an id, ends with the --full hint only when something was cut, and comes back as shown; --full gives numbered lines without terminal escapes, --lines a range clamped to the end, --budget elides the middle with the command for it, and an empty input says so.",
+        "A range past the end or one that does not parse is refused.",
+        "A store that cannot be written leaves clean's answer untagged with a note, instead of failing."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "test_rerun_session_response",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "test_misses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "test_stored_clean_output",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "test_unwritable_store",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
+          "description": "`zazzle read-again r:ID` after a read in one ZAZZLE_SESSION returns the first answer exactly."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "schema.json",
+  "kind": "operation",
+  "title": "Example worker operations",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "entities": [
+    {
+      "id": "submit-job",
+      "name": "Submit job",
+      "description": "Queues a job for the worker.",
+      "sources": [
+        {
+          "path": "src/ExampleWorker/JobsController.cs",
+          "symbol": "ExampleWorker.JobsController.Submit"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/ExampleWorker/JobsController.cs",
+        "symbol": "ExampleWorker.JobsController.Submit"
+      },
+      "action": "command",
+      "transport": "POST /api/jobs",
+      "authorization": "Signed-in operators.",
+      "result": "202 with the job's id.",
+      "failures": [
+        "401 when not signed in.",
+        "422 when the job payload is invalid."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "src/ExampleWorker",
+      "path": "src/ExampleWorker/.dev/use-case.json",
+      "relationship": "The use case that calls this operation."
+    }
+  ]
+}

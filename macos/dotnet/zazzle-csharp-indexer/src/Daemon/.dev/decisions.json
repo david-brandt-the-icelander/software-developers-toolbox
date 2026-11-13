@@ -1,0 +1,103 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Shared daemon decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "one-daemon-per-user",
+      "title": "One daemon per user, shared by every session",
+      "summary": "Each serve process is a thin proxy to one daemon per state directory, which holds the engine, the store, the watchers and every root's index for all sessions.",
+      "status": "accepted",
+      "context": "Several agent sessions, often on the same work trees, each start their own MCP server process; each would otherwise build and watch its own index.",
+      "options": [
+        {
+          "title": "Index in every serve process",
+          "consequences": "Every session pays for the initial index and runs its own watchers. Still available with --no-daemon or ZAZZLE_INDEXER_NO_DAEMON=1."
+        },
+        {
+          "title": "Shared per-user daemon behind a unix socket",
+          "consequences": "One index per work tree, kept current between sessions; serve needs a running daemon, which it starts itself."
+        }
+      ],
+      "decision": "serve connects to <state dir>/daemon.sock, starting `zazzle-csharp-indexer daemon` detached when nothing answers, and falls back to an in-process server when no daemon can be reached.",
+      "rationale": "Sessions share one engine (Engine's own comment: it owns everything a daemon shares between sessions), so a second session on a work tree finds it indexed and current.",
+      "origin": "README.md, intro and Commands.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SpawnDaemon"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_two_clients_share_engine"
+        }
+      ]
+    },
+    {
+      "id": "idle-exit",
+      "title": "Exit when idle",
+      "summary": "The daemon stops once it has had no clients for the idle period, 30 minutes by default.",
+      "status": "accepted",
+      "context": "The daemon is started on demand by serve and nothing else stops it.",
+      "decision": "DaemonServer.IdleLoop checks every quarter of the idle period (between 50 ms and 30 s) and stops the daemon when no client is connected and the last one left longer ago than the period. The period comes from ZAZZLE_INDEXER_IDLE_MINUTES.",
+      "rationale": "No resident process or watchers when nobody is using it; the next serve starts it again and FSEvents replay (on macOS) or a reconcile brings the index up to date.",
+      "origin": "README.md, Commands.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.IdleLoop"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "ZAZZLE_INDEXER_IDLE_MINUTES"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_idle_exit"
+        }
+      ]
+    },
+    {
+      "id": "version-restart",
+      "title": "Replace a daemon of another version when it is idle",
+      "summary": "A client whose version differs from the daemon's makes an otherwise idle daemon stop, then starts a new one from its own executable.",
+      "status": "accepted",
+      "context": "After an upgrade, the daemon still running may be the old binary.",
+      "decision": "The handshake compares versions exactly; if they differ and the asking client is the only one connected, the daemon replies restart: true and stops, and the client retries. With other clients connected the daemon keeps running and the new client serves in process.",
+      "rationale": "Sessions already connected to the old daemon are not cut off.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_version_mismatch_requests_restart"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    }
+  ]
+}

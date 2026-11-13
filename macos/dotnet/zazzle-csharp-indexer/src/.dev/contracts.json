@@ -1,0 +1,77 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazzle-csharp-indexer source contracts",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "state-dir-layout",
+      "title": "The state directory",
+      "summary": "One per-user directory holds everything zazzle-csharp-indexer keeps: store.db, usage.jsonl and usage.jsonl.1, daemon.sock and an optional config.json.",
+      "contractType": "file-format",
+      "consumers": [
+        "Every zazzle-csharp-indexer process of the user (serve, daemon, report, hook)",
+        "zazzled (macos/rust/zazzled/), which connects to daemon.sock to ask for terse C# views",
+        "The developer, who reads the log through zazzle-csharp-indexer report and may write config.json"
+      ],
+      "definition": "Location: ZAZZLE_INDEXER_STATE_DIR, else ~/Library/Application Support/zazzle-csharp-indexer on macOS, else $XDG_STATE_HOME/zazzle-csharp-indexer or ~/.local/state/zazzle-csharp-indexer (configuration.json, state-dir). Files: store.db (SQLite, with its WAL files), usage.jsonl and the rotated usage.jsonl.1, daemon.sock (the daemon's socket), config.json (read for run.unrestricted).",
+      "guarantees": [
+        "Processes using the same state directory share one daemon and one store."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.DefaultDir"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SocketPath"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs",
+          "symbol": "RunPolicy.Unrestricted"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "zazzle read"
+        }
+      ]
+    },
+    {
+      "id": "store-db",
+      "title": "store.db",
+      "summary": "The SQLite database of roots, file records and analysed blobs, kept across daemon runs and versions.",
+      "contractType": "persistence",
+      "consumers": [
+        "Later runs and later versions of zazzle-csharp-indexer on the same state directory"
+      ],
+      "definition": "root(id, path UNIQUE, event_id, full_scan); blob(id, oid UNIQUE, ver, size, binary, lang, lines, bloom, digest, symbols, idents); file(root_id, path, size, mtime, birth, blob_id, PRIMARY KEY(root_id, path)). Journal mode WAL, synchronous NORMAL, busy timeout 10 s; writes serialised within a process.",
+      "guarantees": [
+        "Tables are created if missing; there are no migrations.",
+        "Blobs whose ver differs from Store.ExtractorVersion are deleted when the store opens, and file records pointing at a missing blob are analysed again.",
+        "A file record with blob_id 0 is a file too large to analyse."
+      ],
+      "compatibility": "A change to a blob's analysis bumps ExtractorVersion (src/Analysis/.dev/contracts.json, blob-facts). A change to a table's columns has no migration path: CREATE TABLE IF NOT EXISTS leaves an old table as it is.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store.Store"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store.LoadFiles"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs",
+          "symbol": "FileEntry"
+        }
+      ]
+    }
+  ]
+}

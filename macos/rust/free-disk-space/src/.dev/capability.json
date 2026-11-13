@@ -1,0 +1,177 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "free-disk-space capabilities",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "What the binary can do to reclaim space on the user's Mac, grouped by responsibility. None of them checks who calls; each acts with the invoking user's file permissions.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "Cmd"
+    }
+  ],
+  "entities": [
+    {
+      "id": "compression",
+      "name": "In-place compression of inactive files",
+      "description": "Finds large, old, compressible files and compresses them transparently with APFS compression.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "consider"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        }
+      ],
+      "responsibility": "Keeps a resumable scan of a directory tree in a state file, estimates each file's saving from samples, and compresses chosen candidates in place only after verifying the compressed copy.",
+      "operations": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_resume"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_status"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_list"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        }
+      ],
+      "access": [
+        "Any local user who can run the binary; the scan sees what that user can read.",
+        "A file is compressed only if its directory is writable by the user, no process has it open, and it is unchanged since the scan.",
+        "Compressing needs macOS (ditto and APFS); elsewhere it refuses unless FDS_FORCE is set.",
+        "It does not start when ditto's probe copy does not come out compressed.",
+        "On a terminal the user confirms the plan unless --yes is given."
+      ]
+    },
+    {
+      "id": "clone-dedupe",
+      "name": "Clone dedupe",
+      "description": "Turns identical copies of a file into copy-on-write clones of one copy.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "clone_verified"
+        }
+      ],
+      "responsibility": "From the file names the scan recorded, hashes same-named, same-sized files and replaces identical ones on the same volume with verified APFS clones of a kept copy, keeping each file's own metadata.",
+      "operations": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        }
+      ],
+      "access": [
+        "Any local user; nothing changes without --apply.",
+        "Without --include-system only files the user owns, not owned by root, and outside system paths are considered.",
+        "A file is replaced only if it is single-linked, writable, in a writable directory, not open, not flagged and not already replaced by an earlier dedupe of the same scan.",
+        "--apply needs macOS (clonefile); elsewhere it refuses unless FDS_FORCE is set."
+      ]
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup of regenerable files",
+      "description": "Deletes files that can be downloaded or built again, and empties the Downloads folder and the Trash when asked.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "verify_artifact"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress"
+        }
+      ],
+      "responsibility": "Empties fixed cache folders and the chosen targets, deletes dev build artifacts it can prove are regenerable, old and unused, and prunes Homebrew and an already-running Docker Desktop. An applying run that was interrupted resumes, the next time, after the steps it finished.",
+      "operations": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ],
+      "access": [
+        "Any local user; nothing is deleted without --apply.",
+        "What the user may not delete is listed as protected and left.",
+        "Docker is touched only when it is already running; it is never started."
+      ]
+    },
+    {
+      "id": "background-cleaning",
+      "name": "Background cleaning",
+      "description": "Keeps free space above a threshold without the user asking each time.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        }
+      ],
+      "responsibility": "Checks free space on the data volume every cadence of awake time and runs clean --apply on the chosen targets when it is below the threshold; installs, removes and reports itself as the user's launchd login item.",
+      "operations": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_uninstall"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_status"
+        }
+      ],
+      "access": [
+        "Installed per user, in the user's own launchd gui domain; it deletes with that user's permissions.",
+        "Once installed it deletes without asking, on the targets fixed at install time."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/operation.json",
+      "relationship": "The commands through which each capability is reached."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+      "relationship": "The behavior that makes up each capability."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The use cases that use them."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "../schemas/glossary.schema.json",
+  "kind": "glossary",
+  "schemaVersion": 1,
+  "title": "Example worker glossary",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "slot",
+      "title": "Slot",
+      "summary": "One scheduled moment at which a job should run once.",
+      "notToBeConfusedWith": [
+        "Run: an attempt to execute the job for a slot"
+      ]
+    }
+  ]
+}

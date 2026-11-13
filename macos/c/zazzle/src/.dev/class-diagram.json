@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle invoker source class diagram",
+  "folder": "macos/c/zazzle/src",
+  "description": "The C structures the invoker declares: its own copies of the kernel's message, control-message, socket-address and time layouts, so no system headers are needed. Linux and macOS declare them separately with their own field widths; test/sys_mock.h repeats the Linux layout.",
+  "sources": [
+    {
+      "path": "macos/c/zazzle/src/sys_linux.h",
+      "symbol": "zazzle_msghdr"
+    },
+    {
+      "path": "macos/c/zazzle/src/sys_darwin_arm64.h",
+      "symbol": "zazzle_msghdr"
+    }
+  ],
+  "types": [
+    {
+      "id": "zazzle_iovec",
+      "name": "struct zazzle_iovec",
+      "kind": "struct",
+      "sources": ["macos/c/zazzle/src/sys_linux.h", "macos/c/zazzle/src/sys_darwin_arm64.h"],
+      "members": ["void *base", "size_t len"]
+    },
+    {
+      "id": "zazzle_msghdr",
+      "name": "struct zazzle_msghdr",
+      "kind": "struct",
+      "sources": ["macos/c/zazzle/src/sys_linux.h", "macos/c/zazzle/src/sys_darwin_arm64.h"],
+      "members": [
+        "void *name",
+        "uint32_t namelen",
+        "struct zazzle_iovec *iov",
+        "iovlen (size_t on Linux, int32_t on macOS)",
+        "void *control",
+        "controllen (size_t on Linux, uint32_t on macOS)",
+        "int32_t flags"
+      ]
+    },
+    {
+      "id": "zazzle_cmsghdr",
+      "name": "struct zazzle_cmsghdr",
+      "kind": "struct",
+      "sources": ["macos/c/zazzle/src/sys_linux.h", "macos/c/zazzle/src/sys_darwin_arm64.h"],
+      "members": ["len (size_t on Linux, uint32_t on macOS)", "int32_t level", "int32_t type"]
+    },
+    {
+      "id": "zazzle_sockaddr_un",
+      "name": "struct zazzle_sockaddr_un",
+      "kind": "struct",
+      "sources": ["macos/c/zazzle/src/sys_linux.h", "macos/c/zazzle/src/sys_darwin_arm64.h"],
+      "members": ["uint8_t len (macOS only)", "family (uint16_t on Linux, uint8_t on macOS)", "char path[108] on Linux, path[104] on macOS"]
+    },
+    {
+      "id": "zazzle_timespec",
+      "name": "struct zazzle_timespec",
+      "kind": "struct",
+      "sources": ["macos/c/zazzle/src/sys_linux.h"],
+      "members": ["long sec", "long nsec"]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "zazzle_msghdr",
+      "to": "zazzle_iovec",
+      "kind": "depends-on",
+      "description": "The one data buffer of a sendmsg, or of the one-byte non-blocking recvmsg."
+    },
+    {
+      "from": "zazzle_msghdr",
+      "to": "zazzle_cmsghdr",
+      "kind": "depends-on",
+      "description": "control points at the SCM_RIGHTS message carrying the four descriptors."
+    }
+  ]
+}

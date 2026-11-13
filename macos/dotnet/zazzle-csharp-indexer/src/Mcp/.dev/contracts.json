@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "MCP server contracts",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp",
+  "entities": [
+    {
+      "id": "mcp-stdio",
+      "title": "MCP over newline-delimited JSON-RPC",
+      "summary": "One JSON-RPC 2.0 message per line in, one reply per request line out; the server answers initialize, ping, tools/list and tools/call.",
+      "contractType": "message",
+      "consumers": [
+        "MCP clients that start zazzle-csharp-indexer serve, such as Claude Code (Actors/coding-agent.md)",
+        "zazzled (macos/rust/zazzled/), which speaks the same messages on a daemon connection to call the view tool"
+      ],
+      "definition": "initialize returns protocolVersion \"2024-11-05\", capabilities {tools: {}}, serverInfo {name: \"zazzle-csharp-indexer\", version: ToolVersion.Text} and instructions telling the agent to read, search and edit files through zazzle (zazzle_read, zazzle_find, zazzle_edit) and to use these tools for C# structure (overview, find_symbol, find_references, changed_since, git_log, git_blame), that paths are root:relative/path and that the regex dialect is .NET. tools/list returns each tool's name, description and inputSchema. tools/call {name, arguments} returns {content: [{type: \"text\", text}], isError}.",
+      "guarantees": [
+        "A message without an id is a notification and gets no reply; blank lines are skipped.",
+        "A line that is not JSON gets error -32700 with id null; a request without a method gets -32600; an unknown method gets -32601.",
+        "A tool's failure is not a JSON-RPC error: it is a result with isError true and the message as text; an unknown tool name is reported the same way.",
+        "Every tools/call, failed or not, writes one usage-log record (src/.dev/observability.json, usage-log)."
+      ],
+      "compatibility": "Tool names and argument names are what agents, the instructions, the snippet printed by init and the redirect hook's messages rely on (src/Tools/.dev/operation.json); renaming one breaks existing prompts. zazzled calls the view tool by name.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.Handle"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.Initialize"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_tools_and_logs"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json"
+        }
+      ]
+    }
+  ]
+}

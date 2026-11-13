@@ -1,0 +1,65 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "Command-line helper backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "hook-without-zazzle",
+      "title": "Without zazzled, the hook still sends agents to zazzle",
+      "summary": "init installs the hook for Bash, Grep, Glob and Read and prints the zazzle snippet even when it found no zazzled, so agents are blocked and pointed at zazzle tools the project does not have.",
+      "type": "defect",
+      "priority": "medium",
+      "expected": "In a project where init did not register zazzle, a blocked call names something the agent can use (for example the indexer's own search, find_files and read tools), or init leaves out the redirects that only zazzle can answer, and the printed snippet does not name MCP tools that are not configured.",
+      "observed": "Init.Apply skips the zazzle server, its permission and its enabled-server entry when zazzled is null, but always writes the hook with matcher Bash|Grep|Glob|Read; HookPolicy's messages always name zazzle_find, zazzle_ls or zazzle_read and the zazzle command; Program prints Init.AgentsSnippet, which tells agents to use the zazzle server, either way. A Read of a .cs file is then refused with no escape but ZAZZLE_INDEXER_HOOK=off.",
+      "reproduction": [
+        "Run zazzle-csharp-indexer init in a project on a machine with no zazzled beside the indexer or on PATH.",
+        "In Claude Code in that project, call the built-in Read on a .cs file, or Bash with grep.",
+        "The call is blocked with a message naming zazzle_read or zazzle_find, and .mcp.json has no zazzle server."
+      ],
+      "acceptanceCriteria": [
+        "A test runs Init.Apply with zazzled null and checks that the hook it installs, or the messages HookPolicy gives in that project, name only tools the project has."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while bringing the folder's .dev files in line with commit 5ea503c, by reading Init.Apply, HookPolicy and Program's init and hook branches; not reproduced. test_init_without_zazzled checks only that no zazzle server is written."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.AgentsSnippet"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "init"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_init_without_zazzled"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "hook-protocol"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "init-files"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/versions.schema.json",
+  "title": "Versions",
+  "description": "Released versions of an application, a contract or a stored format, and what changed in each. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "versions"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "versionOf": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For example application, contract or format."
+          },
+          "date": {
+            "type": "string",
+            "minLength": 1
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "version",
+          "versionOf"
+        ]
+      }
+    }
+  }
+}

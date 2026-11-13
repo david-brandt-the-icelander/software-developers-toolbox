@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "State diagram",
+  "description": "Source, folder and diagram paths are relative to the repository root; $schema is relative to the JSON file. IDs are unique within their node collection; relationship endpoints reference declared node IDs.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "const": "state"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "folder": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "symbol"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "machine": {
+      "type": "string",
+      "minLength": 1
+    },
+    "initialState": {
+      "type": "string",
+      "minLength": 1
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "description"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "guard": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "trigger"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "$schema",
+    "kind",
+    "title",
+    "folder",
+    "description",
+    "sources",
+    "machine",
+    "initialState",
+    "states",
+    "transitions"
+  ],
+  "additionalProperties": false
+}

@@ -1,6 +1,7 @@
 // Per-session response tracking: short ids for responses and "already sent" notices for repeats.
 use crate::tokens;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 pub const WINDOW_TOKENS: u64 = 40_000;
@@ -17,11 +18,19 @@ struct Session {
     last_used: u64,
 }
 
-// A response already sent: its content hash, a description and the session's token count just after it.
+// A response already sent: its content hash, a description, the session's token count just after it, and how to produce it again.
 struct Entry {
     hash: [u8; 32],
     desc: String,
     sent_at: u64,
+    replay: Option<Replay>,
+}
+
+// The request behind a response: its command line and working directory, so read-again can run it again.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Replay {
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
 }
 
 // All sessions the daemon knows about.
@@ -67,6 +76,39 @@ impl Sessions {
 
     // Tags a response with its id, or replaces it with a short notice if the session was already sent it recently.
     pub fn apply(&self, session: &str, desc: &str, text: String, allow_dedupe: bool) -> String {
+        self.apply_with(session, desc, None, text, allow_dedupe)
+    }
+
+    // Returns the request and description behind a response id in a session, if it is still remembered.
+    pub fn replay(&self, session: &str, id: &str) -> Option<(Replay, String)> {
+        let guard = self.inner.lock().expect("session lock");
+        let e = guard.0.get(session)?.entries.get(id)?;
+        Some((e.replay.clone()?, e.desc.clone()))
+    }
+
+    // Sends a response again for read-again: under its old id when unchanged, else under a new id with a note naming the old one.
+    pub fn resend(&self, session: &str, old_id: &str, desc: &str, replay: Replay, text: String) -> String {
+        let tagged = self.apply_with(session, desc, Some(replay), text, false);
+        let same = tagged
+            .strip_prefix("[r:")
+            .and_then(|t| t.strip_prefix(old_id))
+            .is_some_and(|t| t.starts_with(']'));
+        if same {
+            return tagged;
+        }
+        let (tag, body) = tagged.split_once('\n').expect("tagged responses have a body line");
+        format!("{tag} r:{old_id} changed since it was sent; this is the current version\n{body}")
+    }
+
+    // Tags a response with its id and remembers how to produce it again, or replaces it with a notice if it was sent recently.
+    pub fn apply_with(
+        &self,
+        session: &str,
+        desc: &str,
+        replay: Option<Replay>,
+        text: String,
+        allow_dedupe: bool,
+    ) -> String {
         if session.is_empty() {
             return text;
         }
@@ -85,7 +127,7 @@ impl Sessions {
         let seen = s.entries.get(&id).filter(|e| allow_dedupe && s.sent_tokens - e.sent_at < WINDOW_TOKENS);
         if let Some(e) = seen {
             return format!(
-                "[r:{id}] already sent: {}, unchanged. Re-run with --disable-session-deduping to resend.",
+                "[r:{id}] already sent: {}, unchanged. If you no longer have it: read-again r:{id}",
                 e.desc
             );
         }
@@ -99,7 +141,8 @@ impl Sessions {
                 .expect("entries are full");
             s.entries.remove(&oldest);
         }
-        s.entries.insert(id.clone(), Entry { hash, desc: desc.to_string(), sent_at: s.sent_tokens });
+        let replay = replay.or_else(|| s.entries.get(&id).and_then(|e| e.replay.clone()));
+        s.entries.insert(id.clone(), Entry { hash, desc: desc.to_string(), sent_at: s.sent_tokens, replay });
         format!("[r:{id}]\n{text}")
     }
 }
@@ -117,7 +160,7 @@ mod tests {
         assert!(first.starts_with("[r:") && first.ends_with("]\ncontent"));
         let id = &first[3..8];
         let second = s.apply("sess", "zazzle read a.rs", "content".into(), true);
-        assert_eq!(second, format!("[r:{id}] already sent: zazzle read a.rs, unchanged. Re-run with --disable-session-deduping to resend."));
+        assert_eq!(second, format!("[r:{id}] already sent: zazzle read a.rs, unchanged. If you no longer have it: read-again r:{id}"));
     }
 
     // Checks the disable flag resends full text under the same id.
@@ -169,7 +212,7 @@ mod tests {
         let a = [1u8; 32];
         let mut b = a;
         b[28] ^= 0x02;
-        entries.insert(id_from(&a, MIN_ID), Entry { hash: a, desc: String::new(), sent_at: 0 });
+        entries.insert(id_from(&a, MIN_ID), Entry { hash: a, desc: String::new(), sent_at: 0, replay: None });
         assert_eq!(unique_id(&entries, &a), id_from(&a, MIN_ID));
         assert_eq!(id_from(&a, MIN_ID), id_from(&b, MIN_ID));
         assert_eq!(unique_id(&entries, &b).len(), MIN_ID + 1);
@@ -203,5 +246,47 @@ mod tests {
         let id = id_from(&[0xAB; 32], 5);
         assert_eq!(id.len(), 5);
         assert!(id.bytes().all(|b| ALPHABET.contains(&b)));
+    }
+
+    // Builds a replay for tests.
+    fn replay(args: &[&str]) -> Replay {
+        Replay { args: args.iter().map(|a| a.to_string()).collect(), cwd: PathBuf::from("/w") }
+    }
+
+    // Checks the request is remembered with the response, kept by plain repeats, and absent for unknown ids or sessions.
+    #[test]
+    fn test_replay_is_remembered() {
+        let s = Sessions::default();
+        let first =
+            s.apply_with("sess", "zazzle read a.rs", Some(replay(&["read", "a.rs"])), "content".into(), true);
+        let id = first[3..8].to_string();
+        assert_eq!(s.replay("sess", &id), Some((replay(&["read", "a.rs"]), "zazzle read a.rs".to_string())));
+        s.apply("sess", "zazzle read a.rs", "content".into(), false);
+        assert_eq!(s.replay("sess", &id).map(|r| r.0), Some(replay(&["read", "a.rs"])));
+        assert_eq!(s.replay("sess", "zzzzz"), None);
+        assert_eq!(s.replay("other", &id), None);
+        let plain = s.apply("sess", "d", "no replay".into(), true);
+        assert_eq!(s.replay("sess", &plain[3..8]), None);
+    }
+
+    // Checks a resend keeps the id when unchanged, even inside the dedupe window, and names the old id when changed.
+    #[test]
+    fn test_resend_same_or_changed() {
+        let s = Sessions::default();
+        let first =
+            s.apply_with("sess", "zazzle read a.rs", Some(replay(&["read", "a.rs"])), "v1".into(), true);
+        let id = first[3..8].to_string();
+        assert_eq!(s.resend("sess", &id, "zazzle read a.rs", replay(&["read", "a.rs"]), "v1".into()), first);
+        let changed = s.resend("sess", &id, "zazzle read a.rs", replay(&["read", "a.rs"]), "v2".into());
+        assert!(
+            changed.starts_with("[r:")
+                && changed.contains(&format!(
+                    "] r:{id} changed since it was sent; this is the current version\nv2"
+                )),
+            "{changed}"
+        );
+        let new_id = &changed[3..8];
+        assert_ne!(new_id, id);
+        assert!(s.replay("sess", new_id).is_some());
     }
 }

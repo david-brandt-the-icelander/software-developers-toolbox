@@ -1,0 +1,346 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "afs use cases",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "What a coding agent and a developer do with afs, step by step.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" },
+    { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+    { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "run" },
+    { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" }
+  ],
+  "entities": [
+    {
+      "id": "reread-changed-file",
+      "name": "Re-read a file and get only what changed",
+      "description": "A coding agent reads a whole file, and later reads it again after it may have changed.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" }
+      ],
+      "actor": "Coding agent",
+      "goal": "Know a file's current content without receiving again what it already has.",
+      "preconditions": [
+        "The agent talks to one long-lived afs session: `afs serve` through its MCP client, or `afs jsonl`.",
+        "The running user may read the file."
+      ],
+      "postconditions": [
+        "The agent holds the file's current content: its earlier reply, that reply with the hunks applied, or the new full content.",
+        "The session records the etag the agent now has for that path."
+      ],
+      "flow": [
+        {
+          "id": "first-read",
+          "actor": "Coding agent",
+          "action": "Calls afs_read with the file's path and no ranges.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "send-content",
+          "actor": "afs",
+          "action": "Loads the file, records its stamp and etag, keeps its bytes as a diff base, and sends the lines with the etag and a ref; the version counts as fully received when no cap cut it.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.record" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_content" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.mark_sent" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "read-again",
+          "actor": "Coding agent",
+          "action": "Later calls afs_read with the same path again.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "find-etag",
+          "actor": "afs",
+          "action": "Takes the recorded etag when the file's stamp equals the recorded one and was already outside the 2-second racy window when it was recorded; otherwise reloads and hashes the file.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.trusted_etag" },
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "send-hunks",
+          "actor": "afs",
+          "action": "The etag differs: computes line hunks against the version the agent fully received and sends them with changed, base_etag and a new ref.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" },
+            { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "apply-hunks",
+          "actor": "Coding agent",
+          "action": "Applies the hunks to its earlier copy, from the last `at` to the first.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "INSTRUCTIONS" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "send-content",
+          "condition": "The path is missing, unreadable or not a regular file.",
+          "outcome": "An error reply (isError over MCP); nothing is recorded.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+          ]
+        },
+        {
+          "atStep": "send-content",
+          "condition": "The file has a NUL byte in its first 8000 bytes.",
+          "outcome": "binary: true and the size, with no lines.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "is_binary" }
+          ]
+        },
+        {
+          "atStep": "send-content",
+          "condition": "The file is longer than max_lines or max_bytes.",
+          "outcome": "truncated, next_ranges and bytes_omitted; the agent continues with ranged reads, and this version is not a diff base for later whole-file reads.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" }
+          ]
+        },
+        {
+          "atStep": "find-etag",
+          "condition": "The etag is the one this session already sent for the same path, ranges and caps.",
+          "outcome": "{etag, unchanged: true, ref}: the content is in the agent's earlier result with that ref.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.already_sent" }
+          ]
+        },
+        {
+          "atStep": "find-etag",
+          "condition": "The agent passed fresh: true.",
+          "outcome": "The whole content again, without a diff.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+          ]
+        },
+        {
+          "atStep": "send-hunks",
+          "condition": "No fully received earlier version is held (never complete, or evicted from the 64 MiB store), either version is not UTF-8, or the hunks are not under half the file's size.",
+          "outcome": "The whole file, as on a first read.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_content" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "find-and-read-item",
+      "name": "Find a definition and read only it",
+      "description": "A coding agent outlines source files and reads the line range of the item it needs.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+      ],
+      "actor": "Coding agent",
+      "goal": "Read one function, type or section without reading the files around it.",
+      "preconditions": [
+        "The agent can call afs as an MCP tool, through `afs jsonl` or with `afs call`.",
+        "The files are in a language outline supports."
+      ],
+      "postconditions": [
+        "The agent holds the item's lines and their etag."
+      ],
+      "flow": [
+        {
+          "id": "ask-outline",
+          "actor": "Coding agent",
+          "action": "Calls afs_outline with the paths to look in.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "outline",
+          "actor": "afs",
+          "action": "Walks the paths honouring ignore files, parses every supported file in parallel and returns [start, end, kind, name] per symbol, sorted by path, caching the result with the walk's stamps.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "ask-range",
+          "actor": "Coding agent",
+          "action": "Calls afs_read with the file and ranges [[start, end]] from the symbol's row.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "send-range",
+          "actor": "afs",
+          "action": "Returns that range as one chunk with the file's etag and a ref.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "outline",
+          "condition": "A path does not exist.",
+          "outcome": "An error reply naming the path.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "builder" }
+          ]
+        },
+        {
+          "atStep": "outline",
+          "condition": "More symbols than max_symbols.",
+          "outcome": "truncated, with total_symbols; the agent narrows the paths.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" }
+          ]
+        },
+        {
+          "atStep": "outline",
+          "condition": "The same outline was already sent and nothing it depends on changed.",
+          "outcome": "{etag, unchanged: true, ref}.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" }
+          ]
+        },
+        {
+          "atStep": "send-range",
+          "condition": "The range is longer than the caps.",
+          "outcome": "truncated and next_ranges for the rest.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "one-shot-request",
+      "name": "Run a request from the terminal",
+      "description": "A developer runs one request, or a batch, with `afs call` and reads the JSON reply.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" },
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "EXAMPLES" }
+      ],
+      "actor": "Developer",
+      "goal": "Read, search, list, stat or outline files as JSON from a shell or script, and tell from the exit code whether it worked.",
+      "preconditions": [
+        "afs is installed and on the PATH."
+      ],
+      "postconditions": [
+        "The reply is on stdout; the exit code is 0 only if every reply has ok: true."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `afs call '<json>'`, or pipes the JSON into `afs call` or `afs call -`.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "request_text" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "execute",
+          "actor": "afs",
+          "action": "Parses the JSON and runs the request, or each request of an array in order, in a fresh session.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "call_once" },
+            { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.call" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "reply",
+          "actor": "afs",
+          "action": "Prints the reply on one line and exits 0.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "stdin is not UTF-8.",
+          "outcome": "`afs: …` on stderr and exit code 1.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" }
+          ]
+        },
+        {
+          "atStep": "execute",
+          "condition": "The text is not JSON.",
+          "outcome": "{\"ok\":false,\"error\":\"invalid JSON: …\"} and exit code 1.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "call_once" }
+          ]
+        },
+        {
+          "atStep": "reply",
+          "condition": "Any reply has ok: false.",
+          "outcome": "All replies are printed and the exit code is 1.",
+          "sources": [
+            { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "all_ok" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/operation.json",
+      "relationship": "The operations the steps call."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/feature.json",
+      "relationship": "The unchanged, diff and bounded-output features they exercise."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/capability.json",
+      "relationship": "The capability they use."
+    },
+    {
+      "kind": "user-journey",
+      "folder": "agents/skills/agent-fs",
+      "path": "agents/skills/agent-fs/.dev/user-journey.json",
+      "relationship": "The skill's journey that strings the agent's use cases together."
+    }
+  ]
+}

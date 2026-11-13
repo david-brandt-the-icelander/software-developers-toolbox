@@ -1,0 +1,154 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzled limitations",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "heuristic-outlines",
+      "title": "Heuristic outlines without a grammar, or for large files",
+      "summary": "Only Rust, Python, C, C#, JavaScript, TypeScript and TSX files up to 1 MiB are outlined from syntax trees; Markdown, TOML and JSON by headings, tables and keys; everything else, and larger files, by declaration keywords and indentation.",
+      "impact": "Outlines, refs' definitions and read --symbol for other languages, and for large generated files, can miss or misplace symbols.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "grammar"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "MAX_PARSE_BYTES"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "generic_outline"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Limits"
+        }
+      ]
+    },
+    {
+      "id": "memory-only-sessions",
+      "title": "Sessions are not kept",
+      "summary": "Session ids, the record of what was sent and the requests read-again replays live in daemon memory only, for at most 64 sessions of 512 answers each.",
+      "impact": "After the daemon exits (it does when idle) or past those limits, a repeated request is answered in full again, and read-again of an older id fails.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "MAX_SESSIONS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "MAX_ENTRIES"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Session ids and dedupe"
+        }
+      ]
+    },
+    {
+      "id": "file-size",
+      "title": "Files over 256 MiB are not loaded",
+      "summary": "read, outline and edit refuse a file larger than 256 MiB, and refs leaves it out.",
+      "impact": "Such a file can be found by ls but not read, outlined or edited.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/meta.rs",
+          "symbol": "MAX_META_SIZE"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::stat_file"
+        }
+      ]
+    },
+    {
+      "id": "walk-scope",
+      "title": "What a walk lists",
+      "summary": "Directory walks skip .git, honour .gitignore, .ignore and .git/info/exclude (not git's global ignore file) unless -u is given, include hidden files, and leave out symlinks and special files found inside the tree.",
+      "impact": "Files reached only through a symlinked directory, or ignored files without -u, are not searched or listed.",
+      "workaround": "Name the symlinked path as a root, or pass -u.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "scan"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "classify"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "collect"
+        }
+      ]
+    },
+    {
+      "id": "request-size",
+      "title": "Requests up to 1 MiB",
+      "summary": "The daemon refuses a request frame over 1 MiB; the C invoker's own limit is lower.",
+      "impact": "A longer command line is refused. Through the invoker, a large --new text can be given on standard input (--new -) instead; an MCP call has no such way round.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proto.rs",
+          "symbol": "MAX_REQUEST"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/c/zazzle/src/.dev/limitations.json",
+          "entityId": "argument-size"
+        }
+      ]
+    },
+    {
+      "id": "stored-outputs-expire",
+      "title": "Stored outputs last an hour, in one process's store",
+      "summary": "A stored clean, run or proxy output is removed after an hour, or earlier when the store passes its size limit, and is found only by a daemon that uses the same store directory as the process that saved it.",
+      "impact": "After that, or when `zazzle run` and the daemon see different ZAZZLE_OUTPUTS_DIR or HOME values (a daemon keeps the environment it started with), read-again says the id is not in the output store and the command must be run again.",
+      "workaround": "Keep ids only for the hour, and give the daemon and the shell the same ZAZZLE_OUTPUTS_DIR (or leave it unset).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "MAX_AGE"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_OUTPUTS_DIR"
+        }
+      ]
+    }
+  ]
+}

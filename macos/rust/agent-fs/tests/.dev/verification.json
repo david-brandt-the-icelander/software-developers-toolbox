@@ -1,0 +1,66 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "afs end-to-end verification",
+  "folder": "macos/rust/agent-fs/tests",
+  "entities": [
+    {
+      "id": "call-command",
+      "title": "afs call",
+      "summary": "One-shot requests from the argument or stdin, with exit codes that reflect every reply.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "call" },
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "cli" },
+        { "path": "macos/rust/agent-fs/src/.dev/use-case.json", "entityId": "one-shot-request" }
+      ],
+      "criteria": [
+        "A request in the argument succeeds with exit code 0",
+        "A request on stdin works both without an argument and with \"-\"",
+        "Failed requests, invalid JSON and batches map to exit codes and replies",
+        "Input that is not valid UTF-8 is reported on stderr with a failing exit code",
+        "Help and version print and succeed"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_call_argument_success", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_call_stdin", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_call_failures_and_batches", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_call_unreadable_stdin", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_help_and_version", "command": "cargo test -p agent-fs --test cli" }
+      ]
+    },
+    {
+      "id": "jsonl-session",
+      "title": "afs jsonl",
+      "summary": "The line loop keeps one session across lines.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "jsonl" },
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "unchanged-replies" }
+      ],
+      "criteria": [
+        "The JSONL loop keeps one session, skips blank lines and answers bad lines with an error",
+        "The JSONL loop stops with an error when its input is not valid UTF-8"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_jsonl_session", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_jsonl_bad_input", "command": "cargo test -p agent-fs --test cli" }
+      ]
+    },
+    {
+      "id": "mcp-server",
+      "title": "afs serve",
+      "summary": "The MCP server over real stdio.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "serve" },
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "mcp-tools" }
+      ],
+      "criteria": [
+        "The MCP server answers the handshake (echoing the client's protocol version), lists six tools, runs a tool, ignores notifications and blank lines, and reports a parse error",
+        "The MCP server stops with an error when its input is not valid UTF-8"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_serve_mcp", "command": "cargo test -p agent-fs --test cli" },
+        { "type": "automated", "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "test_serve_bad_input", "command": "cargo test -p agent-fs --test cli" }
+      ]
+    }
+  ]
+}

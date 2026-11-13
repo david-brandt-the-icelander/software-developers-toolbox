@@ -1,0 +1,22 @@
+{
+  "$schema": "../schemas/runbooks.schema.json",
+  "kind": "runbooks",
+  "schemaVersion": 1,
+  "title": "Example worker runbooks",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "stuck-slot",
+      "title": "A slot is stuck as claimed",
+      "summary": "Release a lease left by a crashed worker.",
+      "purpose": "recover",
+      "when": "A slot shows as running for longer than its job's limit.",
+      "steps": [
+        "Confirm no worker is running the job",
+        "Wait for the lease to expire, or delete it in the admin page"
+      ],
+      "verify": "The next slot runs on time."
+    }
+  ]
+}

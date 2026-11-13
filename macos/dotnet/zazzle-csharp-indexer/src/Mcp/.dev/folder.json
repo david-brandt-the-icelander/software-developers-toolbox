@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "MCP server",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "MCP server",
+      "summary": "A minimal Model Context Protocol server: newline-delimited JSON-RPC in and out, the four methods it answers, and a usage-log record for every tool call.",
+      "purpose": "Holds McpServer, the one adapter between an MCP client and the tools. It builds the tool set for a session's roots, answers initialize, ping, tools/list and tools/call, turns a tool's text or ToolException into an MCP tool result, and times and logs each call.",
+      "boundaries": [
+        "What each tool does is src/Tools/; the server only dispatches by name.",
+        "Whether the session runs on standard input and output (in process) or on a daemon connection is decided by src/Program.cs and src/Daemon/; the server only sees a reader and a writer."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer"
+        }
+      ]
+    }
+  ]
+}

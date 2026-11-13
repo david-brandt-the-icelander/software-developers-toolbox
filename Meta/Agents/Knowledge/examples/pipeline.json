@@ -1,0 +1,41 @@
+{
+  "$schema": "../schemas/pipeline.schema.json",
+  "kind": "pipeline",
+  "schemaVersion": 1,
+  "title": "Example worker pipeline",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "pull-request",
+      "title": "On a pull request",
+      "summary": "Build, test and validate the .dev files.",
+      "trigger": "A pull request to main",
+      "checks": [
+        "Build",
+        "Unit tests",
+        "validate_diagrams.py",
+        "validate_knowledge.py"
+      ],
+      "blocks": "merge",
+      "duration": "about four minutes"
+    },
+    {
+      "id": "release",
+      "title": "On a tag",
+      "summary": "Publish the container image.",
+      "trigger": "A tag v*",
+      "checks": [
+        "Build the image",
+        "Smoke test the image"
+      ],
+      "blocks": "release",
+      "notChecked": [
+        "Behavior against the production database"
+      ],
+      "secrets": [
+        "REGISTRY_TOKEN"
+      ]
+    }
+  ]
+}

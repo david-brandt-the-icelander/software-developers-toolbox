@@ -1,0 +1,519 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzled source component diagram",
+  "folder": "macos/rust/zazzled/src",
+  "description": "The parts of the zazzled crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. All of it is one binary.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/lib.rs",
+      "symbol": "cmd"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/rust/zazzled/src/server.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/rust/zazzled/src/mcp.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/rust/zazzled/src/engine.rs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "macos/rust/zazzled/src/outputs.rs",
+      "symbol": "save"
+    },
+    {
+      "path": "macos/rust/zazzled/src/params.rs",
+      "symbol": "matches"
+    }
+  ],
+  "components": [
+    {
+      "id": "src",
+      "name": "zazzled source",
+      "responsibility": "The zazzled library and binary.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs, cli.rs)",
+      "responsibility": "Parses `zazzled serve|mcp|proxy|wrap|install|uninstall|run|version`, opens the engine with its cache and output store and starts the chosen front end, or hands proxy and wrap to their folders.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "server",
+      "name": "Socket server (server.rs)",
+      "responsibility": "Binds the private socket (or takes launchd's), serves connections on 2 to 8 worker threads, checks the peer's uid, receives the request and passed descriptors, runs the command and answers; flushes the cache every 100 ms and exits when idle.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "proto",
+      "name": "Wire format (proto.rs)",
+      "responsibility": "Encodes and decodes the length-prefixed request, limits its size, and does the relay round trip.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "client",
+      "name": "Socket client (client.rs)",
+      "responsibility": "Finds the socket path, calls the daemon in relay mode, and starts `zazzled serve` and retries when no daemon is listening.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP server (mcp.rs)",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the seven zazzle tools, each call forwarded to the daemon under one session per connection.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "launchd",
+      "name": "launchd integration (launchd.rs)",
+      "responsibility": "Takes the socket launchd opened, writes and loads or unloads the LaunchAgent, and runs external programs with a timeout.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine (engine.rs, meta.rs)",
+      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock and the counters.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "store",
+      "name": "Persistent cache (store.rs)",
+      "responsibility": "The append-only log of per-path summaries under the cache directory: checksums, torn-tail repair, compaction on open, flushed by the server.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "walk",
+      "name": "Walker (walk.rs)",
+      "responsibility": "Lists the files under a root honouring .gitignore, .ignore and git's exclude file, applies globs, and reuses a listing while every directory and ignore file keeps its stat, checked on the pool.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "outline",
+      "name": "Outliner (outline.rs, arena.rs)",
+      "responsibility": "Symbols with line ranges: tree-sitter for Rust, Python, C, C#, JavaScript, TypeScript and TSX up to 1 MiB, its allocations in a per-thread arena during each parse; headings, tables and keys for Markdown, TOML and JSON; keywords and indentation for the rest.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "symbols",
+      "name": "Symbol finder (symbols.rs)",
+      "responsibility": "Resolves a symbol name or qualified name, with optional parameter types, to one outline symbol, lists candidates otherwise, and finds the comments and attributes above it.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "params",
+      "name": "Parameter lists (params.rs)",
+      "responsibility": "Splits a query's `Name(T1, T2)` and a declaration's parameter list, and compares them by type, or by name for untyped parameters.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "pool",
+      "name": "Thread pool (pool.rs)",
+      "responsibility": "One pool of threads per process, started on first use; par_map runs borrowed work on the caller and pool helpers and returns results in item order.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "indexer",
+      "name": "C# indexer bridge (indexer.rs)",
+      "responsibility": "Finds zazzle-csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the file's git work tree, and asks its `view` tool for a C# file's terse view.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "session",
+      "name": "Session table (session.rs)",
+      "responsibility": "Gives each response a short id per session, replaces a repeat within the window by an \"already sent\" notice, and remembers the request behind each id for read-again.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "outputs",
+      "name": "Output store (outputs.rs)",
+      "responsibility": "Keeps outputs that cannot be produced again (clean, run, proxy) on disk under a ten-character id derived from their text: the text shown and the full input, in an owner-only directory; each save drops entries older than an hour and, past the size limit, the oldest until half the bytes remain.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "support",
+      "name": "Helpers (args.rs, tokens.rs, util.rs)",
+      "responsibility": "Flag parsing with one-line errors, token estimates, path display and resolution, ranking and line clipping.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "cmd",
+      "name": "zazzle commands",
+      "responsibility": "find, read, ls, outline, refs, edit, clean, read-again and status.",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "diagram": "macos/rust/zazzled/src/cmd/.dev/component-diagram.json"
+    },
+    {
+      "id": "proxy",
+      "name": "MCP proxy",
+      "responsibility": "`zazzled proxy`: cleans another MCP server's results, over stdio or Streamable HTTP.",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "diagram": "macos/rust/zazzled/src/proxy/.dev/component-diagram.json"
+    },
+    {
+      "id": "wrap",
+      "name": "zazzle run",
+      "responsibility": "`zazzled wrap`: runs a command and prints its output cleaned with a profile.",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "diagram": "macos/rust/zazzled/src/wrap/.dev/component-diagram.json"
+    },
+    {
+      "id": "launchd-service",
+      "name": "launchd",
+      "responsibility": "macOS's service manager: owns the socket of an installed LaunchAgent and starts `zazzled serve` on the first connection; driven with launchctl.",
+      "external": true
+    },
+    {
+      "id": "csharp-indexer",
+      "name": "zazzle-csharp-indexer",
+      "responsibility": "The C# tool in this repository whose daemon answers the `view` tool over its own unix socket.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "src",
+      "to": "cli",
+      "kind": "contains",
+      "description": "The binary's entry."
+    },
+    {
+      "from": "src",
+      "to": "server",
+      "kind": "contains",
+      "description": "The daemon."
+    },
+    {
+      "from": "src",
+      "to": "proto",
+      "kind": "contains",
+      "description": "The wire format."
+    },
+    {
+      "from": "src",
+      "to": "client",
+      "kind": "contains",
+      "description": "The socket client."
+    },
+    {
+      "from": "src",
+      "to": "mcp",
+      "kind": "contains",
+      "description": "The MCP front end."
+    },
+    {
+      "from": "src",
+      "to": "launchd",
+      "kind": "contains",
+      "description": "launchd integration."
+    },
+    {
+      "from": "src",
+      "to": "engine",
+      "kind": "contains",
+      "description": "Shared state."
+    },
+    {
+      "from": "src",
+      "to": "store",
+      "kind": "contains",
+      "description": "The persistent cache."
+    },
+    {
+      "from": "src",
+      "to": "walk",
+      "kind": "contains",
+      "description": "Directory walking."
+    },
+    {
+      "from": "src",
+      "to": "outline",
+      "kind": "contains",
+      "description": "Outlines."
+    },
+    {
+      "from": "src",
+      "to": "symbols",
+      "kind": "contains",
+      "description": "Symbol lookup."
+    },
+    {
+      "from": "src",
+      "to": "params",
+      "kind": "contains",
+      "description": "Parameter lists for overloads."
+    },
+    {
+      "from": "src",
+      "to": "pool",
+      "kind": "contains",
+      "description": "The thread pool."
+    },
+    {
+      "from": "src",
+      "to": "indexer",
+      "kind": "contains",
+      "description": "The C# indexer bridge."
+    },
+    {
+      "from": "src",
+      "to": "session",
+      "kind": "contains",
+      "description": "Sessions."
+    },
+    {
+      "from": "src",
+      "to": "outputs",
+      "kind": "contains",
+      "description": "Stored outputs."
+    },
+    {
+      "from": "src",
+      "to": "support",
+      "kind": "contains",
+      "description": "Helpers."
+    },
+    {
+      "from": "src",
+      "to": "cmd",
+      "kind": "contains",
+      "description": "The commands."
+    },
+    {
+      "from": "src",
+      "to": "proxy",
+      "kind": "contains",
+      "description": "The MCP proxy."
+    },
+    {
+      "from": "src",
+      "to": "wrap",
+      "kind": "contains",
+      "description": "zazzle run."
+    },
+    {
+      "from": "cli",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "serve_main binds or takes the socket and serves until idle."
+    },
+    {
+      "from": "cli",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "mcp_main serves MCP on standard input and output."
+    },
+    {
+      "from": "cli",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "Takes launchd's socket; install and uninstall the LaunchAgent."
+    },
+    {
+      "from": "cli",
+      "to": "client",
+      "kind": "depends-on",
+      "description": "The default socket path."
+    },
+    {
+      "from": "cli",
+      "to": "store",
+      "kind": "depends-on",
+      "description": "Opens the cache, or runs without one if it cannot."
+    },
+    {
+      "from": "cli",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "`zazzled run` runs one command in-process, without the persistent cache."
+    },
+    {
+      "from": "cli",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "outputs::dir gives the daemon's and `zazzled run`'s engine its output store."
+    },
+    {
+      "from": "cli",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "`zazzled proxy`: proxy::parse, then stdio::run or http::run."
+    },
+    {
+      "from": "cli",
+      "to": "wrap",
+      "kind": "depends-on",
+      "description": "`zazzled wrap`: wrap::main."
+    },
+    {
+      "from": "server",
+      "to": "proto",
+      "kind": "depends-on",
+      "description": "Reads the frame length and decodes the request."
+    },
+    {
+      "from": "server",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Runs the request's command line."
+    },
+    {
+      "from": "server",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Flushes pending cache records every tick and on exit."
+    },
+    {
+      "from": "mcp",
+      "to": "client",
+      "kind": "depends-on",
+      "description": "Forwards each tool call to the daemon, starting it if needed."
+    },
+    {
+      "from": "client",
+      "to": "proto",
+      "kind": "depends-on",
+      "description": "The relay round trip."
+    },
+    {
+      "from": "cmd",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Loads files, metadata and outlines; takes the edit lock."
+    },
+    {
+      "from": "cmd",
+      "to": "walk",
+      "kind": "depends-on",
+      "description": "The files under the given roots."
+    },
+    {
+      "from": "cmd",
+      "to": "pool",
+      "kind": "depends-on",
+      "description": "find, refs and ls run their per-file work on the pool."
+    },
+    {
+      "from": "cmd",
+      "to": "symbols",
+      "kind": "depends-on",
+      "description": "read --symbol."
+    },
+    {
+      "from": "cmd",
+      "to": "indexer",
+      "kind": "depends-on",
+      "description": "read's terse C# view."
+    },
+    {
+      "from": "cmd",
+      "to": "session",
+      "kind": "depends-on",
+      "description": "Ids, dedupe and read-again through the engine's session table."
+    },
+    {
+      "from": "cmd",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "clean saves its answer and input; read-again loads stored outputs."
+    },
+    {
+      "from": "cmd",
+      "to": "support",
+      "kind": "depends-on",
+      "description": "Flags, budgets, paths and clipping."
+    },
+    {
+      "from": "proxy",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "clean::shrink_steps and clean::cuts for each text."
+    },
+    {
+      "from": "proxy",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "Saves each shortened text with its original."
+    },
+    {
+      "from": "wrap",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "clean::tidy_lines, shrink_steps, cuts and store."
+    },
+    {
+      "from": "wrap",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "The store directory, through outputs::dir; clean::store saves the output."
+    },
+    {
+      "from": "engine",
+      "to": "store",
+      "kind": "depends-on",
+      "description": "Reads and records persisted summaries."
+    },
+    {
+      "from": "engine",
+      "to": "outline",
+      "kind": "depends-on",
+      "description": "Builds outlines it then caches."
+    },
+    {
+      "from": "engine",
+      "to": "walk",
+      "kind": "depends-on",
+      "description": "Holds the walk cache."
+    },
+    {
+      "from": "engine",
+      "to": "session",
+      "kind": "depends-on",
+      "description": "Holds the session table."
+    },
+    {
+      "from": "walk",
+      "to": "pool",
+      "kind": "depends-on",
+      "description": "Validates a cached listing's stamps on up to four pool workers."
+    },
+    {
+      "from": "symbols",
+      "to": "outline",
+      "kind": "depends-on",
+      "description": "Works on outline symbols and their languages."
+    },
+    {
+      "from": "store",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "On macOS runs `tmutil addexclusion` on a new cache directory with run_with_timeout."
+    },
+    {
+      "from": "launchd",
+      "to": "launchd-service",
+      "kind": "depends-on",
+      "description": "launch_activate_socket; launchctl bootstrap and bootout in the user's gui domain."
+    },
+    {
+      "from": "indexer",
+      "to": "csharp-indexer",
+      "kind": "depends-on",
+      "description": "Runs `zazzle-csharp-indexer --version` and `zazzle-csharp-indexer daemon`, and speaks JSON lines on its daemon socket: a hello, then tools/call view."
+    },
+    {
+      "from": "symbols",
+      "to": "params",
+      "kind": "depends-on",
+      "description": "Picks overloads by parameter types."
+    }
+  ]
+}

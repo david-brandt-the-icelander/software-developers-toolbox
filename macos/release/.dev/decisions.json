@@ -1,0 +1,175 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Release decisions",
+  "folder": "macos/release",
+  "entities": [
+    {
+      "id": "tag-is-the-version",
+      "title": "The git tag is the only source of version numbers",
+      "summary": "The repository's crates and the indexer say 0.0.0-dev; a release takes its version from its vX.Y.Z tag and stamps it into every binary at build time.",
+      "status": "accepted",
+      "context": "Every tool ships in one release, and its --version should report that release.",
+      "decision": "version.sh takes a pushed vX.Y.Z tag as it is, or computes the next version after the latest vX.Y.Z tag for a manual run's bump (patch, minor or major; none only builds), and the run tags the commit itself. set-version.sh writes that version into every crate's manifest and Cargo.lock entry without resolving anything, so --locked still holds, and the indexer is published with -p:Version. Releases are created with no release notes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/version.sh",
+          "symbol": "next"
+        },
+        {
+          "path": "macos/release/set-version.sh"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "version"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Version numbers (`version.sh`, `set-version.sh`)"
+        }
+      ]
+    },
+    {
+      "id": "bottles",
+      "title": "Pour a bottle instead of building from source",
+      "summary": "The formula carries a bottle block, so brew install pours the prebuilt binaries and skips Homebrew's build-from-source checks.",
+      "status": "accepted",
+      "context": "Homebrew's build-from-source path demands up-to-date Command Line Tools, though the formula only copies prebuilt binaries.",
+      "decision": "bottle.sh packs one bottle, tagged all because the binaries are universal and the formula macOS-only; the release job uploads it to the GitHub release and formula.sh points the formula's bottle block there. The release tarball stays the formula's source fallback.",
+      "rationale": "Installs succeed without current Command Line Tools.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/bottle.sh",
+          "symbol": "root"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "bottle_block"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "homebrew: Build the bottle and add it to the release"
+        }
+      ],
+      "links": [
+        {
+          "label": "Release README, Homebrew formula",
+          "path": "macos/release/README.md"
+        }
+      ]
+    },
+    {
+      "id": "one-formula",
+      "title": "One formula for every tool, at the release's version",
+      "summary": "A single zazzle formula installs zazzle, zazzled, afs, fix-network, free-disk-space, zazzle-csharp-indexer and cyberspace-generator, and takes the release tag as its version.",
+      "status": "accepted",
+      "context": "Every tool ships in one tarball from one tag.",
+      "decision": "formula.sh writes Formula/zazzle.rb, installing all the binaries and versioned with the tag without its v.",
+      "rationale": "Every release is an upgrade, and one brew install gives every tool.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/formula.sh"
+        },
+        {
+          "path": "README.md",
+          "symbol": "Tools (macOS, Rust)"
+        }
+      ]
+    },
+    {
+      "id": "indexer-per-cpu",
+      "title": "Ship the C# indexer gzipped per CPU type and expand it after install",
+      "summary": "zazzle-csharp-indexer is a self-contained single file per CPU type, so the tarball and bottle hold both gzipped and the formula's post_install_steps expands the one for the Mac over a placeholder.",
+      "status": "accepted",
+      "context": "The other binaries are universal; the .NET single-file publish is not, and the formula and bottle are tagged all.",
+      "decision": "The release publishes osx-arm64 and osx-x64 and gzips each into the tarball; the formula installs both into libexec/indexer and a placeholder bin/zazzle-csharp-indexer that brew links, and post_install_steps replaces the placeholder with the file for uname -m. brew postinstall zazzle reruns it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Build the C# indexer for both CPU types"
+        },
+        {
+          "path": "macos/release/formula.sh"
+        },
+        {
+          "path": "macos/release/bottle.sh",
+          "symbol": "root"
+        }
+      ]
+    },
+    {
+      "id": "external-tap",
+      "title": "Publish the formula to the zazzcat/homebrew-z tap",
+      "summary": "The release pushes Formula/zazzle.rb to the external tap repository zazzcat/homebrew-z with a fine-grained token, instead of committing formulas to this repository.",
+      "status": "accepted",
+      "context": "brew taps a repository named homebrew-<tap> by itself, so brew install zazzcat/z/zazzle works without a separate tap command; GITHUB_TOKEN cannot push to another account's repository.",
+      "decision": "The homebrew job checks out zazzcat/homebrew-z with HOMEBREW_TAP_TOKEN (Contents: read and write on that repository only), writes the formula there and pushes to its default branch.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "homebrew"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
+        }
+      ]
+    },
+    {
+      "id": "pgo-c-only",
+      "title": "Profile-guided optimization for zazzled's C code only",
+      "summary": "The release compiles tree-sitter's C code in zazzled with a clang profile trained on crate sources; the Rust code is not profiled.",
+      "status": "accepted",
+      "context": "Tree-sitter's C code dominates parsing. Rust's own PGO needs an llvm-profdata that matches rustc's LLVM, which Xcode's tools do not guarantee.",
+      "decision": "pgo.sh builds an instrumented zazzled for the host target only, trains it with outline and refs over the cargo registry sources, merges the profile with the toolchain's llvm-profdata and prints PGO_CFLAGS; the release builds with CC=clang and those flags, and on macOS the arm64 profile also serves the x86_64 slice.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/pgo.sh",
+          "symbol": "runtime_flags"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Train the PGO profile for zazzled's C code"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Profile-guided optimization of zazzled's C code (`pgo.sh`)"
+        }
+      ]
+    },
+    {
+      "id": "optional-signing",
+      "title": "Signing and notarization are optional",
+      "summary": "The release signs and notarizes the macOS binaries only when the Apple secrets are set, and otherwise releases them unsigned with a warning.",
+      "status": "accepted",
+      "context": "Only browser downloads need a signature: Homebrew does not quarantine what a formula installs, and a file downloaded with curl runs as is.",
+      "decision": "sign-and-notarize.sh skips with a warning when a secret is missing, unless the repository variable REQUIRE_SIGNING is true, where it fails the release.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/sign-and-notarize.sh",
+          "symbol": "missing"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Sign and notarize"
+        },
+        {
+          "path": "macos/release/formula.sh"
+        }
+      ],
+      "links": [
+        {
+          "label": "Release README, signing setup",
+          "path": "macos/release/README.md"
+        }
+      ]
+    }
+  ]
+}

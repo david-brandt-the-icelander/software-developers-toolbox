@@ -1,0 +1,134 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "afs source decisions",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "no-mmap",
+      "title": "Whole-file reads, not mmap",
+      "summary": "Files are read into a buffer with read(2); mmap is deliberately not used.",
+      "status": "accepted",
+      "context": "`afs serve` and `afs jsonl` are long-lived processes that read files other programs may be editing at the same moment.",
+      "options": [
+        { "title": "mmap", "consequences": "No copy, but truncating a mapped file while it is read raises SIGBUS and kills the process." },
+        { "title": "read(2) into a buffer", "consequences": "One copy per file; a file changed mid-read gives stale or partial bytes, which the stamps and the racy window catch, never a crash." }
+      ],
+      "decision": "Read whole files with read(2). On Linux, open with O_NOATIME (retried without it when the kernel refuses with EPERM because the caller does not own the file) and hint posix_fadvise(SEQUENTIAL). Match with the regex crate and memchr, and walk searches with the ignore crate's parallel walker.",
+      "rationale": "Truncating a mapped file raises SIGBUS and would kill a long-lived server.",
+      "origin": "macos/rust/agent-fs/README.md, section I/O, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "load" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "open" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "retry_without_noatime" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "advise_sequential" }
+      ]
+    },
+    {
+      "id": "batch-io-by-timing",
+      "title": "Batched loading chosen by timing, per process",
+      "summary": "Each process times io_uring (Linux) or POSIX AIO (macOS) against plain reads on its first files and keeps the faster; AFS_BATCH_IO overrides it.",
+      "status": "accepted",
+      "context": "Search and outline load many files at once. Batching is not always faster: with a hot page cache, cached opens and reads submitted to io_uring are punted to kernel worker threads, and plain reads measured faster on a small virtual machine (the README keeps the measurement).",
+      "options": [
+        { "title": "Always batch", "consequences": "Slower wherever the page cache is hot and the kernel punts the work." },
+        { "title": "Never batch", "consequences": "Gives up the gain on cold caches." },
+        { "title": "Time both per process", "consequences": "The first 128 files of each method may be loaded the slower way." }
+      ],
+      "decision": "fsio::load_many alternates the batched and the plain loader until each has loaded 128 files (TRIAL_FILES), then keeps whichever took less time per file. AFS_BATCH_IO=always or never forces one; anything else is auto. On Linux, uring.rs opens a chunk of files in one round (OpenAt), stats and reads them in a second (Statx linked before a 64 KiB Read, so the stamp is taken before the bytes; pread for the rest of bigger files) and closes them in a third; rings are pooled, probed for those opcodes, and any ring failure disables io_uring for the process. On macOS, aio.rs opens and stamps files one by one (macOS has no asynchronous open) and reads each batch of 16 with one lio_listio(LIO_WAIT) after F_RDAHEAD; empty files and files over 4 MiB use plain reads.",
+      "rationale": "Neither method wins everywhere, and the machine at hand decides which is faster.",
+      "details": "The README stated, before this section moved, that the AIO loader was type-checked against Apple's libc bindings and unit-tested in macOS CI but not benchmarked on a Mac.",
+      "origin": "macos/rust/agent-fs/README.md, section I/O, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "decide" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "record_trial" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "load_with" },
+        { "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "batch" },
+        { "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "read_all" },
+        { "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "take_from" },
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "batch" },
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "prepare" }
+      ],
+      "relationships": [
+        { "relation": "depends-on", "path": "macos/rust/agent-fs/src/.dev/configuration.json", "entityId": "afs-batch-io" }
+      ]
+    },
+    {
+      "id": "racy-window",
+      "title": "Stamps younger than 2 seconds prove nothing",
+      "summary": "A file's stamp is trusted to mean \"unchanged\" only once its mtime and ctime are more than 2 seconds older than the moment the stamp was taken.",
+      "status": "accepted",
+      "context": "afs skips re-reading and re-hashing a file, and reuses cached results, when a file's stamp (device, inode, size, mtime and ctime in nanoseconds) is unchanged. A file edited twice within one timestamp tick, with the same size, keeps the same stamp.",
+      "decision": "Ident.racy marks a stamp racy when max(mtime, ctime) + 2 s is later than the time it was taken. A racy stamp never lets read skip loading the file, never makes a cached search, list or outline result reusable, and never keeps a trigram-index entry fresh; such files are always read again.",
+      "rationale": "The rule git uses for its index: same-tick edits cannot serve stale data.",
+      "origin": "macos/rust/agent-fs/README.md, section Caching, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident.racy" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.trusted_etag" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.begin" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "Update.classify" }
+      ],
+      "relationships": [
+        { "relation": "depends-on", "path": "macos/rust/agent-fs/src/.dev/references.json", "entityId": "racy-git" }
+      ]
+    },
+    {
+      "id": "restat-not-watchers",
+      "title": "Staleness by re-stat, not file-system events",
+      "summary": "Cached results and index entries are checked by stat-ing what they depend on; no inotify, fanotify or FSEvents watcher keeps a dirty set.",
+      "status": "accepted",
+      "context": "A session reuses search, list and outline results and trigram-index entries, and must notice files that changed since.",
+      "options": [
+        { "title": "Re-stat every dependency on each hit", "consequences": "One stat per visited path on every repeat; no background thread and nothing platform-specific." },
+        { "title": "File-system event watchers", "consequences": "A repeat would touch only what changed; three platform APIs to support." }
+      ],
+      "decision": "Re-stat. Watchers stay planned work, absent until a benchmark justifies them.",
+      "origin": "macos/rust/agent-fs/README.md, sections Caching and Not implemented, before they moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.begin" }
+      ],
+      "relationships": [
+        { "relation": "related-to", "path": "macos/rust/agent-fs/src/.dev/backlog.json", "entityId": "fs-event-dirty-sets" }
+      ]
+    },
+    {
+      "id": "index-from-second-search",
+      "title": "Build the trigram index from the second search, in memory",
+      "summary": "A session indexes a walk configuration only once a second search on it is computed, and keeps the index in memory, never on disk.",
+      "status": "accepted",
+      "context": "Building the index costs reading every file once; a one-off search gains nothing from it.",
+      "decision": "TriIndex.warm returns true from the second computed search on a configuration; that search reads every file once, indexing and scanning in the same pass. The index lives in the session's State and is dropped with it.",
+      "rationale": "The code's own comment on warm: the index is worth building from the second search on.",
+      "origin": "macos/rust/agent-fs/README.md, section Trigram index, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.warm" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "find_hits" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.take_index" }
+      ]
+    },
+    {
+      "id": "protocol-compatibility",
+      "title": "What may change in the request protocol and the MCP tools",
+      "summary": "Agents and the agent-fs skill rely on op, field and tool names and on reply fields such as unchanged, ref, hunks and next_ranges; nothing says which of them may change.",
+      "status": "open",
+      "context": "The contracts in macos/rust/agent-fs/src/.dev/contracts.json are relied on by coding agents through MCP or a shell and by agents/skills/agent-fs/SKILL.md. The crate is at version 0.1.0 and the repository states no compatibility policy for them.",
+      "options": [
+        { "title": "Additive only", "consequences": "Fields and tools are only added; a rename or removal needs a new name." },
+        { "title": "Change freely with the skill", "consequences": "Any change is allowed if the skill and the README change in the same commit; agents with older instructions may break." }
+      ],
+      "waitingOn": "owner",
+      "blocks": [
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "request-protocol" },
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "mcp-tools" }
+      ],
+      "evidenceStatus": "documented"
+    }
+  ]
+}

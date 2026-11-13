@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle invoker tests",
+  "folder": "macos/c/zazzle/test",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle invoker tests",
+      "summary": "The invoker's host unit tests with their mock syscall layer, the coverage gate and the end-to-end smoke test.",
+      "purpose": "unit.c checks the request logic in src/zazzle_core.h on the host, built with -DZAZZLE_TEST so that src/sys.h includes sys_mock.h (scripted syscall results, a fake clock and recorded effects) instead of a real backend; `make unit` runs it. coverage.sh reads gcov's report and fails below a branch threshold; `make coverage` runs it with 95. smoke.sh runs the real build/zazzle against a real zazzled (ZAZZLED, by default macos/rust/target/release/zazzled) on temporary sockets, and stand-ins for the standalone tools and for zazzled's run and proxy.",
+      "boundaries": [
+        "What each test checks is recorded with the behaviour it checks, in macos/c/zazzle/src/.dev/verification.json.",
+        "smoke.sh needs zazzled built first; it starts and stops its own daemons and touches only a temporary directory."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": "unit"
+        },
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": "coverage"
+        },
+        {
+          "path": "macos/c/zazzle/test/sys_mock.h",
+          "symbol": "MOCK_SENT_MAX"
+        },
+        {
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "symbol": "ZAZZLED"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/c/zazzle/.dev/folder.json",
+          "entityId": "folder"
+        },
+        {
+          "relation": "verifies",
+          "path": "macos/c/zazzle/src/.dev/verification.json"
+        }
+      ]
+    }
+  ]
+}

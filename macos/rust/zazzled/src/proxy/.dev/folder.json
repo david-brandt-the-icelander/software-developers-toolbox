@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle MCP proxy",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle MCP proxy",
+      "summary": "`zazzled proxy` (reached as `zazzle proxy`): an MCP proxy that sits between a client and another MCP server and shrinks the text of tool results and resource reads with clean's steps.",
+      "purpose": "mod.rs parses the proxy's command line, records which client requests are tools/call or resources/read by JSON-RPC id (Pending), and rewrites the server's answers to them (Filter): the `text` of `content` items and embedded resources in tool results, and of `contents` in resource reads, each replaced by its cleaned form when that saves at least one token, with the lossless, budget and skip settings the --config file gives that tool or resource reads, else the command line's. Each shortened text is stored with its original in the output store (src/outputs.rs), and an item naming its id is appended after the result's items. config.rs reads and checks the --config file and finds a tool's rule. stdio.rs runs the server as a child and relays newline-delimited messages both ways; http.rs listens on a local TCP address and forwards each Streamable HTTP request to an upstream URL, keeping client connections open for further requests, cleaning JSON bodies whole and event streams event by event.",
+      "boundaries": [
+        "Runs as its own process in the caller's environment, never inside the daemon: the invoker execs `zazzled proxy` (macos/c/zazzle/src/zazzle_core.h exec_daemon), and the daemon's dispatcher refuses `proxy`.",
+        "The cleaning itself is clean's (macos/rust/zazzled/src/cmd/clean.rs shrink_steps), and the store is src/outputs.rs; this folder decides what is cleaned, with which settings, and how the stored id is shown.",
+        "Requests, protocol messages, errors, structuredContent and non-text items pass through unchanged."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Pending::note_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "run_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazzled/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

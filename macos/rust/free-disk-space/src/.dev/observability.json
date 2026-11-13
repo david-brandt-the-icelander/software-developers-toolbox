@@ -1,0 +1,171 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "free-disk-space signals",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The binary emits no metrics and sends nothing off the machine. What it says goes to stdout and stderr, and for the installed daemon into one log file.",
+  "entities": [
+    {
+      "id": "daemon-log",
+      "title": "Daemon log",
+      "summary": "One timestamped line per check of the background daemon, plus the full output of each cleanup it runs.",
+      "signalType": "log",
+      "name": "~/Library/Logs/free-disk-space.log",
+      "meaning": "Lines `[YYYY-MM-DD HH:MM:SS] daemon started: every <cadence> awake, threshold <threshold>, targets <targets>`, then per check `ok: <free> free, threshold <limit>`, `below threshold: <free> free < <limit>; cleaning <targets>` followed by clean's report, or `skipped: display asleep or volume unreadable`, and `daemon stopped` on a stop request. Errors (such as invalid settings) arrive on stderr, which the plist sends to the same file.",
+      "unit": "lines; sizes in B, KiB, MiB, GiB or TiB",
+      "dimensions": ["local time of the check"],
+      "cadence": "one check line per --cadence of awake time; none while the Mac sleeps",
+      "access": "The user who installed the login item (a file in their home).",
+      "retention": "Appended to for as long as the login item runs; nothing in the code rotates, trims or deletes it, and uninstall leaves it.",
+      "excludes": ["Which individual files a cleanup deleted beyond clean's own per-folder and per-artifact lines"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "log"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "log_path"
+        }
+      ]
+    },
+    {
+      "id": "run-report",
+      "title": "Run report",
+      "summary": "Every command that changes files prints the free space before and after, and the summed sizes it saw separately from the volume's free-space change.",
+      "signalType": "event",
+      "name": "stdout of clean, compress and dedupe",
+      "meaning": "`Initial free space on <volume>` and `Final free space` (the data volume, /System/Volumes/Data where it exists); per item, clean's removed or kept lines with the run's running total, dedupe's cloned or would-clone lines, and FAILED lines from compress and dedupe (compress prints no line per compressed or skipped file); clean --apply after an interrupted run also says how many steps it skips; then the totals: clean's sum of sizes and actual free-space change with its protected, failure and uncertain lists; compress's counts, the number of files skipped for each reason (most common first, with a pointer to list --status skipped), its verified allocated-space saving and overall free-space change; dedupe's allocated size of replaced duplicates as an upper bound and the free-space change.",
+      "unit": "bytes, shown in binary units",
+      "cadence": "once per command",
+      "access": "Whoever ran the command.",
+      "retention": "Not kept by the binary.",
+      "excludes": ["A machine-readable form: the report is text only"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "report_free"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "data_volume"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "print_skip_reasons"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        }
+      ]
+    },
+    {
+      "id": "progress",
+      "title": "Progress line",
+      "summary": "Long commands show progress in place on a terminal and as periodic lines otherwise, and long subprocesses get a heartbeat.",
+      "signalType": "log",
+      "meaning": "Scan: directories scanned and queued, files, bytes, candidates, estimated saving, elapsed time and the current directory. Compress: position in the plan, files compressed and not compressed (skipped or failed), the saving so far and the elapsed time. Dedupe: position among the name groups, the group being hashed, the duplicates and their size so far and the elapsed time; the line stays up while it hashes and is cleared only to print a result. Clean: items found or removed and their size, and after each target the elapsed time and free space. A subprocess run with a label prints `... <label> still running (<elapsed>)`.",
+      "cadence": "on a terminal at most every 0.4 seconds, rewritten in place; otherwise a line at most every 15 seconds; heartbeats every 30 seconds",
+      "access": "Whoever ran the command.",
+      "retention": "Not kept.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "Ticker"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "HEARTBEAT"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "spawn_wait"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "run_scan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        }
+      ]
+    },
+    {
+      "id": "scan-progress",
+      "title": "Scan progress in the state file",
+      "summary": "The scan's running totals and per-candidate outcomes are kept in the state file, and status reads them back.",
+      "signalType": "health-check",
+      "name": "free-disk-space status",
+      "meaning": "Directories, files, bytes and errors processed, elapsed scan time, whether the scan is complete or how many directories are queued, per candidate status the count with estimated and verified savings, and how many recorded files were replaced by clones.",
+      "access": "Anyone who can read the state file.",
+      "retention": "Until the next new replaces the state file.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "Stats"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_status"
+        }
+      ]
+    },
+    {
+      "id": "exit-status",
+      "title": "Exit status",
+      "summary": "0 when a command finishes, 1 after an error message, 130 after a second Ctrl-C.",
+      "signalType": "event",
+      "meaning": "Errors print `error: <message>` on stderr and exit 1; warnings print `warning: <message>` on stderr and go on. Skipped and failed files inside a run do not change the exit status.",
+      "access": "The calling shell.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "die"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "warn"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "interrupt"
+        }
+      ]
+    }
+  ]
+}

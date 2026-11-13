@@ -1,0 +1,277 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle invoker use cases",
+  "folder": "macos/c/zazzle/src",
+  "description": "Running a zazzle command from a shell.",
+  "sources": [
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "zazzle_run"
+    },
+    {
+      "path": "macos/c/zazzle/README.md",
+      "symbol": "What it does"
+    }
+  ],
+  "entities": [
+    {
+      "id": "run-a-command",
+      "name": "Run a zazzle command in a shell",
+      "description": "A coding agent runs `zazzle CMD ...`; the invoker hands the command to the daemon, starting it if needed, and exits with the daemon's status, or becomes the program that runs it.",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "zazzle_run"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "Use"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get a command's answer on its own standard output, as cheaply as running any small program.",
+      "preconditions": [
+        "zazzle runs on macOS arm64 or Linux x86_64/aarch64.",
+        "A daemon listens on the socket, or zazzled is beside zazzle (or named by ZAZZLE_DAEMON) so zazzle can start one."
+      ],
+      "postconditions": [
+        "The command's text is on zazzle's standard output, or its error on standard error, written there by the daemon (or by the program zazzle became).",
+        "zazzle's exit status is the daemon's status byte, 0 or 2, or that program's own status."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Coding agent",
+          "action": "Runs `zazzle CMD ARGS` in its shell, with ZAZZLE_SESSION set to a stable id if it wants ids, dedupe and read-again.",
+          "sources": [
+            {
+              "path": "agents/skills/zazzle/SKILL.md",
+              "symbol": "Use"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "dispatch",
+          "actor": "zazzle",
+          "action": "Looks at CMD: free-disk-space, fix-network, proxy and run are not daemon requests; anything else is.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "zazzle_run"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "is_tool"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "build",
+          "actor": "zazzle",
+          "action": "Builds the request: an empty working-directory field, the session from ZAZZLE_SESSION, then its arguments; and the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "build_request"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "build_path"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "connect",
+          "actor": "zazzle",
+          "action": "Connects to the socket.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "try_connect"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "check-uid",
+          "actor": "zazzle",
+          "action": "Checks the process on the other end runs as the same user.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "connect_daemon"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "send",
+          "actor": "zazzle",
+          "action": "Opens its working directory and sends the request with descriptors 0, 1, 2 and that directory attached to the first message.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "send_request"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "wait",
+          "actor": "zazzle",
+          "action": "Polls for the one status byte the daemon sends after writing the answer to the passed streams, for up to 25 µs without sleeping, then blocks on it, and exits with it.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "read_status"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "dispatch",
+          "condition": "CMD is free-disk-space or fix-network.",
+          "outcome": "zazzle replaces itself with the binary of that name in its own directory, with the remaining arguments; no daemon is contacted, and the tool's streams and exit status are the caller's. If it cannot be run: `cannot run the tool (error N)`, exit 69.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "exec_tool"
+            }
+          ]
+        },
+        {
+          "atStep": "dispatch",
+          "condition": "CMD is run or proxy.",
+          "outcome": "zazzle replaces itself with `zazzled wrap ARGS` or `zazzled proxy ARGS` (ZAZZLE_DAEMON, or the zazzled beside it), keeping the caller's environment, streams and exit status. If it cannot be run: `cannot run zazzled (error N)`, exit 69.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "exec_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "build",
+          "condition": "The arguments do not fit the 256 KiB request buffer.",
+          "outcome": "`arguments too long`, exit 64.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "put_field"
+            }
+          ]
+        },
+        {
+          "atStep": "build",
+          "condition": "HOME is unset (and ZAZZLE_SOCK too), or the socket path is too long for a socket address.",
+          "outcome": "`HOME is not set` or `socket path too long`, exit 78.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "build_path"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "Nothing listens (no socket file, or connection refused).",
+          "outcome": "Starts ZAZZLE_DAEMON, or the zazzled beside its own executable, as `zazzled serve` in a new session with its standard streams on /dev/null, then retries after 2 ms, doubling the wait up to 128 ms, for up to 3 s, and goes on to check-uid.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "connect_daemon"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "pick_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "The daemon cannot be started, does not listen within 3 s, or connecting fails another way.",
+          "outcome": "`cannot start daemon (error N)`, `daemon did not start` or `cannot connect to daemon`, exit 69.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "connect_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "check-uid",
+          "condition": "The daemon runs as another user.",
+          "outcome": "`daemon runs as another user`, exit 77; nothing is sent.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "connect_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "send",
+          "condition": "The working directory cannot be opened, or sending fails.",
+          "outcome": "`cannot open cwd`, exit 66, or `send failed`, exit 74.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "send_request"
+            }
+          ]
+        },
+        {
+          "atStep": "wait",
+          "condition": "The daemon closes the connection without a status byte.",
+          "outcome": "`daemon closed without answering`, exit 70.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "read_status"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The commands the daemon runs for the invoker."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Session ids, dedupe and read-again, keyed by ZAZZLE_SESSION."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/use-case.json",
+      "relationship": "What `zazzle run` does once the invoker has become `zazzled wrap`."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
+      "relationship": "What `zazzle proxy` does once the invoker has become `zazzled proxy`."
+    },
+    {
+      "kind": "deployment",
+      "folder": "macos/rust/zazzled",
+      "path": "macos/rust/zazzled/.dev/deployment-diagram.json",
+      "relationship": "The zazzle and zazzled processes this use case involves."
+    }
+  ]
+}

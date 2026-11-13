@@ -9,7 +9,7 @@ namespace ZazzleIndexer.Mcp;
 public sealed class McpServer
 {
     private const string Instructions =
-        "Use these tools instead of grep, rg, find, cat or sed for questions about the code in the configured roots. " +
+        "Read, search and edit files through zazzle (zazzle_read, zazzle_find, zazzle_edit); use these tools for C# structure: overview, find_symbol, find_references, changed_since, git_log, git_blame. " +
         "Paths are written root:relative/path. Regex dialect: .NET (Perl-style: lookarounds, backreferences, \\d \\b \\s, inline flags).";
 
     private readonly Dictionary<string, ITool> _tools;
@@ -21,7 +21,7 @@ public sealed class McpServer
     {
         _log = log;
         var set = new RootSet(roots);
-        ITool[] tools = [new FindFilesTool(set), new ReadTool(set), new SearchTool(set), new OutlineTool(set), new FindSymbolTool(set), new FindReferencesTool(set), new OverviewTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new RunTool(set), new ReportGapTool()];
+        ITool[] tools = [new FindFilesTool(set), new ReadTool(set), new SearchTool(set), new OutlineTool(set), new FindSymbolTool(set), new FindReferencesTool(set), new OverviewTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new RunTool(set), new ViewTool(set), new ReportGapTool()];
         _tools = tools.ToDictionary(t => t.Name);
     }
 

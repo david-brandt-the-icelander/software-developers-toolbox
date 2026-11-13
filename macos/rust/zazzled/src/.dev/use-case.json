@@ -1,0 +1,357 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzled use cases",
+  "folder": "macos/rust/zazzled/src",
+  "description": "Reaching the zazzle commands over MCP, and having launchd start the daemon.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/mcp.rs",
+      "symbol": "handle_line"
+    },
+    {
+      "path": "macos/rust/zazzled/src/launchd.rs",
+      "symbol": "install"
+    },
+    {
+      "path": "macos/rust/zazzled/README.md",
+      "symbol": "Setup"
+    }
+  ],
+  "entities": [
+    {
+      "id": "use-over-mcp",
+      "name": "Use the zazzle tools over MCP",
+      "description": "A coding agent's MCP client starts `zazzled mcp` and calls the zazzle tools; each call is answered by the shared daemon without a process spawn.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "serve"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "mcp_main"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "Use"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Search, read, outline and edit the project's files through tools, with short answers it is not sent twice and can fetch again by id.",
+      "preconditions": [
+        "The MCP client is configured to start `zazzled mcp` (for example `claude mcp add zazzle -- zazzled mcp`), in the project directory.",
+        "The zazzled binary can start `zazzled serve` from its own path, or a daemon already listens on the socket."
+      ],
+      "postconditions": [
+        "Each tool call has been answered with the command's text, tagged with a response id for this connection's session.",
+        "One daemon serves every call; the MCP process spawns nothing per call."
+      ],
+      "flow": [
+        {
+          "id": "connect",
+          "actor": "Coding agent",
+          "action": "Its MCP client starts `zazzled mcp` and sends initialize.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "mcp_main"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "initialize",
+          "actor": "zazzled mcp",
+          "action": "Agrees the protocol version the client asked for if it knows it (2025-06-18, 2025-03-26 or 2024-11-05), else the newest, as server `zazzle`; the process already has its random session id.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "initialize"
+            },
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "new_session_id"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "list",
+          "actor": "Coding agent",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs and zazzle_edit with their input schemas.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "list_tools"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Calls a tool with JSON arguments, for example zazzle_read with paths.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "call_tool"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "map",
+          "actor": "zazzled mcp",
+          "action": "Turns the arguments into a zazzle command line.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "read_args"
+            },
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "TOOLS"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "forward",
+          "actor": "zazzled mcp",
+          "action": "Sends the command line with its working directory and session to the daemon in relay mode; if no daemon listens, starts `zazzled serve` detached and retries with backoff for up to 3 seconds.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "DaemonBackend::call"
+            },
+            {
+              "path": "macos/rust/zazzled/src/client.rs",
+              "symbol": "call_autostart"
+            },
+            {
+              "path": "macos/rust/zazzled/src/client.rs",
+              "symbol": "spawn_daemon"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzled mcp",
+          "action": "Returns the daemon's text as the tool result, marked isError when the command's status is not 0.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "tool_result"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "call",
+          "condition": "The tool name is unknown.",
+          "outcome": "A JSON-RPC error -32602 `unknown tool`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "call_tool"
+            }
+          ]
+        },
+        {
+          "atStep": "map",
+          "condition": "An argument has the wrong type, or a required one is missing.",
+          "outcome": "A tool result with isError and `error: ...`; the daemon is not called.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "get_list"
+            },
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "need_str"
+            }
+          ]
+        },
+        {
+          "atStep": "forward",
+          "condition": "The daemon cannot be started, or does not listen within 3 seconds.",
+          "outcome": "A tool result with isError and `error: cannot reach zazzled: ...`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/client.rs",
+              "symbol": "call_autostart"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The same answer was already sent in this session within the last 40,000 estimated tokens, and the call did not set disable_session_deduping.",
+          "outcome": "The result is `[r:ID] already sent: ..., unchanged. If you no longer have it: read-again r:ID` instead of the text; zazzle_read_again with that id returns it.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/session.rs",
+              "symbol": "Sessions::apply_with"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "install-launch-agent",
+      "name": "Have launchd start the daemon",
+      "description": "A developer installs the LaunchAgent once, and from then on launchd starts zazzled when anything connects.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/launchd.rs",
+          "symbol": "install"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Setup"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "The daemon is there whenever a zazzle invoker or MCP server connects, without anyone starting it.",
+      "preconditions": [
+        "A Mac, with zazzled built or installed where it will stay (the plist names its path)."
+      ],
+      "postconditions": [
+        "launchd owns the socket and starts `zazzled serve` on demand; the daemon exits when idle and launchd keeps listening.",
+        "`zazzled uninstall` unloads the agent and removes the plist."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `zazzled install` in a terminal.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "agent_main"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "write",
+          "actor": "zazzled",
+          "action": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist: this executable with `serve`, and a listener socket at ZAZZLE_SOCK or the default path with mode 0600.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "plist"
+            },
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "plist_path"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "load",
+          "actor": "zazzled",
+          "action": "Runs `launchctl bootout` for any loaded copy (ignoring failure), then `launchctl bootstrap gui/UID PLIST`, each with a 10-second limit, and prints `installed PATH`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "install"
+            },
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "run_with_timeout"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "activate",
+          "actor": "zazzled serve",
+          "action": "When launchd starts it on a connection, takes launchd's socket instead of binding one, serves, and exits when idle without removing the socket.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "activated_listener"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "serve_main"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "Not macOS.",
+          "outcome": "`zazzled: install is for macOS launchd; elsewhere the invoker starts zazzled on demand`, exit 2.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "agent_cmd"
+            }
+          ]
+        },
+        {
+          "atStep": "write",
+          "condition": "The plist cannot be written.",
+          "outcome": "The path and the error, exit 2.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "install"
+            }
+          ]
+        },
+        {
+          "atStep": "load",
+          "condition": "launchctl bootstrap fails or runs past 10 seconds.",
+          "outcome": "`launchctl bootstrap ... failed` or `... timed out`, exit 2; the plist stays written.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/launchd.rs",
+              "symbol": "run_with_timeout"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/operation.json",
+      "relationship": "The mcp and install operations these use cases call."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The commands behind the MCP tools."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Session ids, dedupe and read-again, which the MCP use case relies on."
+    },
+    {
+      "kind": "deployment",
+      "folder": "macos/rust/zazzled",
+      "path": "macos/rust/zazzled/.dev/deployment-diagram.json",
+      "relationship": "The processes these use cases start."
+    }
+  ]
+}

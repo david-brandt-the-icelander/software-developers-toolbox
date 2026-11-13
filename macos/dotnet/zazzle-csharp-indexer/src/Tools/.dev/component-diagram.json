@@ -1,0 +1,219 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer MCP tools component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "description": "The tools grouped by where their answers come from: the index, git, an external regex engine, an allowed command or the syntax tree of one C# file.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+      "symbol": "SearchTool.Candidates"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ExternalSearch.cs",
+      "symbol": "ExternalSearch.Try"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+      "symbol": "RunTool.Run"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs",
+      "symbol": "GitLogTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+      "symbol": "ViewTool"
+    }
+  ],
+  "components": [
+    {
+      "id": "tools",
+      "name": "MCP tools",
+      "responsibility": "Everything an agent can call.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "index-tools",
+      "name": "Index-backed tools",
+      "responsibility": "overview, outline, find_symbol, find_references, find_files, changed_since, search and read: answers from file records, blob facts and the files on disk.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "external-search",
+      "name": "External regex fallback (ExternalSearch.cs)",
+      "responsibility": "Runs rg -P, or git grep -P when rg is missing, for patterns .NET rejects, and reshapes the output like search.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "git-tools",
+      "name": "Git tools (GitTools.cs)",
+      "responsibility": "git_log and git_blame with compact formats.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "run",
+      "name": "Command passthrough (RunTool.cs, RunPolicy.cs)",
+      "responsibility": "Runs an allowed read-only program with an argument list in a root, with a timeout and an output budget.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "view-tool",
+      "name": "Terse view tool (ViewTool.cs)",
+      "responsibility": "view: reads one .cs file in a root and returns its terse view under a header with the line count and the changes per step.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "gap",
+      "name": "Gap report (ReportGapTool.cs)",
+      "responsibility": "Puts the agent's one-sentence note into the usage log.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "shared",
+      "name": "Shared helpers (ITool.cs, RootSet.cs, Output.cs, Glob.cs)",
+      "responsibility": "The tool contract and argument helpers, root:path references, globs and token-budgeted output.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "index",
+      "name": "Live index",
+      "responsibility": "File records, barrier, change log.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/component-diagram.json"
+    },
+    {
+      "id": "analysis",
+      "name": "Content analysis",
+      "responsibility": "Bloom filters, literal extraction and the stored symbol format.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/component-diagram.json"
+    },
+    {
+      "id": "view",
+      "name": "Terse C# view",
+      "responsibility": "Builds and formats the view from the file text.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/View"
+    },
+    {
+      "id": "git",
+      "name": "git command-line tool",
+      "responsibility": "log, blame, grep -P, and the passthrough's read-only subcommands.",
+      "external": true
+    },
+    {
+      "id": "rg",
+      "name": "ripgrep (rg), if installed",
+      "responsibility": "PCRE2 search for the regex fallback.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "tools",
+      "to": "index-tools",
+      "kind": "contains",
+      "description": "Eight tools."
+    },
+    {
+      "from": "tools",
+      "to": "external-search",
+      "kind": "contains",
+      "description": "Used by search."
+    },
+    {
+      "from": "tools",
+      "to": "git-tools",
+      "kind": "contains",
+      "description": "Two tools."
+    },
+    {
+      "from": "tools",
+      "to": "run",
+      "kind": "contains",
+      "description": "One tool and its policy."
+    },
+    {
+      "from": "tools",
+      "to": "view-tool",
+      "kind": "contains",
+      "description": "One tool."
+    },
+    {
+      "from": "tools",
+      "to": "gap",
+      "kind": "contains",
+      "description": "One tool."
+    },
+    {
+      "from": "tools",
+      "to": "shared",
+      "kind": "contains",
+      "description": "Used by every tool."
+    },
+    {
+      "from": "index-tools",
+      "to": "index",
+      "kind": "depends-on",
+      "description": "Files, Freshen, Barrier, Sync, ChangesSince, Gen and WaitReady."
+    },
+    {
+      "from": "index-tools",
+      "to": "analysis",
+      "kind": "depends-on",
+      "description": "search and find_references use the Bloom filter; outline, find_symbol and find_references read stored symbols and identifiers."
+    },
+    {
+      "from": "index-tools",
+      "to": "external-search",
+      "kind": "depends-on",
+      "description": "search hands over patterns .NET cannot compile."
+    },
+    {
+      "from": "index-tools",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Arguments, references, globs and output."
+    },
+    {
+      "from": "external-search",
+      "to": "rg",
+      "kind": "depends-on",
+      "description": "Preferred engine when rg --version succeeds."
+    },
+    {
+      "from": "external-search",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "git grep -P when rg is missing."
+    },
+    {
+      "from": "git-tools",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "git log and git blame through Proc.Run."
+    },
+    {
+      "from": "run",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "Among the allowed programs, limited to read-only subcommands."
+    },
+    {
+      "from": "view-tool",
+      "to": "view",
+      "kind": "depends-on",
+      "description": "TerseView.Build and TerseView.Format."
+    },
+    {
+      "from": "view-tool",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Arguments and root:path references."
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "Terse C# view classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "description": "TerseView with its private Plan, which collects hidden ranges and one-line changes before rendering, and the ViewLine record it produces.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+      "symbol": "TerseView"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+      "symbol": "Plan"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+      "symbol": "ViewLine"
+    }
+  ],
+  "types": [
+    {
+      "id": "View.TerseView",
+      "name": "TerseView",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs"
+      ],
+      "members": [
+        "static (List<ViewLine> Lines, List<(string Step, int Count)> Steps) Build(string source)",
+        "static bool IsLogging(StatementSyntax s)",
+        "static string? Abbreviate(string name)",
+        "static string Format(IEnumerable<ViewLine> lines)"
+      ]
+    },
+    {
+      "id": "View.TerseView.Plan",
+      "name": "Plan",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs"
+      ],
+      "members": [
+        "Plan(SourceText text)",
+        "List<(string Step, int Count)> Steps",
+        "void Hide(SyntaxNode first, SyntaxNode last, string? note, string step)",
+        "void HideLine(int line, string step)",
+        "void Change(TextSpan span, string replacement, string? step)",
+        "List<ViewLine> Render()"
+      ]
+    },
+    {
+      "id": "View.ViewLine",
+      "name": "ViewLine",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs"
+      ],
+      "members": [
+        "int Start",
+        "int End",
+        "string Text",
+        "bool Changed",
+        "bool Note"
+      ]
+    },
+    {
+      "id": "Roslyn.CSharpCompilation",
+      "name": "CSharpCompilation",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj"
+      ],
+      "members": [
+        "static CSharpCompilation Create(string assemblyName, IEnumerable<SyntaxTree> syntaxTrees)",
+        "SemanticModel GetSemanticModel(SyntaxTree tree)"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "View.TerseView",
+      "to": "View.TerseView.Plan",
+      "kind": "depends-on",
+      "description": "Each rule records its hides and changes in one Plan, which renders the view."
+    },
+    {
+      "from": "View.TerseView.Plan",
+      "to": "View.ViewLine",
+      "kind": "depends-on",
+      "description": "Render returns one ViewLine per kept source line or note."
+    },
+    {
+      "from": "View.TerseView",
+      "to": "View.ViewLine",
+      "kind": "depends-on",
+      "description": "Format writes ViewLines as tab-separated text."
+    },
+    {
+      "from": "View.TerseView",
+      "to": "Roslyn.CSharpCompilation",
+      "kind": "depends-on",
+      "description": "ShortenLocals binds identifiers with a compilation of the file alone, so only a local's own uses are renamed."
+    }
+  ]
+}

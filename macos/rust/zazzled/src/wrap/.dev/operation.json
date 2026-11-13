@@ -1,0 +1,75 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazzle run operations",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "description": "`zazzled wrap`, which `zazzle run` reaches by exec (macos/c/zazzle); on Intel Macs, which have no invoker, it is run as `zazzled wrap` directly.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    }
+  ],
+  "entities": [
+    {
+      "id": "run",
+      "name": "zazzle run",
+      "description": "Runs a command and prints its output cleaned, then exits with the command's code.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "run_command"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "deliver"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/wrap/mod.rs",
+        "symbol": "main"
+      },
+      "action": "command",
+      "transport": "zazzle run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS.. (exec'd as `zazzled wrap ...`)",
+      "authorization": "Whoever runs it; the command runs with the caller's environment, working directory, standard input and permissions. Nothing else is checked.",
+      "result": "The command's merged standard output and error, cleaned with its profile (detected, or named with --profile) and clean's steps within --budget (default 8000), then `[exit N in Ts; ...]` naming a timeout, cut output and what the profile dropped. With an output store it starts with `[r:ID]` and, when anything was dropped or cut, ends with `[full output: read-again r:ID --full]`; a store that cannot be written leaves it untagged with `[output not stored for read-again: ...]`. The exit status is the command's: its code, 128 + N for signal N, or 124 when it was killed after --timeout (default 3600 s).",
+      "failures": [
+        "No command, an unknown option, a number below 1 for --budget or --timeout, or an unknown profile name: `zazzled: ...` with the usage or the profile names, exit 2.",
+        "The command cannot be started: `zazzled: cannot run CMD: ...`, exit 2.",
+        "The pipe cannot be created: `zazzled: cannot create a pipe: ...`, exit 2."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+      "relationship": "The behavior this operation carries."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/use-case.json",
+      "relationship": "The use case that calls it."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/operation.json",
+      "relationship": "The binary's other subcommands, including `zazzled run`, which is a different thing."
+    }
+  ]
+}

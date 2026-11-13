@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer shared daemon component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "description": "The daemon server and the proxy that serve runs in front of it. Both are in the same binary; they talk over a unix socket in the state directory.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+      "symbol": "DaemonServer.Serve"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy.Connect"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy.Pump"
+    }
+  ],
+  "components": [
+    {
+      "id": "daemon-folder",
+      "name": "Shared daemon",
+      "responsibility": "Both ends of the daemon connection.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "server",
+      "name": "Daemon server (Daemon.cs)",
+      "responsibility": "Binds daemon.sock (owner read and write only), accepts clients, checks the version in the handshake, attaches roots, runs one MCP session per client and exits after the idle period with no clients.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "proxy",
+      "name": "Proxy (Proxy.cs)",
+      "responsibility": "Connects to the socket, starts a detached daemon from the same executable when nothing answers, sends the hello line, retries after a version restart, then copies standard input to the socket and the socket to standard output.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP server",
+      "responsibility": "One session per client connection.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp"
+    },
+    {
+      "id": "engine",
+      "name": "Engine and roots",
+      "responsibility": "The one engine the daemon holds; Root.Parse validates and attaches each root the client names.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "daemon-folder",
+      "to": "server",
+      "kind": "contains",
+      "description": "The daemon command's process."
+    },
+    {
+      "from": "daemon-folder",
+      "to": "proxy",
+      "kind": "contains",
+      "description": "The serve command's side."
+    },
+    {
+      "from": "proxy",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "Unix socket: hello line, reply line, then MCP lines (contracts.json, handshake)."
+    },
+    {
+      "from": "server",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "Proxy.TryConnect, to refuse to start when another daemon already answers on the socket."
+    },
+    {
+      "from": "server",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Root.Parse against the shared engine for each client's roots."
+    },
+    {
+      "from": "server",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "McpServer.RunAsync over the connection, logging to the engine's usage log."
+    }
+  ]
+}

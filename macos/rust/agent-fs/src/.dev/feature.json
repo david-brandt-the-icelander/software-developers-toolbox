@@ -1,0 +1,218 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "afs features",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "What afs offers beyond a plain read or grep: replies that leave out what the caller already has, bounded output, and fast repeats.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" },
+    { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+    { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "find_hits" }
+  ],
+  "entities": [
+    {
+      "id": "unchanged-replies",
+      "name": "Unchanged markers",
+      "description": "A repeated request whose answer this session already received comes back without its content.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.already_sent" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.mark_sent" }
+      ],
+      "behavior": "Every content reply carries an etag and a ref (r1, r2, … per session). A read with the same path, ranges and caps, or a search, list or outline with the same arguments, whose etag is unchanged returns {etag, unchanged: true, ref} with the ref of the earlier reply. fresh: true sends the content again. A read's if_none_match equal to the current etag also returns unchanged.",
+      "outcome": "The caller does not pay again for output it already holds.",
+      "constraints": [
+        "Only within one session: `afs serve` or `afs jsonl`; `afs call` starts a fresh session each time.",
+        "A read is matched by path text, ranges and caps, so the same file under another path, or other ranges, is sent again.",
+        "The sent table is cleared when it passes 200,000 subjects."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.already_sent" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.mark_sent" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+      ]
+    },
+    {
+      "id": "diff-replies",
+      "name": "Diffs of changed files",
+      "description": "Re-reading a whole file that changed since this session fully received it returns line hunks instead of the file.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" }
+      ],
+      "behavior": "When a read without ranges finds a new etag and the session holds the bytes of the last version it sent in full, it computes line hunks ({at: old line, del: old lines removed, new_at, ins: new text}) and sends them with changed: true and base_etag if their estimated size is under half the file's; otherwise the whole file. diff_since gives hunks against any held version named by its etag. Hunks are applied from the last `at` to the first.",
+      "outcome": "An agent that edits or watches a file sees only what changed.",
+      "constraints": [
+        "Only for whole-file reads without fresh, and only after a complete earlier read.",
+        "Both versions must be UTF-8.",
+        "Held versions are bounded: 64 MiB in all, oldest evicted first, files over 8 MiB never held.",
+        "The diff stops refining after 250 ms (similar's timeout), so hunks may be larger than minimal."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "since" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_content" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.complete_etag" }
+      ]
+    },
+    {
+      "id": "bounded-output",
+      "name": "Bounded output with continuation",
+      "description": "Every reply is capped and says how to get the rest.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "render" },
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "compute" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" }
+      ],
+      "behavior": "read stops at max_lines (400) or max_bytes (16384) and returns truncated, next_ranges and bytes_omitted; lines over 2000 bytes are cut and counted in long_lines_cut. search keeps at most max_matches (100) hits, cuts matched lines at 300 bytes, merges overlapping context windows and, with fields: [\"line\"], returns bare line numbers. list pages with max_entries (500) and next_cursor. outline stops at max_symbols (300) and still reports total_symbols.",
+      "outcome": "One request cannot flood the caller's context.",
+      "constraints": [
+        "A single line longer than max_bytes is still sent whole (up to the 2000-byte cut) when it is the first line of the reply.",
+        "The caps are per request; the caller can raise them."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "clip_line" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "build_blocks" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "render" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "clip" },
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "compute" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" }
+      ]
+    },
+    {
+      "id": "cached-queries",
+      "name": "Cached search, list and outline",
+      "description": "A repeated search, listing or outline is answered from the session's cache when nothing it depends on changed.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "ignore_file_deps" }
+      ],
+      "behavior": "The result is stored with the stamp of every file and directory the walk visited and of each visited directory's .gitignore and .ignore (present or absent). A repeat re-stats those paths without reading or matching and reuses the result when all are equal; the reply says cached: true. A result is never reused if any of its stamps was inside the 2-second racy window when it was computed.",
+      "outcome": "Repeated queries over a large tree cost a walk of stat calls.",
+      "constraints": [
+        "At most 256 results per session; the whole cache is cleared when it is full.",
+        "Only the visited directories' .gitignore and .ignore are stamped; see the backlog item ignore-sources-outside-walk."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" },
+        { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "ignore_file_deps" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "walk_files" }
+      ]
+    },
+    {
+      "id": "indexed-search",
+      "name": "Trigram-indexed search",
+      "description": "From the second search on a set of paths, globs and flags, a session reads only files that can contain a match.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "plan" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.candidates" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "find_hits" }
+      ],
+      "behavior": "The pattern is parsed with regex-syntax and the literals every match must start (or end) with are extracted; files that do not contain every trigram of at least one literal are not read. The first indexed search reads each file once, indexing and scanning in the same pass; later ones re-read only files whose stamps changed. Files over 2 MiB and files inside the racy window are always scanned; binary files are skipped. Its lifecycle is in TriIndex.state-diagram.json.",
+      "outcome": "Repeated searches in a session read far fewer files, with the same results as a full scan.",
+      "constraints": [
+        "Patterns without a literal of three or more bytes (\\w+, a*, ab), or with more than 64 alternative literals, scan every file.",
+        "The index is dropped for the rest of its life above 30,000,000 posting entries.",
+        "In memory only, per session; a session keeps at most 8 walk configurations."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "plan" },
+        { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "Update.classify" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "find_hits" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "read_and_scan" }
+      ]
+    },
+    {
+      "id": "outline",
+      "name": "Outline with line ranges",
+      "description": "Lists the definitions in source files with their exact line ranges, so a caller can read just one item.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "grammar" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "walk_tree" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "patterns" }
+      ],
+      "behavior": "Each symbol is [start, end, kind, name]. tree-sitter grammars cover rs, py, js, jsx, mjs, cjs, ts, tsx, go, java, c and the C++ extensions (h, cc, cpp, cxx, hh, hpp, hxx); names inside containers (Rust impl, trait and mod; classes, namespaces, interfaces) are dotted, Rust impls read `Trait for Type`, and JS/TS constants bound to arrow or function expressions count as functions. Function bodies are not entered. Broken syntax still yields what parses. kt, cs, swift, scala, sh, bash and md use line patterns with end equal to start.",
+      "outcome": "A caller reads [start, end] of the item it needs instead of the whole file.",
+      "constraints": [
+        "Files over 2 MiB in a grammar language are skipped.",
+        "Locals and nested functions are not listed.",
+        "Names read through a grammar are cut at 120 characters."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "file_symbols" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tree_symbols" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "regex_symbols" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" }
+      ]
+    },
+    {
+      "id": "batched-loading",
+      "name": "Batched file loading",
+      "description": "Search and outline load files in batches through io_uring on Linux or POSIX AIO on macOS when that is faster than plain reads.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "load_many" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "decide" }
+      ],
+      "behavior": "In auto mode each process alternates the batched and the plain loader until each has loaded 128 files, then keeps whichever took less time per file. AFS_BATCH_IO=always or never forces one. Both loaders return the same stamps, bytes and errors as plain loading.",
+      "outcome": "Bulk reads use the faster method on the machine at hand.",
+      "constraints": [
+        "Linux and macOS only; elsewhere loading is always plain.",
+        "io_uring is disabled for the rest of the process after any ring failure, or when the kernel lacks OpenAt, Statx, Read or Close."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "load_with" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "prefer_batch" },
+        { "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "load_many" },
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "load_many" }
+      ]
+    },
+    {
+      "id": "request-batches",
+      "name": "Request batches",
+      "description": "An array of requests runs in order in one call, with one reply each.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.call" }
+      ],
+      "behavior": "Engine.call runs each element of a JSON array as its own request in the same session and returns the replies as an array in the same order; a failed element does not stop the rest.",
+      "outcome": "Several reads, listings or outlines cost one round trip.",
+      "constraints": [
+        "`afs call` exits 1 if any element failed."
+      ],
+      "implementation": [
+        { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.call" },
+        { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "all_ok" }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/capability.json",
+      "relationship": "The capability these features make up."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/operation.json",
+      "relationship": "The operations whose replies carry them."
+    },
+    {
+      "kind": "state",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/TriIndex.state-diagram.json",
+      "relationship": "The trigram index behind indexed-search."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/use-case.json",
+      "relationship": "The use cases that exercise them."
+    }
+  ]
+}

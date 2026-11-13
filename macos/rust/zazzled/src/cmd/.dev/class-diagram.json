@@ -1,0 +1,433 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle commands class diagram",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "description": "The types the commands declare. Each command is a run function over a Ctx that returns an Output; the rest are private working types of one command. Engine, Meta, Symbol and Regex are declared elsewhere and shown as lightweight nodes.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cmd/mod.rs",
+      "symbol": "Ctx"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/mod.rs",
+      "symbol": "Output"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/find.rs",
+      "symbol": "Plan"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/clean.rs",
+      "symbol": "Cleaned"
+    }
+  ],
+  "types": [
+    {
+      "id": "Ctx",
+      "name": "Ctx",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/mod.rs"
+      ],
+      "members": [
+        "engine: &Engine",
+        "cwd: PathBuf",
+        "session: String",
+        "stdin: RefCell<Option<Box<dyn Read>>>",
+        "read_stdin() -> Result<Vec<u8>, String>",
+        "read_stdin_max(max) -> Result<(Vec<u8>, bool), String>"
+      ]
+    },
+    {
+      "id": "Output",
+      "name": "Output",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/mod.rs"
+      ],
+      "members": [
+        "text: String",
+        "status: u8",
+        "idable: bool",
+        "ok(text) -> Output",
+        "plain(text) -> Output",
+        "err(msg) -> Output"
+      ]
+    },
+    {
+      "id": "Globals",
+      "name": "Globals",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/mod.rs"
+      ],
+      "members": [
+        "dedupe: bool",
+        "budget: Option<usize>"
+      ]
+    },
+    {
+      "id": "find.Hit",
+      "name": "Hit (find)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/find.rs"
+      ],
+      "members": [
+        "line: usize",
+        "col: usize"
+      ]
+    },
+    {
+      "id": "find.Skip",
+      "name": "Skip",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/find.rs"
+      ],
+      "members": [
+        "No",
+        "Binary",
+        "Large",
+        "Unreadable"
+      ]
+    },
+    {
+      "id": "find.FileResult",
+      "name": "FileResult",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/find.rs"
+      ],
+      "members": [
+        "idx: usize",
+        "total: usize",
+        "hits: Vec<Hit>",
+        "skip: Skip"
+      ]
+    },
+    {
+      "id": "find.Plan",
+      "name": "Plan",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/find.rs"
+      ],
+      "members": [
+        "engine: &Engine",
+        "re: Regex",
+        "max: usize",
+        "context: usize",
+        "files_only: bool"
+      ]
+    },
+    {
+      "id": "read.Select",
+      "name": "Select",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/read.rs"
+      ],
+      "members": [
+        "Whole",
+        "Range(usize, Option<usize>)",
+        "Around(usize)",
+        "Head(usize)",
+        "Tail(usize)"
+      ]
+    },
+    {
+      "id": "read.Opts",
+      "name": "Opts (read)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/read.rs"
+      ],
+      "members": [
+        "sel: Select",
+        "ctx: usize",
+        "budget: usize",
+        "anchors: bool",
+        "terse: bool"
+      ]
+    },
+    {
+      "id": "ls.Node",
+      "name": "Node",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/ls.rs"
+      ],
+      "members": [
+        "dirs: BTreeMap<String, Node>",
+        "files: Vec<String>",
+        "count: usize"
+      ]
+    },
+    {
+      "id": "ls.Row",
+      "name": "Row",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/ls.rs"
+      ],
+      "members": [
+        "indent: usize",
+        "text: String",
+        "file: Option<PathBuf>"
+      ]
+    },
+    {
+      "id": "ls.Printer",
+      "name": "Printer",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/ls.rs"
+      ],
+      "members": [
+        "rows: Vec<Row>",
+        "left: usize",
+        "dropped: usize",
+        "depth: usize",
+        "line(indent, text, file) -> bool",
+        "tree(node, dir, level)"
+      ]
+    },
+    {
+      "id": "edit.Target",
+      "name": "Target",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/edit.rs"
+      ],
+      "members": [
+        "path: PathBuf",
+        "shown: String",
+        "data: Vec<u8>",
+        "meta: Arc<Meta>"
+      ]
+    },
+    {
+      "id": "edit.SpanEnd",
+      "name": "SpanEnd",
+      "kind": "type",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/edit.rs"
+      ],
+      "members": [
+        "(usize, Option<String>): a line number and its optional anchor"
+      ]
+    },
+    {
+      "id": "refs.Occurrence",
+      "name": "Occurrence",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/refs.rs"
+      ],
+      "members": [
+        "line: usize",
+        "text: String",
+        "scope: Option<String>"
+      ]
+    },
+    {
+      "id": "refs.FileRefs",
+      "name": "FileRefs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/refs.rs"
+      ],
+      "members": [
+        "path: String",
+        "rank: (bool, usize)",
+        "defs: Vec<Symbol>",
+        "uses: Vec<Occurrence>"
+      ]
+    },
+    {
+      "id": "clean.Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/clean.rs"
+      ],
+      "members": [
+        "Auto",
+        "Grep",
+        "Json",
+        "Text"
+      ]
+    },
+    {
+      "id": "clean.Hit",
+      "name": "Hit (clean)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/clean.rs"
+      ],
+      "members": [
+        "path: &str",
+        "line: Option<&str>",
+        "is_match: bool",
+        "text: &str"
+      ]
+    },
+    {
+      "id": "clean.Cleaned",
+      "name": "Cleaned",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/clean.rs"
+      ],
+      "members": [
+        "lines: Vec<String>",
+        "steps: Vec<&'static str>"
+      ]
+    },
+    {
+      "id": "Engine",
+      "name": "Engine",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/engine.rs"
+      ],
+      "members": [
+        "outputs: Option<PathBuf>",
+        "load(path) -> Result<Loaded, String>",
+        "info(path) -> Result<Info, String>",
+        "outline(path, loaded) -> Arc<Vec<Symbol>>",
+        "stored_info(path, md) -> Option<Info>",
+        "remember(path, md, data)",
+        "edit_guard()",
+        "forget(path)"
+      ]
+    },
+    {
+      "id": "Meta",
+      "name": "Meta",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/meta.rs"
+      ],
+      "members": [
+        "hash: [u8; 32]",
+        "crlf: bool",
+        "starts: Vec<u32>"
+      ]
+    },
+    {
+      "id": "Symbol",
+      "name": "Symbol",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/outline.rs"
+      ],
+      "members": [
+        "kind: &'static str",
+        "name: String",
+        "start: usize",
+        "end: usize",
+        "depth: usize"
+      ]
+    },
+    {
+      "id": "Regex",
+      "name": "regex::Regex",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/Cargo.toml"
+      ],
+      "members": [
+        "find_iter(data)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Ctx",
+      "to": "Engine",
+      "kind": "depends-on",
+      "description": "Every command runs on the shared engine."
+    },
+    {
+      "from": "find.FileResult",
+      "to": "find.Hit",
+      "kind": "depends-on",
+      "description": "The matching lines kept for display."
+    },
+    {
+      "from": "find.FileResult",
+      "to": "find.Skip",
+      "kind": "depends-on",
+      "description": "Why a file produced no results."
+    },
+    {
+      "from": "find.Plan",
+      "to": "Engine",
+      "kind": "depends-on",
+      "description": "Asks the stored info whether a file is known to be binary, and remembers new binary files."
+    },
+    {
+      "from": "find.Plan",
+      "to": "Regex",
+      "kind": "depends-on",
+      "description": "The compiled search pattern."
+    },
+    {
+      "from": "read.Opts",
+      "to": "read.Select",
+      "kind": "depends-on",
+      "description": "Which part of each file to show."
+    },
+    {
+      "from": "ls.Printer",
+      "to": "ls.Row",
+      "kind": "depends-on",
+      "description": "Collects the rows, whose file summaries are then computed on the pool."
+    },
+    {
+      "from": "ls.Printer",
+      "to": "ls.Node",
+      "kind": "depends-on",
+      "description": "Prints the tree of nodes."
+    },
+    {
+      "from": "edit.Target",
+      "to": "Meta",
+      "kind": "depends-on",
+      "description": "The hash, line starts and line-ending style the edit is checked and built against."
+    },
+    {
+      "from": "edit.Target",
+      "to": "edit.SpanEnd",
+      "kind": "depends-on",
+      "description": "Line edits are given as two span ends."
+    },
+    {
+      "from": "refs.FileRefs",
+      "to": "Symbol",
+      "kind": "depends-on",
+      "description": "Definitions are outline symbols."
+    },
+    {
+      "from": "refs.FileRefs",
+      "to": "refs.Occurrence",
+      "kind": "depends-on",
+      "description": "Uses with their enclosing symbol."
+    },
+    {
+      "from": "clean.Cleaned",
+      "to": "clean.Kind",
+      "kind": "depends-on",
+      "description": "The input kind decides which steps run."
+    },
+    {
+      "from": "clean.Cleaned",
+      "to": "clean.Hit",
+      "kind": "depends-on",
+      "description": "grep output is parsed into hits before it is regrouped."
+    }
+  ]
+}

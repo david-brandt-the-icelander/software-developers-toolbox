@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/vision.schema.json",
+  "title": "Vision",
+  "description": "Why the solution exists, for whom, what success looks like, and when it should be shut down. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "vision"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "problem": {
+            "type": "string",
+            "minLength": 1
+          },
+          "audience": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nonGoals": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "successMeasures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "fundedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "shutDownWhen": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "problem",
+          "outcome"
+        ]
+      }
+    }
+  }
+}

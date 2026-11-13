@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "fix-network sources",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "fix-network sources",
+      "summary": "All of fix-network's Rust modules, flat: the command line, gathering a snapshot of the Mac's network, judging it, repairing it, and reporting.",
+      "purpose": "Holds the whole tool. main.rs parses the command line and runs diagnose or fix; facts.rs gathers a snapshot through parse.rs; assess.rs and corp.rs turn it into checks and findings with remedies (types in model.rs); repair.rs plans and runs the repair steps; report.rs prints text or JSON; run.rs keeps the per-run log directory; sys.rs is the one trait through which everything reaches the machine.",
+      "boundaries": [
+        "Everything the tool does to or asks of the machine (commands, name lookups, TCP connections, waiting, the clock, SSH detection, the Wi-Fi watchdog) goes through the Sys trait in sys.rs; no other module runs a process or opens a socket.",
+        "The tests replace the machine with the scripted Mac in sys.rs (module fake); they never change a real network.",
+        "Only macOS is supported: main.rs refuses any other OS before touching the machine."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "run" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Sys" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "gather" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "assess" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" }
+      ]
+    }
+  ]
+}

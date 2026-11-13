@@ -1,10 +1,13 @@
 // Command dispatch: picks the subcommand, runs it and shapes failures for the wire.
 use crate::engine::Engine;
+use crate::session::Replay;
 use crate::tokens;
 use std::cell::RefCell;
 use std::io::Read;
 use std::path::PathBuf;
 
+pub mod again;
+pub mod clean;
 pub mod edit;
 pub mod find;
 pub mod ls;
@@ -18,13 +21,18 @@ const MAX_DESC: usize = 100;
 
 const HELP: &str = "zazzle: file tool for agents
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
-read PATH[:A-B].. [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
+read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
 outline PATH.. [-d N] [-m N]  symbols with line ranges
 refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
-edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
+edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
+CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
+proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
+run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
+read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
 status  daemon info
-Any command: --budget T caps output at ~T tokens (default 8000; read has its own); --disable-session-deduping resends output already sent in this session.";
+C# files read as a terse view without a sha; --source gives the code and the sha every edit needs.
+Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // Where a command runs and who asked.
 pub struct Ctx<'a> {
@@ -37,12 +45,21 @@ pub struct Ctx<'a> {
 impl Ctx<'_> {
     // Reads all of standard input, which can be done once.
     pub fn read_stdin(&self) -> Result<Vec<u8>, String> {
-        let Some(mut r) = self.stdin.borrow_mut().take() else {
+        self.read_stdin_max(usize::MAX).map(|(buf, _)| buf)
+    }
+
+    // Reads standard input up to a byte limit, once; also says whether more was left unread.
+    pub fn read_stdin_max(&self, max: usize) -> Result<(Vec<u8>, bool), String> {
+        let Some(r) = self.stdin.borrow_mut().take() else {
             return Err("no standard input available".into());
         };
         let mut buf = Vec::new();
-        r.read_to_end(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-        Ok(buf)
+        r.take((max as u64).saturating_add(1))
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("reading stdin: {e}"))?;
+        let cut = buf.len() > max;
+        buf.truncate(max);
+        Ok((buf, cut))
     }
 }
 
@@ -79,7 +96,7 @@ struct Globals {
 
 // Pulls the global options out of a command's arguments; read keeps its own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
-    let takes_budget = !matches!(cmd, "read" | "cat");
+    let takes_budget = !matches!(cmd, "read" | "cat" | "clean");
     let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -128,22 +145,33 @@ fn describe(cmd: &str, rest: &[String]) -> String {
     format!("zazzle {cmd} {}", rest.join(" ")).trim_end().chars().take(MAX_DESC).collect()
 }
 
-// Runs one command line and returns its output, tagged or deduplicated for the caller's session.
-pub fn run(ctx: &Ctx, args: &[String]) -> Output {
-    let Some((cmd, rest)) = args.split_first() else { return Output::plain(HELP.into()) };
+// Runs a command and applies the output budget, without the session layer; also returns the description and dedupe choice.
+pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String, bool) {
     let (rest, globals) = match split_globals(cmd, rest) {
         Ok(x) => x,
-        Err(e) => return Output::err(&e),
+        Err(e) => return (Output::err(&e), String::new(), true),
     };
     let mut out = match dispatch(ctx, cmd, &rest) {
         Ok(o) => o,
         Err(msg) => Output::err(&msg),
     };
+    if out.idable && !matches!(cmd, "read" | "cat" | "clean") {
+        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
+    }
+    (out, describe(cmd, &rest), globals.dedupe)
+}
+
+// Runs one command line and returns its output, tagged or deduplicated for the caller's session, remembering how to run it again.
+pub fn run(ctx: &Ctx, args: &[String]) -> Output {
+    let Some((cmd, rest)) = args.split_first() else { return Output::plain(HELP.into()) };
+    if cmd == "read-again" {
+        return again::run(ctx, rest).unwrap_or_else(|e| Output::err(&e));
+    }
+    let (mut out, desc, dedupe) = produce(ctx, cmd, rest);
     if out.idable {
-        if !matches!(cmd.as_str(), "read" | "cat") {
-            out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
-        }
-        out.text = ctx.engine.sessions.apply(&ctx.session, &describe(cmd, &rest), out.text, globals.dedupe);
+        let kept: Vec<String> = args.iter().filter(|a| *a != "--disable-session-deduping").cloned().collect();
+        let replay = Replay { args: kept, cwd: ctx.cwd.clone() };
+        out.text = ctx.engine.sessions.apply_with(&ctx.session, &desc, Some(replay), out.text, dedupe);
     }
     out
 }
@@ -157,10 +185,21 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
+        "clean" => clean::run(ctx, rest),
+        "proxy" => {
+            Err("proxy runs as its own process: start it with `zazzle proxy ..` (or `zazzled proxy ..`)"
+                .into())
+        }
+        "run" => Err(
+            "run executes in the caller's environment: use `zazzle run -- CMD ..` (or `zazzled wrap CMD ..`)"
+                .into(),
+        ),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
-        other => Err(format!("unknown command '{other}'; try: find read ls outline refs edit status help")),
+        other => Err(format!(
+            "unknown command '{other}'; try: find read read-again ls outline refs edit clean status help"
+        )),
     }
 }
 
@@ -218,9 +257,27 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read ls outline refs edit status help"
+            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean status help"
         );
         assert!(!o.idable);
+    }
+
+    // Checks proxy is refused inside the daemon with a pointer to the right entry point.
+    #[test]
+    fn test_proxy_points_to_own_process() {
+        let t = TempDir::new();
+        let o = run_cmd(t.path(), &["proxy", "--", "srv"]);
+        assert_eq!(o.status, 2);
+        assert!(o.text.starts_with("error: proxy runs as its own process: start it with `zazzle proxy ..`"));
+    }
+
+    // Checks run is refused inside the daemon with a pointer to the right entry point.
+    #[test]
+    fn test_run_points_to_own_process() {
+        let t = TempDir::new();
+        assert!(run_cmd(t.path(), &["run", "--", "make"])
+            .text
+            .starts_with("error: run executes in the caller's environment"));
     }
 
     // Checks the aliases route to the same commands.
@@ -347,11 +404,11 @@ mod tests {
         let first = go(&["read", "a.txt"]);
         assert!(first.starts_with("[r:") && first.contains("1\thello"));
         let second = go(&["read", "a.txt"]);
-        assert!(second.contains(
-            "already sent: zazzle read a.txt, unchanged. Re-run with --disable-session-deduping to resend."
-        ));
+        assert!(second
+            .contains("already sent: zazzle read a.txt, unchanged. If you no longer have it: read-again r:"));
         assert_eq!(go(&["read", "a.txt", "--disable-session-deduping"]), first);
-        let edited = go(&["edit", "a.txt", "--old", "hello", "--new", "bye"]);
+        let sha = first[first.find("sha ").expect("sha") + 4..][..8].to_string();
+        let edited = go(&["edit", "a.txt", "--old", "hello", "--new", "bye", "--expect", &sha]);
         assert!(edited.starts_with("ok a.txt") && !edited.starts_with("[r:"));
         assert!(go(&["read", "a.txt"]).contains("1\tbye"));
         assert!(go(&["status"]).contains("1 sessions"));

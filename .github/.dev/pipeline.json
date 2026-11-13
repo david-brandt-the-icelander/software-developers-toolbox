@@ -1,0 +1,175 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/pipeline.schema.json",
+  "kind": "pipeline",
+  "title": "The repository's pipelines",
+  "folder": ".github",
+  "entities": [
+    {
+      "id": "ci",
+      "title": "On a push to main or a pull request",
+      "summary": "Lints, tests and builds every tool on macOS and Linux, checks the release scripts, the minimum Rust version and branch coverage.",
+      "trigger": "A push to main, any pull request, or a manual run (ci.yml). A newer run on the same ref cancels the older one.",
+      "checks": [
+        "lint (Linux): cargo fmt --all --check; shellcheck of the release scripts, pgo.sh and the version scripts included; macos/release/sign-and-notarize.test.sh, formula.test.sh, version.test.sh and fetch-cyberspace-generator.test.sh; cargo clippy --workspace --all-targets, warnings as errors",
+        "test (macOS and Linux): cargo test --workspace, a release build, and a smoke run of afs, fix-network --help and free-disk-space clean caches (a dry run)",
+        "msrv (Linux): cargo check --workspace with Rust 1.85, the workspace's rust-version",
+        "zazzle-c (macOS and Linux): build zazzled, then make, make unit and test/smoke.sh for the C invoker",
+        "coverage (Linux, nightly): agent-fs and fix-network fail below 95% of lines and of branches; zazzled/coverage.sh 95; make coverage for the C invoker",
+        "dotnet (macOS and Linux): dotnet test tests, dotnet publish, and a smoke run of zazzle-csharp-indexer serve (initialize and the overview tool) and zazzle-csharp-indexer report"
+      ],
+      "blocks": "Nothing on its own: whether main waits for it is set in the repository's rules on GitHub, outside this repository.",
+      "notChecked": [
+        "The .dev files and Actors/: the HASD validators are not run in CI.",
+        "free-disk-space line and branch coverage: no coverage gate runs for it.",
+        "The macOS-only behaviour that needs a real Mac (fix-network repairs, free-disk-space compress, dedupe --apply, Finder trash and Docker steps): the tests run against stand-ins.",
+        "pgo.sh itself: CI only shellchecks it; the release and the bench run it."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "jobs"
+        },
+        {
+          "path": "macos/rust/Cargo.toml",
+          "symbol": "workspace.package.rust-version"
+        },
+        {
+          "path": "macos/rust/zazzled/coverage.sh"
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "title": "On a release run or a vX.Y.Z tag",
+      "summary": "Works out the version from the tags, stamps it into every binary, tests and builds every tool, the zazzle invoker and the C# indexer, signs the macOS binaries when configured, and publishes the macOS and Linux tarballs, the Homebrew bottle and the zazzle formula.",
+      "trigger": "A manual run of release.yml with bump patch (the default), minor or major, which releases the next version after the latest vX.Y.Z tag; or a pushed tag v*, which must be vX.Y.Z. A manual run with bump none builds and tests but publishes nothing.",
+      "checks": [
+        "version: version.sh prints the tag, the version (0.0.0-dev for a build-only run) and whether to publish; a manual release run tags the commit and pushes the tag",
+        "macos and linux: set-version.sh writes the version into every crate's manifest and Cargo.lock entry; the indexer is published with -p:Version",
+        "macos: cargo test --workspace; pgo.sh trains a clang profile for zazzled's C code; release builds for arm64 and x86_64 with that profile; make, make unit and test/smoke.sh for the zazzle invoker (arm64 only); lipo into universal binaries",
+        "macos: dotnet test, then zazzle-csharp-indexer published for osx-arm64 and osx-x64 and gzipped, one file per CPU type",
+        "macos: sign-and-notarize.sh on zazzle, zazzled, afs, fix-network, free-disk-space and cyberspace-generator (fetched by fetch-cyberspace-generator.sh and merged with lipo); it skips with a warning when the Apple secrets are missing, and fails when the variable REQUIRE_SIGNING is true",
+        "macos: pack zazzle-macos-universal.tar.gz (the five binaries and the two gzipped indexers) with its .sha256; create the GitHub release, with no release notes; copy both to the download bucket under zazzle/<tag>/ and zazzle/latest/",
+        "linux (x86_64 and aarch64, after macos): cargo test -p zazzled; build zazzled with a PGO profile; build and test the invoker; dotnet test and publish the indexer; attach zazzle-linux-<arch>.tar.gz (zazzle, zazzled, zazzle-csharp-indexer) to the release and copy it to the same bucket folders",
+        "homebrew (after macos): bottle.sh, upload the bottle to the release, formula.sh writes Formula/zazzle.rb into a checkout of the zazzcat/homebrew-z tap and pushes it there"
+      ],
+      "blocks": "The release: a pushed tag that is not vX.Y.Z, or a failed test, build, smoke test, profile training, signing step (when required) or notarization, stops the job before it publishes.",
+      "notChecked": [
+        "Signing and notarization against Apple: nothing has signed a real binary until a tag runs with the secrets in place.",
+        "That the published formula installs: formula.test.sh runs it under a stand-in Formula class in CI, not under Homebrew."
+      ],
+      "secrets": [
+        "CLOUDFLARE_R2_TOKEN",
+        "HOMEBREW_TAP_TOKEN",
+        "MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD, APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID (optional)"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "jobs"
+        },
+        {
+          "path": "macos/release/version.sh",
+          "symbol": "next"
+        },
+        {
+          "path": "macos/release/set-version.sh"
+        },
+        {
+          "path": "macos/release/pgo.sh"
+        },
+        {
+          "path": "macos/release/sign-and-notarize.sh"
+        },
+        {
+          "path": "macos/release/bottle.sh"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "bottle_block"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/release/.dev/delivery.json",
+          "description": "Where the release puts each version."
+        }
+      ]
+    },
+    {
+      "id": "zazzle-bench",
+      "title": "zazzle benchmarks",
+      "summary": "Builds zazzled and the zazzle invoker, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, on macOS and Linux runners.",
+      "trigger": "A pull request that changes macos/c/zazzle/, macos/rust/zazzled/, macos/release/pgo.sh or this workflow, or a manual run with a number of spawns per row.",
+      "checks": [
+        "cargo build --release -p zazzled; make; test/smoke.sh; bench/run.sh; bench/refs.sh",
+        "pgo.sh, a zazzled build with the profile, and bench/refs.sh against it"
+      ],
+      "blocks": "Nothing: the benchmark prints readings and has no threshold.",
+      "notChecked": [
+        "Its PGO numbers are an upper bound: it trains and measures on the same crate sources."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/zazzle-bench.yml",
+          "symbol": "bench"
+        },
+        {
+          "path": "macos/c/zazzle/bench/run.sh"
+        },
+        {
+          "path": "macos/c/zazzle/bench/refs.sh"
+        }
+      ]
+    },
+    {
+      "id": "dependency-updates",
+      "title": "Weekly dependency updates",
+      "summary": "Dependabot opens pull requests for the Cargo workspace's crates and for the GitHub Actions the workflows use, each weekly.",
+      "trigger": "Weekly (dependabot.yml).",
+      "checks": [
+        "None of its own: its pull requests run the ci pipeline."
+      ],
+      "blocks": "Nothing.",
+      "notChecked": [
+        "The .NET packages of zazzle-csharp-indexer: dependabot.yml has no nuget entry."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/dependabot.yml",
+          "symbol": "updates"
+        }
+      ]
+    },
+    {
+      "id": "bump-cyberspace-generator",
+      "title": "Daily cyberspace-generator pin bump",
+      "summary": "Opens a pull request that moves macos/release/cyberspace-generator.version to the newest generator-v* release of cyberspace-explorer, so the next zazzle release ships it.",
+      "trigger": "Daily at 05:17 UTC, by hand, or a repository_dispatch of type cyberspace-generator-released.",
+      "checks": [
+        "The newest release has all four binaries (both macOS CPU types, static Linux x86_64 and aarch64) and they match its SHA256SUMS (fetch-cyberspace-generator.sh).",
+        "It dispatches ci.yml on the new branch, because a pull request opened with GITHUB_TOKEN starts no workflows."
+      ],
+      "blocks": "Nothing: it only opens a pull request; skips when the pin is current or the branch already exists.",
+      "notChecked": [
+        "That the new release passes the zazzle formula's test block: only a zazzle release runs it."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/bump-cyberspace-generator.yml",
+          "symbol": "bump"
+        },
+        {
+          "path": "macos/release/fetch-cyberspace-generator.sh",
+          "symbol": "fetch-cyberspace-generator.sh"
+        }
+      ]
+    }
+  ]
+}

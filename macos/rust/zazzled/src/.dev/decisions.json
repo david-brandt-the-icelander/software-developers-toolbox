@@ -1,0 +1,279 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzled source decisions",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "cache-design",
+      "title": "Cache derived data only, validated by stat",
+      "summary": "The daemon caches what it derives from files, never their text, and trusts a cached record only while the file's stat is unchanged.",
+      "status": "accepted",
+      "context": "Every command needs a file's line count, flags, hash, line index or outline, and a tree's file list; recomputing them on every request costs reads and walks, but a stale answer would mislead an agent and a cache of file text would be a second copy of the user's files.",
+      "decision": "On disk, `~/.zazzle/v1/` (mode 0700, kept out of Spotlight and Time Machine) holds derived data only, never file text: an append-only log of per-path summaries (stat identity, line count, binary, minified and CRLF flags; the record's old 32-byte hash slot is kept as zeros) with per-record checksums, torn-tail repair and compaction. `ls` and `find` fill it without hashing files. In memory: the full metadata (BLAKE3 hash and line index) of recently loaded files, with edit anchors hashed per line on demand; outlines keyed by content hash; and per-root file listings validated by the stat of each directory and ignore file. A record taken within 2 seconds of the file's modification time is not trusted.",
+      "rationale": "Stat identity (device, inode, size, modification time in nanoseconds) changes whenever content can have changed, so a matching stat makes the derived data safe to reuse without reading the file; the 2-second rule covers writes too close to the record to show in the timestamp. Keeping only derived data means the cache never holds what the user's files say. Leaving the hash out of the persisted summary lets listings and searches record line counts and flags without hashing every file; only read and edit, which show or check the sha, hash.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/README.md, section Cache (moved here); commits 0b6fe0d (lazy anchors) and 5186704 (ls and find no longer hash files)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "Store::open"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "encode"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "prepare_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "RACY_NS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::load_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::info"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::outline"
+        },
+        {
+          "path": "macos/rust/zazzled/src/meta.rs",
+          "symbol": "line_anchor"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "Listing::valid"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "cache-log"
+        }
+      ]
+    },
+    {
+      "id": "no-file-watcher",
+      "title": "No file watcher",
+      "summary": "Directory listings are revalidated by stat on each use instead of being kept current by a file-system watcher.",
+      "status": "accepted",
+      "context": "find, refs, ls and outline walk whole trees; a cached listing saves the walk but must notice files being added, removed or newly ignored.",
+      "options": [
+        {
+          "title": "A file-system watcher",
+          "consequences": "Listings stay current without checking, at the cost of a watcher per tree and its platform differences."
+        },
+        {
+          "title": "Validate the cached listing by stat",
+          "consequences": "Each use stats every directory in the tree and every ignore file that can affect it (on up to four pool workers), and rescans when any changed or when the listing was taken within 2 seconds of a change."
+        }
+      ],
+      "decision": "Validate cached listings by stat; no watcher was added.",
+      "rationale": "The measured share of the walk in find fell enough with the validated listing cache that a watcher was not needed; the numbers are in the README's Measurements section.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/README.md, section Measurements"
+      },
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "WalkCache::listing"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "Listing::valid"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "ignore_stamps"
+        }
+      ],
+      "links": [
+        {
+          "label": "Measurements",
+          "path": "macos/rust/zazzled/README.md",
+          "description": "The timings the decision rests on."
+        },
+        {
+          "label": "Benchmark",
+          "path": "macos/c/zazzle/bench/run.sh"
+        }
+      ]
+    },
+    {
+      "id": "shared-thread-pool",
+      "title": "One thread pool per process",
+      "summary": "find, refs, ls and listing validation run their per-file work on one pool of threads started once per process, instead of spawning threads for each request.",
+      "status": "accepted",
+      "context": "A single request can touch thousands of files, and the daemon already serves several requests at once on its worker threads; spawning threads per request costs time on every call and can multiply threads under load.",
+      "decision": "pool.rs starts one pool, sized to the CPUs the process may use, on first use. par_map runs a batch on the calling thread plus up to N - 1 pool helpers, which pull items from a shared counter, and returns the results in item order; nested and concurrent calls cannot deadlock because the caller always works its own batch, and a helper's panic is raised again in the caller. find searches on it (from 8 files up), refs loads and outlines matching files on it, ls computes file summaries on it, and listing validation stats on up to four of its workers.",
+      "rationale": "Per the commit that introduced it, cold ls and refs on a large tree and daemon find on a small one became markedly faster on a 4-core Linux VM; the readings are in that commit message.",
+      "origin": {
+        "kind": "commit",
+        "reference": "0b6fe0d zazzled: thread pool, parallel refs and ls, lazy anchors, tree-sitter size cap (#29)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/pool.rs",
+          "symbol": "par_map"
+        },
+        {
+          "path": "macos/rust/zazzled/src/pool.rs",
+          "symbol": "submit"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "search_all"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/ls.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "VALIDATE_THREADS"
+        }
+      ]
+    },
+    {
+      "id": "tree-sitter-arena",
+      "title": "A per-thread arena for tree-sitter's allocations",
+      "summary": "While a tree-sitter parse runs, its allocations go to a per-thread bump arena with size-class free lists instead of the system allocator.",
+      "status": "accepted",
+      "context": "Outlining is the costly part of refs and outline over many files, and a parse makes many small allocations that all die with the tree.",
+      "decision": "arena.rs installs tree-sitter allocator hooks once. Inside arena::scope (each parse_outline), a thread's allocations of up to 1 KiB come from its arena: 256 MiB of reserved address space, pointer bumping, free lists for seven size classes, and up to 5 MiB of touched pages kept between parses. Larger requests and anything outside a parse use libc. A parse whose blocks outlive it abandons that thread's arena rather than reuse memory still in use. Files over 1 MiB are not parsed at all; they get the line-based outline.",
+      "rationale": "Per the commit that introduced it, single-threaded parsing and cold refs became about 10% faster on a Linux VM, for a few MB more peak memory, with identical output.",
+      "origin": {
+        "kind": "commit",
+        "reference": "8933cdd zazzled: per-thread pooled arena for tree-sitter allocations (#31)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/arena.rs",
+          "symbol": "scope"
+        },
+        {
+          "path": "macos/rust/zazzled/src/arena.rs",
+          "symbol": "RESERVE"
+        },
+        {
+          "path": "macos/rust/zazzled/src/arena.rs",
+          "symbol": "KEEP"
+        },
+        {
+          "path": "macos/rust/zazzled/src/arena.rs",
+          "symbol": "ScopeGuard"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "parse_outline"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "MAX_PARSE_BYTES"
+        }
+      ]
+    },
+    {
+      "id": "own-process-for-run-and-proxy",
+      "title": "`run` and `proxy` run in the caller's process, not in the daemon",
+      "summary": "`zazzle run` and `zazzle proxy` are not daemon requests: the invoker replaces itself with `zazzled wrap` or `zazzled proxy`, and the daemon refuses both.",
+      "status": "accepted",
+      "context": "Both start other programs (a build or test, an MCP server) that must see the caller's environment, working directory and standard streams, and whose exit status the caller needs. The daemon runs with the environment of whoever started it, and answers on a socket.",
+      "decision": "The invoker execs `zazzled wrap ARGS` for `run` and `zazzled proxy ARGS` for `proxy`, the daemon binary chosen as for autostart; the daemon's dispatcher answers `run` and `proxy` with an error pointing at those processes. Where there is no invoker, the subcommands are run directly.",
+      "rationale": "So the commands keep the caller's environment (MCP servers often read keys from it), streams and exit status, and nothing the caller starts runs inside the long-lived daemon.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/README.md, sections Run and MCP proxy; commit c083c02"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "exec_daemon"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "stored-outputs",
+      "title": "Keep clean, run and proxy outputs on disk for an hour",
+      "summary": "Outputs whose input cannot be had again are stored on disk with that input under an id, so read-again can return them, and their uncut text, instead of refusing.",
+      "status": "accepted",
+      "context": "read-again gives back a session response by running its request again, but clean's input was a pipe, `zazzle run`'s a command's output and the proxy's another server's reply: none can be produced again, and each may have been cut by a budget, a profile or a lossy step. Before this, read-again refused clean answers and an agent had to rerun the command to see what was cut.",
+      "decision": "clean, `zazzled wrap` and `zazzled proxy` save the text they showed and the whole input under a ten-character id derived from both, in an owner-only directory (~/.zazzle/outputs, or ZAZZLE_OUTPUTS_DIR); clean and run answers start with `[r:ID]` and the proxy adds a separate `[r:ID shortened by zazzle]` item after each text it shortened; an answer that cut something says `read-again r:ID --full`. read-again returns a stored output as shown, or with --full its input as numbered lines. Each save drops entries older than an hour and trims the store to half when it passes its size limit. A failed save keeps the output and says it was not stored.",
+      "rationale": "The README: these outputs \"cannot be produced again (their input was a pipe, a command's output or another server's reply), so they are stored on disk under an id\". The proxy's note is its own item \"so JSON text stays JSON\". Keeping them on disk rather than in the daemon lets `zazzled wrap` and `zazzled proxy`, which run as their own processes, store outputs the daemon later returns; the hour and the size limit bound what is kept.",
+      "origin": {
+        "kind": "commit",
+        "reference": "5ea503c zazzle: one front door for C#, stored outputs, versions from the tag, proxy config and keep-alive (#42); macos/rust/zazzled/README.md, section Stored outputs"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::keep"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Stored outputs"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "output-store"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/feature.json"
+        }
+      ]
+    }
+  ]
+}

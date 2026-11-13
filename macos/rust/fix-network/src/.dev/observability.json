@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "fix-network signals",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "diagnostic-log",
+      "title": "Run log",
+      "summary": "Every line the run prints, timestamped, in the run's state directory; with --json it still receives them.",
+      "signalType": "log",
+      "name": "diagnostic.log",
+      "meaning": "What one run saw and did: the macOS version and interface, the checks, the findings and remedies, the plan, each repair step with ok or FAILED and the reason, the watchdog's pid, and the paths of the log and original settings.",
+      "dimensions": [
+        "[HH:MM:SS] local time per line"
+      ],
+      "access": "The user who ran the tool: the directory is created with mode 0700.",
+      "retention": "Kept until the person deletes it; the tool never removes it (see decisions.json, state-retention).",
+      "cadence": "One file per run, appended line by line; the Wi-Fi watchdog appends a line when it turns Wi-Fi on.",
+      "excludes": [
+        "Lines that look like they assign a password, passphrase, secret, token, PSK or private key."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/fix-network/src/run.rs",
+          "symbol": "Session::log_to"
+        },
+        {
+          "path": "macos/rust/fix-network/src/run.rs",
+          "symbol": "SENSITIVE"
+        },
+        {
+          "path": "macos/rust/fix-network/src/run.rs",
+          "symbol": "Session::at"
+        },
+        {
+          "path": "macos/rust/fix-network/src/sys.rs",
+          "symbol": "recover_script"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/fix-network/src/.dev/decisions.json",
+          "entityId": "state-retention"
+        }
+      ]
+    }
+  ]
+}

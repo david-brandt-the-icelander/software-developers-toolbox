@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/quality-requirements.schema.json",
+  "kind": "quality-requirements",
+  "schemaVersion": 1,
+  "title": "Example worker quality requirements",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "punctuality",
+      "title": "Punctuality",
+      "summary": "Runs start close to their scheduled time.",
+      "area": "Latency",
+      "requirement": "95% of runs start within 30 seconds of their slot.",
+      "measuredBy": "The run-start delay histogram",
+      "met": "not-checked"
+    }
+  ]
+}

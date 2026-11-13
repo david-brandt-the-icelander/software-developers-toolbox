@@ -1,0 +1,321 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzled source verification",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "wire-protocol",
+      "title": "Wire protocol and the socket server",
+      "summary": "Unit tests drive the server over real socket pairs in both modes and with bad requests; the invoker's smoke test runs the real pair.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "wire-protocol"
+        }
+      ],
+      "criteria": [
+        "Requests round-trip through encode and decode, and oversize frames are refused.",
+        "In descriptor mode output goes to the passed stdout, errors to the passed stderr, and the working directory comes from the descriptor.",
+        "In relay mode the status and text come back on the socket.",
+        "Bad, truncated, split and over-described requests do not stop the server.",
+        "A peer of another uid is refused, and the socket is owner-only."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/proto.rs", "symbol": "test_encode_decode_roundtrip", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/proto.rs", "symbol": "test_frame_len_limit", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_fd_mode_uses_passed_streams_and_cwd", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_fd_mode_error_goes_to_stderr", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_relay_mode_roundtrip", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_bad_requests_are_survivable", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_too_many_descriptors_rejected", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_partial_request_is_reassembled", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_handle_rejects_other_uid", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_socket_permissions", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/smoke.sh", "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)", "description": "The real invoker against a real daemon." }
+      ]
+    },
+    {
+      "id": "daemon-lifecycle",
+      "title": "Starting, idling and autostart",
+      "summary": "The server's idle exit, the stale-socket handling, the CLI's serve path and the client's autostart are unit-tested; the smoke test checks the invoker's autostart.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/operation.json",
+          "entityId": "serve"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/use-case.json",
+          "entityId": "use-over-mcp"
+        }
+      ],
+      "criteria": [
+        "The server exits once idle, but not while a connection is open, and removes the socket it bound.",
+        "A live daemon on the socket is refused; a stale socket is cleared.",
+        "ZAZZLE_IDLE_SECS sets the default idle time and a bad value is ignored.",
+        "The client starts the daemon when none listens, retries, and gives up after its deadline.",
+        "A daemon the invoker starts does not keep the caller's standard output open."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_idle_exit", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_active_connection_defers_idle_exit", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_prepare_live_and_stale", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/cli.rs", "symbol": "test_serve_main_lifecycle", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/cli.rs", "symbol": "test_idle_default_from_environment", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/client.rs", "symbol": "test_autostart_spawns_then_retries", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/client.rs", "symbol": "test_autostart_gives_up", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/smoke.sh", "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)", "description": "Autostart: with no daemon running the invoker starts one, and a pipe on its standard output closes." }
+      ]
+    },
+    {
+      "id": "launch-agent",
+      "title": "LaunchAgent",
+      "summary": "The plist, its path, install and uninstall are tested with a fake launchctl; nothing loads a real LaunchAgent.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/use-case.json",
+          "entityId": "install-launch-agent"
+        }
+      ],
+      "criteria": [
+        "The plist names the label, the program with `serve`, the socket with mode 0600, and escapes XML.",
+        "install writes the plist and runs bootout then bootstrap; uninstall boots out and removes it, or says it was not installed.",
+        "launchctl that fails or hangs is reported."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/launchd.rs", "symbol": "test_plist_contents", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/launchd.rs", "symbol": "test_install_runs_launchctl", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/launchd.rs", "symbol": "test_uninstall_cases", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/launchd.rs", "symbol": "test_run_with_timeout_outcomes", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/cli.rs", "symbol": "test_agent_cmd", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "mcp",
+      "title": "MCP server",
+      "summary": "Every method, tool mapping and error path of the MCP server is tested against a fake backend, and once against a live daemon.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "mcp-tools"
+        }
+      ],
+      "criteria": [
+        "initialize agrees a known protocol version or the newest.",
+        "Each tool's arguments map to the right command line, including read's symbol and source and read-again's id, full, lines and budget, and wrong types are tool errors.",
+        "Every tool has a schema object with its required arguments.",
+        "A nonzero status or an unreachable daemon is a tool result with isError.",
+        "Notifications get no answer and a line that is not JSON gets a parse error."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_initialize_versions", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_ping_list_and_unknown", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_find_maps_arguments", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_read_and_ls_map_arguments", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_outline_refs_edit_map_arguments", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_argument_errors", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_new_tool_argument_errors", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_all_tool_schemas", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_status_and_backend_errors", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_notifications_and_parse_errors", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_daemon_backend_live", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "caches",
+      "title": "Metadata cache, cache log and listing cache",
+      "summary": "Tests change files under the caches and check stale data is never served, the log survives damage, and listings are rescanned when the tree changes.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/decisions.json",
+          "entityId": "cache-design"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "cache-log"
+        }
+      ],
+      "criteria": [
+        "A changed file misses the cache; a record taken too close to the file's modification time is not trusted.",
+        "The summary ls and find record matches the full metadata, and is served from the log after a restart.",
+        "The log persists across opens, repairs a torn tail, rebuilds on a wrong header and compacts.",
+        "The cache directory is private and marked not to be indexed.",
+        "A cached listing is reused while unchanged and rescanned after an added or deleted file or a changed ignore file."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/engine.rs", "symbol": "test_changed_file_misses", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/engine.rs", "symbol": "test_racy_entries_are_not_trusted", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/engine.rs", "symbol": "test_info_served_from_store_after_restart", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/meta.rs", "symbol": "test_info_compute_matches_meta", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_persists_across_open", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_torn_tail_is_repaired", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_wrong_header_is_rebuilt", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_compaction_on_open", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_racy_records_are_not_served", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/store.rs", "symbol": "test_directory_is_private_and_unindexed", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/walk.rs", "symbol": "test_listing_is_reused_while_unchanged", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/walk.rs", "symbol": "test_new_files_invalidate_listing", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/walk.rs", "symbol": "test_deletions_invalidate_listing", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/walk.rs", "symbol": "test_ignore_file_changes_invalidate_listing", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/walk.rs", "symbol": "test_racy_listing_is_rescanned", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "sessions",
+      "title": "Session ids, dedupe and replay",
+      "summary": "The session table's ids, notices, window, eviction and replay records are unit-tested, and dedupe is checked through the dispatcher and the real invoker.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "session-dedupe"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "read-again"
+        }
+      ],
+      "criteria": [
+        "A repeat in the window becomes the notice; --disable-session-deduping resends.",
+        "Sessions and contents are independent; no session leaves the text untouched.",
+        "The window expires, ids lengthen on collision, and sessions and entries are evicted at their limits.",
+        "The request behind an id is remembered, and a resend keeps the id when unchanged and names the old one when changed."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_repeat_becomes_notice", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_disabled_dedupe_resends", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_window_expiry", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_unique_id_extends_on_collision", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_session_eviction", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_replay_is_remembered", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/session.rs", "symbol": "test_resend_same_or_changed", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/cmd/mod.rs", "symbol": "test_session_dedupe_through_run", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/smoke.sh", "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)", "description": "A second identical read in one ZAZZLE_SESSION is the notice; read-again and --disable-session-deduping return the first answer." }
+      ]
+    },
+    {
+      "id": "outlines",
+      "title": "Outlines",
+      "summary": "Each outliner has a test with a sample file of its language; large files skip tree-sitter, and the kind-id table matches the grammars.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/component-diagram.json"
+        }
+      ],
+      "criteria": [
+        "Rust, Python, C, C#, JavaScript and TypeScript are outlined from their syntax trees.",
+        "Markdown, TOML, JSON and other files get line-based outlines, as do files over 1 MiB.",
+        "The enclosing symbol of a line is the innermost one."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_rust_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_python_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_c_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_csharp_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_javascript_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_typescript_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_markdown_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_generic_outline", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_outline_skips_tree_sitter_for_huge_files", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_class_table_by_kind_id", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outline.rs", "symbol": "test_enclosing", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "pool-and-arena",
+      "title": "Thread pool and tree-sitter arena",
+      "summary": "The pool keeps item order, nests and passes a helper's panic to the caller; the arena's allocation hooks, scopes and fallbacks are tested directly.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/decisions.json",
+          "entityId": "shared-thread-pool"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/decisions.json",
+          "entityId": "tree-sitter-arena"
+        }
+      ],
+      "criteria": [
+        "par_map returns results in item order, works when nested, and raises a helper's panic in the caller after every helper has stopped.",
+        "Inside a scope, small allocations come from the arena and are reused; large ones and those outside a scope use the system allocator.",
+        "A scope resets the arena, abandons it when a block outlives the parse, and survives a panic."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/pool.rs", "symbol": "test_par_map_keeps_order", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/pool.rs", "symbol": "test_par_map_nested", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/pool.rs", "symbol": "test_par_map_propagates_panic", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/arena.rs", "symbol": "test_hooks_alloc_free_reuse_and_calloc", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/arena.rs", "symbol": "test_hooks_fall_back_to_system", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/arena.rs", "symbol": "test_scope_resets_and_nests", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/arena.rs", "symbol": "test_scope_abandons_arena_with_live_blocks", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/arena.rs", "symbol": "test_scope_survives_panic", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "indexer-bridge",
+      "title": "C# indexer bridge",
+      "summary": "The bridge is tested against a stand-in indexer: a script that answers --version and a daemon thread that speaks the handshake and one tool call.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "csharp-terse-view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_INDEXER"
+        }
+      ],
+      "criteria": [
+        "A view round-trips: hello with the version and the work tree as a root, then tools/call view with the root-relative path.",
+        "A file outside a git work tree, an indexer error or a refusal are reported as errors; a daemon that keeps asking to restart is given up on.",
+        "When nothing listens the daemon is started, and a daemon that never starts or breaks the connection is reported.",
+        "The executable and state directory are found from ZAZZLE_INDEXER and ZAZZLE_INDEXER_STATE_DIR, or their defaults, and a missing indexer is reported."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "test_view_round_trip", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "test_view_failures", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "test_view_starts_daemon_or_reports", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "test_view_broken_daemon", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "test_locate", "command": "cargo test -p zazzled (in macos/rust)" }
+      ]
+    },
+    {
+      "id": "output-store",
+      "title": "Output store",
+      "summary": "outputs.rs's tests save and load outputs, check the permissions and the refusal of bad ids, reap by age and by size, and read the directory and limit from the environment.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "output-store"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "stored-outputs"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_OUTPUTS_DIR"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_OUTPUTS_MAX_GB"
+        }
+      ],
+      "criteria": [
+        "An output round-trips under a stable id; the directory is 0700 and the files 0600; ids that are not ten characters of the alphabet are refused for saving and loading.",
+        "Entries older than an hour are removed and newer ones kept; a store over its limit loses its oldest entries until half its bytes remain.",
+        "ZAZZLE_OUTPUTS_DIR and ZAZZLE_OUTPUTS_MAX_GB are read, and a missing directory variable or a bad limit falls back to the defaults.",
+        "clean, `zazzle run` and the proxy store their outputs and tag them (checked in cmd/again.rs, wrap/mod.rs and proxy/mod.rs)."
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "test_save_and_load", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "test_reap_by_age", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "test_reap_by_size", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "test_dir_and_limit", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/cmd/again.rs", "symbol": "test_stored_clean_output", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/wrap/mod.rs", "symbol": "test_deliver_stores_output", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/proxy/mod.rs", "symbol": "test_rewrite_stores_with_id", "command": "cargo test -p zazzled (in macos/rust)" }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

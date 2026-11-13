@@ -1,0 +1,88 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "fix-network backlog",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "anyconnect-control",
+      "title": "Control Cisco Secure Client/AnyConnect",
+      "summary": "Cisco Secure Client/AnyConnect is only observed through its tunnel routes; reading its state and reconnecting it are deferred.",
+      "type": "feature",
+      "status": "deferred",
+      "details": "Today a tunnel from a client scutil does not manage is reported as UNSUPPORTED, and its faults get manual advice. The README marks AnyConnect control as deferred and the skill tells the agent that the user reconnects it.",
+      "acceptanceCriteria": [
+        "The VPN check reports an AnyConnect tunnel's state instead of UNSUPPORTED.",
+        "fix --vpn can reconnect it, or the report says why it cannot (for example a sign-in it cannot do).",
+        "The README's Limitations and the skill's Rules are updated to match."
+      ],
+      "origin": { "kind": "document", "reference": "macos/rust/fix-network/README.md", "description": "Limitations: 'Other clients, including Cisco Secure Client/AnyConnect (deferred), are only observed through their tunnel routes.'" },
+      "evidenceStatus": "proposed",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "vpn_facts" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "vpn" },
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/limitations.json", "entityId": "scutil-vpns-only" }
+      ]
+    },
+    {
+      "id": "real-mac-check",
+      "title": "Check the tool on a real Mac",
+      "summary": "The scripted output follows documented formats but was not captured from a real Mac, and the repair steps have not yet run on one.",
+      "type": "research",
+      "status": "open",
+      "acceptanceCriteria": [
+        "The parser fixtures are compared with, or replaced by, output captured from a real Mac on a current macOS.",
+        "Each repair step has run once on a real Mac, and any difference from the scripted behaviour is fixed or recorded."
+      ],
+      "origin": { "kind": "document", "reference": "macos/rust/fix-network/README.md", "description": "Limitations: 'it was not captured from a real Mac, and the repair steps have not yet run on one.'" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "tests" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "exec_step" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/limitations.json", "entityId": "scripted-not-real" }
+      ]
+    },
+    {
+      "id": "stale-route-names-repeat",
+      "title": "Stale-route finding can name the same interface twice",
+      "summary": "routing() removes only adjacent duplicates from the interfaces of stale routes, so an interface whose stale routes are not next to each other in the table is named more than once.",
+      "type": "defect",
+      "priority": "low",
+      "expected": "The stale-routes finding and the Routing detail name each interface once, as Facts::tunnels does.",
+      "observed": "The names come from f.stale_routes() in table order and Vec::dedup drops only consecutive repeats; with stale routes on two interfaces interleaved (for example utun3's and utun5's IPv4 routes followed by their IPv6 routes) the finding reads 'utun3, utun5, utun3, utun5'.",
+      "reproduction": [
+        "Build a snapshot with routes on utun3, utun5, utun3, utun5 in that order and neither interface up.",
+        "assess it and read the stale-routes finding's summary."
+      ],
+      "origin": { "kind": "agent", "description": "Found by reading assess.rs while documenting the folder; not run." },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "routing" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts::stale_routes" }
+      ]
+    },
+    {
+      "id": "same-second-runs-share-directory",
+      "title": "Two runs in the same second share a state directory",
+      "summary": "The state directory is named to the second and created with create_dir_all, so a second run started in the same second reuses the first run's directory.",
+      "type": "defect",
+      "priority": "low",
+      "expected": "Each run gets a fresh directory of its own, as Session::at's comment says.",
+      "observed": "The second run appends to the first run's diagnostic.log and overwrites its original.json, losing the first run's original settings.",
+      "reproduction": [
+        "Start two fix-network runs within the same second with the same state root (for example from a script or an agent running them in parallel)."
+      ],
+      "origin": { "kind": "agent", "description": "Found by reading run.rs while documenting the folder; not run." },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "Session::at" },
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "Session::save_original" }
+      ]
+    }
+  ]
+}

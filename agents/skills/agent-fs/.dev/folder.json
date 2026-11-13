@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "agent-fs skill",
+  "folder": "agents/skills/agent-fs",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "agent-fs skill",
+      "summary": "SKILL.md tells a coding agent to read, search, list and outline files with afs instead of cat, sed -n, grep -r, git grep or find, and how to act on its replies.",
+      "purpose": "Guidance for the coding agent, loaded by name and description from its front matter (name agent-fs): which afs tools to use, the order to use them in, what unchanged markers, hunks and truncation mean, and how to build afs. AGENTS.md lists it under Skills.",
+      "boundaries": [
+        "Only instructions: the tool itself is macos/rust/agent-fs, and its README holds the full field reference.",
+        "Changes follow agents/directives.md, as AGENTS.md requires for skills."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "agent-fs" },
+        { "path": "AGENTS.md", "symbol": "Skills" }
+      ]
+    }
+  ]
+}

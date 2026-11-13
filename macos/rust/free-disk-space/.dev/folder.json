@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "free-disk-space",
+  "folder": "macos/rust/free-disk-space",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "free-disk-space",
+      "summary": "The free-disk-space crate: one command-line binary that reclaims disk space on a Mac (APFS) by cleanups, a resumable compression scan, verified in-place compression, clone dedupe and an optional background daemon.",
+      "purpose": "Holds the crate's manifest (Cargo.toml), its README for the people who install and use it, and its code in src/. It builds one binary, free-disk-space, in the Cargo workspace macos/rust; the binary installs its own launchd login item when asked.",
+      "boundaries": [
+        "Release packaging is not here: the universal macOS binary, the zazzle-macos-universal.tar.gz release tarball and the one zazzle Homebrew formula (published to the external tap zazzcat/homebrew-z, installing this binary with the toolbox's others) are made by .github/workflows/release.yml and macos/release/formula.sh.",
+        "The zazzle invoker in macos/c/zazzle/ is a second way in: `zazzle free-disk-space ARGS` replaces itself with this binary, found beside it, so the program and its output are the same.",
+        "The agent skill that tells coding agents how to use the binary is agents/skills/free-disk-space/SKILL.md.",
+        "It is one independent utility of the toolbox; it shares no code with the other tools."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/Cargo.toml", "symbol": "package"},
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "free-disk-space"},
+        {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "Cli"},
+        {"path": ".github/workflows/release.yml", "symbol": "free-disk-space"},
+        {"path": "macos/release/formula.sh", "symbol": "install"},
+        {"path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "is_tool"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Shared daemon verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "daemon",
+      "title": "Daemon sharing, handshake and lifetime",
+      "summary": "An in-process daemon on a temporary socket is checked for sharing, the version and root checks, idle exit and refusing a second instance.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/contracts.json",
+          "entityId": "handshake"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "one-daemon-per-user"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "idle-exit"
+        }
+      ],
+      "criteria": [
+        "Two clients share one engine and both get answers from the same index",
+        "A client with a different version is told to restart when it is the only one connected",
+        "A root that is not a git work tree is rejected in the handshake",
+        "The daemon exits after the idle period with no clients",
+        "A second daemon on the same socket refuses to start"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_two_clients_share_engine",
+          "command": "dotnet test tests --filter test_two_clients_share_engine"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_version_mismatch_requests_restart",
+          "command": "dotnet test tests --filter test_version_mismatch_requests_restart"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_bad_root_rejected",
+          "command": "dotnet test tests --filter test_bad_root_rejected"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_idle_exit",
+          "command": "dotnet test tests --filter test_idle_exit"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_second_daemon_refused",
+          "command": "dotnet test tests --filter test_second_daemon_refused"
+        }
+      ],
+      "details": "Spawning a detached daemon (Proxy.SpawnDaemon) and the stdio pump (Proxy.Pump) are not covered by these tests; the CI smoke step in .github/workflows/ci.yml runs the published binary's serve command, which goes through them.",
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

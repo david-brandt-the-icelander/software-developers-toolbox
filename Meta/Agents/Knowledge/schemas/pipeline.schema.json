@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/pipeline.schema.json",
+  "title": "Pipeline",
+  "description": "What the build pipeline does, in order: what triggers each stage, what it checks, and what it blocks. Also what it does not check. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "pipeline"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "blocks": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually merge, release or nothing."
+          },
+          "duration": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notChecked": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Names only, never values."
+          }
+        },
+        "required": [
+          "trigger",
+          "checks"
+        ]
+      }
+    }
+  }
+}

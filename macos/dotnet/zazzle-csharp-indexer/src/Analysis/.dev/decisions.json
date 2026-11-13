@@ -1,0 +1,113 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Content analysis decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "git-blob-id",
+      "title": "Identify content by git's blob id",
+      "summary": "A blob is named by the SHA-1 of \"blob <length>\\0\" followed by the bytes, computed locally, which equals git hash-object.",
+      "status": "accepted",
+      "context": "The store keeps analysis once per distinct content (see the content-addressed store decision in src/.dev/decisions.json), so content needs a stable id that does not depend on the path or the branch.",
+      "decision": "BlobAnalyzer.GitOid computes git's blob object id from the bytes on disk, without calling git.",
+      "rationale": "The id is the one git itself uses, so it is the same for the same bytes in any copy, worktree or branch, and costs one hash of bytes already read.",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+          "symbol": "BlobAnalyzer.GitOid"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_oid_matches_git_hash_object"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/decisions.json",
+          "entityId": "content-addressed-store"
+        }
+      ]
+    },
+    {
+      "id": "trigram-bloom-prefilter",
+      "title": "Prefilter search with per-blob trigram Bloom filters",
+      "summary": "Search extracts the literals a pattern must contain, tests their case-folded trigrams against each file's Bloom filter, and reads only the files that may match.",
+      "status": "accepted",
+      "context": "search matches a .NET regex per line; scanning every file of a large work tree on every call is the cost to avoid.",
+      "decision": "Each text blob stores a Bloom filter of its ASCII-lowercased byte trigrams (two bits per trigram, sized to about ten bits per distinct trigram, between 256 bits and 2^21 bits). RegexLiterals.Required returns the literal runs every match must contain, Bloom.Grams turns them into at most 64 trigrams, and a file is a candidate only if Bloom.MayContainAll holds.",
+      "rationale": "The filter only ever says \"maybe\" or \"no\", so as long as the extracted literals really are required, no matching file is skipped. Folding ASCII case on both sides lets one filter serve case-sensitive and case-insensitive searches for ASCII letters.",
+      "details": "Literal extraction is deliberately conservative: a top-level alternation or the x (ignore whitespace) flag yields no literals (every file is a candidate); a quantifier that allows zero repetitions drops the preceding character; runs shorter than three characters are dropped; for literal text, and for a pattern containing \"(?\" (which may switch on case-insensitivity inline), non-ASCII characters split runs, because ASCII folding does not cover them. The ignore_case argument is not taken into account (backlog.json, ignore-case-non-ascii).",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
+          "symbol": "Bloom.Build"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
+          "symbol": "Bloom.MayContainAll"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
+          "symbol": "RegexLiterals.Required"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
+          "symbol": "RegexLiterals.Filter"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.MayMatch"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
+          "symbol": "test_prefilter_is_sound"
+        }
+      ]
+    },
+    {
+      "id": "roslyn-syntax-only",
+      "title": "Parse C# with Roslyn syntax trees; use line regexes elsewhere",
+      "summary": "C# declarations and identifiers come from a Roslyn syntax tree without compilation and are labelled parsed; every other language uses per-line regex rules and is labelled heuristic.",
+      "status": "accepted",
+      "context": "outline, find_symbol and find_references need declarations and identifier occurrences per blob, for many languages, at indexing speed.",
+      "options": [
+        {
+          "title": "Roslyn syntax tree for C#",
+          "consequences": "Exact declarations and identifier tokens, comments and strings excluded; adds the Microsoft.CodeAnalysis.CSharp package and its size to the binary."
+        },
+        {
+          "title": "ctags-style regexes per line",
+          "consequences": "Cheap and broad, but may miss or misread declarations; identifiers are word matches that include comments and strings."
+        }
+      ],
+      "decision": "CSharpSymbols for language csharp, HeuristicSymbols for the rest; the tools label the result [parsed] or [heuristic].",
+      "rationale": "The file's own comment: syntax trees without compilation are fast and exact.",
+      "origin": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs (file comment); README.md, Tools.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+          "symbol": "CSharpSymbols.Extract"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+          "symbol": "HeuristicSymbols.Rules"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "Microsoft.CodeAnalysis.CSharp"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
+          "symbol": "OutlineTool.OutlineFile"
+        }
+      ]
+    }
+  ]
+}

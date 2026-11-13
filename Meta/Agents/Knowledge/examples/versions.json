@@ -1,0 +1,21 @@
+{
+  "$schema": "../schemas/versions.schema.json",
+  "kind": "versions",
+  "schemaVersion": 1,
+  "title": "Example worker versions",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "v1-2",
+      "title": "1.2",
+      "summary": "Adds run-failed events.",
+      "version": "1.2",
+      "versionOf": "application",
+      "date": "2026-11-12",
+      "changes": [
+        "Publishes a run-failed event for every failed run"
+      ]
+    }
+  ]
+}

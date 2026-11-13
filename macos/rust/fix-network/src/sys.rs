@@ -353,8 +353,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let lo: IpAddr = "127.0.0.1".parse().unwrap();
         assert!(Real.tcp(&[lo], port, 2));
-        drop(listener);
-        assert!(!Real.tcp(&[lo], port, 2));
+        // A freed ephemeral port can be picked as the client's own source port and connect to itself, so use port 1.
+        assert!(!Real.tcp(&[lo], 1, 2));
     }
 
     // Check the clock, pause, SSH flag and that the watchdog script runs and logs.

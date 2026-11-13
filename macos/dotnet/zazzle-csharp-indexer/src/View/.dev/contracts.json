@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "Terse C# view contracts",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "entities": [
+    {
+      "id": "view-format",
+      "title": "View line format",
+      "summary": "The text TerseView.Format writes and the view tool returns below its header: one line per kept source line or note, each starting with its source line numbers and a tab.",
+      "contractType": "text-format",
+      "consumers": [
+        "MCP clients of the view tool",
+        "zazzled (macos/rust/zazzled/), which passes the view on for zazzle read of a .cs file"
+      ],
+      "definition": "Lines joined by \\n. N<TAB>text: source line N, unchanged. N~<TAB>text: source line N with a change (an access modifier dropped, var written, a local renamed). A-B<TAB>⋯ note: source lines A to B collapsed into the note. Line numbers are 1-based and those of the file; lines hidden without a note are simply absent.",
+      "guarantees": [
+        "Every number is a line number of the source file, so a reader can go to that line.",
+        "Lines come in source order."
+      ],
+      "compatibility": "No version is attached to the format; a change to it reaches zazzled once a release with a new ToolVersion.Text, taken from the tag, replaces the idle daemon through the handshake (macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json, tool-version-source).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.Format"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "Plan.Render"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+          "symbol": "ViewTool.Description"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "zazzle read"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    }
+  ]
+}

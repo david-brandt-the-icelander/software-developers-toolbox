@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-csharp-indexer source",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-csharp-indexer source",
+      "summary": "The zazzle-csharp-indexer project: the command line, the process-wide engine and SQLite store, roots, the usage log and process helpers, with the analysis, index, daemon, MCP, command-line, tool and terse-view code in subfolders.",
+      "purpose": "Builds the single zazzle-csharp-indexer executable (zazzle-csharp-indexer.csproj). Its top-level files hold what every part shares: Program.cs dispatches the commands, Engine.cs owns the store, the blob tables and one index per root, Root.cs validates roots and resolves paths, UsageLog.cs writes the usage log, Proc.cs runs external programs and Native.cs resolves symlinks.",
+      "boundaries": [
+        "The tests are in macos/dotnet/zazzle-csharp-indexer/tests/, which references this project.",
+        "Build settings shared with the tests (target framework, version, warnings as errors) are in macos/dotnet/zazzle-csharp-indexer/Directory.Build.props.",
+        "git, and optionally rg, are external programs found on PATH; nothing else outside the process is called."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "AssemblyName"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine"
+        }
+      ]
+    }
+  ]
+}

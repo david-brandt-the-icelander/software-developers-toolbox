@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/blockers.schema.json",
+  "kind": "blockers",
+  "schemaVersion": 1,
+  "title": "Example worker blockers",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "alerting-quota",
+      "title": "Alerting service quota",
+      "summary": "The alerting service accepts no new rules this month.",
+      "status": "active",
+      "blocked": [
+        {
+          "path": ".dev/tasks.json",
+          "entityId": "alert-rule"
+        }
+      ],
+      "cause": "The organization's alert-rule quota is used up.",
+      "unblockWhen": "The quota is raised or an old rule is removed.",
+      "canUnblock": "The platform owner",
+      "since": "2026-11-09"
+    }
+  ]
+}

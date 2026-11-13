@@ -1,0 +1,28 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Agent documents",
+  "folder": "agents",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Agent documents",
+      "summary": "The rules for writing this repository's agent instructions, and the skills that tell an agent how to use the tools.",
+      "purpose": "Holds directives.md, the rules AGENTS.md, CLAUDE.md and the skills follow (shape, what to include and exclude, skill frontmatter), and skills/, one skill per tool an agent uses.",
+      "boundaries": [
+        "The HASD skills for .dev folders are not here: they are in Meta/Agents/Skills/, copied from human-assisted-software-development."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "agents/directives.md",
+          "symbol": "Skills (agents/skills/<name>/SKILL.md)"
+        },
+        {
+          "path": "AGENTS.md",
+          "symbol": "Skills"
+        }
+      ]
+    }
+  ]
+}

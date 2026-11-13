@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Rust workspace",
+  "folder": "macos/rust",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Rust workspace",
+      "summary": "The Cargo workspace of the four Rust tools: zazzled, agent-fs, fix-network and free-disk-space.",
+      "purpose": "Holds one crate per tool and what they share: the workspace's edition, minimum Rust version and license, the release profile (link-time optimization, stripped symbols, one codegen unit), one Cargo.lock, the formatting rules and style.md, the Rust rules for agents.",
+      "boundaries": [
+        "The crates share settings, not code: none depends on another.",
+        "Build output in target/ is never committed."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/Cargo.toml",
+          "symbol": "workspace"
+        },
+        {
+          "path": "macos/rust/rustfmt.toml",
+          "symbol": "max_width"
+        },
+        {
+          "path": "macos/rust/style.md",
+          "symbol": "Toolchain"
+        },
+        {
+          "path": "macos/rust/.gitignore",
+          "symbol": "target/"
+        }
+      ],
+      "links": [
+        {
+          "label": "Rust rules for agents",
+          "path": "macos/rust/style.md"
+        }
+      ]
+    }
+  ]
+}

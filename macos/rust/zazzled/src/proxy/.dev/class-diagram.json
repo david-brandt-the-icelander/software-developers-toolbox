@@ -1,0 +1,117 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle MCP proxy class diagram",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "description": "The proxy's types: the parsed options (Opts, Filter, Upstream), the requests awaiting answers (Pending, Asked) and what a rewrite saved (Saved) in mod.rs, the settings read from a --config file (Config, Rule) in config.rs, and one HTTP request, its failure answer and the chunked body writer (Req, Fail, Chunked) in http.rs. stdio.rs declares only functions.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/proxy/mod.rs",
+      "symbol": "Opts"
+    },
+    {
+      "path": "macos/rust/zazzled/src/proxy/mod.rs",
+      "symbol": "Pending"
+    },
+    {
+      "path": "macos/rust/zazzled/src/proxy/http.rs",
+      "symbol": "Req"
+    }
+  ],
+  "types": [
+    {
+      "id": "Opts",
+      "name": "Opts (proxy)",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["filter: Filter", "upstream: Upstream"]
+    },
+    {
+      "id": "Filter",
+      "name": "Filter",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["lossy: bool", "budget: usize", "skip: Vec<String>", "log: bool", "store: Option<PathBuf>", "config: Config", "rewrite_text(pending, text) -> Option<String>"]
+    },
+    {
+      "id": "Upstream",
+      "name": "Upstream",
+      "kind": "enum",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["Command(Vec<String>)", "Http { url: String, listen: String }"]
+    },
+    {
+      "id": "Asked",
+      "name": "Asked",
+      "kind": "enum",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["Tool(String)", "Resource"]
+    },
+    {
+      "id": "Pending",
+      "name": "Pending",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["0: HashMap<String, Asked> (by JSON-RPC id)", "note_text(text)", "is_empty() -> bool"]
+    },
+    {
+      "id": "Saved",
+      "name": "Saved",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/mod.rs"],
+      "members": ["what: String", "before: usize", "after: usize"]
+    },
+    {
+      "id": "http.Req",
+      "name": "Req",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/http.rs"],
+      "members": ["method: String", "headers: Vec<(String, String)>", "body: Vec<u8>", "keep: bool"]
+    },
+    {
+      "id": "http.Fail",
+      "name": "Fail",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/http.rs"],
+      "members": ["0: u16 (HTTP status)", "1: String (one-line message)"]
+    },
+    {
+      "id": "http.Chunked",
+      "name": "Chunked",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/http.rs"],
+      "members": ["0: &mut W (the connection)", "write(buf) -> io::Result<usize>", "flush() -> io::Result<()>"]
+    },
+    {
+      "id": "io.Write",
+      "name": "std::io::Write",
+      "kind": "interface",
+      "sources": ["macos/rust/zazzled/src/proxy/http.rs"],
+      "members": ["write(buf) -> io::Result<usize>", "flush() -> io::Result<()>"]
+    },
+    {
+      "id": "config.Config",
+      "name": "Config",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/config.rs"],
+      "members": ["tools: Vec<(String, Rule)>", "resources: Option<Rule>", "tool(name) -> Option<&Rule>"]
+    },
+    {
+      "id": "config.Rule",
+      "name": "Rule",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/proxy/config.rs"],
+      "members": ["lossy: Option<bool>", "budget: Option<usize>", "skip: bool"]
+    }
+  ],
+  "relationships": [
+    { "from": "Opts", "to": "Filter", "kind": "depends-on", "description": "How results are cleaned." },
+    { "from": "Opts", "to": "Upstream", "kind": "depends-on", "description": "Where the real server is." },
+    { "from": "Pending", "to": "Asked", "kind": "depends-on", "description": "What each awaited request asked for." },
+    { "from": "Filter", "to": "Pending", "kind": "depends-on", "description": "rewrite_text takes the answered requests out of Pending." },
+    { "from": "Filter", "to": "Saved", "kind": "depends-on", "description": "Each cleaned answer is reported as a Saved, for --log." },
+    { "from": "Filter", "to": "config.Config", "kind": "depends-on", "description": "Per-tool and resource settings from --config." },
+    { "from": "config.Config", "to": "config.Rule", "kind": "depends-on", "description": "One rule per tool name or pattern, and one for resource reads." },
+    { "from": "http.Chunked", "to": "io.Write", "kind": "implements", "description": "Writes each non-empty write as one HTTP/1.1 chunk." }
+  ]
+}

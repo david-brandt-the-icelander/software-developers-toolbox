@@ -1,0 +1,82 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Command-line helper verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "hook-init-report",
+      "title": "Hook policy, init and report",
+      "summary": "The hook blocks what it should and lets the rest through, init merges safely and idempotently, and report aggregates the log.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "hook-protocol"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "init-files"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json",
+          "entityId": "review-usage"
+        }
+      ],
+      "criteria": [
+        "grep, rg in a pipeline, git grep, find, cat on a file, sed -n on a file, xargs grep and the Grep and Glob tools are blocked",
+        "dotnet build, git log, a heredoc to a file, echo grep, sed -i, tail -f, find -exec, # allow-raw commands and other tools are allowed",
+        "the built-in Read is blocked for .cs files in any letter case and allowed for other files or no path, and its message names zazzle read",
+        "blocked commands point at zazzle_find, zazzle_ls and zazzle_read and no longer mention report_gap",
+        "init merges into existing settings, is idempotent and keeps unrelated keys; it registers the zazzle server, its permission and enabled server, and the Bash|Grep|Glob|Read matcher",
+        "without zazzled, init still writes the indexer's entries, writes no zazzle server and says zazzled was not found",
+        "zazzled beside the indexer is found, and a directory that does not exist is never returned (the PATH lookup itself is not checked)",
+        "report aggregates tools, resolution paths, run patterns, hook blocks and gap notes"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_policy",
+          "command": "dotnet test tests --filter test_hook_policy"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_read_tool",
+          "command": "dotnet test tests --filter test_hook_read_tool"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_points_at_zazzle",
+          "command": "dotnet test tests --filter test_hook_points_at_zazzle"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_init_idempotent_and_preserving",
+          "command": "dotnet test tests --filter test_init_idempotent_and_preserving"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_init_without_zazzled",
+          "command": "dotnet test tests --filter test_init_without_zazzled"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_find_zazzled",
+          "command": "dotnet test tests --filter test_find_zazzled"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_report",
+          "command": "dotnet test tests --filter test_report"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

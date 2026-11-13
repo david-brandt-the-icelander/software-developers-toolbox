@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzle MCP proxy limitations",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "entities": [
+    {
+      "id": "http-listener-unauthenticated",
+      "title": "The HTTP listener has no authentication of its own",
+      "summary": "Any process that can reach the listen address can use the proxy; the only check is that a request with an Origin header comes from localhost.",
+      "impact": "Other local programs, or other machines if --listen names a non-loopback address, can send requests through the proxy to the upstream with whatever headers they choose.",
+      "workaround": "Keep the default loopback address, and rely on the upstream's own authorization header checks.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "origin_ok"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "exchange"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "DEFAULT_LISTEN"
+        }
+      ]
+    },
+    {
+      "id": "http-request-shape",
+      "title": "Request bodies sized by Content-Length",
+      "summary": "The HTTP side needs request bodies sized by Content-Length (at most 64 MiB, with a head of at most 64 KiB), and closes a kept-open connection that stays idle for 60 seconds.",
+      "impact": "A client that sends chunked bodies gets 411 and the connection is closed; a client that waits longer than 60 seconds between requests must reconnect.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "read_request"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "handle"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "MAX_HEAD"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "IDLE_TIMEOUT"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "exchange"
+        }
+      ]
+    },
+    {
+      "id": "uncleaned-bodies",
+      "title": "Some answers pass through uncleaned",
+      "summary": "Over HTTP, JSON bodies over 64 MiB, compressed bodies and content types other than JSON and event streams are copied as they are; over both transports, lines or bodies that are not UTF-8 JSON are forwarded unchanged.",
+      "impact": "Such answers cost the agent their full size.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "relay"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "pump_responses"
+        }
+      ]
+    }
+  ]
+}

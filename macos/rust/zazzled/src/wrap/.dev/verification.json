@@ -1,0 +1,159 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle run verification",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "entities": [
+    {
+      "id": "runner",
+      "title": "Running, timing out and rendering",
+      "summary": "Unit tests parse the options, run real commands (including a timeout and the output cap) and render with and without a profile.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/.dev/operation.json",
+          "entityId": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/.dev/use-case.json",
+          "entityId": "run-a-build-or-test"
+        }
+      ],
+      "criteria": [
+        "Options end at `--` or the first non-option; bad options, numbers and profile names are refused.",
+        "The exit code, a signal and a timeout come back as the command's code, 128 + N and 124.",
+        "Output past the cap is noted; the footer names the profile and what it dropped.",
+        "With a store, the output is saved with the raw output and tagged with its id, with the --full hint only when something was dropped or cut; without one it is untagged."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_parse",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_parse_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_run_command",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_run_command_timeout",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_run_command_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_render_profile",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_render_options",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_main",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_deliver_stores_output",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
+          "description": "`zazzle run -- make` execs `zazzled wrap -- make` (a stand-in named by ZAZZLE_DAEMON) with its arguments and exit status."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "profiles",
+      "title": "Profiles",
+      "summary": "Each profile is tested on sample output of its tool, and detection on command lines with and without launchers.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+          "entityId": "profiled-output"
+        }
+      ],
+      "criteria": [
+        "Each profile drops and counts its noise and keeps failures, warnings and lines it does not know.",
+        "Detection finds the profile through npx, uv run, python -m and env, and none for other programs.",
+        "tsc diagnostics are grouped under their file, plain and --pretty."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_detect",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_cargo",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_pytest",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_go",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_dotnet",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_js_and_install",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_tsc_plain",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "test_tsc_pretty",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "../schemas/references.schema.json",
+  "kind": "references",
+  "schemaVersion": 1,
+  "title": "Example worker references",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "cron",
+      "title": "Cron expression format",
+      "summary": "The schedule syntax the worker accepts.",
+      "url": "https://en.wikipedia.org/wiki/Cron",
+      "relevance": "Schedules are written as five-field cron expressions."
+    }
+  ]
+}
