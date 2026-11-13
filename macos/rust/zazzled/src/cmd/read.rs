@@ -2,6 +2,7 @@
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::indexer::Indexer;
+use crate::markup;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::outline;
 use crate::symbols::{self, Miss};
@@ -146,6 +147,12 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
             Ok(view) => return Ok(render_terse(&shown, &view, (a, b), nl, o, label)),
             Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
         }
+    }
+    if let Some(view) = markup::kind_of(&path)
+        .filter(|_| o.terse)
+        .and_then(|k| markup::view(&shown, &String::from_utf8_lossy(data), k))
+    {
+        return Ok(render_terse(&shown, &view, (a, b), nl, o, label));
     }
     let costs: Vec<usize> =
         (a..=b).map(|n| tokens::from_bytes(line_bytes(data, &meta.starts, n).len() + 8)).collect();
@@ -538,6 +545,28 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    // Checks HTML and Razor files read as the markup terse view, files with nothing to shorten as source, and --source gives the code.
+    #[test]
+    fn test_markup_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.html"), "<html>\n<!--\nnote\n-->\n<p>hi</p>\n").expect("write");
+        std::fs::write(t.path().join("b.cshtml"), "@using A\n@using B\n<p class=\"a b c d e\">x</p>\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.htm"), "<p>plain</p>\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.html"]).text,
+            "a.html 5 lines, terse view: 1 comments; read --source for the code and its sha\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
+        );
+        let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3"]).text;
+        assert!(
+            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes;")
+                && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
+            "{razor}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.htm"]).text.starts_with("c.htm 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.html", "--source"]).text.contains("3\tnote"));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

@@ -114,6 +114,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "markup",
+      "name": "Markup terse view (markup.rs)",
+      "responsibility": "Builds the terse view of HTML and Razor files in the indexer's line format: hides long comments, <style> and <svg> elements, head tag runs and Razor @using runs, and shortens long class and style values.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "pool",
       "name": "Thread pool (pool.rs)",
       "responsibility": "One pool of threads per process, started on first use; par_map runs borrowed work on the caller and pool helpers and returns results in item order.",
@@ -250,6 +256,12 @@
       "to": "params",
       "kind": "contains",
       "description": "Parameter lists for overloads."
+    },
+    {
+      "from": "src",
+      "to": "markup",
+      "kind": "contains",
+      "description": "Terse view of HTML and Razor."
     },
     {
       "from": "src",
@@ -412,6 +424,12 @@
       "to": "indexer",
       "kind": "depends-on",
       "description": "read's terse C# view."
+    },
+    {
+      "from": "cmd",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "read's terse HTML and Razor view."
     },
     {
       "from": "cmd",

@@ -272,6 +272,50 @@
       ]
     },
     {
+      "id": "markup-terse-view",
+      "name": "Terse HTML and Razor view",
+      "description": "`read` on an .html, .htm, .xhtml, .cshtml or .razor file returns a terse view built in zazzled instead of the markup, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "HTML and Razor terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre>, <textarea> and Razor @code, @functions and @{ } blocks are shown as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
+      "outcome": "An agent reads pages and Razor views without paying for styles, drawings, boilerplate and utility-class lists, and still has to read the real markup before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
+        "C# inside Razor code blocks is not shortened."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "shorten"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "verbatim"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        }
+      ]
+    },
+    {
       "id": "clean-output",
       "name": "Clean piped output",
       "description": "`CMD | zazzle clean` prints what an agent needs from a command's output, with every removal marked.",

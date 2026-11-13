@@ -9,6 +9,7 @@ pub mod cmd;
 pub mod engine;
 pub mod indexer;
 pub mod launchd;
+pub mod markup;
 pub mod mcp;
 pub mod meta;
 pub mod outline;
