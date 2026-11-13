@@ -127,8 +127,8 @@
     },
     {
       "id": "markup-view-line-based",
-      "title": "The HTML and Razor view works on whole lines",
-      "summary": "markup.rs does not parse markup: it hides comments and <style>/<svg> elements only when they start and end their own lines, keeps <script>, <pre>, <textarea> and Razor code blocks unchanged, and leaves C# inside Razor code blocks unshortened.",
+      "title": "The HTML, Razor, CSS and SCSS views work on whole lines",
+      "summary": "markup.rs does not parse markup: it hides comments and <style>/<svg> elements only when they start and end their own lines, keeps <script>, <pre>, <textarea> and Razor code blocks unchanged, and leaves C# inside Razor code blocks unshortened. styles.rs is line-based the same way: it hides comments and @font-face or @keyframes blocks only when they start and end their own lines.",
       "impact": "Minified or single-line HTML, and Razor views that are mostly C#, gain little from the view.",
       "evidenceStatus": "source-verified",
       "sources": [
@@ -139,6 +139,10 @@
         {
           "path": "macos/rust/zazzled/src/markup.rs",
           "symbol": "verbatim"
+        },
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "view"
         }
       ]
     },

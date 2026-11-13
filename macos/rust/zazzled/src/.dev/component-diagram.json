@@ -120,6 +120,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "styles",
+      "name": "Stylesheet terse view (styles.rs)",
+      "responsibility": "Builds the terse view of CSS and SCSS files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, and shortens inline data URIs.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go and Java files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java and Rust access modifiers.",
@@ -274,6 +280,18 @@
       "to": "markup",
       "kind": "contains",
       "description": "Terse view of HTML and Razor."
+    },
+    {
+      "from": "src",
+      "to": "styles",
+      "kind": "contains",
+      "description": "Terse view of CSS and SCSS."
+    },
+    {
+      "from": "styles",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
     },
     {
       "from": "src",
@@ -460,6 +478,12 @@
       "to": "markup",
       "kind": "depends-on",
       "description": "read's terse HTML and Razor view."
+    },
+    {
+      "from": "cmd",
+      "to": "styles",
+      "kind": "depends-on",
+      "description": "read's terse CSS and SCSS view."
     },
     {
       "from": "cmd",

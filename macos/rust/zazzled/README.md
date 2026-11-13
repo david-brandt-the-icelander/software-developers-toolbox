@@ -51,6 +51,14 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
 - Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@code`, `@functions` and `@{ }` blocks (C# in them is not shortened). A comment or element that shares its first or last line with other markup is not hidden.
 
+## CSS and SCSS terse view
+
+`zazzle read` on `.css` and `.scss` files returns a terse view built inside `zazzled` (`src/styles.rs`), line by line, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
+
+- Hidden: `/* */` comments of 4+ lines and SCSS `//` runs of 4+ lines (shorter ones are usually section titles), `/*# sourceMappingURL */` comments, runs of 2+ `@import`/`@use`/`@forward` lines, `@font-face` blocks (`7-10 ⋯ @font-face "Inter", 4 line(s)`) and `@keyframes` blocks, vendor-prefixed declarations (`-webkit-`, `-moz-`, `-ms-`, `-o-`) when the same block also sets the plain property, and SCSS `@debug` lines.
+- Shortened: `url(data:…)` values longer than 60 characters.
+- Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden, and minified files gain little.
+
 ## Python, JavaScript, TypeScript, Dart, Rust, Go and Java terse view
 
 `zazzle read` on `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.dart`, `.rs`, `.go` and `.java` files returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.

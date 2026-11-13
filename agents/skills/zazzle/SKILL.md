@@ -18,6 +18,7 @@ Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`
 - Regex is Rust syntax (no look-around or backreferences); use `-F` for literal text.
 
 - Python, JavaScript, TypeScript, Dart, Rust, Go and Java files read as a terse view too, without a sha: imports, logging, region markers, field-only constructors and log-and-rethrow catches are hidden and long locals have short names; read `--source` before editing.
+- CSS and SCSS files read as a terse view too, without a sha: long comments, imports, @font-face and @keyframes blocks and duplicate vendor prefixes are hidden and data URIs cut; read `--source` before editing.
 - HTML and Razor files (`.html`, `.cshtml`, `.razor`) read as a terse view too, without a sha: long comments, `<style>`, `<svg>`, head tags and `@using` runs are hidden and long `class`/`style` values cut; read `--source` before editing.
 - Structure from `zazzle-csharp-indexer`'s index of the git work tree: `zazzle overview` on an unfamiliar repository, `zazzle find-symbol NAME` for where something is declared, `zazzle changed-since [CURSOR]` to refresh after edits, `zazzle git-log [PATH]`, `zazzle git-blame FILE --start A --end B`. Say what you needed and could not get with `zazzle report-gap TEXT`.
 - C# files read as a terse behavioural view with source line numbers and no sha (`N~` lines are changed, `A-B ⋯` lines are hidden, long locals have short names); use it to understand code, and `zazzle read FILE --source` before editing.

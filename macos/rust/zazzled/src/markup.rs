@@ -23,15 +23,15 @@ pub fn kind_of(path: &Path) -> Option<Kind> {
     }
 }
 
-// The view being built: its lines and how many places each step changed.
-struct Plan<'a> {
-    lines: Vec<String>,
-    steps: Vec<(&'a str, usize)>,
+// The view being built: its lines and how many places each step changed; styles.rs builds its view with it too.
+pub(crate) struct Plan<'a> {
+    pub(crate) lines: Vec<String>,
+    pub(crate) steps: Vec<(&'a str, usize)>,
 }
 
 impl<'a> Plan<'a> {
     // Counts one change for a step.
-    fn count(&mut self, step: &'a str) {
+    pub(crate) fn count(&mut self, step: &'a str) {
         match self.steps.iter_mut().find(|(s, _)| *s == step) {
             Some((_, n)) => *n += 1,
             None => self.steps.push((step, 1)),
@@ -39,13 +39,13 @@ impl<'a> Plan<'a> {
     }
 
     // Adds a note standing for source lines a to b (0-based).
-    fn hide(&mut self, a: usize, b: usize, note: String, step: &'a str) {
+    pub(crate) fn hide(&mut self, a: usize, b: usize, note: String, step: &'a str) {
         self.lines.push(format!("{}-{}\t⋯ {note}", a + 1, b + 1));
         self.count(step);
     }
 
     // Adds a source line, unchanged or changed, dropping a second blank line in a row.
-    fn keep(&mut self, i: usize, text: &str, changed: bool) {
+    pub(crate) fn keep(&mut self, i: usize, text: &str, changed: bool) {
         let text = text.trim_end();
         if text.is_empty() && self.lines.last().is_some_and(|l| l.ends_with('\t')) {
             return;
