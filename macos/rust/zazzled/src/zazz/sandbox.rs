@@ -243,16 +243,19 @@ pub mod linux {
         Ok(())
     }
 
-    // Builds the ruleset for a policy; nothing is enforced until `apply` runs in the child.
-    pub fn prepare(p: &Policy) -> Result<Prepared, String> {
-        let abi = abi();
+    // The ruleset attribute and its size for an ABI: every filesystem right, and TCP when the network is denied (ABI 4+).
+    fn ruleset_attr(abi: i64, network: bool) -> Result<(RulesetAttr, usize), String> {
         if abi < 1 {
             return Err("Landlock is not enabled in this kernel".into());
         }
-        let handled = handled_fs(abi);
-        let net = if abi >= 4 && !p.network { NET_ALL } else { 0 };
-        let attr = RulesetAttr { fs: handled, net };
-        let size = if abi >= 4 { 16usize } else { 8 };
+        let net = if abi >= 4 && !network { NET_ALL } else { 0 };
+        Ok((RulesetAttr { fs: handled_fs(abi), net }, if abi >= 4 { 16 } else { 8 }))
+    }
+
+    // Builds the ruleset for a policy; nothing is enforced until `apply` runs in the child.
+    pub fn prepare(p: &Policy) -> Result<Prepared, String> {
+        let (attr, size) = ruleset_attr(abi(), p.network)?;
+        let handled = attr.fs;
         // SAFETY: attr is live and size matches the fields the kernel will read.
         let fd = unsafe {
             libc::syscall(libc::SYS_landlock_create_ruleset, &attr as *const RulesetAttr, size, 0u32)
@@ -276,6 +279,12 @@ pub mod linux {
         Ok(Prepared { ruleset, filter: (!p.network).then(|| socket_filter().to_vec()) })
     }
 
+    // Exposes the ruleset attribute as plain numbers for tests.
+    #[cfg(test)]
+    pub fn linux_attr(abi: i64, network: bool) -> Result<(u64, u64, usize), String> {
+        ruleset_attr(abi, network).map(|(a, n)| (a.fs, a.net, n))
+    }
+
     // The seccomp program: refuse sockets other than Unix sockets, io_uring and the x32 ABI; other architectures are killed.
     fn socket_filter() -> [SockFilter; 11] {
         let f = |code: u16, jt: u8, jf: u8, k: u32| SockFilter { code, jt, jf, k };
@@ -296,6 +305,7 @@ pub mod linux {
     }
 
     // Enforces the prepared rules on the calling process; runs between fork and exec, so it only makes syscalls.
+    #[cfg_attr(all(coverage_nightly, test), coverage(off))]
     pub fn apply(p: &Prepared) -> io::Result<()> {
         let check = |rc: i64| if rc < 0 { Err(io::Error::last_os_error()) } else { Ok(()) };
         // SAFETY: prctl and the Landlock and seccomp syscalls take only plain values and pointers to live data.
@@ -366,6 +376,20 @@ mod tests {
         assert!(!p.write.contains(&t.path().join("missing")) && p.exec[0] == Path::new("/bin/sh"));
         assert!(!p.exec.contains(&PathBuf::from("/nonexistent")));
         assert!(!p.network);
+    }
+
+    // Checks the ruleset attribute for each ABI generation.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_ruleset_attr() {
+        use linux::*;
+        let _ = abi();
+        assert!(linux_attr(0, false).is_err());
+        assert_eq!(linux_attr(1, false).expect("v1"), ((1 << 13) - 1, 0, 8));
+        assert_eq!(linux_attr(2, true).expect("v2"), ((1 << 14) - 1, 0, 8));
+        assert_eq!(linux_attr(3, false).expect("v3"), ((1 << 15) - 1, 0, 8));
+        assert_eq!(linux_attr(4, false).expect("v4"), ((1 << 15) - 1, 0b11, 16));
+        assert_eq!(linux_attr(6, true).expect("v6"), ((1 << 16) - 1, 0, 16));
     }
 
     // Runs a shell command under a policy and returns (status, stdout).

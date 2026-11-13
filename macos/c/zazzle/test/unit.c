@@ -82,6 +82,28 @@ static void test_no_session_no_args(void)
 	CHECK(M.sent_len == 4 + 2 && memcmp(M.sent + 4, "\0\0", 2) == 0);
 }
 
+/* Checks the invoker's own name: zazz prefixes the zazz command, any other name runs that installed script. */
+static void test_argv0_dispatch(void)
+{
+	reset();
+	char *as_zazz[] = {"/usr/local/bin/zazz", "ls", 0};
+	CHECK(run(2, as_zazz, env_home) == 0);
+	CHECK(M.sent_len == 4 + 10 && memcmp(M.sent + 4, "\0\0zazz\0ls\0", 10) == 0);
+	reset();
+	char *as_script[] = {"csv-sum", "-d", ";", 0};
+	CHECK(run(3, as_script, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0csv-sum\0-d\0;\0", 31) == 0);
+	reset();
+	char *as_zazzle[] = {"./build/zazzle", "read", 0};
+	CHECK(run(2, as_zazzle, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0read\0", 7) == 0);
+	reset();
+	char *none[] = {0};
+	CHECK(run(0, none, env_home) == 0);
+	CHECK(M.sent_len == 4 + 2);
+	CHECK(str_eq("zaz", "zazz") == 0 && str_eq("zazzz", "zazz") == 0);
+}
+
 /* Checks ZAZZLE_SOCK overrides HOME and lookalike variables are ignored. */
 static void test_zazzle_sock_override(void)
 {
@@ -293,6 +315,7 @@ int main(void)
 {
 	test_happy_path();
 	test_no_session_no_args();
+	test_argv0_dispatch();
 	test_zazzle_sock_override();
 	test_path_errors();
 	test_arguments_too_long();

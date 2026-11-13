@@ -70,6 +70,14 @@ pub fn preopens(m: &Manifest, cwd: &Path, tmp: &Path) -> Vec<Value> {
             None => out.push((host, guest, write)),
         }
     }
+    let relative: Vec<(PathBuf, String, bool)> =
+        out.iter().filter(|(_, g, _)| !g.starts_with('/')).cloned().collect();
+    for (host, _, write) in relative {
+        let guest = host.to_string_lossy().into_owned();
+        if !out.iter().any(|(_, g, _)| *g == guest) {
+            out.push((host, guest, write));
+        }
+    }
     out.into_iter().map(|(h, g, w)| json!({"host": h.to_string_lossy(), "guest": g, "write": w})).collect()
 }
 
@@ -375,6 +383,13 @@ mod tests {
             p.iter().map(|x| (x["guest"].as_str().expect("g"), x["write"].as_bool().expect("w"))).collect();
         assert_eq!(&guests[..2], &[(".", true), ("/tmp", false)]);
         assert!(guests.contains(&("out", true)));
+        let abs = t.path().to_string_lossy().into_owned();
+        let both = Manifest::parse(format!(r#"{{"zazz":1,"name":"s","kind":"wasm","entry":"w.wasm","sandbox":{{"read":["{abs}","$CWD"]}}}}"#).as_bytes()).expect("m");
+        assert_eq!(preopens(&both, t.path(), Path::new("/tmp")).len(), 2);
+        assert!(
+            guests.contains(&(abs.as_str(), true)),
+            "the caller's directory is also mounted at its own path"
+        );
         assert_eq!(mount("/etc", t.path(), t.path()), Some((PathBuf::from("/etc"), "/etc".into())));
         assert_eq!(mount("$TMP/x", t.path(), Path::new("/")), None);
         std::fs::create_dir(t.path().join("x")).expect("x");
@@ -433,6 +448,60 @@ mod tests {
         );
     }
 
+    // Checks progress reaches a human caller's stderr, and a script that fails its first message cannot start.
+    #[test]
+    fn test_execute_progress_and_start_failure() {
+        let t = TempDir::new();
+        let e = crate::testutil::zazz_engine(&t);
+        let body =
+            r#"(call $send (i32.const 3000) (i32.const 33)) (call $send (i32.const 3100) (i32.const 42))"#;
+        let progress = script(body).replace(
+            "(data (i32.const 2000)",
+            "(data (i32.const 3000) \"{\\\"t\\\":\\\"progress\\\",\\\"id\\\":1,\\\"msg\\\":\\\"m\\\"}\") (data (i32.const 3100) \"{\\\"t\\\":\\\"result\\\",\\\"id\\\":1,\\\"ok\\\":true,\\\"output\\\":7}\") (data (i32.const 2000)",
+        );
+        let hex = register(&e, &progress, 2000);
+        let err_file = t.path().join("err");
+        let out = std::fs::File::create(t.path().join("out")).expect("out");
+        let errf = std::fs::File::create(&err_file).expect("err");
+        let null = std::fs::File::open("/dev/null").expect("null");
+        let s = Streams::Caller { stdio: [null.into(), out.into(), errf.into()], conn: None };
+        let msg = json!({"t": "json-command", "mode": "human", "input": null});
+        let r = execute(&e.zazz, &hex, t.path(), msg, s).expect("call");
+        assert_eq!((r.result["output"].as_i64(), r.progress.clone()), (Some(7), vec!["m".to_string()]));
+        assert_eq!(std::fs::read_to_string(&err_file).expect("stderr"), "w: m\n");
+        let broken = register(
+            &e,
+            r#"(module (memory (export "memory") 1) (func (export "_start") unreachable))"#,
+            1000,
+        );
+        let msg = json!({"t": "json-command", "mode": "agent", "input": null});
+        let err = execute(&e.zazz, &broken, t.path(), msg, Streams::Capture { stdin: vec![] }).unwrap_err();
+        assert!(err["message"].as_str().expect("msg").starts_with("the script failed to start"), "{err}");
+        e.zazz.pool.shutdown();
+    }
+
+    // Checks the pool kills unhealthy and surplus workers and keeps the rest.
+    #[test]
+    fn test_pool_release_rules() {
+        let pool = std::sync::Arc::new(super::super::pool::Pool::default());
+        let worker = || {
+            let child = std::process::Command::new("sleep").arg("30").spawn().expect("sleep");
+            let (sock, _) = UnixStream::pair().expect("pair");
+            super::super::pool::Worker::for_tests(child, sock)
+        };
+        pool.release("k", worker(), false);
+        assert_eq!(pool.idle_count(), 0);
+        for _ in 0..3 {
+            pool.release("k", worker(), true);
+        }
+        assert_eq!(pool.idle_count(), 2);
+        let mut tired = worker();
+        tired.calls = 5000;
+        pool.release("j", tired, true);
+        assert_eq!(pool.idle_count(), 2);
+        assert_eq!(pool.shutdown(), 2);
+    }
+
     // Checks a call blocked in the host is cancelled when the caller hangs up, and killed by the watchdog otherwise.
     #[test]
     fn test_execute_cancel_and_watchdog() {
@@ -480,6 +549,13 @@ mod tests {
         };
         assert_eq!(agent_reply(ok("")).expect("plain"), json!(5));
         assert_eq!(agent_reply(ok("x")).expect("captured")["stdout"], "x");
+        let err_only = Called {
+            result: json!({"ok": true, "output": 1}),
+            stdout: String::new(),
+            stderr: "e".into(),
+            progress: vec![],
+        };
+        assert_eq!(agent_reply(err_only).expect("stderr")["stderr"], "e");
         let bad = Called {
             result: json!({"ok": false, "error": {"code": "failed"}}),
             stdout: String::new(),

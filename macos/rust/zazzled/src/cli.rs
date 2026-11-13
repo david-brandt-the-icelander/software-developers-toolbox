@@ -78,7 +78,9 @@ pub fn run_in_process(
         caller: std::cell::RefCell::new(None),
     };
     let o = cmd::run(&ctx, args);
-    if o.status == 0 {
+    if o.raw {
+        let _ = write!(out, "{}", o.text);
+    } else if o.status == 0 {
         let _ = writeln!(out, "{}", o.text);
     } else {
         let _ = writeln!(err, "{}", o.text);

@@ -40,6 +40,12 @@ pub struct Worker {
 }
 
 impl Worker {
+    // Wraps a process and socket as a worker, for pool tests.
+    #[cfg(test)]
+    pub fn for_tests(child: Child, sock: UnixStream) -> Worker {
+        Worker { child, sock, calls: 0, idle_since: Instant::now() }
+    }
+
     // Kills the process and reaps it.
     pub fn kill(mut self) {
         let _ = self.child.kill();

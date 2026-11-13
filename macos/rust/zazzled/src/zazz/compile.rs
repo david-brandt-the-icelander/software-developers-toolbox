@@ -252,7 +252,8 @@ mod tests {
         let warn = json!({"$message_type": "diagnostic", "level": "warning", "message": "unused", "spans": [], "children": []});
         let abort = json!({"$message_type": "diagnostic", "level": "error", "message": "aborting due to 1 previous error", "spans": [], "children": []});
         let nospan = json!({"$message_type": "diagnostic", "level": "error", "message": "no main", "spans": [], "children": []});
-        let text = format!("{err}\n{warn}\nnot json\n{{bad\n{abort}\n{nospan}\n");
+        let artifact = json!({"$message_type": "artifact", "artifact": "x"});
+        let text = format!("{err}\n{warn}\nnot json\n{{bad\n{abort}\n{nospan}\n{artifact}\n");
         let d = diagnostics(&text);
         assert_eq!(d.len(), 2);
         assert_eq!(

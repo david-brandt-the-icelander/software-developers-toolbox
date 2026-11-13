@@ -180,10 +180,12 @@ fn respond(stream: &mut UnixStream, out: &Output, fds: Fds) -> io::Result<()> {
         stream.write_all(&[out.status])?;
         return stream.write_all(out.text.as_bytes());
     };
-    let target = if out.status != 0 { fds.stderr.unwrap_or(stdout) } else { stdout };
+    let target = if out.status != 0 && !out.raw { fds.stderr.unwrap_or(stdout) } else { stdout };
     let mut f = File::from(target);
     let _ = f.write_all(out.text.as_bytes());
-    let _ = f.write_all(b"\n");
+    if !out.raw {
+        let _ = f.write_all(b"\n");
+    }
     drop(f);
     stream.write_all(&[out.status])
 }
@@ -669,6 +671,31 @@ pub mod tests {
         let me = unsafe { libc::getuid() };
         let err = check_peer(&a, me + 1).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    // Checks raw outputs go to stdout as they are, whatever the status.
+    #[test]
+    fn test_respond_raw() {
+        let (mut a, mut b) = UnixStream::pair().expect("pair");
+        let (out_w, mut out_r) = UnixStream::pair().expect("out");
+        let fds = Fds { stdout: Some(OwnedFd::from(out_w)), ..Fds::default() };
+        respond(&mut a, &Output::raw("plain".into(), 3), fds).expect("respond");
+        drop(a);
+        let mut status = Vec::new();
+        b.read_to_end(&mut status).expect("status");
+        let mut text = String::new();
+        out_r.read_to_string(&mut text).expect("text");
+        assert_eq!((status, text.as_str()), (vec![3], "plain"));
+    }
+
+    // Checks a script call whose working directory cannot be found fails on its own thread without an answer.
+    #[test]
+    fn test_long_running_request_error() {
+        let srv = Running::start(Duration::from_secs(30));
+        let req =
+            Request { cwd: String::new(), session: String::new(), args: vec!["zazz".into(), "call".into()] };
+        assert!(crate::client::call(&srv.sock, &req).is_err());
+        srv.finish().expect("stop");
     }
 
     // Checks script calls run on their own thread with the caller's streams and still answer.

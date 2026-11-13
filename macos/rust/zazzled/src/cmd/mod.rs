@@ -59,22 +59,28 @@ pub struct Output {
     pub text: String,
     pub status: u8,
     pub idable: bool,
+    pub raw: bool,
 }
 
 impl Output {
     // A successful result whose text may be deduplicated within a session.
     pub fn ok(text: String) -> Output {
-        Output { text, status: 0, idable: true }
+        Output { text, status: 0, idable: true, raw: false }
     }
 
     // A successful result that must always be sent in full.
     pub fn plain(text: String) -> Output {
-        Output { text, status: 0, idable: false }
+        Output { text, status: 0, idable: false, raw: false }
     }
 
     // A failure with a one-line message.
     pub fn err(msg: &str) -> Output {
-        Output { text: format!("error: {msg}"), status: 2, idable: false }
+        Output { text: format!("error: {msg}"), status: 2, idable: false, raw: false }
+    }
+
+    // Text written to standard output exactly as it is (no newline added), with any exit status.
+    pub fn raw(text: String, status: u8) -> Output {
+        Output { text, status, idable: false, raw: true }
     }
 }
 

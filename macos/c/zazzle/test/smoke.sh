@@ -23,6 +23,7 @@ if ZAZZLE_SOCK=$tmp/none ZAZZLE_DAEMON=/usr/bin/true "$zazzle" version 2>"$tmp/e
 grep -q "daemon did not start" "$tmp/err" || fail "missing 'daemon did not start': $(cat "$tmp/err")"
 
 export ZAZZLE_SOCK=$tmp/sock
+export ZAZZ_STORE=$tmp/zazz-store
 "$zazzled" serve --socket "$ZAZZLE_SOCK" &
 dpid=$!
 i=0
@@ -48,6 +49,13 @@ want="src/a.txt
 
 out=$("$zazzle" read src/a.txt:2-2)
 case $out in "src/a.txt 3 lines, sha "*"[2-2]"*"2	beta two") ;; *) fail "read output: '$out'" ;; esac
+
+# Run as "zazz" the invoker talks to the zazz command; under any other name it runs that installed script.
+ln -s "$zazzle" "$tmp/zazz"
+case $("$tmp/zazz" help) in "zazz: sandboxed scripts"*) ;; *) fail "zazz help" ;; esac
+ln -s "$zazzle" "$tmp/no-such-script"
+if "$tmp/no-such-script" 2>"$tmp/err"; then fail "an unknown script must fail"; fi
+grep -q "no-such-script: not_found" "$tmp/err" || fail "shim stderr: $(cat "$tmp/err")"
 
 if "$zazzle" bogus 2>"$tmp/err"; then fail "expected nonzero status"; fi
 grep -q "error: unknown command 'bogus'" "$tmp/err" || fail "stderr: $(cat "$tmp/err")"

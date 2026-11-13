@@ -8,6 +8,8 @@ use std::sync::Mutex;
 pub mod add;
 pub mod call;
 pub mod compile;
+pub mod human;
+pub mod install;
 pub mod manage;
 pub mod pack;
 pub mod pipeline;
@@ -27,8 +29,13 @@ call ID [JSON|-]         run the script's json-command with JSON input (- reads 
 call ID OP [--params JSON] [--body JSON|-]  run one service-call operation
 ls                       registered scripts
 describe ID              what a script is, how it runs and what it may touch
-rm ID                    remove a registered script";
-const COMMANDS: &str = "pack test add call ls describe rm help";
+rm ID                    remove a registered script (and any installed names for it)
+humans:
+install FILE.zazz|ID [--as NAME]  make the script a command: ~/.zazzle/bin/NAME runs it with plain output
+run NAME|ID [ARGS...]    run a script as a human would (flags parsed from its manifest; --json for raw JSON)
+uninstall NAME           remove an installed command
+list                     installed commands";
+const COMMANDS: &str = "pack test add call ls describe rm install run uninstall list help";
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -37,6 +44,8 @@ static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Zazz {
     root: Mutex<Option<PathBuf>>,
     worker: Mutex<Option<PathBuf>>,
+    bin: Mutex<Option<PathBuf>>,
+    invoker: Mutex<Option<PathBuf>>,
     pub pool: std::sync::Arc<pool::Pool>,
 }
 
@@ -49,6 +58,30 @@ impl Zazz {
     // Uses a fixed zazz-worker binary instead of looking for one.
     pub fn set_worker(&self, p: &Path) {
         *self.worker.lock().expect("zazz worker lock") = Some(p.to_path_buf());
+    }
+
+    // Uses fixed shim directory and invoker paths instead of the defaults.
+    pub fn set_install_paths(&self, bin: &Path, invoker: &Path) {
+        *self.bin.lock().expect("zazz bin lock") = Some(bin.to_path_buf());
+        *self.invoker.lock().expect("zazz invoker lock") = Some(invoker.to_path_buf());
+    }
+
+    // The directory holding command shims: $ZAZZ_BIN, else ~/.zazzle/bin.
+    pub fn bin_dir(&self) -> PathBuf {
+        let fixed = self.bin.lock().expect("zazz bin lock").clone();
+        fixed.unwrap_or_else(|| {
+            crate::util::home_path(std::env::var_os("ZAZZ_BIN"), std::env::var_os("HOME"), ".zazzle/bin")
+                .unwrap_or_else(|_| PathBuf::from(".zazzle/bin"))
+        })
+    }
+
+    // The zazz invoker shims point at: beside zazzled, as `zazz` or else `zazzle`.
+    pub fn invoker(&self) -> Option<PathBuf> {
+        if let Some(i) = self.invoker.lock().expect("zazz invoker lock").clone() {
+            return Some(i);
+        }
+        let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+        ["zazz", "zazzle"].iter().map(|n| dir.join(n)).find(|p| p.exists())
     }
 
     // Opens the registry.
@@ -73,7 +106,9 @@ impl Zazz {
 fn reply(r: Result<Value, Value>) -> Output {
     match r {
         Ok(v) => Output::plain(v.to_string()),
-        Err(e) => Output { text: serde_json::json!({"error": e}).to_string(), status: 2, idable: false },
+        Err(e) => {
+            Output { text: serde_json::json!({"error": e}).to_string(), status: 2, idable: false, raw: false }
+        }
     }
 }
 
@@ -86,6 +121,13 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Result<Output, String> {
         "add" => Ok(reply(add::run(z, &ctx.cwd, rest))),
         "call" => Ok(reply(call::run(ctx, rest))),
         "test" => Ok(reply(testcmd::run(z, &ctx.cwd, rest))),
+        "run" | "exec-name" => match rest.split_first() {
+            Some((name, args)) => Ok(human::run(ctx, name, args)),
+            None => Err("usage: zazz run NAME|ID [ARGS...]".into()),
+        },
+        "install" => Ok(install::install(z, &ctx.cwd, rest)),
+        "uninstall" => Ok(install::uninstall(z, rest)),
+        "list" => Ok(install::list(z)),
         "ls" => Ok(reply(manage::ls(z))),
         "rm" => Ok(reply(manage::rm(z, rest))),
         "describe" => Ok(reply(manage::describe(z, rest))),
@@ -131,8 +173,8 @@ mod tests {
     use super::*;
     use crate::testutil::{run_cmd, run_cmd_with, zazz_engine, TempDir};
 
-    const MANIFEST: &str =
-        r#"{"zazz":1,"name":"sum","kind":"rust","entry":"src/main.rs","tests":{"paths":["tests"]}}"#;
+    const MANIFEST: &str = r#"{"zazz":1,"name":"sum","kind":"rust","entry":"src/main.rs","tests":{"paths":["tests"]},
+        "cli":{"usage":"sum FILE...","args":[{"name":"files","positional":true,"type":"path","multiple":true,"required":true}]}}"#;
     const MAIN: &str = "// Sums numbers in files.
 use zazz::{json, Call, Handlers, Json, Result};
 
@@ -235,12 +277,79 @@ fn snapshot() {
         );
         assert_eq!(reply_of(&fed)["total"], 2);
         assert!(call_with_pipes(&e, &id, t.path()).contains("\"total\":3"));
+        assert_eq!(call_stdin_with_caller(&e, &id, t.path()), serde_json::json!({"total": 11}));
+        let stdin_json = crate::testutil::run_cmd_stdin(
+            &e,
+            t.path(),
+            &["zazz", "call", &id, "-"],
+            b"{\"files\":[\"a.txt\"]}",
+        );
+        assert_eq!(reply_of(&stdin_json)["total"], 11);
         assert_eq!(reply_of(&run(&["zazz", "call", &id, "nosuchop"]))["error"]["code"], "not_found");
-        assert_eq!(e.zazz.pool.shutdown(), 1);
+        human_runs(&e, &t, &id);
+        e.zazz.pool.shutdown();
         let d = reply_of(&run(&["zazz", "describe", &id[..15]]));
         assert_eq!((d["name"].as_str(), d["sandbox"]["read"][0].as_str()), (Some("sum"), Some("$CWD")));
         assert_eq!(reply_of(&run(&["zazz", "rm", &id]))["removed"].as_str(), Some(id.as_str()));
+        assert!(std::fs::symlink_metadata(t.path().join("bin/sum")).is_err());
+        assert!(run(&["zazz", "list"]).text.starts_with("no commands installed"));
         assert_eq!(reply_of(&run(&["zazz", "describe", &id]))["error"]["code"], "not_found");
+    }
+
+    // Checks install, list, run (help, --json, parse errors, rendering), exec-name and uninstall.
+    fn human_runs(e: &crate::engine::Engine, t: &TempDir, id: &str) {
+        let run = |args: &[&str]| run_cmd_with(e, t.path(), "", args);
+        e.zazz.set_install_paths(&t.path().join("bin"), Path::new("/usr/local/bin/zazz"));
+        let inst = run(&["zazz", "install", "sum.zazz", "--as", "summer"]);
+        assert!(inst.text.starts_with("installed summer (b3:") && inst.status == 0, "{}", inst.text);
+        assert_eq!(
+            std::fs::read_link(t.path().join("bin/summer")).expect("shim"),
+            PathBuf::from("/usr/local/bin/zazz")
+        );
+        assert!(run(&["zazz", "install", id]).text.contains("installed sum"));
+        assert!(run(&["zazz", "list"]).text.contains("summer  b3:"));
+        let out = run(&["zazz", "run", "summer", "a.txt"]);
+        assert_eq!((out.text.as_str(), out.status, out.raw), ("{\n  \"total\": 11\n}\n", 0, true));
+        assert_eq!(run(&["zazz", "exec-name", "summer", "a.txt", "--json"]).text, "{\n  \"total\": 11\n}\n");
+        assert!(run(&["zazz", "run", "summer", "--help"]).text.starts_with("usage: sum FILE..."));
+        let bad = run(&["zazz", "run", "summer"]);
+        assert_eq!((bad.status, bad.text.contains("FILES is required")), (2, true));
+        let missing = run(&["zazz", "run", "summer", "nope.txt"]);
+        assert_eq!(
+            (missing.status, missing.text.starts_with("sum: not_found: ")),
+            (1, true),
+            "{}",
+            missing.text
+        );
+        assert_eq!(run(&["zazz", "run", "nobody"]).status, 127);
+        assert!(run(&["zazz", "run"]).text.contains("usage: zazz run"));
+        assert_eq!(run(&["zazz", "install", "sum.zazz", "--as", "run"]).status, 2);
+        assert_eq!(run(&["zazz", "install", "missing.zazz"]).status, 1);
+        assert_eq!(run(&["zazz", "install"]).status, 2);
+        assert_eq!(run(&["zazz", "uninstall", "summer"]).text, "uninstalled summer");
+        assert_eq!(run(&["zazz", "uninstall", "summer"]).status, 1);
+        assert_eq!(run(&["zazz", "uninstall"]).status, 2);
+        let shim = |n: &str| std::fs::symlink_metadata(t.path().join("bin").join(n)).is_ok();
+        assert!(!shim("summer") && shim("sum"));
+    }
+
+    // Runs `zazz call ID -` with JSON on stdin while the caller's streams are also present.
+    fn call_stdin_with_caller(e: &crate::engine::Engine, id: &str, cwd: &Path) -> Value {
+        let out = std::fs::File::create(cwd.join("caller-out")).expect("out");
+        let null = std::fs::File::open("/dev/null").expect("null");
+        let caller = crate::cmd::Caller {
+            stdio: [null.into(), out.try_clone().expect("o").into(), out.into()],
+            conn: None,
+        };
+        let ctx = crate::cmd::Ctx {
+            engine: e,
+            cwd: cwd.to_path_buf(),
+            session: String::new(),
+            stdin: std::cell::RefCell::new(Some(Box::new(&b"{\"files\":[\"a.txt\"]}"[..]))),
+            caller: std::cell::RefCell::new(Some(caller)),
+        };
+        let args: Vec<String> = ["zazz", "call", id, "-"].iter().map(|s| s.to_string()).collect();
+        reply_of(&crate::cmd::run(&ctx, &args))
     }
 
     // Runs a call with real caller streams (pipes) and returns what the script wrote to stdout plus the reply.
@@ -346,6 +455,7 @@ fn snapshot() {
         z.set_root(t.path());
         assert_eq!(z.registry().expect("reg").root, t.path());
         assert_eq!(Zazz::default().worker().unwrap_err()["code"], "no_worker");
+        assert_eq!(Zazz::default().invoker(), None);
         z.set_worker(Path::new("/w"));
         assert_eq!(z.worker().expect("fixed"), PathBuf::from("/w"));
     }

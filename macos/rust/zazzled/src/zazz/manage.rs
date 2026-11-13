@@ -36,6 +36,7 @@ pub fn rm(z: &Zazz, args: &[String]) -> Result<Value, Value> {
     let [what] = args else { return Err(err("usage", "usage: zazz rm ID|PREFIX|NAME")) };
     let reg = z.registry().map_err(|e| err("store", &e))?;
     let hex = reg.resolve(what).map_err(|e| err("not_found", &e))?;
+    super::install::forget(z, &hex);
     reg.remove(&hex);
     Ok(json!({"removed": format!("b3:{hex}")}))
 }

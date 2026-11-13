@@ -107,13 +107,43 @@ static size_t put_field(size_t at, const char *s)
 	return at + n;
 }
 
-/* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..]. */
+/* Returns the part of a path after its last slash. */
+static const char *base_name(const char *p)
+{
+	const char *b = p;
+	for (; *p; p++)
+		if (*p == '/')
+			b = p + 1;
+	return b;
+}
+
+/* Returns true when two strings are equal. */
+static int str_eq(const char *a, const char *b)
+{
+	while (*a && *a == *b) {
+		a++;
+		b++;
+	}
+	return *a == *b;
+}
+
+/* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
+   Run as "zazz" the arguments go to the zazz command; run under any other name (an installed script's
+   shim) they go to that script. */
 static size_t build_request(int argc, char **argv, char **envp)
 {
 	size_t at = 4;
 	const char *session = env_get(envp, "ZAZZLE_SESSION");
+	const char *me = argc > 0 ? base_name(argv[0]) : "zazzle";
 	at = put_field(at, "");
 	at = put_field(at, session ? session : "");
+	if (!str_eq(me, "zazzle")) {
+		at = put_field(at, "zazz");
+		if (!str_eq(me, "zazz")) {
+			at = put_field(at, "exec-name");
+			at = put_field(at, me);
+		}
+	}
 	for (int i = 1; i < argc; i++)
 		at = put_field(at, argv[i]);
 	*(uint32_t *)req = (uint32_t)(at - 4);

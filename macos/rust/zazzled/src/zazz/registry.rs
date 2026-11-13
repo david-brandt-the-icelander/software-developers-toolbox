@@ -215,6 +215,7 @@ mod tests {
         std::fs::write(r.root.join("names/sum"), format!("{B}\n")).expect("name");
         assert_eq!(r.resolve("sum").expect("name"), B);
         assert_eq!((hex_of("b3:"), hex_of("ABC"), hex_of("abc")), (None, None, Some("abc")));
+        assert_eq!(hex_of(&"a".repeat(65)), None);
     }
 
     // Checks locks, scratch dirs, purging and removal.
