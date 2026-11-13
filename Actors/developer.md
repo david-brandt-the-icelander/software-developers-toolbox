@@ -11,7 +11,7 @@
 - To decide what a coding agent may change on their Mac when it repairs the network or frees space for them: [fix-network skill](../agents/skills/fix-network/.dev/use-case.json), `fix-the-developers-network`; [free-disk-space skill](../agents/skills/free-disk-space/.dev/use-case.json), `free-space-for-developer`.
 - To read, search, list or outline files as JSON from a shell or a script: [agent-fs use cases](../macos/rust/agent-fs/src/.dev/use-case.json), `one-shot-request`.
 - To have the zazzled daemon there whenever something connects, without starting it themselves: [zazzled use cases](../macos/rust/zazzled/src/.dev/use-case.json), `install-launch-agent`.
-- To have their coding agent use zazzle for files and zazzle-csharp-indexer for C# structure in a project, and see from real use what to improve: [indexer CLI use cases](../macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json), `wire-into-project`, `review-usage`.
+- To have their coding agent use zazzle for files and for C# structure, which zazzle gets from zazzle-csharp-indexer, in a project, and see from real use what to improve: [indexer CLI use cases](../macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json), `wire-into-project`, `review-usage`.
 
 ## How they reach it
 

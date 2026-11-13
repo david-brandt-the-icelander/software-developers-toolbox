@@ -5,7 +5,7 @@ using System.Text;
 namespace ZazzleIndexer.Analysis;
 
 // Everything derived from one file's bytes.
-public sealed record BlobData(string Oid, long Size, bool Binary, string Lang, int Lines, byte[] Bloom, string Digest, string? Symbols, string? Idents);
+public sealed record BlobData(string Oid, long Size, bool Binary, string Lang, int Lines, string Digest, string? Symbols);
 
 // Static analyser; results depend only on the bytes and the file extension.
 public static class BlobAnalyzer
@@ -51,14 +51,13 @@ public static class BlobAnalyzer
         var oid = GitOid(bytes);
         var lang = Language(path);
         if (LooksBinary(bytes))
-            return new BlobData(oid, bytes.Length, true, lang, 0, [], "binary", null, null);
+            return new BlobData(oid, bytes.Length, true, lang, 0, "binary", null);
         var lines = CountLines(bytes);
-        var bloom = Bloom.Build(bytes);
         if (bytes.Length > MaxSymbolBytes)
-            return new BlobData(oid, bytes.Length, false, lang, lines, bloom, $"{lang}, {lines} lines (too large for symbols)", null, null);
+            return new BlobData(oid, bytes.Length, false, lang, lines, $"{lang}, {lines} lines (too large for symbols)", null);
         var text = Encoding.UTF8.GetString(bytes);
-        var (syms, idents) = lang == "csharp" ? CSharpSymbols.Extract(text) : HeuristicSymbols.Extract(text, lang);
-        return new BlobData(oid, bytes.Length, false, lang, lines, bloom, Digest(lang, lines, syms), Sym.ToJson(syms), Sym.IdentsToJson(idents));
+        var syms = lang == "csharp" ? CSharpSymbols.Extract(text) : HeuristicSymbols.Extract(text, lang);
+        return new BlobData(oid, bytes.Length, false, lang, lines, Digest(lang, lines, syms), Sym.ToJson(syms));
     }
 
     // Summarises a file in one line: language, size, its type or heading names, and a member count.

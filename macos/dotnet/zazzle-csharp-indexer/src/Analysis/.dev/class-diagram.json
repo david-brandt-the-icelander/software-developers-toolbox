@@ -10,20 +10,12 @@
       "symbol": "BlobAnalyzer"
     },
     {
-      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
-      "symbol": "Bloom"
-    },
-    {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
       "symbol": "CSharpSymbols"
     },
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
       "symbol": "HeuristicSymbols"
-    },
-    {
-      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
-      "symbol": "RegexLiterals"
     },
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Sym.cs",
@@ -44,10 +36,8 @@
         "bool Binary",
         "string Lang",
         "int Lines",
-        "byte[] Bloom",
         "string Digest",
-        "string? Symbols",
-        "string? Idents"
+        "string? Symbols"
       ]
     },
     {
@@ -66,20 +56,6 @@
       ]
     },
     {
-      "id": "Analysis.Bloom",
-      "name": "Bloom",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs"
-      ],
-      "members": [
-        "static byte[] Build(byte[] bytes)",
-        "static List<int> Grams(IEnumerable<byte[]> runs)",
-        "static bool MayContainAll(byte[] filter, List<int> grams)",
-        "static byte[] Encode(string s)"
-      ]
-    },
-    {
       "id": "Analysis.CSharpSymbols",
       "name": "CSharpSymbols",
       "kind": "class",
@@ -87,7 +63,7 @@
         "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs"
       ],
       "members": [
-        "static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source)"
+        "static List<Sym> Extract(string source)"
       ]
     },
     {
@@ -98,18 +74,7 @@
         "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs"
       ],
       "members": [
-        "static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source, string lang)"
-      ]
-    },
-    {
-      "id": "Analysis.RegexLiterals",
-      "name": "RegexLiterals",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs"
-      ],
-      "members": [
-        "static List<string> Required(string pattern, bool literal)"
+        "static List<Sym> Extract(string source, string lang)"
       ]
     },
     {
@@ -127,9 +92,7 @@
         "int EndLine",
         "string Sig",
         "static string ToJson(IEnumerable<Sym> syms)",
-        "static List<Sym> FromJson(string? json)",
-        "static string IdentsToJson(Dictionary<string, List<int>> idents)",
-        "static Dictionary<string, List<int>> IdentsFromJson(string? json)"
+        "static List<Sym> FromJson(string? json)"
       ]
     },
     {
@@ -154,12 +117,6 @@
     },
     {
       "from": "Analysis.BlobAnalyzer",
-      "to": "Analysis.Bloom",
-      "kind": "depends-on",
-      "description": "Builds the filter for text blobs."
-    },
-    {
-      "from": "Analysis.BlobAnalyzer",
       "to": "Analysis.CSharpSymbols",
       "kind": "depends-on",
       "description": "Extracts C# symbols."
@@ -174,7 +131,7 @@
       "from": "Analysis.BlobAnalyzer",
       "to": "Analysis.Sym",
       "kind": "depends-on",
-      "description": "Serialises symbols and identifiers, and builds the digest from them."
+      "description": "Serialises symbols, and builds the digest from them."
     },
     {
       "from": "Analysis.CSharpSymbols",

@@ -34,19 +34,6 @@ public sealed class Root
         return new Root(name, path, engine.Attach(path));
     }
 
-    // Lists relative paths: from the index when it is ready, else straight from git (and says so in info).
-    public List<string> Listing(CallInfo info)
-    {
-        if (Index.WaitReady(Engine.ReadyTimeoutMs))
-            return Index.Files().Select(f => f.Path).ToList();
-        info.Path = "scan";
-        info.Reason = "index_cold";
-        var r = Proc.Run("git", ["-C", Path, "ls-files", "-co", "--exclude-standard", "-z"], 120);
-        var files = r.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
-        files.Sort(StringComparer.Ordinal);
-        return files;
-    }
-
     // Returns the absolute path for a relative path, or null if it (after resolving symlinks) is outside the root.
     public string? Resolve(string relative)
     {

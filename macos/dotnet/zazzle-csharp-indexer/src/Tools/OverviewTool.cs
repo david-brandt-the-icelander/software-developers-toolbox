@@ -9,8 +9,6 @@ public sealed class OverviewTool(RootSet roots) : ITool
     private static readonly string[] EntryNames = ["Program.cs", "main.rs", "main.go", "main.py", "index.ts", "index.js", "app.py", "README.md", "AGENTS.md", "CLAUDE.md", "Cargo.toml", "package.json", "go.mod", "pyproject.toml", "Makefile"];
 
     public string Name => "overview";
-    public string Description => "Compact map of a root: file and line counts by language, top-level directories, entry points and project files, largest files. Start here on an unfamiliar repo.";
-    public JsonNode Schema => Args.Schema([], ("root", "string", "Limit to one root"));
 
     // Builds the overview text for each selected root.
     public string Run(JsonNode? args, CallInfo info)
@@ -24,7 +22,7 @@ public sealed class OverviewTool(RootSet roots) : ITool
     private static string Describe(Root root, CallInfo info)
     {
         if (!root.Index.WaitReady(Engine.ReadyTimeoutMs))
-            throw new ToolException("index_cold", "index is still building; use find_files");
+            throw new ToolException("index_cold", "index is still building; list files with zazzle_ls");
         var files = root.Index.Files().Select(f => (f.Path, meta: root.Index.Engine.Blob(f.BlobId))).ToList();
         info.TotalFiles += files.Count;
         var langs = files.Where(f => f.meta is { Binary: false }).GroupBy(f => f.meta!.Lang)

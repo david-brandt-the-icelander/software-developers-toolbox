@@ -27,16 +27,4 @@ public sealed record Sym(string Name, string Kind, string Container, int Line, i
         }).ToList();
     }
 
-    // Serialises identifier occurrences: name to line numbers, negative for declarations.
-    public static string IdentsToJson(Dictionary<string, List<int>> idents)
-    {
-        var o = new JsonObject();
-        foreach (var (k, v) in idents)
-            o[k] = new JsonArray(v.Select(x => (JsonNode)x).ToArray());
-        return o.ToJsonString();
-    }
-
-    // Parses stored identifier occurrences.
-    public static Dictionary<string, List<int>> IdentsFromJson(string? json) =>
-        json is null ? [] : JsonNode.Parse(json)!.AsObject().ToDictionary(kv => kv.Key, kv => kv.Value!.AsArray().Select(x => x!.GetValue<int>()).ToList());
 }

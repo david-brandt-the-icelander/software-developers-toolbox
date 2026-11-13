@@ -38,7 +38,7 @@
         }
       ],
       "actor": "Coding agent",
-      "goal": "Search, read, outline and edit the project's files through tools, with short answers it is not sent twice and can fetch again by id.",
+      "goal": "Search, read, outline and edit the project's files, and ask about its C# structure and history, through tools, with short answers it is not sent twice and can fetch again by id.",
       "preconditions": [
         "The MCP client is configured to start `zazzled mcp` (for example `claude mcp add zazzle -- zazzled mcp`), in the project directory.",
         "The zazzled binary can start `zazzled serve` from its own path, or a daemon already listens on the socket."
@@ -80,7 +80,7 @@
         {
           "id": "list",
           "actor": "Coding agent",
-          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs and zazzle_edit with their input schemas.",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap with their input schemas.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/mcp.rs",

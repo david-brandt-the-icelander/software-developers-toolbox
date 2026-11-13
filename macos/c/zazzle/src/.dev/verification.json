@@ -28,7 +28,7 @@
         "Autostart picks ZAZZLE_DAEMON or zazzled beside the executable, for both not-running errors, and gives up after the wait.",
         "A fast reply is read during the spin; a slow one falls back to the blocking read; an error ends the spin.",
         "free-disk-space and fix-network exec the tool beside the invoker, and run and proxy exec `zazzled wrap` and `zazzled proxy`, without contacting a daemon; failures exit 69.",
-        "A partial send is completed; every failure exits with its code and one line on standard error."
+        "A partial send is completed; every failure exits with its code and one line on standard error that starts with the whole `zazzle: ` prefix."
       ],
       "checks": [
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_happy_path", "command": "make unit (in macos/c/zazzle)" },
@@ -85,7 +85,7 @@
         }
       ],
       "criteria": [
-        "Without a daemon that ever listens, zazzle gives up with `daemon did not start`.",
+        "Without a daemon that ever listens, zazzle gives up with exactly `zazzle: daemon did not start`, and a missing tool with `zazzle: cannot run the tool (error N)`.",
         "`zazzle version` prints `zazzle` and the version `zazzled version` reports (the release tag's, `0.0.0-dev` in the repository), not a fixed number.",
         "find and read print the expected text; an unknown command exits 2 with its error on standard error.",
         "A daemon zazzle autostarts does not keep zazzle's standard output open.",

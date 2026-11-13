@@ -8,8 +8,6 @@ namespace ZazzleIndexer.Tools;
 public sealed class ViewTool(RootSet roots) : ITool
 {
     public string Name => "view";
-    public string Description => "Terse behavioural view of a C# file: usings, logging and tracing, regions, constructors that only assign fields and catches that only log and rethrow are hidden or collapsed; access modifiers are dropped, `var` replaces types spelled out on the right, and local variables of 6+ characters get short names (parameters keep theirs). Lines keep their source numbers: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden. Read the file itself before editing it.";
-    public JsonNode Schema => Args.Schema(["path"], ("path", "string", "root:relative/path to a .cs file"));
 
     // Builds the view: a header line, then the view lines.
     public string Run(JsonNode? args, CallInfo info)

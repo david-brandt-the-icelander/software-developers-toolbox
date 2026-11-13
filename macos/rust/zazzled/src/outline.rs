@@ -420,6 +420,36 @@ pub fn outline(path: &Path, data: &[u8], starts: &[u32]) -> Vec<Symbol> {
     }
 }
 
+// Returns the lines where a C# file uses a name as an identifier, so not in comments or strings; None if it cannot be parsed.
+pub fn csharp_identifier_lines(data: &[u8], name: &str) -> Option<Vec<usize>> {
+    if data.len() > MAX_PARSE_BYTES {
+        return None;
+    }
+    let (language, _) = grammar(Lang::CSharp)?;
+    crate::arena::scope(|| {
+        let mut parser = Parser::new();
+        parser.set_language(&language).ok()?;
+        let tree = parser.parse(data, None)?;
+        let mut cursor = tree.walk();
+        let mut lines = Vec::new();
+        loop {
+            let node = cursor.node();
+            if node.kind() == "identifier" && data.get(node.byte_range()) == Some(name.as_bytes()) {
+                lines.push(node.start_position().row + 1);
+            }
+            if cursor.goto_first_child() || cursor.goto_next_sibling() {
+                continue;
+            }
+            while !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    lines.dedup();
+                    return Some(lines);
+                }
+            }
+        }
+    })
+}
+
 // Returns the innermost symbol that contains a line.
 pub fn enclosing(symbols: &[Symbol], line: usize) -> Option<&Symbol> {
     symbols.iter().filter(|s| s.start <= line && line <= s.end).max_by_key(|s| s.depth)
@@ -434,6 +464,15 @@ mod tests {
     // Builds an outline from source text for a file name.
     fn out(name: &str, src: &str) -> Vec<Symbol> {
         outline(Path::new(name), src.as_bytes(), &line_starts(src.as_bytes()))
+    }
+
+    // Checks C# identifier lines skip comments, strings and other names but keep interpolations and declarations.
+    #[test]
+    fn test_csharp_identifier_lines() {
+        let src = "// Widget here\nclass Widget {\n  string s = \"Widget\";\n  void M(Widget w) { var t = $\"{Widget.X}\"; }\n  /* Widget */ int Widgets;\n}\n";
+        assert_eq!(csharp_identifier_lines(src.as_bytes(), "Widget"), Some(vec![2, 4]));
+        assert_eq!(csharp_identifier_lines(b"", "Widget"), Some(vec![]));
+        assert_eq!(csharp_identifier_lines(&vec![b' '; MAX_PARSE_BYTES + 1], "Widget"), None);
     }
 
     // Summarises symbols as "kind name start-end/depth" strings.

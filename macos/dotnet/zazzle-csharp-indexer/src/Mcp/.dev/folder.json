@@ -7,8 +7,8 @@
     {
       "id": "folder",
       "title": "MCP server",
-      "summary": "A minimal Model Context Protocol server: newline-delimited JSON-RPC in and out, the four methods it answers, and a usage-log record for every tool call.",
-      "purpose": "Holds McpServer, the one adapter between an MCP client and the tools. It builds the tool set for a session's roots, answers initialize, ping, tools/list and tools/call, turns a tool's text or ToolException into an MCP tool result, and times and logs each call.",
+      "summary": "A minimal Model Context Protocol server: newline-delimited JSON-RPC in and out, the four methods it answers, an empty tool list and a usage-log record for every tool call.",
+      "purpose": "Holds McpServer, the one adapter between zazzled (or a debugging serve session) and the tools. It builds the tool set for a session's roots, answers initialize, ping, tools/list (empty) and tools/call by name, turns a tool's text or ToolException into an MCP tool result, and times and logs each call.",
       "boundaries": [
         "What each tool does is src/Tools/; the server only dispatches by name.",
         "Whether the session runs on standard input and output (in process) or on a daemon connection is decided by src/Program.cs and src/Daemon/; the server only sees a reader and a writer."

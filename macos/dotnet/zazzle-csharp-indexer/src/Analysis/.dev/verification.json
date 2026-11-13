@@ -28,46 +28,9 @@
       "evidenceStatus": "source-verified"
     },
     {
-      "id": "prefilter",
-      "title": "Literal extraction and the Bloom prefilter",
-      "summary": "Required literals are extracted as expected, and the prefilter never rejects a file the regex matches.",
-      "subject": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
-          "entityId": "trigram-bloom-prefilter"
-        }
-      ],
-      "criteria": [
-        "Required literal runs come out for plain text, escapes, quantifiers, groups and classes, and none for a top-level alternation",
-        "For a spread of patterns, in both case modes, the filter keeps every file the regex matches",
-        "The filter rejects most files that lack the literal"
-      ],
-      "checks": [
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_literals_extracted",
-          "command": "dotnet test tests --filter test_literals_extracted"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_prefilter_is_sound",
-          "command": "dotnet test tests --filter test_prefilter_is_sound"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_bloom_rejects_absent_literal",
-          "command": "dotnet test tests --filter test_bloom_rejects_absent_literal"
-        }
-      ],
-      "evidenceStatus": "source-verified"
-    },
-    {
       "id": "extraction",
-      "title": "Symbol and identifier extraction",
-      "summary": "Roslyn and the heuristic rules find declarations, and C# identifier tables leave out comments and strings.",
+      "title": "Symbol extraction",
+      "summary": "Roslyn and the heuristic rules find declarations.",
       "subject": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
@@ -76,7 +39,6 @@
       ],
       "criteria": [
         "C# types and members come with containers and line spans",
-        "C# identifier tables skip comments and strings and mark declarations with negative lines",
         "The heuristic rules find Rust items and Markdown headings"
       ],
       "checks": [
@@ -85,12 +47,6 @@
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
           "symbol": "test_csharp_symbols",
           "command": "dotnet test tests --filter test_csharp_symbols"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
-          "symbol": "test_csharp_idents_exclude_comments_and_strings",
-          "command": "dotnet test tests --filter test_csharp_idents_exclude_comments_and_strings"
         },
         {
           "type": "automated",

@@ -11,7 +11,7 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make     # or download the release tarball
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
 export ZAZZLE_SESSION=$(date +%s)     # optional: ids and dedupe for CLI use
-claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit
+claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_read_again, and the C# structure tools below
 ```
 
 Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write.
@@ -24,11 +24,12 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | `read PATH[:A-B].. [--source --symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full]` | header with line count and sha, then `N<TAB>text`; elides the middle beyond ~3000 tokens with the exact range to read next; `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)); C# files come as a terse view (see [C# terse view](#c-terse-view)) unless `--source` |
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
-| `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol |
+| `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read --source`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
+| `overview`, `find-symbol`, `changed-since`, `git-log`, `git-blame`, `report-gap` | structure answered by `zazzle-csharp-indexer`: see [C# structure](#c-structure) |
 | `status` | daemon, cache and session counters |
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
@@ -41,6 +42,21 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Shortened: `public`/`private`/`protected`/`internal` on declarations, `var` where the type is spelled out on the right (`new T(..)`, `(T)x`, `x as T`), and local variables of 6+ characters, to the initials of their words (`invoiceRepository` → `ir`) or three letters of one word. Locals are bound by a compilation of the file, so fields, members and parameters with the same name keep theirs; a clash or keyword gets a number; a local used in `nameof` keeps its name. Parameters are never renamed.
 - Kept: everything else, including catches that return or convert, constructors with logic, and logging that shares a line with other code. Lines keep their source numbers: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden. Ranges, `--symbol` and the budget work on the view.
 - The bridge: `zazzled` connects to the indexer daemon's socket (in `$ZAZZLE_INDEXER_STATE_DIR` or the indexer's default state directory), starting `zazzle-csharp-indexer daemon` when nothing listens, and asks its `view` tool. The indexer is `$ZAZZLE_INDEXER`, else beside `zazzled`, else on `PATH`. The file must be inside a git work tree. When there is no view (no indexer, not in git, an error), the source is returned with a line saying why. The first read starts the daemon (about 0.5 s); later ones take a few milliseconds.
+
+## C# structure
+
+`zazzle-csharp-indexer` lists no tools of its own: agents ask zazzle, and `zazzled` calls the indexer's daemon over the same bridge as the terse view (starting it when nothing listens), for the git work tree that holds the working directory. Answers come from the index the daemon keeps current, so they need no file reads. `root:path` in the indexer's answers becomes a path relative to the working directory.
+
+| MCP tool | command | output |
+|---|---|---|
+| `zazzle_overview` | `overview` | file and line counts by language, top directories, entry points and project files, largest files; start here on an unfamiliar repository |
+| `zazzle_find_symbol` | `find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
+| `zazzle_changed_since` | `changed-since [CURSOR]` | `A`/`M`/`D path` since a cursor from an earlier call, then a new cursor; cursors expire when the indexer's daemon restarts |
+| `zazzle_git_log` | `git-log [PATH] [-n N] [--grep TEXT]` | `hash date author subject` |
+| `zazzle_git_blame` | `git-blame PATH [--start N] [--end N]` | `git blame -w` for a range (default 40 lines) |
+| `zazzle_report_gap` | `report-gap TEXT` | records what the agent needed and could not get in the indexer's usage log, where `zazzle-csharp-indexer report` lists it |
+
+Where a symbol is used is `zazzle_refs` (`refs`); the indexer's `find_references` is gone. Unlike it, `refs` shows each use's enclosing symbol, but it lists declarations of fields, locals and parameters as uses rather than definitions, and pages with `-m` and narrower paths instead of an offset.
 
 ## Edits need the sha
 

@@ -9,7 +9,7 @@
       "title": "Block raw search and read commands, with a logged escape",
       "summary": "A Claude Code hook refuses grep, find, cat and similar commands, the built-in Grep and Glob tools and the built-in Read of C# files, names the zazzle tool to use, and lets the agent bypass it for commands with # allow-raw, which is logged.",
       "status": "accepted",
-      "context": "Agents should read, search and edit files through zazzle, the front door, which asks the indexer for terse C# views, and ask the indexer for C# structure; an MCP server alone is easy for an agent to ignore.",
+      "context": "Agents should read, search and edit files and ask for C# structure through zazzle, the front door, which asks the indexer for terse C# views and structure; an MCP server alone is easy for an agent to ignore.",
       "options": [
         {
           "title": "Instructions only (initialize instructions and the AGENTS.md snippet)",

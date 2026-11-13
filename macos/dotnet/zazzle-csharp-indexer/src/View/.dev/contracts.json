@@ -10,7 +10,6 @@
       "summary": "The text TerseView.Format writes and the view tool returns below its header: one line per kept source line or note, each starting with its source line numbers and a tab.",
       "contractType": "text-format",
       "consumers": [
-        "MCP clients of the view tool",
         "zazzled (macos/rust/zazzled/), which passes the view on for zazzle read of a .cs file"
       ],
       "definition": "Lines joined by \\n. N<TAB>text: source line N, unchanged. N~<TAB>text: source line N with a change (an access modifier dropped, var written, a local renamed). A-B<TAB>⋯ note: source lines A to B collapsed into the note. Line numbers are 1-based and those of the file; lines hidden without a note are simply absent.",
@@ -31,7 +30,7 @@
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
-          "symbol": "ViewTool.Description"
+          "symbol": "ViewTool.Run"
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/README.md",

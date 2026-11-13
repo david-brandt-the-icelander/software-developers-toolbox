@@ -168,7 +168,7 @@
     {
       "id": "ZAZZLE_INDEXER",
       "title": "ZAZZLE_INDEXER",
-      "summary": "The zazzle-csharp-indexer executable the daemon uses for the terse C# view.",
+      "summary": "The zazzle-csharp-indexer executable the daemon uses for the terse C# view and the structure tools.",
       "key": "ZAZZLE_INDEXER",
       "type": "path",
       "default": "zazzle-csharp-indexer beside the zazzled executable, else the first on PATH",
@@ -200,7 +200,7 @@
       "type": "path",
       "default": "macOS: $HOME/Library/Application Support/zazzle-csharp-indexer; elsewhere: $XDG_STATE_HOME/zazzle-csharp-indexer, or $HOME/.local/state/zazzle-csharp-indexer",
       "sensitive": false,
-      "scope": "The C# indexer bridge, on each C# read. It mirrors how the indexer itself chooses the directory, so both must see the same environment; a daemon zazzled starts inherits zazzled's.",
+      "scope": "The C# indexer bridge, on each C# read and each structure command. It mirrors how the indexer itself chooses the directory, so both must see the same environment; a daemon zazzled starts inherits zazzled's.",
       "takesEffect": "per-use",
       "evidenceStatus": "source-verified",
       "sources": [

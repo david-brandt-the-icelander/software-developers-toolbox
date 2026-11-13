@@ -11,7 +11,7 @@
       "type": "defect",
       "priority": "medium",
       "expected": "Blobs that no file record points at any more are removed at some point, as Store.CollectGarbage is written to do; macos/dotnet/style.md allows no dead code.",
-      "observed": "No code calls Store.CollectGarbage. Each edit of a file adds a blob row (with its Bloom filter, symbols and identifiers), and Engine loads every blob row into memory at start, so the store and the daemon's memory grow with the history of edits.",
+      "observed": "No code calls Store.CollectGarbage. Each edit of a file adds a blob row (with its symbols), and Engine loads every blob row into memory at start, so the store and the daemon's memory grow with the history of edits.",
       "acceptanceCriteria": [
         "Unreferenced blobs are collected (for example after a reconcile or at daemon start), with a test, or the owner records why they are kept and the method is removed."
       ],

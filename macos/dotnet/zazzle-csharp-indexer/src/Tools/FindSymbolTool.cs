@@ -8,14 +8,6 @@ namespace ZazzleIndexer.Tools;
 public sealed class FindSymbolTool(RootSet roots) : ITool
 {
     public string Name => "find_symbol";
-    public string Description => "Find declarations by name (case-insensitive; substring unless exact=true). Output: root:path:line kind container.name | signature. Exact matches first.";
-    public JsonNode Schema => Args.Schema(["name"],
-        ("name", "string", "Symbol name or part of it"),
-        ("exact", "boolean", "Whole-name match only"),
-        ("kind", "string", "Filter by kind: class, method, property, field, fn, def ..."),
-        ("root", "string", "Limit to one root"),
-        ("limit", "integer", "Max results (default 30)"),
-        ("offset", "integer", "Skip this many results (default 0)"));
 
     // Finds matching declarations in every selected root.
     public string Run(JsonNode? args, CallInfo info)
@@ -30,7 +22,7 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
         foreach (var root in roots.Select(Args.OptStr(args, "root")))
         {
             if (!root.Index.WaitReady(Engine.ReadyTimeoutMs))
-                throw new ToolException("index_cold", "index is still building; use search");
+                throw new ToolException("index_cold", "index is still building; search with zazzle_find");
             var blobs = root.Index.Engine.BlobsDeclaring(name, exact);
             foreach (var f in root.Index.Files().Where(f => blobs.Contains(f.BlobId)))
                 foreach (var s in Sym.FromJson(root.Index.Engine.Store.Symbols(f.BlobId)))

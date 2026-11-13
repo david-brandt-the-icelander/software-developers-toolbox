@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace ZazzleIndexer.Analysis;
 
 // Static ctags-style extractor.
-public static partial class HeuristicSymbols
+public static class HeuristicSymbols
 {
     private static readonly Dictionary<string, (string kind, Regex re)[]> Rules = new()
     {
@@ -20,14 +20,8 @@ public static partial class HeuristicSymbols
         ["c"] = [("func", new(@"^[A-Za-z_][\w\s\*]*?\b(\w+)\s*\([^;]*$")), ("type", new(@"^\s*(?:typedef\s+)?(?:struct|enum|union)\s+(\w+)"))],
     };
 
-    [GeneratedRegex(@"[A-Za-z_]\w*")]
-    private static partial Regex Word();
-
-    // Languages that get identifier occurrences (code, not data or prose).
-    private static readonly HashSet<string> CodeLangs = ["rust", "python", "typescript", "javascript", "go", "java", "gdscript", "shell", "swift", "c", "cpp"];
-
     // Extracts symbols with the language's rules; "javascript" and "cpp" reuse the TypeScript and C rules.
-    public static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source, string lang)
+    public static List<Sym> Extract(string source, string lang)
     {
         var rules = Rules.GetValueOrDefault(lang switch { "javascript" => "typescript", "cpp" => "c", _ => lang });
         var lines = source.Split('\n');
@@ -43,18 +37,6 @@ public static partial class HeuristicSymbols
                     syms.Add(new Sym(m.Groups[1].Value, kind, "", i + 1, i + 1, sig.Length > 140 ? sig[..140] : sig));
                     break;
                 }
-        var idents = new Dictionary<string, List<int>>();
-        if (!CodeLangs.Contains(lang))
-            return (syms, idents);
-        var defs = syms.Select(s => (s.Name, s.Line)).ToHashSet();
-        for (var i = 0; i < lines.Length; i++)
-            foreach (Match w in Word().Matches(lines[i]))
-            {
-                if (!idents.TryGetValue(w.Value, out var list))
-                    idents[w.Value] = list = [];
-                if (list.Count < 200)
-                    list.Add(defs.Contains((w.Value, i + 1)) ? -(i + 1) : i + 1);
-            }
-        return (syms, idents);
+        return syms;
     }
 }

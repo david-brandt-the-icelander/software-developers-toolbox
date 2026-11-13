@@ -200,6 +200,7 @@
         "find groups by file, merges context windows, counts a line once however many matches it has, and keeps file order when searching on the pool.",
         "read selects ranges, --around, --head and --tail, and summarises binary and empty files.",
         "refs lists definitions before uses, with each use's enclosing symbol.",
+        "In C# files refs leaves out mentions in comments and strings, and a file with only those.",
         "An unknown command is one `error:` line with status 2 that lists the commands; proxy and run point at their own processes."
       ],
       "checks": [
@@ -243,6 +244,18 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/cmd/refs.rs",
           "symbol": "test_refs_defs_then_uses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "test_refs_csharp_skips_comments_and_strings",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "test_csharp_identifier_lines",
           "command": "cargo test -p zazzled (in macos/rust)"
         },
         {
@@ -406,6 +419,74 @@
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/verification.json",
+          "entityId": "indexer-bridge"
+        }
+      ]
+    },
+    {
+      "id": "csharp-structure",
+      "title": "C# structure commands",
+      "summary": "The structure commands are tested against a stand-in indexer daemon that echoes each call, and their MCP tools against the argument mapping.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "csharp-structure"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "mcp-tools"
+        }
+      ],
+      "criteria": [
+        "Each command calls the indexer tool of the same name with its arguments, and path arguments become relative to the work tree, also from a subdirectory.",
+        "Usage errors, paths outside the work tree, a working directory outside any work tree and a missing indexer are one `error:` line.",
+        "root:path references at the start of a line, or after a change mark, become paths relative to the working directory; other lines are kept.",
+        "Each structure tool's MCP arguments map to the command line, with wrong types as tool errors."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "test_structure_commands_call_the_indexer",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "test_structure_command_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "test_ask_passes_arguments",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "test_localize",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "test_structure_tools_map_arguments",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "test_structure_tool_errors_and_schemas",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "details": "The real indexer was asked through zazzled end to end on a sample C# work tree when this was written; no automated test runs both programs together.",
       "evidenceStatus": "source-verified",
       "relationships": [
         {

@@ -5,127 +5,13 @@
   "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
   "entities": [
     {
-      "id": "files-read-search",
-      "title": "Globs, find_files, read and search",
-      "summary": "Globs, file listing, reading with budgets and escapes refused, and search with context, paging, modes, case folding and fresh edits.",
-      "subject": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-          "entityId": "find-files"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-          "entityId": "read"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
-          "entityId": "fresh-indexed-search"
-        }
-      ],
-      "criteria": [
-        "A glob without / matches file names at any depth; ** crosses directories and * does not",
-        "find_files hides ignored files and filters by glob",
-        "read returns numbered lines and a continuation hint when the budget is small",
-        "read refuses paths that escape the root, also through a symlinked directory",
-        "search finds matches in path order with context and pages with offset",
-        "search reports a bad regex with the dialect notes and treats literal text literally",
-        "search narrows candidates with the index and still finds an edit made a moment ago",
-        "files and count modes list matching files and per-file counts",
-        "ignore_case finds text whose ASCII case differs",
-        "A pattern .NET rejects is answered by an external PCRE engine when one is installed"
-      ],
-      "checks": [
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_glob_name_any_depth",
-          "command": "dotnet test tests --filter test_glob_name_any_depth"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_glob_star_stays_in_directory",
-          "command": "dotnet test tests --filter test_glob_star_stays_in_directory"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_find_files_respects_gitignore_and_glob",
-          "command": "dotnet test tests --filter test_find_files_respects_gitignore_and_glob"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_read_range_and_truncation",
-          "command": "dotnet test tests --filter test_read_range_and_truncation"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_read_rejects_escape",
-          "command": "dotnet test tests --filter test_read_rejects_escape"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_read_rejects_symlink_escape",
-          "command": "dotnet test tests --filter test_read_rejects_symlink_escape"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_search_context_and_offset",
-          "command": "dotnet test tests --filter test_search_context_and_offset"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_search_bad_regex_and_literal",
-          "command": "dotnet test tests --filter test_search_bad_regex_and_literal"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_search_uses_index_and_sees_fresh_edit",
-          "command": "dotnet test tests --filter test_search_uses_index_and_sees_fresh_edit"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_search_modes",
-          "command": "dotnet test tests --filter test_search_modes"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_search_ignore_case_uses_folded_index",
-          "command": "dotnet test tests --filter test_search_ignore_case_uses_folded_index"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
-          "symbol": "test_search_falls_back_to_external_engine",
-          "command": "dotnet test tests --filter test_search_falls_back_to_external_engine"
-        }
-      ],
-      "evidenceStatus": "source-verified"
-    },
-    {
       "id": "navigation",
-      "title": "outline, find_symbol, find_references, overview and changed_since",
+      "title": "find_symbol, overview and changed_since",
       "summary": "The structure tools answer from the stored analysis, and changed_since hands out and honours cursors.",
       "subject": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-          "entityId": "outline"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
           "entityId": "find-symbol"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-          "entityId": "find-references"
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
@@ -137,9 +23,7 @@
         }
       ],
       "criteria": [
-        "outline lists a file's declarations indented, and digests for a directory",
         "find_symbol finds exact and partial names and filters by kind",
-        "find_references reports uses and declarations but not mentions in comments or strings",
         "overview reports languages and entry files",
         "changed_since returns a cursor, then the files changed after it"
       ],
@@ -147,20 +31,8 @@
         {
           "type": "automated",
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
-          "symbol": "test_outline_file_and_directory",
-          "command": "dotnet test tests --filter test_outline_file_and_directory"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
           "symbol": "test_find_symbol",
           "command": "dotnet test tests --filter test_find_symbol"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
-          "symbol": "test_find_references",
-          "command": "dotnet test tests --filter test_find_references"
         },
         {
           "type": "automated",
@@ -178,49 +50,42 @@
       "evidenceStatus": "source-verified"
     },
     {
-      "id": "run-and-gap",
-      "title": "run, its policy, and report_gap",
-      "summary": "The default policy allows read-only commands and refuses editing or executing ones; run executes in the root; report_gap reaches the log.",
+      "id": "gap-and-dispatch",
+      "title": "report_gap, and what the server lists",
+      "summary": "report_gap reaches the log; the server lists no tools, answers the internal ones by name, and treats the removed ones as unknown.",
       "subject": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
-          "entityId": "guarded-passthrough"
-        },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
           "entityId": "report-gap"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/decisions.json",
+          "entityId": "tools-beside-zazzle"
         }
       ],
       "criteria": [
-        "git log, grep -rn and sed -n are allowed; sed -i, sed w, find -delete, rm, git push and git -c are refused with their reasons",
-        "The unrestricted switch lifts the allowlist",
-        "run executes in the root, caps output, hints at the better tool and refuses disallowed commands",
-        "report_gap stores the note in the usage log in plain text"
+        "report_gap stores the note in the usage log in plain text",
+        "tools/list is empty and the instructions name the zazzle tools, while find_symbol called by name answers and is logged with its text hashed",
+        "search, read, find_files, outline, run and find_references are unknown tools"
       ],
       "checks": [
         {
           "type": "automated",
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
-          "symbol": "test_run_policy",
-          "command": "dotnet test tests --filter test_run_policy"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
-          "symbol": "test_run_policy_unrestricted",
-          "command": "dotnet test tests --filter test_run_policy_unrestricted"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
-          "symbol": "test_run_tool",
-          "command": "dotnet test tests --filter test_run_tool"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
           "symbol": "test_report_gap_logged",
           "command": "dotnet test tests --filter test_report_gap_logged"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs",
+          "command": "dotnet test tests --filter test_server_lists_no_tools_and_logs"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_removed_tools_are_unknown",
+          "command": "dotnet test tests --filter test_removed_tools_are_unknown"
         }
       ],
       "evidenceStatus": "source-verified"

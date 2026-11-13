@@ -35,15 +35,10 @@ public static class Report
         foreach (var g in calls.GroupBy(r => Str(r, "path")).OrderByDescending(g => g.Count()))
             sb.AppendLine($"  {g.Key}: {g.Count()} ({100 * g.Count() / calls.Count}%)");
         Top(sb, "reasons for non-index answers", calls.Where(r => Str(r, "path") != "index" && Str(r, "reason") != "").Select(r => $"{Str(r, "path")} / {Str(r, "reason")}"));
-        var searches = calls.Where(r => Str(r, "tool") == "search" && Int(r, "files") > 0 && Int(r, "candidates") >= 0).ToList();
-        if (searches.Count > 0)
-            sb.AppendLine($"\nsearch selectivity: index kept on average {searches.Average(r => 100.0 * Int(r, "candidates") / Int(r, "files")):0.0}% of files as candidates over {searches.Count} searches");
-        Top(sb, "run passthrough commands (program + flags): candidates for new tools", calls.Where(r => Str(r, "tool") == "run").Select(r => string.Join(' ', r["args"]?["argv"]?.AsArray().Select(a => a!.GetValue<string>()).Where((a, i) => i == 0 || a.StartsWith('-')) ?? [])));
         Top(sb, "raw commands the hook redirected", all.Where(r => Str(r, "tool") == "hook").Select(r => Str(r, "reason")));
         sb.AppendLine("\nwaste signals:");
         sb.AppendLine($"  retries (same tool within 10 s, different arguments): {Retries(calls)}");
         sb.AppendLine($"  repeated identical calls in a session: {calls.GroupBy(r => Str(r, "session") + Str(r, "tool") + r["args"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
-        sb.AppendLine($"  reads answered 'unchanged': {calls.Count(r => Str(r, "reason") == "unchanged_since_last_read")}");
         Top(sb, "errors", calls.Where(r => Str(r, "error") != "").Select(r => $"{Str(r, "tool")} / {Str(r, "error")}"));
         var gaps = calls.Where(r => Str(r, "note") != "").TakeLast(20).ToList();
         if (gaps.Count > 0)

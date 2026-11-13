@@ -48,9 +48,9 @@
       "title": "Exit when idle",
       "summary": "The daemon stops once it has had no clients for the idle period, 30 minutes by default.",
       "status": "accepted",
-      "context": "The daemon is started on demand by serve and nothing else stops it.",
+      "context": "The daemon is started on demand by zazzled (or serve) and nothing else stops it.",
       "decision": "DaemonServer.IdleLoop checks every quarter of the idle period (between 50 ms and 30 s) and stops the daemon when no client is connected and the last one left longer ago than the period. The period comes from ZAZZLE_INDEXER_IDLE_MINUTES.",
-      "rationale": "No resident process or watchers when nobody is using it; the next serve starts it again and FSEvents replay (on macOS) or a reconcile brings the index up to date.",
+      "rationale": "No resident process or watchers when nobody is using it; the next zazzle call that needs it (or serve) starts it again and FSEvents replay (on macOS) or a reconcile brings the index up to date.",
       "origin": "README.md, Commands.",
       "evidenceStatus": "source-verified",
       "sources": [

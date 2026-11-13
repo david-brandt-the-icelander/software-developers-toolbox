@@ -41,9 +41,7 @@
         "bool WaitReady(int ms)",
         "List<FileEntry> Files()",
         "FileEntry? Get(string rel)",
-        "FileEntry? Freshen(string rel)",
         "List<(string path, char kind)> ChangesSince(long gen, out bool expired)",
-        "void Barrier(IEnumerable<string> paths)",
         "void Sync()",
         "void Dispose()"
       ]
@@ -131,7 +129,6 @@
         "bool Binary",
         "string Lang",
         "int Lines",
-        "byte[] Bloom",
         "string Digest"
       ]
     },

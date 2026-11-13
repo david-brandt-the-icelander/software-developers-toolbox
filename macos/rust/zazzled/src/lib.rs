@@ -10,6 +10,7 @@ pub mod engine;
 pub mod indexer;
 pub mod launchd;
 pub mod mcp;
+pub mod mcp_structure;
 pub mod meta;
 pub mod outline;
 pub mod outputs;

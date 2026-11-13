@@ -90,13 +90,6 @@ public sealed class RootIndex : IDisposable
     // Looks up one file by relative path.
     public FileEntry? Get(string rel) => _files.GetValueOrDefault(rel);
 
-    // Re-checks one file against the disk now and returns its current entry, or null if it is gone.
-    public FileEntry? Freshen(string rel)
-    {
-        Analyze(rel);
-        return _files.GetValueOrDefault(rel);
-    }
-
     // Lists changes after a generation; expired is true when the log no longer reaches back that far.
     public List<(string path, char kind)> ChangesSince(long gen, out bool expired)
     {
@@ -105,13 +98,6 @@ public sealed class RootIndex : IDisposable
             expired = gen < _logBase;
             return _log.Where(l => l.gen > gen).GroupBy(l => l.path).Select(g => (g.Key, g.Last().kind)).ToList();
         }
-    }
-
-    // Applies queued watcher events now and re-checks the stat key of every given file, so a query sees edits made a moment ago.
-    public void Barrier(IEnumerable<string> paths)
-    {
-        Drain();
-        Parallel.ForEach(paths, p => Safely(() => Analyze(p)));
     }
 
     // Runs a full reconcile now (used by tests and as the safety net).

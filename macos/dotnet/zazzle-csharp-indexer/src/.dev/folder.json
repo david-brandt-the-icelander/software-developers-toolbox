@@ -12,7 +12,8 @@
       "boundaries": [
         "The tests are in macos/dotnet/zazzle-csharp-indexer/tests/, which references this project.",
         "Build settings shared with the tests (target framework, version, warnings as errors) are in macos/dotnet/zazzle-csharp-indexer/Directory.Build.props.",
-        "git, and optionally rg, are external programs found on PATH; nothing else outside the process is called."
+        "git is an external program found on PATH; nothing else outside the process is called.",
+        "Agents do not talk to this project: zazzled (macos/rust/zazzled/src/indexer.rs) does, over the daemon socket."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

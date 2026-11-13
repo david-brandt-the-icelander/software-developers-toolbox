@@ -14,7 +14,7 @@
     {
       "id": "file-operations",
       "name": "File operations for agents",
-      "description": "Searching, reading, listing, outlining and editing files, and shrinking piped command output, with short, capped answers.",
+      "description": "Searching, reading, listing, outlining and editing files, asking about C# structure and history, and shrinking piped command output, with short, capped answers.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
@@ -29,7 +29,7 @@
           "symbol": "confine"
         }
       ],
-      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used), makes checked edits, shrinks command output an agent pipes in, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
+      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used, where is it declared, what changed, who changed this line), makes checked edits, shrinks command output an agent pipes in, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
       "operations": [
         {
           "path": "macos/rust/zazzled/src/cmd/find.rs",
@@ -64,6 +64,30 @@
           "symbol": "run"
         },
         {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "overview"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "find_symbol"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "changed_since"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "git_log"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "git_blame"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "report_gap"
+        },
+        {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
           "symbol": "status"
         }
@@ -74,7 +98,8 @@
         "Edits write only inside the caller's working directory, after resolving symlinks (edit.rs confine).",
         "read-again reruns only ids of the caller's own session, in the working directory the request first ran in (again.rs rerun); a stored clean, run or proxy output is given to any caller that may use the daemon and names its id, from the store that process uses (again.rs run, outputs.rs load).",
         "Over MCP the working directory of `zazzled mcp` is the root for relative paths and for edits (cli.rs mcp_main).",
-        "`zazzled run` runs the command in its own process with the caller's permissions."
+        "`zazzled run` runs the command in its own process with the caller's permissions.",
+        "The structure commands answer for the git work tree that holds the working directory, through zazzle-csharp-indexer's daemon socket, which only the user can open."
       ]
     }
   ],
