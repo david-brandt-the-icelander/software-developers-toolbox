@@ -91,7 +91,7 @@ fn home_dir(var: &str, rel: &str) -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rel)))
 }
 
-// Native builds link with the system C toolchain: let rustc run it and read its files.
+// Native builds link with the system C toolchain: let rustc run it and read its files, including the active Xcode (xcode-select's link, resolved by the sandbox profile, or $DEVELOPER_DIR).
 fn with_linker(p: Policy) -> Policy {
     let toolchain = [
         "/usr/bin",
@@ -101,7 +101,9 @@ fn with_linker(p: Policy) -> Policy {
         "/usr/local/bin",
         "/Library/Developer/CommandLineTools",
         "/Applications/Xcode.app",
+        "/private/var/db/xcode_select_link",
     ];
+    let developer = std::env::var_os("DEVELOPER_DIR").map(PathBuf::from);
     let reads = [
         "/usr/include",
         "/usr/local/lib",
@@ -109,8 +111,8 @@ fn with_linker(p: Policy) -> Policy {
         "/private/var/db/xcode_select_link",
         "/private/var/select",
     ];
-    p.executing(toolchain.iter().map(PathBuf::from))
-        .reading(reads.iter().chain(toolchain.iter()).map(PathBuf::from))
+    p.executing(toolchain.iter().map(PathBuf::from).chain(developer.clone()))
+        .reading(reads.iter().chain(toolchain.iter()).map(PathBuf::from).chain(developer))
 }
 
 // The host target triple from `rustc -vV`.

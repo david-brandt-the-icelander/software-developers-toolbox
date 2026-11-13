@@ -60,7 +60,7 @@ pub fn tidy_path(p: &str) -> String {
     parts.join("/")
 }
 
-// Turns rustc's JSON diagnostics into short {level, file, line, col, msg, hint} records, errors only.
+// Turns rustc's JSON diagnostics into short {level, file, line, col, msg, hint} records, errors only; the hint is the first help, else the first note (where linker output goes).
 pub fn diagnostics(stderr: &str) -> Vec<Value> {
     let mut out = Vec::new();
     for line in stderr.lines().filter(|l| l.starts_with('{')) {
@@ -77,7 +77,9 @@ pub fn diagnostics(stderr: &str) -> Vec<Value> {
             d["spans"].as_array().and_then(|s| s.iter().find(|s| s["is_primary"] == true).or(s.first()));
         let hint = d["children"]
             .as_array()
-            .and_then(|c| c.iter().find(|c| c["level"] == "help"))
+            .and_then(|c| {
+                c.iter().find(|c| c["level"] == "help").or_else(|| c.iter().find(|c| c["level"] == "note"))
+            })
             .and_then(|c| c["message"].as_str());
         out.push(json!({
             "level": level,
@@ -282,6 +284,9 @@ mod tests {
             json!({"level": "error", "file": "tests/a.rs", "line": 3, "col": 5, "msg": "cannot find value `x`", "hint": "a local variable with a similar name exists: `y`"})
         );
         assert_eq!(d[1]["file"], Value::Null);
+        let link = json!({"$message_type": "diagnostic", "level": "error", "message": "linking with `cc` failed", "spans": [],
+            "children": [{"level": "note", "message": "xcrun: error: invalid active developer path"}]});
+        assert_eq!(diagnostics(&link.to_string())[0]["hint"], "xcrun: error: invalid active developer path");
         let many = format!("{err}\n").repeat(30);
         assert_eq!(diagnostics(&many).len(), MAX_DIAGNOSTICS);
         assert_eq!((tidy_path("./a/../../b"), tidy_path("a//b/.")), ("../b".to_string(), "a/b".to_string()));
