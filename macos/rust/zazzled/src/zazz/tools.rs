@@ -137,10 +137,36 @@ pub fn rustc_command(
         )
         .executing([sysroot].into_iter().chain(cargo.map(|c| c.join("bin"))))
         .writing([build.to_path_buf()]);
-    let policy = if native { with_linker(policy) } else { policy };
-    let mut cmd = sandbox::command(&program, args, &policy)?;
+    let (policy, args, sdk) =
+        if native { apple_link(with_linker(policy), args) } else { (policy, args.to_vec(), None) };
+    let mut cmd = sandbox::command(&program, &args, &policy)?;
     rustc_env(&mut cmd).current_dir(build).env("TMPDIR", build);
+    cmd.envs(sdk.map(|s| ("SDKROOT", s)));
     Ok(cmd)
+}
+
+// On macOS, finds clang and the SDK with xcrun outside the sandbox and hands them to rustc, so nothing runs xcrun inside it.
+#[cfg(target_os = "macos")]
+fn apple_link(p: Policy, args: &[OsString]) -> (Policy, Vec<OsString>, Option<PathBuf>) {
+    let find = |what: &[&str]| -> Option<PathBuf> {
+        let r = proc::run(Command::new("/usr/bin/xcrun").args(what), None, PROBE).ok()?;
+        let s = String::from_utf8_lossy(&r.stdout).trim().to_string();
+        (r.ok() && !s.is_empty()).then(|| PathBuf::from(s))
+    };
+    let (Some(clang), Some(sdk)) = (find(&["--find", "clang"]), find(&["--show-sdk-path"])) else {
+        return (p, args.to_vec(), None);
+    };
+    let toolchain = clang.ancestors().nth(3).unwrap_or(clang.as_path()).to_path_buf();
+    let mut args = args.to_vec();
+    args.push(format!("-Clinker={}", clang.display()).into());
+    let p = p.executing([toolchain.clone()]).reading([toolchain, sdk.clone()]);
+    (p, args, Some(sdk))
+}
+
+// Elsewhere the linker is the system cc, already allowed by with_linker.
+#[cfg(not(target_os = "macos"))]
+fn apple_link(p: Policy, args: &[OsString]) -> (Policy, Vec<OsString>, Option<PathBuf>) {
+    (p, args.to_vec(), None)
 }
 
 #[cfg(test)]
