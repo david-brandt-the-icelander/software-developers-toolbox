@@ -1,0 +1,29 @@
+[package]
+name = "zazz-worker"
+version = "0.1.0"
+edition.workspace = true
+# wasmtime follows recent Rust releases, so this crate has its own minimum.
+rust-version = "1.97"
+license.workspace = true
+
+[[bin]]
+name = "zazz-worker"
+path = "src/main.rs"
+
+# Each dependency has one reason; std covers everything else.
+[dependencies]
+# HTTPS for scripts allowed to use the network; bundled roots, no redirects.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+# The WebAssembly runtime: Cranelift AOT compilation and epoch interruption.
+wasmtime = { version = "50", default-features = false, features = ["cranelift", "runtime", "std"] }
+# WASI preview 1 for scripts: stdio, preopened directories, clocks, random.
+wasmtime-wasi = { version = "50", default-features = false, features = ["p1"] }
+# Frames, messages, HTTP wire layout and the host allowlist shared with scripts.
+zazz-sdk = { path = "../zazz-sdk" }
+
+[dev-dependencies]
+# Hand-written WebAssembly text for tests.
+wat = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
