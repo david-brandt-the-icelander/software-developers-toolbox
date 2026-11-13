@@ -54,12 +54,20 @@ pub fn now_secs() -> u64 {
 // Asks a freshly registered script for its OpenAPI document; a script that cannot answer is removed again.
 fn fetch_openapi(z: &Zazz, reg: &Registry, hex: &str) -> Result<Value, Value> {
     let msg = json!({"t": "openapi", "mode": "agent"});
-    let called = super::call::execute(z, hex, &reg.root.join("tmp"), msg, super::call::Streams::Capture { stdin: Vec::new() });
+    let called = super::call::execute(
+        z,
+        hex,
+        &reg.root.join("tmp"),
+        msg,
+        super::call::Streams::Capture { stdin: Vec::new() },
+    );
     match called {
         Ok(c) if c.result["ok"] == true && c.result["output"].is_object() => Ok(c.result["output"].clone()),
         Ok(c) => {
             reg.remove(hex);
-            Err(json!({"code": "invalid_openapi", "message": "the script declares \"openapi\" but did not return a document", "error": c.result["error"]}))
+            Err(
+                json!({"code": "invalid_openapi", "message": "the script declares \"openapi\" but did not return a document", "error": c.result["error"]}),
+            )
         }
         Err(e) => {
             reg.remove(hex);
@@ -101,7 +109,7 @@ fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) ->
     reg.write_atomic(&reg.wasm_path(hex, "cwasm"), &built.cwasm).map_err(|e| err("store", &e))?;
     reg.write_meta(hex, &meta).map_err(|e| err("store", &e))?;
     if m.messages.iter().any(|x| x == "openapi") {
-        let doc = fetch_openapi(z, &reg, hex)?;
+        let doc = fetch_openapi(z, reg, hex)?;
         let mut meta = meta;
         meta["openapi"] = doc;
         reg.write_meta(hex, &meta).map_err(|e| err("store", &e))?;

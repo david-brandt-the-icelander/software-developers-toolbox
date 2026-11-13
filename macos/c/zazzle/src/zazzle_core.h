@@ -126,14 +126,10 @@ static const char *base_name(const char *p)
 	return b;
 }
 
-/* Returns true when two strings are equal. */
-static int str_eq(const char *a, const char *b)
+/* The name the invoker was started under, without its directory ("zazzle" when there is none). */
+static const char *own_name(int argc, char **argv)
 {
-	while (*a && *a == *b) {
-		a++;
-		b++;
-	}
-	return *a == *b;
+	return argc > 0 ? base_name(argv[0]) : "zazzle";
 }
 
 /* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
@@ -143,7 +139,7 @@ static size_t build_request(int argc, char **argv, char **envp)
 {
 	size_t at = 4;
 	const char *session = env_get(envp, "ZAZZLE_SESSION");
-	const char *me = argc > 0 ? base_name(argv[0]) : "zazzle";
+	const char *me = own_name(argc, argv);
 	at = put_field(at, "");
 	at = put_field(at, session ? session : "");
 	if (!str_eq(me, "zazzle")) {
@@ -308,7 +304,7 @@ static int read_status(int fd)
 /* Runs a tool as its own process (exec), or one request/answer round trip, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
-	if (argc > 1 && is_tool(argv[1]))
+	if (argc > 1 && str_eq(own_name(argc, argv), "zazzle") && is_tool(argv[1]))
 		exec_tool(argv, envp);
 	size_t total = build_request(argc, argv, envp);
 	size_t pathlen = build_path(envp);

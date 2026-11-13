@@ -102,7 +102,8 @@ pub fn doctor(z: &Zazz) -> Value {
     let worker = z.worker().ok();
     let bin = z.bin_dir();
     let on_path = std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin));
-    let path_of = |p: &Option<std::path::PathBuf>| json!(p.as_ref().map(|p| p.to_string_lossy().into_owned()));
+    let path_of =
+        |p: &Option<std::path::PathBuf>| json!(p.as_ref().map(|p| p.to_string_lossy().into_owned()));
     json!({
         "rustc": check(version.is_some(), json!(version.as_deref().and_then(|v| v.lines().next())), "install Rust with rustup (only needed for kind \"rust\" scripts)"),
         "wasm_target": check(target, json!(tools::WASM_TARGET), "rustup target add wasm32-wasip1"),
@@ -125,7 +126,9 @@ mod tests {
     fn test_new_template_passes_its_tests() {
         let t = TempDir::new();
         let e = zazz_engine(&t);
-        let run = |args: &[&str]| serde_json::from_str::<Value>(&run_cmd_with(&e, t.path(), "", args).text).expect("json");
+        let run = |args: &[&str]| {
+            serde_json::from_str::<Value>(&run_cmd_with(&e, t.path(), "", args).text).expect("json")
+        };
         let made = run(&["zazz", "new", "wc"]);
         assert_eq!(made["files"], json!(["zazz.json", "src/main.rs", "tests/basic.rs"]));
         assert_eq!(run(&["zazz", "new", "wc"])["error"]["code"], "exists");

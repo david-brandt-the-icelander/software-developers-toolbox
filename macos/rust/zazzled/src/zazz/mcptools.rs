@@ -44,7 +44,10 @@ pub const TOOLS: &[Tool] = &[
 
 // Schema for zazz_new.
 fn new_schema() -> Value {
-    object(json!({"name": {"type": "string", "description": "Script name: lowercase letters, digits and '-'"}}), &["name"])
+    object(
+        json!({"name": {"type": "string", "description": "Script name: lowercase letters, digits and '-'"}}),
+        &["name"],
+    )
 }
 
 // Schema for zazz_test.
@@ -57,7 +60,10 @@ fn test_schema() -> Value {
 
 // Schema for zazz_pack.
 fn pack_schema() -> Value {
-    object(json!({"dir": {"type": "string"}, "output": {"type": "string", "description": "Default: DIR.zazz beside DIR"}}), &["dir"])
+    object(
+        json!({"dir": {"type": "string"}, "output": {"type": "string", "description": "Default: DIR.zazz beside DIR"}}),
+        &["dir"],
+    )
 }
 
 // Schema for zazz_add.
@@ -153,13 +159,23 @@ mod tests {
     fn test_mappings() {
         let s = |v: Vec<String>| v.join(" ");
         assert_eq!(s(new_args(&json!({"name": "x"})).expect("new")), "zazz new x");
-        assert_eq!(s(test_args(&json!({"path": "d", "update": true})).expect("test")), "zazz test d --update");
-        assert_eq!(s(pack_args(&json!({"dir": "d", "output": "o.zazz"})).expect("pack")), "zazz pack d -o o.zazz");
+        assert_eq!(
+            s(test_args(&json!({"path": "d", "update": true})).expect("test")),
+            "zazz test d --update"
+        );
+        assert_eq!(
+            s(pack_args(&json!({"dir": "d", "output": "o.zazz"})).expect("pack")),
+            "zazz pack d -o o.zazz"
+        );
         assert_eq!(s(pack_args(&json!({"dir": "d"})).expect("pack")), "zazz pack d");
         assert_eq!(s(add_args(&json!({"file": "f"})).expect("add")), "zazz add f");
-        assert_eq!(s(call_args(&json!({"id": "i", "input": {"a": 1}})).expect("call")), r#"zazz call i {"a":1}"#);
+        assert_eq!(
+            s(call_args(&json!({"id": "i", "input": {"a": 1}})).expect("call")),
+            r#"zazz call i {"a":1}"#
+        );
         assert_eq!(s(call_args(&json!({"id": "i"})).expect("call")), "zazz call i null");
-        let svc = call_args(&json!({"id": "i", "operation": "op", "params": {"n": 1}, "body": [1]})).expect("svc");
+        let svc =
+            call_args(&json!({"id": "i", "operation": "op", "params": {"n": 1}, "body": [1]})).expect("svc");
         assert_eq!(s(svc), r#"zazz call i op --params {"n":1} --body [1]"#);
         assert_eq!(s(call_args(&json!({"id": "i", "operation": "op"})).expect("svc")), "zazz call i op");
         assert_eq!(s(describe_args(&json!({"id": "i"})).expect("describe")), "zazz describe i");

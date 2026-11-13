@@ -102,6 +102,10 @@ static void test_argv0_dispatch(void)
 	CHECK(run(0, none, env_home) == 0);
 	CHECK(M.sent_len == 4 + 2);
 	CHECK(str_eq("zaz", "zazz") == 0 && str_eq("zazzz", "zazz") == 0);
+	reset();
+	char *zazz_tool[] = {"zazz", "free-disk-space", 0};
+	CHECK(run(2, zazz_tool, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0free-disk-space\0", 23) == 0);
 }
 
 /* Checks ZAZZLE_SOCK overrides HOME and lookalike variables are ignored. */
