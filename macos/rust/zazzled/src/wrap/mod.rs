@@ -155,6 +155,11 @@ pub fn run_command(argv: &[String], timeout: Duration) -> Result<Ran, String> {
 
 // Cleans a finished command's output with its profile and the clean steps, and adds a footer with the exit code.
 pub fn render(o: &Opts, ran: &Ran) -> String {
+    render_parts(o, ran).0
+}
+
+// Renders the output and says whether anything was dropped or cut that read-again --full can bring back.
+fn render_parts(o: &Opts, ran: &Ran) -> (String, bool) {
     let text = String::from_utf8_lossy(&ran.output);
     let chosen = match o.profile.as_deref() {
         _ if !o.lossy => None,
@@ -167,7 +172,8 @@ pub fn render(o: &Opts, ran: &Ran) -> String {
         Some(p) => p.apply(tidy),
         None => (tidy, profile::Dropped::default()),
     };
-    let body = clean::shrink(&lines.join("\n"), o.lossy, o.budget);
+    let (body, steps) = clean::shrink_steps(&lines.join("\n"), o.lossy, o.budget);
+    let cut = ran.cut || !dropped.0.is_empty() || clean::cuts(&steps);
     let mut footer = format!("[exit {} in {:.1}s", ran.code, ran.elapsed.as_secs_f64());
     if ran.timed_out {
         footer.push_str(&format!("; killed after the {}s timeout", o.timeout.as_secs()));
@@ -183,10 +189,15 @@ pub fn render(o: &Opts, ran: &Ran) -> String {
         }
     }
     footer.push(']');
-    if body.is_empty() {
-        footer
-    } else {
-        format!("{body}\n{footer}")
+    (if body.is_empty() { footer } else { format!("{body}\n{footer}") }, cut)
+}
+
+// Renders the output and, given a store, keeps it with the full output for read-again and tags it with the id.
+pub fn deliver(o: &Opts, ran: &Ran, store: Option<&std::path::Path>) -> String {
+    let (text, cut) = render_parts(o, ran);
+    match store {
+        Some(dir) => clean::store(dir, text, &String::from_utf8_lossy(&ran.output), cut),
+        None => text,
     }
 }
 
@@ -194,7 +205,7 @@ pub fn render(o: &Opts, ran: &Ran) -> String {
 pub fn main(args: &[String], out: &mut dyn io::Write) -> Result<i32, String> {
     let o = parse(args)?;
     let ran = run_command(&o.argv, o.timeout)?;
-    writeln!(out, "{}", render(&o, &ran)).map_err(|e| e.to_string())?;
+    writeln!(out, "{}", deliver(&o, &ran, crate::outputs::dir().as_deref())).map_err(|e| e.to_string())?;
     Ok(ran.code)
 }
 
@@ -355,12 +366,40 @@ mod tests {
         );
     }
 
+    // Checks a stored run output carries its id, a hint when the profile dropped lines, and comes back in full.
+    #[test]
+    fn test_deliver_stores_output() {
+        let t = crate::testutil::TempDir::new();
+        let dir = t.path().join("out");
+        let shown =
+            deliver(&opts(&["cargo", "test"]), &ran("test a ... ok\ntest b ... FAILED\n", 101), Some(&dir));
+        assert!(shown.starts_with("[r:") && shown.contains("test b ... FAILED\n[exit 101"), "{shown}");
+        let id = &shown[3..13];
+        assert!(shown.ends_with(&format!("\n[full output: read-again r:{id} --full]")));
+        let stored = crate::outputs::load(&dir, id).expect("stored");
+        assert_eq!(format!("[r:{id}]\n{}", stored.shown), shown);
+        assert_eq!(stored.full, "test a ... ok\ntest b ... FAILED\n");
+        let plain = deliver(&opts(&["make"]), &ran("ok\n", 0), Some(&dir));
+        assert!(plain.starts_with("[r:") && !plain.contains("--full"), "{plain}");
+        assert_eq!(deliver(&opts(&["make"]), &ran("ok\n", 0), None), "ok\n[exit 0 in 1.5s]");
+    }
+
     // Checks the entry point prints the rendered output and returns the command's exit code, or an option error.
     #[test]
     fn test_main() {
+        let _g = crate::testutil::env_lock();
+        let t = crate::testutil::TempDir::new();
+        let saved = std::env::var_os("ZAZZLE_OUTPUTS_DIR");
+        std::env::set_var("ZAZZLE_OUTPUTS_DIR", t.path());
         let mut out = Vec::new();
         assert_eq!(main(&v(&["sh", "-c", "echo hi; exit 2"]), &mut out), Ok(2));
-        assert!(String::from_utf8_lossy(&out).starts_with("hi\n[exit 2 in "));
+        let text = String::from_utf8_lossy(&out).into_owned();
+        assert!(text.starts_with("[r:") && text.contains("]\nhi\n[exit 2 in "), "{text}");
+        assert!(crate::outputs::load(t.path(), &text[3..13]).is_ok());
+        match saved {
+            Some(v) => std::env::set_var("ZAZZLE_OUTPUTS_DIR", v),
+            None => std::env::remove_var("ZAZZLE_OUTPUTS_DIR"),
+        }
         assert_eq!(
             main(&v(&["--bogus"]), &mut out).unwrap_err().split(';').next(),
             Some("unknown run option '--bogus'")

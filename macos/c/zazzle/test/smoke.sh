@@ -36,8 +36,10 @@ mkdir -p "$tmp/work/src"
 printf 'alpha one\nbeta two\nalpha three\n' > "$tmp/work/src/a.txt"
 cd "$tmp/work"
 
+# The version comes from the release tag (0.0.0-dev in the repository), so compare with the daemon's own.
 out=$("$zazzle" version)
-[ "$out" = "zazzle 0.1.0" ] || fail "version: '$out'"
+want=$("$zazzled" version)
+[ "$out" = "zazzle ${want#zazzled }" ] || fail "version: '$out', daemon says '$want'"
 
 out=$("$zazzle" find alpha)
 want="src/a.txt

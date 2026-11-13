@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-fs"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "blake3",
  "clap",
@@ -440,7 +440,7 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "fix-network"
-version = "2.0.0"
+version = "0.0.0-dev"
 dependencies = [
  "chrono",
  "clap",
@@ -468,7 +468,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "free-disk-space"
-version = "1.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "chrono",
  "clap",
@@ -1661,7 +1661,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "zazzled"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "blake3",
  "ignore",

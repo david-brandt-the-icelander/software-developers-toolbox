@@ -92,13 +92,14 @@ pub fn run_in_process(
 
 // Builds the engine with the persistent cache, or without it if the cache cannot be opened.
 fn open_engine() -> Engine {
-    match store::default_dir().and_then(|d| Store::open(&d)) {
+    let engine = match store::default_dir().and_then(|d| Store::open(&d)) {
         Ok(s) => Engine::with_store(s),
         Err(e) => {
             eprintln!("zazzled: cache disabled: {e}");
             Engine::new()
         }
-    }
+    };
+    engine.with_outputs(crate::outputs::dir())
 }
 
 // Binds the socket, serves until idle and removes the socket afterwards.
@@ -205,7 +206,7 @@ pub fn main(args: Vec<String>) -> ExitCode {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
             let session = std::env::var("ZAZZLE_SESSION").unwrap_or_default();
             let status = run_in_process(
-                &Engine::new(),
+                &Engine::new().with_outputs(crate::outputs::dir()),
                 &cwd,
                 &session,
                 &rest,

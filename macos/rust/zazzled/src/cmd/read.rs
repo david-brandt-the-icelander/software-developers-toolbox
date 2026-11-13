@@ -35,7 +35,7 @@ enum Select {
 }
 
 // Parses the text after a colon into a start line and optional end line.
-fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
+pub(super) fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
     let (a, b) = match r.split_once('-') {
         Some((a, "")) => (a.parse().ok()?, None),
         Some((a, b)) => (a.parse().ok()?, Some(b.parse().ok()?)),

@@ -109,6 +109,30 @@ public class CliTests
     public void test_hook_policy(string tool, string? command, bool block) =>
         Assert.Equal(block, HookPolicy.Decide(tool, command).Block);
 
+    [Theory]
+    [InlineData("/w/src/Invoice.cs", true)]
+    [InlineData("/w/src/Invoice.CS", true)]
+    [InlineData("/w/README.md", false)]
+    [InlineData(null, false)]
+    // The built-in Read is sent to zazzle for C# files only, so they come as the terse view.
+    public void test_hook_read_tool(string? path, bool block)
+    {
+        var d = HookPolicy.Decide("Read", null, path);
+        Assert.Equal(block, d.Block);
+        if (block)
+            Assert.Contains("zazzle read", d.Message);
+    }
+
+    [Fact]
+    // Blocked commands point at zazzle, not at the indexer's own read and search tools.
+    public void test_hook_points_at_zazzle()
+    {
+        Assert.Contains("zazzle_find", HookPolicy.Decide("Bash", "grep -rn foo src").Message);
+        Assert.Contains("zazzle_ls", HookPolicy.Decide("Glob", null).Message);
+        Assert.Contains("zazzle_read", HookPolicy.Decide("Bash", "cat a.cs").Message);
+        Assert.DoesNotContain("report_gap", HookPolicy.Decide("Bash", "cat a.cs").Message);
+    }
+
     [Fact]
     // init merges into existing settings, is idempotent and keeps unrelated keys.
     public void test_init_idempotent_and_preserving()
@@ -116,15 +140,42 @@ public class CliTests
         var dir = Directory.CreateTempSubdirectory("init").FullName;
         Directory.CreateDirectory(Path.Combine(dir, ".claude"));
         File.WriteAllText(Path.Combine(dir, ".claude", "settings.json"), "{\"model\":\"x\",\"permissions\":{\"allow\":[\"Bash(ls:*)\"]}}");
-        Init.Apply(dir, "/opt/zazzle-csharp-indexer");
-        Init.Apply(dir, "/opt/zazzle-csharp-indexer");
+        Init.Apply(dir, "/opt/zazzle-csharp-indexer", "/opt/zazzled");
+        Init.Apply(dir, "/opt/zazzle-csharp-indexer", "/opt/zazzled");
         var s = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, ".claude", "settings.json")))!;
         Assert.Equal("x", s["model"]!.GetValue<string>());
-        Assert.Equal(2, s["permissions"]!["allow"]!.AsArray().Count);
+        Assert.Equal(3, s["permissions"]!["allow"]!.AsArray().Count);
+        Assert.Equal(["zazzle-csharp-indexer", "zazzle"], s["enabledMcpjsonServers"]!.AsArray().Select(n => n!.GetValue<string>()));
+        Assert.Equal("Bash|Grep|Glob|Read", s["hooks"]!["PreToolUse"]![0]!["matcher"]!.GetValue<string>());
         Assert.Single(s["hooks"]!["PreToolUse"]!.AsArray());
         Assert.Equal("/opt/zazzle-csharp-indexer hook", s["hooks"]!["PreToolUse"]![0]!["hooks"]![0]!["command"]!.GetValue<string>());
         var m = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, ".mcp.json")))!;
         Assert.Equal("/opt/zazzle-csharp-indexer", m["mcpServers"]!["zazzle-csharp-indexer"]!["command"]!.GetValue<string>());
+        Assert.Equal("/opt/zazzled", m["mcpServers"]!["zazzle"]!["command"]!.GetValue<string>());
+        Assert.Equal("mcp", m["mcpServers"]!["zazzle"]!["args"]![0]!.GetValue<string>());
+        Directory.Delete(dir, true);
+    }
+
+    [Fact]
+    // Without zazzled, init still wires the indexer and says how to get the front door.
+    public void test_init_without_zazzled()
+    {
+        var dir = Directory.CreateTempSubdirectory("init").FullName;
+        var done = Init.Apply(dir, "/opt/zazzle-csharp-indexer", null);
+        Assert.Contains(done, l => l.StartsWith("zazzled not found"));
+        var m = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, ".mcp.json")))!;
+        Assert.Null(m["mcpServers"]!["zazzle"]);
+        Directory.Delete(dir, true);
+    }
+
+    [Fact]
+    // zazzled is found beside the indexer first, else on PATH.
+    public void test_find_zazzled()
+    {
+        var dir = Directory.CreateTempSubdirectory("bin").FullName;
+        File.WriteAllText(Path.Combine(dir, "zazzled"), "");
+        Assert.Equal(Path.Combine(dir, "zazzled"), Init.FindZazzled(Path.Combine(dir, "zazzle-csharp-indexer")));
+        Assert.False(Init.FindZazzled("/nonexistent-dir/zazzle-csharp-indexer")?.StartsWith("/nonexistent-dir") ?? false);
         Directory.Delete(dir, true);
     }
 

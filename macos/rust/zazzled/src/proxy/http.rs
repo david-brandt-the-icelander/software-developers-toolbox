@@ -10,6 +10,8 @@ use ureq::tls::{RootCerts, TlsConfig};
 const MAX_BODY: usize = 64 << 20;
 const MAX_HEAD: usize = 64 << 10;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+// How long a kept-alive connection may wait for its next request before the proxy closes it.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const HOP_BY_HOP: &[&str] = &[
     "accept-encoding",
     "connection",
@@ -30,6 +32,27 @@ struct Req {
     method: String,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    keep: bool,
+}
+
+// Writes a body as HTTP/1.1 chunks, so a connection can stay open after a reply of unknown length.
+struct Chunked<'a, W: Write>(&'a mut W);
+
+impl<W: Write> Write for Chunked<'_, W> {
+    // Writes one chunk; an empty write would end the body, so it is skipped.
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !buf.is_empty() {
+            write!(self.0, "{:x}\r\n", buf.len())?;
+            self.0.write_all(buf)?;
+            self.0.write_all(b"\r\n")?;
+        }
+        Ok(buf.len())
+    }
+
+    // Flushes the connection.
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
 }
 
 // A failure answered to the client with an HTTP status and a one-line message.
@@ -70,6 +93,7 @@ fn read_request(r: &mut impl BufRead) -> Result<Req, Fail> {
     let mut used = 0;
     let first = head_line(r, &mut used)?;
     let method = first.split(' ').next().unwrap_or_default().to_string();
+    let http10 = first.ends_with("HTTP/1.0");
     let mut headers = Vec::new();
     loop {
         let line = head_line(r, &mut used)?;
@@ -91,7 +115,9 @@ fn read_request(r: &mut impl BufRead) -> Result<Req, Fail> {
     }
     let mut body = vec![0; len];
     r.read_exact(&mut body).map_err(|_| Fail(400, "request body ended early".into()))?;
-    Ok(Req { method, headers, body })
+    let connection = header(&headers, "connection").unwrap_or("").to_ascii_lowercase();
+    let keep = if http10 { connection.contains("keep-alive") } else { !connection.contains("close") };
+    Ok(Req { method, headers, body, keep })
 }
 
 // Returns the host of an Origin value such as `http://localhost:3000` or `http://[::1]`.
@@ -141,7 +167,13 @@ fn forward(agent: &ureq::Agent, url: &str, req: Req) -> Result<http::Response<ur
 }
 
 // Writes a status line, the upstream's end-to-end headers and any extra header lines.
-fn write_head(out: &mut impl Write, status: StatusCode, headers: &HeaderMap, extra: &str) -> io::Result<()> {
+fn write_head(
+    out: &mut impl Write,
+    status: StatusCode,
+    headers: &HeaderMap,
+    extra: &str,
+    keep: bool,
+) -> io::Result<()> {
     write!(out, "HTTP/1.1 {} {}\r\n", status.as_u16(), status.canonical_reason().unwrap_or("Unknown"))?;
     for (k, v) in headers.iter().filter(|(k, _)| !hop(k.as_str())) {
         out.write_all(k.as_str().as_bytes())?;
@@ -149,14 +181,14 @@ fn write_head(out: &mut impl Write, status: StatusCode, headers: &HeaderMap, ext
         out.write_all(v.as_bytes())?;
         out.write_all(b"\r\n")?;
     }
-    write!(out, "{extra}connection: close\r\n\r\n")
+    write!(out, "{extra}connection: {}\r\n\r\n", if keep { "keep-alive" } else { "close" })
 }
 
 // Answers a failure with a plain-text body.
-fn write_fail(out: &mut impl Write, Fail(code, msg): Fail) -> io::Result<()> {
+fn write_fail(out: &mut impl Write, Fail(code, msg): Fail, keep: bool) -> io::Result<()> {
     let status = StatusCode::from_u16(code).expect("valid status code");
     let extra = format!("content-type: text/plain\r\ncontent-length: {}\r\n", msg.len() + 1);
-    write_head(out, status, &HeaderMap::new(), &extra)?;
+    write_head(out, status, &HeaderMap::new(), &extra, keep)?;
     writeln!(out, "{msg}")
 }
 
@@ -217,6 +249,7 @@ fn relay(
     res: http::Response<ureq::Body>,
     filter: &Filter,
     mut pending: Pending,
+    keep: bool,
 ) -> io::Result<()> {
     let (parts, body) = res.into_parts();
     let mut body = body.into_reader();
@@ -229,49 +262,93 @@ fn relay(
         if buf.len() <= MAX_BODY {
             let cleaned = std::str::from_utf8(&buf).ok().and_then(|t| filter.rewrite_text(&mut pending, t));
             let buf = cleaned.map_or(buf, String::into_bytes);
-            write_head(out, parts.status, &parts.headers, &format!("content-length: {}\r\n", buf.len()))?;
+            write_head(
+                out,
+                parts.status,
+                &parts.headers,
+                &format!("content-length: {}\r\n", buf.len()),
+                keep,
+            )?;
             return out.write_all(&buf);
         }
-        write_head(out, parts.status, &parts.headers, "")?;
-        out.write_all(&buf)?;
-    } else {
-        write_head(out, parts.status, &parts.headers, "")?;
-        if plain && ctype.starts_with("text/event-stream") {
-            return relay_events(BufReader::new(body), out, filter, &mut pending);
-        }
+        return stream(out, &parts, Some(&buf), &mut body, keep, |b, o| io::copy(b, o).map(|_| ()));
     }
-    io::copy(&mut body, out).map(|_| ())
+    if plain && ctype.starts_with("text/event-stream") {
+        return stream(out, &parts, None, &mut body, keep, |b, mut o| {
+            relay_events(BufReader::new(b), &mut o, filter, &mut pending)
+        });
+    }
+    stream(out, &parts, None, &mut body, keep, |b, o| io::copy(b, o).map(|_| ()))
 }
 
-// Handles one request: checks it, forwards it and relays the answer, or answers the failure.
+// Sends a reply whose length is not known up front: chunked on a kept connection, else until close; replies that cannot have a body get none.
+fn stream(
+    out: &mut impl Write,
+    parts: &http::response::Parts,
+    start: Option<&[u8]>,
+    body: &mut ureq::BodyReader<'static>,
+    keep: bool,
+    copy: impl FnOnce(&mut ureq::BodyReader<'static>, &mut dyn Write) -> io::Result<()>,
+) -> io::Result<()> {
+    let status = parts.status;
+    if status.is_informational() || status == StatusCode::NO_CONTENT || status == StatusCode::NOT_MODIFIED {
+        return write_head(out, status, &parts.headers, "", keep);
+    }
+    if !keep {
+        write_head(out, status, &parts.headers, "", false)?;
+        out.write_all(start.unwrap_or_default())?;
+        return copy(body, out);
+    }
+    write_head(out, status, &parts.headers, "transfer-encoding: chunked\r\n", true)?;
+    let mut chunked = Chunked(out);
+    chunked.write_all(start.unwrap_or_default())?;
+    copy(body, &mut chunked)?;
+    chunked.0.write_all(b"0\r\n\r\n")
+}
+
+// Handles one request on a connection: checks it, forwards it and relays the answer, or answers the failure; returns whether the connection stays open.
 fn exchange(
     r: &mut impl BufRead,
     out: &mut impl Write,
     agent: &ureq::Agent,
     url: &str,
     filter: &Filter,
-) -> io::Result<()> {
-    let mut pending = Pending::default();
-    let sent = read_request(r).and_then(|req| {
-        if !origin_ok(&req.headers) {
-            return Err(Fail(403, "requests from other web origins are refused".into()));
+) -> io::Result<bool> {
+    if r.fill_buf()?.is_empty() {
+        return Ok(false);
+    }
+    let req = match read_request(r) {
+        Ok(req) => req,
+        Err(fail) => {
+            write_fail(out, fail, false)?;
+            out.flush()?;
+            return Ok(false);
         }
+    };
+    let keep = req.keep;
+    if !origin_ok(&req.headers) {
+        write_fail(out, Fail(403, "requests from other web origins are refused".into()), keep)?;
+    } else {
+        let mut pending = Pending::default();
         if let Ok(text) = std::str::from_utf8(&req.body) {
             pending.note_text(text);
         }
-        forward(agent, url, req)
-    });
-    match sent {
-        Ok(res) => relay(out, res, filter, pending)?,
-        Err(fail) => write_fail(out, fail)?,
+        match forward(agent, url, req) {
+            Ok(res) => relay(out, res, filter, pending, keep)?,
+            Err(fail) => write_fail(out, fail, keep)?,
+        }
     }
-    out.flush()
+    out.flush()?;
+    Ok(keep)
 }
 
-// Serves one connection: one request and one response, then the connection closes.
+// Serves one connection: requests one after another while the client keeps it open, until it closes, asks to, sends something unreadable or stays idle past the timeout.
 fn handle(stream: TcpStream, agent: &ureq::Agent, url: &str, filter: &Filter) -> io::Result<()> {
+    stream.set_read_timeout(Some(IDLE_TIMEOUT))?;
     let mut r = BufReader::new(stream.try_clone()?);
-    exchange(&mut r, &mut BufWriter::new(stream), agent, url, filter)
+    let mut w = BufWriter::new(stream);
+    while exchange(&mut r, &mut w, agent, url, filter)? {}
+    Ok(())
 }
 
 // Accepts connections until the listener fails, serving each on its own thread.
@@ -304,7 +381,14 @@ mod tests {
 
     // A filter with the default settings.
     fn filter() -> Filter {
-        Filter { lossy: true, budget: 8000, skip: Vec::new(), log: false }
+        Filter {
+            lossy: true,
+            budget: 8000,
+            skip: Vec::new(),
+            log: false,
+            store: None,
+            config: crate::proxy::config::Config::default(),
+        }
     }
 
     // Parses a request from text.
@@ -390,10 +474,15 @@ mod tests {
                     "sse" => ("text/event-stream", format!("event: message\ndata: {}\n\n", tool_result())),
                     "gzip" => ("application/json\r\ncontent-encoding: gzip", tool_result()),
                     "missing" => ("text/plain", "not here".to_string()),
+                    "empty" => ("text/plain", String::new()),
                     "big" => ("application/json", " ".repeat(MAX_BODY + 1)),
                     _ => ("application/json", tool_result()),
                 };
-                let status = if mode == "missing" { "404 Not Found" } else { "200 OK" };
+                let status = match mode.as_str() {
+                    "missing" => "404 Not Found",
+                    "empty" => "204 No Content",
+                    _ => "200 OK",
+                };
                 let _ = write!(
                     w,
                     "HTTP/1.1 {status}\r\ncontent-type: {ctype}\r\nmcp-session-id: s1\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
@@ -415,8 +504,12 @@ mod tests {
     // Sends a raw request to the proxy and returns the whole raw response.
     fn call(addr: SocketAddr, extra: &str, body: &str) -> String {
         let mut s = TcpStream::connect(addr).expect("connect");
-        write!(s, "POST /mcp HTTP/1.1\r\nHost: x\r\n{extra}Content-Length: {}\r\n\r\n{body}", body.len())
-            .expect("send");
+        write!(
+            s,
+            "POST /mcp HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{extra}Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("send");
         let mut out = String::new();
         s.read_to_string(&mut out).expect("read");
         out
@@ -436,6 +529,105 @@ mod tests {
             sse.contains("event: message\ndata: {") && sse.contains(r#""text":"{\"a\":[1,2]}""#),
             "{sse}"
         );
+    }
+
+    // Reads one response from a kept-open connection: its head, then a body sized by Content-Length or sent in chunks.
+    fn response(r: &mut BufReader<TcpStream>) -> (String, String) {
+        let mut head = String::new();
+        loop {
+            let mut line = String::new();
+            r.read_line(&mut line).expect("head line");
+            head.push_str(&line);
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let lower = head.to_ascii_lowercase();
+        let mut body = Vec::new();
+        if let Some(n) =
+            lower.split("content-length: ").nth(1).and_then(|v| v.split("\r\n").next()?.parse::<usize>().ok())
+        {
+            body.resize(n, 0);
+            r.read_exact(&mut body).expect("body");
+        } else if lower.contains("transfer-encoding: chunked") {
+            loop {
+                let mut size = String::new();
+                r.read_line(&mut size).expect("chunk size");
+                let n = usize::from_str_radix(size.trim(), 16).expect("hex size");
+                let mut chunk = vec![0; n + 2];
+                r.read_exact(&mut chunk).expect("chunk");
+                if n == 0 {
+                    break;
+                }
+                body.extend_from_slice(&chunk[..n]);
+            }
+        }
+        (head, String::from_utf8(body).expect("utf8"))
+    }
+
+    // Checks one connection carries several requests: a sized JSON answer, a chunked event stream and an error, then closes on request.
+    #[test]
+    fn test_proxy_keeps_connection_open() {
+        let addr = proxy(upstream());
+        let s = TcpStream::connect(addr).expect("connect");
+        let mut w = s.try_clone().expect("clone");
+        let mut r = BufReader::new(s);
+        let send = |w: &mut TcpStream, extra: &str, body: &str| {
+            write!(w, "POST /mcp HTTP/1.1\r\nHost: x\r\n{extra}Content-Length: {}\r\n\r\n{body}", body.len())
+                .expect("send")
+        };
+        send(&mut w, "", CALL);
+        let (head, body) = response(&mut r);
+        assert!(
+            head.contains("connection: keep-alive") && body.contains(r#""text":"{\"a\":[1,2]}""#),
+            "{head}{body}"
+        );
+        send(&mut w, "X-Mode: sse\r\n", CALL);
+        let (head, body) = response(&mut r);
+        assert!(
+            head.contains("transfer-encoding: chunked") && body.contains(r#""text":"{\"a\":[1,2]}""#),
+            "{head}{body}"
+        );
+        send(&mut w, "X-Mode: empty\r\n", "");
+        let (head, body) = response(&mut r);
+        assert!(
+            head.starts_with("HTTP/1.1 204 No Content\r\n") && !head.contains("chunked") && body.is_empty(),
+            "{head}"
+        );
+        send(&mut w, "Origin: https://evil.example\r\n", CALL);
+        let (head, _) = response(&mut r);
+        assert!(head.starts_with("HTTP/1.1 403") && head.contains("connection: keep-alive"));
+        send(&mut w, "Connection: close\r\n", CALL);
+        let (head, _) = response(&mut r);
+        assert!(head.contains("connection: close"));
+        let mut rest = String::new();
+        r.read_to_string(&mut rest).expect("closed");
+        assert!(rest.is_empty());
+    }
+
+    // Checks HTTP/1.0 closes unless it asks to keep the connection, and a client that just hangs up ends the connection quietly.
+    #[test]
+    fn test_proxy_http10_and_hangup() {
+        let addr = proxy(upstream());
+        let mut s = TcpStream::connect(addr).expect("connect");
+        write!(s, "POST /mcp HTTP/1.0\r\nContent-Length: {}\r\n\r\n{CALL}", CALL.len()).expect("send");
+        let mut out = String::new();
+        s.read_to_string(&mut out).expect("read");
+        assert!(out.contains("connection: close"));
+        let s = TcpStream::connect(addr).expect("connect");
+        let mut w = s.try_clone().expect("clone");
+        let mut r = BufReader::new(s);
+        write!(
+            w,
+            "POST /mcp HTTP/1.0\r\nConnection: keep-alive\r\nContent-Length: {}\r\n\r\n{CALL}",
+            CALL.len()
+        )
+        .expect("send");
+        assert!(response(&mut r).0.contains("connection: keep-alive"));
+        w.shutdown(std::net::Shutdown::Write).expect("hang up");
+        let mut rest = String::new();
+        r.read_to_string(&mut rest).expect("closed");
+        assert!(rest.is_empty());
     }
 
     // Checks encoded, error, oversized and unrequested answers pass through untouched.
