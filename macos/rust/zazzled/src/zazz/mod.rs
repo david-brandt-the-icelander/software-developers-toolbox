@@ -558,6 +558,10 @@ fn snapshot() {
         t.write("bad/src/main.rs", b"// No document.\nfn main() {\n    zazz::serve(zazz::Handlers::new().json_command(|_, i| Ok(i)));\n}\n");
         run(&["zazz", "pack", "bad"]);
         assert_eq!(run(&["zazz", "add", "bad.zazz"])["error"]["code"], "invalid_openapi");
+        t.write("text/zazz.json", br#"{"zazz":1,"name":"text","kind":"rust","entry":"src/main.rs","messages":["json-command","openapi"]}"#);
+        t.write("text/src/main.rs", b"// A document that is not an object.\nfn main() {\n    zazz::serve(zazz::Handlers::new().json_command(|_, i| Ok(i)).openapi(|| zazz::json!(\"none\")));\n}\n");
+        run(&["zazz", "pack", "text"]);
+        assert_eq!(run(&["zazz", "add", "text.zazz"])["error"]["code"], "invalid_openapi");
         assert_eq!(run(&["zazz", "ls"]).as_array().map(Vec::len), Some(1));
         e.zazz.pool.shutdown();
     }

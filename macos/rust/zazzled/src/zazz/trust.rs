@@ -321,6 +321,8 @@ mod tests {
             (Some(true), json!({"native": false, "network": {"hosts": ["a.com"]}})),
             "{v}"
         );
+        let with_ca = evaluate(&z, &[leaf, ca]);
+        assert_eq!(with_ca["grants"], json!({"native": false, "network": {"hosts": ["a.com"]}}), "{with_ca}");
     }
 
     // Checks the system trust directory is only read when root-owned.

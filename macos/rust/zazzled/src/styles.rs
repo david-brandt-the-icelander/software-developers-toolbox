@@ -258,5 +258,7 @@ mod tests {
         assert!(none("a {\n  background: url(data:image/png;base64,AAAA);\n  b: url(x.png;\n}\n"));
         assert!(none("}\n}\na { }\n"));
         assert_eq!(body("@font-face {\n  src: url(a);\n}\n", Kind::Css), ["1-3\t⋯ @font-face, 3 line(s)"]);
+        assert_eq!(shorten_data_uris("background: url(a.png);"), ("background: url(a.png);".to_string(), 0));
+        assert_eq!(shorten_data_uris("a: url(x"), ("a: url(x".to_string(), 0));
     }
 }

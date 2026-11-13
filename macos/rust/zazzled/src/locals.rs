@@ -1,4 +1,4 @@
-// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
@@ -10,7 +10,8 @@ const KEYWORDS: &[&str] = &[
     "var", "void", "with", "None", "True", "abs", "all", "any", "bin", "chr", "dir", "hex", "id", "int",
     "iter", "len", "list", "map", "max", "min", "next", "num", "oct", "ord", "pow", "str", "sum", "box",
     "dyn", "fn", "impl", "loop", "mod", "move", "mut", "pub", "ref", "self", "use", "cap", "chan", "func",
-    "go", "make", "nil", "byte", "char",
+    "go", "make", "nil", "byte", "char", "it", "fun", "val", "by", "out", "auto", "bool", "long", "goto",
+    "std", "asm", "xor", "some", "Self",
 ];
 
 // One local to rename: the byte spans of its declaration and uses, and its new name.
@@ -23,6 +24,15 @@ pub struct Rename {
 pub fn renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
     let mut out = Vec::new();
     let mut done: Vec<(Node, String, String)> = Vec::new();
+    let macro_kinds = ["preproc_def", "preproc_function_def"];
+    let macros: HashSet<&str> = match lang {
+        Lang::C | Lang::Cpp => preorder(root)
+            .into_iter()
+            .filter(|n| macro_kinds.contains(&n.kind()))
+            .flat_map(|n| words(&src[n.byte_range()]))
+            .collect(),
+        _ => HashSet::new(),
+    };
     for scope in preorder(root).into_iter().filter(|n| is_scope(n.kind(), lang)) {
         let nodes = preorder(scope);
         if poisoned(&nodes, lang, src) {
@@ -36,7 +46,9 @@ pub fn renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
             }
         }
         for name in declared(scope, &nodes, lang, src) {
-            let (Some(want), Some(spans)) = (abbreviate(&name), uses(scope, &nodes, &name, lang, src)) else {
+            let spans =
+                if macros.contains(name.as_str()) { None } else { uses(scope, &nodes, &name, lang, src) };
+            let (Some(want), Some(spans)) = (abbreviate(&name), spans) else {
                 continue;
             };
             let mut short = want.clone();
@@ -99,6 +111,9 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
         Lang::Rust => matches!(kind, "function_item" | "closure_expression"),
         Lang::Go => matches!(kind, "function_declaration" | "method_declaration" | "func_literal"),
         Lang::Java => matches!(kind, "method_declaration" | "constructor_declaration" | "lambda_expression"),
+        Lang::Kotlin => matches!(kind, "function_declaration" | "lambda_literal" | "anonymous_function"),
+        Lang::Swift => matches!(kind, "function_declaration" | "init_declaration" | "lambda_literal"),
+        Lang::C | Lang::Cpp => matches!(kind, "function_definition" | "lambda_expression"),
     }
 }
 
@@ -113,20 +128,44 @@ fn is_params(kind: &str) -> bool {
             | "closure_parameters"
             | "parameter_list"
             | "inferred_parameters"
+            | "function_value_parameters"
+            | "lambda_function_type_parameters"
+            | "lambda_parameter"
+            | "parameter"
     )
 }
 
-// True when a function reaches its locals by name at run time (eval, locals(), vars(), exec, with), so nothing in it is renamed.
+// True when nothing in a function should be renamed: it reaches its locals by name at run time (eval, locals(), vars(), exec, with), its parse has errors, or a C function definition has no function declarator (a macro hid its shape).
 fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
     let dynamic: &[&str] = match lang {
         Lang::Python => &["locals", "vars", "eval", "exec"],
         Lang::JavaScript | Lang::TypeScript | Lang::Tsx => &["eval"],
-        Lang::Dart | Lang::Rust | Lang::Go | Lang::Java => &[],
+        Lang::Dart
+        | Lang::Rust
+        | Lang::Go
+        | Lang::Java
+        | Lang::Kotlin
+        | Lang::Swift
+        | Lang::C
+        | Lang::Cpp => &[],
     };
-    nodes.iter().any(|n| {
-        n.kind() == "with_statement" && lang != Lang::Python
-            || n.kind() == "identifier" && dynamic.contains(&&src[n.byte_range()])
-    })
+    let not_a_function = matches!(lang, Lang::C | Lang::Cpp)
+        && nodes.first().is_some_and(|f| {
+            f.kind() == "function_definition"
+                && f.child_by_field_name("declarator").is_none_or(|d| !has_kind(d, "function_declarator"))
+        });
+    not_a_function
+        || nodes.iter().any(|n| {
+            n.is_error()
+                || n.is_missing()
+                || n.kind() == "with_statement" && lang != Lang::Python
+                || n.kind() == "identifier" && dynamic.contains(&&src[n.byte_range()])
+        })
+}
+
+// True when a node or one of its descendants has the given kind.
+fn has_kind(n: Node, kind: &str) -> bool {
+    preorder(n).iter().any(|x| x.kind() == kind)
 }
 
 // Returns the nearest function scope around a node, not counting the node itself.
@@ -166,6 +205,20 @@ fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
         (Lang::Go, "short_var_declaration") => field("left"),
         (Lang::Go, "range_clause") if has_decl_keyword(n) => field("left"),
         (Lang::Go, "var_spec") => return kids(n).filter(|c| c.kind() == "identifier").collect(),
+        (Lang::Kotlin, "variable_declaration")
+            if n.parent().is_some_and(|p| {
+                matches!(p.kind(), "property_declaration" | "for_statement" | "when_subject")
+            }) =>
+        {
+            kids(n).find(|c| c.kind() == "identifier")
+        }
+        (Lang::Swift, "property_declaration") => field("name"),
+        (Lang::Swift, "for_statement") => field("item"),
+        (Lang::C | Lang::Cpp, "declaration") => {
+            let mut cursor = n.walk();
+            return n.children_by_field_name("declarator", &mut cursor).flat_map(targets).collect();
+        }
+        (Lang::Cpp, "for_range_loop") => field("declarator"),
         (Lang::Dart, "initialized_variable_declaration" | "initialized_identifier" | "for_statement") => {
             field("name")
         }
@@ -189,9 +242,12 @@ fn kids<'t>(n: Node<'t>) -> impl Iterator<Item = Node<'t>> {
 // Returns the plain identifiers of an assignment target, looking inside tuple and list patterns.
 fn targets(t: Node) -> Vec<Node> {
     match t.kind() {
-        "identifier" => vec![t],
-        "tuple_pattern" | "pattern_list" | "list_pattern" | "expression_list" => {
+        "identifier" | "simple_identifier" => vec![t],
+        "tuple_pattern" | "pattern_list" | "list_pattern" | "expression_list" | "pattern" => {
             kids(t).flat_map(targets).collect()
+        }
+        "init_declarator" | "pointer_declarator" | "reference_declarator" | "array_declarator" => {
+            t.child_by_field_name("declarator").or_else(|| t.named_child(0)).map(targets).unwrap_or_default()
         }
         _ => Vec::new(),
     }
@@ -205,22 +261,32 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
         n.kind() == "string_content"
             && (t.contains(&format!("{{{name}}}")) || t.contains(&format!("{{{name}:")))
     };
-    if lang == Lang::Rust && nodes.iter().any(in_format) {
+    let in_template = |n: &Node| {
+        let t = &src[n.byte_range()];
+        n.kind() == "string_literal"
+            && t.match_indices(&format!("${name}"))
+                .any(|(i, m)| !t[i + m.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+    };
+    if lang == Lang::Rust && nodes.iter().any(in_format)
+        || lang == Lang::Kotlin && nodes.iter().any(in_template)
+    {
         return None;
     }
     let mut spans = Vec::new();
     let mut decls = Vec::new();
     for n in nodes.iter().filter(named) {
         match n.kind() {
-            "identifier" | "identifier_dollar_escaped" => {}
+            "identifier" | "identifier_dollar_escaped" | "simple_identifier" => {}
             "shorthand_property_identifier"
             | "shorthand_property_identifier_pattern"
-            | "shorthand_field_identifier" => return None,
+            | "shorthand_field_identifier"
+            | "type_identifier" => return None,
             _ => continue,
         }
         let parent = n.parent()?;
-        if declared_by(parent, lang).iter().any(|d| d.id() == n.id())
-            || parent.parent().is_some_and(|g| declared_by(g, lang).iter().any(|d| d.id() == n.id()))
+        if std::iter::successors(Some(parent), |x| x.parent())
+            .take(4)
+            .any(|a| declared_by(a, lang).iter().any(|d| d.id() == n.id()))
         {
             decls.push(*n);
         }
@@ -267,6 +333,18 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         (Lang::Java, "method_invocation") if is_field(parent, "name") => return Role::Other,
         (Lang::Java | Lang::Rust, "scoped_identifier") if !in_use(parent) => return Role::Other,
         (Lang::Rust, "macro_invocation") if is_field(parent, "macro") => return Role::Unsafe,
+        (Lang::Kotlin, "navigation_expression")
+            if parent.named_child(0).is_some_and(|f| f.id() != n.id()) =>
+        {
+            return Role::Other
+        }
+        (Lang::Kotlin, "value_argument") if n.next_sibling().is_some_and(|s| s.kind() == "=") => {
+            return Role::Other
+        }
+        (Lang::Kotlin, "user_type") => return Role::Other,
+        (Lang::Swift, "navigation_suffix" | "value_argument_label") => return Role::Other,
+        (Lang::C | Lang::Cpp, "qualified_identifier") => return Role::Other,
+        (Lang::Cpp, "lambda_capture_initializer") if is_field(parent, "left") => return Role::Unsafe,
         (Lang::Rust, "token_tree") if n.prev_sibling().is_some_and(|p| matches!(p.kind(), "::" | ".")) => {
             return Role::Other
         }
@@ -302,6 +380,7 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
     let mut p = Some(parent);
     while let Some(x) = p.filter(|x| x.id() != scope.id()) {
         let unsafe_kind = is_params(x.kind())
+            || x.kind().starts_with("preproc")
             || matches!(
                 x.kind(),
                 "global_statement"
@@ -347,6 +426,12 @@ fn block_of(decl: Node) -> Option<Node> {
         "enhanced_for_statement",
         "constructor_body",
         "switch_block",
+        "compound_statement",
+        "for_range_loop",
+        "while_statement",
+        "switch_statement",
+        "when_expression",
+        "statements",
         "if_statement",
         "expression_switch_statement",
         "type_switch_statement",
@@ -627,5 +712,63 @@ mod tests {
         assert!(
             renamed("function f() {\n  const counter = 1;\n  eval('x');\n}\n", Lang::JavaScript).is_empty()
         );
+    }
+
+    // Checks Kotlin locals and the places that keep a name: `$name` templates, named arguments, members, types, lambda parameters.
+    #[test]
+    fn test_kotlin() {
+        let src = "fun f(repo: Repo) {\n    val invoiceRows = repo.rows(invoiceRows = 1)\n    var runningTotal = 0\n    for (invoiceRow in invoiceRows) { runningTotal += invoiceRow.amount }\n    x.runningTotal = runningTotal\n    println(\"${runningTotal}\")\n}\n";
+        assert_eq!(
+            renamed(src, Lang::Kotlin),
+            ["invoiceRows->ir@2", "runningTotal->rt@4", "invoiceRow->ir2@2"]
+        );
+        let none = |src: &str| renamed(src, Lang::Kotlin).is_empty();
+        assert!(none("fun f() {\n    val counter = 1\n    println(\"$counter!\")\n}\n"));
+        assert!(none("fun f() {\n    val counter = 1\n    xs.map { counter -> counter }\n}\n"));
+        assert!(none("fun f(counter: Int) {\n    val counter = 2\n}\n"));
+        assert_eq!(renamed("fun f() {\n    val counter = 1\n    println(\"$counters\")\n    val y: counter = counter\n}\n", Lang::Kotlin), ["counter->cou@2"]);
+        assert_eq!(
+            renamed("fun f() {\n    when (val counter = g()) { else -> counter }\n}\n", Lang::Kotlin),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks Swift locals, interpolation, labels and members, and parameters keep their names.
+    #[test]
+    fn test_swift() {
+        let src = "func f(repo: Repo) {\n    let invoiceRows = repo.rows(invoiceRows: 1)\n    var runningTotal = 0\n    for invoiceRow in invoiceRows { runningTotal += invoiceRow.amount }\n    print(\"\\(runningTotal) \\(x.runningTotal)\")\n}\n";
+        assert_eq!(
+            renamed(src, Lang::Swift),
+            ["invoiceRows->ir@2", "runningTotal->rt@3", "invoiceRow->ir2@2"]
+        );
+        let none = |src: &str| renamed(src, Lang::Swift).is_empty();
+        assert!(none("func f(counter: Int) {\n    let counter = 2\n}\n"));
+        assert!(none("func f() {\n    let counter = 1\n    xs.map { counter in counter }\n}\n"));
+        assert!(none("func f() {\n    let counter = 1\n    let counter = 2\n}\n"));
+    }
+
+    // Checks C and C++ locals through pointers, references and arrays, and the places that keep a name: macros, init-captures, type names, misparsed macros.
+    #[test]
+    fn test_c_cpp() {
+        let src = "int f(int n) {\n    int total_sum = 0, *item_ptr = 0, buffer_data[4];\n    for (int index_value = 0; index_value < n; index_value++) total_sum += buffer_data[index_value];\n    return total_sum + *item_ptr + s.total_sum;\n}\n";
+        assert_eq!(
+            renamed(src, Lang::C),
+            ["total_sum->ts@3", "item_ptr->ip@2", "buffer_data->bd@2", "index_value->iv@4"]
+        );
+        let cpp = "int f() {\n    auto counter = 1;\n    for (const auto& line_item : xs) { counter += line_item; }\n    auto g = [&counter]() { return counter; };\n    return std::counter(counter);\n}\n";
+        assert_eq!(renamed(cpp, Lang::Cpp), ["counter->cou@5", "line_item->li@2"]);
+        let none_c = |src: &str| renamed(src, Lang::C).is_empty();
+        let none_cpp = |src: &str| renamed(src, Lang::Cpp).is_empty();
+        assert!(none_c(
+            "#define USE() (counter + 1)\nint f() {\n    int counter = 1;\n    return USE();\n}\n"
+        ));
+        assert!(none_c("int f() {\n    int counter = 1;\n#ifdef counter\n    return 0;\n#endif\n    return counter;\n}\n"));
+        assert!(none_cpp(
+            "int f() {\n    int counter = 1;\n    auto g = [counter = 2]() { return counter; };\n}\n"
+        ));
+        assert!(none_cpp("void f() {\n    Fn handler_fn([](int) {});\n    Ref wr(nurse, handler_fn);\n}\n"));
+        assert!(none_c("static WSD struct Stat {\n    int now_value[10];\n} stats = {0};\n"));
+        assert!(none_c("int f() {\n    int counter = 1;\n    return counter +;\n}\n"));
+        assert!(none_c("int f() {\n    int counter = 1;\n    @@ counter $$;\n    return counter;\n}\n"));
     }
 }

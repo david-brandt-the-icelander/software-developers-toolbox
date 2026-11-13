@@ -314,6 +314,10 @@ pub mod tests {
         assert!(verify_chain_now(&[leaf.clone(), other_leaf], std::slice::from_ref(&ca))
             .unwrap_err()
             .contains("is not signed by"));
+        let under_leaf = leaf_from(&leaf_key, &leaf, &stray, &json!({}));
+        assert!(verify_chain_now(std::slice::from_ref(&under_leaf), std::slice::from_ref(&leaf))
+            .unwrap_err()
+            .contains("no trusted authority"));
         let forged = leaf_from(&stray, &ca, &leaf_key, &json!({}));
         assert!(verify_chain_now(std::slice::from_ref(&forged), std::slice::from_ref(&ca)).is_err());
         assert!(!signed_by(

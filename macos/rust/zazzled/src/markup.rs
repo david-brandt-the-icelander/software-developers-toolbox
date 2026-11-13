@@ -275,6 +275,10 @@ mod tests {
         assert_eq!(shorten(r#"<p class="@x a b c d e">"#).1, 0);
         assert_eq!(shorten(r#"<p data-class="a b c d e f">"#).1, 0);
         assert_eq!(shorten(r#"<p class="a b c d e"#).1, 0);
+        assert_eq!(shorten(r#"<p style="color: red">"#).1, 0);
+        assert_eq!(shorten(r#"<p style="{{ s }} color: red; margin: 0 auto; padding: 4px 8px 4px">"#).1, 0);
+        assert_eq!(shorten(r#"<p class="${a} b c d e f">"#).1, 0);
+        assert_eq!(shorten(r#"<p title="x"class="a b c d e f">"#).1, 0);
         assert_eq!(body("<i class=\"a b c d e\"></i>", Kind::Html), ["1~\t<i class=\"a b c …\"></i>"]);
     }
 

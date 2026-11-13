@@ -176,6 +176,9 @@ mod tests {
         assert_eq!(split("a,\n"), v(&["a"]));
         assert_eq!(split("Func<int> f = x => x, int y"), v(&["Func<int> f = x => x", "int y"]));
         assert_eq!(split("f: impl Fn(u8) -> u8, x: i32"), v(&["f: impl Fn(u8) -> u8", "x: i32"]));
+        assert!(!arrow(">a", 0) && !arrow("a>", 1));
+        assert_eq!(split_top("a=>b", '='), ("a=>b", ""));
+        assert_eq!(split_top_colon(":T"), Some(("", "T")));
     }
 
     // Checks queries with and without parameter lists.
