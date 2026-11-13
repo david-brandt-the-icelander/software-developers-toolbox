@@ -88,16 +88,21 @@ fn header(size: u64) -> [u8; 16] {
     h
 }
 
+// Wrap the last OS error with the step that failed.
+#[cfg(target_os = "macos")]
+fn step_error(step: &str) -> std::io::Error {
+    let e = std::io::Error::last_os_error();
+    std::io::Error::new(e.kind(), format!("{step}: {e}"))
+}
+
 // Set one extended attribute through an open file descriptor.
 #[cfg(target_os = "macos")]
 fn set_xattr(fd: libc::c_int, name: &str, value: &[u8]) -> std::io::Result<()> {
     let name = std::ffi::CString::new(name).map_err(std::io::Error::other)?;
     // SAFETY: fd is open, name is NUL-terminated and value is a valid slice for its length.
-    let rc = unsafe {
-        libc::fsetxattr(fd, name.as_ptr(), value.as_ptr().cast(), value.len(), 0, libc::XATTR_NOFOLLOW)
-    };
+    let rc = unsafe { libc::fsetxattr(fd, name.as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) };
     if rc != 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(step_error(&format!("setxattr {}", name.to_string_lossy())));
     }
     Ok(())
 }
@@ -114,7 +119,7 @@ pub fn apply(path: &Path, size: u64, fork: &[u8]) -> std::io::Result<()> {
     let flags = crate::util::flags(&file.metadata()?);
     // SAFETY: fd is an open file descriptor owned by `file`.
     if unsafe { libc::fchflags(fd, flags | crate::util::UF_COMPRESSED) } != 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(step_error("chflags"));
     }
     Ok(())
 }
