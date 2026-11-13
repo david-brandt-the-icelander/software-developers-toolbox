@@ -7,7 +7,7 @@ Status: draft, not implemented. Revision 3:
 - a standard test library fakes the edges (filesystem, network, stdio, clock);
 - `keygen` and `sign` are scripts themselves.
 
-Open decisions are D9–D12 at the end.
+All decisions are settled (§2).
 
 ## 1. What it is
 
@@ -53,6 +53,10 @@ human:  zazz install /tmp/csv-sum.zazz && csv-sum -d ';' a.csv | sort
   - Revocation is done by the external system (for example AD/MDM removing or distrusting a certificate). We pick it up at the next refresh.
 - **Tests:** a `.zazz` should include unit tests. A script whose tests fail is never run. Tests run once per script hash per machine.
 - **Test library:** included automatically. It makes edge interactions (filesystem, network, stdio, clock, cancellation) easy to fake and assert.
+- **D9 Signature algorithm:** ECDSA P-256. It works with the Secure Enclave, Keychain/SecTrust, AD CS and MDM-issued certificates.
+- **D10 After a refresh says "revoked":** native scripts fall back to their WASM build, and WASM scripts drop to the unsigned tier (no network). A launch is never blocked. The default `trust_ttl` is 600 s.
+- **D11 Tests are optional:** `add` warns on `tests: 0`. An administrator can still require tests with the global policy switch `require_tests` (off by default). This applies to native scripts too.
+- **D12 Built-ins are prebuilt:** `keygen`, `sign` and `trust` ship as prebuilt universal native binaries signed by the pinned release authority. `native-bin` is accepted only from that authority, so the built-ins work on machines with no Rust toolchain.
 - **Earlier fixed points still hold:**
   - one compressed file, decompressed with our own built-in code;
   - no copy of the `.zazz` is kept;
@@ -182,7 +186,7 @@ human:  zazz install /tmp/csv-sum.zazz && csv-sum -d ';' a.csv | sort
 8. **Run the tests** (§9) in the script's runtime tier, but always with no network and a scratch copy of `tests/fixtures/` as cwd.
    - Any failure: nothing is published, and the reply lists the failures.
    - Pass: record `{passed, failed:0, duration_ms, build_key}`.
-   - No tests: `"tests":0` with a warning, or refusal when the policy sets `require_tests` (D11).
+   - No tests: `"tests":0` with a warning, or refusal when the global policy sets `require_tests` (D11).
 9. Fetch `openapi` if declared and cache it.
 10. Publish atomically (temp file + rename): the metadata, the verdict, the test record and the artifacts.
 11. Delete the temp directory (sources, test binaries, fixtures) and release the lock.
@@ -376,15 +380,4 @@ agents/skills/zazz/SKILL.md
 
 ## 16. Open decisions
 
-- **D9 Signature algorithm.**
-  - Recommended: ECDSA P-256 (Secure Enclave, Keychain/SecTrust, AD CS and MDM certificates).
-  - Alternative: Ed25519, which is simpler but cannot live in the Secure Enclave and is rarely issued by enterprise PKI.
-- **D10 After a refresh says "revoked".**
-  - Recommended: native falls back to the WASM build and WASM drops to unsigned; launch is never blocked. Default `trust_ttl` = 600 s.
-  - Alternative: refuse scripts whose signer is revoked (still never blocking on the lookup itself).
-- **D11 Are tests mandatory?**
-  - Recommended: optional by default, with `add` warning on `tests: 0`, a policy `require_tests` switch, and tests always required for native scripts.
-  - Alternative: required for every script.
-- **D12 Built-ins as prebuilt native binaries.**
-  - Recommended: `keygen`/`sign`/`trust` ship prebuilt and signed by the pinned release authority (the only `native-bin` exception), so they work on machines with no Rust toolchain.
-  - Alternative: compile them from source like any other script and require `rustc`.
+None. D9–D12 are settled in §2. Implementation starts with the §15 spikes, then phase 1.
