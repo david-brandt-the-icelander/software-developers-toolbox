@@ -3,6 +3,7 @@
 A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` and `sed -i` with commands whose output is short, capped, ranked and deduplicated per session.
 
 - `zazzle` (`macos/c/zazzle/`): a tiny C program with no libc on Linux (raw syscalls); on macOS it links libSystem but still uses raw syscalls for all I/O. It sends its arguments, working-directory descriptor and standard streams to the daemon and exits with the daemon's status byte.
+- `zazz`: the same invoker under another name, for the zazz script commands below; installed scripts are symlinks to it.
 - `zazzled` (this crate): the long-lived daemon. `zazzled serve` listens on `~/.zazzle/sock`; `zazzled mcp` is an MCP stdio server in front of the same daemon (no process spawn per call); `zazzled run CMD..` runs one command in-process; `zazzled install` / `uninstall` manage the macOS LaunchAgent.
 
 ## Setup
@@ -29,6 +30,30 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | `status` | daemon, cache and session counters |
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` has its own) and `--disable-session-deduping`.
+
+## zazz scripts
+
+Agents (and humans) can ship small programs to zazzled: a `.zazz` file is a ZIP (stored or deflate, read with built-in code) holding `zazz.json`, Rust sources (`src/`, `tests/`) or a prebuilt WASM module. Design and decisions: `ZAZZ-PLAN.md`; agent how-to: `agents/skills/zazz/SKILL.md`.
+
+| command | does |
+|---|---|
+| `zazz new NAME` | a script directory to start from (manifest, `src/main.rs`, `tests/basic.rs`) |
+| `zazz test DIR\|FILE [--update]` | builds to WASM and runs the tests; replies with diagnostics or a test report; registers nothing |
+| `zazz pack DIR [-o FILE]` | a deterministic `.zazz` (same sources, same bytes, same id) |
+| `zazz add FILE` | reads the file once, ids it by the BLAKE3 of its exact bytes, builds and tests once, registers; `cached` when known |
+| `zazz call ID [JSON\|-]` / `zazz call ID OP [--params J] [--body J]` | runs `json-command` or one OpenAPI operation in a warm sandboxed worker; JSON in, JSON out |
+| `zazz describe\|ls\|rm` | what a script is and may touch; the registry |
+| `zazz install FILE\|ID [--as NAME]`, `zazz run NAME ARGS`, `uninstall`, `list` | commands for humans: `~/.zazzle/bin/NAME` links to the invoker; flags come from the manifest's `cli` spec |
+| `zazz keygen NAME [--native] [--network ...]`, `zazz sign FILE`, `zazz trust add\|ls\|rm` | signing authorities and the machine's trust in them |
+| `zazz doctor` | rustc, the `wasm32-wasip1` target, zazz-worker, the OS sandbox, paths |
+
+- **Runtime:** Rust scripts compile (std + the embedded `zazz` SDK, built once per toolchain) to `wasm32-wasip1` and run in `zazz-worker` (wasmtime). Each call gets a fresh instance with time and memory limits; workers are kept warm per (script, directory, policy) and recycled.
+- **Two sandbox layers:**
+  - WASI preopens only the manifest's paths; the `zazz_host` imports carry the call, progress, cancellation and allowlisted HTTPS.
+  - The OS sandbox wraps every worker, `rustc` build and test run: Landlock + seccomp on Linux, `sandbox-exec` on macOS. Unsigned scripts never run without it.
+- **Signing:** a `zazz.sig` (ECDSA P-256 over a canonical digest, plus the signer's chain) is checked at add. Authorities are certificates in root-owned `/etc/zazzle/trust.d` (and the Keychain on macOS); their grants (network hosts, paths, native) narrow what the script may do. Verdicts are cached for `trust_ttl` (root-owned `/etc/zazzle/policy.json`, default 600 s) and refreshed in the background, so a call never waits on trust. Only signed and trusted scripts get network; scripts trusted for native code also get a host build and run natively under the OS sandbox, falling back to WASM when trust is withdrawn.
+- **Streams:** through the invoker a script reads and writes the caller's real stdin, stdout and stderr; over MCP the output is captured into the reply.
+- **Store:** `~/.zazzle/v1/zazz/` (0700) keeps compiled modules, native binaries and metadata, never the `.zazz` itself.
 
 ## Session ids and dedupe
 

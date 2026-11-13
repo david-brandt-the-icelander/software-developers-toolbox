@@ -24,7 +24,7 @@ trap 'rm -rf "$work"' EXIT
 
 root="$work/zazzle/$version"
 mkdir -p "$root/bin" "$root/libexec/indexer"
-for binary in zazzle zazzled afs fix-network free-disk-space; do
+for binary in zazzle zazz zazzled zazz-worker afs fix-network free-disk-space; do
   [ -f "$bin_dir/$binary" ] || { echo "missing binary: $bin_dir/$binary" >&2; exit 1; }
   install -m 0755 "$bin_dir/$binary" "$root/bin/$binary"
 done

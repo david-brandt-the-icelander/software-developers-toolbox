@@ -9,6 +9,13 @@ Status: draft, not implemented. Revision 3:
 
 All decisions are settled (§2).
 
+Implementation status (this branch): implemented, with these deviations and gaps:
+- `keygen`, `sign` and `trust` are built-in zazzled commands with software P-256 keys in `~/.zazzle/keys` (0600), not yet prebuilt signed scripts using the Keychain or Secure Enclave (D12).
+- macOS trust also reads root-owned `/etc/zazzle/trust.d`; the Keychain path (`SecTrust`, trust settings on `trust add`) compiles but is not exercised by CI.
+- The zazz OIDs sit under IANA's example enterprise number 32473 until a registered PEN replaces them.
+- Network for signed WASM scripts goes through `zazz_host.http` (wasi:http and components are not linked yet). Native scripts get no SDK HTTP client.
+- No `wasm` component transport; core WASI commands only.
+
 ## 1. What it is
 
 Agents write a small program, pack it into one compressed file (`NAME.zazz`) and give zazzled its absolute path. zazzled then:

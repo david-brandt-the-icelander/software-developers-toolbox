@@ -8,7 +8,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failures=0
 sha=$(printf '%064d' 7 | tr 0 a)
-bins="zazzle zazzled afs fix-network free-disk-space"
+bins="zazzle zazz zazzled zazz-worker afs fix-network free-disk-space"
 placeholder=$(printf '#!/bin/sh\necho "zazzle-csharp-indexer is not set up yet; run: brew postinstall zazzle" >&2\nexit 1\nX')
 placeholder=${placeholder%X}
 
@@ -98,7 +98,7 @@ raise "homepage #{v[:homepage]}" unless v[:homepage] == repo
 raise "desc" unless v[:desc].is_a?(String) && v[:desc].length.between?(20, 100) && !v[:desc].end_with?(".")
 inst = f.new
 inst.install
-want = %w[zazzle zazzled afs fix-network free-disk-space]
+want = %w[zazzle zazz zazzled zazz-worker afs fix-network free-disk-space]
 raise "installed #{inst.bin.installed}" unless inst.bin.installed == want
 indexer = inst.libexec / "indexer"
 raise "indexer files #{indexer.installed}" unless indexer.installed == %w[zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz]
@@ -125,7 +125,7 @@ raise "expanded #{File.read(indexer_bin).inspect}" unless File.read(indexer_bin)
 raise "mode" unless File.stat(indexer_bin).mode & 0o777 == 0o755
 raise "temporary file left" if File.exist?("#{indexer_bin}.tmp")
 inst.instance_eval(&f.test_block)
-need = %w[zazzle zazzled fix-network free-disk-space afs zazzle-csharp-indexer]
+need = %w[zazzle zazzled zazz zazz-worker fix-network free-disk-space afs zazzle-csharp-indexer]
 raise "test ran #{inst.commands}" unless inst.commands.length == need.length
 bottles = ENV.fetch("BOTTLES", "")
 spec = f.bottle_spec
@@ -177,7 +177,7 @@ file="$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz"
 grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  zazzle-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "printed sha256"
 cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "bottle is not reproducible"
 listing=$(tar tzf "$file" | grep -v '/$' | tr '\n' ' ')
-want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzle-csharp-indexer zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
+want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazz zazzle/2.1.0/bin/zazz-worker zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzle-csharp-indexer zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
 [ "$listing" = "$want" ] || fail "contents $listing"
 tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/afs$" || fail "binary not 0755 root-owned"
 # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.

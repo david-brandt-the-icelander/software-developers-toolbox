@@ -47,7 +47,7 @@ class Zazzle < Formula
   depends_on :macos
 
   def install
-    bin.install "zazzle", "zazzled", "afs", "fix-network", "free-disk-space"
+    bin.install "zazzle", "zazz", "zazzled", "zazz-worker", "afs", "fix-network", "free-disk-space"
     (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
     (bin/"zazzle-csharp-indexer").write <<~SH
       #!/bin/sh
@@ -69,6 +69,8 @@ class Zazzle < Formula
   test do
     assert_match "zazzle", shell_output("#{bin}/zazzle version")
     assert_match "zazzled", shell_output("#{bin}/zazzled --version")
+    assert_match "zazz", shell_output("#{bin}/zazz help")
+    assert_match "zazz-worker", shell_output("#{bin}/zazz-worker version")
     assert_match "fix-network", shell_output("#{bin}/fix-network --version")
     assert_match "free-disk-space", shell_output("#{bin}/free-disk-space --version")
     assert_match "agent-fs", shell_output("#{bin}/afs --version")

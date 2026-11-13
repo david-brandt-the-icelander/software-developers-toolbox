@@ -17,6 +17,7 @@ if [ "$#" -lt 2 ]; then
   exit 2
 fi
 dir=$1
+here=$(cd "$(dirname "$0")" && pwd)
 shift
 
 missing=()
@@ -58,7 +59,10 @@ echo "signing with: $identity"
 
 mkdir "$work/notarize"
 for bin in "$@"; do
-  codesign --force --options runtime --timestamp --keychain "$keychain" --sign "$identity" "$dir/$bin"
+  # A binary with entitlements/NAME.plist gets them (zazz-worker needs executable memory for WebAssembly).
+  ent=()
+  [ -f "$here/entitlements/$bin.plist" ] && ent=(--entitlements "$here/entitlements/$bin.plist")
+  codesign --force --options runtime --timestamp ${ent[@]+"${ent[@]}"} --keychain "$keychain" --sign "$identity" "$dir/$bin"
   codesign --verify --strict --verbose=2 "$dir/$bin"
   cp "$dir/$bin" "$work/notarize/"
 done
