@@ -1,4 +1,4 @@
-/* Spawns a command repeatedly with stdout on a pipe and prints latency percentiles in microseconds. */
+/* Spawns a command repeatedly with stdout on a pipe and prints latency percentiles in microseconds; SPAWNBENCH_WARMUP sets the unmeasured warm-up runs (default 200). */
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,7 +59,9 @@ int main(int argc, char **argv)
 	}
 	int n = atoi(argv[1]);
 	char **cmd = argv + 3;
-	for (int i = 0; i < 200; i++)
+	const char *w = getenv("SPAWNBENCH_WARMUP");
+	int warmup = w ? atoi(w) : 200;
+	for (int i = 0; i < warmup; i++)
 		run_once(cmd);
 	double *v = malloc(sizeof(double) * (size_t)n);
 	double sum = 0;
