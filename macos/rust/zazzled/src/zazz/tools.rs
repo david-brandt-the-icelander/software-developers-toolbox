@@ -14,12 +14,21 @@ fn first_file(candidates: Vec<Option<PathBuf>>) -> Option<PathBuf> {
     candidates.into_iter().flatten().find(|p| p.is_file())
 }
 
-// Finds rustc: $ZAZZ_RUSTC, ~/.cargo/bin/rustc, then the Homebrew and /usr/local locations.
+// Finds rustc: $ZAZZ_RUSTC, $CARGO_HOME/bin/rustc, ~/.cargo/bin/rustc, then the Homebrew and /usr/local locations.
 pub fn rustc() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    rustc_from(std::env::var_os("ZAZZ_RUSTC"), std::env::var_os("CARGO_HOME"), std::env::var_os("HOME"))
+}
+
+// Finds rustc from explicit environment values.
+pub fn rustc_from(
+    over: Option<OsString>,
+    cargo_home: Option<OsString>,
+    home: Option<OsString>,
+) -> Option<PathBuf> {
     first_file(vec![
-        std::env::var_os("ZAZZ_RUSTC").map(PathBuf::from),
-        home.map(|h| h.join(".cargo/bin/rustc")),
+        over.map(PathBuf::from),
+        cargo_home.map(|c| PathBuf::from(c).join("bin/rustc")),
+        home.map(|h| PathBuf::from(h).join(".cargo/bin/rustc")),
         Some("/opt/homebrew/bin/rustc".into()),
         Some("/usr/local/bin/rustc".into()),
     ])
@@ -27,8 +36,13 @@ pub fn rustc() -> Option<PathBuf> {
 
 // Finds zazz-worker: $ZAZZ_WORKER, else beside the running zazzled.
 pub fn worker() -> Option<PathBuf> {
+    worker_from(std::env::var_os("ZAZZ_WORKER"))
+}
+
+// Finds zazz-worker from an explicit override.
+pub fn worker_from(over: Option<OsString>) -> Option<PathBuf> {
     let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("zazz-worker")));
-    first_file(vec![std::env::var_os("ZAZZ_WORKER").map(PathBuf::from), beside])
+    first_file(vec![over.map(PathBuf::from), beside])
 }
 
 // The environment rustc runs with: only what rustup needs to find its toolchains.
@@ -93,23 +107,20 @@ pub fn rustc_command(
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use crate::testutil::{env_lock, TempDir};
+    use crate::testutil::TempDir;
 
-    // Checks the environment overrides win and missing files are skipped.
+    // Checks the overrides win and missing files are skipped.
     #[test]
     fn test_overrides() {
-        let _g = env_lock();
         let t = TempDir::new();
         let fake = t.write("rustc", b"");
-        std::env::set_var("ZAZZ_RUSTC", &fake);
-        assert_eq!(rustc(), Some(fake.clone()));
-        std::env::set_var("ZAZZ_WORKER", &fake);
-        assert_eq!(worker(), Some(fake));
-        std::env::set_var("ZAZZ_WORKER", t.path().join("missing"));
-        assert_ne!(worker(), Some(t.path().join("missing")));
-        std::env::remove_var("ZAZZ_RUSTC");
-        std::env::remove_var("ZAZZ_WORKER");
+        assert_eq!(rustc_from(Some(fake.clone().into()), None, None), Some(fake.clone()));
+        let cargo = t.write("cargo/bin/rustc", b"");
+        assert_eq!(rustc_from(None, Some(t.path().join("cargo").into()), None), Some(cargo));
+        assert_eq!(worker_from(Some(fake.clone().into())), Some(fake));
+        assert_eq!(worker_from(Some(t.path().join("missing").into())), None);
         assert_eq!(first_file(vec![None, Some(t.path().join("nope"))]), None);
+        assert!(rustc().is_some(), "tests need a rustc");
     }
 
     // Checks version and target probes against the real toolchain, and failures on a fake one.

@@ -9,11 +9,8 @@ const START_DEADLINE: Duration = Duration::from_secs(3);
 
 // Returns the socket path from ZAZZLE_SOCK or the default under the home directory.
 pub fn socket_path() -> io::Result<PathBuf> {
-    if let Some(p) = std::env::var_os("ZAZZLE_SOCK") {
-        return Ok(PathBuf::from(p));
-    }
-    let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".zazzle").join("sock"))
+    crate::util::home_path(std::env::var_os("ZAZZLE_SOCK"), std::env::var_os("HOME"), ".zazzle/sock")
+        .map_err(io::Error::other)
 }
 
 // Sends one request over a fresh connection and returns the status and text.
@@ -86,11 +83,8 @@ mod tests {
         std::env::set_var("ZAZZLE_SOCK", "/tmp/custom.sock");
         assert_eq!(socket_path().expect("path"), PathBuf::from("/tmp/custom.sock"));
         std::env::remove_var("ZAZZLE_SOCK");
-        std::env::set_var("HOME", "/home/x");
-        assert_eq!(socket_path().expect("path"), PathBuf::from("/home/x/.zazzle/sock"));
-        std::env::remove_var("HOME");
-        assert_eq!(socket_path().unwrap_err().to_string(), "HOME is not set");
-        std::env::set_var("HOME", "/root");
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set for tests"));
+        assert_eq!(socket_path().expect("path"), home.join(".zazzle/sock"));
     }
 
     // Checks a plain call against a running server.

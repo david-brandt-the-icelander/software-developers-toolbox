@@ -345,10 +345,7 @@ fn snapshot() {
         let z = Zazz::default();
         z.set_root(t.path());
         assert_eq!(z.registry().expect("reg").root, t.path());
-        let _g = crate::testutil::env_lock();
-        std::env::set_var("ZAZZ_WORKER", "/nonexistent/zazz-worker");
         assert_eq!(Zazz::default().worker().unwrap_err()["code"], "no_worker");
-        std::env::remove_var("ZAZZ_WORKER");
         z.set_worker(Path::new("/w"));
         assert_eq!(z.worker().expect("fixed"), PathBuf::from("/w"));
     }

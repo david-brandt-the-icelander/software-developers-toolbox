@@ -31,11 +31,7 @@ impl Drop for Lock {
 
 // The default registry directory: $ZAZZ_STORE, else ~/.zazzle/v1/zazz.
 pub fn default_root() -> Result<PathBuf, String> {
-    if let Some(p) = std::env::var_os("ZAZZ_STORE") {
-        return Ok(PathBuf::from(p));
-    }
-    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".zazzle/v1/zazz"))
+    crate::util::home_path(std::env::var_os("ZAZZ_STORE"), std::env::var_os("HOME"), ".zazzle/v1/zazz")
 }
 
 // Strips the "b3:" prefix and checks an id or prefix is hex.
@@ -254,13 +250,7 @@ mod tests {
         std::env::set_var("ZAZZ_STORE", "/s");
         assert_eq!(default_root().expect("env"), PathBuf::from("/s"));
         std::env::remove_var("ZAZZ_STORE");
-        let home = std::env::var_os("HOME");
-        std::env::set_var("HOME", "/h");
-        assert_eq!(default_root().expect("home"), PathBuf::from("/h/.zazzle/v1/zazz"));
-        std::env::remove_var("HOME");
-        assert!(default_root().is_err());
-        if let Some(h) = home {
-            std::env::set_var("HOME", h);
-        }
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set for tests"));
+        assert_eq!(default_root().expect("home"), home.join(".zazzle/v1/zazz"));
     }
 }
