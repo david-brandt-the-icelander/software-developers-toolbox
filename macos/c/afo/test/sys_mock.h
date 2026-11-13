@@ -16,6 +16,7 @@ struct afo_sockaddr_un { uint16_t family; char path[108]; };
 #define AFO_SUN_PATH_MAX 108
 #define SYS_ENOENT 2
 #define SYS_ECONNREFUSED 111
+#define SYS_EAGAIN 11
 #define MOCK_SENT_MAX 4096
 
 struct mock {
@@ -27,6 +28,10 @@ struct mock {
 	long write_rc[8];
 	int write_n, write_calls;
 	long read_rc;
+	int read_calls;
+	long recv_rc;
+	int recv_calls, relax_calls;
+	uint64_t clock;
 	unsigned char status;
 	long self_exe_rc;
 	char self_exe[512];
@@ -57,10 +62,30 @@ static inline long sys_read(int fd, void *buf, size_t n)
 {
 	(void)fd;
 	(void)n;
+	M.read_calls++;
 	if (M.read_rc == 1)
 		*(unsigned char *)buf = M.status;
 	return M.read_rc;
 }
+
+/* Returns the scripted non-blocking receive result, with the status byte when it is 1. */
+static inline long sys_recv_nowait(int fd, unsigned char *b)
+{
+	(void)fd;
+	M.recv_calls++;
+	if (M.recv_rc == 1)
+		*b = M.status;
+	return M.recv_rc;
+}
+
+/* Returns a fake clock that advances one microsecond per reading. */
+static inline uint64_t sys_clock_now(void) { return M.clock++; }
+
+/* Returns the fake clock value us microseconds from now. */
+static inline uint64_t sys_clock_after_us(uint64_t us) { return sys_clock_now() + us; }
+
+/* Counts spin hints. */
+static inline void sys_cpu_relax(void) { M.relax_calls++; }
 
 /* Records stderr text; scripted results apply to other descriptors. */
 static inline long sys_write(int fd, const void *buf, size_t n)
