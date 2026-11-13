@@ -37,9 +37,10 @@ jobs:
       - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles)
         working-directory: macos/release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
+          bash fetch-cyberspace-generator.test.sh
       - run: cargo clippy --workspace --all-targets --locked
 
   test:

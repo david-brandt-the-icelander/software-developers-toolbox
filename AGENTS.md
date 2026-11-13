@@ -18,13 +18,15 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - zazzled branch coverage: `sh zazzled/coverage.sh 95` in `macos/rust`.
 - Branch coverage (nightly `llvm-tools-preview` + `cargo-llvm-cov`; target 95% of non-test branches and lines, enforced in CI for agent-fs and fix-network): `cargo +nightly llvm-cov --branch -p <crate> --summary-only`; run free-disk-space as non-root so its permission tests execute.
 - CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries to a GitHub release, icelander.net/downloads and the `zazzcat/homebrew-z` tap (`release.yml`; secrets `CLOUDFLARE_R2_TOKEN`, `HOMEBREW_TAP_TOKEN`, optional signing in `macos/release/README.md`).
-- Release scripts: `bash macos/release/sign-and-notarize.test.sh && bash macos/release/formula.test.sh` (also `shellcheck` them).
+- Release scripts: `bash macos/release/sign-and-notarize.test.sh && bash macos/release/formula.test.sh && bash macos/release/fetch-cyberspace-generator.test.sh` (also `shellcheck` them).
+- `cyberspace-generator` is built in the cyberspace-explorer repository, not here: change it there. `bump-cyberspace-generator.yml` opens the PR that moves `macos/release/cyberspace-generator.version`; never edit that pin by hand to an unreleased tag.
 
 ## Skills
 - Free disk space on macOS (compression scan, cache/dev/docker cleanup): `agents/skills/free-disk-space/SKILL.md`
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
 - Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed: `agents/skills/zazzle/SKILL.md`
+- Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Layout
 - `macos/rust/<tool>/` one crate per tool; `macos/c/zazzle/` is the freestanding C invoker for `zazzled`; `macos/dotnet/<tool>/` one .NET project per C# tool; `agents/` agent docs and skills.

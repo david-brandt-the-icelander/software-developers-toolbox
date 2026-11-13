@@ -50,6 +50,12 @@ jobs:
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
           cp ../c/zazzle/build/zazzle dist/zazzle
+      # cyberspace-generator is built in cyberspace-explorer; ship the release pinned in macos/release/cyberspace-generator.version.
+      - name: Add cyberspace-generator
+        run: |
+          bash ../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
+          lipo -create -output dist/cyberspace-generator cg/cyberspace-generator-aarch64-apple-darwin cg/cyberspace-generator-x86_64-apple-darwin
+          ./dist/cyberspace-generator --version
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
@@ -72,10 +78,10 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist zazzle zazzled afs fix-network free-disk-space
+        run: ../release/sign-and-notarize.sh dist zazzle zazzled afs fix-network free-disk-space cyberspace-generator
       - name: Package
         run: |
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
@@ -149,7 +155,9 @@ jobs:
         run: |
           mkdir -p dist
           cp macos/rust/target/release/zazzled macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
-          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer
+          bash macos/release/fetch-cyberspace-generator.sh cg ${{ matrix.arch }}-unknown-linux-musl
+          cp cg/cyberspace-generator-${{ matrix.arch }}-unknown-linux-musl dist/cyberspace-generator
+          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer cyberspace-generator
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
