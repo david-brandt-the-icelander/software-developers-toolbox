@@ -1,4 +1,4 @@
-// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go and Java files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java and Rust access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift and Rust access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -38,6 +38,10 @@ pub enum Lang {
     Rust,
     Go,
     Java,
+    Kotlin,
+    Swift,
+    C,
+    Cpp,
 }
 
 impl Lang {
@@ -58,6 +62,10 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "rs" => Some(Lang::Rust),
         "go" => Some(Lang::Go),
         "java" => Some(Lang::Java),
+        "kt" | "kts" => Some(Lang::Kotlin),
+        "swift" => Some(Lang::Swift),
+        "c" => Some(Lang::C),
+        "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
         _ => None,
     }
 }
@@ -73,6 +81,10 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
         Lang::Go => tree_sitter_go::LANGUAGE.into(),
         Lang::Java => tree_sitter_java::LANGUAGE.into(),
+        Lang::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
+        Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
+        Lang::C => tree_sitter_c::LANGUAGE.into(),
+        Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
     }
 }
 
@@ -105,10 +117,10 @@ impl<'a> Plan<'a> {
 
     // True when a node has only whitespace before it on its first line and nothing but `;` after it on its last.
     fn alone(&self, n: Node) -> bool {
-        let (a, b) = (n.start_byte(), n.end_byte());
+        let (a, b) = (n.start_byte(), end_byte(n, self.src));
         let before = &self.src[self.starts[self.line(a)]..a];
-        let after =
-            &self.text(self.line(b.saturating_sub(1)))[b - self.starts[self.line(b.saturating_sub(1))]..];
+        let last = self.line(b.saturating_sub(1));
+        let after = self.text(last).get(b - self.starts[last]..).unwrap_or("");
         before.trim().is_empty() && after.trim().trim_start_matches(';').trim().is_empty()
     }
 
@@ -129,7 +141,7 @@ impl<'a> Plan<'a> {
 
     // Hides the lines of a node that stands alone on them.
     fn hide_node(&mut self, n: Node, note: Option<String>, step: &'static str) -> bool {
-        self.alone(n) && self.hide(n.start_position().row, n.end_position().row, note, step)
+        self.alone(n) && self.hide(n.start_position().row, end_row(n, self.src), note, step)
     }
 
     // Replaces a byte range with new text, unless its line is hidden.
@@ -181,6 +193,26 @@ impl<'a> Plan<'a> {
     }
 }
 
+// Returns where a node's text ends, not counting the newline that C preprocessor lines include.
+fn end_byte(n: Node, src: &str) -> usize {
+    let b = n.end_byte();
+    if b > n.start_byte() && src.as_bytes()[b - 1] == b'\n' {
+        b - 1
+    } else {
+        b
+    }
+}
+
+// Returns the last line a node's text is on, not counting the newline that C preprocessor lines include.
+fn end_row(n: Node, src: &str) -> usize {
+    let row = n.end_position().row;
+    if end_byte(n, src) < n.end_byte() && n.end_position().column == 0 {
+        row - 1
+    } else {
+        row
+    }
+}
+
 // Returns the view of a file, or None when nothing would be shortened or it cannot be parsed: a header, then `N`, `N~` and `A-B` lines.
 pub fn view(shown: &str, src: &str, lang: Lang) -> Option<String> {
     if src.len() > crate::outline::MAX_PARSE_BYTES {
@@ -216,11 +248,17 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
         catch(n, lang, &mut plan);
     }
     for &n in &nodes {
-        let in_block =
-            n.parent().is_some_and(|p| matches!(p.kind(), "block" | "statement_block" | "constructor_body"));
+        let in_block = n.parent().is_some_and(|p| {
+            matches!(
+                p.kind(),
+                "block" | "statement_block" | "constructor_body" | "statements" | "compound_statement"
+            )
+        });
         if (is_logging(n, lang, src) || is_log_guard(n, lang, src)) && in_block {
             plan.hide_node(n, None, "log statements");
-        } else if matches!(n.kind(), "comment" | "line_comment") && is_region(&src[n.byte_range()]) {
+        } else if matches!(n.kind(), "comment" | "line_comment") && is_region(&src[n.byte_range()])
+            || n.kind() == "preproc_call" && is_pragma_region(&src[n.byte_range()])
+        {
             plan.hide_node(n, None, "regions");
         } else if is_access_modifier(n, lang) {
             let end = src[n.end_byte()..]
@@ -258,6 +296,7 @@ fn is_access_modifier(n: Node, lang: Lang) -> bool {
         ),
         (Lang::Java, "public" | "private" | "protected") => parent == "modifiers",
         (Lang::Rust, "visibility_modifier") => parent != "use_declaration",
+        (Lang::Kotlin | Lang::Swift, "visibility_modifier") => parent == "modifiers",
         _ => false,
     }
 }
@@ -269,6 +308,12 @@ fn is_region(comment: &str) -> bool {
     word.strip_prefix("region").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace))
 }
 
+// True for a C or C++ `#pragma region` or `#pragma endregion` line.
+fn is_pragma_region(line: &str) -> bool {
+    let rest = line.trim_start_matches('#').trim_start().strip_prefix("pragma").unwrap_or("").trim_start();
+    is_region(&format!("//{rest}"))
+}
+
 // Collapses each run of top-level imports into one line.
 fn imports(root: Node, lang: Lang, plan: &mut Plan) {
     let is_import = |k: &str| match lang {
@@ -276,7 +321,9 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
         Lang::JavaScript | Lang::TypeScript | Lang::Tsx => k == "import_statement",
         Lang::Dart => matches!(k, "import_or_export" | "part_directive" | "part_of_directive"),
         Lang::Rust => matches!(k, "use_declaration" | "extern_crate_declaration"),
-        Lang::Go | Lang::Java => k == "import_declaration",
+        Lang::Go | Lang::Java | Lang::Swift => k == "import_declaration",
+        Lang::Kotlin => k == "import",
+        Lang::C | Lang::Cpp => k == "preproc_include",
     };
     let kids: Vec<Node> = (0..root.child_count()).filter_map(|i| root.child(i)).collect();
     let mut i = 0;
@@ -284,7 +331,7 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
         let run = kids[i..].iter().take_while(|k| is_import(k.kind())).count();
         if run > 0 {
             let (first, last) = (kids[i], kids[i + run - 1]);
-            let (a, b) = (first.start_position().row, last.end_position().row);
+            let (a, b) = (first.start_position().row, end_row(last, plan.src));
             if b > a && plan.alone(first) && plan.alone(last) {
                 let count: usize = kids[i..i + run].iter().map(|k| import_count(*k)).sum();
                 plan.hide(a, b, Some(format!("{count} import(s)")), "imports");
@@ -302,16 +349,19 @@ fn import_count(n: Node) -> usize {
 
 // Returns a call's callee text, such as `self._log.debug` or `console.error`, for an expression statement that is only a call.
 fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node<'t>, &'s str)> {
-    if stmt.kind() != "expression_statement" {
-        return None;
-    }
-    let call = stmt.named_child(0)?;
+    let call = match (lang, stmt.kind()) {
+        (Lang::Kotlin | Lang::Swift, "call_expression") => stmt,
+        (_, "expression_statement") => stmt.named_child(0)?,
+        _ => return None,
+    };
     let callee = match (lang, call.kind()) {
         (Lang::Python, "call")
-        | (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Go, "call_expression") => {
-            call.child_by_field_name("function")?.byte_range()
-        }
-        (Lang::Dart, "call_expression") => call.named_child(0)?.byte_range(),
+        | (
+            Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Go | Lang::C | Lang::Cpp,
+            "call_expression",
+        ) => call.child_by_field_name("function")?.byte_range(),
+        (Lang::Dart | Lang::Kotlin | Lang::Swift, "call_expression") => call.named_child(0)?.byte_range(),
+        (Lang::C | Lang::Cpp, "binary_expression") => stream_log(call, src)?.byte_range(),
         (Lang::Rust, "macro_invocation") => call.child_by_field_name("macro")?.byte_range(),
         (Lang::Java, "method_invocation") => {
             let name = call.child_by_field_name("name")?;
@@ -331,16 +381,28 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     if has_side_effects(call) || lang == Lang::Go && src[call.byte_range()].contains("<-") {
         return false;
     }
-    let Some((receiver, method)) = callee.rsplit_once('.') else {
-        return lang == Lang::Dart && matches!(callee, "debugPrint" | "log");
+    if call.kind() == "binary_expression" {
+        return true;
+    }
+    let normalized: String = callee.replace("->", ".").replace("::", ".").split_whitespace().collect();
+    let Some((receiver, method)) = normalized.rsplit_once('.') else {
+        return match lang {
+            Lang::Dart => matches!(callee, "debugPrint" | "log"),
+            Lang::Swift => matches!(callee, "NSLog" | "os_log" | "debugPrint"),
+            Lang::C | Lang::Cpp => is_c_log_macro(callee),
+            _ => false,
+        };
     };
-    let last = receiver.rsplit('.').next().unwrap_or(receiver).trim().trim_end_matches(['?', '!']);
+    let last = receiver.rsplit('.').next().unwrap_or(receiver).trim_end_matches(['?', '!']);
     if last == "console" {
         return lang.is_script() && CONSOLE_METHODS.contains(&method);
     }
-    let r = last.trim_start_matches('_').to_ascii_lowercase();
-    let logger = matches!(r.as_str(), "log" | "logs" | "logging" | "slog") || r.ends_with("logger");
-    let method = method.trim();
+    if matches!(last, "Log" | "Timber") && matches!(method, "d" | "i" | "w" | "e" | "v" | "wtf") {
+        return true;
+    }
+    let r = last.trim_matches('_').to_ascii_lowercase();
+    let logger =
+        matches!(r.as_str(), "log" | "logs" | "logging" | "slog" | "spdlog") || r.ends_with("logger");
     if lang == Lang::Go {
         let m = method.to_ascii_lowercase();
         let base = m.trim_end_matches("context").trim_end_matches("ln").trim_end_matches(['f', 'w']);
@@ -348,6 +410,28 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
         return logger && !exits && (LOG_METHODS.contains(&base) || base == "print" || base == "logattrs");
     }
     logger && (LOG_METHODS.contains(&method) || method.starts_with("log"))
+}
+
+// True for a C or C++ logging macro by its conventional name: `LOG_INFO`, `DLOG_WARN`, `ALOGD`, `LOGE`, ...
+fn is_c_log_macro(name: &str) -> bool {
+    let upper = name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+    upper && ["LOG_", "DLOG", "ALOG", "VLOG"].iter().any(|p| name.starts_with(p))
+        || matches!(name, "LOGD" | "LOGI" | "LOGW" | "LOGE" | "LOGV")
+}
+
+// Returns the call that starts a C++ stream log statement, `LOG(INFO) << x` or `qDebug() << x`, if the statement is one.
+fn stream_log<'t>(expr: Node<'t>, src: &str) -> Option<Node<'t>> {
+    let mut left = expr;
+    while left.kind() == "binary_expression" {
+        let op = left.child_by_field_name("operator")?;
+        if &src[op.byte_range()] != "<<" {
+            return None;
+        }
+        left = left.child_by_field_name("left")?;
+    }
+    let name = left.child_by_field_name("function").filter(|_| left.kind() == "call_expression")?;
+    let streams = ["LOG", "DLOG", "VLOG", "LOG_IF", "qDebug", "qInfo", "qWarning", "qCritical"];
+    streams.contains(&&src[name.byte_range()]).then_some(name)
 }
 
 // True for a Rust logging macro: `debug!`, `info!`, `warn!`, `error!`, `trace!` or `event!`, bare or under `log::` or `tracing::`.
@@ -397,7 +481,7 @@ fn has_side_effects(n: Node) -> bool {
     let mut cursor = n.walk();
     let mut stack = vec![n];
     while let Some(x) = stack.pop() {
-        if SIDE_EFFECTS.iter().any(|s| x.kind().contains(s)) {
+        if SIDE_EFFECTS.iter().any(|s| x.kind().contains(s)) || matches!(x.kind(), "++" | "--") {
             return true;
         }
         stack.extend(x.children(&mut cursor));
@@ -420,7 +504,7 @@ fn one_line(text: &str) -> String {
 // Collapses a multi-line constructor that only stores its parameters into one note.
 fn constructor(n: Node, lang: Lang, plan: &mut Plan) {
     if let Some((name, params)) = stores_only(n, lang, plan.src) {
-        if n.end_position().row > n.start_position().row {
+        if end_row(n, plan.src) > n.start_position().row {
             let note = format!("{name}{}: only assigns fields", one_line(params));
             plan.hide_node(n, Some(note), "constructors");
         }
@@ -457,6 +541,28 @@ fn stores_only<'s>(n: Node, lang: Lang, src: &'s str) -> Option<(String, &'s str
                         && f.child_by_field_name("value").is_some_and(|v| is_value(v.kind()))
             };
             kids(inits).all(plain).then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Swift, "init_declaration") => {
+            let body = field("body")?;
+            let all: Vec<Node> = (0..n.child_count()).filter_map(|i| n.child(i)).collect();
+            let open = all.iter().find(|c| c.kind() == "(")?.start_byte();
+            let close = all.iter().rev().find(|c| c.kind() == ")")?.end_byte();
+            let ok = statements(body).iter().all(|s| swift_store(*s, src));
+            ok.then(|| ("init".to_string(), &src[open..close]))
+        }
+        (Lang::Cpp, "function_definition") => {
+            let inits = kids(n).find(|c| c.kind() == "field_initializer_list")?;
+            let declarator = field("declarator")?;
+            let (name, params) = (
+                declarator.child_by_field_name("declarator")?,
+                declarator.child_by_field_name("parameters")?,
+            );
+            let plain = |i: Node| {
+                let args: Vec<Node> = i.named_child(1).map(|a| kids(a).collect()).unwrap_or_default();
+                matches!(&args[..], [v] if is_value(v.kind()))
+            };
+            let ok = statements(field("body")?).is_empty() && kids(inits).all(plain);
+            ok.then(|| (text(name).to_string(), text(params)))
         }
         (Lang::Go, "function_declaration") => {
             let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
@@ -499,9 +605,10 @@ fn is_plain_init(e: &str) -> bool {
         || e.split_once('=').is_some_and(|(l, r)| simple(l.trim()) && simple(r.trim()))
 }
 
-// Returns the named statements of a block, skipping comments.
+// Returns the named statements of a block, skipping comments and looking inside a Swift `statements` child.
 fn statements(block: Node) -> Vec<Node> {
-    kids(block).filter(|s| !s.kind().contains("comment")).collect()
+    let inner = kids(block).find(|c| c.kind() == "statements").unwrap_or(block);
+    kids(inner).filter(|s| !s.kind().contains("comment")).collect()
 }
 
 // True for a Python constructor statement that is a docstring, `pass`, a super().__init__ call or `self.x = name`.
@@ -540,6 +647,15 @@ fn java_store(s: Node, src: &str) -> bool {
     }
 }
 
+// True for a Swift initializer statement that is `self.x = name`.
+fn swift_store(s: Node, src: &str) -> bool {
+    let (Some(target), Some(value)) = (s.child_by_field_name("target"), s.child_by_field_name("result"))
+    else {
+        return false;
+    };
+    s.kind() == "assignment" && src[target.byte_range()].starts_with("self.") && is_value(value.kind())
+}
+
 // True for an assignment of a plain name or literal to a member of the instance, `self.x = x` or `this.x = x`.
 fn stores_name(e: Node, owner: &str, src: &str) -> Option<bool> {
     let (l, r) = (e.child_by_field_name("left")?, e.child_by_field_name("right")?);
@@ -569,6 +685,9 @@ fn is_value(kind: &str) -> bool {
             | "nil"
             | "null_literal"
             | "decimal_integer_literal"
+            | "simple_identifier"
+            | "number_literal"
+            | "nullptr"
     )
 }
 
@@ -584,20 +703,24 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
     } else {
         ("{ ⋯ logs and rethrows }".to_string(), "log-and-rethrow catches")
     };
-    let header = src[start..block.start_byte()].trim().trim_end_matches(':').trim_end();
+    let open = (0..block.child_count())
+        .filter_map(|i| block.child(i))
+        .find(|c| c.kind() == "{")
+        .map_or(block.start_byte(), |b| b.start_byte());
+    let header = src[start..open].trim().trim_end_matches(':').trim_end();
     let (first, last) = (plan.line(start), block.end_position().row);
-    let open_line = plan.line(block.start_byte());
+    let open_line = plan.line(open);
     let starts_line = src[plan.starts[first]..start].trim().is_empty();
     let block_ends_line = plan.text(last)[block.end_position().column..].trim().is_empty();
     if starts_line && block_ends_line && lang != Lang::Go {
         plan.hide(first, last, Some(format!("{header}: logs and rethrows")), step);
     } else if lang != Lang::Python
-        && plan.text(open_line)[block.start_position().column + 1..].trim().is_empty()
+        && plan.text(open_line)[open - plan.starts[open_line] + 1..].trim().is_empty()
         && plan.text(last).trim() == "}"
         && plan.hide(open_line + 1, last, None, step)
     {
         let end = plan.starts[open_line] + plan.text(open_line).len();
-        plan.changes.push((block.start_byte(), end, inline));
+        plan.changes.push((open, end, inline));
     }
 }
 
@@ -605,9 +728,11 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
 fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<'t>)> {
     let (start, block) = match (lang, n.kind()) {
         (Lang::Python, "except_clause") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
-        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java, "catch_clause") => {
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java | Lang::Cpp, "catch_clause") => {
             (n.start_byte(), n.child_by_field_name("body")?)
         }
+        (Lang::Kotlin, "catch_block") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
+        (Lang::Swift, "catch_block") => (n.start_byte(), n),
         (Lang::Go, "if_statement") if n.child_by_field_name("alternative").is_none() => {
             (n.start_byte(), n.child_by_field_name("consequence")?)
         }
@@ -617,24 +742,46 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
         }
         _ => return None,
     };
-    let caught = match lang {
-        Lang::Java => {
-            kids(n).find(|c| c.kind() == "catch_formal_parameter").and_then(|p| p.child_by_field_name("name"))
-        }
-        Lang::Go => nil_check(n),
-        _ => n.child_by_field_name("parameter"),
-    }
-    .map(|p| &src[p.byte_range()]);
+    let text = |x: Node| &src[x.byte_range()];
+    let caught: Option<&str> = match lang {
+        Lang::Java => kids(n)
+            .find(|c| c.kind() == "catch_formal_parameter")
+            .and_then(|p| p.child_by_field_name("name"))
+            .map(text),
+        Lang::Kotlin => kids(n).find(|c| c.kind() == "identifier").map(text),
+        Lang::Swift => Some(n.child_by_field_name("error").and_then(bound_name).map_or("error", text)),
+        Lang::Go => nil_check(n).map(text),
+        _ => n.child_by_field_name("parameter").map(text),
+    };
     let last_ok = |l: &Node| match lang {
         Lang::Python => l.kind() == "raise_statement" && l.named_child_count() == 0,
+        Lang::Cpp => l.kind() == "throw_statement" && l.named_child_count() == 0,
         Lang::Dart => l.kind() == "rethrow_statement",
         Lang::Go => l.kind() == "return_statement" && returns_error(*l, caught, src),
-        _ => l.kind() == "throw_statement" && l.named_child(0).map(|e| &src[e.byte_range()]) == caught,
+        Lang::Swift => {
+            let throws = kids(*l).any(|c| c.kind() == "throw_keyword");
+            l.kind() == "control_transfer_statement" && throws && kids(*l).nth(1).map(text) == caught
+        }
+        _ => {
+            matches!(l.kind(), "throw_statement" | "throw_expression") && l.named_child(0).map(text) == caught
+        }
     };
     if lang == Lang::Go && caught.is_none() {
         return None;
     }
     rethrows(block, &last_ok, lang, src).then_some((start, block))
+}
+
+// Returns the name a Swift catch pattern binds, as in `catch let failure as MyError`.
+fn bound_name(pattern: Node) -> Option<Node> {
+    let mut stack = vec![pattern];
+    while let Some(p) = stack.pop() {
+        if let Some(name) = p.child_by_field_name("bound_identifier") {
+            return Some(name);
+        }
+        stack.extend(kids(p));
+    }
+    None
 }
 
 // Returns the name a Go `if` checks with `name != nil`, if that is its whole condition.
@@ -820,6 +967,100 @@ public class Repo {
     }
 }
 "#;
+    const KOTLIN: &str = r#"package repo
+
+import java.io.IOException
+import kotlinx.coroutines.flow.Flow
+
+class Repo(private val api: Api) {
+    private val log = LoggerFactory.getLogger(Repo::class.java)
+
+    // region loading
+    fun load(id: String): Int {
+        log.debug("loading {}", id)
+        Log.d(TAG, "load $id")
+        try {
+            val responseBody = api.get(id = id)
+            for (lineItem in responseBody.lines()) { println("$lineItem ${lineItem.length}") }
+            return responseBody.length
+        } catch (e: IOException) {
+            log.error("failed", e)
+            throw e
+        }
+    }
+}
+"#;
+    const SWIFT: &str = r#"import Foundation
+import os
+
+public final class Repo {
+    private let api: Api
+    private let retries: Int
+
+    public init(api: Api, retries: Int) {
+        self.api = api
+        self.retries = retries
+    }
+
+    // MARK: - loading
+    func load(id: String) throws -> Int {
+        logger.debug("loading \(id)")
+        NSLog("load %@", id)
+        do {
+            let responseBody = try api.get(id: id)
+            for lineItem in responseBody.lines { print("\(lineItem)") }
+            return responseBody.count
+        } catch {
+            logger.error("failed \(error)")
+            throw error
+        }
+    }
+}
+"#;
+    const CPP: &str = r#"#include <string>
+#include <vector>
+#include "repo.h"
+
+namespace repo {
+
+Repo::Repo(Api api, int retries)
+    : api_(api),
+      retries_(retries) {}
+
+#pragma region loading
+int Repo::load(const std::string& id) {
+    spdlog::debug("loading {}", id);
+    LOG_INFO("load %s", id.c_str());
+    try {
+        auto responseBody = api_.get(id);
+        for (const auto& lineItem : responseBody.lines()) { std::cout << lineItem; }
+        auto counter = [&responseBody](int extra) { return responseBody.size() + extra; };
+        return counter(0);
+    } catch (const std::exception& e) {
+        logger->error("failed {}", e.what());
+        throw;
+    }
+}
+#pragma endregion
+
+}  // namespace repo
+"#;
+    const C: &str = r#"#include <stdio.h>
+#include <stdlib.h>
+#define CHECK(x) if (!(x)) return status
+
+int parse(const char *input, int length) {
+    int status = 0;
+    int running_total = 0;
+    LOG_DEBUG("parsing %d", length);
+    for (int index_value = 0; index_value < length; index_value++) {
+        running_total += input[index_value];
+    }
+    CHECK(running_total > 0);
+    printf("%d\n", running_total);
+    return running_total;
+}
+"#;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -880,7 +1121,12 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.rs")), Some(Lang::Rust));
         assert_eq!(lang_of(Path::new("b.go")), Some(Lang::Go));
         assert_eq!(lang_of(Path::new("B.java")), Some(Lang::Java));
-        assert_eq!(lang_of(Path::new("b.kt")), None);
+        assert_eq!(lang_of(Path::new("b.kt")), Some(Lang::Kotlin));
+        assert_eq!(lang_of(Path::new("b.swift")), Some(Lang::Swift));
+        assert_eq!(lang_of(Path::new("b.c")), Some(Lang::C));
+        assert_eq!(lang_of(Path::new("b.hpp")), Some(Lang::Cpp));
+        assert_eq!(lang_of(Path::new("b.h")), Some(Lang::Cpp));
+        assert_eq!(lang_of(Path::new("b.rb")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
 
@@ -1319,5 +1565,144 @@ class InvoiceRepository {
             go_err("if err != nil {\n\t\tpanic(err)\n\t}")
                 && go_err("if err != other {\n\t\treturn err\n\t}")
         );
+    }
+
+    // Asserts each wanted line is in a view.
+    fn has_all(lines: &[String], want: &[&str]) {
+        for w in want {
+            assert!(lines.contains(&w.to_string()), "{w}: {lines:?}");
+        }
+    }
+
+    // Checks the Kotlin rules: imports, Android and SLF4J logging, a region, modifiers, a rethrowing catch, and locals except `$name` templates.
+    #[test]
+    fn test_view_kotlin() {
+        let lines = body(KOTLIN, Lang::Kotlin);
+        has_all(
+            &lines,
+            &[
+                "3-4\t⋯ 2 import(s)",
+                "6~\tclass Repo(val api: Api) {",
+                "14~\t            val rb = api.get(id = id)",
+                "15~\t            for (lineItem in rb.lines()) { println(\"$lineItem ${lineItem.length}\") }",
+                "17~\t        } catch (e: IOException) { ⋯ logs and rethrows }",
+            ],
+        );
+        assert!(!lines
+            .iter()
+            .any(|l| l.starts_with("9\t") || l.starts_with("11\t") || l.starts_with("12\t")));
+    }
+
+    // Checks the Swift rules: imports, the field-only init, modifiers, NSLog and logger calls, a bare catch that rethrows, and locals; MARK comments stay.
+    #[test]
+    fn test_view_swift() {
+        let lines = body(SWIFT, Lang::Swift);
+        has_all(
+            &lines,
+            &[
+                "1-2\t⋯ 2 import(s)",
+                "4~\tfinal class Repo {",
+                "8-11\t⋯ init(api: Api, retries: Int): only assigns fields",
+                "13\t    // MARK: - loading",
+                "18~\t            let rb = try api.get(id: id)",
+                "19~\t            for li in rb.lines { print(\"\\(li)\") }",
+                "21~\t        } catch { ⋯ logs and rethrows }",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("15\t") || l.starts_with("16\t")));
+    }
+
+    // Checks the C++ rules: includes, the initializer-list constructor, pragma regions, spdlog and macro logging, a bare rethrow, and locals with a lambda capture.
+    #[test]
+    fn test_view_cpp() {
+        let lines = body(CPP, Lang::Cpp);
+        has_all(
+            &lines,
+            &[
+                "1-3\t⋯ 3 import(s)",
+                "7-9\t⋯ Repo::Repo(Api api, int retries): only assigns fields",
+                "18~\t        auto cou = [&rb](int extra) { return rb.size() + extra; };",
+                "20~\t    } catch (const std::exception& e) { ⋯ logs and rethrows }",
+            ],
+        );
+        assert!(!lines.iter().any(|l| ["11\t", "13\t", "14\t", "25\t"].iter().any(|k| l.starts_with(k))));
+    }
+
+    // Checks C: includes, a LOG_ macro, and locals except one a #define names.
+    #[test]
+    fn test_view_c() {
+        let lines = body(C, Lang::C);
+        has_all(
+            &lines,
+            &[
+                "1-2\t⋯ 2 import(s)",
+                "6\t    int status = 0;",
+                "7~\t    int rt = 0;",
+                "9~\t    for (int iv = 0; iv < length; iv++) {",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("8\t")));
+    }
+
+    // Checks what the new languages keep: prints, side effects, rethrows of something else, constructors with logic, and stream logs.
+    #[test]
+    fn test_kept_kotlin_swift_c() {
+        let kt = |s: &str| view("f", &format!("fun f() {{\n    {s}\n}}\n"), Lang::Kotlin).is_none();
+        assert!(
+            !kt("Log.d(TAG, \"x\")")
+                && !kt("Timber.w(\"x\")")
+                && kt("println(x)")
+                && kt("log.info(i++)")
+                && kt("Log.x(y)")
+        );
+        let sw = |s: &str| view("f", &format!("func f() {{\n    {s}\n}}\n"), Lang::Swift).is_none();
+        assert!(
+            !sw("os_log(\"x\")") && !sw("logger.info(\"x\")") && sw("print(x)") && sw("logger.info(x = 1)")
+        );
+        let cpp = |s: &str| view("f", &format!("void f() {{\n    {s}\n}}\n"), Lang::Cpp).is_none();
+        assert!(
+            !cpp("LOG(INFO) << \"x\" << y;")
+                && !cpp("qDebug() << x;")
+                && !cpp("LOGE(\"x\");")
+                && !cpp("log_->debug(\"x\");")
+        );
+        assert!(
+            cpp("std::cout << x;")
+                && cpp("printf(\"x\");")
+                && cpp("LOG(INFO) << i++;")
+                && cpp("x << LOG(INFO);")
+                && cpp("Logger_x(1);")
+        );
+        assert!(cpp(
+            "try {\n        g();\n    } catch (...) {\n        throw std::runtime_error(\"x\");\n    }"
+        ));
+        let ctor = |s: &str| view("f", s, Lang::Cpp).is_none();
+        assert!(
+            ctor("A::A(int a)\n    : a_(a) {\n    init();\n}\n")
+                && ctor("A::A(int a)\n    : a_(a + 1) {}\n")
+                && ctor("int f(int a)\n{\n    return a;\n}\n")
+        );
+        assert!(view("f", "struct A {\n  init(a: Int) {\n    self.a = a\n    load()\n  }\n}\n", Lang::Swift)
+            .is_none());
+        let kt_catch = "fun f() {\n    try {\n        g()\n    } catch (e: Exception) {\n        throw other\n    }\n}\n";
+        assert!(view("f", kt_catch, Lang::Kotlin).is_none());
+        let sw_catch = "func f() throws {\n    do {\n        try g()\n    } catch let failure as MyError {\n        throw failure\n    }\n}\n";
+        assert!(view("f", sw_catch, Lang::Swift).is_some_and(|v| v.contains("{ ⋯ logs and rethrows }")));
+        assert!(view("f", "#pragma once\n#pragma region a\n#pragma endregion\nint x;\n", Lang::Cpp)
+            .is_some_and(|v| v.contains("2 regions")));
+    }
+
+    // Checks the last edges of the C++ and Swift rules.
+    #[test]
+    fn test_cpp_swift_edges() {
+        let cpp = |s: &str| view("f", &format!("void f() {{\n    {s}\n}}\n"), Lang::Cpp).is_none();
+        assert!(cpp("LOG(INFO) + x;") && cpp("log_info(x);"));
+        assert!(!cpp("try {\n        g();\n    } catch (const E& e) {\n        log_->error(\"x\");\n        throw e;\n    }"));
+        let rethrown =
+            "void f() {\n    try {\n        g();\n    } catch (const E& e) {\n        throw e;\n    }\n}\n";
+        assert!(view("f", rethrown, Lang::Cpp).is_none());
+        let swift_return = "func f() {\n    do {\n        try g()\n    } catch {\n        return\n    }\n}\n";
+        assert!(view("f", swift_return, Lang::Swift).is_none());
+        assert!(view("f", "struct A {\n  init(a: Int) {\n    x = a\n  }\n}\n", Lang::Swift).is_none());
     }
 }
