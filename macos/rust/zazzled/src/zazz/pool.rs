@@ -255,6 +255,30 @@ mod tests {
         assert!(move_fd(fd, -1).is_err());
     }
 
+    // Checks release keeps at most MAX_IDLE_PER_KEY per key and MAX_IDLE_TOTAL overall, and kills unhealthy or overused workers.
+    #[test]
+    fn test_release_limits() {
+        let fake = || {
+            let (a, _b) = UnixStream::pair().expect("pair");
+            Worker::for_tests(Command::new("sleep").arg("30").spawn().expect("sleep"), a)
+        };
+        let pool = Pool::default();
+        pool.release("a", fake(), false);
+        let mut old = fake();
+        old.calls = MAX_CALLS;
+        pool.release("a", old, true);
+        assert_eq!(pool.idle_count(), 0);
+        for _ in 0..=MAX_IDLE_PER_KEY {
+            pool.release("a", fake(), true);
+        }
+        assert_eq!(pool.idle_count(), MAX_IDLE_PER_KEY);
+        for i in 0..MAX_IDLE_TOTAL {
+            pool.release(&format!("k{i}"), fake(), true);
+        }
+        assert_eq!(pool.idle_count(), MAX_IDLE_TOTAL);
+        assert_eq!(pool.shutdown(), MAX_IDLE_TOTAL);
+    }
+
     // Checks JSON conversions both ways.
     #[test]
     fn test_conversions() {

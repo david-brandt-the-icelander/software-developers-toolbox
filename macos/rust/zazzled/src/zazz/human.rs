@@ -137,6 +137,8 @@ mod tests {
         assert_eq!(split_json(&json!({}), &a), (true, vec!["x".to_string()]));
         let own = json!({"cli": {"args": [{"name": "json", "type": "bool"}]}});
         assert_eq!(split_json(&own, &a), (false, a.clone()));
+        let long = json!({"cli": {"args": [{"name": "other"}, {"name": "j", "long": "json"}]}});
+        assert_eq!(split_json(&long, &a), (false, a.clone()));
         assert_eq!(split_json(&json!({}), &a[..1]), (false, vec!["x".to_string()]));
     }
 

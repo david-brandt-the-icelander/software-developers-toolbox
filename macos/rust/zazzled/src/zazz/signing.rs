@@ -164,7 +164,7 @@ pub fn trust_cmd(z: &Zazz, cwd: &Path, args: &[String]) -> Result<Value, Value> 
         [cmd, cert] if cmd == "add" => {
             let data = std::fs::read(cwd.join(cert)).map_err(|e| err("io", &format!("{cert}: {e}")))?;
             let certs = crypto::certs_from(&data).map_err(|e| err("bad_input", &e))?;
-            add_to_os(&certs[0])?;
+            add_to_os(z, &certs[0])?;
             let name = Path::new(cert)
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -195,9 +195,12 @@ pub fn trust_cmd(z: &Zazz, cwd: &Path, args: &[String]) -> Result<Value, Value> 
 
 // Also trusts the authority in the Keychain on macOS (macOS asks the human to authenticate).
 #[cfg(target_os = "macos")]
-fn add_to_os(der: &[u8]) -> Result<(), Value> {
+fn add_to_os(z: &Zazz, der: &[u8]) -> Result<(), Value> {
     use security_framework::certificate::SecCertificate;
     use security_framework::trust_settings::{Domain, TrustSettings};
+    if !z.uses_os_store() {
+        return Ok(());
+    }
     let c = SecCertificate::from_der(der).map_err(|e| err("bad_input", &e.to_string()))?;
     TrustSettings::new(Domain::User)
         .set_trust_settings_always(&c)
@@ -206,7 +209,7 @@ fn add_to_os(der: &[u8]) -> Result<(), Value> {
 
 // Nothing to do outside macOS: the trust directory is the store.
 #[cfg(not(target_os = "macos"))]
-fn add_to_os(_der: &[u8]) -> Result<(), Value> {
+fn add_to_os(_z: &Zazz, _der: &[u8]) -> Result<(), Value> {
     Ok(())
 }
 
@@ -312,6 +315,7 @@ mod tests {
         assert_eq!(run(&["zazz", "sign", "--bogus"])["error"]["code"], "usage");
         assert_eq!(run(&["zazz", "trust", "bogus"])["error"]["code"], "usage");
         assert_eq!(run(&["zazz", "trust", "add", "a", "b"])["error"]["code"], "usage");
+        assert_eq!(run(&["zazz", "trust", "x", "y"])["error"]["code"], "usage");
     }
 
     // Checks the key choice when none is named.

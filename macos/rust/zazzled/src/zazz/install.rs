@@ -228,6 +228,12 @@ mod tests {
         assert_eq!(install(&z, t.path(), &["x".into()]).status, 1);
         forget(&z, "ab");
         assert_eq!(uninstall(&Zazz::default(), &["run".into()]).status, 1);
+        let fresh = Zazz::default();
+        fresh.set_root(&t.path().join("fresh"));
+        forget(&fresh, "ab");
+        t.write("fresh/names/other", b"cd");
+        forget(&fresh, "ab");
+        assert!(t.path().join("fresh/names/other").exists());
     }
 
     // Checks shims: created, replaced when a symlink, refused over a real file, removed only when a symlink.

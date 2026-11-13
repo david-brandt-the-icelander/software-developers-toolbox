@@ -316,6 +316,13 @@ mod tests {
         let none =
             Manifest::parse(br#"{"zazz":1,"name":"x","kind":"rust","entry":"src/main.rs"}"#).expect("m");
         assert!(test_files(&none, &a).is_empty());
+        let odd = Manifest::parse(
+            br#"{"zazz":1,"name":"x","kind":"rust","entry":"src/main.rs","tests":{"paths":["tests/x.txt"]}}"#,
+        )
+        .expect("m");
+        assert!(test_files(&odd, &a).is_empty());
+        let (_, text) = test_root("main.rs", &["a/x.rs".into(), "b/x.rs".into(), ".rs".into()]);
+        assert!(text.contains("mod x;") && text.contains("mod t1_x;") && text.contains("mod t2_;"));
     }
 
     // Checks AOT failures report the worker's message without its prefix, and a missing worker is an error.

@@ -210,6 +210,23 @@ mod tests {
         assert_eq!(s, "via fd");
     }
 
+    // Checks three descriptors arrive with the first bytes of a longer message read in parts, as frames are read.
+    #[test]
+    fn test_partial_read_keeps_fds() {
+        let (a, b) = UnixStream::pair().expect("pair");
+        let (x, y) = UnixStream::pair().expect("pair");
+        send_with_fds(a.as_raw_fd(), b"0123", &[]).expect("plain");
+        let mut buf = [0u8; 4];
+        assert_eq!(recv_with_fds(b.as_raw_fd(), &mut buf).expect("recv").0, 4);
+        let fds = [x.as_raw_fd(), y.as_raw_fd(), x.as_raw_fd()];
+        send_with_fds(a.as_raw_fd(), b"headbody", &fds).expect("send");
+        let (n, got) = recv_with_fds(b.as_raw_fd(), &mut buf).expect("recv");
+        assert_eq!((n, got.len()), (4, 3));
+        let mut rest = [0u8; 4];
+        (&b).read_exact(&mut rest).expect("rest");
+        assert_eq!(&rest, b"body");
+    }
+
     // Checks plain sends, pending detection and errors on bad descriptors.
     #[test]
     fn test_plain_pending_and_errors() {

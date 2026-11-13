@@ -108,6 +108,12 @@ impl Zazz {
         *self.trust.lock().expect("zazz trust lock") = Some((dir.to_path_buf(), policy.to_path_buf(), true));
     }
 
+    // True when trust uses the system locations, so the OS store (the Keychain) takes part; tests set their own paths.
+    #[cfg(target_os = "macos")]
+    pub fn uses_os_store(&self) -> bool {
+        self.trust.lock().expect("zazz trust lock").is_none()
+    }
+
     // The trust directory and whether its ownership is checked: /etc/zazzle/trust.d, checked, by default.
     pub fn trust_dir(&self) -> (PathBuf, bool) {
         match self.trust.lock().expect("zazz trust lock").clone() {

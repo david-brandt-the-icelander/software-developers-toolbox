@@ -132,6 +132,13 @@ mod tests {
         assert_eq!(r["failed"][0], json!({"name": "c", "message": "boom", "file": "tests/t.rs", "line": 4}));
         let bare = parse_libtest("test x ... FAILED\n---- x stdout ----\nsomething broke\n");
         assert_eq!(bare["failed"][0]["message"], "something broke");
+        let two = parse_libtest(
+            "test x ... FAILED\ntest y ... FAILED\n---- x stdout ----\nfirst\n---- y stdout ----\nsecond\n",
+        );
+        assert_eq!(
+            (two["failed"][0]["message"].as_str(), two["failed"][1]["message"].as_str()),
+            (Some("first"), Some("second"))
+        );
         assert_eq!(parse_libtest("noise\ntest  ... ok\n")["passed"], 0);
     }
 

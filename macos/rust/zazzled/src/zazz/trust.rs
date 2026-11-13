@@ -138,10 +138,13 @@ pub fn paths_within(want: &[String], allow: &[String]) -> Vec<String> {
 
 // Checks the Keychain trusts a chain (macOS); elsewhere nothing is trusted this way.
 #[cfg(target_os = "macos")]
-fn keychain_trusts(chain: &[Vec<u8>]) -> bool {
+fn keychain_trusts(z: &Zazz, chain: &[Vec<u8>]) -> bool {
     use security_framework::certificate::SecCertificate;
     use security_framework::policy::SecPolicy;
     use security_framework::trust::SecTrust;
+    if !z.uses_os_store() {
+        return false;
+    }
     let Ok(certs) = chain.iter().map(|d| SecCertificate::from_der(d)).collect::<Result<Vec<_>, _>>() else {
         return false;
     };
@@ -151,7 +154,7 @@ fn keychain_trusts(chain: &[Vec<u8>]) -> bool {
 
 // Checks the Keychain trusts a chain (macOS); elsewhere nothing is trusted this way.
 #[cfg(not(target_os = "macos"))]
-fn keychain_trusts(_chain: &[Vec<u8>]) -> bool {
+fn keychain_trusts(_z: &Zazz, _chain: &[Vec<u8>]) -> bool {
     false
 }
 
@@ -173,7 +176,7 @@ pub fn evaluate(z: &Zazz, chain: &[Vec<u8>]) -> Value {
             (true, Some(crypto::subject(&anchors[i])), g, None)
         }
         Err(_)
-            if keychain_trusts(chain)
+            if keychain_trusts(z, chain)
                 && crypto::verify_chain(chain, &chain[chain.len() - 1..], at).is_ok() =>
         {
             (true, Some("keychain".to_string()), leaf_grants, None)
@@ -288,7 +291,7 @@ mod tests {
         assert_eq!(effective(&z, &v), (json!({"hosts": ["api.x.com"]}), None, false));
         std::fs::write(t.path().join("policy.json"), r#"{"network": false}"#).expect("policy");
         assert_eq!(effective(&z, &v).0, json!("none"));
-        assert!(!keychain_trusts(std::slice::from_ref(&cert)));
+        assert!(!keychain_trusts(&z, std::slice::from_ref(&cert)));
         std::fs::write(t.path().join("policy.json"), r#"{"native": false}"#).expect("policy");
         let native =
             json!({"trusted": true, "grants": {"native": true, "network": "all", "fs": {"read": ["$CWD"]}}});
