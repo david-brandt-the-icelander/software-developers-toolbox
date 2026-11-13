@@ -19,7 +19,7 @@ const MAX_DESC: usize = 100;
 
 const HELP: &str = "zazzle: file tool for agents
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
-read PATH[:A-B].. [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
+read PATH[:A-B].. [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
 outline PATH.. [-d N] [-m N]  symbols with line ranges
 refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol

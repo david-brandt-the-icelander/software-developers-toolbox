@@ -46,7 +46,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read",
-        description: "Read files or line ranges (PATH or PATH:A-B) with numbered lines; long output is elided to a token budget.",
+        description: "Read files, line ranges (PATH or PATH:A-B) or one named symbol with its docs, as numbered lines; long output is elided to a token budget.",
         schema: read_schema,
         map: read_args,
     },
@@ -98,6 +98,7 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
+            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; #N picks among duplicates) with its doc comments and attributes"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
@@ -255,6 +256,10 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
         ("budget", "--budget"),
     ] {
         push_num(&mut a, v, k, f)?;
+    }
+    if let Some(sym) = get_str(v, "symbol")? {
+        a.push("--symbol".into());
+        a.push(sym);
     }
     let paths = get_list(v, "paths")?;
     if paths.is_empty() {
@@ -556,7 +561,7 @@ mod tests {
         ask(
             &b,
             json!({"id":1,"method":"tools/call","params":{"name":"zazzle_read","arguments":{
-            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "full":true}}}),
+            "paths":["a:1-2"], "around":5, "ctx":1, "head":2, "tail":3, "budget":100, "anchors":true, "full":true, "symbol":"A.b"}}}),
         );
         ask(
             &b,
@@ -580,6 +585,8 @@ mod tests {
                 "3",
                 "--budget",
                 "100",
+                "--symbol",
+                "A.b",
                 "--",
                 "a:1-2"
             ]
