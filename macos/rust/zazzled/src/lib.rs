@@ -6,6 +6,7 @@ pub mod cli;
 pub mod client;
 pub mod cmd;
 pub mod engine;
+pub mod indexer;
 pub mod launchd;
 pub mod mcp;
 pub mod meta;

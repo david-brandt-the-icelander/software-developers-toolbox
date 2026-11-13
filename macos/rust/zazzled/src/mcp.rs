@@ -1,5 +1,6 @@
 // MCP stdio front end: exposes the zazzle commands as tools and forwards them to the daemon.
 use crate::client;
+use crate::indexer::IndexerLink;
 use crate::proto::Request;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
@@ -11,6 +12,8 @@ const VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 pub trait Backend {
     // Runs the arguments as one zazzle command.
     fn call(&self, args: Vec<String>) -> Result<(u8, String), String>;
+    // Sends one MCP request to the C# indexer and returns its result.
+    fn index(&self, method: &str, params: Value) -> Result<Value, String>;
 }
 
 // The real backend: a unix-socket client that starts the daemon on demand.
@@ -18,6 +21,7 @@ pub struct DaemonBackend {
     pub sock: PathBuf,
     pub cwd: String,
     pub session: String,
+    pub indexer: IndexerLink,
 }
 
 impl Backend for DaemonBackend {
@@ -27,7 +31,15 @@ impl Backend for DaemonBackend {
         client::call_autostart(&self.sock, &req, &client::spawn_daemon)
             .map_err(|e| format!("cannot reach zazzled: {e}"))
     }
+
+    // Relays the request to the indexer process.
+    fn index(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.indexer.request(method, params)
+    }
 }
+
+// Prefix that marks a tool as served by the C# indexer, so its names never clash with the zazzle_ tools.
+const INDEX_PREFIX: &str = "index_";
 
 // One exposed tool: how it is described and how its arguments become a command line.
 struct Tool {
@@ -346,13 +358,29 @@ fn initialize(params: &Value) -> Value {
     })
 }
 
-// Lists the tools with their schemas.
-fn list_tools() -> Value {
-    let tools: Vec<Value> = TOOLS
+// Lists the tools with their schemas, then the indexer's tools under the index_ prefix when it answers.
+fn list_tools(backend: &dyn Backend) -> Value {
+    let mut tools: Vec<Value> = TOOLS
         .iter()
         .map(|t| json!({"name": t.name, "description": t.description, "inputSchema": (t.schema)()}))
         .collect();
+    let theirs = backend.index("tools/list", json!({})).ok();
+    for t in theirs.iter().filter_map(|r| r["tools"].as_array()).flatten() {
+        let mut t = t.clone();
+        t["name"] = json!(format!("{INDEX_PREFIX}{}", t["name"].as_str().unwrap_or("")));
+        tools.push(t);
+    }
     json!({"tools": tools})
+}
+
+// Forwards a call to an index_ tool to the indexer under its own name; its failures become tool errors.
+fn call_indexer(params: &Value, name: &str, backend: &dyn Backend) -> Value {
+    let mut forwarded = params.clone();
+    forwarded["name"] = json!(name);
+    match backend.index("tools/call", forwarded) {
+        Ok(result) => result,
+        Err(e) => tool_result(&format!("error: indexer unavailable: {e}"), true),
+    }
 }
 
 // Wraps text as an MCP tool result.
@@ -390,11 +418,16 @@ pub fn handle_line(line: &str, backend: &dyn Backend) -> Option<Value> {
     Some(match method {
         "initialize" => rpc_result(id, initialize(params)),
         "ping" => rpc_result(id, json!({})),
-        "tools/list" => rpc_result(id, list_tools()),
-        "tools/call" => match call_tool(params, backend) {
-            Ok(r) => rpc_result(id, r),
-            Err(e) => rpc_error(id, -32602, &e),
-        },
+        "tools/list" => rpc_result(id, list_tools(backend)),
+        "tools/call" => {
+            match params.get("name").and_then(Value::as_str).and_then(|n| n.strip_prefix(INDEX_PREFIX)) {
+                Some(name) => rpc_result(id, call_indexer(params, name, backend)),
+                None => match call_tool(params, backend) {
+                    Ok(r) => rpc_result(id, r),
+                    Err(e) => rpc_error(id, -32602, &e),
+                },
+            }
+        }
         _ => rpc_error(id, -32601, "method not found"),
     })
 }
@@ -448,6 +481,8 @@ mod tests {
     struct Fake {
         calls: RefCell<Vec<Vec<String>>>,
         answer: Result<(u8, String), String>,
+        index_calls: RefCell<Vec<(String, Value)>>,
+        index_answer: Result<Value, String>,
     }
 
     impl Backend for Fake {
@@ -456,11 +491,22 @@ mod tests {
             self.calls.borrow_mut().push(args);
             self.answer.clone()
         }
+
+        // Answers indexer requests with the scripted result.
+        fn index(&self, method: &str, params: Value) -> Result<Value, String> {
+            self.index_calls.borrow_mut().push((method.to_string(), params));
+            self.index_answer.clone()
+        }
     }
 
     // Builds a fake that answers with text.
     fn fake(status: u8, text: &str) -> Fake {
-        Fake { calls: RefCell::new(vec![]), answer: Ok((status, text.into())) }
+        Fake {
+            calls: RefCell::new(vec![]),
+            answer: Ok((status, text.into())),
+            index_calls: RefCell::new(vec![]),
+            index_answer: Err("no indexer".into()),
+        }
     }
 
     // Sends one request line and returns the response.
@@ -628,7 +674,12 @@ mod tests {
             (r["result"]["isError"].as_bool(), r["result"]["content"][0]["text"].as_str()),
             (Some(true), Some("error: bad"))
         );
-        let down = Fake { calls: RefCell::new(vec![]), answer: Err("cannot reach zazzled: boom".into()) };
+        let down = Fake {
+            calls: RefCell::new(vec![]),
+            answer: Err("cannot reach zazzled: boom".into()),
+            index_calls: RefCell::new(vec![]),
+            index_answer: Err("no indexer".into()),
+        };
         let r =
             ask(&down, json!({"id":2,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{}}}));
         assert_eq!(r["result"]["content"][0]["text"], "error: cannot reach zazzled: boom");
@@ -680,7 +731,12 @@ mod tests {
     fn test_daemon_backend_errors() {
         let dir = crate::testutil::TempDir::new();
         let file = dir.write("f", b"x");
-        let be = DaemonBackend { sock: file, cwd: "/".into(), session: "s".into() };
+        let be = DaemonBackend {
+            sock: file,
+            cwd: "/".into(),
+            session: "s".into(),
+            indexer: IndexerLink::new("/nonexistent/indexer".into(), "/".into()),
+        };
         assert!(be.call(vec!["version".into()]).unwrap_err().starts_with("cannot reach zazzled: "));
     }
 
@@ -688,7 +744,12 @@ mod tests {
     #[test]
     fn test_daemon_backend_live() {
         let srv = crate::server::tests::Running::start(std::time::Duration::from_secs(30));
-        let be = DaemonBackend { sock: srv.sock.clone(), cwd: "/".into(), session: "s".into() };
+        let be = DaemonBackend {
+            sock: srv.sock.clone(),
+            cwd: "/".into(),
+            session: "s".into(),
+            indexer: IndexerLink::new("/nonexistent/indexer".into(), "/".into()),
+        };
         let (status, text) = be.call(vec!["version".into()]).expect("call");
         assert_eq!(status, 0);
         assert!(text.starts_with("zazzle "));
@@ -758,11 +819,52 @@ mod tests {
     // Checks every tool has a schema object with its required list.
     #[test]
     fn test_all_tool_schemas() {
-        let l = list_tools();
+        let l = list_tools(&fake(0, ""));
         for t in l["tools"].as_array().expect("tools") {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
         assert_eq!(l["tools"].as_array().expect("tools").len(), 6);
+    }
+
+    // Checks the indexer's tools are listed with the index_ prefix and calls are forwarded without it.
+    #[test]
+    fn test_indexer_tools_listed_and_forwarded() {
+        let mut b = fake(0, "");
+        b.index_answer = Ok(json!({"tools": [{"name": "overview", "description": "d", "inputSchema": {}}]}));
+        let l = ask(&b, json!({"id":1,"method":"tools/list"}));
+        let names: Vec<&str> = l["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .map(|t| t["name"].as_str().expect("n"))
+            .collect();
+        assert!(names.contains(&"index_overview") && names.contains(&"zazzle_find"));
+        b.index_answer = Ok(json!({"content": [{"type": "text", "text": "ok"}], "isError": false}));
+        let r = ask(
+            &b,
+            json!({"id":2,"method":"tools/call","params":{"name":"index_overview","arguments":{"x":1}}}),
+        );
+        assert_eq!(r["result"]["content"][0]["text"], "ok");
+        let calls = b.index_calls.borrow();
+        let (method, params) = calls.last().expect("call");
+        assert_eq!(method, "tools/call");
+        assert_eq!(params["name"], "overview");
+        assert_eq!(params["arguments"]["x"], 1);
+    }
+
+    // Checks an unavailable indexer leaves the zazzle tools listed and turns index_ calls into tool errors.
+    #[test]
+    fn test_indexer_unavailable() {
+        let b = fake(0, "");
+        let l = ask(&b, json!({"id":1,"method":"tools/list"}));
+        assert_eq!(l["result"]["tools"].as_array().expect("tools").len(), TOOLS.len());
+        let r =
+            ask(&b, json!({"id":2,"method":"tools/call","params":{"name":"index_search","arguments":{}}}));
+        assert_eq!(r["result"]["isError"], true);
+        assert!(r["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text")
+            .contains("indexer unavailable: no indexer"));
     }
 }

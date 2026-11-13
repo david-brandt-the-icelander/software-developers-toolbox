@@ -124,7 +124,8 @@ public class CliTests
         Assert.Single(s["hooks"]!["PreToolUse"]!.AsArray());
         Assert.Equal("/opt/zazzle-csharp-indexer hook", s["hooks"]!["PreToolUse"]![0]!["hooks"]![0]!["command"]!.GetValue<string>());
         var m = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, ".mcp.json")))!;
-        Assert.Equal("/opt/zazzle-csharp-indexer", m["mcpServers"]!["zazzle-csharp-indexer"]!["command"]!.GetValue<string>());
+        Assert.Equal("zazzled", m["mcpServers"]!["zazzle"]!["command"]!.GetValue<string>());
+        Assert.Equal("mcp", m["mcpServers"]!["zazzle"]!["args"]![0]!.GetValue<string>());
         Directory.Delete(dir, true);
     }
 

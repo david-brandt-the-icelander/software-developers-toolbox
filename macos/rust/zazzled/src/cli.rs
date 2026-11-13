@@ -2,6 +2,7 @@
 use crate::client;
 use crate::cmd::{self, Ctx};
 use crate::engine::Engine;
+use crate::indexer::IndexerLink;
 use crate::launchd;
 use crate::mcp::{self, DaemonBackend};
 use crate::server::{self, Config};
@@ -120,7 +121,8 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
 fn mcp_main() -> Result<(), String> {
     let sock = client::socket_path().map_err(|e| e.to_string())?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
-    let backend = DaemonBackend { sock, cwd, session: mcp::new_session_id() };
+    let indexer = IndexerLink::new(IndexerLink::default_program(), cwd.clone());
+    let backend = DaemonBackend { sock, cwd, session: mcp::new_session_id(), indexer };
     mcp::serve(&mut std::io::stdin().lock(), &mut std::io::stdout().lock(), &backend)
         .map_err(|e| e.to_string())
 }

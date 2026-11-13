@@ -16,9 +16,9 @@ public static class HookPolicy
     private static readonly HashSet<string> Readers = ["cat", "head", "tail", "less", "more", "bat", "nl"];
     private static readonly HashSet<string> FindActions = ["-delete", "-exec", "-execdir", "-ok", "-okdir"];
 
-    private const string SearchMsg = "Use the zazzle-csharp-indexer MCP tool `search` (mcp__zazzle-csharp-indexer__search) instead of grep/rg: it is index-accelerated and cheaper in tokens (args: pattern, literal, glob, context, mode=files|count|lines).";
-    private const string FindMsg = "Use the zazzle-csharp-indexer MCP tool `find_files` (mcp__zazzle-csharp-indexer__find_files) instead of find/Glob (args: query, glob).";
-    private const string ReadMsg = "Use the zazzle-csharp-indexer MCP tool `read` (mcp__zazzle-csharp-indexer__read, args: path root:file, start_line, end_line) or `outline` instead of cat/head/tail/sed -n.";
+    private const string SearchMsg = "Use the zazzle MCP tool `index_search` (mcp__zazzle__index_search) instead of grep/rg: it is index-accelerated and cheaper in tokens (args: pattern, literal, glob, context, mode=files|count|lines).";
+    private const string FindMsg = "Use the zazzle MCP tool `index_find_files` (mcp__zazzle__index_find_files) instead of find/Glob (args: query, glob).";
+    private const string ReadMsg = "Use the zazzle MCP tool `index_read` (mcp__zazzle__index_read, args: path root:file, start_line, end_line) or `index_outline` instead of cat/head/tail/sed -n.";
     private const string Escape = " If these tools cannot do what you need, call `report_gap`, or add the comment `# allow-raw` to the command (logged).";
 
     // Evaluates a tool call given Claude Code's tool name and its tool_input command (for Bash).

@@ -1,24 +1,23 @@
 # zazzle-csharp-indexer
 
-Single-file MCP server that answers code questions for agents over one or more git work trees, so they use it instead of grep, find, cat and sed. A per-user daemon keeps an index current from file-change notifications; every call is logged to `usage.jsonl` so the next version can be shaped by real use.
+Single-file MCP server that answers code questions for agents over one or more git work trees, so they use it instead of grep, find, cat and sed. It is started on demand by `zazzled mcp` (the `zazzle` MCP server), which relays its tools as `index_*`; the index is kept current from file-change notifications; every call is logged to `usage.jsonl` so the next version can be shaped by real use.
 
 ## Quick start
 ```bash
 zazzle-csharp-indexer init            # in a project: writes .mcp.json and .claude/settings.json (server, permission, redirect hook)
 zazzle-csharp-indexer report          # after some use: what to improve next
 ```
-`init` prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle-csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and points at the matching MCP tool; add `# allow-raw` to a command to bypass it (logged).
+`init` writes the `zazzle` MCP server (`zazzled mcp`, which relays this indexer's tools as `index_*`) and prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle-csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and points at the matching MCP tool; add `# allow-raw` to a command to bypass it (logged).
 
 ## Commands
-- `serve [--root name=path]...` stdio MCP server (default root: current directory). Connects to the shared daemon, starting it if needed; `--no-daemon` or `ZAZZLE_INDEXER_NO_DAEMON=1` serves in-process.
-- `daemon` the shared per-user daemon on a unix socket in the state directory; exits after 30 idle minutes (`ZAZZLE_INDEXER_IDLE_MINUTES`).
+- `serve [--root name=path]...` stdio MCP server (default root: current directory), always in-process. `zazzled mcp` starts it as a child process on first use and ends it when its own input closes; there is no separate daemon.
 - `init [--dir path]`, `report`, `hook`, `--version`.
 
 ## Tools
 - `overview`, `outline`, `find_symbol`, `find_references`: structure from the index. C# is parsed with Roslyn (exact); other languages use a regex extractor and are marked `[heuristic]`.
 - `search`: .NET regex per line (or `literal`), glob filter, `mode` lines/files/count, context, paging. Patterns .NET rejects fall back to `rg -P` or `git grep -P`.
 - `read`: line ranges with numbers and a token budget; an unchanged repeat read returns a one-line note.
-- `find_files`, `changed_since` (cursor-based, valid within one daemon run), `git_log`, `git_blame`.
+- `find_files`, `changed_since` (cursor-based, valid within one server run), `git_log`, `git_blame`.
 - `run`: argv passthrough for read-only commands (grep, rg, sed, awk, find, cat, head, tail, wc, ls, git log/blame/show/diff/status ...). Best-effort guard against edits; `run.unrestricted: true` in `config.json` (or `ZAZZLE_INDEXER_RUN_UNRESTRICTED=1`) lifts it.
 - `report_gap`: the agent says what it could not get; stored in the log.
 
@@ -41,7 +40,7 @@ Paths are `root:relative/path`. Every root must be inside a git work tree.
 - The stat key has no ctime (not exposed by .NET): an in-place rewrite that keeps size, mtime and birth time is caught by the watcher but not by a restart reconcile.
 - Ranking is path order; there is no relevance ranking and no import/dependency graph.
 - `find_references` is name-based, not type-resolved.
-- The published file is large (about 130 MB with Roslyn, ReadyToRun, untrimmed). The store is about twice the source size for dense code. Initial indexing of 20,000 files (80 MB) took about 12 s; afterwards a `search` answered in about 100 ms inside the daemon (about 0.15 s including starting the client process).
+- The published file is large (about 130 MB with Roslyn, ReadyToRun, untrimmed). The store is about twice the source size for dense code. Initial indexing of 20,000 files (80 MB) took about 12 s; afterwards a `search` answered in about 100 ms.
 - MCP `roots/list` is not used; the default root is the working directory Claude Code launches the server in.
 
 ## Build (run in `macos/dotnet/zazzle-csharp-indexer/`)

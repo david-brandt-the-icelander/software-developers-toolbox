@@ -132,11 +132,10 @@ jobs:
           dotnet-version: 8.0.x
       - run: dotnet test tests
       - run: dotnet publish src -c Release -o out
-      - name: Smoke test server and daemon
+      - name: Smoke test server
         env:
           ZAZZLE_INDEXER_STATE_DIR: ${{ runner.temp }}/zazzle-csharp-indexer-state
         run: |
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/zazzle-csharp-indexer serve --root repo=../../.. | tee smoke.txt
           grep -q '"isError":false' smoke.txt
           ./out/zazzle-csharp-indexer report
-          pkill -f "zazzle-csharp-indexer daemon" || true

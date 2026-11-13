@@ -5,7 +5,7 @@ using ZazzleIndexer.Index;
 
 namespace ZazzleIndexer;
 
-// Owns everything a daemon (or an in-process server) shares between sessions.
+// Owns everything one server shares between sessions.
 public sealed class Engine : IDisposable
 {
     public const long MaxIndexBytes = 16 * 1024 * 1024;

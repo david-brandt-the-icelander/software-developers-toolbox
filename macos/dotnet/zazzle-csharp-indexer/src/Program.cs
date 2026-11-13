@@ -2,12 +2,11 @@
 using ZazzleIndexer;
 using System.Text.Json.Nodes;
 using ZazzleIndexer.Cli;
-using ZazzleIndexer.Daemon;
 using ZazzleIndexer.Mcp;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-    Console.Error.WriteLine("usage: zazzle-csharp-indexer serve [--no-daemon] [--root name=path]... | daemon | report | init [--dir path] | hook");
+    Console.Error.WriteLine("usage: zazzle-csharp-indexer serve [--root name=path]... | report | init [--dir path] | hook");
     return args.Length == 0 ? 2 : 0;
 }
 if (args[0] == "--version")
@@ -41,19 +40,16 @@ if (args[0] == "hook")
     return 2;
 }
 
-if (args[0] is not ("serve" or "daemon"))
+if (args[0] != "serve")
 {
     Console.Error.WriteLine($"unknown command: {args[0]}");
     return 2;
 }
 
 var specs = new List<string>();
-var noDaemon = Environment.GetEnvironmentVariable("ZAZZLE_INDEXER_NO_DAEMON") == "1";
 for (var i = 1; i < args.Length; i++)
 {
-    if (args[i] == "--no-daemon")
-        noDaemon = true;
-    else if (args[i] == "--root" && i + 1 < args.Length)
+    if (args[i] == "--root" && i + 1 < args.Length)
         specs.Add(args[++i]);
     else
     {
@@ -64,29 +60,6 @@ for (var i = 1; i < args.Length; i++)
 if (specs.Count == 0)
     specs.Add(Directory.GetCurrentDirectory());
 specs = specs.Select(Absolute).ToList();
-
-if (args[0] == "daemon")
-{
-    var stateDir = UsageLog.DefaultDir();
-    Directory.CreateDirectory(stateDir);
-    using var engine = Engine.Open(stateDir);
-    var idle = TimeSpan.FromMinutes(double.Parse(Environment.GetEnvironmentVariable("ZAZZLE_INDEXER_IDLE_MINUTES") ?? "30"));
-    using var daemon = new DaemonServer(engine, Proxy.SocketPath(stateDir), idle);
-    daemon.Start();
-    await daemon.Done;
-    return 0;
-}
-
-if (!noDaemon)
-{
-    var socket = Proxy.Connect(UsageLog.DefaultDir(), specs, out var error);
-    if (socket is not null)
-    {
-        await Proxy.Pump(socket);
-        return 0;
-    }
-    Console.Error.WriteLine($"zazzle-csharp-indexer: no daemon ({error}); serving in-process");
-}
 
 using var local = Engine.Open();
 var roots = specs.Select(s => Root.Parse(s, local)).ToList();

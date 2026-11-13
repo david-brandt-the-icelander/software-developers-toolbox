@@ -6,7 +6,7 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 - [`agent-fs`](macos/rust/agent-fs/README.md): JSON read/search/list/outline tool and MCP server for agents, with session caching (`afs`).
 - [`zazzle`/`zazzled`](macos/rust/zazzled/README.md): file tool and MCP server for agents (find, read, outline, refs, safe edit) with a tiny C invoker, per-session dedupe and a persistent cache.
 - [`free-disk-space`](macos/rust/free-disk-space/README.md): scan, compress, dedupe and clean up disk space (also `zazzle free-disk-space ...`; `daemon install` schedules it).
-- [`zazzle-csharp-indexer`](macos/dotnet/zazzle-csharp-indexer/README.md) (C#): MCP server that answers code questions for agents instead of grep and cat.
+- [`zazzle-csharp-indexer`](macos/dotnet/zazzle-csharp-indexer/README.md) (C#): code indexer (Roslyn for C#) for agents; `zazzled mcp` starts it on demand and relays its tools as `index_*`.
 
 Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 

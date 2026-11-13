@@ -16,6 +16,8 @@ claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, 
 
 Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write.
 
+`zazzled mcp` also relays the C# code indexer (`zazzle-csharp-indexer`, beside `zazzled`, or `$ZAZZLE_INDEXER`): on the first `tools/list` it starts the indexer as a child process on the working directory (it must be a git work tree) and lists its tools with an `index_` prefix (`index_overview`, `index_find_symbol`, `index_find_references`, `index_search`, ...). The child ends when the MCP input closes. If the indexer is missing or the directory is not a git work tree, only the `zazzle_*` tools are listed and `index_*` calls return an error text.
+
 ## Commands
 
 | command | output |

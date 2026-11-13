@@ -1,4 +1,4 @@
-// `zazzle-csharp-indexer init`: wires the server and the redirect hook into a project's Claude Code settings.
+// `zazzle-csharp-indexer init`: wires the zazzled MCP server (which relays this indexer) and the redirect hook into a project's Claude Code settings.
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -16,7 +16,7 @@ public static class Init
         var mcp = Path.Combine(dir, ".mcp.json");
         var m = Load(mcp);
         var servers = m["mcpServers"] as JsonObject ?? new JsonObject();
-        servers["zazzle-csharp-indexer"] = new JsonObject { ["type"] = "stdio", ["command"] = exe, ["args"] = new JsonArray("serve") };
+        servers["zazzle"] = new JsonObject { ["type"] = "stdio", ["command"] = "zazzled", ["args"] = new JsonArray("mcp") };
         m["mcpServers"] = servers;
         Save(mcp, m);
         done.Add($"wrote {mcp}");
@@ -36,13 +36,13 @@ public static class Init
         s["hooks"] = hooks;
         var perms = s["permissions"] as JsonObject ?? new JsonObject();
         var allow = perms["allow"] as JsonArray ?? new JsonArray();
-        if (!allow.Any(a => a?.GetValue<string>() == "mcp__zazzle-csharp-indexer"))
-            allow.Add("mcp__zazzle-csharp-indexer");
+        if (!allow.Any(a => a?.GetValue<string>() == "mcp__zazzle"))
+            allow.Add("mcp__zazzle");
         perms["allow"] = allow;
         s["permissions"] = perms;
         var enabled = s["enabledMcpjsonServers"] as JsonArray ?? new JsonArray();
-        if (!enabled.Any(a => a?.GetValue<string>() == "zazzle-csharp-indexer"))
-            enabled.Add("zazzle-csharp-indexer");
+        if (!enabled.Any(a => a?.GetValue<string>() == "zazzle"))
+            enabled.Add("zazzle");
         s["enabledMcpjsonServers"] = enabled;
         Save(settings, s);
         done.Add($"wrote {settings}");
@@ -52,9 +52,9 @@ public static class Init
     // The text to paste into AGENTS.md or CLAUDE.md.
     public const string AgentsSnippet = """
         ## Code questions
-        - Ask zazzle-csharp-indexer (MCP server `zazzle-csharp-indexer`) instead of grep, rg, find, cat or sed: `overview`, `outline`, `find_symbol`, `find_references`, `search`, `read`, `find_files`, `changed_since`.
-        - Paths are `root:relative/path`. `search` uses .NET regex; use `literal` for plain text.
-        - If the tools cannot answer, call `report_gap` with one sentence, then use `run`.
+        - Ask the MCP server `zazzle` instead of grep, rg, find, cat or sed. `zazzle_*` tools read, search, list and edit files; `index_*` tools answer code questions: `index_overview`, `index_outline`, `index_find_symbol`, `index_find_references`, `index_search`, `index_read`, `index_find_files`, `index_changed_since`.
+        - `index_*` paths are `root:relative/path`. `index_search` uses .NET regex; use `literal` for plain text.
+        - If the tools cannot answer, call `index_report_gap` with one sentence, then use `index_run`.
         """;
 
     // Reads a JSON object file, or an empty object when it does not exist.
