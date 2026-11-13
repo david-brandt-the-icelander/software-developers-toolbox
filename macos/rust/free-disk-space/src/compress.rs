@@ -1,4 +1,5 @@
 // Verified in-place APFS compression of scanned candidates.
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, Write};
 use std::os::unix::fs::MetadataExt;
@@ -165,6 +166,37 @@ fn confirm(question: &str) -> bool {
     line.trim().eq_ignore_ascii_case("y")
 }
 
+// Tell whether ditto really compresses; on macOS 26/27 it reports success but writes a plain copy.
+fn ditto_compresses() -> bool {
+    let dir = std::env::temp_dir().join(format!("fds-probe-{}", std::process::id()));
+    let (src, dst) = (dir.join("probe.txt"), dir.join("probe.out"));
+    let text = "free-disk-space compression probe\n".repeat(8192);
+    let (s, d) = (src.to_string_lossy(), dst.to_string_lossy());
+    let ok = fs::create_dir_all(&dir).is_ok()
+        && fs::write(&src, text).is_ok()
+        && util::run(&["/usr/bin/ditto", "--hfsCompression", &s, &d], 60.0, &[]).is_some_and(|o| o.code == 0)
+        && fs::symlink_metadata(&dst).is_ok_and(|m| util::flags(&m) & util::UF_COMPRESSED != 0);
+    let _ = fs::remove_dir_all(&dir);
+    ok
+}
+
+// Group a skip note by its reason, dropping per-file details such as sizes and errors.
+fn reason_key(note: &str) -> &str {
+    note.split([':', '(']).next().unwrap_or(note).trim()
+}
+
+// Print how many files were skipped for each reason, most common first.
+fn print_skip_reasons(reasons: &BTreeMap<String, usize>) {
+    let mut rows: Vec<_> = reasons.iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(a.1));
+    for (reason, n) in rows {
+        println!("  skipped {n:>7}  {reason}");
+    }
+    if !reasons.is_empty() {
+        println!("  (per file: free-disk-space list --status skipped)");
+    }
+}
+
 // Compress planned candidates in place and report verified savings.
 pub fn cmd_compress(o: &CompressOpts) {
     let forced = std::env::var_os("FDS_FORCE").is_some();
@@ -188,6 +220,10 @@ pub fn cmd_compress(o: &CompressOpts) {
         println!("Dry run - nothing changed.");
         return;
     }
+    if cfg!(target_os = "macos") && !ditto_compresses() {
+        die("ditto --hfsCompression wrote an uncompressed test copy (known on macOS 26/27); \
+             compress is unavailable until Apple fixes it. Nothing was changed.");
+    }
     if util::is_tty() && !o.yes && !confirm("Compress these files in place? [y/N] ") {
         println!("Aborted.");
         return;
@@ -196,6 +232,7 @@ pub fn cmd_compress(o: &CompressOpts) {
     let free0 = util::report_free("Initial");
     let mut tk = util::Ticker::new();
     let (mut saved_total, mut n_done, mut n_skip, mut n_fail, mut streak) = (0i64, 0, 0, 0, 0);
+    let mut reasons = BTreeMap::new();
     let t0 = now();
     for (i, cand) in chosen.iter().enumerate() {
         if util::stopped() {
@@ -227,6 +264,7 @@ pub fn cmd_compress(o: &CompressOpts) {
             }
             "skipped" => {
                 n_skip += 1;
+                *reasons.entry(reason_key(&note).to_string()).or_insert(0) += 1;
             }
             _ => {
                 n_fail += 1;
@@ -251,6 +289,7 @@ pub fn cmd_compress(o: &CompressOpts) {
     }
     let free1 = util::report_free("Final");
     println!("Compressed {n_done}, skipped {n_skip}, failed {n_fail} in {}", hms(now() - t0));
+    print_skip_reasons(&reasons);
     println!("Verified allocated-space saving (sum over files): {}", c("1", &human_i(saved_total)));
     println!("Overall free-space change on the volume:         {}", c("1", &human_i(free1 - free0)));
     println!("(These can differ: snapshots, shared blocks/clones and other writers affect free space.)");
@@ -548,5 +587,34 @@ mod tests {
         util::set_stop(true);
         cmd_compress(&opts(&sb));
         assert_eq!(status_of(&sb, &files[5]).0, "pending");
+    }
+
+    // Check skip notes group by reason without per-file details.
+    #[test]
+    fn test_reason_key_groups() {
+        assert_eq!(reason_key("gain too small (12 KiB)"), "gain too small");
+        assert_eq!(reason_key("gone: No such file"), "gone");
+        assert_eq!(reason_key("modified recently"), "modified recently");
+        let mut r = BTreeMap::new();
+        r.insert("a".to_string(), 1);
+        r.insert("b".to_string(), 3);
+        print_skip_reasons(&r);
+        print_skip_reasons(&BTreeMap::new());
+    }
+
+    // Check the ditto probe needs a successful run and a compressed copy.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_ditto_compresses_probe() {
+        let sb = Sandbox::new();
+        fake_ditto(&sb, "true");
+        util::set_flags(&[util::UF_COMPRESSED]);
+        assert!(ditto_compresses());
+        util::set_flags(&[0]);
+        assert!(!ditto_compresses());
+        util::set_flags(&[util::UF_COMPRESSED]);
+        sb.tool("ditto", "exit 1");
+        assert!(!ditto_compresses());
+        util::set_flags(&[]);
     }
 }
