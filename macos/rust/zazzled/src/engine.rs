@@ -189,7 +189,7 @@ impl Engine {
         Ok(Loaded { data, meta })
     }
 
-    // Returns a file's summary, reading the file only when neither cache has a valid record.
+    // Returns a file's summary, reading the file only when neither cache has a valid record; it never hashes the file.
     pub fn info(&self, path: &Path) -> Result<Info, String> {
         let key = Engine::stat_file(path)?;
         if let Some(m) = self.cached(path, key) {
@@ -200,7 +200,15 @@ impl Engine {
             self.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(i);
         }
-        Ok(self.load(path)?.meta.info())
+        self.misses.fetch_add(1, Ordering::Relaxed);
+        let data = std::fs::read(path).map_err(|e| crate::walk::reason(&e))?;
+        let info = Info::compute(&data);
+        if let (Some(s), Ok(after)) = (&self.store, Engine::stat_file(path)) {
+            if after == key {
+                s.put(path, key, info);
+            }
+        }
+        Ok(info)
     }
 
     // Returns the persisted summary for a file whose metadata the caller already has, without reading it.
@@ -211,7 +219,7 @@ impl Engine {
     // Persists the summary of content the caller already read.
     pub fn remember(&self, path: &Path, md: &Metadata, data: &[u8]) {
         if let Some(s) = &self.store {
-            s.put(path, key_of(md), Meta::compute(data).info());
+            s.put(path, key_of(md), Info::compute(data));
         }
     }
 }
@@ -263,16 +271,30 @@ mod tests {
         assert_eq!((first.lines, second.lines), (1, 2));
     }
 
-    // Checks info() answers from the hot cache without reading.
+    // Checks info() answers from the hot cache that a load filled, without reading again.
     #[test]
     fn test_info_hot_cache_hit() {
         let t = TempDir::new();
         let p = t.write("a.txt", b"x\n");
         age(&p);
         let e = Engine::new();
-        e.info(&p).expect("info");
-        e.info(&p).expect("info");
+        e.load(&p).expect("load");
+        assert_eq!(e.info(&p).expect("info").lines, 1);
         assert_eq!(e.hits.load(Ordering::Relaxed), 1);
+    }
+
+    // Checks info() on its own computes the hash-free summary and leaves the hot cache of full metadata alone.
+    #[test]
+    fn test_info_alone_does_not_fill_hot_cache() {
+        let t = TempDir::new();
+        let p = t.write("a.txt", b"x\r\ny\r\n");
+        age(&p);
+        let e = Engine::new();
+        let i = e.info(&p).expect("info");
+        assert_eq!((i.lines, i.crlf, i.size), (2, true, 6));
+        e.info(&p).expect("info");
+        assert_eq!((e.hits.load(Ordering::Relaxed), e.misses.load(Ordering::Relaxed)), (0, 2));
+        assert_eq!(e.cached_entries(), 0);
     }
 
     // Checks forget removes the record.
@@ -282,7 +304,8 @@ mod tests {
         let p = t.write("a.txt", b"x\n");
         age(&p);
         let e = Engine::new();
-        e.info(&p).expect("info");
+        e.load(&p).expect("load");
+        assert_eq!(e.cached_entries(), 1);
         e.forget(&p);
         assert_eq!(e.cached_entries(), 0);
     }
@@ -313,7 +336,7 @@ mod tests {
                 );
             }
         }
-        e.info(&p).expect("info");
+        e.load(&p).expect("load");
         assert_eq!(e.cached_entries(), 1);
     }
 

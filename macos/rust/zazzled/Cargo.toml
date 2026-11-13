@@ -39,6 +39,8 @@ serde_json = "1"
 tree-sitter = "0.25"
 # C grammar for outlines.
 tree-sitter-c = "0.24"
+# C# grammar for outlines and read --symbol.
+tree-sitter-c-sharp = "0.23"
 # JavaScript grammar for outlines.
 tree-sitter-javascript = "0.23"
 # Python grammar for outlines.
@@ -47,6 +49,9 @@ tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 # TypeScript and TSX grammars for outlines.
 tree-sitter-typescript = "0.23"
+# HTTPS client for the MCP proxy: blocking like the rest of the daemon, rustls with the OS trust store.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
+
 # .zazz archives, manifests and script ids, shared with the zazz tools.
 zazz-format = { path = "../zazz-format" }
 # The script protocol: frames, descriptor passing, the human CLI parser and output rendering.

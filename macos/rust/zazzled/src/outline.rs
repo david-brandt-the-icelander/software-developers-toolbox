@@ -25,6 +25,7 @@ pub enum Lang {
     Rust,
     Python,
     C,
+    CSharp,
     JavaScript,
     TypeScript,
     Tsx,
@@ -60,6 +61,20 @@ const C: &[KindRow] = &[
     ("preproc_def", "#define", false),
     ("preproc_function_def", "#define", false),
 ];
+const CSHARP: &[KindRow] = &[
+    ("namespace_declaration", "namespace", true),
+    ("file_scoped_namespace_declaration", "namespace", false),
+    ("class_declaration", "class", true),
+    ("struct_declaration", "struct", true),
+    ("record_declaration", "record", true),
+    ("interface_declaration", "interface", true),
+    ("enum_declaration", "enum", false),
+    ("delegate_declaration", "delegate", false),
+    ("method_declaration", "method", false),
+    ("constructor_declaration", "ctor", false),
+    ("property_declaration", "property", false),
+    ("event_declaration", "event", false),
+];
 const JS: &[KindRow] = &[
     ("function_declaration", "function", false),
     ("generator_function_declaration", "function", false),
@@ -87,6 +102,7 @@ pub fn lang_of(path: &Path) -> Lang {
         "rs" => Lang::Rust,
         "py" | "pyi" => Lang::Python,
         "c" | "h" => Lang::C,
+        "cs" => Lang::CSharp,
         "js" | "jsx" | "mjs" | "cjs" => Lang::JavaScript,
         "ts" | "mts" | "cts" => Lang::TypeScript,
         "tsx" => Lang::Tsx,
@@ -107,7 +123,7 @@ pub fn worth_outlining(path: &Path) -> bool {
 
 // Returns the tree-sitter grammar for a language and its kind-id table, which is built once per process.
 fn grammar(lang: Lang) -> Option<(Language, &'static [Class])> {
-    static TABLES: [OnceLock<Vec<Class>>; 6] = [const { OnceLock::new() }; 6];
+    static TABLES: [OnceLock<Vec<Class>>; 7] = [const { OnceLock::new() }; 7];
     let (slot, language, kinds): (usize, Language, &[KindRow]) = match lang {
         Lang::Rust => (0, tree_sitter_rust::LANGUAGE.into(), RUST),
         Lang::Python => (1, tree_sitter_python::LANGUAGE.into(), PYTHON),
@@ -115,6 +131,7 @@ fn grammar(lang: Lang) -> Option<(Language, &'static [Class])> {
         Lang::JavaScript => (3, tree_sitter_javascript::LANGUAGE.into(), JS),
         Lang::TypeScript => (4, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), TS),
         Lang::Tsx => (5, tree_sitter_typescript::LANGUAGE_TSX.into(), TS),
+        Lang::CSharp => (6, tree_sitter_c_sharp::LANGUAGE.into(), CSHARP),
         _ => return None,
     };
     let table = TABLES[slot].get_or_init(|| class_table(&language, kinds));
@@ -422,6 +439,29 @@ mod tests {
     // Summarises symbols as "kind name start-end/depth" strings.
     fn brief(syms: &[Symbol]) -> Vec<String> {
         syms.iter().map(|s| format!("{} {} {}-{}/{}", s.kind, s.name, s.start, s.end, s.depth)).collect()
+    }
+
+    // Checks C# namespaces, types and members, with attributes inside a method's range.
+    #[test]
+    fn test_csharp_outline() {
+        let src = "namespace Acme.Billing;\n\npublic sealed class Invoice\n{\n    public Invoice(int id) { }\n    public int Id { get; }\n    [Obsolete]\n    public decimal Total(decimal r)\n    {\n        return r;\n    }\n    public delegate void D();\n    public event D Changed { add { } remove { } }\n}\nnamespace Old { public interface I { } public enum E { A } public record R(int X); public struct S { } }\n";
+        assert_eq!(
+            brief(&out("a.cs", src)),
+            [
+                "namespace Acme.Billing 1-1/0",
+                "class Invoice 3-14/0",
+                "ctor Invoice 5-5/1",
+                "property Id 6-6/1",
+                "method Total 7-11/1",
+                "delegate D 12-12/1",
+                "event Changed 13-13/1",
+                "namespace Old 15-15/0",
+                "interface I 15-15/1",
+                "enum E 15-15/1",
+                "record R 15-15/1",
+                "struct S 15-15/1"
+            ]
+        );
     }
 
     // Checks Rust items, impl naming and nesting.

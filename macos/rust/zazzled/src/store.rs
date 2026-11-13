@@ -60,7 +60,8 @@ fn encode(path: &Path, rec: &Rec) -> Vec<u8> {
         body.extend_from_slice(&v.to_le_bytes());
     }
     body.extend_from_slice(&rec.key.mtime_ns.to_le_bytes());
-    body.extend_from_slice(&rec.info.hash);
+    // Formerly the content hash; kept as zeros so the record layout and existing caches stay valid.
+    body.extend_from_slice(&[0; 32]);
     body.extend_from_slice(&rec.info.lines.to_le_bytes());
     let flags = [
         (rec.info.binary, F_BINARY),
@@ -88,13 +89,12 @@ fn decode_body(mut b: &[u8]) -> Option<(PathBuf, Rec)> {
     let (path, mut b) = b.split_at_checked(plen)?;
     let [dev, ino, size] = [(); 3].map(|()| take::<8>(&mut b).map(u64::from_le_bytes));
     let mtime_ns = i64::from_le_bytes(take::<8>(&mut b)?);
-    let hash = take::<32>(&mut b)?;
+    take::<32>(&mut b)?;
     let lines = u32::from_le_bytes(take::<4>(&mut b)?);
     let [flags] = take::<1>(&mut b)?;
     let key = StatKey { dev: dev?, ino: ino?, size: size?, mtime_ns };
     let info = Info {
         size: key.size,
-        hash,
         binary: flags & F_BINARY != 0,
         minified: flags & F_MINIFIED != 0,
         crlf: flags & F_CRLF != 0,
@@ -261,7 +261,7 @@ mod tests {
 
     // Builds an info record.
     fn info(lines: u32) -> Info {
-        Info { size: 10, hash: [7; 32], binary: false, minified: false, crlf: false, lines }
+        Info { size: 10, binary: false, minified: false, crlf: false, lines }
     }
 
     // Checks every field survives encode and decode, including flags and a non-UTF-8 path.
