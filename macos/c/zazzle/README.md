@@ -6,6 +6,7 @@ The client half of `zazzle`/`zazzled` (docs: `macos/rust/zazzled/README.md`). A 
 - Builds the socket path from `$ZAZZLE_SOCK` or `$HOME/.zazzle/sock` and connects; checks the daemon runs as the same user.
 - If no daemon is listening it starts one (`$ZAZZLE_DAEMON`, else `zazzled` beside itself) with standard streams on `/dev/null`, detached, and retries with backoff for up to 3 s. On macOS with `zazzled install` launchd owns the socket and starts the daemon on demand.
 - Sends one message: `cwd(empty) NUL session NUL args... NUL` with SCM_RIGHTS fds 0, 1, 2 and an `open(".")` directory fd. The daemon writes straight into the caller's stdout/stderr and answers with one status byte, which becomes the exit code. `ZAZZLE_SESSION` is the session key.
+- Waits for that byte by polling without sleeping for up to 25 µs (timed with `CNTVCT_EL0` on arm64, `clock_gettime` on x86_64), then blocks. Fast replies (about 10–15 µs of daemon work for `read`) then skip the sleep/wake-up, which cost about 25 µs per call on a Linux VM; slow commands lose at most 25 µs of CPU.
 
 ## Build and test
 - `make` builds `build/zazzle`, `build/exit0` (startup floor), `build/hello_libc`, `build/spawnbench`. Build `zazzled` first: `cd ../../rust && cargo build --release -p zazzled`.

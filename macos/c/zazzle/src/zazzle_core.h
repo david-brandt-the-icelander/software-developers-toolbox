@@ -6,6 +6,7 @@
 #define NFDS 4
 #define START_WAIT_MS 3000
 #define EXE_MAX 512
+#define SPIN_US 25
 
 static char req[REQ_MAX + 4] __attribute__((aligned(8)));
 static char sockpath[ZAZZLE_SUN_PATH_MAX];
@@ -220,10 +221,19 @@ static void send_request(int fd, size_t total)
 	}
 }
 
-/* Reads the daemon's one-byte exit status. */
+/* Reads the daemon's one-byte exit status, polling without sleeping for up to SPIN_US first so a fast reply skips the wake-up. */
 static int read_status(int fd)
 {
 	unsigned char b;
+	uint64_t end = sys_clock_after_us(SPIN_US);
+	do {
+		long r = sys_recv_nowait(fd, &b);
+		if (r == 1)
+			return b;
+		if (r != -SYS_EAGAIN)
+			break;
+		sys_cpu_relax();
+	} while (sys_clock_now() < end);
 	if (sys_read(fd, &b, 1) != 1)
 		die("daemon closed without answering", 70);
 	return b;

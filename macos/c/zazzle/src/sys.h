@@ -43,4 +43,21 @@ static inline long sys_sendmsg(int fd, const struct zazzle_msghdr *m) { return s
 
 /* Returns the real uid of this process. */
 static inline long sys_getuid(void) { return sys_call(SYS_getuid, 0, 0, 0, 0, 0); }
+
+/* Receives one byte without blocking: 1 if read, 0 at end of stream, else a negative errno such as -SYS_EAGAIN. */
+static inline long sys_recv_nowait(int fd, unsigned char *b)
+{
+	struct zazzle_iovec v;
+	struct zazzle_msghdr m;
+	v.base = b;
+	v.len = 1;
+	m.name = 0;
+	m.namelen = 0;
+	m.iov = &v;
+	m.iovlen = 1;
+	m.control = 0;
+	m.controllen = 0;
+	m.flags = 0;
+	return sys_call(SYS_recvmsg, fd, (long)&m, ZAZZLE_MSG_DONTWAIT, 0, 0);
+}
 #endif

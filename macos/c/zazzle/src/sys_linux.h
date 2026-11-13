@@ -37,6 +37,8 @@ static inline long sys_peer_uid(int fd)
 
 #define SYS_ENOENT 2
 #define SYS_ECONNREFUSED 111
+#define SYS_EAGAIN 11
+#define ZAZZLE_MSG_DONTWAIT 0x40
 
 struct zazzle_timespec { long sec; long nsec; };
 

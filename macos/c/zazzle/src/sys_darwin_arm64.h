@@ -8,6 +8,7 @@
 #define SYS_close 6
 #define SYS_getuid 24
 #define SYS_sendmsg 28
+#define SYS_recvmsg 27
 #define SYS_socket 97
 #define SYS_connect 98
 #define SYS_getsockopt 118
@@ -66,6 +67,10 @@ static inline long sys_peer_uid(int fd)
 
 #define SYS_ENOENT 2
 #define SYS_ECONNREFUSED 61
+#define SYS_EAGAIN 35
+#define ZAZZLE_MSG_DONTWAIT 0x80
+
+#include "sys_arm64_clock.h"
 
 /* libSystem entry points, declared by hand so no SDK headers are needed. */
 extern int _NSGetExecutablePath(char *buf, uint32_t *size);

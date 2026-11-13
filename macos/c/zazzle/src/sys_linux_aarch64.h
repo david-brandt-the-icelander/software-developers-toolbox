@@ -17,6 +17,7 @@
 #define SYS_nanosleep 101
 #define SYS_readlinkat 78
 #define SYS_dup3 24
+#define SYS_recvmsg 212
 #define ZAZZLE_O_DIRECTORY 0x4000
 
 /* Issues one syscall with up to five arguments; errors come back as -errno. */
@@ -36,3 +37,4 @@ static inline long sys_call(long n, long a, long b, long c, long d, long e)
 }
 
 #include "sys_linux.h"
+#include "sys_arm64_clock.h"
