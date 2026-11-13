@@ -7,6 +7,8 @@ cold=${1:-20}
 warm=${2:-100}
 bin=$root/build
 zazzled=${ZAZZLED:-$root/../../rust/target/release/zazzled}
+# The runs happen inside the crate sources, so a relative ZAZZLED must be made absolute first.
+zazzled=$(cd "$(dirname "$zazzled")" && pwd)/$(basename "$zazzled")
 src=""
 for d in "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/; do
 	if [ -d "$d" ]; then
