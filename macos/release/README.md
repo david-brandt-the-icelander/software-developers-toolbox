@@ -25,6 +25,16 @@ The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/h
 
   CI runs it. The stand-in is not Homebrew: nothing has pulled a real bottle until a tag runs.
 
+## Profile-guided optimization of zazzled's C code (`pgo.sh`)
+
+Tree-sitter's C code dominates parsing, so the release compiles it with clang PGO. Rust code is not profiled: Rust's own PGO needs an `llvm-profdata` that matches rustc's LLVM, which Xcode's tools don't guarantee.
+
+- `pgo.sh [CORPUS]` builds an instrumented `zazzled` (`-fprofile-instr-generate`, for the host target only, so build scripts stay uninstrumented) under `macos/rust/target/pgo`.
+- It trains that build by running `outline` and `refs` over the crate sources that building `zazzled` downloaded (`$CARGO_HOME/registry/src`). Then it merges the profile with the matching `llvm-profdata` (Xcode's on macOS) and prints `PGO_CFLAGS=...` for `$GITHUB_ENV`.
+- The release builds with `CC=clang` and `CFLAGS=$PGO_CFLAGS`. On macOS the arm64-trained profile also serves the x86_64 slice, because tree-sitter's C code is the same on both.
+- Linux runners need `clang`, `llvm` and `libclang-rt-<version>-dev` (the profile runtime); the release job installs them.
+- `.github/workflows/zazzle-bench.yml` times `refs` with and without the profile on macOS and Linux. It trains and measures on the same crate sources, so its PGO numbers are an upper bound.
+
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
 
 Only browser downloads need signing, since Homebrew installs don't. With the Apple secrets below, the release signs every binary with a Developer ID (hardened runtime, secure timestamp) and has Apple notarize them before packing. Without them, it releases unsigned binaries with a warning.

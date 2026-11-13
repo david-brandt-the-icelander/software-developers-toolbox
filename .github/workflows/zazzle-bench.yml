@@ -1,9 +1,9 @@
-# Run the zazzle phase 0 latency benchmark on macOS and Linux runners, on demand and on changes to the C invoker.
+# Run the zazzle latency and refs benchmarks on macOS and Linux runners, on demand and on changes to the C invoker or the daemon.
 name: zazzle bench
 
 on:
   pull_request:
-    paths: ["macos/c/zazzle/**", ".github/workflows/zazzle-bench.yml"]
+    paths: ["macos/c/zazzle/**", "macos/rust/zazzled/**", "macos/release/pgo.sh", ".github/workflows/zazzle-bench.yml"]
   workflow_dispatch:
     inputs:
       runs:
@@ -37,3 +37,26 @@ jobs:
       - name: Benchmark
         working-directory: macos/c/zazzle
         run: sh bench/run.sh ${{ inputs.runs || '3000' }}
+      - name: Benchmark refs over the crate sources (cold, then warm)
+        working-directory: macos/c/zazzle
+        run: sh bench/refs.sh 20 100
+      - name: Install clang, LLVM and clang's profile runtime for PGO
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang llvm
+          v=$(clang --version | sed -n 's/.*clang version \([0-9][0-9]*\).*/\1/p' | head -1)
+          sudo apt-get install -y -qq "libclang-rt-$v-dev"
+      - name: Train the PGO profile (same script as the release)
+        run: sh macos/release/pgo.sh >> "$GITHUB_ENV"
+      - name: Build zazzled with the profile
+        working-directory: macos/rust
+        env:
+          CC: clang
+          CFLAGS: ${{ env.PGO_CFLAGS }}
+        run: cargo build --release -p zazzled --locked --target-dir target/pgo-use
+      - name: Benchmark refs with PGO (trained on the same crate sources, so an upper bound)
+        working-directory: macos/c/zazzle
+        env:
+          ZAZZLED: ../../rust/target/pgo-use/release/zazzled
+        run: sh bench/refs.sh 20 100

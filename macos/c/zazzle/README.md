@@ -15,6 +15,7 @@ The client half of `zazzle`/`zazzled` (docs: `macos/rust/zazzled/README.md`). A 
 - `make unit` runs the host unit tests of the request logic against a mock syscall layer (`test/sys_mock.h`); `make coverage` fails below 95% gcov branch coverage of `src/zazzle_core.h` (currently 100%).
 - `sh test/smoke.sh` runs the invoker against the real daemon: output, exit status, errors, session dedupe, stdin, write confinement and autostart.
 - `sh bench/run.sh [N]` prints spawn latency in microseconds against `grep`, `cat` and a libc hello.
+- `sh bench/refs.sh [COLD WARM]` times `refs Error` and `refs Result` over the cargo registry's crate sources: cold (a fresh `zazzled run` per run, so every file is parsed) and warm (through a running daemon).
 
 ## Layout
 - `src/zazzle_core.h` the logic; `src/zazzle.c` the entry; `src/entry.h` raw `_start` (Linux) or `main` (macOS); `src/sys*.h` per-platform syscalls and struct layouts.
