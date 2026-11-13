@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "fix-network",
+  "folder": "macos/rust/fix-network",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "fix-network",
+      "summary": "A command-line tool that diagnoses and repairs a Mac's network: link, public internet, VPN, routing, corporate DNS and services, and proxies. One Rust binary, two modes: diagnose and fix.",
+      "purpose": "The crate of the fix-network binary: Cargo.toml, the user README, and the sources in src/. It is one member of the Cargo workspace in macos/rust and builds one binary.",
+      "boundaries": [
+        "It stands alone: it uses no other tool in the repository, and nothing in the repository's code calls it. The agent skill in agents/skills/fix-network tells coding agents how to run it.",
+        "Building, testing in CI and publishing the binary are the workspace's and the release workflow's concern, not this folder's."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/Cargo.toml", "symbol": "package" },
+        { "path": "macos/rust/fix-network/README.md", "symbol": "fix-network" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "main" }
+      ],
+      "links": [
+        { "label": "The agent skill", "path": "agents/skills/fix-network/SKILL.md" }
+      ]
+    }
+  ]
+}

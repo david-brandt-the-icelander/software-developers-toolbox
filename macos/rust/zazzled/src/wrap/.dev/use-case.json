@@ -1,0 +1,204 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle run use cases",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "description": "Running a build or test through `zazzle run`.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "agents/skills/zazzle/SKILL.md",
+      "symbol": "Use"
+    }
+  ],
+  "entities": [
+    {
+      "id": "run-a-build-or-test",
+      "name": "Run a build or test with cleaned output",
+      "description": "A coding agent runs its project's build or tests through `zazzle run` and reads only what matters from the output.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "Use"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Learn whether a build or test passed, and why not, from a short answer with the command's exit code.",
+      "preconditions": [
+        "zazzle and zazzled are installed side by side (or ZAZZLE_DAEMON names zazzled), or zazzled is run directly as `zazzled wrap`.",
+        "The command exists in the caller's environment."
+      ],
+      "postconditions": [
+        "The agent has the cleaned output and the footer on standard output, tagged `[r:ID]` when it was stored for read-again.",
+        "The exit status is the command's own, so a failing command still fails."
+      ],
+      "flow": [
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Runs `zazzle run -- cargo test` (or another build, test or install command) in its shell; the invoker replaces itself with `zazzled wrap -- cargo test`.",
+          "sources": [
+            {
+              "path": "agents/skills/zazzle/SKILL.md",
+              "symbol": "Use"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "exec_daemon"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "parse",
+          "actor": "zazzled wrap",
+          "action": "Reads its options up to `--` or the first argument that is not one; the rest is the command.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "parse"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "execute",
+          "actor": "zazzled wrap",
+          "action": "Starts the command with standard output and error on one pipe, collects up to 64 MiB, and waits for it to exit or for the timeout.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "run_command"
+            },
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "drain"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "render",
+          "actor": "zazzled wrap",
+          "action": "Tidies the output, applies the detected or named profile, runs clean's steps within the budget and adds the footer.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "render"
+            },
+            {
+              "path": "macos/rust/zazzled/src/wrap/profile.rs",
+              "symbol": "detect"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "exit",
+          "actor": "zazzled wrap",
+          "action": "Stores the result with the raw output when there is an output store, tagging it with its id and, when anything was dropped or cut, a read-again --full hint; prints it and exits with the command's exit code.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "main"
+            },
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "deliver"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "main"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "parse",
+          "condition": "No command, an unknown option or profile, or a bad number.",
+          "outcome": "`zazzled: ...` on standard error, exit 2; nothing is run.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "parse"
+            }
+          ]
+        },
+        {
+          "atStep": "execute",
+          "condition": "The command cannot be started.",
+          "outcome": "`zazzled: cannot run CMD: ...`, exit 2.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "run_command"
+            }
+          ]
+        },
+        {
+          "atStep": "execute",
+          "condition": "The command runs past --timeout.",
+          "outcome": "It is killed; the footer says so and the exit status is 124.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "run_command"
+            },
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "TIMED_OUT"
+            }
+          ]
+        },
+        {
+          "atStep": "render",
+          "condition": "No profile matches the command, --profile none is given, or --lossless is set.",
+          "outcome": "Only clean's steps (lossless ones with --lossless) and the budget apply.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "render"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+      "relationship": "Getting the cut part of the output back with read-again --full."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/operation.json",
+      "relationship": "The operation the steps run."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+      "relationship": "The profiles and cleaning this use case relies on."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/c/zazzle/src",
+      "path": "macos/c/zazzle/src/.dev/use-case.json",
+      "relationship": "How the invoker hands `zazzle run` to `zazzled wrap`."
+    }
+  ]
+}

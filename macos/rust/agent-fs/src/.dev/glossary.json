@@ -1,0 +1,107 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "afs glossary",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "session",
+      "title": "Session",
+      "summary": "One Engine and its State: everything one `afs serve` or `afs jsonl` process remembers, or a single `afs call`.",
+      "notToBeConfusedWith": ["An MCP client's conversation, which may restart afs and so start a new session"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine" }]
+    },
+    {
+      "id": "etag",
+      "title": "Etag",
+      "summary": "`b3:` and the first 64 bits of a BLAKE3 hash in hex: of a file's bytes for read, stat and diff_since, or of the reply value for search, list and outline.",
+      "notToBeConfusedWith": ["Stamp: file metadata, compared without reading the file"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "etag" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" }
+      ]
+    },
+    {
+      "id": "stamp",
+      "title": "Stamp",
+      "summary": "A file's device, inode, size, mtime and ctime (in nanoseconds), the Ident type; equal stamps outside the racy window are taken to mean unchanged content.",
+      "aliases": ["Ident", "identity stamp"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident" }]
+    },
+    {
+      "id": "racy-window",
+      "title": "Racy window",
+      "summary": "The 2 seconds after a file's mtime or ctime during which its stamp proves nothing; the term comes from git.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident.racy" }]
+    },
+    {
+      "id": "ref",
+      "title": "Ref",
+      "summary": "r1, r2, …: the session's id for a reply that carried content; an unchanged marker names the ref of the reply that holds the content.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.new_ref" }]
+    },
+    {
+      "id": "unchanged-marker",
+      "title": "Unchanged marker",
+      "summary": "A reply {etag, unchanged: true, ref} sent instead of content the session already sent for the same request shape.",
+      "notToBeConfusedWith": ["cached: true, which says the result was reused from the cache but is still sent in full"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" }
+      ]
+    },
+    {
+      "id": "hunk",
+      "title": "Hunk",
+      "summary": "One change in a diff reply: at (1-based old line), del (old lines removed), new_at (1-based new line) and ins (the new text, absent for a pure deletion).",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" }]
+    },
+    {
+      "id": "diff-base",
+      "title": "Diff base",
+      "summary": "A version of a file whose bytes the session holds and that it sent in full, so a later whole-file read can be answered with hunks.",
+      "notToBeConfusedWith": ["Any version diff_since can use: diff_since accepts every held version, complete or not"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.complete_etag" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_content" }
+      ]
+    },
+    {
+      "id": "walk-configuration",
+      "title": "Walk configuration",
+      "summary": "A search's paths, globs, hidden and no_ignore together; a session keeps one trigram index per walk configuration.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/search.rs", "symbol": "run" }]
+    },
+    {
+      "id": "trigram",
+      "title": "Trigram",
+      "summary": "Three consecutive bytes folded to ASCII lower case and packed into one number; the index maps each to the files containing it.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/index.rs", "symbol": "trigrams" }]
+    },
+    {
+      "id": "plan",
+      "title": "Plan",
+      "summary": "The prefilter derived from a pattern: sets of trigrams, one per literal every match must start (or end) with; a file is a candidate when it has every trigram of at least one set.",
+      "notToBeConfusedWith": ["A HASD plan knowledge file"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/index.rs", "symbol": "plan" }]
+    },
+    {
+      "id": "always-scan",
+      "title": "Always-scan file",
+      "summary": "A file the index never filters out: over 2 MiB, inside the racy window when read, or unreadable; every indexed search scans it.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/index.rs", "symbol": "Update.classify" }]
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzle command limitations",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "entities": [
+    {
+      "id": "rust-regex",
+      "title": "Rust regex dialect",
+      "summary": "find's patterns are Rust regular expressions: no look-around and no backreferences.",
+      "impact": "A pattern that uses them is refused with `invalid regex: ...; rewrite without it or use -F`.",
+      "workaround": "Rewrite the pattern, or search for literal text with -F.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "build_regex"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "friendly"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Limits"
+        }
+      ]
+    },
+    {
+      "id": "search-skips",
+      "title": "Large and binary files are not searched",
+      "summary": "find and refs skip files over 2 MiB and files with a NUL byte in their first 8000 bytes, and count them in the footer.",
+      "impact": "Text in a large generated file, a log or a binary is not found.",
+      "workaround": "Read the file with read, which accepts files up to 256 MiB.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "MAX_FILE"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "read_searchable"
+        },
+        {
+          "path": "macos/rust/zazzled/src/meta.rs",
+          "symbol": "looks_binary"
+        }
+      ]
+    },
+    {
+      "id": "refs-is-textual",
+      "title": "refs matches text, not meaning",
+      "summary": "refs finds the symbol as a case-sensitive whole word; a match on the first line of an outline symbol of that name is a definition, every other match a use.",
+      "impact": "Mentions in comments and strings count as uses, same-named symbols in different scopes are not told apart, and files without a grammar get heuristic definitions.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "classify"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "declares"
+        }
+      ]
+    },
+    {
+      "id": "read-budget-per-file",
+      "title": "read's budget is per file",
+      "summary": "read applies its token budget to each file it is given, and its output is not cut by the global budget.",
+      "impact": "One read of many files can return several budgets' worth of text.",
+      "workaround": "Read files one at a time, or give a smaller --budget.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        }
+      ]
+    },
+    {
+      "id": "edit-replace-side-effects",
+      "title": "What the atomic replace does not keep",
+      "summary": "A file with several hard links is rewritten in place rather than replaced; extended attributes are not carried over by the replace.",
+      "impact": "An edit of a hard-linked file is not atomic; an edited file loses its extended attributes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "write_atomic"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Safety"
+        }
+      ]
+    },
+    {
+      "id": "terse-view-needs",
+      "title": "The terse C# view needs the indexer and a git work tree",
+      "summary": "A C# file is shown as a terse view only when zazzle-csharp-indexer can be found and started and the file lies inside a git work tree; otherwise read returns the source with a line saying why.",
+      "impact": "Outside git, or without the indexer installed, C# files cost as many tokens as any other source.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "find_exe"
+        }
+      ]
+    }
+  ]
+}

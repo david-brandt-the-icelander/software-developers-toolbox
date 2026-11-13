@@ -1,0 +1,171 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Release script checks",
+  "folder": "macos/release",
+  "entities": [
+    {
+      "id": "version-numbers",
+      "title": "Version numbers",
+      "summary": "version.test.sh runs version.sh in a throwaway repository with release tags.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "tag-is-the-version"
+        }
+      ],
+      "criteria": [
+        "With no tag, a patch bump gives v0.0.1",
+        "Tags sort as versions, so the next patch after v1.2.9, v1.2.10 and v1.10.0 is v1.10.1; minor and major bump likewise",
+        "bump none gives no tag, version 0.0.0-dev and no publish; a pushed vX.Y.Z tag is taken as it is",
+        "A pushed tag that is not vX.Y.Z, and an unknown bump, are refused"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/release/version.test.sh",
+          "symbol": "run"
+        }
+      ],
+      "notChecked": [
+        "set-version.sh has no test of its own; only shellcheck runs on it in CI."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/version.test.sh",
+          "symbol": "run"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "lint"
+        }
+      ]
+    },
+    {
+      "id": "formulas-and-bottles",
+      "title": "Formula and bottle",
+      "summary": "formula.test.sh runs formula.sh and bottle.sh and checks their output under a stand-in Homebrew Formula class, for both CPU types.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/contracts.json",
+          "entityId": "homebrew-bottle"
+        },
+        {
+          "path": "macos/release/.dev/contracts.json",
+          "entityId": "formula-version-name"
+        },
+        {
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "indexer-per-cpu"
+        }
+      ],
+      "criteria": [
+        "Bad arguments are refused and write nothing",
+        "One formula, valid Ruby, with the release's url, version, sha256, license, depends_on :macos and a description",
+        "It installs the five binaries, both gzipped indexers and the placeholder; the one post_install step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 and leaves no temporary file",
+        "Its test block runs one command per binary, and release.yml builds every binary",
+        "One reproducible bottle with exactly the expected files, the binaries and the placeholder mode 0755 and root-owned, the placeholder identical to the formula's",
+        "With the bottle, the formula's bottle block matches its name and checksum; a missing bottle or bottle folder is refused"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/release/formula.test.sh",
+          "symbol": "check"
+        }
+      ],
+      "notChecked": [
+        "Homebrew itself: the stand-in is not Homebrew, and nothing has pulled a real bottle until a tag runs.",
+        "What the binaries really print for their version: the stand-in answers for them."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/formula.test.sh",
+          "symbol": "check"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "lint"
+        }
+      ]
+    },
+    {
+      "id": "signing",
+      "title": "Signing and notarization",
+      "summary": "sign-and-notarize.test.sh runs sign-and-notarize.sh against recording stand-ins for security, codesign, xcrun and ditto.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "optional-signing"
+        }
+      ],
+      "criteria": [
+        "Without secrets it warns, runs no tool and succeeds; with REQUIRE_SIGNING=true it fails, naming only the missing secrets",
+        "With every secret it signs each binary with hardened runtime and a timestamp, verifies it, notarizes with the API key and waits, and removes the keychain",
+        "A rejected or failed notarization fails the run, prints Apple's log when there is a submission, and still removes the keychain",
+        "A certificate that is not a Developer ID Application one fails before anything is signed",
+        "Missing arguments are a usage error"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/release/sign-and-notarize.test.sh",
+          "symbol": "run"
+        },
+        {
+          "type": "manual",
+          "description": "After a release with the secrets in place, codesign -dv on a downloaded binary shows the Developer ID authority, the runtime flag and a timestamp, and it starts from a browser download without a warning (README, Checking a signed release)."
+        }
+      ],
+      "notChecked": [
+        "Signing with a real certificate and notarizing with Apple: nothing has signed a real binary until a tag runs with the secrets in place."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/sign-and-notarize.test.sh",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Checking a signed release"
+        }
+      ]
+    },
+    {
+      "id": "pgo",
+      "title": "PGO training",
+      "summary": "pgo.sh has no test of its own: CI shellchecks it, and the release and zazzle-bench workflows run it, failing when training writes no profile.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "pgo-c-only"
+        }
+      ],
+      "criteria": [
+        "It finds a training corpus or fails",
+        "Training writes at least one raw profile, and it prints PGO_CFLAGS"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "lint"
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/zazzle-bench.yml",
+          "symbol": "bench"
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/pgo.sh"
+        }
+      ]
+    }
+  ]
+}

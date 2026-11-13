@@ -1,0 +1,85 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "free-disk-space component diagram",
+  "folder": "macos/rust/free-disk-space",
+  "description": "The crate and the third-party crates compiled into its binary. What the binary reaches at run time (the state file, macOS tools, launchd, Docker) is drawn in src's diagram.",
+  "sources": [
+    {"path": "macos/rust/free-disk-space/Cargo.toml", "symbol": "dependencies"},
+    {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "Cli"}
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "free-disk-space crate",
+      "responsibility": "Builds the free-disk-space binary.",
+      "folder": "macos/rust/free-disk-space"
+    },
+    {
+      "id": "source",
+      "name": "free-disk-space source",
+      "responsibility": "The binary's modules: command line, scan, compression, dedupe, cleanup, daemon and helpers.",
+      "folder": "macos/rust/free-disk-space/src",
+      "diagram": "macos/rust/free-disk-space/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "clap",
+      "name": "clap",
+      "responsibility": "Parses the subcommands and flags from derive attributes, and prints help and version.",
+      "external": true
+    },
+    {
+      "id": "rusqlite",
+      "name": "rusqlite (bundled SQLite)",
+      "responsibility": "Opens and queries the scan state file; the bundled feature compiles SQLite into the binary.",
+      "external": true
+    },
+    {
+      "id": "flate2",
+      "name": "flate2",
+      "responsibility": "zlib-compresses file samples to estimate how well a file would compress.",
+      "external": true
+    },
+    {
+      "id": "sha2",
+      "name": "sha2",
+      "responsibility": "SHA-256 of files, to verify compressed copies and clones and to find identical files.",
+      "external": true
+    },
+    {
+      "id": "ctrlc",
+      "name": "ctrlc",
+      "responsibility": "Turns Ctrl-C, and with the termination feature SIGTERM, into the graceful stop flag.",
+      "external": true
+    },
+    {
+      "id": "chrono",
+      "name": "chrono",
+      "responsibility": "Local timestamps for the daemon's log and the date clean prints for the start of today.",
+      "external": true
+    },
+    {
+      "id": "serde-json",
+      "name": "serde_json",
+      "responsibility": "The JSON values in the state file's meta table.",
+      "external": true
+    },
+    {
+      "id": "libc",
+      "name": "libc",
+      "responsibility": "System calls the standard library does not offer: statvfs, clock_gettime, access, utimensat, ioctl, getuid.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {"from": "crate", "to": "source", "kind": "contains", "description": "src/main.rs is the binary's entry point."},
+    {"from": "source", "to": "clap", "kind": "depends-on", "description": "main.rs derives Parser, Subcommand, Args and ValueEnum."},
+    {"from": "source", "to": "rusqlite", "kind": "depends-on", "description": "scan.rs, compress.rs and dedupe.rs read and write the state file."},
+    {"from": "source", "to": "flate2", "kind": "depends-on", "description": "scan.rs sample_ratio."},
+    {"from": "source", "to": "sha2", "kind": "depends-on", "description": "util.rs sha256."},
+    {"from": "source", "to": "ctrlc", "kind": "depends-on", "description": "util.rs install_sigint."},
+    {"from": "source", "to": "chrono", "kind": "depends-on", "description": "daemon.rs log and clean.rs clean_dev."},
+    {"from": "source", "to": "serde-json", "kind": "depends-on", "description": "scan.rs meta_get and meta_set."},
+    {"from": "source", "to": "libc", "kind": "depends-on", "description": "util.rs and dedupe.rs system calls."}
+  ]
+}

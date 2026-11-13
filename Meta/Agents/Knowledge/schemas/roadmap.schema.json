@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/roadmap.schema.json",
+  "title": "Roadmap",
+  "description": "Milestones in order, each with its goals and the backlog items it needs. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "roadmap"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A date, a quarter, or 'next'."
+          },
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/reference"
+            }
+          }
+        },
+        "required": [
+          "target",
+          "goals"
+        ]
+      }
+    }
+  }
+}

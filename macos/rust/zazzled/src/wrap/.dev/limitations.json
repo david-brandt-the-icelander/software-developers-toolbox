@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzle run limitations",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "entities": [
+    {
+      "id": "timeout-kills-only-the-command",
+      "title": "The timeout kills only the command itself",
+      "summary": "After --timeout, SIGKILL goes to the command's own process, not to the processes it started; once the command exits, the output pipe is waited on for at most 2 seconds.",
+      "impact": "Children of a timed-out command (or background children of a finished one) may keep running, and output they write after those 2 seconds is not shown.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "run_command"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "DRAIN_WAIT"
+        }
+      ]
+    },
+    {
+      "id": "merged-streams",
+      "title": "Standard output and error are merged",
+      "summary": "The command's standard output and error share one pipe, so the result cannot say which stream a line came from, and nothing is shown until the command ends.",
+      "impact": "A caller that needs the streams apart, or live output, should run the command directly.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "run_command"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "output-cap",
+      "title": "At most 64 MiB of output",
+      "summary": "Output past 64 MiB is read and discarded; the footer says it was not read.",
+      "impact": "The end of a very long output is lost.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "MAX_OUTPUT"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "drain"
+        }
+      ]
+    }
+  ]
+}

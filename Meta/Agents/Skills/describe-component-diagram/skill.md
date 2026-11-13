@@ -1,0 +1,12 @@
+---
+name: describe-component-diagram
+description: Create or maintain .dev/component-diagram.json files when documenting or changing a folder's component architecture.
+---
+
+# Component diagrams
+
+Describe a cohesive capability, adapter, boundary or subsystem that belongs in a system component diagram. Grouping folders may describe a meaningful subsystem; do not turn every namespace, DTO, migration or asset directory into a component. Read child diagrams first, then source and composition code. Include the folder itself, direct child components, and only evidenced dependencies crossing its boundary. A dependency outside the repository (another repository's service, a managed database, a third party) is a component with `external: true` and no folder. When such an external component is an actor, an external system with goals of its own toward this one rather than infrastructure the system merely uses, set `actor` to its file, `Actors/<name>.md`, written with the `describe-actor` skill. Reference child diagrams using repository-relative paths. Relationship direction means the source depends on or invokes the target; distinguish containment. Do not imply each component is separately deployed.
+
+Work bottom up through source folders. Read existing diagrams and relevant code before editing. Write `component-diagram.json` under the owning folder's `.dev` directory, following [schema.json](schema.json). Use [example.json](example.json) for a complete fictional example, not as evidence about this service. Set `$schema` to the relative path from the diagram file to this skill's schema. All other paths are relative to the repository root, and `folder` identifies the owning source folder. Keep stable IDs and concise descriptions. Record source paths and symbols sufficient to verify the model. Avoid secrets and incidental runtime values.
+
+Validate against the schema with a JSON Schema Draft 2020-12 validator, then check source paths, unique IDs, relationship endpoints and any child-diagram references. Run `python3 Meta/Agents/Skills/validate_diagrams.py` from the repository root in an environment with `jsonschema` installed; it also checks IDs and file references. Schema validation alone does not establish architectural accuracy. Reconcile diagrams after relevant code changes and remove stale diagrams when their applicability changes. Do not run the application or infrastructure merely to document it.

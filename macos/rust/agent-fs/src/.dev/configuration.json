@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "afs settings",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "afs-batch-io",
+      "title": "Batched file loading",
+      "summary": "Whether search and outline load files through io_uring (Linux) or POSIX AIO (macOS), plain reads, or whichever proves faster.",
+      "key": "environment variable AFS_BATCH_IO",
+      "type": "always | never | auto",
+      "default": "auto",
+      "sensitive": false,
+      "scope": "per process",
+      "takesEffect": "at-first-use",
+      "validation": "Only the exact values always and never change anything; every other value, and no value, means auto.",
+      "details": "Read once, the first time a batch of files is loaded, and kept for the life of the process. always uses the batched loader whenever the platform has a usable one (falling back to plain reads where io_uring is unavailable); never always reads one file at a time; auto times both (see decisions.json, batch-io-by-timing).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "mode" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "parse_mode" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "decide" }
+      ],
+      "relationships": [
+        { "relation": "part-of", "path": "macos/rust/agent-fs/src/.dev/decisions.json", "entityId": "batch-io-by-timing" }
+      ]
+    }
+  ]
+}

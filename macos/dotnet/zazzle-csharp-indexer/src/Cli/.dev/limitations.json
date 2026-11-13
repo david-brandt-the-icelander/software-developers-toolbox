@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "Command-line helper limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "hook-is-a-nudge",
+      "title": "The hook classifies words, it does not parse the shell",
+      "summary": "HookPolicy splits a command at |, ;, &, parentheses, backquotes and newlines and looks at the first program of each segment after wrappers such as env, sudo and xargs.",
+      "impact": "A search or read hidden inside another program's arguments (for example sh -c \"grep ...\") is not blocked; the hook steers agents, it does not enforce.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Segments"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Classify"
+        }
+      ]
+    },
+    {
+      "id": "init-absolute-path",
+      "title": "init writes this machine's binary path",
+      "summary": "The server command in .mcp.json and the hook command in .claude/settings.json are the absolute path of the zazzle-csharp-indexer that ran init, and the zazzle server command is the absolute path of the zazzled it found.",
+      "impact": "If those files are shared, other machines need both binaries at the same paths or must run init themselves; moving either binary breaks its server (and, for the indexer, the hook) until init runs again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "init"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        }
+      ]
+    },
+    {
+      "id": "init-former-name",
+      "title": "init does not clean up entries from the tool's former name",
+      "summary": "init replaces only hook entries whose command contains zazzle-csharp-indexer, and adds its own server, permission and enabled-server names; entries written when the tool was called codeindexd stay.",
+      "impact": "In a project initialised before the rename, running init again leaves the old codeindexd server in .mcp.json and the old hook, permission and enabled server in .claude/settings.json beside the new ones, so the old hook keeps running before the tool calls it was configured for, for as long as its binary exists.",
+      "workaround": "Remove the codeindexd entries from both files by hand.",
+      "details": "A deliberate historical note: codeindexd was this tool's name before the rename to zazzle-csharp-indexer.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        }
+      ]
+    }
+  ]
+}

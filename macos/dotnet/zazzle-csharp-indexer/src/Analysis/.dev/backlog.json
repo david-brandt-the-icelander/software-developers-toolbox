@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "Content analysis backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "ignore-case-non-ascii",
+      "title": "ignore_case search misses non-ASCII case variants",
+      "summary": "With the ignore_case argument, the prefilter drops files whose only match differs from the pattern in the case of a non-ASCII letter.",
+      "type": "defect",
+      "priority": "medium",
+      "expected": "search with pattern ÉCOLE and ignore_case true lists a file containing école, because the .NET regex with IgnoreCase matches it.",
+      "observed": "RegexLiterals.Required is not told about ignore_case, so it keeps the non-ASCII characters in the literal run (it splits runs at non-ASCII characters only for literal=true or a pattern containing \"(?\"); the Bloom filter folds ASCII only, so the trigrams of É never match those of é and the file is not a candidate.",
+      "reproduction": [
+        "Build a Bloom filter for the text \"une école ici\" with Bloom.Build.",
+        "Take Bloom.Grams(RegexLiterals.Required(\"ÉCOLE\", false).Select(Bloom.Encode)).",
+        "Bloom.MayContainAll returns false, while Regex.IsMatch with RegexOptions.IgnoreCase | CultureInvariant returns true."
+      ],
+      "acceptanceCriteria": [
+        "test_prefilter_is_sound (or a new test) covers ignore_case with a required non-ASCII letter whose case differs, and passes."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder: read in RegexLiterals.Required and SearchTool.Run, and reproduced with the steps above against the built library (not through the tool)."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
+          "symbol": "RegexLiterals.Required"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
+          "symbol": "Bloom.Lower"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
+          "symbol": "test_prefilter_is_sound"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
+          "entityId": "trigram-bloom-prefilter"
+        }
+      ]
+    }
+  ]
+}

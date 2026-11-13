@@ -1,0 +1,83 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Compression candidate state diagram",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed, and never back. A dry run, a failed ditto probe (compress stops before touching any row when ditto --hfsCompression writes an uncompressed test copy), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the four.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "SCHEMA"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "scan_entry"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "plan"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "compress_one"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "compress_verified"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "cmd_compress"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "ditto_compresses"
+    }
+  ],
+  "machine": "cands.status (compress::Cand)",
+  "initialState": "pending",
+  "states": [
+    {
+      "id": "pending",
+      "description": "Recorded by the scan with its size, allocated size, estimated saving, mtime and inode; waiting for compress."
+    },
+    {
+      "id": "done",
+      "description": "Compressed in place; saved holds the verified drop in allocated size.",
+      "terminal": true
+    },
+    {
+      "id": "skipped",
+      "description": "Left as it was, with a note why: gone, changed, flagged, recently modified, open, directory not writable, not enough free space for the temp copy, APFS declined, or gain below --min-gain.",
+      "terminal": true
+    },
+    {
+      "id": "failed",
+      "description": "A verification or I/O step failed; the original is untouched and the note says which step.",
+      "terminal": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "pending",
+      "to": "done",
+      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
+      "guard": "precheck passes; ditto succeeds; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's xattr names; the original is unchanged since",
+      "action": "Restore the times on the temp copy, rename it over the original, write status done and the saving."
+    },
+    {
+      "from": "pending",
+      "to": "skipped",
+      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
+      "guard": "precheck finds a reason, APFS did not compress the copy, the gain is below --min-gain, or the original changed during compression",
+      "action": "Remove the temp copy; write status skipped and the note."
+    },
+    {
+      "from": "pending",
+      "to": "failed",
+      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
+      "guard": "ditto fails, or size, permissions or ownership differ, xattrs were lost, the hash differs, or an I/O error occurs",
+      "action": "Remove the temp copy; write status failed and the note; after three failures in a row stop the run."
+    }
+  ]
+}

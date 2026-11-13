@@ -26,15 +26,10 @@ zazzle-csharp-indexer report          # after some use: what to improve next
 Paths are `root:relative/path`. Every root must be inside a git work tree.
 
 ## How it works
-- Content-addressed store (SQLite, WAL) keyed by git blob id (SHA-1 of `blob <len>\0` + bytes, computed locally and equal to `git hash-object`). Line counts, language, trigram Bloom filter, symbols, identifier tables and digest are stored once per blob, so copies, worktrees and branches share them.
-- Per-path stat key (size, mtime, birth time) avoids rehashing unchanged files. Files come from `git ls-files -co --exclude-standard`, so ignore rules are git's own.
-- Change tracking: FSEvents on macOS (event id persisted, journal replayed after a restart if the last full scan is under 24 hours old), `FileSystemWatcher` elsewhere. Events are debounced, unknown paths are checked with `git check-ignore`, and a full reconcile runs on `.gitignore`/`HEAD` changes, watcher errors and every 5 minutes.
-- Before `search`, `find_references` and `changed_since` answer, the touched files are re-stat'd (a "barrier"), so an edit made a moment ago is seen even if its event has not arrived.
-- Search: required literals are extracted from the regex, their case-folded trigrams are tested against each file's Bloom filter, and only candidates are read and matched. Files too large (16 MiB) are listed but not analysed.
-- Fallbacks are labelled in the log and the answer: `index_cold` (index still building, plain scan), `regex_unsupported` (external PCRE engine), `run:<prog>` (passthrough).
+The parts are in [.dev/component-diagram.json](.dev/component-diagram.json) and [src/.dev/component-diagram.json](src/.dev/component-diagram.json), and the design (content-addressed store, stat key, change tracking, barrier, Bloom-filter search, labelled fallbacks) in the `decisions.json` of [src](src/.dev/decisions.json), [src/Index](src/Index/.dev/decisions.json), [src/Analysis](src/Analysis/.dev/decisions.json) and [src/Tools](src/Tools/.dev/decisions.json). The rules of the `view` tool are in [src/View/.dev/feature.json](src/View/.dev/feature.json).
 
 ## Usage log
-`~/Library/Application Support/zazzle-csharp-indexer/usage.jsonl` on macOS, `$XDG_STATE_HOME/zazzle-csharp-indexer/usage.jsonl` elsewhere (`ZAZZLE_INDEXER_STATE_DIR` overrides; the store and socket live there too). Text arguments are stored as 12-hex SHA-256 prefixes (`ZAZZLE_INDEXER_LOG_PLAIN=1` keeps them readable); `run` keeps the program and flags. Fields: `v ts session tool args path reason ms bytes_out est_tokens results truncated candidates files note error`.
+`~/Library/Application Support/zazzle-csharp-indexer/usage.jsonl` on macOS, `$XDG_STATE_HOME/zazzle-csharp-indexer/usage.jsonl` elsewhere (`ZAZZLE_INDEXER_STATE_DIR` overrides; the store and socket live there too). Text arguments are hashed unless `ZAZZLE_INDEXER_LOG_PLAIN=1`; fields and rotation: [src/.dev/observability.json](src/.dev/observability.json). All settings: [src/.dev/configuration.json](src/.dev/configuration.json).
 
 ## Known limits
 - macOS is the primary target. FSEvents replay is implemented and covered by a macOS-only test that runs in CI, but was not run on a Mac when written. Linux uses `FileSystemWatcher` without replay (full reconcile at start). Windows is untested.

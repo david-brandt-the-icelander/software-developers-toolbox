@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/runbooks.schema.json",
+  "title": "Runbooks",
+  "description": "Procedures for setting up, operating, diagnosing, recovering and rolling back, step by step. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "runbooks"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually setup, operate, diagnose, recover or rollback."
+          },
+          "when": {
+            "type": "string",
+            "minLength": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "verify": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "purpose",
+          "steps"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/stakeholders.schema.json",
+  "title": "Stakeholders",
+  "description": "Who cares about the solution, what they want from it, and how much say they have. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "stakeholders"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "influence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually decides, can-veto, consulted or informed."
+          },
+          "reach": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role",
+          "interest"
+        ]
+      }
+    }
+  }
+}

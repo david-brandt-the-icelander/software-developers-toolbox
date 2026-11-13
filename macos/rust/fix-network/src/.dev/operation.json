@@ -1,0 +1,80 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "fix-network commands",
+  "folder": "macos/rust/fix-network/src",
+  "description": "The two subcommands of the fix-network binary, with fix --dry-run as a third way in because it changes nothing.",
+  "sources": [
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "Cmd" },
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "run" }
+  ],
+  "entities": [
+    {
+      "id": "diagnose",
+      "name": "diagnose",
+      "description": "Takes one snapshot, judges every dimension and prints the checks, the findings with their outcomes, what was not verified and whether a Wi-Fi reset is required.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "prepare" },
+        { "path": "macos/rust/fix-network/src/report.rs", "symbol": "print_report" }
+      ],
+      "entrypoint": { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+      "action": "query",
+      "transport": "Command line (also as zazzle fix-network ...): fix-network diagnose [--internal-host HOST[:PORT]]... [--json] [-v]",
+      "authorization": "Nothing is checked. It runs as the calling user and never uses sudo; its only writes are the run's own state directory.",
+      "result": "The report on stdout (or, with --json, the whole run as one JSON document), the same lines in diagnostic.log, and exit status 0 when no dimension failed, else 1.",
+      "failures": [
+        "Not macOS: 'error: fix-network works on macOS only' on stderr, exit status 2, nothing run.",
+        "The state directory cannot be created: 'error: cannot create state directory' on stderr, exit status 1.",
+        "An --internal-host that parse_target rejects (bad port, missing ], empty host): clap's usage error, nothing run."
+      ]
+    },
+    {
+      "id": "fix-dry-run",
+      "name": "fix --dry-run",
+      "description": "Diagnoses as diagnose does, then prints the steps a fix would start with: the --force ladder first when --force is given, then the findings' steps least disruptive first, each marked with the flag that would block it.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "dry_run" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "start_plan" },
+        { "path": "macos/rust/fix-network/src/report.rs", "symbol": "print_plan" }
+      ],
+      "entrypoint": { "path": "macos/rust/fix-network/src/main.rs", "symbol": "dry_run" },
+      "action": "query",
+      "transport": "Command line (also as zazzle fix-network ...): fix-network fix --dry-run [fix flags] [--internal-host HOST[:PORT]]... [--json] [-v]",
+      "authorization": "Nothing is checked and no step runs; the flags only decide which planned steps are marked as skipped.",
+      "result": "The report and the plan ('nothing to run' when empty); exit status 0 when no dimension failed, else 1.",
+      "failures": [
+        "Not macOS: exit status 2.",
+        "The state directory cannot be created: exit status 1."
+      ]
+    },
+    {
+      "id": "fix",
+      "name": "fix",
+      "description": "Repairs adaptively: runs the least disruptive allowed step, takes a fresh snapshot, assesses again and repeats until healthy or nothing more is allowed; then, if any step ran, waits 15 seconds and verifies every dimension again.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "exec_step" }
+      ],
+      "entrypoint": { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+      "action": "command",
+      "transport": "Command line (also as zazzle fix-network ...): fix-network fix [--vpn] [--fix-proxy] [--allow-route-flush] [--allow-remote] [--force] [--internal-host HOST[:PORT]]... [--json] [-v]",
+      "authorization": "Gated steps need their flag: --vpn to reconnect a VPN, --fix-proxy to disable proxies, --allow-route-flush to flush routes. Over SSH, steps that can cut the session need --allow-remote (Gates::blocked). Privileged steps run through sudo, which asks in the terminal, or fails as sudo -n when there is none (sys::argv).",
+      "result": "The final report, the actions with ok or FAILED and the reason, and exit status 0 when no dimension failed after the repair, else 1.",
+      "failures": [
+        "A step's command exits non-zero or networksetup prints '** Error': the step is recorded as FAILED with the command and its first line of output, and the loop moves on to the next step.",
+        "Every remedy needs a flag or manual action: no step runs, the log says so, and the findings name the missing flags.",
+        "A VPN does not reach Connected within its polls: FAILED, and the finding falls back to manual advice (sign-in or MFA from the menu bar).",
+        "Twelve rounds pass without a healthy report: the loop stops (MAX_ROUNDS).",
+        "Not macOS: exit status 2. The state directory cannot be created: exit status 1."
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "capability", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/capability.json", "relationship": "The capability these commands expose." },
+    { "kind": "use-case", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/use-case.json", "relationship": "The developer's use cases that call them." },
+    { "kind": "use-case", "folder": "agents/skills/fix-network", "path": "agents/skills/fix-network/.dev/use-case.json", "relationship": "The coding agent's use case that calls them through the skill." },
+    { "kind": "feature", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/feature.json", "relationship": "The features they carry out." }
+  ]
+}

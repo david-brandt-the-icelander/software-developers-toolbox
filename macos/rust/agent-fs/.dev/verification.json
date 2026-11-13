@@ -1,0 +1,63 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "agent-fs verification",
+  "folder": "macos/rust/agent-fs",
+  "description": "Checks that cover the whole crate. What each test checks is in src/.dev/verification.json and tests/.dev/verification.json; results are readings and live with CI.",
+  "entities": [
+    {
+      "id": "tests-on-both-platforms",
+      "title": "Tests on macOS and Linux",
+      "summary": "The unit and end-to-end tests run on both platforms the batched loaders are written for.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/verification.json" },
+        { "path": "macos/rust/agent-fs/tests/.dev/verification.json" }
+      ],
+      "criteria": [
+        "Every test passes on macOS (where aio.rs is compiled) and on Linux (where uring.rs is compiled)"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.test", "command": "cargo test --workspace --locked", "description": "Matrix of macos-latest and ubuntu-latest, on every push to main and every pull request." }
+      ]
+    },
+    {
+      "id": "coverage-gate",
+      "title": "Line and branch coverage of at least 95%",
+      "summary": "CI fails when the tests cover less than 95% of agent-fs's lines or branches.",
+      "criteria": [
+        "At least 95% of lines covered (cargo llvm-cov --fail-under-lines 95)",
+        "At least 95% of branches covered, counted from the lcov BRDA records"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.coverage", "command": "cargo +nightly llvm-cov --branch -p agent-fs --summary-only", "description": "Runs on Linux only, so aio.rs is not part of the measured code." }
+      ]
+    },
+    {
+      "id": "release-binary-smoke",
+      "title": "The built binary starts and answers",
+      "summary": "The release build prints its help and answers one request.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "cli" }
+      ],
+      "criteria": [
+        "`afs --help` succeeds",
+        "`afs call '{\"op\":\"stat\",\"path\":\".\"}'` succeeds"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "Smoke test CLIs", "command": "cargo build --workspace --release --locked" },
+        { "type": "automated", "path": "macos/release/formula.sh", "symbol": "Zazzle.test", "description": "The zazzle formula's test block (brew test zazzle): `afs --version` prints agent-fs." }
+      ]
+    },
+    {
+      "id": "msrv",
+      "title": "Builds with the workspace's minimum Rust",
+      "summary": "The crate compiles with Rust 1.85, the workspace's rust-version.",
+      "criteria": [
+        "cargo check succeeds with the 1.85 toolchain"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.msrv", "command": "cargo check --workspace --locked" }
+      ]
+    }
+  ]
+}

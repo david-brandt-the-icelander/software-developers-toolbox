@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "MCP tools settings",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "entities": [
+    {
+      "id": "run-unrestricted",
+      "title": "Unrestricted run",
+      "summary": "Lifts the run tool's read-only allowlist and argument checks.",
+      "key": "run.unrestricted in <state dir>/config.json, or ZAZZLE_INDEXER_RUN_UNRESTRICTED=1",
+      "type": "boolean (config.json) or the string \"1\" (environment variable)",
+      "default": false,
+      "sensitive": false,
+      "scope": "every session of the engine whose state directory holds config.json; the environment variable applies to the process that runs the tool (the daemon, or the in-process server)",
+      "takesEffect": "per-use",
+      "validation": "A config.json that is not valid JSON counts as false; only the value true lifts the policy.",
+      "details": "Read by RunPolicy.Unrestricted on every run call, so editing config.json takes effect without a restart. The state directory is described in src/.dev/configuration.json (state-dir).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs",
+          "symbol": "RunPolicy.Unrestricted"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+          "symbol": "RunTool.Run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/configuration.json",
+          "entityId": "state-dir"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/stakeholders.schema.json",
+  "kind": "stakeholders",
+  "schemaVersion": 1,
+  "title": "Example Scheduler stakeholders",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "operators",
+      "title": "Operators",
+      "summary": "Run the scheduler day to day and answer its alarms.",
+      "role": "Operator",
+      "interest": "Few alarms, each one actionable.",
+      "influence": "consulted",
+      "reach": "The operations channel"
+    }
+  ]
+}

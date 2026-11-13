@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "fix-network component diagram",
+  "folder": "macos/rust/fix-network",
+  "description": "The fix-network crate: one binary built from src/, which reaches the Mac only through macOS's own network commands and the network itself.",
+  "sources": [
+    { "path": "macos/rust/fix-network/Cargo.toml", "symbol": "package" },
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "main" },
+    { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Sys" }
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "fix-network",
+      "responsibility": "The crate and its binary.",
+      "folder": "macos/rust/fix-network"
+    },
+    {
+      "id": "src",
+      "name": "fix-network sources",
+      "responsibility": "Command line, snapshot, checks, repair, report and machine access.",
+      "folder": "macos/rust/fix-network/src",
+      "diagram": "macos/rust/fix-network/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "macos-tools",
+      "name": "macOS network commands",
+      "responsibility": "networksetup, scutil, ifconfig, netstat, route, ipconfig, sysctl, sw_vers, ping, dig, curl, dscacheutil, killall, arp and sudo.",
+      "external": true
+    },
+    {
+      "id": "network",
+      "name": "Network endpoints",
+      "responsibility": "The public-internet probes, the internal hosts given with --internal-host, DNS servers asked directly, and the system proxies and PAC file.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "crate", "to": "src", "kind": "contains", "description": "Built into the fix-network binary." },
+    { "from": "src", "to": "macos-tools", "kind": "depends-on", "description": "Reads and changes network settings by running them (sys.rs)." },
+    { "from": "src", "to": "network", "kind": "depends-on", "description": "Name lookups and TCP probes (sys.rs), and HTTP probes through curl." }
+  ]
+}

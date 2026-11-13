@@ -1,0 +1,54 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle invoker source",
+  "folder": "macos/c/zazzle/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle invoker source",
+      "summary": "The C source of the zazzle invoker: its logic, its entry point and a raw-syscall layer per platform.",
+      "purpose": "zazzle_core.h is the logic (exec a standalone tool, `zazzled wrap` or `zazzled proxy` for the commands that run as their own process; otherwise build the request, find or start the daemon, send the request with the standard streams and working directory, and return the daemon's status after a short spin); zazzle.c is the program around it; entry.h is the raw `_start` on Linux or `main` on macOS; sys.h picks the syscall backend for the platform, or the test mock, and adds thin wrappers including a non-blocking receive; sys_linux.h holds the Linux structure layouts and helpers shared by sys_linux_x86_64.h and sys_linux_aarch64.h; sys_darwin_arm64.h is the macOS arm64 backend; sys_arm64_clock.h is the arm64 timer and yield hint the spin uses on both arm64 platforms.",
+      "boundaries": [
+        "Everything is header-only and compiled as one translation unit per program; bench/exit0.c reuses entry.h.",
+        "The wire protocol is the daemon's (macos/rust/zazzled/src/.dev/contracts.json, wire-protocol); this folder only speaks it.",
+        "No libc on Linux; on macOS it links libSystem only for its entry, the executable path, nanosleep and posix_spawn."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "zazzle_run"
+        },
+        {
+          "path": "macos/c/zazzle/src/entry.h",
+          "symbol": "zazzle_start_c"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys.h",
+          "symbol": "ZAZZLE_TEST"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_darwin_arm64.h",
+          "symbol": "posix_spawn"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_arm64_clock.h",
+          "symbol": "sys_clock_now"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/c/zazzle/.dev/folder.json",
+          "entityId": "folder"
+        },
+        {
+          "relation": "depends-on",
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "wire-protocol"
+        }
+      ]
+    }
+  ]
+}

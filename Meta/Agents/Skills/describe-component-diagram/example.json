@@ -1,0 +1,48 @@
+{
+  "$schema": "schema.json",
+  "kind": "component",
+  "title": "Example worker component diagram",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "components": [
+    {
+      "id": "worker",
+      "name": "Worker",
+      "responsibility": "Processes pending messages.",
+      "folder": "src/ExampleWorker"
+    },
+    {
+      "id": "queue",
+      "name": "Queue adapter",
+      "responsibility": "Retrieves pending messages.",
+      "folder": "src/ExampleWorker/Queue",
+      "diagram": "src/ExampleWorker/Queue/.dev/component-diagram.json"
+    },
+    {
+      "id": "broker",
+      "name": "Message broker",
+      "responsibility": "Holds pending messages between producers and the worker.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "worker",
+      "to": "queue",
+      "kind": "depends-on",
+      "description": "Reads pending messages through the adapter."
+    },
+    {
+      "from": "queue",
+      "to": "broker",
+      "kind": "depends-on",
+      "description": "Polls the broker for pending messages."
+    }
+  ]
+}

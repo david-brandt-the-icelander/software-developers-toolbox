@@ -1,0 +1,27 @@
+{
+  "$schema": "../schemas/roadmap.schema.json",
+  "kind": "roadmap",
+  "schemaVersion": 1,
+  "title": "Example Scheduler roadmap",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "m1",
+      "title": "Every job reports its outcome",
+      "summary": "Alarms reach the operator for every failed run.",
+      "target": "2027-Q1",
+      "goals": [
+        "Failure alarms",
+        "A run history page"
+      ],
+      "status": "planned",
+      "items": [
+        {
+          "path": "src/ExampleWorker/.dev/backlog.json",
+          "entityId": "failure-alarm"
+        }
+      ]
+    }
+  ]
+}

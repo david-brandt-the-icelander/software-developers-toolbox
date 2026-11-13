@@ -1,0 +1,217 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "afs source verification",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "The unit tests beside the code, run with `cargo test -p agent-fs` in macos/rust. uring.rs tests and test_retry_without_noatime are compiled only on Linux; aio.rs has no tests of its own and is exercised on macOS through fsio's load_many tests.",
+  "entities": [
+    {
+      "id": "read-unchanged-and-diff",
+      "title": "Read: unchanged, diff, ranges and caps",
+      "summary": "Repeats are markers, changed files are hunks, and ranges, caps and errors behave as documented.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "unchanged-replies" },
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "diff-replies" },
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "bounded-output" },
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "read" }
+      ],
+      "criteria": [
+        "A second identical read sends no content and a changed read sends only a diff",
+        "Ranges, truncation and if_none_match behave as documented",
+        "Once a file is old enough to trust its stamp, repeats are answered without reloading it",
+        "A diff that is not smaller than the file falls back to full content",
+        "Binary files, long lines and byte caps are reported in the reply",
+        "Reads fail on directories and missing files, and reject bad ranges"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_read_unchanged_then_diff", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_read_ranges_and_etag", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/read.rs", "symbol": "tests::test_run_trusted_etag_path", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/read.rs", "symbol": "tests::test_run_large_diff_falls_back", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/read.rs", "symbol": "tests::test_run_binary_long_and_caps", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/read.rs", "symbol": "tests::test_run_errors", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/read.rs", "symbol": "tests::test_slice_lines_span_boundaries", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "tests::test_since_cases", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "result-cache",
+      "title": "Result cache and invalidation",
+      "summary": "Cached results are reused only while every stamp is equal and was trusted, and edits invalidate them.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "cached-queries" },
+        { "path": "macos/rust/agent-fs/src/.dev/decisions.json", "entityId": "racy-window" }
+      ],
+      "criteria": [
+        "Search results are cached once files are old, and edits invalidate the cache",
+        "Only a stamp that is old enough, and still equal, makes a cached result a hit",
+        "A repeat of a delivered reply is only a marker until the content changes or fresh is asked",
+        "A stamp is trusted for skipping a re-read only after it is older than the racy window",
+        "The result cache, the stamp and sent tables and the index table reset at their limits; the content store evicts the oldest"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_search_cache_and_invalidation", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_cached_trust_rules", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_serve_cached_unchanged_marker", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_trusted_etag_requires_old_stamp", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_cache_limit", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_table_limits", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_index_table_limit", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/state.rs", "symbol": "tests::test_store_evicts_oldest", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_ident_racy_window", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "indexed-search-equals-scan",
+      "title": "Indexed search equals a full scan",
+      "summary": "Whatever the index does, a search returns what a cold full scan returns.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "indexed-search" },
+        { "path": "macos/rust/agent-fs/src/.dev/TriIndex.state-diagram.json" }
+      ],
+      "criteria": [
+        "Indexed searches equal full scans across edits, additions and deletions, for literal, case-insensitive, alternation and literal-free patterns",
+        "The first search skips the index and later ones use it with equal results",
+        "A disabled index and an index that overflows mid-search both fall back to a full scan",
+        "Candidates are the files holding all trigrams, always-scan files and nothing binary",
+        "Changed files are re-read, removed files vanish and compaction keeps results intact",
+        "Literals give a plan; short, wildcard-led, empty and too-many-alternative patterns give none"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_indexed_search_matches_full_scan", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_find_hits_cold_then_warm", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_find_hits_with_unusable_index", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_candidates_filtering", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_incremental_update_and_compaction", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_plan_usability", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_plan_limits", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_budget_disables_index", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/index.rs", "symbol": "tests::test_classify_cases", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "search-shapes",
+      "title": "Search results and their caps",
+      "summary": "Search groups, merges, caps and renders hits as documented, and reports bad input.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "search" },
+        { "path": "macos/rust/agent-fs/src/.dev/limitations.json", "entityId": "match-per-line" }
+      ],
+      "criteria": [
+        "Search supports context blocks, files_only and compact single-field output",
+        "Overlapping context windows merge into one block",
+        "Scanning reports line and column, ignores binary files and counts every matching line",
+        "Rendering stops at the budget and says it truncated, across files and across blocks",
+        "Unknown or empty field lists, bad patterns and missing paths are rejected"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_search_shapes", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_build_blocks_merges", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_scan_lines_and_binary", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_scan_bytes_edges", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_render_budget", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_parse_fields_validation", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/search.rs", "symbol": "tests::test_regex_pattern_and_errors", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "outline-languages",
+      "title": "Outline per language",
+      "summary": "Each supported language yields the expected symbols with exact ranges.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "outline" }
+      ],
+      "criteria": [
+        "Rust items carry exact line ranges, impl names and dotted method names",
+        "Python, JavaScript, TypeScript, Go, Java, C and C++ symbols are found with ranges",
+        "Languages without a grammar still get line-pattern outlines, and unknown ones are unsupported",
+        "Broken syntax still yields the parts that parse",
+        "Oversized sources are skipped and binary files are never outlined",
+        "The symbol cap truncates, drops files past it and still reports the true total"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_rust", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_python", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_js_ts", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_go", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_java_c_cpp", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_regex_fallback_and_unsupported", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_tolerates_syntax_errors", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_skips_big_and_binary", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "tests::test_outline_cap_and_total", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "batched-loading-equals-plain",
+      "title": "Batched loading equals plain loading",
+      "summary": "Every loader returns the same stamps, bytes and errors, and the mode chooses as documented.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "batched-loading" },
+        { "path": "macos/rust/agent-fs/src/.dev/configuration.json", "entityId": "afs-batch-io" }
+      ],
+      "criteria": [
+        "Batched loading returns exactly what one-by-one loading returns, including errors, for empty, small, 64 KiB-edge and large files",
+        "Many more files than one batch still load in order",
+        "When the kernel allows io_uring, a batch matches ordinary loading; otherwise loading falls back (Linux)",
+        "Auto mode alternates during the trial, then picks the faster method; always and never force it",
+        "The batched loader is used when preferred and present, and plain loading covers every other case"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_load_many_matches_load", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_load_many_large_batch", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_decide_modes", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_parse_mode_values", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "tests::test_load_with_fallbacks", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "tests::test_uring_matches_plain_load", "command": "cargo test -p agent-fs", "description": "Linux only." },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "tests::test_finish_cases", "command": "cargo test -p agent-fs", "description": "Linux only." },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "tests::test_load_many_error_paths", "command": "cargo test -p agent-fs", "description": "Linux only." }
+      ]
+    },
+    {
+      "id": "mcp-protocol",
+      "title": "MCP handler",
+      "summary": "The JSON-RPC handler initializes, lists six tools, runs them and reports errors.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "mcp-tools" }
+      ],
+      "criteria": [
+        "Initialize, list tools and call a tool through the JSON-RPC handler",
+        "Unknown methods and tools are reported as errors",
+        "A tool call without arguments uses an empty argument object"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tests::test_handle_lifecycle", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tests::test_handle_errors", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tests::test_call_tool_without_arguments", "command": "cargo test -p agent-fs" }
+      ]
+    },
+    {
+      "id": "list-stat-batches",
+      "title": "List, stat and request batches",
+      "summary": "Listings, stat kinds and batches behave as documented, and unknown requests are rejected.",
+      "subject": [
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "list" },
+        { "path": "macos/rust/agent-fs/src/.dev/operation.json", "entityId": "stat" },
+        { "path": "macos/rust/agent-fs/src/.dev/feature.json", "entityId": "request-batches" }
+      ],
+      "criteria": [
+        "A glob lists matching files at any depth and no directories",
+        "Plain listings are one level deep with directories marked, and long mode adds sizes",
+        "Paging reports where to continue and the last page has no cursor",
+        "Stat reports absence, kind (file, dir, symlink, other) and a content etag only for regular files",
+        "List, outline and diff_since work and unknown ops or fields are rejected",
+        "Batches return one reply per request and all_ok reflects failures"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_list_glob_walks_deep", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_list_default_depth_and_long", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_list_paging", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_stat_kinds", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_stat_symlink_and_other", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/list.rs", "symbol": "tests::test_stat_hash_only_regular_files", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_list_outline_diff_since_errors", "command": "cargo test -p agent-fs" },
+        { "type": "automated", "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "tests::test_batch_and_all_ok", "command": "cargo test -p agent-fs" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "zazzle command capabilities",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "description": "What the zazzle commands do for a caller, and who may ask.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cmd/mod.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "file-operations",
+      "name": "File operations for agents",
+      "description": "Searching, reading, listing, outlining and editing files, and shrinking piped command output, with short, capped answers.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "handle"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "confine"
+        }
+      ],
+      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used), makes checked edits, shrinks command output an agent pipes in, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
+      "operations": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/ls.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/outline.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "status"
+        }
+      ],
+      "access": [
+        "Over the socket, only a peer running as the daemon's own uid is served (server.rs handle, peer_uid); the socket is created mode 0600 (server.rs bind).",
+        "Searches, reads and listings reach anything the user can read; nothing narrows them further.",
+        "Edits write only inside the caller's working directory, after resolving symlinks (edit.rs confine).",
+        "read-again reruns only ids of the caller's own session, in the working directory the request first ran in (again.rs rerun); a stored clean, run or proxy output is given to any caller that may use the daemon and names its id, from the store that process uses (again.rs run, outputs.rs load).",
+        "Over MCP the working directory of `zazzled mcp` is the root for relative paths and for edits (cli.rs mcp_main).",
+        "`zazzled run` runs the command in its own process with the caller's permissions."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The operations through which the capability is reached."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+      "relationship": "The behavior this capability offers."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Session ids, dedupe, read-again and stored outputs, applied to the commands' output."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+      "relationship": "A use case built on it."
+    }
+  ]
+}

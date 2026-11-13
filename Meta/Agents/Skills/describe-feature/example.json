@@ -1,0 +1,46 @@
+{
+  "$schema": "schema.json",
+  "kind": "feature",
+  "title": "Example worker features",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "entities": [
+    {
+      "id": "retry",
+      "name": "Retry failed jobs",
+      "description": "A failed job is tried again.",
+      "sources": [
+        {
+          "path": "src/ExampleWorker/Worker.cs",
+          "symbol": "ExampleWorker.Worker.RunAsync"
+        }
+      ],
+      "behavior": "A job that fails is requeued until it has been tried three times.",
+      "outcome": "Transient failures do not need an operator.",
+      "constraints": [
+        "At most three attempts.",
+        "Attempts are a minute apart."
+      ],
+      "implementation": [
+        {
+          "path": "src/ExampleWorker/Worker.cs",
+          "symbol": "ExampleWorker.Worker.RunAsync"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "src/ExampleWorker",
+      "path": "src/ExampleWorker/.dev/capability.json",
+      "relationship": "The capability this feature belongs to."
+    }
+  ]
+}

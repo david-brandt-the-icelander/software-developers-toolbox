@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "agent-fs",
+  "folder": "macos/rust/agent-fs",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "agent-fs",
+      "summary": "The agent-fs crate, which builds the `afs` binary: JSON-in, JSON-out file reading, search, listing and outlines for coding agents, with session memory that sends only what changed, as a CLI and an MCP server.",
+      "purpose": "Holds one tool of the toolbox: the crate manifest (Cargo.toml, a member of the macos/rust workspace), the README a user reads to install and use it, the modules in src/ and the end-to-end tests in tests/. It replaces the cat, sed -n, grep -r, git grep and find calls an agent repeats.",
+      "boundaries": [
+        "An independent utility: it uses no other crate of the workspace, and none uses it.",
+        "How agents should use it is written for them in agents/skills/agent-fs/SKILL.md, outside this folder.",
+        "Its release build, packaging and Homebrew formula are made by .github/workflows/release.yml and macos/release/, outside this folder."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/Cargo.toml", "symbol": "[[bin]]" },
+        { "path": "macos/rust/Cargo.toml", "symbol": "workspace.members" },
+        { "path": "macos/rust/agent-fs/README.md", "symbol": "agent-fs (`afs`)" }
+      ]
+    }
+  ]
+}

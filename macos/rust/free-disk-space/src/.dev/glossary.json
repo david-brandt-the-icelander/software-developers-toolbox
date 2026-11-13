@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "free-disk-space terms",
+  "folder": "macos/rust/free-disk-space/src",
+  "entities": [
+    {
+      "id": "candidate",
+      "title": "Candidate",
+      "summary": "A file the scan judged worth compressing, recorded in the cands table with its estimated saving and a status.",
+      "notToBeConfusedWith": ["A recorded file: every regular file the scan saw is recorded in the files table for dedupe, candidate or not."],
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "consider"}, {"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "SCHEMA"}]
+    },
+    {
+      "id": "state-file",
+      "title": "State file",
+      "summary": "The SQLite database at $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3 that holds one scan and what compress and dedupe did with it.",
+      "aliases": ["scan state"],
+      "notToBeConfusedWith": ["The daemon's log, which is a separate text file", "The launchd plist"],
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "default_state"}]
+    },
+    {
+      "id": "data-volume",
+      "title": "Data volume",
+      "summary": "/System/Volumes/Data where it exists, else /: the volume whose free space every command reports and the daemon watches.",
+      "notToBeConfusedWith": ["The volume a particular file is on, which can differ when a scan crosses devices"],
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "data_volume"}]
+    },
+    {
+      "id": "name-group",
+      "title": "Name group",
+      "summary": "Recorded files that share a leaf name, extension included, and a size; dedupe hashes only within a group.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "groups"}]
+    },
+    {
+      "id": "keeper",
+      "title": "Kept copy",
+      "summary": "In a set of identical files on one volume, the file the others become clones of: one that may not be replaced if there is one, otherwise the oldest.",
+      "aliases": ["keeper"],
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "plan"}]
+    },
+    {
+      "id": "system-file",
+      "title": "System file",
+      "summary": "For dedupe, a file owned by root or by another user, or under /Library, /Applications, /private, /etc, /var, /tmp or a scan skip prefix; left alone unless --include-system.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "is_system_file"}]
+    },
+    {
+      "id": "dev-artifact",
+      "title": "Dev artifact",
+      "summary": "A directory under the dev root with a known build-output or dependency name (node_modules, target, dist and the rest) that clean may delete once it proves it regenerable, old and unused.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "ARTIFACTS"}, {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "verify_artifact"}]
+    },
+    {
+      "id": "protected",
+      "title": "Protected entry",
+      "summary": "Something clean tried to remove or read and could not, usually for lack of permission; it is listed and skipped.",
+      "notToBeConfusedWith": ["Uncertain entry", "Kept artifact: one clean chose not to delete because it was modified today or in use"],
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "rm_tree"}]
+    },
+    {
+      "id": "uncertain",
+      "title": "Uncertain entry",
+      "summary": "A dev artifact clean could not prove safe to delete (no manifest or lockfile, not git-ignored, tracked files, no process snapshot, or changed before deletion); it is listed and left untouched.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "clean_dev"}]
+    },
+    {
+      "id": "awake-time",
+      "title": "Awake time",
+      "summary": "Time the Mac has been awake, from a clock that stops during sleep; the daemon's cadence is measured in it.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "awake_secs"}]
+    },
+    {
+      "id": "dry-run",
+      "title": "Dry run",
+      "summary": "A run that reports what it would do and changes nothing: clean and dedupe without --apply, and compress --dry-run.",
+      "evidenceStatus": "source-verified",
+      "sources": [{"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "cmd_clean"}, {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "cmd_dedupe"}, {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"}]
+    }
+  ]
+}

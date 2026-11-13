@@ -1,0 +1,30 @@
+{
+  "$schema": "../schemas/requirements.schema.json",
+  "kind": "requirements",
+  "schemaVersion": 1,
+  "title": "Example Scheduler requirements",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "no-silent-failure",
+      "title": "No silent failures",
+      "summary": "A failed run always reaches the operator on duty.",
+      "statement": "When a job run fails, the operator on duty is alerted within five minutes.",
+      "rationale": "Silent failures are the reason the scheduler exists.",
+      "priority": "must",
+      "acceptanceCriteria": [
+        "A failing test job raises an alarm within five minutes",
+        "The alarm names the job and the run"
+      ],
+      "realizedBy": [
+        {
+          "path": "src/ExampleWorker/.dev/feature.json",
+          "entityId": "failure-alarm"
+        }
+      ],
+      "evidenceStatus": "proposed",
+      "origin": "Vision: jobs run on time, and someone knows when they don't"
+    }
+  ]
+}

@@ -1,0 +1,198 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer content analysis classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "description": "Static analysers and the two records they produce. No type here holds state.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+      "symbol": "BlobAnalyzer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
+      "symbol": "Bloom"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+      "symbol": "CSharpSymbols"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+      "symbol": "HeuristicSymbols"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
+      "symbol": "RegexLiterals"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Sym.cs",
+      "symbol": "Sym"
+    }
+  ],
+  "types": [
+    {
+      "id": "Analysis.BlobData",
+      "name": "BlobData",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs"
+      ],
+      "members": [
+        "string Oid",
+        "long Size",
+        "bool Binary",
+        "string Lang",
+        "int Lines",
+        "byte[] Bloom",
+        "string Digest",
+        "string? Symbols",
+        "string? Idents"
+      ]
+    },
+    {
+      "id": "Analysis.BlobAnalyzer",
+      "name": "BlobAnalyzer",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs"
+      ],
+      "members": [
+        "static string GitOid(byte[] bytes)",
+        "static string Language(string path)",
+        "static bool LooksBinary(byte[] bytes)",
+        "static int CountLines(byte[] bytes)",
+        "static BlobData Analyze(byte[] bytes, string path)"
+      ]
+    },
+    {
+      "id": "Analysis.Bloom",
+      "name": "Bloom",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs"
+      ],
+      "members": [
+        "static byte[] Build(byte[] bytes)",
+        "static List<int> Grams(IEnumerable<byte[]> runs)",
+        "static bool MayContainAll(byte[] filter, List<int> grams)",
+        "static byte[] Encode(string s)"
+      ]
+    },
+    {
+      "id": "Analysis.CSharpSymbols",
+      "name": "CSharpSymbols",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs"
+      ],
+      "members": [
+        "static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source)"
+      ]
+    },
+    {
+      "id": "Analysis.HeuristicSymbols",
+      "name": "HeuristicSymbols",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs"
+      ],
+      "members": [
+        "static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source, string lang)"
+      ]
+    },
+    {
+      "id": "Analysis.RegexLiterals",
+      "name": "RegexLiterals",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs"
+      ],
+      "members": [
+        "static List<string> Required(string pattern, bool literal)"
+      ]
+    },
+    {
+      "id": "Analysis.Sym",
+      "name": "Sym",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Sym.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Kind",
+        "string Container",
+        "int Line",
+        "int EndLine",
+        "string Sig",
+        "static string ToJson(IEnumerable<Sym> syms)",
+        "static List<Sym> FromJson(string? json)",
+        "static string IdentsToJson(Dictionary<string, List<int>> idents)",
+        "static Dictionary<string, List<int>> IdentsFromJson(string? json)"
+      ]
+    },
+    {
+      "id": "Roslyn.CSharpSyntaxTree",
+      "name": "CSharpSyntaxTree",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj"
+      ],
+      "members": [
+        "static SyntaxTree ParseText(string text)"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Analysis.BlobAnalyzer",
+      "to": "Analysis.BlobData",
+      "kind": "depends-on",
+      "description": "Analyze returns one."
+    },
+    {
+      "from": "Analysis.BlobAnalyzer",
+      "to": "Analysis.Bloom",
+      "kind": "depends-on",
+      "description": "Builds the filter for text blobs."
+    },
+    {
+      "from": "Analysis.BlobAnalyzer",
+      "to": "Analysis.CSharpSymbols",
+      "kind": "depends-on",
+      "description": "Extracts C# symbols."
+    },
+    {
+      "from": "Analysis.BlobAnalyzer",
+      "to": "Analysis.HeuristicSymbols",
+      "kind": "depends-on",
+      "description": "Extracts other languages' symbols."
+    },
+    {
+      "from": "Analysis.BlobAnalyzer",
+      "to": "Analysis.Sym",
+      "kind": "depends-on",
+      "description": "Serialises symbols and identifiers, and builds the digest from them."
+    },
+    {
+      "from": "Analysis.CSharpSymbols",
+      "to": "Roslyn.CSharpSyntaxTree",
+      "kind": "depends-on",
+      "description": "Parses the source text."
+    },
+    {
+      "from": "Analysis.CSharpSymbols",
+      "to": "Analysis.Sym",
+      "kind": "depends-on",
+      "description": "Produces Sym records."
+    },
+    {
+      "from": "Analysis.HeuristicSymbols",
+      "to": "Analysis.Sym",
+      "kind": "depends-on",
+      "description": "Produces Sym records."
+    }
+  ]
+}

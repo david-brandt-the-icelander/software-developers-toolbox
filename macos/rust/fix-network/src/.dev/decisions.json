@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "fix-network decisions",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "sys-trait",
+      "title": "Every effect on the machine goes through one trait",
+      "summary": "Commands, name lookups, TCP connections, waiting, the clock, SSH detection and the Wi-Fi watchdog all go through the Sys trait in sys.rs.",
+      "status": "accepted",
+      "context": "The tool reads and changes a Mac's network, and its repair steps can cut the connection; the tests must exercise gathering, diagnosis, every repair step and both commands without touching a real network.",
+      "decision": "One Sys trait with a real implementation (Real) and a scripted Mac for tests (fake::Fake); no other module runs a process or opens a socket.",
+      "rationale": "The tests can drive the whole tool against a scripted Mac, and the real implementation separately against localhost.",
+      "evidenceStatus": "source-verified",
+      "origin": "Moved from the second bullet of Limitations in macos/rust/fix-network/README.md.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Sys" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Real" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "fake::Fake" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "main" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/verification.json", "entityId": "end-to-end-scripted-mac" }
+      ]
+    },
+    {
+      "id": "wifi-by-address",
+      "title": "Judge Wi-Fi association by the address, not the SSID",
+      "summary": "The tool decides whether Wi-Fi is usable from the interface's addresses and never asks for the network name.",
+      "status": "accepted",
+      "context": "networksetup -getairportnetwork is unreliable on recent macOS.",
+      "decision": "Use the interface's IPv4 or global IPv6 address from ifconfig, and the radio power from networksetup -getairportpower.",
+      "rationale": "An address is a reliable sign the Mac has joined a working network; the reported SSID is not.",
+      "evidenceStatus": "source-verified",
+      "origin": "macos/rust/fix-network/README.md, Limitations.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "link_facts" },
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "parse_ifconfig" },
+        { "path": "macos/rust/fix-network/README.md", "symbol": "Limitations" }
+      ]
+    },
+    {
+      "id": "state-retention",
+      "title": "How long run directories are kept",
+      "summary": "Every run leaves a directory with its log and the original settings under the state root, and nothing ever removes them.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "Session::at creates a new timestamped directory per run (diagnostic.log, original.json, and recover.sh after a Wi-Fi cycle); no code deletes old ones, and neither the README nor the skill says whether they should be kept forever.",
+      "options": [
+        { "title": "Keep every run", "consequences": "Full history for diagnosis; the directories grow without bound." },
+        { "title": "Prune runs older than a set age or beyond a set count", "consequences": "Bounded space; old original settings are lost." }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "Session::at" },
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "state_root" }
+      ],
+      "origin": { "kind": "agent", "description": "Found while documenting the folder: the code never removes run directories." }
+    }
+  ]
+}

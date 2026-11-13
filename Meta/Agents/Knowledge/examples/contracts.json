@@ -1,0 +1,25 @@
+{
+  "$schema": "../schemas/contracts.schema.json",
+  "kind": "contracts",
+  "schemaVersion": 1,
+  "title": "Example worker contracts",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "run-failed-event",
+      "title": "Run-failed event",
+      "summary": "Published once for every failed run.",
+      "contractType": "message",
+      "consumers": [
+        "Alerting service"
+      ],
+      "guarantees": [
+        "At least once per failed run",
+        "Carries the job id, the slot and the error"
+      ],
+      "compatibility": "Fields are only added, never renamed or removed.",
+      "definition": "schemas/run-failed.json"
+    }
+  ]
+}

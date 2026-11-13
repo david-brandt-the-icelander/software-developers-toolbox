@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle run class diagram",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "description": "The runner's options and result (mod.rs), and the profiles with their rules and drop counts (profile.rs).",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "Opts"
+    },
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "Ran"
+    },
+    {
+      "path": "macos/rust/zazzled/src/wrap/profile.rs",
+      "symbol": "Profile"
+    }
+  ],
+  "types": [
+    {
+      "id": "Opts",
+      "name": "Opts (run)",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/wrap/mod.rs"],
+      "members": ["lossy: bool", "budget: usize", "timeout: Duration", "profile: Option<String>", "argv: Vec<String>"]
+    },
+    {
+      "id": "Ran",
+      "name": "Ran",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/wrap/mod.rs"],
+      "members": ["output: Vec<u8>", "code: i32", "elapsed: Duration", "timed_out: bool", "cut: bool"]
+    },
+    {
+      "id": "Profile",
+      "name": "Profile",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/wrap/profile.rs"],
+      "members": ["name: &'static str", "rules: &'static [Rule]", "apply(lines) -> (Vec<String>, Dropped)"]
+    },
+    {
+      "id": "Rule",
+      "name": "Rule",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/wrap/profile.rs"],
+      "members": ["action: Action", "pattern: &'static str", "label: &'static str"]
+    },
+    {
+      "id": "Action",
+      "name": "Action",
+      "kind": "enum",
+      "sources": ["macos/rust/zazzled/src/wrap/profile.rs"],
+      "members": ["Drop", "DropRepeat", "Group"]
+    },
+    {
+      "id": "Dropped",
+      "name": "Dropped",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzled/src/wrap/profile.rs"],
+      "members": ["0: Vec<(&'static str, usize)>", "describe() -> String"]
+    }
+  ],
+  "relationships": [
+    { "from": "Profile", "to": "Rule", "kind": "depends-on", "description": "A profile is a list of rules." },
+    { "from": "Rule", "to": "Action", "kind": "depends-on", "description": "What the rule does with matching lines." },
+    { "from": "Profile", "to": "Dropped", "kind": "depends-on", "description": "apply counts what it dropped, per label." },
+    { "from": "Opts", "to": "Profile", "kind": "depends-on", "description": "profile names one, or none; otherwise one is detected from argv." }
+  ]
+}

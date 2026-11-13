@@ -1,0 +1,319 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "afs source types",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "The structs, enums and type aliases the afs modules declare: the command line, the request shapes, the engine and its session state, the trigram index, file stamps and the per-operation working types. Private helper structs are shown because they carry the shape of the replies.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Cli" },
+    { "path": "macos/rust/agent-fs/src/req.rs", "symbol": "Request" },
+    { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine" },
+    { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State" },
+    { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex" },
+    { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident" }
+  ],
+  "types": [
+    {
+      "id": "main.Cli",
+      "name": "Cli",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/main.rs"],
+      "members": ["command: Command"]
+    },
+    {
+      "id": "main.Command",
+      "name": "Command",
+      "kind": "enum",
+      "sources": ["macos/rust/agent-fs/src/main.rs"],
+      "members": ["Call { json: Option<String> }", "Jsonl", "Serve"]
+    },
+    {
+      "id": "req.Request",
+      "name": "Request",
+      "kind": "enum",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["Read(ReadArgs)", "Search(SearchArgs)", "List(ListArgs)", "Stat(StatArgs)", "Outline(OutlineArgs)", "DiffSince(DiffArgs)"]
+    },
+    {
+      "id": "req.ReadArgs",
+      "name": "ReadArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["path: String", "ranges: Vec<[usize; 2]>", "max_lines: Option<usize>", "max_bytes: Option<usize>", "if_none_match: Option<String>", "fresh: bool"]
+    },
+    {
+      "id": "req.SearchArgs",
+      "name": "SearchArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["pattern: String", "literal: bool", "ignore_case: bool", "paths: Vec<String>", "glob: Vec<String>", "context: usize", "max_matches: Option<usize>", "files_only: bool", "fields: Option<Vec<String>>", "hidden: bool", "no_ignore: bool", "fresh: bool"]
+    },
+    {
+      "id": "req.ListArgs",
+      "name": "ListArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["path: Option<String>", "glob: Vec<String>", "depth: Option<usize>", "hidden: bool", "no_ignore: bool", "long: bool", "max_entries: Option<usize>", "cursor: usize", "fresh: bool"]
+    },
+    {
+      "id": "req.StatArgs",
+      "name": "StatArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["path: String", "hash: bool"]
+    },
+    {
+      "id": "req.OutlineArgs",
+      "name": "OutlineArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["paths: Vec<String>", "max_symbols: Option<usize>", "fresh: bool"]
+    },
+    {
+      "id": "req.DiffArgs",
+      "name": "DiffArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/req.rs"],
+      "members": ["path: String", "etag: String"]
+    },
+    {
+      "id": "engine.Engine",
+      "name": "Engine",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/engine.rs"],
+      "members": ["state: State", "pub fn new() -> Engine", "fn dispatch(&mut self, request: Request) -> Res<Value>", "fn call_one(&mut self, input: Value) -> Value", "pub fn call(&mut self, input: Value) -> Value"]
+    },
+    {
+      "id": "state.Res",
+      "name": "Res<T>",
+      "kind": "type",
+      "sources": ["macos/rust/agent-fs/src/state.rs"],
+      "members": ["= Result<T, String>"]
+    },
+    {
+      "id": "state.Dep",
+      "name": "Dep",
+      "kind": "type",
+      "sources": ["macos/rust/agent-fs/src/state.rs"],
+      "members": ["= (PathBuf, Option<Ident>)"]
+    },
+    {
+      "id": "state.Sent",
+      "name": "Sent",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/state.rs"],
+      "members": ["etag: String", "keys: HashMap<String, String>", "complete: bool"]
+    },
+    {
+      "id": "state.Entry",
+      "name": "Entry",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/state.rs"],
+      "members": ["deps: Vec<Dep>", "value: Value", "etag: String", "trusted: bool"]
+    },
+    {
+      "id": "state.State",
+      "name": "State",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/state.rs"],
+      "members": [
+        "next_ref: u64",
+        "sent: HashMap<String, Sent>",
+        "store: HashMap<String, Arc<Vec<u8>>>",
+        "order: VecDeque<String>",
+        "store_bytes: usize",
+        "idx: HashMap<PathBuf, (Ident, String, i128)>",
+        "cache: HashMap<String, Entry>",
+        "indexes: HashMap<String, TriIndex>",
+        "pub fn new() -> State",
+        "pub fn take_index(&mut self, config: &str) -> TriIndex",
+        "pub fn put_index(&mut self, config: String, index: TriIndex)",
+        "pub fn trusted_etag(&self, path: &Path, id: &Ident) -> Option<String>",
+        "pub fn record(&mut self, path: &Path, id: Ident, bytes: &[u8]) -> String",
+        "pub fn already_sent(&self, subject: &str, etag: &str, key: &str) -> Option<String>",
+        "pub fn mark_sent(&mut self, subject: &str, etag: &str, key: &str, complete: bool) -> String",
+        "pub fn complete_etag(&self, subject: &str) -> Option<String>",
+        "pub fn put_content(&mut self, etag: &str, bytes: Arc<Vec<u8>>)",
+        "pub fn content(&self, etag: &str) -> Option<Arc<Vec<u8>>>",
+        "fn cached(&mut self, key: &str, compute: impl FnOnce() -> Res<(Value, Vec<Dep>)>) -> Res<(Value, String, bool)>",
+        "pub fn serve_cached(&mut self, key: &str, fresh: bool, compute: impl FnOnce() -> Res<(Value, Vec<Dep>)>) -> Res<Value>"
+      ]
+    },
+    {
+      "id": "index.Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": ["macos/rust/agent-fs/src/index.rs"],
+      "members": ["Indexed", "Always", "Binary"]
+    },
+    {
+      "id": "index.Update",
+      "name": "Update",
+      "kind": "enum",
+      "sources": ["macos/rust/agent-fs/src/index.rs"],
+      "members": ["Trigrams(Vec<u32>)", "Always", "Binary", "pub fn classify(bytes: &[u8], ident: &Ident, at: i128, binary: bool) -> Update"]
+    },
+    {
+      "id": "index.Rec",
+      "name": "Rec",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/index.rs"],
+      "members": ["id: u32", "ident: Ident", "at: i128", "generation: u64"]
+    },
+    {
+      "id": "index.TriIndex",
+      "name": "TriIndex",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/index.rs"],
+      "members": [
+        "paths: Vec<PathBuf>",
+        "kinds: Vec<Kind>",
+        "alive: Vec<bool>",
+        "by_path: HashMap<PathBuf, Rec>",
+        "postings: HashMap<u32, Vec<u32>>",
+        "entries: usize",
+        "dead: usize",
+        "generation: u64",
+        "queries: u32",
+        "max_entries: usize",
+        "disabled: bool",
+        "pub fn new() -> TriIndex",
+        "pub fn with_limit(max_entries: usize) -> TriIndex",
+        "pub fn usable(&self) -> bool",
+        "pub fn warm(&mut self) -> bool",
+        "pub fn begin(&mut self, files: &[(PathBuf, Ident)]) -> Vec<usize>",
+        "pub fn apply(&mut self, path: &Path, ident: Ident, at: i128, update: Update)",
+        "pub fn finish(&mut self)",
+        "fn compact(&mut self)",
+        "fn matching(&self, alternative: &[u32]) -> Vec<u32>",
+        "pub fn candidates(&self, plan: Option<&[Vec<u32>]>) -> Vec<PathBuf>"
+      ]
+    },
+    {
+      "id": "fsio.Ident",
+      "name": "Ident",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/fsio.rs"],
+      "members": ["dev: u64", "ino: u64", "size: u64", "mtime_ns: i128", "ctime_ns: i128", "pub fn of(md: &Metadata) -> Ident", "pub fn from_parts(dev: u64, ino: u64, size: u64, mtime_ns: i128, ctime_ns: i128) -> Ident (Linux)", "pub fn racy(&self, at_ns: i128) -> bool"]
+    },
+    {
+      "id": "fsio.Loaded",
+      "name": "Loaded",
+      "kind": "type",
+      "sources": ["macos/rust/agent-fs/src/fsio.rs"],
+      "members": ["= io::Result<(Ident, Vec<u8>)>"]
+    },
+    {
+      "id": "fsio.Mode",
+      "name": "Mode",
+      "kind": "enum",
+      "sources": ["macos/rust/agent-fs/src/fsio.rs"],
+      "members": ["Auto", "Always", "Never"]
+    },
+    {
+      "id": "read.Slice",
+      "name": "Slice",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/read.rs"],
+      "members": ["chunks: Vec<Value>", "next: Vec<[usize; 2]>", "omitted: usize", "cut_lines: usize"]
+    },
+    {
+      "id": "search.Hit",
+      "name": "Hit",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/search.rs"],
+      "members": ["line: usize", "col: usize", "text: String"]
+    },
+    {
+      "id": "search.Block",
+      "name": "Block",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/search.rs"],
+      "members": ["start: usize", "lines: Vec<String>", "hits: Vec<usize>"]
+    },
+    {
+      "id": "search.FileHits",
+      "name": "FileHits",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/search.rs"],
+      "members": ["path: String", "count: usize", "hits: Vec<Hit>", "blocks: Vec<Block>"]
+    },
+    {
+      "id": "search.Seen",
+      "name": "Seen",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/search.rs"],
+      "members": ["ident: Ident", "at: i128", "update: Update", "hits: Option<FileHits>"]
+    },
+    {
+      "id": "search.Walked",
+      "name": "Walked",
+      "kind": "type",
+      "sources": ["macos/rust/agent-fs/src/search.rs"],
+      "members": ["= (PathBuf, Ident)"]
+    },
+    {
+      "id": "list.Row",
+      "name": "Row",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/list.rs"],
+      "members": ["path: String", "dir: bool", "size: u64", "mtime: i64"]
+    },
+    {
+      "id": "outline.Grammar",
+      "name": "Grammar",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/outline.rs"],
+      "members": ["language: Language", "items: &'static [(&'static str, &'static str)]", "containers: &'static [&'static str]", "passthrough: &'static [&'static str]"]
+    },
+    {
+      "id": "outline.Symbol",
+      "name": "Symbol",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/outline.rs"],
+      "members": ["start: usize", "end: usize", "kind: String", "name: String"]
+    },
+    {
+      "id": "outline.Outlined",
+      "name": "Outlined",
+      "kind": "type",
+      "sources": ["macos/rust/agent-fs/src/outline.rs"],
+      "members": ["= (String, Vec<Value>)"]
+    },
+    {
+      "id": "aio.Pending",
+      "name": "Pending<'a>",
+      "kind": "struct",
+      "sources": ["macos/rust/agent-fs/src/aio.rs"],
+      "members": ["index: usize", "path: &'a Path", "file: File", "ident: Ident", "buf: Vec<u8>", "cb: libc::aiocb"]
+    }
+  ],
+  "relationships": [
+    { "from": "main.Cli", "to": "main.Command", "kind": "depends-on", "description": "The subcommand to run." },
+    { "from": "req.Request", "to": "req.ReadArgs", "kind": "depends-on", "description": "Variant Read." },
+    { "from": "req.Request", "to": "req.SearchArgs", "kind": "depends-on", "description": "Variant Search." },
+    { "from": "req.Request", "to": "req.ListArgs", "kind": "depends-on", "description": "Variant List." },
+    { "from": "req.Request", "to": "req.StatArgs", "kind": "depends-on", "description": "Variant Stat." },
+    { "from": "req.Request", "to": "req.OutlineArgs", "kind": "depends-on", "description": "Variant Outline." },
+    { "from": "req.Request", "to": "req.DiffArgs", "kind": "depends-on", "description": "Variant DiffSince." },
+    { "from": "engine.Engine", "to": "state.State", "kind": "depends-on", "description": "Owns one session's state." },
+    { "from": "engine.Engine", "to": "req.Request", "kind": "depends-on", "description": "Parses each request object into a Request and dispatches on it." },
+    { "from": "state.State", "to": "state.Sent", "kind": "depends-on", "description": "What was sent, per path or per query key hash." },
+    { "from": "state.State", "to": "state.Entry", "kind": "depends-on", "description": "Cached results by query key." },
+    { "from": "state.State", "to": "index.TriIndex", "kind": "depends-on", "description": "Trigram indexes by walk configuration." },
+    { "from": "state.State", "to": "fsio.Ident", "kind": "depends-on", "description": "The stamp each read file had when its etag was recorded." },
+    { "from": "state.Entry", "to": "state.Dep", "kind": "depends-on", "description": "The stamps a cached result depends on." },
+    { "from": "state.Dep", "to": "fsio.Ident", "kind": "depends-on", "description": "None when the path was absent." },
+    { "from": "index.TriIndex", "to": "index.Rec", "kind": "depends-on", "description": "One record per indexed path." },
+    { "from": "index.TriIndex", "to": "index.Kind", "kind": "depends-on", "description": "Whether each file id is filtered, always scanned or binary." },
+    { "from": "index.TriIndex", "to": "index.Update", "kind": "depends-on", "description": "apply records what a worker learned about a file." },
+    { "from": "index.Rec", "to": "fsio.Ident", "kind": "depends-on", "description": "The stamp the entry was built from." },
+    { "from": "fsio.Loaded", "to": "fsio.Ident", "kind": "depends-on", "description": "A loaded file's stamp, taken before its bytes." },
+    { "from": "search.FileHits", "to": "search.Hit", "kind": "depends-on", "description": "Up to max_matches hits per file." },
+    { "from": "search.FileHits", "to": "search.Block", "kind": "depends-on", "description": "Merged context windows when context > 0." },
+    { "from": "search.Seen", "to": "index.Update", "kind": "depends-on", "description": "How the file joins the index." },
+    { "from": "search.Seen", "to": "search.FileHits", "kind": "depends-on", "description": "The hits found while indexing." },
+    { "from": "search.Walked", "to": "fsio.Ident", "kind": "depends-on", "description": "The stamp seen by the walk." },
+    { "from": "aio.Pending", "to": "fsio.Ident", "kind": "depends-on", "description": "The stamp taken when the file was opened." }
+  ]
+}

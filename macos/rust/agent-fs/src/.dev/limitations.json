@@ -1,0 +1,77 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "afs limitations",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "no-access-control",
+      "title": "No path restriction",
+      "summary": "afs reads any path the user running it may read, absolute or relative to its working directory.",
+      "impact": "An agent given afs can read every file the user can, including outside the project; only the operating system's permissions limit it.",
+      "workaround": "Run afs as a user, or in a sandbox, that can read only what the agent should see.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "builder" }
+      ]
+    },
+    {
+      "id": "session-memory-only",
+      "title": "Memory lasts one process",
+      "summary": "Unchanged markers, diffs, cached results and indexes exist only within one `afs serve` or `afs jsonl` process; `afs call` has none.",
+      "impact": "A restarted server, or each `afs call`, sends everything in full again and rebuilds its caches.",
+      "workaround": "Keep one `afs serve` or `afs jsonl` process for the whole session.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "call_once" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State" }
+      ]
+    },
+    {
+      "id": "match-per-line",
+      "title": "Search reports at most one match per line, on the line where it starts",
+      "summary": "Patterns are matched across the whole file buffer in multi-line mode; each match is reported on the line where it starts, and the scan then resumes at the next line.",
+      "impact": "A second match on the same line is neither shown nor counted, so total_matches counts matching lines; a match spanning lines is shown only by its first line.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "scan_bytes" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "build_regex" }
+      ]
+    },
+    {
+      "id": "binary-by-nul",
+      "title": "Binary means a NUL in the first 8000 bytes",
+      "summary": "A file is treated as binary only when its first 8000 bytes hold a NUL byte.",
+      "impact": "Binary files are not read as lines, searched or outlined; UTF-16 text counts as binary, and a binary file without an early NUL is treated as text.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "is_binary" }
+      ]
+    },
+    {
+      "id": "unix-only",
+      "title": "Unix only",
+      "summary": "The code uses Unix file metadata (std::os::unix), so it builds only on Unix-like systems; batched loading exists only on Linux and macOS.",
+      "impact": "No Windows build. On other Unix systems every file is read one at a time.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident.of" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "load_batched" }
+      ]
+    },
+    {
+      "id": "session-bounds",
+      "title": "Session tables are cleared, not trimmed",
+      "summary": "The result cache (256 entries), the stamp and sent tables (200,000 entries) and the index table (8 configurations) are emptied whole when they reach their limit.",
+      "impact": "In a very long or very broad session, a repeat right after a clear is answered in full and recomputed rather than with an unchanged marker or a cache hit.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.record" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.mark_sent" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_index" }
+      ]
+    }
+  ]
+}

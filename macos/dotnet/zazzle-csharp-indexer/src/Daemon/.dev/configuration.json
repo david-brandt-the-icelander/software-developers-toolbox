@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "Shared daemon settings",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "idle-minutes",
+      "title": "Idle exit period",
+      "summary": "How long the daemon keeps running with no clients before it exits.",
+      "key": "ZAZZLE_INDEXER_IDLE_MINUTES",
+      "type": "number of minutes (environment variable, fractions allowed)",
+      "default": 30,
+      "sensitive": false,
+      "scope": "the daemon process; read from the environment of the process that starts it",
+      "takesEffect": "at-startup",
+      "validation": "Parsed with double.Parse; a value that does not parse stops the daemon command with an exception.",
+      "details": "Read in src/Program.cs when the daemon command starts and passed to DaemonServer as idleExit.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "ZAZZLE_INDEXER_IDLE_MINUTES"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.IdleLoop"
+        }
+      ]
+    }
+  ]
+}

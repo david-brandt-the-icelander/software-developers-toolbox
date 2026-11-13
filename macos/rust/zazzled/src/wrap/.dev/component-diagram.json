@@ -1,0 +1,69 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle run component diagram",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "description": "The runner starts the command and renders its output through a profile and then clean's steps, and stores the result with the raw output for read-again. The command itself is whatever the caller names.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "run_command"
+    },
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "render"
+    },
+    {
+      "path": "macos/rust/zazzled/src/wrap/profile.rs",
+      "symbol": "Profile::apply"
+    }
+  ],
+  "components": [
+    {
+      "id": "wrap",
+      "name": "zazzle run",
+      "responsibility": "Runs one command and prints its output cleaned, with its exit code.",
+      "folder": "macos/rust/zazzled/src/wrap"
+    },
+    {
+      "id": "runner",
+      "name": "Runner (mod.rs)",
+      "responsibility": "Parses the options, runs the command with one merged output pipe (at most 64 MiB kept) and a timeout, and renders the output with a footer; tags it with an output id when it is stored.",
+      "folder": "macos/rust/zazzled/src/wrap"
+    },
+    {
+      "id": "profiles",
+      "name": "Profiles (profile.rs)",
+      "responsibility": "Per-tool rules that drop and count known noise, drop repeats, or group diagnostics under their file; detection from the command line.",
+      "folder": "macos/rust/zazzled/src/wrap"
+    },
+    {
+      "id": "clean",
+      "name": "clean's steps",
+      "responsibility": "tidy_lines before the profile; shrink_steps and cuts after it; store to keep the result and the raw output under an id.",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "diagram": "macos/rust/zazzled/src/cmd/.dev/component-diagram.json"
+    },
+    {
+      "id": "outputs",
+      "name": "Output store",
+      "responsibility": "outputs.rs in the parent folder: keeps the result and the raw output for an hour for read-again.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "command",
+      "name": "The wrapped command",
+      "responsibility": "Any program the caller names, such as cargo test or dotnet build, run as a child with the caller's environment and standard input.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "wrap", "to": "runner", "kind": "contains", "description": "Running and rendering." },
+    { "from": "wrap", "to": "profiles", "kind": "contains", "description": "The profiles." },
+    { "from": "runner", "to": "command", "kind": "depends-on", "description": "Spawns it with stdout and stderr on one pipe; kills it after the timeout." },
+    { "from": "runner", "to": "profiles", "kind": "depends-on", "description": "detect or named, then Profile::apply." },
+    { "from": "runner", "to": "clean", "kind": "depends-on", "description": "clean::tidy_lines before the profile, clean::shrink_steps and cuts after it, and clean::store for the stored output." },
+    { "from": "runner", "to": "outputs", "kind": "depends-on", "description": "outputs::dir: the store directory, from the caller's environment." }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/limitations.schema.json",
+  "title": "Limitations",
+  "description": "What the solution deliberately does not do or cannot do, with no promise to change it. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "limitations"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "impact": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workaround": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "impact"
+        ]
+      }
+    }
+  }
+}

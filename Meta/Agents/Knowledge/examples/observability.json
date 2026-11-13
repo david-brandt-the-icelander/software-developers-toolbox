@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/observability.schema.json",
+  "kind": "observability",
+  "schemaVersion": 1,
+  "title": "Example worker observability",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "run-start-delay",
+      "title": "Run start delay",
+      "summary": "Seconds between a slot's time and its run starting.",
+      "signalType": "metric",
+      "name": "worker.run.start_delay",
+      "meaning": "How late runs start.",
+      "unit": "seconds",
+      "dimensions": [
+        "job"
+      ],
+      "access": "Operators",
+      "retention": "30 days",
+      "cadence": "per run",
+      "excludes": [
+        "Job arguments"
+      ]
+    }
+  ]
+}

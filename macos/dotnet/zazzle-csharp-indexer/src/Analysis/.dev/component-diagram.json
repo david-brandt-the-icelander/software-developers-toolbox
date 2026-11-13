@@ -1,0 +1,155 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer content analysis component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "description": "From bytes to stored blob facts, and the literal extraction that lets search use the Bloom filters. Everything here is a static function of its input.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+      "symbol": "BlobAnalyzer.Analyze"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
+      "symbol": "Bloom"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
+      "symbol": "RegexLiterals.Required"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+      "symbol": "Microsoft.CodeAnalysis.CSharp"
+    }
+  ],
+  "components": [
+    {
+      "id": "analysis",
+      "name": "Content analysis",
+      "responsibility": "Everything zazzle-csharp-indexer derives from a file's bytes.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "blob-analyzer",
+      "name": "Blob analyser (BlobAnalyzer.cs)",
+      "responsibility": "Git blob id, language from the extension, binary test (a NUL in the first 8 KiB), line count, digest; calls the filter and the extractors.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "bloom",
+      "name": "Trigram Bloom filter (Bloom.cs)",
+      "responsibility": "Builds a per-blob filter of ASCII-lowercased byte trigrams and tests whether all of a query's trigrams may be present.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "csharp",
+      "name": "C# extractor (CSharpSymbols.cs)",
+      "responsibility": "Declarations and identifier tokens from a Roslyn syntax tree, without compiling.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "heuristic",
+      "name": "Heuristic extractor (HeuristicSymbols.cs)",
+      "responsibility": "Per-line regex rules for Rust, Python, TypeScript/JavaScript, Go, Java, GDScript, shell, Markdown headings, Swift and C/C++, and word-based identifier tables for code languages.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "literals",
+      "name": "Regex literal extractor (RegexLiterals.cs)",
+      "responsibility": "The literal runs every match of a pattern must contain, conservatively: none when unsure.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "sym",
+      "name": "Symbol format (Sym.cs)",
+      "responsibility": "The Sym record and the compact JSON stored for symbols and identifier occurrences.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "roslyn",
+      "name": "Roslyn C# syntax (NuGet Microsoft.CodeAnalysis.CSharp)",
+      "responsibility": "C# parser, used in process for syntax trees only.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "analysis",
+      "to": "blob-analyzer",
+      "kind": "contains",
+      "description": "The entry point the engine calls."
+    },
+    {
+      "from": "analysis",
+      "to": "bloom",
+      "kind": "contains",
+      "description": "Search prefilter."
+    },
+    {
+      "from": "analysis",
+      "to": "csharp",
+      "kind": "contains",
+      "description": "Exact extraction for .cs files."
+    },
+    {
+      "from": "analysis",
+      "to": "heuristic",
+      "kind": "contains",
+      "description": "Extraction for other languages."
+    },
+    {
+      "from": "analysis",
+      "to": "literals",
+      "kind": "contains",
+      "description": "Query side of the prefilter."
+    },
+    {
+      "from": "analysis",
+      "to": "sym",
+      "kind": "contains",
+      "description": "Stored symbol format."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "bloom",
+      "kind": "depends-on",
+      "description": "Builds the filter for every text blob."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "csharp",
+      "kind": "depends-on",
+      "description": "For language csharp, up to 2 MiB."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "heuristic",
+      "kind": "depends-on",
+      "description": "For every other language, up to 2 MiB."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Serialises symbols and identifiers for the store."
+    },
+    {
+      "from": "csharp",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "CSharpSyntaxTree.ParseText."
+    },
+    {
+      "from": "csharp",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Returns Sym records."
+    },
+    {
+      "from": "heuristic",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Returns Sym records."
+    }
+  ]
+}

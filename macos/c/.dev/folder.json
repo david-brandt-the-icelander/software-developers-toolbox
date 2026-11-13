@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "C programs",
+  "folder": "macos/c",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "C programs",
+      "summary": "Holds zazzle, the C invoker for the zazzled daemon.",
+      "purpose": "A grouping folder for the repository's C code, which today is only zazzle/.",
+      "boundaries": [
+        "No code of its own."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": "all"
+        }
+      ]
+    }
+  ]
+}

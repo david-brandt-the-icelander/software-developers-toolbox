@@ -1,0 +1,121 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "fix-network module diagram",
+  "folder": "macos/rust/fix-network/src",
+  "description": "The tool's modules and how they depend on each other. Every effect on the machine passes through the Sys trait, so the tests can swap the real Mac for a scripted one.",
+  "sources": [
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+    { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Sys" },
+    { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "fake::Fake" }
+  ],
+  "components": [
+    {
+      "id": "tool",
+      "name": "fix-network sources",
+      "responsibility": "The whole tool, compiled into one binary.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs)",
+      "responsibility": "Parses diagnose and fix with their flags, refuses anything but macOS, records the original settings, and runs a diagnosis, a dry run or the repair, then picks the exit status.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "facts",
+      "name": "Snapshot (facts.rs)",
+      "responsibility": "Takes a fresh snapshot of link, routes, DNS resolvers, proxies, VPN services, public-internet probes and each internal host.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "parse",
+      "name": "Parsers (parse.rs)",
+      "responsibility": "Pure parsers for networksetup, ifconfig, netstat, route, scutil, sysctl and dig output, and for --internal-host targets.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "checks",
+      "name": "Checks (assess.rs, corp.rs)",
+      "responsibility": "Judge the seven dimensions of one snapshot and record each problem as a finding with its remedy, given the steps already tried.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "model",
+      "name": "Result types (model.rs)",
+      "responsibility": "Check states, repair steps with their order and gates, remedies, findings and reports.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "repair",
+      "name": "Repair (repair.rs)",
+      "responsibility": "Plans the steps a report calls for, runs the adaptive fix loop under the flag gates, and carries out each step.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "report",
+      "name": "Report (report.rs)",
+      "responsibility": "Prints checks, findings with their outcomes, plans and actions as text, or the whole run as JSON.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "run",
+      "name": "Session and helpers (run.rs)",
+      "responsibility": "The per-run state directory, its redacted diagnostic.log and original.json, terminal colours and small text helpers.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "sys",
+      "name": "Machine access (sys.rs)",
+      "responsibility": "The Sys trait and its real implementation: bounded commands (with sudo when asked), system name lookups, TCP connects, pauses, the clock, SSH detection and the detached Wi-Fi watchdog; plus the scripted Mac the tests use.",
+      "folder": "macos/rust/fix-network/src"
+    },
+    {
+      "id": "macos-tools",
+      "name": "macOS network commands",
+      "responsibility": "networksetup, scutil, ifconfig, netstat, route, ipconfig, sysctl, sw_vers, ping, dig, curl, dscacheutil, killall, arp and sudo on the Mac the tool runs on.",
+      "external": true
+    },
+    {
+      "id": "network",
+      "name": "Network endpoints",
+      "responsibility": "What the probes reach: the public-internet probes, the internal hosts given with --internal-host, DNS servers asked directly, and the system proxies and PAC file.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "tool", "to": "cli", "kind": "contains", "description": "The binary's entry point." },
+    { "from": "tool", "to": "facts", "kind": "contains", "description": "Gathering." },
+    { "from": "tool", "to": "parse", "kind": "contains", "description": "Parsing." },
+    { "from": "tool", "to": "checks", "kind": "contains", "description": "Diagnosis." },
+    { "from": "tool", "to": "model", "kind": "contains", "description": "Shared result types." },
+    { "from": "tool", "to": "repair", "kind": "contains", "description": "Repair." },
+    { "from": "tool", "to": "report", "kind": "contains", "description": "Output." },
+    { "from": "tool", "to": "run", "kind": "contains", "description": "Logging and state." },
+    { "from": "tool", "to": "sys", "kind": "contains", "description": "Machine access." },
+    { "from": "cli", "to": "facts", "kind": "depends-on", "description": "gather for the first snapshot, and again after the repair settles." },
+    { "from": "cli", "to": "checks", "kind": "depends-on", "description": "assess for the diagnosis and the final report." },
+    { "from": "cli", "to": "repair", "kind": "depends-on", "description": "plan, force_steps, fix_loop and exec_step." },
+    { "from": "cli", "to": "report", "kind": "depends-on", "description": "print_report, print_plan, print_actions, to_json and facts_json." },
+    { "from": "cli", "to": "run", "kind": "depends-on", "description": "Session::at and state_root." },
+    { "from": "cli", "to": "parse", "kind": "depends-on", "description": "parse_target validates each --internal-host." },
+    { "from": "cli", "to": "sys", "kind": "depends-on", "description": "Runs on Real, and records the original settings through Sys::run." },
+    { "from": "facts", "to": "parse", "kind": "depends-on", "description": "Parses every command's output." },
+    { "from": "facts", "to": "sys", "kind": "depends-on", "description": "Runs commands, resolves names and opens TCP connections." },
+    { "from": "checks", "to": "facts", "kind": "depends-on", "description": "Reads the snapshot and its helpers (tunnels, stale routes, stale resolvers)." },
+    { "from": "checks", "to": "model", "kind": "depends-on", "description": "Builds checks, findings and remedies." },
+    { "from": "checks", "to": "parse", "kind": "depends-on", "description": "is_private and is_tunnel." },
+    { "from": "repair", "to": "checks", "kind": "depends-on", "description": "Re-assesses after every step." },
+    { "from": "repair", "to": "facts", "kind": "depends-on", "description": "tcp_host to tell which proxy is unreachable." },
+    { "from": "repair", "to": "sys", "kind": "depends-on", "description": "Runs each step's commands and starts the watchdog." },
+    { "from": "repair", "to": "run", "kind": "depends-on", "description": "capture reads proxy settings." },
+    { "from": "report", "to": "repair", "kind": "depends-on", "description": "Gates name the flags a blocked step needs; Action holds what ran." },
+    { "from": "report", "to": "run", "kind": "depends-on", "description": "Writes every line through the session's log." },
+    { "from": "report", "to": "model", "kind": "depends-on", "description": "Renders states, findings, remedies and steps." },
+    { "from": "report", "to": "facts", "kind": "depends-on", "description": "The verbose details and the facts summary in JSON." },
+    { "from": "sys", "to": "run", "kind": "depends-on", "description": "shell_quote for the watchdog script." },
+    { "from": "sys", "to": "macos-tools", "kind": "depends-on", "description": "Spawns them with a time limit, via sudo -n when there is no terminal." },
+    { "from": "sys", "to": "network", "kind": "depends-on", "description": "System-resolver lookups and TCP connects with a time limit." }
+  ]
+}

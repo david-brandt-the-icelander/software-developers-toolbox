@@ -1,0 +1,30 @@
+{
+  "$schema": "../schemas/verification.schema.json",
+  "kind": "verification",
+  "schemaVersion": 1,
+  "title": "Example worker verification",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "once-per-slot",
+      "title": "Once per slot",
+      "summary": "A slot never runs twice, even with two workers.",
+      "subject": [
+        {
+          "path": "src/ExampleWorker/.dev/feature.json"
+        }
+      ],
+      "criteria": [
+        "Two workers started together run each slot once"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/ExampleWorker/WorkerTests.cs",
+          "symbol": "WorkerTests.TwoWorkersRunEachSlotOnce"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,261 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "fix-network use cases",
+  "folder": "macos/rust/fix-network/src",
+  "description": "What a developer does with fix-network in a terminal, step by step: find out what is wrong, then repair it.",
+  "sources": [
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" }
+  ],
+  "entities": [
+    {
+      "id": "diagnose-network",
+      "name": "Find out what is wrong with the Mac's network",
+      "description": "A developer whose internet, VPN or intranet is not working runs a read-only diagnosis.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_diagnose" }
+      ],
+      "actor": "Developer",
+      "goal": "Learn which layer of the network is broken and what it takes to fix each problem, without changing anything.",
+      "preconditions": [
+        "The developer is at a terminal on a Mac with fix-network installed.",
+        "For corporate DNS and services to be checked, the developer knows an internal host (and port) to name with --internal-host."
+      ],
+      "postconditions": [
+        "The network is unchanged.",
+        "The checks, findings and outcomes are on the screen (or as JSON) and in diagnostic.log, and the settings found are in original.json.",
+        "The exit status is 0 when no dimension failed, else 1."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs fix-network diagnose, naming internal hosts with --internal-host and adding -v or --json if wanted.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "Common" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "record",
+          "actor": "fix-network",
+          "action": "Creates the run's state directory, takes a snapshot of the network and saves the original settings.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "prepare" },
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "record_original" },
+            { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "gather" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "assess",
+          "actor": "fix-network",
+          "action": "Judges the seven dimensions and records each problem as a finding with its remedy.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "assess" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "report",
+          "actor": "fix-network",
+          "action": "Prints the checks, each finding with its outcome and the fix command line for the fixable ones, what was not verified, and whether a Wi-Fi reset is required.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/report.rs", "symbol": "print_report" },
+            { "path": "macos/rust/fix-network/src/report.rs", "symbol": "remedy_text" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "read",
+          "actor": "Developer",
+          "action": "Reads the outcomes: runs the suggested fix command, does what a manual remedy says, or reboots.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/model.rs", "symbol": "Remedy" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "The machine is not a Mac.",
+          "outcome": "The tool says it works on macOS only and exits with status 2 before touching the machine.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "run" }
+          ]
+        },
+        {
+          "atStep": "record",
+          "condition": "The state directory cannot be created.",
+          "outcome": "The tool says so on stderr and exits with status 1.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "prepare" }
+          ]
+        },
+        {
+          "atStep": "report",
+          "condition": "No --internal-host was given.",
+          "outcome": "Corporate DNS and corporate service are NOT TESTED, and the report asks for --internal-host HOST:PORT.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/corp.rs", "symbol": "corp_dns" },
+            { "path": "macos/rust/fix-network/src/report.rs", "symbol": "print_report" }
+          ]
+        },
+        {
+          "atStep": "report",
+          "condition": "--json was given.",
+          "outcome": "Only the JSON document is printed on stdout.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "finish" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "repair-network",
+      "name": "Repair the Mac's network",
+      "description": "A developer lets fix-network repair what the diagnosis found, allowing the steps the evidence calls for.",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" }
+      ],
+      "actor": "Developer",
+      "goal": "Get the network working again with as little disruption as possible, and see that it does.",
+      "preconditions": [
+        "The developer is at a terminal on a Mac with fix-network installed.",
+        "For privileged steps, the developer can use sudo."
+      ],
+      "postconditions": [
+        "Every step that ran is listed as ok or FAILED with its reason.",
+        "Every dimension, internal hosts included, has been checked again after the repair.",
+        "The exit status is 0 when no dimension failed, else 1."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs fix-network fix with the same --internal-host as the diagnosis, adding --vpn, --fix-proxy, --allow-route-flush, --allow-remote or --force as wanted.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "FixArgs" },
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "gates" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "record",
+          "actor": "fix-network",
+          "action": "Creates the run's state directory, takes a snapshot and saves the original settings.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "prepare" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "step",
+          "actor": "fix-network",
+          "action": "Assesses the snapshot and runs the least disruptive allowed step not yet tried, checking every command's exit status.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" },
+            { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "exec_step" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "authorize",
+          "actor": "Developer",
+          "action": "Types their password when sudo asks for it in the terminal.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "argv" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "recheck",
+          "actor": "fix-network",
+          "action": "Takes a fresh snapshot and assesses again; repeats the step and recheck until healthy or nothing more is allowed.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_loop" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "verify",
+          "actor": "fix-network",
+          "action": "Waits 15 seconds, gathers everything again and prints the final report and the actions.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+            { "path": "macos/rust/fix-network/src/report.rs", "symbol": "print_actions" }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "--dry-run was given.",
+          "outcome": "The diagnosis and the plan are printed, with the flag each blocked step needs, and nothing is changed.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "dry_run" }
+          ]
+        },
+        {
+          "atStep": "step",
+          "condition": "Every remaining step needs a flag that was not given, or every remedy is manual or a reboot.",
+          "outcome": "No step runs; the report says 'fixable but not allowed' with the flags to add, or gives the manual or reboot advice.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" },
+            { "path": "macos/rust/fix-network/src/report.rs", "symbol": "remedy_text" }
+          ]
+        },
+        {
+          "atStep": "step",
+          "condition": "The tool runs inside an SSH session without --allow-remote.",
+          "outcome": "Steps that can cut the session are skipped and reported as needing --allow-remote.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "Gates::blocked" }
+          ]
+        },
+        {
+          "atStep": "authorize",
+          "condition": "There is no terminal for sudo to ask in.",
+          "outcome": "sudo -n fails and the step is recorded as FAILED.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "argv" },
+            { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "Exec::ok" }
+          ]
+        },
+        {
+          "atStep": "recheck",
+          "condition": "A step failed or did not help, and the finding has no untried step left.",
+          "outcome": "The finding falls back to its manual or reboot advice, for example signing in to the VPN from the menu bar.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "Ctx::steps" },
+            { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "Ctx::vpn_fix" }
+          ]
+        },
+        {
+          "atStep": "verify",
+          "condition": "No step ran.",
+          "outcome": "The tool does not wait; it reports the first snapshot.",
+          "sources": [
+            { "path": "macos/rust/fix-network/src/main.rs", "symbol": "cmd_fix" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    { "kind": "operation", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/operation.json", "relationship": "The commands these use cases call." },
+    { "kind": "feature", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/feature.json", "relationship": "The features they exercise." },
+    { "kind": "capability", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/capability.json", "relationship": "The capability they use." },
+    { "kind": "use-case", "folder": "agents/skills/fix-network", "path": "agents/skills/fix-network/.dev/use-case.json", "relationship": "The same goals pursued by a coding agent on the developer's behalf." }
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Scan state file state diagram",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The life of one scan, as the state file records it: the meta table's cfg and finished keys and the dirs table's done flags. There is no Rust type for it; cmd_new, cmd_resume and run_scan drive it. Running and paused look the same on disk (directories still pending, no finished key); running means a process is walking them. compress and dedupe read a paused scan with a warning and do not change it.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "cmd_new"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "cmd_resume"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "run_scan"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "finish_scan"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "finished"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "remove_state"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/util.rs",
+      "symbol": "interrupt"
+    }
+  ],
+  "machine": "Scan state file (scan.rs: meta cfg and finished, dirs.done)",
+  "initialState": "none",
+  "states": [
+    {
+      "id": "none",
+      "description": "No state file at the path; status, list, resume, compress and dedupe exit with an error pointing at new."
+    },
+    {
+      "id": "running",
+      "description": "A new or resume process takes the newest pending directory, records its entries, marks it done, and commits progress about every 2 seconds."
+    },
+    {
+      "id": "paused",
+      "description": "Directories are still pending and no process is walking them; progress up to the last commit is kept."
+    },
+    {
+      "id": "finished",
+      "description": "No directories pending; meta.finished holds the time it completed."
+    }
+  ],
+  "transitions": [
+    {
+      "from": "none",
+      "to": "running",
+      "trigger": "new",
+      "guard": "--root is a directory",
+      "action": "Create the database, store cfg and started, queue the root."
+    },
+    {
+      "from": "running",
+      "to": "running",
+      "trigger": "a pending directory is processed",
+      "action": "Queue subdirectories, record files and candidates, mark it done; commit stats and elapsed time when 2 seconds have passed."
+    },
+    {
+      "from": "running",
+      "to": "paused",
+      "trigger": "first Ctrl-C (stop flag)",
+      "action": "Finish the current directory, commit, print Scan paused."
+    },
+    {
+      "from": "running",
+      "to": "paused",
+      "trigger": "second Ctrl-C, or the process is killed",
+      "action": "Exit at once; work since the last commit is lost and redone on resume."
+    },
+    {
+      "from": "running",
+      "to": "finished",
+      "trigger": "no pending directory is left",
+      "action": "Commit, set meta.finished, print the candidate total and the next steps."
+    },
+    {
+      "from": "paused",
+      "to": "running",
+      "trigger": "resume",
+      "guard": "the meta table holds a scan configuration",
+      "action": "Read cfg back and continue with the pending directories."
+    },
+    {
+      "from": "paused",
+      "to": "paused",
+      "trigger": "new without --force",
+      "action": "Refuse: an unfinished scan exists; use resume or new --force."
+    },
+    {
+      "from": "paused",
+      "to": "running",
+      "trigger": "new --force",
+      "guard": "--root is a directory",
+      "action": "Delete the database and its WAL files, then start afresh."
+    },
+    {
+      "from": "finished",
+      "to": "finished",
+      "trigger": "resume",
+      "action": "Print that the scan is already complete."
+    },
+    {
+      "from": "finished",
+      "to": "running",
+      "trigger": "new",
+      "guard": "--root is a directory",
+      "action": "Delete the database and its WAL files, then start afresh."
+    }
+  ]
+}

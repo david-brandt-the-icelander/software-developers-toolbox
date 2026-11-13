@@ -1,0 +1,111 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer shared daemon classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "description": "The daemon server and the static client helpers.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+      "symbol": "DaemonServer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy"
+    }
+  ],
+  "types": [
+    {
+      "id": "Daemon.DaemonServer",
+      "name": "DaemonServer",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs"
+      ],
+      "members": [
+        "DaemonServer(Engine engine, string socketPath, TimeSpan idleExit)",
+        "Task Done",
+        "void Start()",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "Daemon.Proxy",
+      "name": "Proxy",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs"
+      ],
+      "members": [
+        "static Socket? TryConnect(string socketPath)",
+        "static string SocketPath(string stateDir)",
+        "static void SpawnDaemon()",
+        "static Socket? Connect(string stateDir, IEnumerable<string> rootSpecs, out string? error)",
+        "static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs)",
+        "static Task Pump(Socket socket)"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Engine",
+      "name": "Engine",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs"
+      ],
+      "members": [
+        "UsageLog Log"
+      ],
+      "external": true
+    },
+    {
+      "id": "ZazzleIndexer.Root",
+      "name": "Root",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Root.cs"
+      ],
+      "members": [
+        "static Root Parse(string spec, Engine engine)"
+      ],
+      "external": true
+    },
+    {
+      "id": "Mcp.McpServer",
+      "name": "McpServer",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs"
+      ],
+      "members": [
+        "Task RunAsync(TextReader input, TextWriter output)"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Daemon.Proxy",
+      "kind": "depends-on",
+      "description": "TryConnect checks for a live daemon before binding."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "ZazzleIndexer.Engine",
+      "kind": "depends-on",
+      "description": "The engine every session shares."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "ZazzleIndexer.Root",
+      "kind": "depends-on",
+      "description": "Parses the roots named in the hello line."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Mcp.McpServer",
+      "kind": "depends-on",
+      "description": "One per connection."
+    }
+  ]
+}

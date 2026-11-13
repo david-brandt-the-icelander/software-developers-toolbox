@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/references.schema.json",
+  "kind": "references",
+  "title": "afs source references",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "mcp",
+      "title": "Model Context Protocol",
+      "summary": "The protocol `afs serve` speaks to MCP clients.",
+      "url": "https://modelcontextprotocol.io/specification",
+      "relevance": "mcp.rs implements its stdio transport, initialize, ping, tools/list and tools/call, and defaults to protocol version 2024-11-05.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "handle" }
+      ]
+    },
+    {
+      "id": "racy-git",
+      "title": "Racy Git",
+      "summary": "Git's explanation of why a file modified in the same timestamp tick as its index entry cannot be trusted by its stat data.",
+      "url": "https://git-scm.com/docs/racy-git",
+      "relevance": "The racy-window rule (Ident.racy) follows it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "Ident.racy" }
+      ]
+    },
+    {
+      "id": "io-uring",
+      "title": "io_uring",
+      "summary": "Linux's asynchronous I/O interface.",
+      "url": "https://man7.org/linux/man-pages/man7/io_uring.7.html",
+      "relevance": "uring.rs batches openat, statx, read and close through it, linking statx before read with IOSQE_IO_LINK.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "read_all" }
+      ]
+    },
+    {
+      "id": "posix-aio",
+      "title": "POSIX lio_listio",
+      "summary": "The POSIX call that submits a list of asynchronous reads at once.",
+      "url": "https://pubs.opengroup.org/onlinepubs/9799919799/functions/lio_listio.html",
+      "relevance": "aio.rs reads each batch of files on macOS with one lio_listio(LIO_WAIT), then checks each request with aio_error and aio_return.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "submit" },
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "settle" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-user-journey/schema.json",
+  "kind": "user-journey",
+  "title": "free-disk-space journeys",
+  "folder": "macos/rust/free-disk-space",
+  "description": "A developer's way through the tool as its README orders the commands and as each command's closing lines point to the next.",
+  "sources": [
+    {"path": "macos/rust/free-disk-space/README.md", "symbol": "free-disk-space"},
+    {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "EXAMPLES"}
+  ],
+  "entities": [
+    {
+      "id": "reclaim-and-keep-space",
+      "name": "Reclaim disk space, then keep it",
+      "description": "From a nearly full disk to a Mac that cleans up after itself: quick cleanups first, then the slower scan, dedupe and compression, then the background daemon.",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "free-disk-space"},
+        {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "cmd_clean"},
+        {"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "finish_scan"}
+      ],
+      "persona": "Developer",
+      "goal": "Get space back on their Mac without losing anything they need, and not run out again.",
+      "stages": [
+        {
+          "id": "install",
+          "context": "The disk is filling up.",
+          "touchpoint": "Homebrew (the zazzle formula), the zazzle release tarball or a cargo build",
+          "action": "Installs free-disk-space, which comes with the other toolbox binaries; after a browser download of an unsigned build, removes the quarantine attribute.",
+          "outcome": "free-disk-space --help lists the commands and examples.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/README.md", "symbol": "free-disk-space"},
+            {"path": "macos/release/formula.sh", "symbol": "install"}
+          ]
+        },
+        {
+          "id": "preview-cleanup",
+          "context": "Wants to know what is safe to delete before deleting anything.",
+          "touchpoint": "free-disk-space clean all",
+          "action": "Runs the dry run.",
+          "outcome": "Per folder and per artifact, what would go, its size and the running total, the dev artifacts kept or uncertain, and `Nothing was changed. Re-run with --apply.`",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "cmd_clean"}
+          ]
+        },
+        {
+          "id": "apply-cleanup",
+          "context": "Accepts some of the targets.",
+          "touchpoint": "free-disk-space clean caches dev --apply",
+          "action": "Applies the cleanup to the targets they accept.",
+          "outcome": "Space freed, with a running total of what is deleted, the actual free-space change beside the summed sizes, and a pointer to new and compress for more. If they stop it with Ctrl-C, the next applying clean within 12 hours skips what was already done.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "cmd_clean"},
+            {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "Progress"}
+          ]
+        },
+        {
+          "id": "scan",
+          "context": "Wants more space; the scan can take long, so it may span several sittings.",
+          "touchpoint": "free-disk-space new, resume, status, list",
+          "action": "Starts a scan of their home, stops it with Ctrl-C when they need the machine, and resumes it later.",
+          "outcome": "`Scan complete` with the candidates and estimated saving, and the next steps: dedupe to preview cloning, list and compress --sample 5.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "finish_scan"},
+            {"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "cmd_resume"}
+          ]
+        },
+        {
+          "id": "dedupe",
+          "context": "Before compressing, since compressed files cannot be deduped.",
+          "touchpoint": "free-disk-space dedupe",
+          "action": "Previews the duplicates, applies cloning to a sample of 5, checks those files and the free-space change, then applies it to the rest.",
+          "outcome": "Identical copies share their blocks; the report gives the upper bound on savings and the actual change.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/README.md", "symbol": "Dedupe"},
+            {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "cmd_dedupe"}
+          ]
+        },
+        {
+          "id": "compress",
+          "context": "Wants old, large files to take less space.",
+          "touchpoint": "free-disk-space compress",
+          "action": "Compresses a sample of 5 and compares the verified saving with the free-space change, then compresses up to a limit with --yes.",
+          "outcome": "`Sample finished. If it looks right, run compress without --sample.`, then the larger run's verified saving and how many files were skipped for each reason. Where ditto --hfsCompression does not really compress (macOS 26/27), compress stops before changing anything.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
+            {"path": "macos/rust/free-disk-space/README.md", "symbol": "Caveats"}
+          ]
+        },
+        {
+          "id": "automate",
+          "context": "Does not want to do this by hand again.",
+          "touchpoint": "free-disk-space daemon install, and later daemon status and the log",
+          "action": "Installs the daemon with the targets it may clean, and checks on it now and then.",
+          "outcome": "Caches and old build output are cleared whenever free space drops below the threshold while the Mac is in use.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "cmd_install"},
+            {"path": "macos/rust/free-disk-space/README.md", "symbol": "Daemon"}
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The use cases behind the cleanup, compress, dedupe and automate stages."
+    },
+    {
+      "kind": "deployment",
+      "folder": "macos/rust/free-disk-space",
+      "path": "macos/rust/free-disk-space/.dev/deployment-diagram.json",
+      "relationship": "Where the commands and the daemon run."
+    }
+  ]
+}

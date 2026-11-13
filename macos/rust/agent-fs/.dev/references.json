@@ -1,0 +1,115 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/references.schema.json",
+  "kind": "references",
+  "title": "agent-fs dependencies",
+  "folder": "macos/rust/agent-fs",
+  "description": "The crates Cargo.toml depends on, and what each is for. The protocol and system references are in src/.dev/references.json.",
+  "entities": [
+    {
+      "id": "blake3",
+      "title": "blake3",
+      "summary": "BLAKE3 hashing.",
+      "url": "https://crates.io/crates/blake3",
+      "relevance": "Content etags: the first 64 bits of a file's or a reply's BLAKE3 hash.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "etag" }]
+    },
+    {
+      "id": "ignore",
+      "title": "ignore",
+      "summary": "Gitignore-aware, parallel directory walking (from ripgrep).",
+      "url": "https://crates.io/crates/ignore",
+      "relevance": "Every walk of search, list and outline: .gitignore, .ignore, git excludes, globs, hidden files and depth.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "builder" }]
+    },
+    {
+      "id": "regex-and-memchr",
+      "title": "regex and memchr",
+      "summary": "ripgrep's regex engine and byte search with runtime-detected SIMD.",
+      "url": "https://crates.io/crates/regex",
+      "relevance": "Matching search patterns over file bytes, counting lines and finding line ends.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "build_regex" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "line_count" }
+      ],
+      "links": [{ "label": "memchr", "url": "https://crates.io/crates/memchr" }]
+    },
+    {
+      "id": "regex-syntax",
+      "title": "regex-syntax",
+      "summary": "The regex crate's parser and literal extractor.",
+      "url": "https://crates.io/crates/regex-syntax",
+      "relevance": "Extracting the literals every match must start or end with, for the trigram index.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/index.rs", "symbol": "alternatives" }]
+    },
+    {
+      "id": "tree-sitter",
+      "title": "tree-sitter and its grammar crates",
+      "summary": "Incremental parsers; the grammar crates (rust, python, javascript, typescript, go, java, c, cpp) compile C at build time.",
+      "url": "https://crates.io/crates/tree-sitter",
+      "relevance": "The outline parser.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "grammar" }]
+    },
+    {
+      "id": "similar",
+      "title": "similar",
+      "summary": "Text diffing.",
+      "url": "https://crates.io/crates/similar",
+      "relevance": "Line hunks for diff replies and diff_since, with a 250 ms timeout.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" }]
+    },
+    {
+      "id": "serde",
+      "title": "serde and serde_json",
+      "summary": "Serialization.",
+      "url": "https://crates.io/crates/serde_json",
+      "relevance": "The JSON protocol: strict request structs and JSON replies.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/req.rs", "symbol": "Request" }]
+    },
+    {
+      "id": "clap",
+      "title": "clap",
+      "summary": "Command-line parsing.",
+      "url": "https://crates.io/crates/clap",
+      "relevance": "The call, jsonl and serve subcommands, --help and --version.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Cli" }]
+    },
+    {
+      "id": "libc",
+      "title": "libc",
+      "summary": "Raw bindings to the C library.",
+      "url": "https://crates.io/crates/libc",
+      "relevance": "Read hints (O_NOATIME, posix_fadvise, F_RDAHEAD), the macOS AIO calls and the io_uring statx and errno values.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "advise_sequential" },
+        { "path": "macos/rust/agent-fs/src/aio.rs", "symbol": "submit" }
+      ]
+    },
+    {
+      "id": "io-uring",
+      "title": "io-uring",
+      "summary": "Rust bindings to Linux io_uring; a dependency only on Linux.",
+      "url": "https://crates.io/crates/io-uring",
+      "relevance": "The batched loader on Linux.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/src/uring.rs", "symbol": "load_many" }]
+    },
+    {
+      "id": "tempfile",
+      "title": "tempfile",
+      "summary": "Temporary files and directories; a dev-dependency only.",
+      "url": "https://crates.io/crates/tempfile",
+      "relevance": "Fixture directories in the unit and end-to-end tests.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "sample" }]
+    }
+  ]
+}

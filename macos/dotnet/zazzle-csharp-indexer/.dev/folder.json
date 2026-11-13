@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-csharp-indexer",
+  "folder": "macos/dotnet/zazzle-csharp-indexer",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-csharp-indexer",
+      "summary": "A single-file MCP server, written in C#, that answers code questions for coding agents over one or more git work trees, backed by a per-user daemon that keeps an index current; zazzle also asks that daemon for terse views of C# files.",
+      "purpose": "Holds the whole tool: the project in src/, the xunit tests in tests/, the build settings both share (Directory.Build.props, including the 0.0.0-dev version a release replaces with its tag's) and the README a person reads to install and use it. It has its own build (dotnet) and its own CI job, apart from the repository's Rust tools and the C invoker, but ships inside the same v* release as them.",
+      "boundaries": [
+        "Released by .github/workflows/release.yml together with the other tools, for a pushed v* tag or a release run by hand with a bump, and built with that release's version: gzipped per macOS CPU type in the macOS tarball and the zazzle Homebrew formula, plain in the Linux tarballs (delivery.json). The pipeline is recorded in .github/.dev and the release tarballs, formula and version scripts in macos/release/.dev.",
+        "Its daemon socket is also used by zazzled (macos/rust/zazzled/), which asks for the view tool when zazzle reads a .cs file; that client's code is documented there.",
+        "zazzle is the agents' front door for reading, searching and editing files: init registers zazzled's MCP server beside the indexer's, and the redirect hook names zazzle's tools. zazzle itself is documented in macos/rust/zazzled/ and macos/c/zazzle/.",
+        "Code rules for this folder are in macos/dotnet/style.md."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "TargetFramework"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "zazzle-csharp-indexer"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Build the C# indexer for both CPU types"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "post_install_steps"
+        }
+      ]
+    }
+  ]
+}

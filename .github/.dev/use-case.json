@@ -1,0 +1,196 @@
+{
+  "$schema": "../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "Release use cases",
+  "folder": ".github",
+  "description": "How a version of the tools gets from a tag to the places people install it from.",
+  "sources": [
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "jobs"
+    }
+  ],
+  "entities": [
+    {
+      "id": "publish-a-release",
+      "name": "Publish a release",
+      "description": "The owner runs the release workflow with a version bump, or pushes a vX.Y.Z tag; the workflow works out the version, stamps it into every binary, tests and builds every tool, publishes the tarballs and the bottle, and pushes the zazzle formula to the Homebrew tap.",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "jobs"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
+        }
+      ],
+      "actor": "Owner",
+      "actorDocument": "Actors/owner.md",
+      "goal": "Make a new version of zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network and free-disk-space installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
+      "preconditions": [
+        "The change is on main: main takes only pull requests.",
+        "The repository holds the secrets CLOUDFLARE_R2_TOKEN and HOMEBREW_TAP_TOKEN; the Apple signing secrets are optional.",
+        "The tap repository zazzcat/homebrew-z has at least one commit on its default branch."
+      ],
+      "postconditions": [
+        "The commit carries the tag vX.Y.Z, and every published binary reports X.Y.Z as its version.",
+        "A GitHub release named after the tag, with no release notes, holds zazzle-macos-universal.tar.gz, the two Linux tarballs, their .sha256 files and the zazzle bottle.",
+        "The download bucket holds the same tarballs under zazzle/<tag>/ and zazzle/latest/.",
+        "Formula/zazzle.rb in the tap names the tag as its version, unless it was already identical."
+      ],
+      "flow": [
+        {
+          "id": "tag",
+          "actor": "Owner",
+          "participantKind": "actor",
+          "actorDocument": "Actors/owner.md",
+          "action": "Runs the release workflow by hand with bump patch (the default), minor or major, or pushes a tag vX.Y.Z.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "on"
+            }
+          ]
+        },
+        {
+          "id": "version",
+          "actor": "Release workflow",
+          "participantKind": "system",
+          "action": "Works out the tag and version: a pushed tag as it is, or the next version after the latest vX.Y.Z tag for the bump (counting from v0.0.0 when there is none); for a manual run it tags the commit and pushes the tag.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "version"
+            },
+            {
+              "path": "macos/release/version.sh",
+              "symbol": "next"
+            }
+          ]
+        },
+        {
+          "id": "macos",
+          "actor": "Release workflow",
+          "participantKind": "system",
+          "action": "On macOS: stamps the version into every crate, tests the workspace, trains the PGO profile, builds both architectures, builds and smoke tests the zazzle invoker, makes universal binaries, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set, packs the tarball, creates the GitHub release and copies the tarball to the download bucket.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "macos"
+            },
+            {
+              "path": "macos/release/pgo.sh",
+              "symbol": "profdata"
+            },
+            {
+              "path": "macos/release/sign-and-notarize.sh",
+              "symbol": "cleanup"
+            }
+          ]
+        },
+        {
+          "id": "linux",
+          "actor": "Release workflow",
+          "participantKind": "system",
+          "action": "On Linux x86_64 and aarch64: tests zazzled, builds it with a PGO profile, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz to the release and copies it to the download bucket.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "linux"
+            }
+          ]
+        },
+        {
+          "id": "homebrew",
+          "actor": "Release workflow",
+          "participantKind": "system",
+          "action": "Builds the bottle, uploads it to the release, writes Formula/zazzle.rb into a checkout of zazzcat/homebrew-z and pushes it to the tap.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "homebrew"
+            },
+            {
+              "path": "macos/release/bottle.sh",
+              "symbol": "root"
+            },
+            {
+              "path": "macos/release/formula.sh",
+              "symbol": "bottle_block"
+            }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "version",
+          "condition": "The workflow was run by hand with bump none.",
+          "outcome": "Every binary is built and tested with version 0.0.0-dev, and nothing is tagged or published.",
+          "sources": [
+            {
+              "path": "macos/release/version.sh",
+              "symbol": "publish=false"
+            }
+          ]
+        },
+        {
+          "atStep": "version",
+          "condition": "The pushed tag is not vX.Y.Z.",
+          "outcome": "The version job fails and nothing is built or published.",
+          "sources": [
+            {
+              "path": "macos/release/version.sh",
+              "symbol": "is not vX.Y.Z"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "An Apple secret is missing.",
+          "outcome": "The binaries are released unsigned with a warning; when the repository variable REQUIRE_SIGNING is true, the job fails and nothing is published.",
+          "sources": [
+            {
+              "path": "macos/release/sign-and-notarize.sh",
+              "symbol": "missing"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "Apple does not accept the notarization.",
+          "outcome": "The job fails, prints Apple's log, and nothing is published.",
+          "sources": [
+            {
+              "path": "macos/release/sign-and-notarize.sh",
+              "symbol": "status"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "The PGO training writes no profile.",
+          "outcome": "pgo.sh fails, so the build and everything after it do not run.",
+          "sources": [
+            {
+              "path": "macos/release/pgo.sh",
+              "symbol": "training wrote no profile"
+            }
+          ]
+        },
+        {
+          "atStep": "homebrew",
+          "condition": "The formula did not change.",
+          "outcome": "Nothing is committed to the tap.",
+          "sources": [
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "homebrew: Write and push the formula"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "relatedViews": []
+}

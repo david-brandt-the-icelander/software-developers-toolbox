@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "fix-network limitations",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "scutil-vpns-only",
+      "title": "VPN control covers only scutil-managed VPNs",
+      "summary": "Only VPNs listed by scutil --nc (built-in IKEv2/IPSec/L2TP and Network-Extension VPNs such as WireGuard) are read and reconnected; other clients, including Cisco Secure Client/AnyConnect, are only observed through their tunnel routes.",
+      "impact": "A tunnel from another client is reported as UNSUPPORTED with its state unreadable, and a fault in it gets manual advice instead of a reconnect. --vpn cannot sign in when MFA or SSO is required.",
+      "workaround": "Reconnect the client yourself, from its own app or the menu bar.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "vpn_facts" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "vpn" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "Ctx::vpn_fix" },
+        { "path": "macos/rust/fix-network/README.md", "symbol": "Limitations" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/backlog.json", "entityId": "anyconnect-control", "description": "Control of Cisco Secure Client/AnyConnect is deferred work." }
+      ]
+    },
+    {
+      "id": "scripted-not-real",
+      "title": "Tested against a scripted Mac, not a real one",
+      "summary": "The scripted command output the tests use follows documented macOS formats; it was not captured from a real Mac, and the repair steps have not yet run on one.",
+      "impact": "A difference between the documented formats and what a real Mac prints, or a repair step that behaves differently on real hardware, would not be caught by the tests.",
+      "details": "Every command, lookup and connection goes through the Sys trait, and the tests drive the whole tool against sys::fake::Fake; see verification.json.",
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "tests" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "tests::mac" }
+      ],
+      "origin": "Moved from the second bullet of Limitations in macos/rust/fix-network/README.md.",
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/backlog.json", "entityId": "real-mac-check" }
+      ]
+    },
+    {
+      "id": "wifi-by-address",
+      "title": "Wi-Fi association is judged by the address, not the SSID",
+      "summary": "The tool never asks which network the Mac joined; a Wi-Fi link counts as up when it has a usable IPv4 or global IPv6 address.",
+      "impact": "Being joined to the wrong network is not reported as such.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "link_facts" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "local" },
+        { "path": "macos/rust/fix-network/README.md", "symbol": "Limitations" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/decisions.json", "entityId": "wifi-by-address" }
+      ]
+    },
+    {
+      "id": "macos-only",
+      "title": "macOS only",
+      "summary": "On any other OS every command is refused with exit status 2 before anything runs.",
+      "impact": "The binary builds and its tests run on Linux, but it cannot diagnose a Linux machine.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "run" }
+      ]
+    },
+    {
+      "id": "never-done",
+      "title": "What the tool never does",
+      "summary": "No reboot, no router changes, no deleting network preferences, VPN profiles or keychains, no public DNS in place of the configured servers, no edits to scoped DNS or MDM-managed settings, no killing VPN processes, no stored credentials.",
+      "impact": "Problems that need one of these end as 'not fixable by this tool' or 'reboot needed', and the person does it.",
+      "details": "The repair steps are exactly the eight in model.rs's Step; none of them does any of the above. The DNS-server finding says that public DNS is never substituted automatically.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/model.rs", "symbol": "Step" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "exec_step" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "dns_finding" },
+        { "path": "macos/rust/fix-network/README.md", "symbol": "Permissions and safety" }
+      ]
+    },
+    {
+      "id": "proxy-repair-scope",
+      "title": "Proxy repair disables only web and secure web proxies on the active service",
+      "summary": "--fix-proxy turns off an unreachable HTTP or HTTPS proxy on the service in use; an unreachable PAC file is reported but never changed.",
+      "impact": "A proxy set by a managed profile or on another service is left as it is, and the step fails with that explanation.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "fix_proxy" },
+        { "path": "macos/rust/fix-network/src/corp.rs", "symbol": "proxy" }
+      ]
+    }
+  ]
+}

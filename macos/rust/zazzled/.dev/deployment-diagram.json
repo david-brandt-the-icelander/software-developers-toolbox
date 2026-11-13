@@ -1,0 +1,189 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle / zazzled deployment diagram",
+  "folder": "macos/rust/zazzled",
+  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads the daemon starts and talks to the zazzle-csharp-indexer daemon. The release tarballs ship zazzle and zazzled side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "serve_main"
+    },
+    {
+      "path": "macos/rust/zazzled/src/client.rs",
+      "symbol": "socket_path"
+    },
+    {
+      "path": "macos/rust/zazzled/src/server.rs",
+      "symbol": "bind"
+    },
+    {
+      "path": "macos/rust/zazzled/src/launchd.rs",
+      "symbol": "plist"
+    },
+    {
+      "path": "macos/rust/zazzled/src/store.rs",
+      "symbol": "default_dir"
+    },
+    {
+      "path": "macos/rust/zazzled/src/indexer.rs",
+      "symbol": "Indexer::start_daemon"
+    },
+    {
+      "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+      "symbol": "run_with"
+    },
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "run_command"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "connect_daemon"
+    },
+    {
+      "path": "macos/rust/zazzled/README.md",
+      "symbol": "Setup"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Package"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac (zazzle itself on arm64 only) or a Linux machine (x86_64 or aarch64), with the binaries built from source or unpacked from a release tarball."
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "A shell where the developer runs `zazzled install`, `zazzled run` or zazzle itself.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent",
+      "kind": "client",
+      "description": "An agent that runs `zazzle ...` in a shell (setting ZAZZLE_SESSION), or whose MCP client starts `zazzled mcp`, or `zazzle proxy` in front of another server, in the project directory.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "zazzle",
+      "name": "zazzle process",
+      "kind": "process",
+      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with zazzled instead."
+    },
+    {
+      "id": "mcp",
+      "name": "zazzled mcp process",
+      "kind": "process",
+      "description": "One per MCP connection, started by the client with standard input and output as the transport; one session for its lifetime."
+    },
+    {
+      "id": "daemon",
+      "name": "zazzled serve process",
+      "kind": "process",
+      "description": "The daemon, listening on $ZAZZLE_SOCK (by default ~/.zazzle/sock, mode 0600 in a 0700 directory): 2 to 8 worker threads and a pool of helper threads; exits after the idle time (default 1800 s) with no connection open."
+    },
+    {
+      "id": "cache",
+      "name": "Cache directory",
+      "kind": "cache",
+      "description": "$ZAZZLE_CACHE_DIR, by default ~/.zazzle/v1: paths.log, derived summaries only."
+    },
+    {
+      "id": "outputs",
+      "name": "Output store",
+      "kind": "cache",
+      "description": "$ZAZZLE_OUTPUTS_DIR, by default ~/.zazzle/outputs (mode 0700): the shown text and full input of clean, run and proxy outputs, files of mode 0600, removed after an hour or when the store passes its size limit."
+    },
+    {
+      "id": "wrap",
+      "name": "zazzled wrap process",
+      "kind": "process",
+      "description": "One per `zazzle run`: runs the caller's command as a child with the caller's environment, prints its cleaned output and exits with its code."
+    },
+    {
+      "id": "proxy",
+      "name": "zazzled proxy process",
+      "kind": "process",
+      "description": "One per `zazzle proxy`: runs an MCP server as a child over stdio, or listens on a local TCP address (default 127.0.0.1:8808) in front of an HTTP one, keeping client connections open for further requests."
+    },
+    {
+      "id": "upstream-http",
+      "name": "Upstream MCP endpoint",
+      "kind": "external-service",
+      "description": "A Streamable HTTP MCP server named with --upstream, reached over HTTP or HTTPS.",
+      "condition": "`zazzle proxy --upstream URL`"
+    },
+    {
+      "id": "indexer",
+      "name": "zazzle-csharp-indexer daemon process",
+      "kind": "process",
+      "description": "The C# indexer's own daemon, listening on daemon.sock in its state directory; started detached by zazzled when a C# file is read and nothing listens.",
+      "condition": "C# reads, with zazzle-csharp-indexer installed"
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "kind": "external-service",
+      "description": "The user's gui launchd domain, with ~/Library/LaunchAgents/com.zazzle.zazzled.plist loaded: holds the socket and starts `zazzled serve` on a connection.",
+      "condition": "macOS, after `zazzled install`"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "zazzled-bin",
+      "name": "zazzled",
+      "source": "macos/rust/zazzled/Cargo.toml",
+      "deployedTo": "daemon",
+      "description": "The Rust binary; the same file also runs as `zazzled mcp`, `zazzled proxy`, `zazzled wrap`, `zazzled run`, `zazzled install` and `zazzled uninstall`."
+    },
+    {
+      "id": "zazzle-bin",
+      "name": "zazzle",
+      "source": "macos/c/zazzle/Makefile",
+      "deployedTo": "zazzle",
+      "description": "The C invoker, built into macos/c/zazzle/build/zazzle; it starts the zazzled beside itself unless ZAZZLE_DAEMON names another."
+    },
+    {
+      "id": "plist",
+      "name": "com.zazzle.zazzled.plist",
+      "source": "macos/rust/zazzled/src/launchd.rs",
+      "deployedTo": "launchd",
+      "description": "Written by `zazzled install`: the zazzled path with `serve`, the socket path with mode 0600, process type Interactive."
+    }
+  ],
+  "relationships": [
+    { "from": "machine", "to": "zazzle", "kind": "hosts", "description": "Short-lived, one per command." },
+    { "from": "machine", "to": "mcp", "kind": "hosts", "description": "One per MCP connection." },
+    { "from": "machine", "to": "daemon", "kind": "hosts", "description": "Long-lived until idle." },
+    { "from": "machine", "to": "wrap", "kind": "hosts", "description": "One per `zazzle run`." },
+    { "from": "machine", "to": "proxy", "kind": "hosts", "description": "As long as its MCP client keeps it." },
+    { "from": "machine", "to": "indexer", "kind": "hosts", "description": "Long-lived, managed by the indexer itself." },
+    { "from": "terminal", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazzle CMD ...`." },
+    { "from": "agent", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazzle CMD ...` in its shell." },
+    { "from": "agent", "to": "mcp", "kind": "connects-to", "description": "Its MCP client starts `zazzled mcp` and speaks JSON-RPC on its standard input and output." },
+    { "from": "agent", "to": "proxy", "kind": "connects-to", "description": "Its MCP client starts `zazzle proxy -- CMD` on stdio, or sends HTTP requests to the proxy's listen address." },
+    { "from": "zazzle", "to": "daemon", "kind": "connects-to", "description": "Unix socket, descriptor mode: the request with SCM_RIGHTS descriptors; the daemon writes to zazzle's own stdout or stderr and answers with a status byte. When nothing listens, zazzle first starts `zazzled serve` detached with its streams on /dev/null and retries for up to 3 s." },
+    { "from": "zazzle", "to": "wrap", "kind": "connects-to", "description": "`zazzle run` replaces itself (exec) with `zazzled wrap`." },
+    { "from": "zazzle", "to": "proxy", "kind": "connects-to", "description": "`zazzle proxy` replaces itself (exec) with `zazzled proxy`." },
+    { "from": "mcp", "to": "daemon", "kind": "connects-to", "description": "Unix socket, relay mode: the request with its working directory; the status byte and text come back on the socket. When nothing listens, starts `zazzled serve` from its own executable and retries for up to 3 s." },
+    { "from": "proxy", "to": "upstream-http", "kind": "connects-to", "description": "HTTP or HTTPS, one upstream request per client request, through one client shared by every connection." },
+    { "from": "daemon", "to": "indexer", "kind": "connects-to", "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call view. When nothing listens, starts `zazzle-csharp-indexer daemon` detached and waits up to 5 s." },
+    { "from": "launchd", "to": "daemon", "kind": "hosts", "description": "Starts `zazzled serve` on a connection and passes it the listening socket." },
+    { "from": "daemon", "to": "outputs", "kind": "connects-to", "description": "clean saves its answer and input; read-again loads stored outputs, including those wrap and proxy saved." },
+    { "from": "wrap", "to": "outputs", "kind": "connects-to", "description": "Saves each run's result and raw output, reaping old entries." },
+    { "from": "proxy", "to": "outputs", "kind": "connects-to", "description": "Saves each shortened text with its original, reaping old entries." },
+    { "from": "daemon", "to": "cache", "kind": "connects-to", "description": "Loads the log at start; appends pending records every 100 ms and on exit." },
+    { "from": "terminal", "to": "launchd", "kind": "connects-to", "description": "`zazzled install` and `zazzled uninstall` run launchctl bootstrap and bootout." }
+  ]
+}

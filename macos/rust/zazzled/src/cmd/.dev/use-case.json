@@ -1,0 +1,411 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle command use cases",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "description": "What a caller does with the commands, step by step: edit a file it read, and get back what a cleaned output cut.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cmd/edit.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "agents/skills/zazzle/SKILL.md",
+      "symbol": "Edit"
+    }
+  ],
+  "entities": [
+    {
+      "id": "edit-a-file-safely",
+      "name": "Edit a file it has read",
+      "description": "A coding agent reads the source of a file, then changes it, and the edit lands only if the file is still what it read.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "replace_lines"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "replace_text"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "Edit"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Change a file it has read without overwriting a newer version or writing outside the project.",
+      "preconditions": [
+        "The agent runs zazzle, or `zazzled mcp`, from the project directory, which is the root edits are confined to.",
+        "The file is a text file inside that directory."
+      ],
+      "postconditions": [
+        "The file holds the new text, written in one rename, with its line endings and permissions kept.",
+        "The agent has the file's new sha for a further edit."
+      ],
+      "flow": [
+        {
+          "id": "read",
+          "actor": "Coding agent",
+          "action": "Reads the file or a range with `zazzle read FILE:A-B --source` (adding `--anchors` for line anchors) and keeps the sha from the header; for files other than C#, a plain read shows the sha too.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/read.rs",
+              "symbol": "render"
+            },
+            {
+              "path": "agents/skills/zazzle/SKILL.md",
+              "symbol": "Edit"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "edit",
+          "actor": "Coding agent",
+          "action": "Runs `zazzle edit FILE --old TEXT --new TEXT --expect SHA` or `--lines A-B --new TEXT --expect SHA`, or `--at A#xyz-B#xyz` with the anchors.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "run"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "confine",
+          "actor": "edit",
+          "action": "Resolves the path through symlinks and checks it lies inside the working directory.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "confine"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "check",
+          "actor": "edit",
+          "action": "Loads the file, refuses a binary file and lines outside it, and checks the sha prefix or the anchors against the file as it is now.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "open_target"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "check_precondition"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "write",
+          "actor": "edit",
+          "action": "Builds the new content in the file's line-ending style, hashes the file on disk again, writes a temporary file and renames it over the original, and drops the cached record.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "commit"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "write_atomic"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "report",
+          "actor": "edit",
+          "action": "Answers `ok FILE: lines A-B replaced by N (now A-C); sha NEW` (or what the text replacement did).",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "replace_lines"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "confine",
+          "condition": "The path resolves outside the working directory, directly, through .. or through a symlink.",
+          "outcome": "Refused with `refusing to write outside DIR (run from a parent directory)`; nothing is written.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "confine"
+            }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "Neither --expect nor --at is given.",
+          "outcome": "Refused: `edits need --expect SHA (from read --source) or --at A#xyz-B#xyz (from read --source --anchors)`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "check_precondition"
+            }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "The sha no longer matches the file, or an anchor no longer matches its line.",
+          "outcome": "Refused with `the file is not the version you read; read it again with --source` or `line N is not what you read; ...`, without revealing the current sha; the agent reads again.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "check_precondition"
+            },
+            {
+              "path": "agents/skills/zazzle/SKILL.md",
+              "symbol": "Edit"
+            }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "The range lies outside the file, the --old text is missing or not unique, or the file is binary.",
+          "outcome": "Refused with the file's line count, the lines that hold the text's first line, the places it matches, or `binary file`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "replace_lines"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "replace_text"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "open_target"
+            }
+          ]
+        },
+        {
+          "atStep": "write",
+          "condition": "The file changed between loading and writing.",
+          "outcome": "Refused with `file changed while editing; read it again`; the file is left as the other writer left it.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "commit"
+            }
+          ]
+        },
+        {
+          "atStep": "write",
+          "condition": "The file has more than one hard link.",
+          "outcome": "It is rewritten in place, so every link sees the change, instead of being replaced by rename.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/edit.rs",
+              "symbol": "write_atomic"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "get-a-cut-output-in-full",
+      "name": "Get back what a cleaned output cut",
+      "description": "A coding agent that was shown a cleaned output with something cut fetches the uncut lines it needs by the output's id, without running the command again.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "read-again"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "See lines a budget, a profile or a lossy cleaning step left out of an output it was shown, without rerunning a build or test or calling the other server again.",
+      "preconditions": [
+        "The agent was shown a `zazzle clean`, `zazzle run` or proxied output that carries an output id: `[r:ID]` at the start, or a `[r:ID shortened by zazzle]` item from the proxy.",
+        "Less than an hour has passed and the store has not been trimmed past it; the process that stored the output and the daemon that answers use the same store directory."
+      ],
+      "postconditions": [
+        "The agent has the lines it asked for, numbered as in the original output, or the next read-again command for the part that did not fit.",
+        "Nothing was run again and nothing was written."
+      ],
+      "flow": [
+        {
+          "id": "see-hint",
+          "actor": "Coding agent",
+          "action": "Reads an output that ends with `[full output: read-again r:ID --full]` (clean and run) or carries `[r:ID shortened by zazzle; full text: read-again r:ID --full]` (proxy).",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/clean.rs",
+              "symbol": "store"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::keep"
+            },
+            {
+              "path": "agents/skills/zazzle/SKILL.md",
+              "symbol": "read-again"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "action": "Runs `zazzle read-again r:ID --full`, adding `--lines A-B` for a range and `--budget T` for more room, or calls zazzle_read_again with full, lines and budget.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "SPEC"
+            },
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "read_again_args"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "load",
+          "actor": "read-again",
+          "action": "With --full (or --lines) skips the session rerun and loads the stored full text by its id from the engine's output store.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "macos/rust/zazzled/src/outputs.rs",
+              "symbol": "load"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "render",
+          "actor": "read-again",
+          "action": "Removes terminal escapes and redraws line by line, numbers the lines of the range, keeps its head and tail within the budget (default 3000 tokens) and names the elided lines with the read-again command that shows them.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "render_full"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/clean.rs",
+              "symbol": "plain_lines"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/read.rs",
+              "symbol": "fit"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "ask",
+          "condition": "The agent leaves out --full and --lines.",
+          "outcome": "The output comes back exactly as it was shown, under `[r:ID]`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "run"
+            }
+          ]
+        },
+        {
+          "atStep": "load",
+          "condition": "The store does not hold the id: it is older than an hour, was trimmed, was never stored, or the store is another directory.",
+          "outcome": "`no response r:ID in this session or the output store (stored outputs are kept for an hour); run the command again`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "macos/rust/zazzled/src/outputs.rs",
+              "symbol": "reap"
+            }
+          ]
+        },
+        {
+          "atStep": "load",
+          "condition": "The id is a session response, which is never cut.",
+          "outcome": "`r:ID was not cut; read-again r:ID gives it whole`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "run"
+            }
+          ]
+        },
+        {
+          "atStep": "render",
+          "condition": "The range does not parse or starts past the last line.",
+          "outcome": "`bad line range '...'; use A-B`, or `r:ID has N lines; line A is past the end`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/again.rs",
+              "symbol": "render_full"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The read, edit and read-again operations the steps call."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+      "relationship": "The checked edits and the cleaning these use cases rely on."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/capability.json",
+      "relationship": "The capability they use."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Stored outputs and read-again, which getting a cut output in full relies on."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/use-case.json",
+      "relationship": "Running a build or test, whose cut output this use case gets back."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
+      "relationship": "Using another MCP server through the proxy, whose shortened texts this use case gets back."
+    }
+  ]
+}

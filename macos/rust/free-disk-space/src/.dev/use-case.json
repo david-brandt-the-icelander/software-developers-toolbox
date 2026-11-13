@@ -1,0 +1,704 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "free-disk-space use cases",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "What a developer does with the binary in a terminal to get disk space back, step by step, with the branches the code has. The binary does not know who runs it; a coding agent running the same commands follows the skill's use case in agents/skills/free-disk-space.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "EXAMPLES"
+    },
+    {
+      "path": "macos/rust/free-disk-space/README.md",
+      "symbol": "free-disk-space"
+    }
+  ],
+  "entities": [
+    {
+      "id": "clean-up",
+      "name": "Clean up regenerable files",
+      "description": "The developer previews what a cleanup would delete, then runs it.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Free space by deleting caches, downloads, trash and build output that can be had again, without losing anything in use or unproven.",
+      "preconditions": [
+        "The binary is installed and the developer is in a terminal on their Mac."
+      ],
+      "postconditions": [
+        "The chosen targets are emptied, except entries listed as protected, failed or uncertain.",
+        "The developer has seen the summed sizes and the volume's actual free-space change."
+      ],
+      "flow": [
+        {
+          "id": "preview",
+          "actor": "Developer",
+          "action": "Runs clean with the targets, or all, and no --apply.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "CleanArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "report-preview",
+          "actor": "free-disk-space",
+          "action": "Prints the free space, then per target what it would delete, its size and the running total, the kept and uncertain dev artifacts, and `Nothing was changed. Re-run with --apply.`",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "clean_dev"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "apply",
+          "actor": "Developer",
+          "action": "Runs clean again with the targets they accept and --apply.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "CleanArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "delete",
+          "actor": "free-disk-space",
+          "action": "Empties each target in a fixed order (caches, xcode, downloads, trash, dev, brew, docker), rechecking each dev artifact just before deleting it.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "ordered_targets"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "clean_dev"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "rm_tree"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "summary",
+          "actor": "free-disk-space",
+          "action": "Prints the sum of sizes deleted, the actual free-space change, Docker's state and the protected, failed and uncertain entries.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "print_list"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "apply",
+          "condition": "downloads is among the targets.",
+          "outcome": "A note warns that ~/Downloads will be emptied completely, hidden files included, and the run goes on.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            }
+          ]
+        },
+        {
+          "atStep": "apply",
+          "condition": "An applying clean was interrupted less than 12 hours ago.",
+          "outcome": "It says it is resuming an interrupted run and skips the steps finished then; when it completes, it forgets them.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "Progress::load"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            }
+          ]
+        },
+        {
+          "atStep": "delete",
+          "condition": "A dev artifact is modified today, in use, or cannot be proved regenerable, or changed since the first check.",
+          "outcome": "It is kept and listed as kept or uncertain.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "verify_artifact"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "clean_dev"
+            }
+          ]
+        },
+        {
+          "atStep": "delete",
+          "condition": "Docker Desktop is not running.",
+          "outcome": "Docker is left alone and reported as not running.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "clean_docker"
+            }
+          ]
+        },
+        {
+          "atStep": "delete",
+          "condition": "The developer presses Ctrl-C.",
+          "outcome": "The current item finishes, the remaining targets are skipped and the summary is printed; a second Ctrl-C exits at once. With --apply, the folders, artifacts and targets finished so far are recorded, and the next applying clean within 12 hours skips them.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/util.rs",
+              "symbol": "interrupt"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "Progress::mark"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "compress-files",
+      "name": "Compress inactive files",
+      "description": "The developer scans for compressible files, tries a sample, then compresses more.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Make large, old files take less space without changing what they read as.",
+      "preconditions": [
+        "The developer is on a Mac with an APFS data volume and /usr/bin/ditto."
+      ],
+      "postconditions": [
+        "The chosen candidates are compressed in place, or marked skipped or failed with a reason.",
+        "The developer has seen the verified saving and the free-space change."
+      ],
+      "flow": [
+        {
+          "id": "scan",
+          "actor": "Developer",
+          "action": "Runs new with a root and a minimum size.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "NewArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "record",
+          "actor": "free-disk-space",
+          "action": "Walks the tree, records candidates in the state file and prints `Scan complete` with the candidate count, estimated saving and next steps.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "run_scan"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "finish_scan"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "inspect",
+          "actor": "Developer",
+          "action": "Looks at status and list.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "cmd_status"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "cmd_list"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "sample",
+          "actor": "Developer",
+          "action": "Runs compress --sample 5.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "CompressArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "compress",
+          "actor": "free-disk-space",
+          "action": "Prints the plan, checks that ditto really compresses a probe file, asks for confirmation on a terminal, compresses each file through a verified temp copy with a progress line of files compressed and not, and prints the skips per reason and the verified saving beside the free-space change.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "cmd_compress"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "compress_one"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "ditto_compresses"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "widen",
+          "actor": "Developer",
+          "action": "If the sample looks right, runs compress again with a --limit and --yes.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "cmd_compress"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "record",
+          "condition": "The developer presses Ctrl-C.",
+          "outcome": "The scan pauses after the current directory; resume continues it later.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "finish_scan"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "cmd_resume"
+            }
+          ]
+        },
+        {
+          "atStep": "scan",
+          "condition": "An unfinished scan exists in the state file.",
+          "outcome": "new refuses; the developer runs resume, or new --force to discard it.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/scan.rs",
+              "symbol": "cmd_new"
+            }
+          ]
+        },
+        {
+          "atStep": "compress",
+          "condition": "The developer answers anything but y.",
+          "outcome": "Aborted; nothing changed.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "confirm"
+            }
+          ]
+        },
+        {
+          "atStep": "compress",
+          "condition": "ditto --hfsCompression writes an uncompressed probe copy (the code names macOS 26/27).",
+          "outcome": "compress exits with an error before asking; nothing changed.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "ditto_compresses"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "cmd_compress"
+            }
+          ]
+        },
+        {
+          "atStep": "compress",
+          "condition": "A file is open, changed, too recent, flagged, or not worth enough.",
+          "outcome": "It is skipped and stays as it was; the summary counts it under its reason, and list --status skipped shows its note.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "precheck"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "compress_verified"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "print_skip_reasons"
+            }
+          ]
+        },
+        {
+          "atStep": "compress",
+          "condition": "Three files in a row fail verification.",
+          "outcome": "The run stops for safety and reports what it did.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "cmd_compress"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "dedupe-files",
+      "name": "Turn duplicates into clones",
+      "description": "After a scan, the developer previews duplicate cloning, tries a sample, then applies it.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Stop identical copies of the same file taking space more than once.",
+      "preconditions": [
+        "A scan has recorded file names in the state file.",
+        "The developer is on a Mac with an APFS volume."
+      ],
+      "postconditions": [
+        "Each replaced duplicate is a clone of the kept copy, with its own metadata, and marked cloned in the state file.",
+        "The developer has seen the upper bound on savings and the free-space change."
+      ],
+      "flow": [
+        {
+          "id": "preview",
+          "actor": "Developer",
+          "action": "Runs dedupe without --apply.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "DedupeArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "hash",
+          "actor": "free-disk-space",
+          "action": "Hashes each group of same-named, same-sized files with a progress line, lists up to 50 files it would clone, then says it is still hashing, and ends with the upper bound on savings.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "plan"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "dedupe_group"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "sample",
+          "actor": "Developer",
+          "action": "Runs dedupe --sample 5 --apply and checks the files and the free-space change.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "DedupeArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "clone",
+          "actor": "free-disk-space",
+          "action": "Replaces each duplicate with a verified clone of the kept copy and prints the clones made and the free-space change.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "clone_over"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "cmd_dedupe"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "apply",
+          "actor": "Developer",
+          "action": "Runs dedupe --apply without --sample.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "cmd_dedupe"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "hash",
+          "condition": "The state file holds no file names.",
+          "outcome": "dedupe exits asking for a new scan.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "cmd_dedupe"
+            }
+          ]
+        },
+        {
+          "atStep": "clone",
+          "condition": "lsof cannot list open files.",
+          "outcome": "dedupe exits before changing anything.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "cmd_dedupe"
+            }
+          ]
+        },
+        {
+          "atStep": "clone",
+          "condition": "A clone's permissions, xattrs or hash differ, or the target changed.",
+          "outcome": "That file is kept as it was and reported as FAILED; three in a row stop the run.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "clone_verified"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/dedupe.rs",
+              "symbol": "dedupe_group"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "keep-space-free",
+      "name": "Keep free space above a threshold",
+      "description": "The developer installs the daemon once; from then on it cleans whenever free space runs low.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Never run out of disk space because caches and build output piled up.",
+      "preconditions": [
+        "The developer is on a Mac, logged in, and has chosen the targets the daemon may delete."
+      ],
+      "postconditions": [
+        "A login item runs daemon run with the chosen settings now and at every login.",
+        "Whenever a check finds free space below the threshold, the targets are cleaned and the log says so."
+      ],
+      "flow": [
+        {
+          "id": "install",
+          "actor": "Developer",
+          "action": "Runs daemon install, optionally with --threshold, --cadence, --targets and --dev-root.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "DaemonOpts"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "register",
+          "actor": "free-disk-space",
+          "action": "Writes the plist with its own path and the settings, boots out any earlier instance, bootstraps the new one and prints the settings and the log path.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_install"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "plist"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "check",
+          "actor": "free-disk-space",
+          "action": "Every cadence of awake time, compares free space with the threshold and logs the result.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "run_loop"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "check"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "clean",
+          "actor": "free-disk-space",
+          "action": "Below the threshold, runs clean --apply on the targets.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_run"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/clean.rs",
+              "symbol": "cmd_clean"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "look",
+          "actor": "Developer",
+          "action": "Checks daemon status or reads the log; runs daemon uninstall to stop it.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_status"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_uninstall"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "register",
+          "condition": "The threshold or cadence is invalid, or launchctl bootstrap fails.",
+          "outcome": "The install exits with the problem and leaves no plist behind.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "daemon_settings"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_install"
+            }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "The display is asleep (a maintenance wake) or the volume cannot be read.",
+          "outcome": "The check is logged as skipped and the next waits a full cadence.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "cmd_run"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "check"
+            }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "Free space is at or above the threshold.",
+          "outcome": "Nothing is cleaned; an ok line is logged.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/daemon.rs",
+              "symbol": "check"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/operation.json",
+      "relationship": "The commands the steps call."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+      "relationship": "The features the use cases exercise."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/capability.json",
+      "relationship": "The capabilities they use."
+    },
+    {
+      "kind": "user-journey",
+      "folder": "macos/rust/free-disk-space",
+      "path": "macos/rust/free-disk-space/.dev/user-journey.json",
+      "relationship": "The journey these use cases are stages of."
+    }
+  ]
+}
