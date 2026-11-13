@@ -1,9 +1,9 @@
-# Run the zazzle phase 0 latency benchmark on macOS and Linux runners, on demand and on changes to the C invoker.
+# Run the zazzle latency and refs benchmarks on macOS and Linux runners, on demand and on changes to the C invoker or the daemon.
 name: zazzle bench
 
 on:
   pull_request:
-    paths: ["macos/c/zazzle/**", ".github/workflows/zazzle-bench.yml"]
+    paths: ["macos/c/zazzle/**", "macos/rust/zazzled/**", ".github/workflows/zazzle-bench.yml"]
   workflow_dispatch:
     inputs:
       runs:
@@ -37,3 +37,6 @@ jobs:
       - name: Benchmark
         working-directory: macos/c/zazzle
         run: sh bench/run.sh ${{ inputs.runs || '3000' }}
+      - name: Benchmark refs over the crate sources (cold, then warm)
+        working-directory: macos/c/zazzle
+        run: sh bench/refs.sh 20 100
