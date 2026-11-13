@@ -60,10 +60,10 @@ impl Policy {
     }
 }
 
-// Builds a sandbox-exec profile whose paths all arrive as -D parameters, so no path can change the profile's meaning.
+// Builds a sandbox-exec profile on Apple's bsd.sb base whose paths arrive resolved (the sandbox sees /private/var, not /var) as -D parameters, so no path can change the profile's meaning.
 pub fn sbpl(p: &Policy) -> (String, Vec<(String, String)>) {
     let mut text =
-        String::from("(version 1)\n(deny default)\n(allow signal (target self))\n(allow sysctl-read)\n");
+        String::from("(version 1)\n(deny default)\n(import \"bsd.sb\")\n(allow signal (target self))\n(allow sysctl-read)\n");
     text.push_str("(allow file-read-metadata)\n(allow process-fork)\n(allow dynamic-code-generation)\n");
     text.push_str("(allow mach-lookup)\n(allow mach-task-name)\n(allow ipc-posix-shm-read-data)\n");
     let mut params = Vec::new();
@@ -72,7 +72,8 @@ pub fn sbpl(p: &Policy) -> (String, Vec<(String, String)>) {
             let name = format!("{prefix}{i}");
             let op = if path.is_dir() { "subpath" } else { "literal" };
             text.push_str(&format!("(allow {kind} ({op} (param \"{name}\")))\n"));
-            params.push((name, path.to_string_lossy().into_owned()));
+            let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            params.push((name, real.to_string_lossy().into_owned()));
         }
     };
     rule("file-read*", "R", &p.read, &mut params);

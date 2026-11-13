@@ -14,24 +14,32 @@ fn first_file(candidates: Vec<Option<PathBuf>>) -> Option<PathBuf> {
     candidates.into_iter().flatten().find(|p| p.is_file())
 }
 
-// Finds rustc: $ZAZZ_RUSTC, $CARGO_HOME/bin/rustc, ~/.cargo/bin/rustc, then the Homebrew and /usr/local locations.
+// Finds rustc: $ZAZZ_RUSTC, $CARGO_HOME/bin/rustc, ~/.cargo/bin/rustc, the Homebrew and /usr/local locations, then PATH.
 pub fn rustc() -> Option<PathBuf> {
-    rustc_from(std::env::var_os("ZAZZ_RUSTC"), std::env::var_os("CARGO_HOME"), std::env::var_os("HOME"))
+    rustc_from(
+        std::env::var_os("ZAZZ_RUSTC"),
+        std::env::var_os("CARGO_HOME"),
+        std::env::var_os("HOME"),
+        std::env::var_os("PATH"),
+    )
 }
 
-// Finds rustc from explicit environment values.
+// Finds rustc from explicit environment values; PATH comes last because launchd leaves it nearly empty.
 pub fn rustc_from(
     over: Option<OsString>,
     cargo_home: Option<OsString>,
     home: Option<OsString>,
+    path: Option<OsString>,
 ) -> Option<PathBuf> {
-    first_file(vec![
+    let mut candidates = vec![
         over.map(PathBuf::from),
         cargo_home.map(|c| PathBuf::from(c).join("bin/rustc")),
         home.map(|h| PathBuf::from(h).join(".cargo/bin/rustc")),
         Some("/opt/homebrew/bin/rustc".into()),
         Some("/usr/local/bin/rustc".into()),
-    ])
+    ];
+    candidates.extend(path.iter().flat_map(std::env::split_paths).map(|d| Some(d.join("rustc"))));
+    first_file(candidates)
 }
 
 // Finds zazz-worker: $ZAZZ_WORKER, else beside the running zazzled.
@@ -143,13 +151,19 @@ mod tests {
     fn test_overrides() {
         let t = TempDir::new();
         let fake = t.write("rustc", b"");
-        assert_eq!(rustc_from(Some(fake.clone().into()), None, None), Some(fake.clone()));
+        assert_eq!(rustc_from(Some(fake.clone().into()), None, None, None), Some(fake.clone()));
         let cargo = t.write("cargo/bin/rustc", b"");
-        assert_eq!(rustc_from(None, Some(t.path().join("cargo").into()), None), Some(cargo));
+        assert_eq!(rustc_from(None, Some(t.path().join("cargo").into()), None, None), Some(cargo));
         assert_eq!(worker_from(Some(fake.clone().into())), Some(fake));
         assert_eq!(worker_from(Some(t.path().join("missing").into())), None);
         assert_eq!(first_file(vec![None, Some(t.path().join("nope"))]), None);
-        assert!(rustc().is_some(), "tests need a rustc");
+        let on_path = t.write("p/rustc", b"");
+        let path = std::env::join_paths([t.path().join("none"), t.path().join("p")]).expect("join");
+        let system =
+            ["/opt/homebrew/bin/rustc", "/usr/local/bin/rustc"].iter().any(|p| Path::new(p).is_file());
+        assert!(system || rustc_from(None, None, None, Some(path)) == Some(on_path));
+        let env = ["CARGO_HOME", "HOME", "PATH"].map(|k| (k, std::env::var_os(k)));
+        assert!(rustc().is_some(), "tests need a rustc; environment: {env:?}");
     }
 
     // Checks version and target probes against the real toolchain, and failures on a fake one.
