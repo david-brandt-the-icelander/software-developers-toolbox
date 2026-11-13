@@ -18,16 +18,28 @@ profdata() {
 	fi
 }
 
-# Links through clang so the instrumented binary gets clang's profile runtime (Linux defaults to gcc).
-linker=""
-[ "$(uname -s)" = Darwin ] || linker="-C linker=clang"
+# Prints the rustc flags that link clang's profile runtime into the instrumented binary.
+runtime_flags() {
+	if [ "$(uname -s)" = Darwin ]; then
+		echo "-C link-arg=-fprofile-instr-generate"
+		return
+	fi
+	# rustc links with -nodefaultlibs, so name the runtime archive and put libc (for atexit) after it.
+	dir=$(clang -print-runtime-dir)
+	for rt in "$dir/libclang_rt.profile-$(uname -m).a" "$dir/libclang_rt.profile.a"; do
+		[ -f "$rt" ] && { echo "-C link-arg=$rt -C link-arg=-lc"; return; }
+	done
+	echo "pgo.sh: no clang profile runtime in $dir (install libclang-rt-<version>-dev)" >&2
+	exit 1
+}
 
 # An explicit --target keeps RUSTFLAGS off build scripts, which must not link the profile runtime.
 host=$(rustc -vV | sed -n 's/^host: //p')
 rm -rf "$out"
 mkdir -p "$out/raw" "$out/home"
 echo "pgo.sh: building instrumented zazzled for $host" >&2
-(cd "$rust" && CC=clang CFLAGS="-fprofile-instr-generate" RUSTFLAGS="$linker -C link-arg=-fprofile-instr-generate" \
+rtflags=$(runtime_flags)
+(cd "$rust" && CC=clang CFLAGS="-fprofile-instr-generate" RUSTFLAGS="$rtflags" \
 	cargo build --release --locked -p zazzled --target "$host" --target-dir "$out/build" >&2)
 bin=$out/build/$host/release/zazzled
 
