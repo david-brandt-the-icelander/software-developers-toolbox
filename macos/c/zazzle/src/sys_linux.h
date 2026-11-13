@@ -78,3 +78,9 @@ static inline long sys_spawn_daemon(const char *path, char **envp)
 	for (;;)
 		sys_call(SYS_exit_group, 127, 0, 0, 0, 0);
 }
+
+/* Replaces this process with path (argv[0] is the first element); returns a negative errno only if that fails. */
+static inline long sys_exec(const char *path, char **argv, char **envp)
+{
+	return sys_call(SYS_execve, (long)path, (long)argv, (long)envp, 0, 0);
+}

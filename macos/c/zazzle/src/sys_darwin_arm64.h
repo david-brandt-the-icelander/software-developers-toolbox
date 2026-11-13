@@ -65,6 +65,7 @@ static inline long sys_peer_uid(int fd)
 	return r < 0 ? -1 : (long)cred[1];
 }
 
+#define SYS_execve 59
 #define SYS_ENOENT 2
 #define SYS_ECONNREFUSED 61
 #define SYS_EAGAIN 35

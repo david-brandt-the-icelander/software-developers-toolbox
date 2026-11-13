@@ -87,4 +87,15 @@ case $out in *"2: beta two"*) ;; *) fail "autostart output: '$out'" ;; esac
 status=$("$zazzle" status)
 echo "$status" | sed -n 's/^zazzled [^ ]* pid \([0-9]*\) .*/\1/p' > "$tmp/auto.pid"
 [ -s "$tmp/auto.pid" ] || fail "no pid in status: $status"
+
+# The standalone tools run as their own process, found beside the invoker, with exit status and arguments passed through (no daemon involved).
+mkdir "$tmp/bin"
+cp "$zazzle" "$tmp/bin/zazzle"
+printf '#!/bin/sh\necho "fix-network $*"\nexit 3\n' > "$tmp/bin/fix-network"
+chmod +x "$tmp/bin/fix-network"
+rc=0
+out=$(ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" fix-network --verbose x 2>&1) || rc=$?
+[ "$rc" = 3 ] && [ "$out" = "fix-network --verbose x" ] || fail "tool exec: rc=$rc out='$out'"
+if ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" free-disk-space 2>"$tmp/err"; then fail "missing tool must fail"; fi
+grep -q "cannot run the tool" "$tmp/err" || fail "missing tool message: $(cat "$tmp/err")"
 echo "smoke ok"
