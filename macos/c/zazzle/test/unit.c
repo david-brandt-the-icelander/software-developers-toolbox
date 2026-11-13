@@ -310,6 +310,33 @@ static void test_spin_wait(void)
 	CHECK(run(1, argv, env_home) == 5 && M.recv_calls == 1 && M.relax_calls == 0 && M.read_calls == 1);
 }
 
+/* Checks that the standalone tools are exec'd from beside the invoker with the remaining arguments, and the failure paths. */
+static void test_tool_exec(void)
+{
+	char *argv[] = {"zazzle", "free-disk-space", "daemon", "status", 0};
+	reset();
+	CHECK(run(4, argv, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/free-disk-space") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/free-disk-space") == 0 && strcmp(M.exec_arg1, "daemon") == 0);
+	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv2[] = {"zazzle", "fix-network", 0};
+	reset();
+	CHECK(run(2, argv2, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/fix-network") == 0);
+	reset();
+	M.exec_rc = -SYS_ENOENT;
+	char *argv3[] = {"zazzle", "fix-network", 0};
+	CHECK(run(2, argv3, env_home) == -1000 - 69 && err_has("cannot run the tool"));
+	reset();
+	M.self_exe_rc = -1;
+	char *argv4[] = {"zazzle", "fix-network", 0};
+	CHECK(run(2, argv4, env_home) == -1000 - 69 && err_has("cannot find the tool"));
+	reset();
+	char *argv5[] = {"zazzle", "free-disk-spac", 0};
+	CHECK(run(2, argv5, env_home) == 0 && M.exec_path[0] == 0);
+	char *argv6[] = {"zazzle", "free-disk-spaces", 0};
+	reset();
+	CHECK(run(2, argv6, env_home) == 0 && M.exec_path[0] == 0);
+}
+
 /* Runs every test and reports. */
 int main(void)
 {
@@ -328,6 +355,7 @@ int main(void)
 	test_send_paths();
 	test_read_status_failure();
 	test_spin_wait();
+	test_tool_exec();
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

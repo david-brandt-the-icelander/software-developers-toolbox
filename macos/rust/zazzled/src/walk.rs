@@ -140,13 +140,10 @@ impl Listing {
         }
         let all: Vec<&(PathBuf, Stamp)> = self.dirs.iter().chain(self.ignores.iter()).collect();
         let chunk = all.len().div_ceil(VALIDATE_THREADS).max(VALIDATE_MIN_CHUNK);
-        std::thread::scope(|s| {
-            let handles: Vec<_> = all
-                .chunks(chunk)
-                .map(|part| s.spawn(move || part.iter().all(|(p, st)| stamp(p) == *st)))
-                .collect();
-            handles.into_iter().all(|h| h.join().expect("validation thread"))
-        })
+        let parts: Vec<&[&(PathBuf, Stamp)]> = all.chunks(chunk).collect();
+        crate::pool::par_map(&parts, VALIDATE_THREADS, |_, part| part.iter().all(|(p, st)| stamp(p) == *st))
+            .into_iter()
+            .all(|ok| ok)
     }
 }
 

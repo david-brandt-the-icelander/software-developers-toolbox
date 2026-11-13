@@ -26,6 +26,15 @@ static size_t str_len(const char *s)
 	return n;
 }
 
+/* Returns true if a and b are equal strings. */
+static int str_eq(const char *a, const char *b)
+{
+	size_t i = 0;
+	while (a[i] && a[i] == b[i])
+		i++;
+	return a[i] == b[i];
+}
+
 /* Prints a one-line error to stderr and exits with code. */
 static __attribute__((noreturn)) void die(const char *m, int code)
 {
@@ -173,6 +182,18 @@ static int not_running(long r)
 	return r == -SYS_ENOENT || r == -SYS_ECONNREFUSED;
 }
 
+/* Writes the directory of this executable, with a trailing slash, into exe_path; returns false if unknown. */
+static int exe_dir(void)
+{
+	long n = sys_self_exe(exe_path, sizeof exe_path);
+	if (n <= 0)
+		return 0;
+	while (n > 0 && exe_path[n - 1] != '/')
+		n--;
+	exe_path[n] = 0;
+	return 1;
+}
+
 /* Chooses the daemon executable: $ZAZZLE_DAEMON, else "zazzled" beside this executable. */
 static void pick_daemon(char **envp)
 {
@@ -182,14 +203,29 @@ static void pick_daemon(char **envp)
 		append(daemon_path, sizeof daemon_path, &at, s, "ZAZZLE_DAEMON too long", 78);
 		return;
 	}
-	long n = sys_self_exe(exe_path, sizeof exe_path);
-	if (n <= 0)
+	if (!exe_dir())
 		die("daemon not running", 69);
-	while (n > 0 && exe_path[n - 1] != '/')
-		n--;
-	exe_path[n] = 0;
 	append(daemon_path, sizeof daemon_path, &at, exe_path, "daemon path too long", 78);
 	append(daemon_path, sizeof daemon_path, &at, "zazzled", "daemon path too long", 78);
+}
+
+/* Returns true if the argument names a standalone tool that runs as its own process, not through the daemon. */
+static int is_tool(const char *a)
+{
+	return str_eq(a, "free-disk-space") || str_eq(a, "fix-network");
+}
+
+/* Replaces this process with the tool named by argv[1], found beside this executable, passing the rest of the arguments; returns only on failure. */
+static void exec_tool(char **argv, char **envp)
+{
+	size_t at = 0;
+	if (!exe_dir())
+		die("cannot find the tool", 69);
+	append(daemon_path, sizeof daemon_path, &at, exe_path, "tool path too long", 78);
+	append(daemon_path, sizeof daemon_path, &at, argv[1], "tool path too long", 78);
+	argv[1] = daemon_path;
+	long r = sys_exec(daemon_path, argv + 1, envp);
+	die_errno("cannot run the tool", -r, 69);
 }
 
 /* Connects to the daemon, starting it and retrying with backoff if it is not running. */
@@ -269,9 +305,11 @@ static int read_status(int fd)
 	return b;
 }
 
-/* Runs one request/answer round trip and returns the daemon's exit status. */
+/* Runs a tool as its own process (exec), or one request/answer round trip, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
+	if (argc > 1 && is_tool(argv[1]))
+		exec_tool(argv, envp);
 	size_t total = build_request(argc, argv, envp);
 	size_t pathlen = build_path(envp);
 	int fd = connect_daemon(pathlen, envp);

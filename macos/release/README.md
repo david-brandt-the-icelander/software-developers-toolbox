@@ -6,7 +6,7 @@ On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and
 
 The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/homebrew-z` and pushes it to that repo's default branch.
 
-- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`) and the formula's `post_install` expands the one matching the Mac into `bin/`.
+- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`). `bin/zazzle-csharp-indexer` starts as a placeholder so brew links it, and the formula's `post_install_steps` replace it with the binary for this Mac (`brew postinstall zazzle` reruns that).
 - `bottle.sh` packs the bottle (`zazzle-<version>.all.bottle.tar.gz`, one, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
 - The formula takes the release tag as its version, so every release is an upgrade.
 - Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.
@@ -24,6 +24,16 @@ The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/h
   - that the bottle holds exactly `zazzle/VERSION/...` (Homebrew's `Bottle#extract_snapshot` check) with the binaries mode 0755, and is reproducible.
 
   CI runs it. The stand-in is not Homebrew: nothing has pulled a real bottle until a tag runs.
+
+## Profile-guided optimization of zazzled's C code (`pgo.sh`)
+
+Tree-sitter's C code dominates parsing, so the release compiles it with clang PGO. Rust code is not profiled: Rust's own PGO needs an `llvm-profdata` that matches rustc's LLVM, which Xcode's tools don't guarantee.
+
+- `pgo.sh [CORPUS]` builds an instrumented `zazzled` (`-fprofile-instr-generate`, for the host target only, so build scripts stay uninstrumented) under `macos/rust/target/pgo`.
+- It trains that build by running `outline` and `refs` over the crate sources that building `zazzled` downloaded (`$CARGO_HOME/registry/src`). Then it merges the profile with the matching `llvm-profdata` (Xcode's on macOS) and prints `PGO_CFLAGS=...` for `$GITHUB_ENV`.
+- The release builds with `CC=clang` and `CFLAGS=$PGO_CFLAGS`. On macOS the arm64-trained profile also serves the x86_64 slice, because tree-sitter's C code is the same on both.
+- Linux runners need `clang`, `llvm` and `libclang-rt-<version>-dev` (the profile runtime); the release job installs them.
+- `.github/workflows/zazzle-bench.yml` times `refs` with and without the profile on macOS and Linux. It trains and measures on the same crate sources, so its PGO numbers are an upper bound.
 
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
 

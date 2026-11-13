@@ -5,7 +5,7 @@ description: Reclaim disk space on a Mac (APFS). Use when asked to free space, c
 
 # free-disk-space
 
-Binary: `macos/rust/target/release/free-disk-space` (build: `cd macos/rust && cargo build --release`; macOS only for compress/dedupe/Finder/Docker steps).
+Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, started from the `zazzle` binary's directory, including `daemon install` for the scheduled run); built at `macos/rust/target/release/free-disk-space` (build: `cd macos/rust && cargo build --release`; macOS only for compress/dedupe/Finder/Docker steps).
 
 ## Cleanup (dry run by default)
 1. Preview: `macos/rust/target/release/free-disk-space clean all`

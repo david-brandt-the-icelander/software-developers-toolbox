@@ -24,9 +24,9 @@ defaults:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -37,7 +37,7 @@ jobs:
       - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles)
         working-directory: macos/release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
       - run: cargo clippy --workspace --all-targets --locked
@@ -46,10 +46,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           # zazz scripts compile to WASM; the zazz tests build real scripts.
@@ -72,9 +72,9 @@ jobs:
           ./target/release/free-disk-space clean caches
 
   msrv:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.85
       # zazz-worker embeds wasmtime, which needs a recent Rust; it has its own rust-version.
       - run: cargo check --workspace --exclude zazz-worker --locked
@@ -83,10 +83,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release -p zazzled --locked
       - name: Build, unit test and smoke test the C invoker
@@ -95,9 +95,9 @@ jobs:
 
   # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs and fix-network must keep 95% of branches and lines.
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools-preview
@@ -131,14 +131,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: macos/dotnet/zazzle-csharp-indexer
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - run: dotnet test tests

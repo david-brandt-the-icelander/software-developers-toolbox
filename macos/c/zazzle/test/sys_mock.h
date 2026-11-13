@@ -35,7 +35,8 @@ struct mock {
 	unsigned char status;
 	long self_exe_rc;
 	char self_exe[512];
-	long spawn_rc;
+	long spawn_rc, exec_rc;
+	char exec_path[512], exec_arg0[512], exec_arg1[512];
 	int spawn_calls;
 	char spawn_path[512];
 	long slept_ms;
@@ -173,4 +174,17 @@ static inline long sys_spawn_daemon(const char *path, char **envp)
 	M.spawn_calls++;
 	strncpy(M.spawn_path, path, sizeof M.spawn_path - 1);
 	return M.spawn_rc;
+}
+
+/* Records the tool path and its first two arguments; exec_rc 0 stands for a successful exec, which ends the process. */
+static inline long sys_exec(const char *path, char **argv, char **envp)
+{
+	(void)envp;
+	strncpy(M.exec_path, path, sizeof M.exec_path - 1);
+	strncpy(M.exec_arg0, argv[0], sizeof M.exec_arg0 - 1);
+	if (argv[1])
+		strncpy(M.exec_arg1, argv[1], sizeof M.exec_arg1 - 1);
+	if (M.exec_rc == 0)
+		sys_exit(0);
+	return M.exec_rc;
 }

@@ -5,7 +5,7 @@ description: Diagnose and repair a Mac's Wi-Fi, internet, DNS, routing, proxy or
 
 # fix-network
 
-Binary: `macos/rust/target/release/fix-network` (build: `cd macos/rust && cargo build --release`; macOS only).
+Binary: `fix-network`, or `zazzle fix-network ...` (same program, started from the `zazzle` binary's directory); built at `macos/rust/target/release/fix-network` (build: `cd macos/rust && cargo build --release`; macOS only).
 
 ## Steps
 1. Read-only first: `... diagnose --internal-host HOST[:PORT]` (repeatable; add `-v` for tunnels/split DNS, `--json` to parse).

@@ -7,9 +7,10 @@ use crate::util::{clip, display, resolve, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use memchr::{memchr_iter, memrchr};
 use regex::bytes::{Regex, RegexBuilder};
+use std::cell::RefCell;
+use std::fs::{File, Metadata};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 const SPEC: &[Flag] = &[
     flag("ignore-case", 'i'),
@@ -27,6 +28,12 @@ const DEFAULT_MAX: usize = 50;
 const LIST_CAP: usize = 200;
 const MAX_FILE: u64 = 2 << 20;
 const PARALLEL_MIN: usize = 8;
+const BUF_KEEP: usize = 256 << 10;
+
+thread_local! {
+    // Each thread's reusable read buffer, so searching many files does not allocate a fresh buffer per file.
+    static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 // A matching line: its number and where the match starts within it.
 #[derive(Debug)]
@@ -115,60 +122,90 @@ fn search_bytes(data: &[u8], plan: &Plan) -> (usize, Vec<Hit>) {
     (total, hits)
 }
 
-// Reads a file for searching, or says why it is skipped; binary files are remembered so later searches skip them unread.
-fn read_searchable(path: &Path, engine: &Engine) -> Result<Vec<u8>, Skip> {
-    let md = std::fs::metadata(path).map_err(|_| Skip::Unreadable)?;
+// Lends f this thread's read buffer, then shrinks it if a large file grew it past the amount worth keeping.
+fn with_buf<R>(f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        let r = f(&mut buf);
+        if buf.capacity() > BUF_KEEP {
+            buf.truncate(BUF_KEEP);
+            buf.shrink_to(BUF_KEEP);
+        }
+        r
+    })
+}
+
+// Reads up to len bytes of an open file into the front of buf, which only grows, and returns how many were read.
+fn read_into(mut f: &File, len: usize, buf: &mut Vec<u8>) -> io::Result<usize> {
+    if buf.len() < len {
+        buf.resize(len, 0);
+    }
+    let mut n = 0;
+    while n < len {
+        match f.read(&mut buf[n..len]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(n)
+}
+
+// Opens a file and reads its current contents into buf, returning the byte count.
+fn read_path(path: &Path, buf: &mut Vec<u8>) -> io::Result<usize> {
+    let f = File::open(path)?;
+    let len = f.metadata()?.len() as usize;
+    read_into(&f, len, buf)
+}
+
+// Says why a file with this metadata is skipped without reading it, if it is.
+fn pre_skip(path: &Path, md: &Metadata, engine: &Engine) -> Option<Skip> {
     if md.len() > MAX_FILE {
-        return Err(Skip::Large);
+        return Some(Skip::Large);
     }
-    if engine.stored_info(path, &md).is_some_and(|i| i.binary) {
-        return Err(Skip::Binary);
+    engine.stored_info(path, md).is_some_and(|i| i.binary).then_some(Skip::Binary)
+}
+
+// Classifies a file that could not be opened as a stat-first check would, so a large unreadable file still counts as large.
+fn unopened(path: &Path, engine: &Engine) -> Skip {
+    std::fs::metadata(path).ok().and_then(|md| pre_skip(path, &md, engine)).unwrap_or(Skip::Unreadable)
+}
+
+// Opens a file once and reads it into buf for searching, or says why it is skipped; binary files are remembered so later searches skip them unread.
+fn read_searchable(path: &Path, engine: &Engine, buf: &mut Vec<u8>) -> Result<usize, Skip> {
+    let Ok(f) = File::open(path) else { return Err(unopened(path, engine)) };
+    let md = f.metadata().map_err(|_| Skip::Unreadable)?;
+    if let Some(skip) = pre_skip(path, &md, engine) {
+        return Err(skip);
     }
-    let data = std::fs::read(path).map_err(|_| Skip::Unreadable)?;
-    if !looks_binary(&data) {
-        return Ok(data);
+    let n = read_into(&f, md.len() as usize, buf).map_err(|_| Skip::Unreadable)?;
+    if !looks_binary(&buf[..n]) {
+        return Ok(n);
     }
-    engine.remember(path, &md, &data);
+    engine.remember(path, &md, &buf[..n]);
     Err(Skip::Binary)
 }
 
-// Reads and searches one file, classifying files that cannot be searched.
+// Reads and searches one file in the thread's buffer, classifying files that cannot be searched.
 fn search_file(idx: usize, path: &Path, plan: &Plan) -> FileResult {
-    let (total, hits, skip) = match read_searchable(path, plan.engine) {
-        Ok(data) => {
-            let (total, hits) = search_bytes(&data, plan);
+    let (total, hits, skip) = with_buf(|buf| match read_searchable(path, plan.engine, buf) {
+        Ok(n) => {
+            let (total, hits) = search_bytes(&buf[..n], plan);
             (total, hits, Skip::No)
         }
         Err(skip) => (0, vec![], skip),
-    };
+    });
     FileResult { idx, total, hits, skip }
 }
 
-// Searches all files, in parallel when there are enough, and returns results in file order.
+// Searches all files, on the pool when there are enough, and returns the results worth reporting in file order.
 pub(super) fn search_all(files: &[PathBuf], plan: &Plan, cpus: usize) -> Vec<FileResult> {
-    let results = Mutex::new(Vec::new());
-    let next = AtomicUsize::new(0);
-    let work = || loop {
-        let i = next.fetch_add(1, Ordering::Relaxed);
-        let Some(path) = files.get(i) else { break };
-        let r = search_file(i, path, plan);
-        if r.total > 0 || r.skip != Skip::No {
-            results.lock().expect("results lock").push(r);
-        }
-    };
-    let workers = cpus.min(files.len());
-    if files.len() < PARALLEL_MIN || workers < 2 {
-        work();
-    } else {
-        std::thread::scope(|s| {
-            for _ in 0..workers {
-                s.spawn(work);
-            }
-        });
-    }
-    let mut out = results.into_inner().expect("results lock");
-    out.sort_by_key(|r| r.idx);
-    out
+    let workers = if files.len() < PARALLEL_MIN { 1 } else { cpus };
+    crate::pool::par_map(files, workers, |i, path| search_file(i, path, plan))
+        .into_iter()
+        .filter(|r| r.total > 0 || r.skip != Skip::No)
+        .collect()
 }
 
 // Renders one line as text, clipped around the match column.
@@ -206,6 +243,16 @@ fn render_file(out: &mut String, data: &[u8], hits: &[Hit], context: usize) {
         next_line = hi + 1;
         printed_any = true;
     }
+}
+
+// Re-reads one matched file into the thread's buffer and renders its name and hits; false if it can no longer be read.
+fn render_path(out: &mut String, path: &Path, cwd: &Path, hits: &[Hit], context: usize) -> bool {
+    with_buf(|buf| {
+        let Ok(n) = read_path(path, buf) else { return false };
+        out.push_str(&format!("{}\n", display(path, cwd)));
+        render_file(out, &buf[..n], hits, context);
+        true
+    })
 }
 
 // Describes skipped files for the footer.
@@ -260,11 +307,9 @@ fn render_matches(results: &[FileResult], files: &[PathBuf], cwd: &Path, plan: &
         if take == 0 {
             continue;
         }
-        let path = &files[r.idx];
-        let Ok(data) = std::fs::read(path) else { continue };
-        out.push_str(&format!("{}\n", display(path, cwd)));
-        render_file(&mut out, &data, &r.hits[..take], plan.context);
-        shown += take;
+        if render_path(&mut out, &files[r.idx], cwd, &r.hits[..take], plan.context) {
+            shown += take;
+        }
     }
     out.push_str(&format!(
         "-- {total} matches in {matched} files ({} searched{})",
@@ -296,8 +341,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
     let list_mode = p.has("files") || p.has("count");
     let plan = Plan { engine: ctx.engine, re, max, context, files_only: p.has("files") };
-    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let mut results = search_all(&files, &plan, cpus);
+    let mut results = search_all(&files, &plan, crate::pool::cpus());
     results.sort_by_key(|r| crate::util::rank(&files[r.idx]));
     if !results.iter().any(|r| r.total > 0) {
         return Ok(Output::ok(format!("no matches in {} files{}", files.len(), skipped_note(&results))));
@@ -536,6 +580,68 @@ mod tests {
         };
         assert_eq!(search_file(0, &t.path().join("gone"), &plan).skip, Skip::Unreadable);
         assert_eq!(search_file(1, t.path(), &plan).skip, Skip::Unreadable);
+    }
+
+    // Checks a file that cannot be opened is still classified large when a stat says so, else unreadable.
+    #[test]
+    fn test_search_file_unopened_classification() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempDir::new();
+        let e = Engine::new();
+        let plan = Plan {
+            engine: &e,
+            re: build_regex("x", false, false, false).expect("regex"),
+            max: 5,
+            context: 0,
+            files_only: false,
+        };
+        let sock = t.path().join("s.sock");
+        let _l = std::os::unix::net::UnixListener::bind(&sock).expect("bind");
+        assert_eq!(search_file(0, &sock, &plan).skip, Skip::Unreadable);
+        let big = t.write("big.txt", &vec![b'x'; (MAX_FILE + 1) as usize]);
+        std::fs::set_permissions(&big, std::fs::Permissions::from_mode(0o0)).expect("chmod");
+        assert_eq!(search_file(1, &big, &plan).skip, Skip::Large);
+    }
+
+    // Checks a reused buffer holding a longer earlier file never leaks its bytes into a shorter file's search.
+    #[test]
+    fn test_search_file_reused_buffer_is_bounded() {
+        let t = TempDir::new();
+        let e = Engine::new();
+        let plan = Plan {
+            engine: &e,
+            re: build_regex("needle", false, false, false).expect("regex"),
+            max: 5,
+            context: 0,
+            files_only: false,
+        };
+        let long = t.write("long.txt", "pad\n".repeat(100).as_bytes());
+        let short = t.write("short.txt", b"needle\n");
+        let tail = t.write("tail.txt", format!("{}needle\n", "pad\n".repeat(50)).as_bytes());
+        assert_eq!(search_file(0, &tail, &plan).total, 1);
+        assert_eq!(search_file(1, &long, &plan).total, 0);
+        assert_eq!(search_file(2, &short, &plan).total, 1);
+        assert_eq!(search_file(3, &long, &plan).total, 0);
+    }
+
+    // Checks the thread buffer keeps its capacity for small files and shrinks back after a large one.
+    #[test]
+    fn test_with_buf_caps_retained_capacity() {
+        with_buf(|b| b.resize(1000, 0));
+        assert!(with_buf(|b| b.capacity()) >= 1000);
+        with_buf(|b| b.resize(BUF_KEEP * 4, 0));
+        assert_eq!(with_buf(|b| (b.len(), b.capacity())), (BUF_KEEP, BUF_KEEP));
+    }
+
+    // Checks read_into stops at end of file when the file is shorter than expected.
+    #[test]
+    fn test_read_into_short_file() {
+        let t = TempDir::new();
+        let f = File::open(t.write("a.txt", b"abc")).expect("open");
+        let mut buf = vec![b'z'; 2];
+        assert_eq!(read_into(&f, 10, &mut buf).expect("read"), 3);
+        assert_eq!(&buf[..3], b"abc");
+        assert_eq!(buf.len(), 10);
     }
 
     // Checks rendering skips a file that vanished after the search.
