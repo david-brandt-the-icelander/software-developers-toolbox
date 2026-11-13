@@ -17,8 +17,8 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - C invoker (`macos/c/zazzle/`): build the daemon first, then in that folder `make && make unit && sh test/smoke.sh`; `make coverage` gates C branch coverage; `sh bench/run.sh` measures latency.
 - zazzled branch coverage: `sh zazzled/coverage.sh 95` in `macos/rust`.
 - Branch coverage (nightly `llvm-tools-preview` + `cargo-llvm-cov`; target 95% of non-test branches and lines, enforced in CI for agent-fs and fix-network): `cargo +nightly llvm-cov --branch -p <crate> --summary-only`; run free-disk-space as non-root so its permission tests execute.
-- CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; pushing a `v*` tag publishes universal macOS binaries to a GitHub release, icelander.net/downloads and the `zazzcat/homebrew-z` tap (`release.yml`; secrets `CLOUDFLARE_R2_TOKEN`, `HOMEBREW_TAP_TOKEN`, optional signing in `macos/release/README.md`).
-- Release scripts: `bash macos/release/sign-and-notarize.test.sh && bash macos/release/formula.test.sh` (also `shellcheck` them).
+- CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; running the Release workflow (bump patch, minor or major from the latest `v*` tag) or pushing a `vX.Y.Z` tag publishes universal macOS binaries to a GitHub release without notes, icelander.net/downloads and the `zazzcat/homebrew-z` tap; the tag is the only version source, the repository says `0.0.0-dev` (`release.yml`; secrets `CLOUDFLARE_R2_TOKEN`, `HOMEBREW_TAP_TOKEN`, optional signing in `macos/release/README.md`).
+- Release scripts: `bash macos/release/sign-and-notarize.test.sh && bash macos/release/formula.test.sh && bash macos/release/version.test.sh` (also `shellcheck` them).
 
 ## Skills
 - Free disk space on macOS (compression scan, cache/dev/docker cleanup): `agents/skills/free-disk-space/SKILL.md`

@@ -1,10 +1,16 @@
-# Build universal macOS binaries (signed when configured) and Linux tarballs; publish them to a GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap on version tags.
+# Build universal macOS binaries (signed when configured) and Linux tarballs; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or the next one after the latest tag when run by hand with a bump (macos/release/version.sh); every binary is built with it.
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Release the next version after the latest v* tag (patch, minor, major), or only build (none)"
+        type: choice
+        options: [patch, minor, major, none]
+        default: patch
 
 permissions:
   contents: write
@@ -13,7 +19,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: v
+        run: bash macos/release/version.sh "${{ github.ref_type }}" "$GITHUB_REF_NAME" "${{ inputs.bump || 'none' }}" >> "$GITHUB_OUTPUT"
+      # A tag pushed with GITHUB_TOKEN starts no other workflow, so this run goes on to publish it.
+      - name: Tag the release
+        if: github.ref_type != 'tag' && steps.v.outputs.publish == 'true'
+        run: |
+          git tag "${{ steps.v.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "${{ steps.v.outputs.tag }}"
+
   macos:
+    needs: version
     runs-on: macos-latest
     defaults:
       run:
@@ -23,6 +49,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Stamp the version
+        working-directory: .
+        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
       - run: cargo test --workspace --locked
       # Profile-guided optimization of the C code (tree-sitter): train on arm64, use the profile for both slices.
       - name: Train the PGO profile for zazzled's C code
@@ -59,7 +88,7 @@ jobs:
         run: |
           dotnet test tests
           for pair in arm64:osx-arm64 x64:osx-x64; do
-            dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}"
+            dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}" -p:Version="${{ needs.version.outputs.version }}"
             gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "../../rust/dist/zazzle-csharp-indexer-${pair%%:*}.gz"
           done
       # Optional Developer ID signature and Apple notarization (macos/release/README.md): skipped with a
@@ -84,19 +113,21 @@ jobs:
             macos/rust/zazzle-macos-universal.tar.gz
             macos/rust/zazzle-macos-universal.tar.gz.sha256
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: >
-          gh release create "$GITHUB_REF_NAME" --generate-notes
+          gh release create "$TAG" --notes ""
           zazzle-macos-universal.tar.gz zazzle-macos-universal.tar.gz.sha256
       - name: Publish to icelander.net
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.version.outputs.publish == 'true'
         env:
+          TAG: ${{ needs.version.outputs.tag }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          for dir in "$GITHUB_REF_NAME" latest; do
+          for dir in "$TAG" latest; do
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz" \
               --file zazzle-macos-universal.tar.gz --content-type application/gzip --remote
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" \
@@ -104,7 +135,7 @@ jobs:
           done
 
   linux:
-    needs: macos
+    needs: [version, macos]
     strategy:
       matrix:
         include:
@@ -114,6 +145,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - name: Stamp the version
+        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
       - name: Test zazzled
         working-directory: macos/rust
         run: cargo test -p zazzled --locked
@@ -144,7 +177,7 @@ jobs:
         working-directory: macos/dotnet/zazzle-csharp-indexer
         run: |
           dotnet test tests
-          dotnet publish src -c Release -r ${{ matrix.rid }} -o out
+          dotnet publish src -c Release -r ${{ matrix.rid }} -o out -p:Version="${{ needs.version.outputs.version }}"
       - name: Package
         run: |
           mkdir -p dist
@@ -158,19 +191,21 @@ jobs:
             zazzle-linux-${{ matrix.arch }}.tar.gz
             zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - name: Attach to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: >
-          gh release upload "$GITHUB_REF_NAME" --clobber
+          gh release upload "$TAG" --clobber
           zazzle-linux-${{ matrix.arch }}.tar.gz zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - name: Publish to icelander.net
-        if: startsWith(github.ref, 'refs/tags/')
+        if: needs.version.outputs.publish == 'true'
         env:
+          TAG: ${{ needs.version.outputs.tag }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          for dir in "$GITHUB_REF_NAME" latest; do
+          for dir in "$TAG" latest; do
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" \
               --file zazzle-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" \
@@ -180,8 +215,10 @@ jobs:
   # Write the zazzle formula for this release into the zazzcat/homebrew-z tap. HOMEBREW_TAP_TOKEN is a fine-grained
   # token with "Contents: read and write" on that repository only; GITHUB_TOKEN cannot push to another account.
   homebrew:
-    needs: macos
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, macos]
+    if: needs.version.outputs.publish == 'true'
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -200,16 +237,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tar -xzf dist/zazzle-macos-universal.tar.gz -C dist
-          bash macos/release/bottle.sh "$GITHUB_REF_NAME" dist bottles
-          gh release upload "$GITHUB_REF_NAME" bottles/*.bottle.tar.gz --clobber
+          bash macos/release/bottle.sh "$TAG" dist bottles
+          gh release upload "$TAG" bottles/*.bottle.tar.gz --clobber
       - name: Write and push the formula
         run: |
           sha=$(cut -d' ' -f1 dist/zazzle-macos-universal.tar.gz.sha256)
-          bash macos/release/formula.sh "$GITHUB_REF_NAME" "$sha" tap/Formula bottles
+          bash macos/release/formula.sh "$TAG" "$sha" tap/Formula bottles
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "zazzle $GITHUB_REF_NAME"
+          git commit -m "zazzle $TAG"
           git push origin HEAD
