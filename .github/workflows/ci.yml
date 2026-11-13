@@ -34,12 +34,14 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo fmt --all --check
-      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles)
+      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles; version numbers)
         working-directory: macos/release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh version.sh version.test.sh set-version.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
+          bash version.test.sh
+          bash fetch-cyberspace-generator.test.sh
       - run: cargo clippy --workspace --all-targets --locked
 
   test:
@@ -155,7 +157,8 @@ jobs:
         env:
           ZAZZLE_INDEXER_STATE_DIR: ${{ runner.temp }}/zazzle-csharp-indexer-state
         run: |
-          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/zazzle-csharp-indexer serve --root repo=../../.. | tee smoke.txt
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/zazzle-csharp-indexer serve --root repo=../../.. | tee smoke.txt
+          grep -q '"tools":\[\]' smoke.txt
           grep -q '"isError":false' smoke.txt
           ./out/zazzle-csharp-indexer report
           pkill -f "zazzle-csharp-indexer daemon" || true

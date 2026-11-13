@@ -1,13 +1,15 @@
 // MCP proxy: sits between a client and a server and shrinks the text of tool results and resource reads.
 use crate::cmd::clean;
 use crate::tokens;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
+pub mod config;
 pub mod http;
 pub mod stdio;
 
-pub const USAGE: &str = "usage: zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--log] \
+pub const USAGE: &str =
+    "usage: zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] \
 (-- CMD ARGS.. | --upstream URL [--listen ADDR])";
 const DEFAULT_BUDGET: usize = 8000;
 const DEFAULT_LISTEN: &str = "127.0.0.1:8808";
@@ -19,6 +21,8 @@ pub struct Filter {
     pub budget: usize,
     pub skip: Vec<String>,
     pub log: bool,
+    pub store: Option<std::path::PathBuf>,
+    pub config: config::Config,
 }
 
 // Where the real MCP server is: a command speaking stdio, or a Streamable HTTP endpoint.
@@ -61,7 +65,14 @@ fn value(it: &mut std::slice::Iter<String>, flag: &str) -> Result<String, String
 
 // Parses the arguments after `zazzled proxy`.
 pub fn parse(args: &[String]) -> Result<Opts, String> {
-    let mut filter = Filter { lossy: true, budget: DEFAULT_BUDGET, skip: Vec::new(), log: false };
+    let mut filter = Filter {
+        lossy: true,
+        budget: DEFAULT_BUDGET,
+        skip: Vec::new(),
+        log: false,
+        store: crate::outputs::dir(),
+        config: config::Config::default(),
+    };
     let (mut url, mut listen, mut command) = (None, None, None);
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -70,6 +81,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--lossless" => filter.lossy = false,
             "--log" => filter.log = true,
             "--skip" => filter.skip.push(value(&mut it, a)?),
+            "--config" => filter.config = config::load(&value(&mut it, a)?)?,
             "--upstream" => url = Some(value(&mut it, a)?),
             "--listen" => listen = Some(value(&mut it, a)?),
             "--budget" => {
@@ -131,33 +143,66 @@ impl Pending {
 
 impl Filter {
     // Replaces a text with its cleaned form when that saves at least one token; returns the sizes before and after.
-    fn text(&self, s: &mut String) -> (usize, usize) {
+    fn text(&self, s: &mut String, lossy: bool, budget: usize) -> (usize, usize, Option<String>) {
         let before = s.len();
-        let out = clean::shrink(s, self.lossy, self.budget);
-        if tokens::from_bytes(out.len()) < tokens::from_bytes(before) {
-            *s = out;
+        let (out, steps) = clean::shrink_steps(s, lossy, budget);
+        if tokens::from_bytes(out.len()) >= tokens::from_bytes(before) {
+            return (before, before, None);
         }
-        (before, s.len())
+        let original = std::mem::replace(s, out);
+        (before, s.len(), self.keep(s, &original, clean::cuts(&steps)))
+    }
+
+    // Stores a shortened text with its original for read-again; returns the note that names its id, or why it was not stored.
+    fn keep(&self, shown: &str, original: &str, cut: bool) -> Option<String> {
+        let dir = self.store.as_deref()?;
+        let id = crate::outputs::id_of(shown, original);
+        Some(match crate::outputs::save(dir, &id, shown, original, crate::outputs::limit()) {
+            Ok(()) if cut => format!("[r:{id} shortened by zazzle; full text: read-again r:{id} --full]"),
+            Ok(()) => format!("[r:{id} shortened by zazzle]"),
+            Err(e) => format!("[shortened by zazzle; not stored for read-again: {e}]"),
+        })
     }
 
     // Cleans the text items of a tools/call result (`content`) or resources/read result (`contents`).
-    fn result(&self, result: &mut Value, asked: &Asked) -> (usize, usize) {
+    fn result(&self, result: &mut Value, asked: &Asked, lossy: bool, budget: usize) -> (usize, usize) {
         let key = if *asked == Asked::Resource { "contents" } else { "content" };
         let Some(items) = result.get_mut(key).and_then(Value::as_array_mut) else { return (0, 0) };
-        let (mut before, mut after) = (0, 0);
-        for item in items {
+        let (mut before, mut after, mut notes) = (0, 0, Vec::new());
+        for item in items.iter_mut() {
+            let uri = item.get("uri").cloned();
             let slot = match item.get("type").and_then(Value::as_str) {
                 Some("resource") => item.pointer_mut("/resource/text"),
                 Some("text") | None => item.get_mut("text"),
                 Some(_) => None,
             };
             if let Some(Value::String(s)) = slot {
-                let (b, a) = self.text(s);
+                let (b, a, note) = self.text(s, lossy, budget);
                 before += b;
                 after += a;
+                notes.extend(note.map(|n| match uri {
+                    Some(uri) => json!({"uri": uri, "mimeType": "text/plain", "text": n}),
+                    None => json!({"type": "text", "text": n}),
+                }));
             }
         }
+        items.extend(notes);
         (before, after)
+    }
+
+    // Returns whether to leave a response alone, and the lossy and budget settings for it: the config's rule for its tool or for resources, else the command line.
+    fn settings(&self, asked: &Asked) -> (bool, bool, usize) {
+        let rule = match asked {
+            Asked::Tool(name) => self.config.tool(name),
+            Asked::Resource => self.config.resources.as_ref(),
+        };
+        let skipped =
+            matches!(asked, Asked::Tool(name) if self.skip.contains(name)) || rule.is_some_and(|r| r.skip);
+        (
+            skipped,
+            rule.and_then(|r| r.lossy).unwrap_or(self.lossy),
+            rule.and_then(|r| r.budget).unwrap_or(self.budget),
+        )
     }
 
     // Cleans the responses in a server payload that answer recorded requests; structuredContent is never touched.
@@ -165,13 +210,16 @@ impl Filter {
         let mut saved = Vec::new();
         for m in each_mut(msg) {
             let Some(asked) = pending.take(m) else { continue };
+            let (skipped, lossy, budget) = self.settings(&asked);
+            if skipped {
+                continue;
+            }
             let what = match &asked {
-                Asked::Tool(name) if self.skip.contains(name) => continue,
                 Asked::Tool(name) => format!("tools/call {name}"),
                 Asked::Resource => "resources/read".to_string(),
             };
             let Some(result) = m.get_mut("result") else { continue };
-            let (before, after) = self.result(result, &asked);
+            let (before, after) = self.result(result, &asked, lossy, budget);
             if after < before {
                 saved.push(Saved { what, before, after });
             }
@@ -212,7 +260,14 @@ mod tests {
 
     // A filter with the default settings.
     fn filter() -> Filter {
-        Filter { lossy: true, budget: DEFAULT_BUDGET, skip: Vec::new(), log: false }
+        Filter {
+            lossy: true,
+            budget: DEFAULT_BUDGET,
+            skip: Vec::new(),
+            log: false,
+            store: None,
+            config: config::Config::default(),
+        }
     }
 
     // Text that clean shrinks: pretty JSON.
@@ -226,10 +281,20 @@ mod tests {
         let o = parse(&v(&["--lossless", "--log", "--skip", "a", "--budget", "50", "--", "srv", "-x"]))
             .expect("opts");
         assert_eq!(o.upstream, Upstream::Command(v(&["srv", "-x"])));
-        assert_eq!(o.filter, Filter { lossy: false, budget: 50, skip: v(&["a"]), log: true });
+        assert_eq!(
+            o.filter,
+            Filter {
+                lossy: false,
+                budget: 50,
+                skip: v(&["a"]),
+                log: true,
+                store: crate::outputs::dir(),
+                config: config::Config::default()
+            }
+        );
         let o = parse(&v(&["--upstream", "https://h/mcp"])).expect("opts");
         assert_eq!(o.upstream, Upstream::Http { url: "https://h/mcp".into(), listen: DEFAULT_LISTEN.into() });
-        assert_eq!(o.filter, filter());
+        assert_eq!(o.filter, Filter { store: crate::outputs::dir(), ..filter() });
         let o = parse(&v(&["--upstream", "u", "--listen", "127.0.0.1:1"])).expect("opts");
         assert_eq!(o.upstream, Upstream::Http { url: "u".into(), listen: "127.0.0.1:1".into() });
     }
@@ -289,6 +354,91 @@ mod tests {
         assert_eq!(out[0]["result"]["structuredContent"]["keep"], "  as is  ");
         assert_eq!(out[1]["result"]["contents"][0]["text"], min);
         assert!(p.is_empty());
+    }
+
+    // Checks a shortened text is stored with its original, and its id is added as its own item, so JSON text stays JSON.
+    #[test]
+    fn test_rewrite_stores_with_id() {
+        let t = crate::testutil::TempDir::new();
+        let f = Filter { store: Some(t.path().to_path_buf()), ..filter() };
+        let mut p = Pending::default();
+        p.note_text(
+            r#"[{"id":1,"method":"tools/call","params":{"name":"t"}},{"id":2,"method":"resources/read"}]"#,
+        );
+        let msg = json!([
+            {"id": 1, "result": {"content": [{"type": "text", "text": pretty()}]}},
+            {"id": 2, "result": {"contents": [{"uri": "f", "text": pretty()}]}}
+        ]);
+        let out: Value =
+            serde_json::from_str(&f.rewrite_text(&mut p, &msg.to_string()).expect("changed")).expect("json");
+        let note = out[0]["result"]["content"][1]["text"].as_str().expect("note");
+        assert!(note.starts_with("[r:") && note.ends_with(" shortened by zazzle]"), "{note}");
+        let stored = crate::outputs::load(t.path(), &note[3..13]).expect("stored");
+        assert_eq!((stored.shown.as_str(), stored.full), (r#"{"items":[1,2,3],"name":"x"}"#, pretty()));
+        assert_eq!(out[1]["result"]["contents"][1]["uri"], "f");
+        assert!(out[1]["result"]["contents"][1]["text"].as_str().expect("note").starts_with("[r:"));
+        let cut = Filter { budget: 5, ..f.clone() };
+        p.note_text(r#"{"id":3,"method":"tools/call","params":{"name":"t"}}"#);
+        let long = (0..200).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let msg = json!({"id": 3, "result": {"content": [{"type": "text", "text": long}]}});
+        let out: Value = serde_json::from_str(&cut.rewrite_text(&mut p, &msg.to_string()).expect("changed"))
+            .expect("json");
+        assert!(out["result"]["content"][1]["text"]
+            .as_str()
+            .expect("note")
+            .contains("full text: read-again r:"));
+        let broken = Filter { store: Some(t.path().join("no/such\0dir")), ..filter() };
+        p.note_text(r#"{"id":4,"method":"tools/call","params":{"name":"t"}}"#);
+        let msg = json!({"id": 4, "result": {"content": [{"type": "text", "text": pretty()}]}});
+        let out: Value =
+            serde_json::from_str(&broken.rewrite_text(&mut p, &msg.to_string()).expect("changed"))
+                .expect("json");
+        assert!(out["result"]["content"][1]["text"]
+            .as_str()
+            .expect("note")
+            .starts_with("[shortened by zazzle; not stored"));
+    }
+
+    // Checks per-tool rules: a lossless tool keeps its progress bars, a small budget cuts, a skipped tool and resource stay, others use the command line.
+    #[test]
+    fn test_rewrite_uses_config() {
+        let config = config::parse(r#"{"tools": {"keep_*": {"lossless": true}, "tiny": {"budget": 5}, "secret": {"skip": true}}, "resources": {"skip": true}}"#).expect("config");
+        let f = Filter { config, ..filter() };
+        let bars = "10% |█████     |\n100% |██████████|\nend";
+        let long = (0..100).map(|i| format!("row {i}")).collect::<Vec<_>>().join("\n");
+        let mut p = Pending::default();
+        p.note_text(r#"[{"id":1,"method":"tools/call","params":{"name":"keep_raw"}},{"id":2,"method":"tools/call","params":{"name":"tiny"}},{"id":3,"method":"tools/call","params":{"name":"secret"}},{"id":4,"method":"resources/read"},{"id":5,"method":"tools/call","params":{"name":"plain"}}]"#);
+        let item = |t: &str| json!({"content": [{"type": "text", "text": t}]});
+        let msg = json!([
+            {"id": 1, "result": item(&format!("{bars}\n\n\n\n\n\nx"))},
+            {"id": 2, "result": item(&long)},
+            {"id": 3, "result": item(&pretty())},
+            {"id": 4, "result": {"contents": [{"uri": "f", "text": pretty()}]}},
+            {"id": 5, "result": item(&format!("{bars}\n\n\n\n\n\nx"))}
+        ]);
+        let out: Value =
+            serde_json::from_str(&f.rewrite_text(&mut p, &msg.to_string()).expect("changed")).expect("json");
+        assert!(out[0]["result"]["content"][0]["text"].as_str().expect("t").contains("10% |"));
+        assert!(out[1]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("t")
+            .contains("cut to fit the budget of 5"));
+        assert_eq!(out[2]["result"]["content"][0]["text"], pretty());
+        assert_eq!(out[3]["result"]["contents"][0]["text"], pretty());
+        assert!(!out[4]["result"]["content"][0]["text"].as_str().expect("t").contains("10% |"));
+    }
+
+    // Checks --config loads a file and a bad one stops the proxy from starting.
+    #[test]
+    fn test_parse_config_flag() {
+        let t = crate::testutil::TempDir::new();
+        let path = t.write("p.json", br#"{"tools": {"a": {"budget": 9}}}"#).to_string_lossy().into_owned();
+        let o = parse(&v(&["--config", &path, "--", "srv"])).expect("opts");
+        assert_eq!(o.filter.config.tool("a").and_then(|r| r.budget), Some(9));
+        assert!(parse(&v(&["--config", "/nonexistent.json", "--", "srv"]))
+            .unwrap_err()
+            .starts_with("--config /nonexistent.json: "));
+        assert_eq!(parse(&v(&["--config"])).unwrap_err(), "--config needs a value");
     }
 
     // Checks the cases left untouched: nothing pending, not JSON, unknown ids, server requests, skipped tools, errors.

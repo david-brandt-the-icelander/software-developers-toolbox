@@ -1,0 +1,100 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle invoker deployment diagram",
+  "folder": "macos/c/zazzle",
+  "description": "What `make` produces and where it runs: one small executable per platform, run once per command in the user's shell, beside the zazzled it starts and the standalone tools it hands commands to. The daemon side is in macos/rust/zazzled/.dev/deployment-diagram.json; the release ships build/zazzle in the macOS and Linux tarballs beside zazzled.",
+  "sources": [
+    {
+      "path": "macos/c/zazzle/Makefile",
+      "symbol": "LINK"
+    },
+    {
+      "path": "macos/c/zazzle/src/entry.h",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "pick_daemon"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "exec_tool"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Build and smoke test the zazzle invoker"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "linux",
+      "name": "Linux machine",
+      "kind": "host",
+      "description": "x86_64 or aarch64."
+    },
+    {
+      "id": "mac",
+      "name": "Mac",
+      "kind": "host",
+      "description": "Apple silicon (arm64) only; Intel Macs have no zazzle."
+    },
+    {
+      "id": "shell",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle CMD ...`, with ZAZZLE_SESSION set for ids and dedupe.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "zazzle-linux",
+      "name": "zazzle process (Linux)",
+      "kind": "process",
+      "description": "A static executable with no libc: raw syscalls only, its own `_start`."
+    },
+    {
+      "id": "zazzle-mac",
+      "name": "zazzle process (macOS)",
+      "kind": "process",
+      "description": "Loaded by dyld with libSystem, entered at `main`; its I/O, socket and exec calls are still raw syscalls."
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled serve process",
+      "kind": "process",
+      "description": "The daemon; see the zazzled deployment diagram."
+    },
+    {
+      "id": "exec",
+      "name": "Program the invoker becomes",
+      "kind": "process",
+      "description": "For `zazzle run`, `zazzle proxy`, `zazzle free-disk-space` and `zazzle fix-network`, the same process after exec: `zazzled wrap`, `zazzled proxy`, or the tool found beside the invoker, with the caller's environment, streams and exit status."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "zazzle-static",
+      "name": "build/zazzle (Linux)",
+      "source": "macos/c/zazzle/Makefile",
+      "deployedTo": "zazzle-linux",
+      "description": "-Os -ffreestanding, linked -static -nostdlib -no-pie with sections garbage-collected, two LOAD segments (-z noseparate-code) and symbols stripped; shipped in the Linux release tarballs beside zazzled."
+    },
+    {
+      "id": "zazzle-macho",
+      "name": "build/zazzle (macOS)",
+      "source": "macos/c/zazzle/Makefile",
+      "deployedTo": "zazzle-mac",
+      "description": "-Os -ffreestanding with ZAZZLE_LIBSYSTEM, linked against libSystem with dead code stripped; shipped in the macOS release tarball beside zazzled."
+    }
+  ],
+  "relationships": [
+    { "from": "linux", "to": "zazzle-linux", "kind": "hosts", "description": "One process per command." },
+    { "from": "mac", "to": "zazzle-mac", "kind": "hosts", "description": "One process per command." },
+    { "from": "shell", "to": "zazzle-linux", "kind": "connects-to", "description": "Runs it." },
+    { "from": "shell", "to": "zazzle-mac", "kind": "connects-to", "description": "Runs it." },
+    { "from": "zazzle-linux", "to": "zazzled", "kind": "connects-to", "description": "Unix socket, descriptor mode; starts ZAZZLE_DAEMON or the zazzled beside it with clone, setsid and execve when nothing listens." },
+    { "from": "zazzle-mac", "to": "zazzled", "kind": "connects-to", "description": "Unix socket, descriptor mode; starts ZAZZLE_DAEMON or the zazzled beside it with posix_spawn in a new session when nothing listens (or launchd does, once installed)." },
+    { "from": "zazzle-linux", "to": "exec", "kind": "connects-to", "description": "execve, for the commands that run as their own process." },
+    { "from": "zazzle-mac", "to": "exec", "kind": "connects-to", "description": "execve, for the commands that run as their own process." }
+  ]
+}

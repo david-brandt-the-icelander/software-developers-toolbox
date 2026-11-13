@@ -1,0 +1,23 @@
+{
+  "$schema": "../schemas/contacts.schema.json",
+  "kind": "contacts",
+  "schemaVersion": 1,
+  "title": "Example Scheduler contacts",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "on-call",
+      "title": "Operator on duty",
+      "summary": "Answers alarms around the clock.",
+      "role": "Operator on duty",
+      "responsibleFor": [
+        "Alarms",
+        "Stuck slots"
+      ],
+      "channel": "The paging service, schedule 'scheduler'",
+      "hours": "Always",
+      "escalation": "The platform team lead"
+    }
+  ]
+}

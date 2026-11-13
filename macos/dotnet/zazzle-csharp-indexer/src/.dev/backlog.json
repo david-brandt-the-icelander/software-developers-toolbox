@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazzle-csharp-indexer source backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "store-never-collected",
+      "title": "Unreferenced blobs are never deleted",
+      "summary": "Store.CollectGarbage deletes blobs no file refers to, but nothing calls it, so every content any indexed file ever had stays in store.db and in the engine's memory.",
+      "type": "defect",
+      "priority": "medium",
+      "expected": "Blobs that no file record points at any more are removed at some point, as Store.CollectGarbage is written to do; macos/dotnet/style.md allows no dead code.",
+      "observed": "No code calls Store.CollectGarbage. Each edit of a file adds a blob row (with its symbols), and Engine loads every blob row into memory at start, so the store and the daemon's memory grow with the history of edits.",
+      "acceptanceCriteria": [
+        "Unreferenced blobs are collected (for example after a reconcile or at daemon start), with a test, or the owner records why they are kept and the method is removed."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder: a search of src/ finds no caller of Store.CollectGarbage; not reproduced."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store.CollectGarbage"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.Engine"
+        },
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Token-lean, agent-readable code"
+        }
+      ]
+    }
+  ]
+}

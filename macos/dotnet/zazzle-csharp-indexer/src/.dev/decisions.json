@@ -1,0 +1,112 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzle-csharp-indexer source decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "content-addressed-store",
+      "title": "A content-addressed SQLite store",
+      "summary": "Analysis is stored once per distinct content, keyed by git blob id, in a SQLite database in WAL mode; files only point at blobs, so copies, worktrees and branches share the analysis.",
+      "status": "accepted",
+      "context": "The same content appears under many paths: copies of a repository, git worktrees, branches switched back and forth. Analysing it again for each path wastes the indexing time the daemon exists to save.",
+      "decision": "store.db has a root table (path, FSEvents id, last full scan), a blob table keyed by oid (line count, language, digest, symbols, extractor version) and a file table (root, path, stat key, blob id). Engine keeps every blob's facts and the symbol-name index in memory and analyses bytes only when their oid is new. Blobs written by another extractor version are deleted when the store opens.",
+      "rationale": "Content that has been seen once costs a hash, not an analysis, under any path and in any root.",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.GetOrAddBlob"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_copies_share_blobs"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
+          "entityId": "git-blob-id"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/decisions.json",
+          "entityId": "stat-key"
+        }
+      ]
+    },
+    {
+      "id": "usage-log-for-next-version",
+      "title": "Log every call locally to shape the next version",
+      "summary": "Every internal tool call and every hook decision is appended to a local JSONL log, with free-text arguments hashed, so the owner can see from real use what to build next.",
+      "status": "accepted",
+      "context": "Which questions agents ask, which they cannot get answered and which raw commands they still run is not known in advance.",
+      "decision": "McpServer and the hook command write one record per event through UsageLog; report_gap (zazzle_report_gap) lets the agent add a sentence; zazzle-csharp-indexer report summarises the log. String arguments are reduced to 12-hex SHA-256 prefixes unless ZAZZLE_INDEXER_LOG_PLAIN=1; in arrays the first element and flags stay readable.",
+      "rationale": "The README's intro: every call is logged so the next version can be shaped by real use. Hashing keeps patterns, paths and notes passed as arguments out of the log while still showing repeats.",
+      "origin": "README.md, intro and Usage log.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Shape"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.Build"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "documents",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/observability.json",
+          "entityId": "usage-log"
+        }
+      ]
+    },
+    {
+      "id": "roslyn-and-sqlite-packages",
+      "title": "Two NuGet packages",
+      "summary": "The project depends on Microsoft.Data.Sqlite for the store and Microsoft.CodeAnalysis.CSharp for C# syntax trees, and on nothing else outside the base class library.",
+      "status": "accepted",
+      "context": "macos/dotnet/style.md: prefer the BCL; add a NuGet package only with a stated reason.",
+      "decision": "Microsoft.Data.Sqlite 8.0.10 and Microsoft.CodeAnalysis.CSharp 4.8.0.",
+      "rationale": "Roslyn's reason is stated in CSharpSymbols.cs (exact C# symbols without compiling). No reason for SQLite is written down in the repository beyond Store.cs being a SQLite store.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "PackageReference"
+        },
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Toolchain"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+          "symbol": "CSharpSymbols"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
+          "entityId": "roslyn-syntax-only"
+        }
+      ]
+    }
+  ]
+}

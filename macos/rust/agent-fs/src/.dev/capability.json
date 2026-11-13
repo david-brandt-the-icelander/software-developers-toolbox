@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "afs capability",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "What afs can do for whoever runs it.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.dispatch" },
+    { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tools" }
+  ],
+  "entities": [
+    {
+      "id": "session-aware-file-access",
+      "name": "Session-aware file reading and search",
+      "description": "Reads, searches, lists, stats and outlines local files on request, as JSON, and remembers within a session what it already sent.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State" }
+      ],
+      "responsibility": "Answers JSON requests about the local file system with bounded replies, and within one session replaces content the caller already has with an unchanged marker or a line diff.",
+      "operations": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "list" },
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "stat" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "since" }
+      ],
+      "access": [
+        "Anyone who can run the binary; nothing in the code checks who the caller is.",
+        "Any path, absolute or relative to the working directory, that the operating system lets the running user read; there is no root or allow-list.",
+        "Read-only: no operation changes a file."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/operation.json",
+      "relationship": "The operations that reach it."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/feature.json",
+      "relationship": "The features that make it up."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/use-case.json",
+      "relationship": "The use cases that use it."
+    }
+  ]
+}

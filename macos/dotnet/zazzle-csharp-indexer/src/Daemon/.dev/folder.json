@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Shared daemon",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Shared daemon",
+      "summary": "Both ends of the per-user daemon: the server that holds one engine for every session, and the client side that serve uses to start it, greet it and pipe standard input and output through it.",
+      "purpose": "Holds DaemonServer, which listens on a unix socket in the state directory, attaches each client's roots and runs one MCP session per connection, and Proxy, which connects (spawning the daemon when nothing answers), performs the handshake and copies bytes both ways.",
+      "boundaries": [
+        "The MCP protocol itself is src/Mcp/; the daemon only frames a session with a one-line handshake.",
+        "Which process is a daemon and which is a client is decided in src/Program.cs (the daemon and serve commands)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "daemon"
+        }
+      ]
+    }
+  ]
+}

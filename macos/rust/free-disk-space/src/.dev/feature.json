@@ -1,0 +1,465 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "free-disk-space features",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The behavior the binary offers for reclaiming disk space, with the limits the code puts on each. Every command that changes files reports the summed sizes it saw separately from the change in the volume's free space, and says the two can differ.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "Cmd"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/util.rs",
+      "symbol": "report_free"
+    }
+  ],
+  "entities": [
+    {
+      "id": "resumable-scan",
+      "name": "Resumable scan",
+      "description": "A scan of a directory tree that survives Ctrl-C and continues where it stopped.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "run_scan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "scan_entry"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "consider"
+        }
+      ],
+      "behavior": "The scan queues directories in the state file and always takes the newest pending one. For each entry it skips symlinks, queues subdirectories that are not excluded and (without --cross-devices) on the root's device, records every regular file's path, leaf name and size, and records a candidate when the file qualifies. A file qualifies when it is at least --min-size (default 1M), has one link, carries no compressed, immutable, append-only or dataless flag, was not modified within --min-age-days (default 14), is not sparse (allocated at least 80% of its size), is not a skipped name or extension, and zlib on up to three 64 KiB samples shows at least --min-savings-pct (default 25) and an estimated saving of at least 128 KiB. The estimate is the size times the sampled saving ratio times 0.85. Progress is committed about every 2 seconds; the first Ctrl-C stops after the current directory.",
+      "outcome": "A list of compression candidates ranked by estimated saving, and a record of every file name for dedupe, built in as many sittings as the user likes.",
+      "constraints": [
+        "Directories named .Trash, .Spotlight-V100, .fseventsd, .DocumentRevisions-V100, .TemporaryItems, .ssh, .gnupg, .aws, .gcloud, Keychains, Mobile Documents, CloudStorage or com.docker.docker, bundles and libraries such as .app, .photoslibrary and .xcarchive, the paths under SKIP_PREFIXES (/System, /usr, /Volumes, /private/var/vm and others) and every --exclude are not entered.",
+        "Archives, media, databases and their journals, VM disks, lock files and credential files (by extension, by name, and any name starting id_) are never candidates.",
+        "Only one scan per state file; a new one replaces a finished scan, and an unfinished one only with --force."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_resume"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "run_scan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "scan_entry"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "dir_excluded"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "consider"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "sample_ratio"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "install_sigint"
+        }
+      ]
+    },
+    {
+      "id": "verified-compression",
+      "name": "Verified in-place compression",
+      "description": "Each candidate is compressed through a temp copy that must match the original before it replaces it.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "compress_one"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        }
+      ],
+      "behavior": "Pending candidates are taken largest estimated saving first, up to --sample or --max-files files and until --limit of estimated saving is planned. Before each file it checks the file is unchanged since the scan, single-linked, unflagged, not modified within --min-age-days, in a writable directory, not open (lsof), and that the data volume has the file's size plus --reserve (default 2G) free. ditto --hfsCompression copies it to .fds-<pid>-<name>.tmp beside it; the copy must carry the compressed flag, save at least --min-gain (default 64K) of allocated space, match the original's size, mode, owner, group and SHA-256, and keep every xattr name the original has. The original's access and modification times are put on the copy, the original is checked once more for change, and the copy is renamed over it. On macOS, before the first file and before asking for confirmation, it checks that ditto --hfsCompression really compresses: it copies a highly compressible probe file in the system temp directory and requires the copy to carry the compressed flag, and otherwise exits saying nothing was changed (the code names macOS 26/27, where ditto reports success but writes plain copies). While it runs, the progress line shows how many files were compressed and how many were not; per file it prints only failures, and at the end how many files were skipped for each reason, pointing at list --status skipped for each file's note.",
+      "outcome": "Files read exactly as before and take less space; the run reports the verified saving and the volume's free-space change separately.",
+      "constraints": [
+        "macOS only, unless FDS_FORCE is set.",
+        "Refuses to start when the ditto probe copy does not come out compressed.",
+        "Stops after three failures in a row.",
+        "--dry-run lists up to 25 planned files and changes nothing.",
+        "A non-terminal run does not ask for confirmation."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "precheck"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "in_use"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "temp_beside"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "xattr_names"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "ditto_compresses"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "reason_key"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "print_skip_reasons"
+        }
+      ]
+    },
+    {
+      "id": "clone-dedupe",
+      "name": "Copy-on-write dedupe",
+      "description": "Identical same-named files become clones of one kept copy, each keeping its own metadata.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "clone_verified"
+        }
+      ],
+      "behavior": "Groups of recorded files with the same leaf name and size (at least --min-size, default 1 byte), largest first, are checked against the disk; a group with at least two members and one replaceable member is hashed with SHA-256 and split by volume and digest. In each set it keeps a member that cannot be replaced if there is one, else the oldest, and for each replaceable other member clones the kept copy to a temp file beside it, gives the clone the target's ACL, mode, owner, flags, times and xattrs (dropping xattrs the target lacks), checks permissions, ownership, xattr names, the hash and that the target has not changed, and renames the clone over the target, marking it cloned in the state file.",
+      "outcome": "Duplicate copies share their blocks on disk while every path keeps its own metadata.",
+      "constraints": [
+        "A dry run unless --apply; the dry run prints at most 50 of the files it would clone, then says it is still hashing and that the totals come at the end; the progress line stays up while it hashes.",
+        "Without --include-system it skips files owned by root or another user and files under /Library, /Applications, /private, /etc, /var, /tmp and the scan's SKIP_PREFIXES.",
+        "Hard-linked, open, compressed, immutable, append-only and dataless (iCloud placeholder) files are never replaced.",
+        "Only files the scan recorded, and only same-named ones, are compared.",
+        "--sample N stops after N duplicates; three failures in a row stop the run.",
+        "--apply needs macOS, unless FDS_FORCE is set, and a successful lsof snapshot."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "groups"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "members"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "is_system_file"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "clone_verified"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "sync_metadata"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "dedupe_group"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "apfs"
+        }
+      ]
+    },
+    {
+      "id": "folder-cleanup",
+      "name": "Cache, Downloads and Trash cleanup",
+      "description": "Empties fixed cache folders, Xcode's derived data, the Downloads folder and the Trash.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "CACHE_DIRS"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "empty_dir"
+        }
+      ],
+      "behavior": "caches empties ~/.cache, ~/.nuget/packages, ~/Library/Caches, VS Code's cached extensions, cached data and logs, and the Claude app's Cache and Code Cache under ~/Library/Application Support; xcode empties ~/Library/Developer/Xcode/DerivedData; downloads empties ~/Downloads, hidden files included. Each folder is kept and its contents removed without following symlinks; its line shows its size and the running total of the run. trash asks Finder to empty the Trash; its dry run measures ~/.Trash.",
+      "outcome": "Space held by regenerable caches and unwanted downloads is freed, with a per-folder size.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Entries the user may not remove are listed as protected and skipped.",
+        "all includes downloads but not brew or xcode.",
+        "Emptying the Trash needs Finder (macOS), unless FDS_FORCE is set.",
+        "With --apply, a folder emptied by an interrupted run is skipped by the next applying run within 12 hours (resumable-cleanup)."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "empty_dir"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "rm_tree"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_trash"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "ordered_targets"
+        }
+      ]
+    },
+    {
+      "id": "dev-artifact-cleanup",
+      "name": "Dev build artifact cleanup",
+      "description": "Deletes build output and dependency folders under the dev root that can be proved regenerable.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "ARTIFACTS"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "verify_artifact"
+        }
+      ],
+      "behavior": "Under --dev-root (default ~/dev) it finds directories named node_modules, .next, .nuxt, dist, build, target, .gradle, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, obj, bin and DerivedData, without descending into them or into .git. Each must have its rule's manifest beside it (package.json, Cargo.toml, a .csproj and so on), a lockfile where the rule asks for one, a marker inside where the rule asks for one, only .pyc and .pyo files for __pycache__; it must be inside a git work tree, ignored by git and contain no tracked files; nothing in it may be modified since the start of the current day in Atlantic/Reykjavik (UTC); and no running process may have a file in it open, its parent as working directory, or its parent in its command line. Eligibility is checked again just before deleting. Each artifact's line shows its size and the running total of the run.",
+      "outcome": "Old, unused build output and dependencies are deleted; anything unproven is listed as uncertain and kept.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Skipped when git is not on PATH or the dev root does not exist.",
+        "Everything is kept when the lsof snapshot fails.",
+        "With --apply, an artifact deleted or kept (modified today or in use) by an interrupted run is skipped by the next applying run within 12 hours (resumable-cleanup)."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "find_artifacts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "verify_artifact"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "today_start_ts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Snapshot"
+        }
+      ]
+    },
+    {
+      "id": "tool-cleanup",
+      "name": "Homebrew and Docker cleanup",
+      "description": "Lets Homebrew and an already-running Docker Desktop remove what they can download again.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_brew"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_docker"
+        }
+      ],
+      "behavior": "brew runs brew cleanup --prune=all -s when brew is on PATH. docker, only when the docker CLI is on PATH, Docker Desktop's process is running and docker info answers, prunes all unused images and the build cache, stops every running container with --docker-stop-timeout seconds' grace (default 30), asks Docker Desktop to quit and waits up to 180 seconds for it to stop.",
+      "outcome": "Space held by Homebrew's cache and Docker's images and build cache is freed.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Docker is never started; containers and volumes are never deleted.",
+        "If a container cannot be stopped, Docker is left running."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_brew"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "docker_running"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_docker"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "wait_for_quit"
+        }
+      ]
+    },
+    {
+      "id": "resumable-cleanup",
+      "name": "Resumable cleanup",
+      "description": "An applying clean that was interrupted continues after the steps it finished, the next time an applying clean runs.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ],
+      "behavior": "With --apply, clean appends each step it finishes to ~/.local/state/free-disk-space/clean-progress.txt: a cache, Xcode or Downloads folder emptied (dir:<folder>), a dev artifact deleted or kept because it was modified today or is in use (dev:<path>), and a target completed (target:<name>). A step during which the stop flag was set (Ctrl-C, or SIGTERM) is not recorded. The next applying run prints `resuming an interrupted run: N steps already done` and skips those steps, saying `done before the interruption` for each folder and target it skips. A run that completes removes the file; a file older than 12 hours is deleted unread. Dry runs neither read nor write it.",
+      "outcome": "A long cleanup stopped part way, by the user or by a logout that ends the daemon, does not start over from the first folder.",
+      "constraints": [
+        "Only applying runs, clean --apply and the daemon's cleanups, use it; there is one file per user, wherever --state or FDS_STATE points.",
+        "Progress older than 12 hours is discarded.",
+        "Steps are keyed by folder, artifact path and target name only, not by the interrupted run's dev root or targets (backlog clean-resume-ignores-dev-root).",
+        "The totals a resumed run prints count only what that run deleted."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::mark"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::finish"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "install_sigint"
+        }
+      ]
+    },
+    {
+      "id": "threshold-daemon",
+      "name": "Free-space threshold daemon",
+      "description": "A login item that cleans when free space falls below a threshold, counting only awake time.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        }
+      ],
+      "behavior": "Every --cadence (default 15m) of awake time it reads the data volume's total and free space and compares free space with --threshold (default 30G, or a percentage of the volume); below it, it runs clean --apply on --targets (default caches dev) with --dev-root (default ~/dev). A check is skipped while the main display is asleep. install writes a launchd plist that runs daemon run with these settings at load and keeps it alive, as a background process at nice 10 with low-priority I/O, logging to ~/Library/Logs/free-disk-space.log.",
+      "outcome": "Caches and old build output are cleared when space runs low, without the user remembering to.",
+      "constraints": [
+        "The clock stops while the Mac sleeps, and the daemon never wakes it.",
+        "Settings change only by reinstalling; the plist holds the absolute path of the binary that installed it.",
+        "Docker's stop grace is fixed at 30 seconds when the daemon cleans.",
+        "macOS only: installing runs /bin/launchctl."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "Settings::parse"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "awake_secs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "display_awake"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/capability.json",
+      "relationship": "The capabilities these features belong to."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/operation.json",
+      "relationship": "The commands that carry them out."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The use cases that exercise them."
+    }
+  ]
+}

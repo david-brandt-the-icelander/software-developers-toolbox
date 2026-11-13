@@ -1,0 +1,106 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "Live index limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "entities": [
+    {
+      "id": "no-ctime",
+      "title": "The stat key has no ctime",
+      "summary": "A rewrite that keeps size, modification time and birth time is not detected from the stat key.",
+      "impact": "Such a file keeps its old analysis until its stat key changes.",
+      "details": "Listed in the README's Known limits (ctime is not exposed by .NET), which says the watcher still catches such a rewrite. In the code a watcher event leads to RootIndex.Analyze, which also returns early when FileEntry.Matches holds, so the watcher does not catch it either; see backlog.json, watcher-same-stat-key.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs",
+          "symbol": "FileEntry.Matches"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Analyze"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/backlog.json",
+          "entityId": "watcher-same-stat-key"
+        }
+      ]
+    },
+    {
+      "id": "no-replay-off-macos",
+      "title": "No replay outside macOS",
+      "summary": "Linux (and any non-macOS system) uses FileSystemWatcher, which cannot replay, so every start runs a full reconcile.",
+      "impact": "Startup on Linux re-stats every file of every root.",
+      "details": "Listed in the README's Known limits, which also says FSEvents replay is covered by a macOS-only test in CI but was not run on a Mac when written, and that Windows is untested.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FswSource.cs",
+          "symbol": "FswSource.SupportsReplay"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "ChangeSources.Create"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    },
+    {
+      "id": "local-filesystems",
+      "title": "Local file systems only",
+      "summary": "The README lists local file systems as the only supported kind.",
+      "impact": "Roots on network file systems may miss change events.",
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    },
+    {
+      "id": "no-symlinks",
+      "title": "Symbolic links are not indexed",
+      "summary": "A path that is a symbolic link is skipped by reconcile and removed by analysis, even when git tracks it.",
+      "impact": "Files reached through a symlink are absent from overview, find_symbol and changed_since.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Reconcile"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Analyze"
+        }
+      ]
+    },
+    {
+      "id": "large-files",
+      "title": "Files over 16 MiB are listed but not analysed",
+      "summary": "A file larger than Engine.MaxIndexBytes gets a file record with blob id 0 and no analysis.",
+      "impact": "It counts in overview's file total, but has no symbols and no line count.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.MaxIndexBytes"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Analyze"
+        }
+      ]
+    }
+  ]
+}

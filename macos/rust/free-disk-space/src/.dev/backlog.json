@@ -1,0 +1,116 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "free-disk-space backlog",
+  "folder": "macos/rust/free-disk-space/src",
+  "entities": [
+    {
+      "id": "scan-root-under-system",
+      "title": "A scan rooted under /System or another skipped prefix stops at the top level",
+      "summary": "new --root /System/Volumes/Data, which the help text offers for scanning everything, records only the files directly in that directory: every subdirectory is under /System, a skipped prefix.",
+      "type": "defect",
+      "status": "open",
+      "expected": "`new --root /System/Volumes/Data` scans the whole data volume (users' homes, /Applications, /Library and the rest), as the `--root` help says (\"default: your home; /System/Volumes/Data for all\").",
+      "observed": "cmd_new queues the root itself without checking it, but scan_entry calls dir_excluded for each subdirectory, and dir_excluded excludes any path under an entry of SKIP_PREFIXES; /System/Volumes/Data/Users is under /System, so no subdirectory is queued and the scan finishes after one directory. The same happens for a root under /Volumes, /usr or any other entry of SKIP_PREFIXES.",
+      "reproduction": [
+        "On a Mac: free-disk-space new --root /System/Volumes/Data --force (reasoned from the code, not run)",
+        "free-disk-space status would show one directory processed and only the files at the top of the volume",
+        "In a unit test: dir_excluded(\"/System/Volumes/Data/Users\", \"Users\", &cfg) returns true"
+      ],
+      "acceptanceCriteria": [
+        "A scan rooted at /System/Volumes/Data descends into its subdirectories.",
+        "A unit test covers a root under a skipped prefix."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "coding agent documenting the folder",
+        "date": "2026-11-12",
+        "description": "Found reading scan.rs against the --root help text in main.rs."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "NewArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "SKIP_PREFIXES"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "dir_excluded"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "scan_entry"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "resumable-scan"
+        }
+      ]
+    },
+    {
+      "id": "clean-resume-ignores-dev-root",
+      "title": "Resuming a clean skips the dev target even when the dev root differs",
+      "summary": "After an interrupted clean --apply that had finished the dev target, the next applying clean within 12 hours skips dev as done before the interruption, whatever --dev-root it is given.",
+      "type": "defect",
+      "status": "open",
+      "expected": "An applying clean resumes only the run that was interrupted: a later clean dev --apply with a different --dev-root (or the daemon's run with its own dev root) searches that tree for artifacts.",
+      "observed": "cmd_clean records a finished target as `target:<name>` in ~/.local/state/free-disk-space/clean-progress.txt and, on the next applying run, skips any target whose key is there. The key holds neither the dev root nor the target list, and the file is shared by every applying run of the user (clean and the daemon alike), so `clean dev docker --apply --dev-root ~/a` interrupted during docker, followed within 12 hours by `clean dev --apply --dev-root ~/b`, prints `dev: done before the interruption`, leaves ~/b untouched, and then deletes the progress file. Any later applying run counts as the resume, even one that is not a retry, such as the daemon's scheduled clean after an interrupted manual one.",
+      "reproduction": [
+        "Reasoned from the code, not run: clean dev docker --apply --dev-root ~/a, press Ctrl-C while Docker is being cleaned",
+        "Within 12 hours: clean dev --apply --dev-root ~/b",
+        "The dev section prints `dev: done before the interruption` and nothing under ~/b is examined"
+      ],
+      "acceptanceCriteria": [
+        "A resumed run skips only steps of the same targets and dev root as the interrupted run, or the interrupted run's settings are checked before resuming.",
+        "A unit test covers a resume with a different dev root."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "coding agent reconciling the folder's .dev files",
+        "date": "2026-11-13",
+        "description": "Found reading Progress and cmd_clean in clean.rs after the resume change (#36)."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::mark"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "resumable-cleanup"
+        }
+      ]
+    }
+  ]
+}

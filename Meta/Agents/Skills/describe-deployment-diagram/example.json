@@ -1,0 +1,45 @@
+{
+  "$schema": "schema.json",
+  "kind": "deployment",
+  "title": "Example worker deployment diagram",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "process",
+      "name": "Worker process",
+      "kind": "process",
+      "description": "Executes the worker application."
+    },
+    {
+      "id": "operator-browser",
+      "name": "Operator's browser",
+      "kind": "client",
+      "description": "An operator working the admin pages.",
+      "actor": "Actors/example-operator.md"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "worker",
+      "name": "ExampleWorker.dll",
+      "source": "src/ExampleWorker/ExampleWorker.csproj",
+      "deployedTo": "process",
+      "description": "Published application entry assembly."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "operator-browser",
+      "to": "process",
+      "kind": "connects-to",
+      "description": "Loads the admin pages over HTTPS."
+    }
+  ]
+}

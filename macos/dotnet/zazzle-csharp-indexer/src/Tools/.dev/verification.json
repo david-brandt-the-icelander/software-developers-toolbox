@@ -1,0 +1,126 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "MCP tools verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "entities": [
+    {
+      "id": "navigation",
+      "title": "find_symbol, overview and changed_since",
+      "summary": "The structure tools answer from the stored analysis, and changed_since hands out and honours cursors.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+          "entityId": "find-symbol"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+          "entityId": "overview"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
+          "entityId": "change-cursors"
+        }
+      ],
+      "criteria": [
+        "find_symbol finds exact and partial names and filters by kind",
+        "overview reports languages and entry files",
+        "changed_since returns a cursor, then the files changed after it"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_find_symbol",
+          "command": "dotnet test tests --filter test_find_symbol"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_overview",
+          "command": "dotnet test tests --filter test_overview"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_changed_since",
+          "command": "dotnet test tests --filter test_changed_since"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "gap-and-dispatch",
+      "title": "report_gap, and what the server lists",
+      "summary": "report_gap reaches the log; the server lists no tools, answers the internal ones by name, and treats the removed ones as unknown.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+          "entityId": "report-gap"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/decisions.json",
+          "entityId": "tools-beside-zazzle"
+        }
+      ],
+      "criteria": [
+        "report_gap stores the note in the usage log in plain text",
+        "tools/list is empty and the instructions name the zazzle tools, while find_symbol called by name answers and is logged with its text hashed",
+        "search, read, find_files, outline, run and find_references are unknown tools"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_report_gap_logged",
+          "command": "dotnet test tests --filter test_report_gap_logged"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs",
+          "command": "dotnet test tests --filter test_server_lists_no_tools_and_logs"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_removed_tools_are_unknown",
+          "command": "dotnet test tests --filter test_removed_tools_are_unknown"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "view-tool",
+      "title": "The view tool",
+      "summary": "view answers a .cs file with a header and the view, and refuses other and missing files.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+          "entityId": "view"
+        }
+      ],
+      "criteria": [
+        "The answer starts with root:path, the line count and the changes per step, and holds the collapsed usings as a 1-2 note line",
+        "A file not ending in .cs is refused with not a C# file, and a missing one with no such file"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_tool",
+          "command": "dotnet test tests --filter test_view_tool"
+        }
+      ],
+      "details": "The rules of the view itself are checked in src/View/.dev/verification.json. A path outside the root is not covered by a view test.",
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/.dev/verification.json",
+          "entityId": "terse-view-rules"
+        }
+      ]
+    }
+  ]
+}

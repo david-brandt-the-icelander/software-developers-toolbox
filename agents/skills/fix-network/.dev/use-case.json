@@ -1,0 +1,141 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "fix-network skill use case",
+  "folder": "agents/skills/fix-network",
+  "description": "What a coding agent does, following SKILL.md, when the developer reports a network problem on their Mac.",
+  "sources": [
+    { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" },
+    { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+  ],
+  "entities": [
+    {
+      "id": "fix-the-developers-network",
+      "name": "Diagnose and repair the developer's network for them",
+      "description": "The developer reports no internet, failing DNS, a captive portal, an unreachable intranet behind a connected VPN, or broken networking after sleep; the agent diagnoses with fix-network, reports the outcomes as given and repairs only what the evidence and the developer allow.",
+      "sources": [
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "description" },
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get the developer's Mac network working again, or tell them exactly what they must do themselves, without taking an unsafe or unauthorized step.",
+      "preconditions": [
+        "The agent has a shell on the developer's Mac and fix-network is built or installed.",
+        "The developer has reported a network problem."
+      ],
+      "postconditions": [
+        "The developer has each finding's outcome as fix-network gave it: fixed, not fixable by this tool, or reboot needed.",
+        "Without --internal-host, corporate DNS and service are reported as not verified.",
+        "A cause is reported as confirmed only with evidence."
+      ],
+      "flow": [
+        {
+          "id": "report",
+          "actor": "Developer",
+          "action": "Tells the agent the network is broken, and names an internal host if the intranet is the problem.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "description" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "diagnose",
+          "actor": "Coding agent",
+          "action": "Runs fix-network diagnose with --internal-host, adding -v for tunnels and split DNS or --json to parse.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "relay",
+          "actor": "Coding agent",
+          "action": "Relays each finding's outcome as given: fixable with the exact fix command, not fixable by this tool, or reboot needed.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "preview",
+          "actor": "Coding agent",
+          "action": "Runs fix --dry-run with the same arguments to show the plan.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "repair",
+          "actor": "Coding agent",
+          "action": "Runs fix with the same arguments, adding --vpn, --fix-proxy or --allow-route-flush only with evidence from the diagnosis, and --allow-remote only if the developer accepts losing an SSH session.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "sudo",
+          "actor": "Developer",
+          "action": "Types their password into sudo in their own terminal when a privileged step needs it; the agent never asks for it in chat.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "result",
+          "actor": "Coding agent",
+          "action": "Reports the result, naming a cause as confirmed only with evidence ('it recovered' is not proof of cause), and points to the logs and original settings in the run's state directory.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" },
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "relay",
+          "condition": "A finding is not fixable by the tool or needs a reboot.",
+          "outcome": "The agent passes the advice on and does not reboot, delete network preferences, credentials or profiles, set public DNS or touch the router itself.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+          ]
+        },
+        {
+          "atStep": "repair",
+          "condition": "The VPN is Cisco Secure Client/AnyConnect.",
+          "outcome": "The tool only observes it through its routes; the developer reconnects it.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" }
+          ]
+        },
+        {
+          "atStep": "repair",
+          "condition": "A Wi-Fi cycle leaves Wi-Fi off.",
+          "outcome": "The watchdog turns it back on; otherwise the manual rescue is networksetup -setairportpower <device> on.",
+          "sources": [
+            { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md",
+      "supportingActors": [
+        { "name": "Developer", "actorDocument": "Actors/developer.md" }
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "operation", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/operation.json", "relationship": "The diagnose, fix --dry-run and fix commands the agent runs." },
+    { "kind": "use-case", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/use-case.json", "relationship": "The same goals pursued by the developer directly." },
+    { "kind": "feature", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/feature.json", "relationship": "The outcomes and repairs the agent relays." }
+  ]
+}

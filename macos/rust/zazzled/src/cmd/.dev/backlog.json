@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazzle command backlog",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "entities": [
+    {
+      "id": "unused-clean-shrink",
+      "title": "clean::shrink has no caller left",
+      "summary": "Since the MCP proxy and `zazzle run` moved to clean::shrink_steps, clean::shrink is called only by its own test, and its comment still names the proxy as its caller.",
+      "type": "debt",
+      "status": "open",
+      "compromise": "shrink was kept beside the new shrink_steps (which also returns the steps, so callers can tell whether anything was cut) instead of being removed; its comment says it is for \"callers other than the command line such as the MCP proxy\", which no longer holds.",
+      "cost": "A public function and a test to keep in step with clean, and a comment that points a reader at a caller that does not use it.",
+      "acceptanceCriteria": [
+        "clean::shrink is removed with its test, or has a caller again and a comment that names it.",
+        "`cargo test -p zazzled` and the branch-coverage gate still pass."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent reconciling the zazzled .dev files with commit 5ea503c",
+        "date": "2026-11-13",
+        "reference": "macos/rust/zazzled/src/cmd/clean.rs (shrink, shrink_steps); macos/rust/zazzled/src/proxy/mod.rs (Filter::text); macos/rust/zazzled/src/wrap/mod.rs (render_parts)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "shrink"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "render_parts"
+        }
+      ]
+    }
+  ]
+}

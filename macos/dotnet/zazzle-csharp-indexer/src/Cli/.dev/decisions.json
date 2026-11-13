@@ -1,0 +1,47 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Command-line helper decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "redirect-hook",
+      "title": "Block raw search and read commands, with a logged escape",
+      "summary": "A Claude Code hook refuses grep, find, cat and similar commands, the built-in Grep and Glob tools and the built-in Read of C# files, names the zazzle tool to use, and lets the agent bypass it for commands with # allow-raw, which is logged.",
+      "status": "accepted",
+      "context": "Agents should read, search and edit files and ask for C# structure through zazzle, the front door, which asks the indexer for terse C# views and structure; an MCP server alone is easy for an agent to ignore.",
+      "options": [
+        {
+          "title": "Instructions only (initialize instructions and the AGENTS.md snippet)",
+          "consequences": "Agents keep using their habitual shell commands."
+        },
+        {
+          "title": "A blocking PreToolUse hook with an escape hatch",
+          "consequences": "Raw commands are turned into tool calls; the escape and every block show up in the usage log and in zazzle-csharp-indexer report."
+        }
+      ],
+      "decision": "init installs zazzle-csharp-indexer hook for Bash, Grep, Glob and Read; HookPolicy blocks the searching and reading commands and Read of .cs files only, points at zazzle_find, zazzle_ls or zazzle_read, and lets building, editing, following logs, reads of other files and commands marked # allow-raw through.",
+      "rationale": "The README's Quick start: zazzle is the front door, and the hook points at the matching zazzle tool. Reading a .cs file through zazzle gives the terse view instead of the source. Logging both blocks and escapes shows which redirects agents fight.",
+      "origin": "README.md, intro and Quick start; commit 5ea503c sent the redirects to zazzle and added Read.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.Build"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,296 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazzled configuration",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "ZAZZLE_SOCK",
+      "title": "ZAZZLE_SOCK",
+      "summary": "The daemon's socket path.",
+      "key": "ZAZZLE_SOCK",
+      "type": "path",
+      "default": "$HOME/.zazzle/sock",
+      "sensitive": false,
+      "scope": "Read by `zazzled serve` (unless --socket is given or launchd passed a socket), by `zazzled mcp` to reach the daemon, and by `zazzled install`, which writes it into the LaunchAgent. The C invoker reads it too (macos/c/zazzle/src/zazzle_core.h build_path).",
+      "takesEffect": "at-startup",
+      "details": "A daemon installed as a LaunchAgent keeps the path that was current when `zazzled install` ran.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/client.rs",
+          "symbol": "socket_path"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "serve_main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "agent_main"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "build_path"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_SESSION",
+      "title": "ZAZZLE_SESSION",
+      "summary": "The session key for ids, dedupe and rerunning a response with read-again on the command line.",
+      "key": "ZAZZLE_SESSION",
+      "type": "string",
+      "default": "unset (no session: no session ids, no dedupe and no rerun by read-again; stored clean, run and proxy outputs still carry their own ids and can be read again)",
+      "sensitive": false,
+      "scope": "Read by the C invoker, which sends it in the request (macos/c/zazzle/src/zazzle_core.h build_request), and by `zazzled run`. The daemon itself does not read it; `zazzled mcp` uses a random session per process instead.",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "build_request"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "new_session_id"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/feature.json"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_IDLE_SECS",
+      "title": "ZAZZLE_IDLE_SECS",
+      "summary": "How long `zazzled serve` waits with no connection before it exits.",
+      "key": "ZAZZLE_IDLE_SECS",
+      "type": "integer (seconds)",
+      "default": 1800,
+      "sensitive": false,
+      "scope": "`zazzled serve`, including a daemon the invoker or the MCP front end starts, which inherits their environment. `--idle SECS` overrides it.",
+      "takesEffect": "at-startup",
+      "validation": "A value that is not a whole number is ignored and the default used.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "parse_serve"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "DEFAULT_IDLE_SECS"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_CACHE_DIR",
+      "title": "ZAZZLE_CACHE_DIR",
+      "summary": "Where the persistent cache lives.",
+      "key": "ZAZZLE_CACHE_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/v1",
+      "sensitive": false,
+      "scope": "`zazzled serve`. `zazzled run` uses no persistent cache.",
+      "takesEffect": "at-startup",
+      "validation": "If the directory cannot be created or opened, the daemon prints `zazzled: cache disabled: ...` and runs with the in-memory cache only. A new directory is made mode 0700, marked for Spotlight not to index, and on macOS excluded from Time Machine.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "default_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "prepare_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        }
+      ]
+    },
+    {
+      "id": "HOME",
+      "title": "HOME",
+      "summary": "The base of the default socket path, cache directory, output store and indexer state directory.",
+      "key": "HOME",
+      "type": "path",
+      "sensitive": false,
+      "scope": "Every zazzled subcommand that needs a default path, `zazzled install` for ~/Library/LaunchAgents, and the C# indexer bridge.",
+      "takesEffect": "at-startup",
+      "validation": "Unset: `HOME is not set` where a default path is needed; the cache is then disabled, outputs are not stored (unless ZAZZLE_OUTPUTS_DIR is set) and carry no output id, and C# files are read as source.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/client.rs",
+          "symbol": "socket_path"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "agent_main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::locate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "dir"
+        }
+      ]
+    },
+    {
+      "id": "serve-options",
+      "title": "zazzled serve --socket, --idle",
+      "summary": "Command-line options of `zazzled serve`: an explicit socket path, and the idle time in seconds.",
+      "key": "--socket PATH, --idle SECS",
+      "type": "path; integer (seconds)",
+      "sensitive": false,
+      "scope": "One `zazzled serve` process. The tests and the invoker's smoke test and benchmarks start the daemon with --socket.",
+      "takesEffect": "at-startup",
+      "validation": "A missing value, a non-numeric --idle or an unknown option is a usage error, exit 2.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "parse_serve"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_INDEXER",
+      "title": "ZAZZLE_INDEXER",
+      "summary": "The zazzle-csharp-indexer executable the daemon uses for the terse C# view and the structure tools.",
+      "key": "ZAZZLE_INDEXER",
+      "type": "path",
+      "default": "zazzle-csharp-indexer beside the zazzled executable, else the first on PATH",
+      "sensitive": false,
+      "scope": "Read in the process that renders a C# read (the daemon, or `zazzled run`), on each such read.",
+      "takesEffect": "per-use",
+      "validation": "An empty value counts as unset. If no executable is found, C# files are read as source with `(no terse view: zazzle-csharp-indexer is not installed (beside zazzled or on PATH); this is the source)`. Its version is asked once per executable and process.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "find_exe"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::locate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "VERSIONS"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_INDEXER_STATE_DIR",
+      "title": "ZAZZLE_INDEXER_STATE_DIR",
+      "summary": "The indexer's state directory, which holds its daemon socket; zazzled looks for `daemon.sock` there.",
+      "key": "ZAZZLE_INDEXER_STATE_DIR (falling back to XDG_STATE_HOME on Linux)",
+      "type": "path",
+      "default": "macOS: $HOME/Library/Application Support/zazzle-csharp-indexer; elsewhere: $XDG_STATE_HOME/zazzle-csharp-indexer, or $HOME/.local/state/zazzle-csharp-indexer",
+      "sensitive": false,
+      "scope": "The C# indexer bridge, on each C# read and each structure command. It mirrors how the indexer itself chooses the directory, so both must see the same environment; a daemon zazzled starts inherits zazzled's.",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "state_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::connect"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/contracts.json",
+          "entityId": "state-dir-layout",
+          "description": "The indexer owns the state directory's layout."
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_OUTPUTS_DIR",
+      "title": "ZAZZLE_OUTPUTS_DIR",
+      "summary": "Where clean, run and proxy outputs are stored for read-again.",
+      "key": "ZAZZLE_OUTPUTS_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/outputs",
+      "sensitive": false,
+      "scope": "Read by each process that stores or loads outputs: `zazzled serve` and `zazzled run` when they open their engine (clean stores, read-again loads), `zazzled wrap` on each run, and `zazzled proxy` at its start. A `zazzle run` or proxy output can be read again only by a daemon that uses the same directory.",
+      "takesEffect": "at-startup",
+      "validation": "An empty value counts as unset. Without it and without HOME nothing is stored. The directory is created mode 0700 and each file 0600; a save that fails leaves the output in the answer with a note that it was not stored.",
+      "details": "A daemon keeps the directory it started with; `zazzled wrap` reads the variable from the caller's environment on every run.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "parse"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "output-store"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_OUTPUTS_MAX_GB",
+      "title": "ZAZZLE_OUTPUTS_MAX_GB",
+      "summary": "The output store's size limit in gigabytes.",
+      "key": "ZAZZLE_OUTPUTS_MAX_GB",
+      "type": "number (gigabytes, fractions allowed)",
+      "default": 2,
+      "sensitive": false,
+      "scope": "Read by the process that stores an output, on each save: the daemon for clean, `zazzled wrap` for run, `zazzled proxy` for shortened texts.",
+      "takesEffect": "per-use",
+      "validation": "A value that is not a number, or not above 0, is ignored and the default used. After a save, if the entries younger than an hour hold more bytes than the limit, the oldest go until half remain.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "limit"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "reap"
+        }
+      ]
+    }
+  ]
+}

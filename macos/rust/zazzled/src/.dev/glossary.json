@@ -1,0 +1,140 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "zazzle terms",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "invoker",
+      "title": "invoker",
+      "summary": "The small `zazzle` program in macos/c/zazzle that passes its command line, standard streams and working directory to the daemon and exits with the daemon's status, or execs zazzled or a standalone tool for the commands that run as their own process.",
+      "notToBeConfusedWith": ["`zazzled run`, which runs a zazzle command in its own process without a daemon"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "zazzle_run" }]
+    },
+    {
+      "id": "run",
+      "title": "zazzle run / zazzled run",
+      "summary": "Two different things: `zazzle run -- CMD` runs any program and prints its output cleaned with a profile (it execs `zazzled wrap`); `zazzled run CMD..` runs one zazzle command, such as `read` or `status`, in-process without a daemon or persistent cache.",
+      "aliases": ["zazzled wrap"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "zazzle_run" },
+        { "path": "macos/rust/zazzled/src/cli.rs", "symbol": "run_in_process" },
+        { "path": "macos/rust/zazzled/src/wrap/mod.rs", "symbol": "main" }
+      ]
+    },
+    {
+      "id": "session",
+      "title": "session",
+      "summary": "The key under which the daemon remembers what it has sent: ZAZZLE_SESSION on the command line, or one random `mcp-...` id per `zazzled mcp` process.",
+      "notToBeConfusedWith": ["A connection: the invoker opens one per command, all in the same session."],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/session.rs", "symbol": "Sessions" },
+        { "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "new_session_id" }
+      ]
+    },
+    {
+      "id": "response-id",
+      "title": "response id",
+      "summary": "The `[r:ID]` that starts an answer sent in a session: at least five characters, derived from the session and the answer's text; `read-again r:ID` fetches it again.",
+      "notToBeConfusedWith": ["An output id: ten characters, given to clean, `zazzle run` and proxied outputs whether or not there is a session, and looked up in the output store."],
+      "aliases": ["[r:ID]"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/zazzled/src/session.rs", "symbol": "unique_id" }]
+    },
+    {
+      "id": "already-sent",
+      "title": "already-sent notice",
+      "summary": "`[r:ID] already sent: zazzle CMD ARGS, unchanged. If you no longer have it: read-again r:ID`, given instead of an answer the session was sent identically within its last 40,000 estimated tokens.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/zazzled/src/session.rs", "symbol": "Sessions::apply_with" }]
+    },
+    {
+      "id": "sha",
+      "title": "sha",
+      "summary": "The first 8 hex digits of a file's BLAKE3 hash, shown in read's header (with --source for C# files) and edit's answer; edit --expect accepts any prefix of at least four of them.",
+      "notToBeConfusedWith": ["A git object id or a SHA-1/SHA-2 digest."],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/util.rs", "symbol": "hex8" },
+        { "path": "macos/rust/zazzled/src/cmd/edit.rs", "symbol": "check_precondition" }
+      ]
+    },
+    {
+      "id": "anchor",
+      "title": "anchor",
+      "summary": "Three base-32 characters hashed from one line's text, shown as `N#xyz` by read --anchors; edit --at A#xyz-B#xyz is refused if either line's anchor changed.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/meta.rs", "symbol": "anchor_str" },
+        { "path": "macos/rust/zazzled/src/cmd/edit.rs", "symbol": "check_precondition" }
+      ]
+    },
+    {
+      "id": "terse-view",
+      "title": "terse view",
+      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs) or a Python, TypeScript or Dart file (terse.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
+      "notToBeConfusedWith": ["An outline, which lists symbols and their ranges, not code."],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "render_terse" },
+        { "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "Indexer::view" },
+        { "path": "macos/rust/zazzled/src/markup.rs", "symbol": "view" },
+        { "path": "macos/rust/zazzled/src/terse.rs", "symbol": "view" }
+      ]
+    },
+    {
+      "id": "profile",
+      "title": "profile",
+      "summary": "In `zazzle run`, a named set of rules for one tool (cargo, pytest, go, dotnet, js-test, tsc, install) that drops and counts lines known to be noise and groups diagnostics; detected from the command or named with --profile.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/wrap/profile.rs", "symbol": "PROFILES" },
+        { "path": "macos/rust/zazzled/src/wrap/profile.rs", "symbol": "detect" }
+      ]
+    },
+    {
+      "id": "budget",
+      "title": "budget",
+      "summary": "A cap on an answer's size in estimated tokens (bytes × 2 / 7, rounded up): 8000 by default, 3000 per file for read and for read-again --full; clean, `zazzle run` and the proxy have their own, 8000 by default.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/tokens.rs", "symbol": "from_bytes" },
+        { "path": "macos/rust/zazzled/src/cmd/mod.rs", "symbol": "DEFAULT_BUDGET" },
+        { "path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "DEFAULT_BUDGET" }
+      ]
+    },
+    {
+      "id": "racy",
+      "title": "racy",
+      "summary": "Said of a cached record or listing taken within 2 seconds of the modification time it depends on; it is not trusted, because a later write in the same instant would not change the timestamp.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/store.rs", "symbol": "RACY_NS" },
+        { "path": "macos/rust/zazzled/src/walk.rs", "symbol": "RACY_NS" }
+      ]
+    },
+    {
+      "id": "relay-mode",
+      "title": "relay mode",
+      "summary": "A request without passed descriptors: the daemon sends the status byte and the text back on the socket. Used by the MCP front end; the invoker uses descriptor mode, where the daemon writes to the caller's own streams.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/zazzled/src/server.rs", "symbol": "respond" }]
+    },
+    {
+      "id": "output-id",
+      "title": "output id",
+      "summary": "The ten-character `[r:ID]` of a stored clean, `zazzle run` or proxied output, derived from the text shown and its input; `read-again r:ID` returns the output as shown and `--full` its input, for an hour.",
+      "aliases": ["stored output", "[r:ID shortened by zazzle]"],
+      "notToBeConfusedWith": ["A response id, which a session gives a find, read, ls, outline or refs answer and which read-again reruns."],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "id_of" },
+        { "path": "macos/rust/zazzled/src/outputs.rs", "symbol": "MAX_AGE" },
+        { "path": "macos/rust/zazzled/src/cmd/again.rs", "symbol": "run" }
+      ]
+    }
+  ]
+}

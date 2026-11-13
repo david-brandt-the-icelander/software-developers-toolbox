@@ -1,0 +1,303 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer source component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "The parts of the zazzle-csharp-indexer executable. The same binary is the shared daemon zazzled talks to, the stdio server in front of it and the init, hook and report commands; one engine per process holds the store and the indexes.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+      "symbol": "PackageReference"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+      "symbol": "TerseView.Build"
+    }
+  ],
+  "components": [
+    {
+      "id": "executable",
+      "name": "zazzle-csharp-indexer executable",
+      "responsibility": "Everything zazzle-csharp-indexer does, in one process per command.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "program",
+      "name": "Command line (Program.cs)",
+      "responsibility": "Dispatches serve, daemon, init, report, hook and --version; wires roots, the engine, the daemon proxy and the MCP server together.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine, store and roots (Engine.cs, Store.cs, Root.cs)",
+      "responsibility": "The SQLite store, in-memory blob and symbol-name tables, one live index per root path, root validation and path resolution.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "usage-log",
+      "name": "Usage log (UsageLog.cs)",
+      "responsibility": "Appends one JSON line per tool call or hook decision to usage.jsonl in the state directory.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "proc",
+      "name": "Process and path helpers (Proc.cs, Native.cs)",
+      "responsibility": "Runs external programs with an argument list, a timeout and an 8 MiB output cap; resolves symlinks with realpath.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "analysis",
+      "name": "Content analysis",
+      "responsibility": "Blob ids, line counts and symbols from file bytes.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/component-diagram.json"
+    },
+    {
+      "id": "index",
+      "name": "Live index",
+      "responsibility": "Keeps each root's file records current.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/component-diagram.json"
+    },
+    {
+      "id": "daemon",
+      "name": "Shared daemon",
+      "responsibility": "The per-user daemon and the proxy serve runs in front of it.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/component-diagram.json"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP server",
+      "responsibility": "JSON-RPC dispatch to the internal tools by name, with a usage-log record per call; lists no tools.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp"
+    },
+    {
+      "id": "tools",
+      "name": "Internal tools",
+      "responsibility": "The seven tools zazzled calls: view, overview, find_symbol, changed_since, git_log, git_blame, report_gap.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/component-diagram.json"
+    },
+    {
+      "id": "cli",
+      "name": "Command-line helpers",
+      "responsibility": "init, which registers zazzle's MCP server and the redirect hook; the hook's policy, which sends raw reads and searches to zazzle; and report.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli"
+    },
+    {
+      "id": "view",
+      "name": "Terse C# view",
+      "responsibility": "Builds a shortened, line-numbered view of a C# file from its syntax tree.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/View"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's client (for example Claude Code)",
+      "responsibility": "After init, runs zazzle-csharp-indexer hook before Bash, Grep, Glob and Read calls; it asks zazzle, not the indexer, for answers.",
+      "external": true,
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite (NuGet Microsoft.Data.Sqlite)",
+      "responsibility": "The store.db database, in process.",
+      "external": true
+    },
+    {
+      "id": "git",
+      "name": "git command-line tool",
+      "responsibility": "Work-tree checks, file listings, ignore checks, log and blame.",
+      "external": true
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "Connects to the daemon socket and calls the internal tools by name for zazzle's C# view and structure tools.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "executable",
+      "to": "program",
+      "kind": "contains",
+      "description": "Entry point."
+    },
+    {
+      "from": "executable",
+      "to": "engine",
+      "kind": "contains",
+      "description": "Shared state."
+    },
+    {
+      "from": "executable",
+      "to": "usage-log",
+      "kind": "contains",
+      "description": "Learning-loop record."
+    },
+    {
+      "from": "executable",
+      "to": "proc",
+      "kind": "contains",
+      "description": "Helpers."
+    },
+    {
+      "from": "executable",
+      "to": "analysis",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "index",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "daemon",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "mcp",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "tools",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "cli",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "executable",
+      "to": "view",
+      "kind": "contains",
+      "description": "Subfolder."
+    },
+    {
+      "from": "agent",
+      "to": "program",
+      "kind": "depends-on",
+      "description": "Runs zazzle-csharp-indexer hook with a JSON event before its own Bash, Grep, Glob and Read calls."
+    },
+    {
+      "from": "program",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "serve connects through the proxy; daemon runs the server."
+    },
+    {
+      "from": "program",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "Serves in process when no daemon is used."
+    },
+    {
+      "from": "program",
+      "to": "cli",
+      "kind": "depends-on",
+      "description": "init, hook and report."
+    },
+    {
+      "from": "program",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Opens the engine and parses roots."
+    },
+    {
+      "from": "daemon",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "One MCP session per client connection."
+    },
+    {
+      "from": "mcp",
+      "to": "tools",
+      "kind": "depends-on",
+      "description": "Dispatches tools/call by name."
+    },
+    {
+      "from": "mcp",
+      "to": "usage-log",
+      "kind": "depends-on",
+      "description": "Records each call."
+    },
+    {
+      "from": "tools",
+      "to": "index",
+      "kind": "depends-on",
+      "description": "File records, readiness, change log."
+    },
+    {
+      "from": "tools",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Blob facts, stored symbols, path resolution."
+    },
+    {
+      "from": "tools",
+      "to": "view",
+      "kind": "depends-on",
+      "description": "The view tool builds and formats a file's terse view."
+    },
+    {
+      "from": "index",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Analyses new content and stores file records."
+    },
+    {
+      "from": "engine",
+      "to": "analysis",
+      "kind": "depends-on",
+      "description": "BlobAnalyzer for content not seen before."
+    },
+    {
+      "from": "engine",
+      "to": "sqlite",
+      "kind": "depends-on",
+      "description": "store.db, WAL mode."
+    },
+    {
+      "from": "engine",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "Root.Parse checks git rev-parse --is-inside-work-tree."
+    },
+    {
+      "from": "cli",
+      "to": "usage-log",
+      "kind": "depends-on",
+      "description": "report reads it; Program writes the hook's records."
+    },
+    {
+      "from": "zazzled",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "Handshake and tools/call over daemon.sock, starting zazzle-csharp-indexer daemon when nothing listens."
+    }
+  ]
+}

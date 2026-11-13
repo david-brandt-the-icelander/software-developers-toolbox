@@ -1,0 +1,97 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "afs contracts",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "request-protocol",
+      "title": "JSON request and reply protocol",
+      "summary": "The request objects afs accepts and the reply fields callers act on, the same through `afs call`, `afs jsonl` and the MCP tools.",
+      "contractType": "json-protocol",
+      "consumers": [
+        "Coding agents, through MCP or a shell, guided by agents/skills/agent-fs/SKILL.md",
+        "Developers' shells and scripts using `afs call`",
+        "The CI smoke test (`afs call '{\"op\":\"stat\",\"path\":\".\"}'` in .github/workflows/ci.yml)"
+      ],
+      "guarantees": [
+        "A request is an object whose `op` is read, search, list, stat, outline or diff_since; unknown ops and unknown fields are rejected. An array of requests gets an array of replies in the same order.",
+        "Every reply carries `ok`; a failure is {\"ok\": false, \"error\": <message>}.",
+        "Line numbers and ranges are 1-based and inclusive.",
+        "An etag is `b3:` followed by the first 16 hex digits (64 bits) of the content's BLAKE3 hash; equal etags mean equal content.",
+        "Replies of read, search, list, outline and diff_since that carry content also carry a `ref` (r1, r2, … per session); a repeat already received is {etag, unchanged: true, ref} with the earlier ref, and `fresh: true` always sends content.",
+        "A diff reply carries changed: true, base_etag and hunks of {at, del, new_at, ins}: at is the 1-based old line, del the old lines removed, ins the new text (absent for a pure deletion).",
+        "A capped reply carries truncated with next_ranges and bytes_omitted (read) or next_cursor (list); outline and search say truncated."
+      ],
+      "compatibility": "Not stated; waiting on the owner (decisions.json, protocol-compatibility).",
+      "definition": "macos/rust/agent-fs/src/req.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/req.rs", "symbol": "Request" },
+        { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.call_one" },
+        { "path": "macos/rust/agent-fs/src/fsio.rs", "symbol": "etag" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.serve_cached" }
+      ],
+      "relationships": [
+        { "relation": "blocked-by", "path": "macos/rust/agent-fs/src/.dev/decisions.json", "entityId": "protocol-compatibility" }
+      ]
+    },
+    {
+      "id": "mcp-tools",
+      "title": "MCP server and tools",
+      "summary": "`afs serve` is an MCP server over stdio exposing the six operations as tools afs_read, afs_search, afs_list, afs_stat, afs_outline and afs_diff_since.",
+      "contractType": "mcp-server",
+      "consumers": [
+        "MCP clients that start `afs serve` for a coding agent (the README's .mcp.json entry)",
+        "agents/skills/agent-fs/SKILL.md, which names the tools"
+      ],
+      "guarantees": [
+        "Newline-delimited JSON-RPC 2.0 on stdin and stdout; methods initialize, ping, tools/list and tools/call; messages without an id get no reply.",
+        "initialize answers with the client's protocolVersion (2024-11-05 when it sends none), the tools capability, serverInfo {name: afs, version: the crate version} and usage instructions.",
+        "Each tool's inputSchema lists its fields with additionalProperties false; the tool name minus afs_ is the request's op.",
+        "tools/call returns the operation's reply as one text content item holding its JSON, with isError true when the reply is not ok.",
+        "Errors: -32700 for a line that is not JSON, -32601 for an unknown method."
+      ],
+      "compatibility": "Not stated; waiting on the owner (decisions.json, protocol-compatibility).",
+      "definition": "macos/rust/agent-fs/src/mcp.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tools" },
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "handle" },
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" },
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "INSTRUCTIONS" }
+      ],
+      "relationships": [
+        { "relation": "depends-on", "path": "macos/rust/agent-fs/src/.dev/contracts.json", "entityId": "request-protocol" },
+        { "relation": "blocked-by", "path": "macos/rust/agent-fs/src/.dev/decisions.json", "entityId": "protocol-compatibility" },
+        { "relation": "depends-on", "path": "macos/rust/agent-fs/src/.dev/references.json", "entityId": "mcp" }
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "Command line and exit codes",
+      "summary": "The subcommands call, jsonl and serve, where they read and write, and what their exit codes mean.",
+      "contractType": "cli",
+      "consumers": [
+        "Developers' shells and scripts",
+        "The CI smoke test in .github/workflows/ci.yml (`afs --help`, `afs call`)",
+        "The zazzle Homebrew formula's test block (`afs --version`), written by macos/release/formula.sh"
+      ],
+      "guarantees": [
+        "`afs call [JSON|-]` reads the request from the argument, or from stdin when it is omitted or `-`, prints one reply line and exits 0 only when every reply is ok, else 1.",
+        "`afs jsonl` and `afs serve` run until stdin closes and exit 0; input that is not UTF-8 ends them with exit code 1.",
+        "Errors outside a reply are printed to stderr as `afs: <message>`.",
+        "`afs --version` prints `agent-fs <version>`; `--help` ends with usage examples."
+      ],
+      "definition": "macos/rust/agent-fs/src/main.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Cli" },
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" },
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "EXAMPLES" },
+        { "path": "macos/release/formula.sh", "symbol": "Zazzle.test" }
+      ]
+    }
+  ]
+}

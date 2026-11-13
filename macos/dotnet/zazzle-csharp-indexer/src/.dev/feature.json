@@ -1,0 +1,87 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle-csharp-indexer features",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "Behaviour that spans the server, the hook and the report.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+      "symbol": "UsageLog"
+    }
+  ],
+  "entities": [
+    {
+      "id": "usage-loop",
+      "name": "Usage-shaped improvement loop",
+      "description": "Every call and redirect is recorded locally, agents can say what was missing with zazzle_report_gap, and one command turns that into what to build next.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Record"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReportGapTool.cs",
+          "symbol": "ReportGapTool"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "zazzle_report_gap"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.Build"
+        }
+      ],
+      "behavior": "McpServer logs each internal tool call zazzled makes with its timing, size, result counts and how the answer was produced; the hook logs each block and each # allow-raw escape; gap reports come from zazzle_report_gap (zazzle report-gap), which zazzled hands to the indexer's report_gap tool, which stores the note; zazzle-csharp-indexer report summarises per tool, per resolution path, redirected commands, waste signals, errors and the latest gap notes.",
+      "outcome": "The owner can see which structure tools agents use through zazzle, where the index could not answer, what they still do by hand and what they missed, from real sessions.",
+      "constraints": [
+        "Free-text arguments are hashed unless ZAZZLE_INDEXER_LOG_PLAIN=1.",
+        "The log rotates at 20 MiB, keeping one previous file; report reads both.",
+        "Everything stays in the state directory; nothing is sent anywhere."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Record"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.FromDir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "report_gap"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json",
+      "relationship": "Reviewing the report, and the hook's redirects that feed it."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "report_gap feeds it."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/operation.json",
+      "relationship": "The report and hook commands."
+    }
+  ]
+}

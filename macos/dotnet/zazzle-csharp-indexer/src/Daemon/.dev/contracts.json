@@ -1,0 +1,65 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "Shared daemon contracts",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "handshake",
+      "title": "Daemon socket handshake",
+      "summary": "A client opens <state dir>/daemon.sock, sends one JSON line naming its version and roots, reads one JSON reply line, and then speaks MCP over the same connection.",
+      "contractType": "message",
+      "consumers": [
+        "zazzle-csharp-indexer serve (Proxy.Connect), from the same or another build of the binary",
+        "zazzled (macos/rust/zazzled/), which connects to call the view tool when zazzle reads a .cs file"
+      ],
+      "definition": "Hello: {\"version\": ToolVersion.Text, \"roots\": [\"name=/abs/path\" | \"/abs/path\", ...]}. Reply: {\"ok\": true}, or {\"ok\": false, \"error\": text} when a root is rejected, or {\"ok\": false, \"restart\": bool, \"error\": \"daemon version differs\"} when the versions differ. After ok, newline-delimited JSON-RPC as in src/Mcp/.dev/contracts.json until the client closes.",
+      "guarantees": [
+        "The socket file is readable and writable by its owner only (not set on Windows).",
+        "A daemon whose version differs from the client's replies restart: true and stops when that client is its only one; with other clients connected it replies restart: false and keeps running.",
+        "A client told to restart waits 500 ms and tries again, at most three attempts in all, starting a new daemon when nothing answers.",
+        "A second daemon refuses to start while one answers on the socket; a stale socket file with nothing behind it is deleted."
+      ],
+      "compatibility": "The version check is an exact string match on ToolVersion.Text, which every release takes from its tag (macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json, tool-version-source), so a released change to the handshake or to MCP behaviour reaches clients once the old daemon is idle. Builds outside a release all say 0.0.0-dev and are not told apart.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Hello"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "zazzle read"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/.dev/contracts.json",
+          "entityId": "mcp-stdio"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    }
+  ]
+}

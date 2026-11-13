@@ -1,12 +1,19 @@
 # Release: Homebrew formula and optional signing
 
-On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and the C# indexer and publishes them to a GitHub release, icelander.net/downloads and the Homebrew tap. Two scripts here take part.
+`.github/workflows/release.yml` builds universal binaries and the C# indexer and publishes them to a GitHub release (with no release notes), icelander.net/downloads and the Homebrew tap.
+
+## Version numbers (`version.sh`, `set-version.sh`)
+
+- The git tag is the only source of version numbers; the repository's crates and the indexer say `0.0.0-dev`.
+- Run the Release workflow by hand with `bump` patch (default), minor or major: `version.sh` takes the latest `vX.Y.Z` tag (v0.0.0 when there is none), computes the next one, and the run tags the commit and publishes it. `bump: none` only builds. Pushing a `vX.Y.Z` tag yourself still releases that version.
+- `set-version.sh X.Y.Z` writes the version into every crate's manifest and its `Cargo.lock` entry (no network, so `--locked` still holds); the indexer gets `-p:Version=X.Y.Z`. Every binary's `--version` then reports the release.
+- `version.test.sh` checks the arithmetic (v1.10.0 sorts after v1.2.9) and the refusals; CI runs it with shellcheck.
 
 ## Homebrew formula (`formula.sh`, `bottle.sh`)
 
 The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/homebrew-z` and pushes it to that repo's default branch.
 
-- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`). `bin/zazzle-csharp-indexer` starts as a placeholder so brew links it, and the formula's `post_install_steps` replace it with the binary for this Mac (`brew postinstall zazzle` reruns that).
+- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network`, `free-disk-space` and `cyberspace-generator` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`). `bin/zazzle-csharp-indexer` starts as a placeholder so brew links it, and the formula's `post_install_steps` replace it with the binary for this Mac (`brew postinstall zazzle` reruns that).
 - `bottle.sh` packs the bottle (`zazzle-<version>.all.bottle.tar.gz`, one, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
 - The formula takes the release tag as its version, so every release is an upgrade.
 - Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.
@@ -84,3 +91,9 @@ codesign -dv --verbose=2 fix-network 2>&1 | grep -E "Authority=Developer ID Appl
 Then download the tarball in a browser, unpack it, and run `./fix-network --help`. It should start without a warning.
 
 Notarization can't be stapled to a bare executable. The first launch on each Mac checks the notarization with Apple online.
+
+## cyberspace-generator (`fetch-cyberspace-generator.sh`)
+
+`cyberspace-generator` is built and released in [cyberspace-explorer](https://github.com/david-brandt-the-icelander/cyberspace-explorer) (tags `generator-v*`). `cyberspace-generator.version` pins the release zazzle ships. The release job runs `fetch-cyberspace-generator.sh`, which downloads that release's binaries and checks them against its `SHA256SUMS`; the macOS job merges the two CPU types with `lipo` and signs the result with the other binaries, and each Linux tarball gets the static musl build.
+
+`.github/workflows/bump-cyberspace-generator.yml` checks daily (or on demand) for a newer `generator-v*` release and opens a pull request moving the pin, after checking that release has every binary. It uses `GITHUB_TOKEN` only, so the repository must allow GitHub Actions to create pull requests (Settings → Actions → General); since such pull requests start no workflows, it dispatches `ci.yml` on the branch itself. Merge it, then tag a zazzle release to ship it. `fetch-cyberspace-generator.test.sh` checks the script against a fake release.

@@ -1,0 +1,137 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "zazzle-csharp-indexer glossary",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "root",
+      "title": "root",
+      "summary": "A named directory inside a git work tree that a session asks about; tool paths are written root:relative/path.",
+      "notToBeConfusedWith": [
+        "The repository's top level: a root may be any directory inside the work tree.",
+        "MCP roots, which zazzle-csharp-indexer does not use."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+          "symbol": "Root"
+        }
+      ]
+    },
+    {
+      "id": "blob",
+      "title": "blob",
+      "summary": "One distinct file content, identified by its git blob id; its analysis is stored once and shared by every file with that content.",
+      "aliases": [
+        "oid",
+        "blob id"
+      ],
+      "notToBeConfusedWith": [
+        "The integer blob id in store.db, which is the row id the file records point at."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/BlobMeta.cs",
+          "symbol": "BlobMeta"
+        }
+      ]
+    },
+    {
+      "id": "stat-key",
+      "title": "stat key",
+      "summary": "A file's size, modification time and birth time, stored with its record; while it is unchanged the file is not read again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs",
+          "symbol": "FileEntry.Matches"
+        }
+      ]
+    },
+    {
+      "id": "reconcile",
+      "title": "reconcile",
+      "summary": "A full pass over a root: list git's files, analyse new or changed ones, drop vanished ones.",
+      "notToBeConfusedWith": [
+        "barrier, which re-checks only the files a query needs"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Reconcile"
+        }
+      ]
+    },
+    {
+      "id": "cursor",
+      "title": "cursor",
+      "summary": "The value changed_since returns: the engine's epoch followed by each root's generation, valid only within the engine run that issued it.",
+      "aliases": [
+        "generation",
+        "epoch"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.Epoch"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Gen"
+        }
+      ]
+    },
+    {
+      "id": "parsed-heuristic",
+      "title": "parsed / heuristic",
+      "summary": "How symbols were found: parsed when they come from a Roslyn syntax tree (C#), heuristic when they come from line regexes (other languages).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+          "symbol": "CSharpSymbols.Extract"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+          "symbol": "HeuristicSymbols.Extract"
+        }
+      ]
+    },
+    {
+      "id": "path-reason",
+      "title": "path and reason (usage log)",
+      "summary": "How an answer was produced (index, run:git, view, hook) and why, recorded for every call.",
+      "notToBeConfusedWith": [
+        "A file path: the usage log's path field is a resolution path."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "CallInfo"
+        }
+      ]
+    },
+    {
+      "id": "state-dir",
+      "title": "state directory",
+      "summary": "The per-user directory holding store.db, the usage log and the daemon socket.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.DefaultDir"
+        }
+      ]
+    }
+  ]
+}

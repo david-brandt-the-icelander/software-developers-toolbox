@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Content analysis verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "blob-id",
+      "title": "Blob id",
+      "summary": "The computed blob id equals git's.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
+          "entityId": "git-blob-id"
+        }
+      ],
+      "criteria": [
+        "BlobAnalyzer.GitOid returns what git hash-object prints for the same bytes"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_oid_matches_git_hash_object",
+          "command": "dotnet test tests --filter test_oid_matches_git_hash_object"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "extraction",
+      "title": "Symbol extraction",
+      "summary": "Roslyn and the heuristic rules find declarations.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/decisions.json",
+          "entityId": "roslyn-syntax-only"
+        }
+      ],
+      "criteria": [
+        "C# types and members come with containers and line spans",
+        "The heuristic rules find Rust items and Markdown headings"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_csharp_symbols",
+          "command": "dotnet test tests --filter test_csharp_symbols"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_heuristic_symbols",
+          "command": "dotnet test tests --filter test_heuristic_symbols"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

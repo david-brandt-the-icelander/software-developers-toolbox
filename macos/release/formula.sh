@@ -37,7 +37,7 @@ block=$(bottle_block)
 cat >"$dir/zazzle.rb" <<RUBY
 # Homebrew formula for zazzle; written by macos/release/formula.sh on each release.
 class Zazzle < Formula
-  desc "Agent file tools: zazzle, its zazzled daemon, a C# code indexer, free-disk-space and fix-network"
+  desc "Agent tools: zazzle, zazzled, a C# indexer, cyberspace-generator and macOS fixers"
   homepage "https://github.com/$repo"
   url "https://github.com/$repo/releases/download/$tag/zazzle-macos-universal.tar.gz"
   version "${tag#v}"
@@ -47,7 +47,7 @@ class Zazzle < Formula
   depends_on :macos
 
   def install
-    bin.install "zazzle", "zazz", "zazzled", "zazz-worker", "afs", "fix-network", "free-disk-space"
+    bin.install "zazzle", "zazz", "zazzled", "zazz-worker", "afs", "fix-network", "free-disk-space", "cyberspace-generator"
     (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
     (bin/"zazzle-csharp-indexer").write <<~SH
       #!/bin/sh
@@ -75,6 +75,7 @@ class Zazzle < Formula
     assert_match "free-disk-space", shell_output("#{bin}/free-disk-space --version")
     assert_match "agent-fs", shell_output("#{bin}/afs --version")
     assert_match "zazzle-csharp-indexer", shell_output("#{bin}/zazzle-csharp-indexer --version")
+    assert_match "cyberspace-generator", shell_output("#{bin}/cyberspace-generator --version")
   end
 end
 RUBY

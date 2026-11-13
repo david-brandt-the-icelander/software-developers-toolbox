@@ -2,7 +2,7 @@
 use crate::mcp::{get_str, need_str, object, push_flag, Tool};
 use serde_json::{json, Value};
 
-pub const TOOLS: &[Tool] = &[
+pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "zazz_new",
         description: "Create a zazz script directory (Rust, std + the zazz SDK; tests use zazz::test) to edit, test and pack.",

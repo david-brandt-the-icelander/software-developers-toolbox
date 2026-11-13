@@ -25,6 +25,8 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 | `outline` | grep for definitions | `paths`, `max_symbols` (300); returns `[start, end, kind, name]` per symbol; tree-sitter for rs py js jsx mjs ts tsx go java c cpp (+ h hh hpp), line patterns for kt cs swift scala sh md |
 | `diff_since` | re-reading a changed file | `path`, `etag` (a version this session received) |
 
+`search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
+
 ## Token savers
 
 - **Unchanged**: repeating a read or search whose answer was already sent returns `{"unchanged":true,"etag","ref"}` with no content. `fresh:true` forces the content again.
@@ -34,9 +36,7 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 
 ## Caching
 
-- A file's etag is the first 64 bits of its BLAKE3 hash. Stamps (device, inode, size, mtime, ctime in ns) let a repeat skip hashing; a stamp younger than 2 seconds is never trusted (the "racy" rule git uses), so same-tick edits cannot serve stale data.
-- Search, list and outline results are cached with the stamp of every file and directory the walk visited, plus each directory's `.gitignore` and `.ignore`. A hit re-stats those paths (no reads, no regex work) and recomputes on any difference.
-- Session memory is bounded: 64 MiB of file versions kept as diff bases (files over 8 MiB are not kept), 256 cached results.
+Session memory is bounded (64 MiB of file versions kept as diff bases, files over 8 MiB not kept, 256 cached results); how etags, stamps, the 2-second racy rule and the result cache work is in [src/.dev/component-diagram.json](src/.dev/component-diagram.json) and [src/.dev/decisions.json](src/.dev/decisions.json).
 
 ## Outline
 
@@ -44,29 +44,25 @@ afs jsonl    # one request per stdin line, one reply per stdout line (one sessio
 
 ## Trigram index
 
-From the second `search` on a given set of paths/globs/flags, `afs` builds an in-memory trigram index (ASCII-case-folded 3-byte sequences, posting lists of file ids). The regex is parsed and the literals every match must start or end with are extracted (`regex-syntax`); only files containing all trigrams of at least one literal are read. Patterns with no literal of 3+ bytes (`\w+`, `a*`, `ab`) scan everything. Binary files are skipped, files over 2 MiB and files younger than the 2 s racy window are always scanned, and changed, new and deleted files are re-read or dropped on the next walk (stamps decide), so results equal a full scan (tested). The first indexed query reads each file once, indexing and scanning in the same pass. The index is dropped above ~30M posting entries. It lives in the session (`serve`/`jsonl`), not on disk.
+From the second `search` on the same paths, globs and flags, a `serve` or `jsonl` session reads only the files an in-memory trigram index says can match, with results equal to a full scan; how it is built, kept up to date and dropped is in [src/.dev/TriIndex.state-diagram.json](src/.dev/TriIndex.state-diagram.json).
 
 ## I/O
 
-Whole-file reads through `read(2)` with `O_NOATIME` and `posix_fadvise(SEQUENTIAL)` on Linux; ripgrep's regex and `memchr` (runtime-detected SIMD) for matching; the `ignore` crate's parallel walker. `mmap` is deliberately not used: truncating a mapped file raises SIGBUS and would kill a long-lived server.
-
-Search loads files in chunks of 32 through `fsio::load_many`, which has two implementations of the same contract:
-
-- **Linux, io_uring** (`uring.rs`): per chunk, one round opens every file (`OpenAt`), one round stats and reads them (`Statx` linked before `Read` so the stamp is taken before the bytes, 64 KiB first read, `pread` for the remainder of bigger files), one round closes them. Rings are pooled and probed for the needed opcodes; any ring failure disables it for the process.
-- **macOS, POSIX AIO** (`aio.rs`): files are opened and stamped one by one (macOS has no async open), then each batch of 16 is read with a single `lio_listio(LIO_WAIT)` after `F_RDAHEAD`. Empty and over-4 MiB files use plain reads. Type-checked against the Apple `libc` bindings and unit-tested in macOS CI, but not benchmarked on a Mac.
-- **Choice**: batching is not always faster (on a 4-core VM with a hot page cache io_uring was about 1.6x *slower* than plain reads for 7k small files, because cached opens and reads are punted to kernel worker threads). So each process times both methods on its first 128 files each and keeps the faster. `AFS_BATCH_IO=always|never` forces it; the default is `auto`.
+Files are read whole with `read(2)`, never `mmap`, and search and outline load them in batches through io_uring (Linux) or POSIX AIO (macOS) only when each process finds that faster (on a 4-core VM with a hot page cache io_uring was about 1.6x *slower* than plain reads for 7k small files); the design is in [src/.dev/decisions.json](src/.dev/decisions.json), and `AFS_BATCH_IO=always|never` (default `auto`) in [src/.dev/configuration.json](src/.dev/configuration.json).
 
 ## Testing
 
 `cargo test -p agent-fs` runs unit tests beside the code and `tests/cli.rs`, which drives the real binary (arguments, stdin, exit codes, `jsonl`, MCP). CI gates `agent-fs` at 95% line and 95% branch coverage on Linux (`cargo +nightly llvm-cov -p agent-fs --branch`); measured at the time of writing: 99.0% lines, 98.7% branches (294 of 298), 98 unit tests plus 9 CLI tests. The macOS-only `aio.rs` is not compiled on Linux, so it is covered only by the macOS test job. The few uncovered branches are walker errors and io_uring ring failures, which cannot be provoked from a test. Mutation spot-checks (inverting the intersection, racy window, line counting, diff offsets) fail the suite.
 
+What each test checks is in [src/.dev/verification.json](src/.dev/verification.json) and [tests/.dev/verification.json](tests/.dev/verification.json).
+
 ## Not implemented
 
-Planned, but absent until a benchmark justifies them: inotify/fanotify/FSEvents dirty sets (staleness is detected by re-stat instead), hand-written assembly (the compiler-vectorised `memchr` already saturates memory bandwidth on the hot loops). `search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
+Planned work that waits for a benchmark to justify it (file-system event dirty sets, hand-written assembly) is in [src/.dev/backlog.json](src/.dev/backlog.json).
 
 ## Dependencies
 
-`blake3` hashing; `ignore` gitignore-aware parallel walking; `regex` and `memchr` matching; `regex-syntax` literal extraction for the index; `tree-sitter` and the per-language grammar crates the outline parser (they compile C at build time); `similar` line diffs; `serde`/`serde_json` the JSON protocol; `clap` the CLI; `libc` read hints and the macOS AIO calls; `io-uring` (Linux only) the ring; `tempfile` (tests) fixture directories.
+What each crate is used for is in [.dev/references.json](.dev/references.json).
 
 ## Use from an agent
 

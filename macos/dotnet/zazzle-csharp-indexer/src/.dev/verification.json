@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle-csharp-indexer source verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "usage-log",
+      "title": "Usage log records",
+      "summary": "A tool call writes a record that hides its free text, and a gap report is stored in plain text.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/observability.json",
+          "entityId": "usage-log"
+        }
+      ],
+      "criteria": [
+        "The server lists no tools, and a find_symbol called by name writes a record naming the tool without the name it was asked for",
+        "report_gap's note appears in the log's note field"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs",
+          "command": "dotnet test tests --filter test_server_lists_no_tools_and_logs"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_report_gap_logged",
+          "command": "dotnet test tests --filter test_report_gap_logged"
+        }
+      ],
+      "details": "Rotation at 20 MiB and the readable first element and flags of array arguments are not covered by a test.",
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "suite",
+      "title": "The whole suite",
+      "summary": "All xunit tests of the tool, which must pass on Linux and macOS.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ],
+      "criteria": [
+        "dotnet test tests passes; each folder's verification.json lists what its tests check"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/tests.csproj",
+          "command": "dotnet test tests",
+          "description": "Run in macos/dotnet/zazzle-csharp-indexer/. CI and the release workflow run it on macOS and Linux."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Testing"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "dotnet"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "dotnet test tests"
+        }
+      ]
+    }
+  ]
+}

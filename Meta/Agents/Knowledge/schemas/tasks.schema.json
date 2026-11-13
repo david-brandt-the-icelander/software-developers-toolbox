@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/tasks.schema.json",
+  "title": "Tasks",
+  "description": "Concrete units of work in progress: who has each, its state, and what it waits for. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "tasks"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually todo, doing, blocked or done."
+          },
+          "assignee": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "description": "agent or human"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "partOf": {
+            "$ref": "common.schema.json#/$defs/reference"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pullRequest": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "state"
+        ]
+      }
+    }
+  }
+}

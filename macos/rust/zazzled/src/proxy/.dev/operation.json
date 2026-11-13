@@ -1,0 +1,96 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazzle MCP proxy operations",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "description": "`zazzled proxy`, in its two forms. `zazzle proxy ARGS` reaches it by exec (macos/c/zazzle); on Intel Macs, which have no invoker, it is run as `zazzled proxy` directly. Options shared by both: --lossless, --budget T (per text, default 8000), --skip TOOL (repeatable), --config FILE (per-tool settings), --log. A bad command line prints `zazzled: ...` with the usage and exits 2.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/proxy/mod.rs",
+      "symbol": "parse"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    }
+  ],
+  "entities": [
+    {
+      "id": "proxy-stdio",
+      "name": "zazzled proxy -- CMD ARGS",
+      "description": "Runs an MCP server over standard streams and cleans its answers.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "run_with"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+        "symbol": "run"
+      },
+      "action": "command",
+      "transport": "zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] -- CMD ARGS..; started by an MCP client as its stdio server",
+      "authorization": "Whoever starts it; the server command runs with the caller's environment and permissions. Nothing else is checked.",
+      "result": "Relays newline-delimited JSON-RPC between the client on standard input and output and the server child, cleaning the texts of tools/call and resources/read answers; the server's stderr passes through. Exits with the server's exit code when the server closes its output.",
+      "failures": [
+        "No command after `--`, or `--` together with --upstream or --listen: usage error.",
+        "A --config file that cannot be read or is not valid: `zazzled: --config FILE: ...`, exit 2.",
+        "The server command cannot be started: `cannot start CMD: ...`, exit 2.",
+        "Relaying fails: `relaying CMD's output: ...`, exit 2."
+      ]
+    },
+    {
+      "id": "proxy-http",
+      "name": "zazzled proxy --upstream URL",
+      "description": "Serves Streamable HTTP on a local address and forwards each request to an upstream MCP endpoint, cleaning its answers.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "exchange"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/proxy/http.rs",
+        "symbol": "run"
+      },
+      "action": "command",
+      "transport": "zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] --upstream URL [--listen ADDR]; clients connect over HTTP/1.1 to ADDR (default 127.0.0.1:8808)",
+      "authorization": "Any process that can reach the listen address; requests carrying an Origin header from a host other than localhost, 127.0.0.1 or [::1] are refused with 403. Authorization and session headers are forwarded to the upstream, which does its own checks.",
+      "result": "Prints `zazzled proxy: http://ADDR → URL` on standard error and serves until the listener fails, each connection on its own thread. A connection carries requests one after another, each answered with the upstream's status, redirects and end-to-end headers, until the client sends `Connection: close` (or speaks HTTP/1.0 without keep-alive), sends a request that cannot be read, or is idle for 60 seconds; an answer of unknown length is sent chunked while the connection stays open, and 1xx, 204 and 304 answers get no body.",
+      "failures": [
+        "--upstream that is not an http:// or https:// URL, or a --config file that cannot be read or is not valid.",
+        "The listen address cannot be bound: `cannot listen on ADDR: ...`.",
+        "Per request: a head over 64 KiB (431), a malformed head or a body that ends early (400), a chunked body (411), a body over 64 MiB (413), each answered and the connection closed; another web origin (403) or an upstream that cannot be reached (502), after which a kept connection stays open."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/feature.json",
+      "relationship": "The cleaning these operations carry."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
+      "relationship": "The use case that starts the proxy."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/operation.json",
+      "relationship": "The binary's other subcommands."
+    }
+  ]
+}

@@ -38,7 +38,7 @@ static int str_eq(const char *a, const char *b)
 /* Prints a one-line error to stderr and exits with code. */
 static __attribute__((noreturn)) void die(const char *m, int code)
 {
-	sys_write(2, "zazzle: ", 5);
+	sys_write(2, "zazzle: ", 8);
 	sys_write(2, m, str_len(m));
 	sys_write(2, "\n", 1);
 	sys_exit(code);
@@ -49,7 +49,7 @@ static __attribute__((noreturn)) void die_errno(const char *m, long err, int cod
 {
 	char digits[24];
 	size_t n = 0;
-	sys_write(2, "zazzle: ", 5);
+	sys_write(2, "zazzle: ", 8);
 	sys_write(2, m, str_len(m));
 	sys_write(2, " (error ", 8);
 	do {

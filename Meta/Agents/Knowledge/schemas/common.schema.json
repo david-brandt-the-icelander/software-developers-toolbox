@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/common.schema.json",
+  "title": "Common parts of HASD knowledge files",
+  "description": "Every knowledge file is a document holding entities. The fields named here are standard; any other field is allowed, so an agent can record whatever helps a reader.",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path from this file to its kind's schema."
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository-relative folder that owns this .dev directory; '.' for the repository root."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entities": {
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "folder",
+        "entities"
+      ]
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the file, and kept when the record moves."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A short name."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One or two sentences a person can read in the browser."
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The full explanation, as Markdown."
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the record stands; each kind documents its usual values."
+        },
+        "origin": {
+          "$ref": "#/$defs/origin"
+        },
+        "evidenceStatus": {
+          "$ref": "#/$defs/evidenceStatus"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationship"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "summary"
+      ]
+    },
+    "evidenceStatus": {
+      "description": "source-verified: checked against the code; documented: written down, not checked; proposed: intent, not yet true.",
+      "enum": [
+        "source-verified",
+        "documented",
+        "proposed"
+      ]
+    },
+    "origin": {
+      "description": "Where the record came from: who or what asked, and where. A sentence, or an object.",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "description": "For example: person, conversation, incident, review, document, agent."
+            },
+            "by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "date": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "link": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "path"
+          ]
+        }
+      ]
+    },
+    "reference": {
+      "description": "Another record: a file, optionally narrowed to one entity in it.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "relationship": {
+      "type": "object",
+      "properties": {
+        "relation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Usually one of: relates-to, depends-on, part-of, affects, implements, verifies, verified-by, supersedes, resolved-by, blocks, documents."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "relation",
+        "path"
+      ]
+    }
+  }
+}

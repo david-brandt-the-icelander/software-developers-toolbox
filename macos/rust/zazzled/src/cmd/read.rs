@@ -2,9 +2,11 @@
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::indexer::Indexer;
+use crate::markup;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::outline;
 use crate::symbols::{self, Miss};
+use crate::terse;
 use crate::tokens;
 use crate::util::{clip, display, hex8, resolve};
 
@@ -35,7 +37,7 @@ enum Select {
 }
 
 // Parses the text after a colon into a start line and optional end line.
-fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
+pub(super) fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
     let (a, b) = match r.split_once('-') {
         Some((a, "")) => (a.parse().ok()?, None),
         Some((a, b)) => (a.parse().ok()?, Some(b.parse().ok()?)),
@@ -147,6 +149,9 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
             Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
         }
     }
+    if let Some(view) = o.terse.then(|| other_view(&path, &shown, data)).flatten() {
+        return Ok(render_terse(&shown, &view, (a, b), nl, o, label));
+    }
     let costs: Vec<usize> =
         (a..=b).map(|n| tokens::from_bytes(line_bytes(data, &meta.starts, n).len() + 8)).collect();
     let (head, tail_start) = fit(&costs, o.budget);
@@ -166,6 +171,16 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     }
     out.pop();
     Ok(out)
+}
+
+// Returns zazzled's own terse view of an HTML, Razor, Python, TypeScript or Dart file, if it has one.
+fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(data);
+    match (markup::kind_of(path), terse::lang_of(path)) {
+        (Some(kind), _) => markup::view(shown, &text, kind),
+        (None, Some(lang)) => terse::view(shown, &text, lang),
+        (None, None) => None,
+    }
 }
 
 // Returns the source lines a terse view line covers, from its key: `N`, `N~` or `A-B`.
@@ -215,7 +230,10 @@ fn miss_text(shown: &str, query: &str, miss: Miss) -> String {
         }
         Miss::None(near) => format!("{shown}: no symbol '{query}'; similar:\n{}", near.join("\n")),
         Miss::Many(n, list) => {
-            format!("{shown}: '{query}' matches {n} symbols; add #N to pick one:\n{}", list.join("\n"))
+            format!(
+                "{shown}: '{query}' matches {n} symbols; pick one with its parameter types, Name(T1, T2), or #N:\n{}",
+                list.join("\n")
+            )
         }
         Miss::Index(n) => format!("{shown}: '{query}' has {n} match(es); pick #1 to #{n}"),
     }
@@ -478,7 +496,7 @@ mod tests {
         assert_eq!(many.status, 2);
         assert_eq!(
             many.text,
-            "error: m.rs: 'new' matches 2 symbols; add #N to pick one:\n#1 6-8 fn A.new: fn new() -> A {\n#2 14-16 fn B.new: fn new() -> B {"
+            "error: m.rs: 'new' matches 2 symbols; pick one with its parameter types, Name(T1, T2), or #N:\n#1 6-8 fn A.new: fn new() -> A {\n#2 14-16 fn B.new: fn new() -> B {"
         );
         assert_eq!(
             run_cmd(t.path(), &["read", "m.rs", "-s", "ne"]).text,
@@ -535,6 +553,50 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    // Checks HTML and Razor files read as the markup terse view, files with nothing to shorten as source, and --source gives the code.
+    #[test]
+    fn test_markup_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.html"), "<html>\n<!--\nnote\n-->\n<p>hi</p>\n").expect("write");
+        std::fs::write(t.path().join("b.cshtml"), "@using A\n@using B\n<p class=\"a b c d e\">x</p>\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.htm"), "<p>plain</p>\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.html"]).text,
+            "a.html 5 lines, terse view: 1 comments; read --source for the code and its sha\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
+        );
+        let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3"]).text;
+        assert!(
+            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes;")
+                && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
+            "{razor}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.htm"]).text.starts_with("c.htm 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.html", "--source"]).text.contains("3\tnote"));
+    }
+
+    // Checks Python, TypeScript and Dart files read as zazzled's terse view, and --source gives the code.
+    #[test]
+    fn test_code_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.py"), "import os\nimport sys\nx = 1\n").expect("write");
+        std::fs::write(t.path().join("b.ts"), "function f() {\n  console.log('x');\n  return 1;\n}\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.dart"), "int f() => 1;\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.py"]).text,
+            "a.py 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\tx = 1"
+        );
+        let ts = run_cmd(t.path(), &["read", "b.ts", "--symbol", "f"]).text;
+        assert!(
+            ts.starts_with("b.ts 4 lines, terse view: 1 log statements;")
+                && ts.ends_with("\n1\tfunction f() {\n3\t  return 1;\n4\t}"),
+            "{ts}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.dart"]).text.starts_with("c.dart 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.py", "--source"]).text.contains("1\timport os"));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

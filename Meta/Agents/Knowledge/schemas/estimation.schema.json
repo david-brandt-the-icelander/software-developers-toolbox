@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/estimation.schema.json",
+  "title": "Estimation",
+  "description": "How much something will take, in a stated unit, as a range with its assumptions. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "estimation"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "subject": {
+            "$ref": "common.schema.json#/$defs/reference"
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For example agent-hours, human-hours, tokens, currency."
+          },
+          "low": {
+            "type": "number"
+          },
+          "likely": {
+            "type": "number"
+          },
+          "high": {
+            "type": "number"
+          },
+          "confidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "estimatedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "date": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "subject",
+          "unit",
+          "likely"
+        ]
+      }
+    }
+  }
+}

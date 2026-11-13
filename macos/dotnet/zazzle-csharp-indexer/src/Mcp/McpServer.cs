@@ -1,16 +1,15 @@
-// Minimal MCP server over newline-delimited JSON-RPC on stdio.
+// Minimal MCP server over newline-delimited JSON-RPC: zazzled's session with the daemon, which lists no tools to clients.
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using ZazzleIndexer.Tools;
 
 namespace ZazzleIndexer.Mcp;
 
-// Dispatches MCP requests to tools and logs each call.
+// Dispatches tool calls from zazzled by name and logs each call; tools/list is empty, since agents go through zazzle.
 public sealed class McpServer
 {
     private const string Instructions =
-        "Use these tools instead of grep, rg, find, cat or sed for questions about the code in the configured roots. " +
-        "Paths are written root:relative/path. Regex dialect: .NET (Perl-style: lookarounds, backreferences, \\d \\b \\s, inline flags).";
+        "This server offers no tools to agents: use zazzle (MCP server `zazzle`) for everything. It reads, searches and edits files (zazzle_read, zazzle_find, zazzle_edit), and answers C# structure from this indexer: zazzle_overview, zazzle_find_symbol, zazzle_refs, zazzle_changed_since, zazzle_git_log, zazzle_git_blame, zazzle_report_gap.";
 
     private readonly Dictionary<string, ITool> _tools;
     private readonly UsageLog _log;
@@ -21,7 +20,7 @@ public sealed class McpServer
     {
         _log = log;
         var set = new RootSet(roots);
-        ITool[] tools = [new FindFilesTool(set), new ReadTool(set), new SearchTool(set), new OutlineTool(set), new FindSymbolTool(set), new FindReferencesTool(set), new OverviewTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new RunTool(set), new ViewTool(set), new ReportGapTool()];
+        ITool[] tools = [new ViewTool(set), new OverviewTool(set), new FindSymbolTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new ReportGapTool()];
         _tools = tools.ToDictionary(t => t.Name);
     }
 
@@ -77,14 +76,8 @@ public sealed class McpServer
         ["instructions"] = Instructions,
     };
 
-    // Builds the tools/list result.
-    private JsonObject ListTools()
-    {
-        var arr = new JsonArray();
-        foreach (var t in _tools.Values)
-            arr.Add(new JsonObject { ["name"] = t.Name, ["description"] = t.Description, ["inputSchema"] = t.Schema.DeepClone() });
-        return new JsonObject { ["tools"] = arr };
-    }
+    // Builds the tools/list result: no tools, because zazzle is the front door and calls these by name.
+    private static JsonObject ListTools() => new() { ["tools"] = new JsonArray() };
 
     // Runs a tool, times it, logs it, and wraps its text (or error) as an MCP tool result.
     private JsonObject CallTool(JsonNode? p)

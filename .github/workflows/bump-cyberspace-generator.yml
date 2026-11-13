@@ -1,0 +1,47 @@
+# Open a pull request that pins the newest cyberspace-generator release (a generator-v* tag in
+# david-brandt-the-icelander/cyberspace-explorer) in macos/release/cyberspace-generator.version, so the next zazzle release
+# ships it. Runs daily and on demand; a repository_dispatch of type cyberspace-generator-released also starts it.
+# Uses GITHUB_TOKEN only. Pull requests it opens do not start CI by themselves, so it dispatches ci.yml on the branch,
+# whose checks then show on the pull request. Needs Settings → Actions → "Allow GitHub Actions to create and approve pull requests".
+name: Bump cyberspace-generator
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [cyberspace-generator-released]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Pin the newest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pin=macos/release/cyberspace-generator.version
+          latest=$(gh release list -R david-brandt-the-icelander/cyberspace-explorer --exclude-drafts --exclude-pre-releases \
+            --json tagName,createdAt --jq '[.[] | select(.tagName | startswith("generator-v"))] | sort_by(.createdAt) | last | .tagName // ""')
+          current=$(tr -d '[:space:]' <"$pin")
+          if [ -z "$latest" ] || [ "$latest" = "$current" ]; then echo "pinned $current is the newest"; exit 0; fi
+          branch="bump/cyberspace-generator-$latest"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then echo "$branch already open"; exit 0; fi
+          echo "$latest" >"$pin"
+          # Check that the release has every binary the zazzle release needs, with matching checksums.
+          bash macos/release/fetch-cyberspace-generator.sh "$RUNNER_TEMP/cg" \
+            aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Ship cyberspace-generator $latest in zazzle"
+          git push -u origin "$branch"
+          gh pr create --head "$branch" --title "Ship cyberspace-generator $latest in zazzle" \
+            --body "Pins [cyberspace-generator $latest](https://github.com/david-brandt-the-icelander/cyberspace-explorer/releases/tag/$latest) (was $current). Opened by bump-cyberspace-generator.yml; CI was dispatched on the branch."
+          gh workflow run ci.yml --ref "$branch"

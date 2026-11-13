@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazzle invoker backlog",
+  "folder": "macos/c/zazzle/src",
+  "entities": [
+    {
+      "id": "error-prefix-truncated",
+      "title": "Error messages start with `zazzl` instead of `zazzle: `",
+      "summary": "die and die_errno write the 8-byte prefix `zazzle: ` with a length of 5, a length left from the old 5-byte `afo: `, so every invoker error reads like `zazzldaemon did not start`.",
+      "type": "defect",
+      "status": "done",
+      "expected": "`zazzle: daemon did not start` (the prefix written in full, then the message).",
+      "observed": "`sys_write(2, \"zazzle: \", 5)` writes `zazzl`, and the message follows with no separator: `zazzldaemon did not start`. The unit and smoke tests only look for the message text, so they pass.",
+      "reproduction": [
+        "Run `ZAZZLE_SOCK=/tmp/none ZAZZLE_DAEMON=/usr/bin/true zazzle version`.",
+        "Standard error reads `zazzldaemon did not start`."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent reconciling the invoker's .dev files with the code after the rename",
+        "date": "2026-11-13",
+        "reference": "macos/c/zazzle/src/zazzle_core.h (die, die_errno), against the rename in commit 4c01533"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "die"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "die_errno"
+        },
+        {
+          "path": "macos/c/zazzle/test/unit.c",
+          "symbol": "err_has"
+        },
+        {
+          "path": "macos/c/zazzle/test/unit.c",
+          "symbol": "err_is"
+        },
+        {
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "symbol": "zazzle: daemon did not start"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/c/zazzle/src/.dev/contracts.json",
+          "entityId": "exit-status"
+        }
+      ],
+      "resolution": "die and die_errno write all 8 bytes of `zazzle: `, so errors read `zazzle: daemon did not start`. The unit tests' err_has now requires the stderr to start with `zazzle: `, err_is checks two messages whole (die and die_errno), and the smoke test compares `zazzle: daemon did not start` exactly and matches `^zazzle: cannot run the tool (error `.",
+      "resolvedOn": "2026-11-13"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "schema.json",
+  "kind": "class",
+  "title": "Example worker class diagram",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "types": [
+    {
+      "id": "ExampleWorker.Worker",
+      "name": "Worker",
+      "kind": "class",
+      "sources": [
+        "src/ExampleWorker/Worker.cs"
+      ],
+      "members": [
+        "public Task RunAsync(CancellationToken cancellationToken)"
+      ]
+    },
+    {
+      "id": "ExampleWorker.WorkerOptions",
+      "name": "WorkerOptions",
+      "kind": "class",
+      "sources": [
+        "src/ExampleWorker/WorkerOptions.cs"
+      ],
+      "members": [
+        "public int BatchSize { get; set; }"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "ExampleWorker.Worker",
+      "to": "ExampleWorker.WorkerOptions",
+      "kind": "depends-on",
+      "description": "Constructor receives worker options."
+    }
+  ]
+}

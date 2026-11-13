@@ -1,0 +1,207 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "afs operations",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "The three ways to run afs and the six request operations each of them accepts. A request is a JSON object whose `op` field names the operation; as an MCP tool the operation is afs_<op> and its arguments are the same fields.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Command" },
+    { "path": "macos/rust/agent-fs/src/req.rs", "symbol": "Request" },
+    { "path": "macos/rust/agent-fs/src/engine.rs", "symbol": "Engine.dispatch" },
+    { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "tools" }
+  ],
+  "entities": [
+    {
+      "id": "call",
+      "name": "Run one request",
+      "description": "`afs call [JSON|-]`: runs one request, or an array of them in order, in a fresh session and prints the reply.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "request_text" },
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "call_once" },
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "main" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Command::Call" },
+      "action": "query",
+      "transport": "command line: `afs call '<json>'`, or the JSON on stdin when the argument is omitted or `-`",
+      "authorization": "None: nothing checks who calls; afs reads whatever the user running it may read.",
+      "result": "One JSON reply on stdout (an array of replies for an array); exit code 0 when every reply has ok: true, else 1. No session memory: nothing is ever unchanged.",
+      "failures": [
+        "Text that is not JSON: {\"ok\":false,\"error\":\"invalid JSON: …\"} and exit code 1.",
+        "Any reply in a batch has ok: false: exit code 1 with every reply printed.",
+        "stdin that is not UTF-8: `afs: …` on stderr and exit code 1."
+      ]
+    },
+    {
+      "id": "jsonl",
+      "name": "Run a JSONL session",
+      "description": "`afs jsonl`: one request per stdin line, one reply per stdout line, all in one session.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "jsonl" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "jsonl" },
+      "action": "query",
+      "transport": "stdin and stdout of `afs jsonl`, newline-delimited JSON",
+      "authorization": "None: nothing checks who calls; afs reads whatever the user running it may read.",
+      "result": "A reply line per non-blank request line until stdin closes; repeats within the session get unchanged markers and diffs.",
+      "failures": [
+        "A line that is not JSON: an {\"ok\":false,\"error\":\"invalid JSON: …\"} line, and the loop goes on.",
+        "Input that is not UTF-8: the loop stops with `afs: …` on stderr and exit code 1."
+      ]
+    },
+    {
+      "id": "serve",
+      "name": "Serve MCP over stdio",
+      "description": "`afs serve`: a Model Context Protocol server on stdin and stdout with one session per process.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "serve" },
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "handle" },
+        { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "call_tool" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "serve" },
+      "action": "query",
+      "transport": "newline-delimited JSON-RPC 2.0 on stdio: initialize, ping, tools/list, tools/call; messages without an id are notifications and get no reply",
+      "authorization": "None: nothing checks who calls; afs reads whatever the user running it may read.",
+      "result": "initialize returns serverInfo afs, the tools capability and usage instructions; tools/list returns afs_read, afs_search, afs_list, afs_stat, afs_outline and afs_diff_since with their input schemas; tools/call returns the operation's reply as one text content item, with isError when the reply is not ok.",
+      "failures": [
+        "A line that is not JSON: JSON-RPC error -32700 with a null id.",
+        "An unknown method: JSON-RPC error -32601 `method not found`.",
+        "A tool name without the afs_ prefix: isError with `unknown tool …`.",
+        "A failed operation: isError with the operation's error reply as text.",
+        "Input that is not UTF-8: the server stops with exit code 1."
+      ]
+    },
+    {
+      "id": "read",
+      "name": "read",
+      "description": "Reads a file, whole or by 1-based line ranges, capped, and remembers what this session received.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" },
+        { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+      "action": "query",
+      "transport": "request {\"op\":\"read\",\"path\":…}, or MCP tool afs_read",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "path, etag, total_lines, chunks of {start, end, text} and ref; truncated, next_ranges and bytes_omitted when a cap (max_lines 400, max_bytes 16384 by default) stopped it; long_lines_cut when lines over 2000 bytes were cut. A repeat this session already received gives {etag, unchanged: true, ref}; if_none_match equal to the etag gives unchanged without ref; a whole-file re-read of a file whose earlier full version is still held gives changed, base_etag and hunks when they are smaller than half the file; a file with a NUL in its first 8000 bytes gives binary: true and its size.",
+      "failures": [
+        "The path cannot be read: `<path>: <OS error>`.",
+        "The path is not a regular file: `<path>: not a regular file (use list for directories)`.",
+        "A range starting at 0 or ending before it starts: `bad range [s,e]: lines are 1-based and start must be <= end`.",
+        "An unknown field: the parser's error."
+      ]
+    },
+    {
+      "id": "search",
+      "name": "search",
+      "description": "Regex or literal search over files under the given paths, honouring ignore files, grouped by file and cached.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "compute" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "render" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "run" },
+      "action": "query",
+      "transport": "request {\"op\":\"search\",\"pattern\":…}, or MCP tool afs_search",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "results (per file: hits rendered with the chosen fields, or blocks of merged context lines), files_matched, total_matches, and etag, cached and ref; files instead of results with files_only; truncated when max_matches (100 by default) cut it. A repeat already received gives {etag, unchanged: true, ref}.",
+      "failures": [
+        "A pattern that does not compile: `bad pattern: …`.",
+        "A field other than path, line, col or text: `unknown field …; use path, line, col, text`; no field left after path: `fields must include line, col or text`.",
+        "A path that does not exist: `<path>: no such file or directory`.",
+        "A malformed glob: `glob <glob>: …`."
+      ]
+    },
+    {
+      "id": "list",
+      "name": "list",
+      "description": "Lists a directory, one level unless a glob or depth is given, honouring ignore files, sorted and paged.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "list" },
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "compute" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "list" },
+      "action": "query",
+      "transport": "request {\"op\":\"list\"}, or MCP tool afs_list",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "entries (path strings, directories with a trailing slash; [path, size, mtime] with long), total, etag, cached and ref; truncated and next_cursor when max_entries (500 by default) cut it. With a glob, only matching files are listed, at any depth unless depth is given.",
+      "failures": [
+        "A path that does not exist: `<path>: no such file or directory`.",
+        "A malformed glob: `glob <glob>: …`."
+      ]
+    },
+    {
+      "id": "stat",
+      "name": "stat",
+      "description": "Metadata of one path, without following symlinks, and optionally its content etag.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "stat" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "stat" },
+      "action": "query",
+      "transport": "request {\"op\":\"stat\",\"path\":…}, or MCP tool afs_stat",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "exists: false for a missing path; otherwise kind (file, dir, symlink or other), size and mtime, plus etag for a regular file when hash is true. Not cached and never unchanged.",
+      "failures": [
+        "hash: true on a regular file that cannot be read: `<path>: <OS error>`."
+      ]
+    },
+    {
+      "id": "outline",
+      "name": "outline",
+      "description": "Symbols with their line ranges for every supported source file under the paths.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "run" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" },
+        { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "file_symbols" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "run" },
+      "action": "query",
+      "transport": "request {\"op\":\"outline\"}, or MCP tool afs_outline",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "files of {path, symbols: [[start, end, kind, name], …]} sorted by path, total_symbols, etag, cached and ref; truncated when max_symbols (300 by default) cut it. Files without symbols, unsupported, binary or unreadable files are left out.",
+      "failures": [
+        "A path that does not exist: `<path>: no such file or directory`."
+      ]
+    },
+    {
+      "id": "diff-since",
+      "name": "diff_since",
+      "description": "Line hunks between a version of a file this session still holds, named by its etag, and the file now.",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "since" },
+        { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "hunks" }
+      ],
+      "entrypoint": { "path": "macos/rust/agent-fs/src/diff.rs", "symbol": "since" },
+      "action": "query",
+      "transport": "request {\"op\":\"diff_since\",\"path\":…,\"etag\":…}, or MCP tool afs_diff_since",
+      "authorization": "None: any path the user running afs may read.",
+      "result": "path, base_etag, etag, newlines (the count of newline bytes), hunks of {at, del, new_at, ins} and ref; {etag, unchanged: true} when the file still has that etag.",
+      "failures": [
+        "The etag is not among the versions the session holds: `base_unavailable: that version is not held; use read`.",
+        "Either version is not UTF-8: `cannot diff non-UTF-8 content; use read`.",
+        "The file cannot be read: `<path>: <OS error>`."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/capability.json",
+      "relationship": "The capability these operations offer."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/use-case.json",
+      "relationship": "The use cases that call them."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/feature.json",
+      "relationship": "The token-saving behaviour their replies carry."
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle invoker benchmarks",
+  "folder": "macos/c/zazzle/bench",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle invoker benchmarks",
+      "summary": "Measures how long one zazzle process takes to start and finish, against a startup floor, a libc hello, grep and cat, and how long refs takes over a large tree, cold and warm.",
+      "purpose": "spawnbench.c spawns a command repeatedly with its output on a pipe and prints latency percentiles in microseconds (SPAWNBENCH_WARMUP sets the unmeasured warm-up runs); exit0.c is the startup floor (zazzle's own entry, exiting at once); hello_libc.c is a minimal libc program for comparison. run.sh starts zazzled on a temporary socket, writes a small tree, and times exit0, hello_libc, `zazzle version`, `zazzle find`, `grep -rn`, `zazzle read` and `cat`; `sh bench/run.sh [N]` runs N spawns of each (default 3000). refs.sh times `refs Error` and `refs Result` over the cargo registry's crate sources: cold, with a fresh `zazzled run` per run, and warm, through `zazzle` and a running daemon; `sh bench/refs.sh [COLD WARM]` (default 20 and 100).",
+      "boundaries": [
+        "The numbers they print are readings; the spawn latencies quoted in macos/rust/zazzled/README.md (Measurements) name run.sh as their source. Nothing here gates a build.",
+        "`make` builds exit0, hello_libc and spawnbench into build/ beside zazzle; ZAZZLED names a zazzled other than the release build."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/bench/run.sh",
+          "symbol": "spawnbench"
+        },
+        {
+          "path": "macos/c/zazzle/bench/refs.sh",
+          "symbol": "SPAWNBENCH_WARMUP"
+        },
+        {
+          "path": "macos/c/zazzle/bench/spawnbench.c",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/c/zazzle/bench/exit0.c",
+          "symbol": "zazzle_main"
+        },
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": "all"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/c/zazzle/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

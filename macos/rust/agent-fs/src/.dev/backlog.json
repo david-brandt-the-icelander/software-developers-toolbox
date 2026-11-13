@@ -1,0 +1,73 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "afs source backlog",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "ignore-sources-outside-walk",
+      "title": "Cached results miss ignore-rule changes outside the visited directories",
+      "summary": "A cached search, list or outline is reused after a change to .git/info/exclude, the global git excludes file, or a .gitignore or .ignore in a parent of the search root, although the walk honours all of them.",
+      "type": "defect",
+      "status": "open",
+      "expected": "A repeated search, list or outline reflects the ignore rules in force now, as a fresh walk would.",
+      "observed": "walk::builder enables git_exclude, git_global and parents, but the cached result's dependencies stamp only the visited files and directories and each visited directory's .gitignore and .ignore (walk::ignore_file_deps); .git is never entered. An edit to any other ignore source leaves every stamp equal, so State.cached reuses the old result until something stamped changes; fresh: true does not help, because it only re-sends the cached content.",
+      "reproduction": [
+        "In a git working tree, create an untracked file holding a word, wait more than 2 seconds, start `afs jsonl` and search for the word.",
+        "Add that file's name to .git/info/exclude (or to a .gitignore in the directory above the search root).",
+        "Run the same search with fresh: true: the reply has cached: true and still lists the file."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Documenting agent (HASD leg agent-fs)",
+        "date": "2026-11-12",
+        "description": "Found by reading walk.rs, search.rs, list.rs, outline.rs and state.rs; not reproduced by running afs."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "builder" },
+        { "path": "macos/rust/agent-fs/src/walk.rs", "symbol": "ignore_file_deps" },
+        { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.cached" },
+        { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "walk_files" }
+      ]
+    },
+    {
+      "id": "fs-event-dirty-sets",
+      "title": "Dirty sets from file-system events",
+      "summary": "Use inotify or fanotify (Linux) and FSEvents (macOS) to know which files changed, instead of re-stat-ing every dependency.",
+      "type": "improvement",
+      "status": "deferred",
+      "details": "Planned, but absent until a benchmark justifies it; staleness is detected by re-stat instead (decisions.json, restat-not-watchers).",
+      "acceptanceCriteria": [
+        "A benchmark shows re-stat cost worth removing.",
+        "Results stay equal to a full scan."
+      ],
+      "origin": {
+        "kind": "documentation",
+        "reference": "macos/rust/agent-fs/README.md",
+        "description": "The README's Not implemented section, before it moved here."
+      },
+      "evidenceStatus": "documented",
+      "relationships": [
+        { "relation": "related-to", "path": "macos/rust/agent-fs/src/.dev/decisions.json", "entityId": "restat-not-watchers" }
+      ]
+    },
+    {
+      "id": "hand-written-assembly",
+      "title": "Hand-written assembly for the hot loops",
+      "summary": "Hand-written assembly for byte scanning, planned but absent until a benchmark justifies it.",
+      "type": "improvement",
+      "status": "deferred",
+      "details": "The README stated that the compiler-vectorised memchr (with runtime-detected SIMD) already saturates memory bandwidth on the hot loops.",
+      "acceptanceCriteria": [
+        "A benchmark shows a hot loop that memchr and the regex crate do not already run at memory bandwidth."
+      ],
+      "origin": {
+        "kind": "documentation",
+        "reference": "macos/rust/agent-fs/README.md",
+        "description": "The README's Not implemented section, before it moved here."
+      },
+      "evidenceStatus": "documented"
+    }
+  ]
+}

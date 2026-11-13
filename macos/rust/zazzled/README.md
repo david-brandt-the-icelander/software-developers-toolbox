@@ -12,7 +12,7 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make     # or download the release tarball
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
 export ZAZZLE_SESSION=$(date +%s)     # optional: ids and dedupe for CLI use
-claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit
+claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_read_again, and the C# structure tools below
 ```
 
 Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write.
@@ -25,11 +25,12 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | `read PATH[:A-B].. [--source --symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full]` | header with line count and sha, then `N<TAB>text`; elides the middle beyond ~3000 tokens with the exact range to read next; `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)); C# files come as a terse view (see [C# terse view](#c-terse-view)) unless `--source` |
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
-| `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol |
+| `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read --source`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
+| `overview`, `find-symbol`, `changed-since`, `git-log`, `git-blame`, `report-gap` | structure answered by `zazzle-csharp-indexer`: see [C# structure](#c-structure) |
 | `status` | daemon, cache and session counters |
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
@@ -43,6 +44,38 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Kept: everything else, including catches that return or convert, constructors with logic, and logging that shares a line with other code. Lines keep their source numbers: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden. Ranges, `--symbol` and the budget work on the view.
 - The bridge: `zazzled` connects to the indexer daemon's socket (in `$ZAZZLE_INDEXER_STATE_DIR` or the indexer's default state directory), starting `zazzle-csharp-indexer daemon` when nothing listens, and asks its `view` tool. The indexer is `$ZAZZLE_INDEXER`, else beside `zazzled`, else on `PATH`. The file must be inside a git work tree. When there is no view (no indexer, not in git, an error), the source is returned with a line saying why. The first read starts the daemon (about 0.5 s); later ones take a few milliseconds.
 
+## HTML and Razor terse view
+
+`zazzle read` on `.html`, `.htm`, `.xhtml`, `.cshtml` and `.razor` files returns a terse view built inside `zazzled`, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
+
+- Hidden: comments of 3+ lines (`<!-- -->`, Razor `@* *@`), `<style>` and `<svg>` elements that start and end their own lines, runs of 2+ `<meta>`/`<link>`/`<base>` lines, and in Razor runs of 2+ `@using`/`@addTagHelper`/`@removeTagHelper` lines.
+- Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
+- Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@code`, `@functions` and `@{ }` blocks (C# in them is not shortened). A comment or element that shares its first or last line with other markup is not hidden.
+
+## Python, TypeScript and Dart terse view
+
+`zazzle read` on `.py`, `.pyi`, `.ts`, `.mts`, `.cts`, `.tsx` and `.dart` files returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.
+
+- Hidden or collapsed: runs of 2+ lines of top-level imports (`1-6 ⋯ 3 import(s)`); logging statements on loggers (`log`, `logger`, `_logger`, `self.logger`, `this.logger?`, ...), TypeScript `console.log/debug/info/warn/error/trace` and Dart `debugPrint`/`log`, when they are alone on their lines and have no assignment, await, yield, increment or decrement in their arguments; region markers (`# region`, `// #region`, `//#endregion`); multi-line constructors that only store parameters (`__init__` with `self.x = name`, docstrings, `pass` and `super().__init__(..)`; TypeScript `this.x = name` and `super(..)`; Dart constructors without a body whose initializers are `field = name` or `super(..)`) as `12-17 ⋯ __init__(self, api, cache): only assigns fields`; and catches that only log and rethrow (bare `raise`, `throw e` of the caught name, `rethrow`), whole when the clause has its own lines, else as `} catch (e) { ⋯ logs and rethrows }`.
+- Shortened: `public`/`private`/`protected` on TypeScript class members; constructor parameter properties keep theirs.
+- Short locals: locals of 6+ characters get the C# view's short names (`invoice_rows` → `ir`, `runningTotal` → `rt`, `response` → `res`; a clash, keyword or common builtin gets a number) at their declaration and every use (`src/locals.rs`). Without a compiler, a name is renamed at every place it appears in its function, and only when that is provably safe. It keeps its name when it is also a parameter, a nested function or class name, a JSX tag, an object shorthand key, in `global`/`nonlocal` or an import, inside a `match` case or a self-documenting f-string field (`{x=}`); in TypeScript and Dart also when it is declared twice or used outside the block that declares it; and in a function that uses `eval`, `locals()`, `vars()`, `exec` or `with`. Members (`obj.name`) and keyword or named-argument labels are other things and keep their text.
+- Kept: everything else, including `print` and logging that shares a line with other code.
+
+## C# structure
+
+`zazzle-csharp-indexer` lists no tools of its own: agents ask zazzle, and `zazzled` calls the indexer's daemon over the same bridge as the terse view (starting it when nothing listens), for the git work tree that holds the working directory. Answers come from the index the daemon keeps current, so they need no file reads. `root:path` in the indexer's answers becomes a path relative to the working directory.
+
+| MCP tool | command | output |
+|---|---|---|
+| `zazzle_overview` | `overview` | file and line counts by language, top directories, entry points and project files, largest files; start here on an unfamiliar repository |
+| `zazzle_find_symbol` | `find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
+| `zazzle_changed_since` | `changed-since [CURSOR]` | `A`/`M`/`D path` since a cursor from an earlier call, then a new cursor; cursors expire when the indexer's daemon restarts |
+| `zazzle_git_log` | `git-log [PATH] [-n N] [--grep TEXT]` | `hash date author subject` |
+| `zazzle_git_blame` | `git-blame PATH [--start N] [--end N]` | `git blame -w` for a range (default 40 lines) |
+| `zazzle_report_gap` | `report-gap TEXT` | records what the agent needed and could not get in the indexer's usage log, where `zazzle-csharp-indexer report` lists it |
+
+Where a symbol is used is `zazzle_refs` (`refs`); the indexer's `find_references` is gone. Unlike it, `refs` shows each use's enclosing symbol, but it lists declarations of fields, locals and parameters as uses rather than definitions, and pages with `-m` and narrower paths instead of an offset.
+
 ## Edits need the sha
 
 Every edit except `--create` needs proof that the caller read the current code: `--expect SHA` from `read --source`, or `--at` anchors from `read --source --anchors`. A refusal never reveals the current sha or anchors (`the file is not the version you read; read it again with --source`). A successful edit returns the new sha, since the caller wrote the change.
@@ -52,7 +85,8 @@ Every edit except `--create` needs proof that the caller read the current code: 
 `zazzle read FILE --symbol NAME` (`-s`) reads one symbol instead of the whole file: the outline gives its range, which is extended upward over the doc comments, comments and attributes directly above it (`///`, `/** */`, `#[...]`, C# `[...]`, `@decorator`, Python `#`), so a C# method's XML doc comes with it.
 
 - `NAME` is the symbol's name or the last parts of its qualified name: `Invoice.Total`, `billing::tax::total`. Containers come from nesting (classes, impls, modules, namespaces); `impl Display for A` counts as `A`; generics are ignored. Exact case is tried first, then any case.
-- Several matches (overloads, the same method in two impls) are listed with their lines and declaration line, numbered; add `#N` (`Total#2`) to pick one. No match lists similar names, or points at `zazzle outline`.
+- Overloads are picked by parameter types: `Total(decimal, int)`, `Total()`. Types are compared as written in the declaration, ignoring spaces (`Dictionary<string,int>` matches `Dictionary<string, int>`, but `decimal` does not match `System.Decimal`); both `Type name` and `name: Type` declarations work, defaults, attributes and modifiers (`ref`, `out`, `params`, `mut`) are ignored, receivers (`self`, `&self`, Python's `self`/`cls`) are not counted, and an untyped parameter matches by name. A list that fits no overload shows the overloads there are.
+- Several matches (overloads, the same method in two impls) are listed with their lines and declaration line, numbered; add the parameter types or `#N` (`Total#2`) to pick one. No match lists similar names, or points at `zazzle outline`.
 - The usual budget applies, and `--symbol` cannot be combined with `PATH:A-B`, `--around`, `--head` or `--tail`. Over MCP, `zazzle_read` takes `symbol`.
 
 ## Clean
@@ -75,7 +109,7 @@ Every removal leaves a marker. Input that is not recognised only gets the lossle
 
 ## Run
 
-`zazzle run -- cargo test` runs a command in the caller's environment and prints what an agent needs from its output. The invoker `exec`s `zazzled wrap ARGS` (on Intel Macs run `zazzled wrap` directly); it never runs inside the daemon.
+`zazzle run -- cargo test` runs a command in the caller's environment and prints what an agent needs from its output. The invoker `exec`s `zazzled wrap ARGS` (on Intel Macs run `zazzled wrap` directly); it never runs inside the daemon ([why](src/.dev/decisions.json)).
 
 - stdout and stderr go through one pipe, so their order is kept; stdin is the caller's. The exit status is the command's (128 + N for a signal); `--timeout SECS` (default 3600) kills it and exits 124. Up to 64 MiB of output is read.
 - A profile, picked from the command (through `npx`, `uv run`, `python -m`, `env VAR=x`, …) or named with `--profile`, drops only lines it knows are noise and counts them. Lines it does not recognise are always kept.
@@ -103,12 +137,25 @@ zazzle proxy --upstream https://mcp.example.com/mcp --listen 127.0.0.1:8808     
 claude mcp add --transport http example http://127.0.0.1:8808/mcp
 ```
 
-- `zazzle proxy ARGS` replaces itself (`exec`) with `zazzled proxy ARGS`, so the proxy keeps the caller's environment (servers often read keys from it), streams and exit status; it does not run inside the daemon. On Intel Macs, where there is no `zazzle`, run `zazzled proxy` directly.
+- `zazzle proxy ARGS` replaces itself (`exec`) with `zazzled proxy ARGS` and does not run inside the daemon ([why](src/.dev/decisions.json)). On Intel Macs, where there is no `zazzle`, run `zazzled proxy` directly.
 - What changes: the `text` of `content` items (and of embedded `resource` items) in `tools/call` results, and the `text` of `contents` in `resources/read` results. A text is replaced only when that saves at least one token.
 - What never changes: `structuredContent`, images and other binary items, errors, protocol messages (`initialize`, lists, notifications), requests in either direction, and replies to anything else. Responses are matched to requests by JSON-RPC id, single or batched.
-- Options: `--lossless` and `--budget T` as for `clean` (budget per text, default 8000); `--skip TOOL` (repeatable) leaves one tool's results alone; `--log` writes `tools/call NAME ~A→~B tokens` to standard error for each cleaned result.
+- Options: `--lossless` and `--budget T` as for `clean` (budget per text, default 8000); `--skip TOOL` (repeatable) leaves one tool's results alone; `--log` writes `tools/call NAME ~A→~B tokens` to standard error for each cleaned result; `--config FILE` sets them per tool.
+- `--config FILE` is JSON. Each tool (by exact name, else the longest matching `*` pattern) and resource reads can set `lossless`, `budget` and `skip`; what a rule leaves out comes from the command line. Unknown sections, settings or types stop the proxy at startup.
+
+  ```json
+  {"tools": {"read_file": {"lossless": true, "budget": 30000}, "github_*": {"budget": 2000}, "get_secret": {"skip": true}},
+   "resources": {"lossless": true}}
+  ```
 - stdio: the server runs as a child with stderr passed through; the proxy exits with its exit code when it closes its output.
-- HTTP: one request per connection. JSON replies are cleaned whole (up to 64 MiB, larger ones are passed through), `text/event-stream` replies event by event as they stream, and anything else (including compressed bodies) is copied. Headers such as `Mcp-Session-Id` and `Authorization` pass both ways; hop-by-hop headers are dropped, bodies are requested uncompressed, redirects and error statuses are returned to the client. `Origin` headers from hosts other than localhost are refused (403). It listens on `127.0.0.1:8808` unless told otherwise; request bodies need `Content-Length`. Upstream TLS uses the operating system's trust store, and `HTTPS_PROXY`/`NO_PROXY` are honoured.
+- HTTP: only Streamable HTTP (MCP 2025-03-26 and later), not the older HTTP+SSE transport. Connections stay open for further requests unless the client asks to close them (`Connection: close`, or HTTP/1.0 without keep-alive), sends something unreadable or stays idle for 60 seconds; replies of unknown length are chunked on open connections, and the upstream side reuses its connections too. JSON replies are cleaned whole (up to 64 MiB, larger ones are passed through), `text/event-stream` replies event by event as they stream, and anything else (including compressed bodies) is copied. Headers such as `Mcp-Session-Id` and `Authorization` pass both ways; hop-by-hop headers are dropped, bodies are requested uncompressed, redirects and error statuses are returned to the client. `Origin` headers from hosts other than localhost are refused (403). It listens on `127.0.0.1:8808` unless told otherwise; request bodies need `Content-Length`. Upstream TLS uses the operating system's trust store, and `HTTPS_PROXY`/`NO_PROXY` are honoured.
+
+## Stored outputs
+
+`clean`, `run` and `proxy` outputs cannot be produced again (their input was a pipe, a command's output or another server's reply), so they are stored on disk under an id: `clean` and `run` replies start with `[r:ID]`, and the proxy adds an item `[r:ID shortened by zazzle]` after each text it shortened (its own item, so JSON text stays JSON). When something was cut (a budget, a profile, progress bars, blobs, long lines), the reply says `read-again r:ID --full`.
+
+- `zazzle read-again r:ID` returns the output exactly as it was shown; `--full` returns the uncut text with its line numbers (terminal escapes removed), with `--lines A-B` and `--budget T` (default 3000).
+- The store is `~/.zazzle/outputs` (`$ZAZZLE_OUTPUTS_DIR`), mode 0700 with 0600 files. Each save reaps entries older than an hour; if the store then holds more than `$ZAZZLE_OUTPUTS_MAX_GB` gigabytes (default 2), the oldest go until half the bytes remain. A failed save keeps the output and says it was not stored.
 
 ## zazz scripts
 
@@ -138,15 +185,15 @@ Agents (and humans) can ship small programs to zazzled: a `.zazz` file is a ZIP 
 
 With `ZAZZLE_SESSION` set (or over MCP, where each connection is a session) every response starts with `[r:ID]`. Repeating a request whose response is identical and was sent within the last 40,000 estimated tokens returns `[r:ID] already sent: zazzle read a.rs:1-20, unchanged. If you no longer have it: read-again r:ID`.
 
-`zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean` responses cannot be read again, since their input is gone. Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
+`zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a session response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean`, `run` and `proxy` outputs come from the output store instead (see [Stored outputs](#stored-outputs)). Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
 
 ## Cache
 
-`~/.zazzle/v1/` (mode 0700, excluded from Spotlight and Time Machine) holds derived data only, never file text: an append-only log of per-path records (stat identity, line count, binary/minified/CRLF flags; `ls` and `find` fill it without hashing files, and the record's old 32-byte hash slot is kept as zeros) with per-record checksums, torn-tail repair and compaction. In memory: line indexes for recently read files (edit anchors are hashed per line on demand), outlines keyed by content hash, and per-root file listings validated by `stat` of each directory and ignore file (no watcher; measured below).
+The daemon keeps derived data only, never file text, in `~/.zazzle/v1/` (`ZAZZLE_CACHE_DIR`); design notes: [src/.dev/decisions.json](src/.dev/decisions.json), file format: [src/.dev/contracts.json](src/.dev/contracts.json).
 
 ## Measurements
 
-Linux x86_64 VM, p50 per process spawn over 3000 runs, microseconds (`macos/c/zazzle/bench/run.sh`): floor (`_exit`) 120, `zazzle version` 209, `zazzle read` 228 vs `cat` 1057, `zazzle find` on a small tree 554 vs `grep -rn` 1278, libc hello 941. On a 111 MB tree of 6,751 files: `find` 25-35 ms vs `grep -rn` 150 ms; `ls` with line counts 1088 ms cold, 52 ms after a daemon restart; walk share of `find` fell from 33 ms to 10 ms with the validated listing cache, so no file watcher was added. macOS (GitHub Actions virtual M1, noisy, 3000 runs, p50): floor 1734, libc hello 1662, `zazzle version` 1799, `zazzle read` 1736 vs `cat` 1938, `zazzle find` on a small tree 2361 vs `grep -rn` 2471, so `zazzle` costs about what any libSystem program costs and the gain there is in output size, not startup. On macOS the floor is dyld plus libSystem (a freestanding Mach-O is killed by the kernel), so the invoker can match but not beat a libSystem hello; the MCP front end avoids the spawn entirely.
+Linux x86_64 VM, p50 per process spawn over 3000 runs, microseconds (`macos/c/zazzle/bench/run.sh`): floor (`_exit`) 120, `zazzle version` 209, `zazzle read` 228 vs `cat` 1057, `zazzle find` on a small tree 554 vs `grep -rn` 1278, libc hello 941. On a 111 MB tree of 6,751 files: `find` 25-35 ms vs `grep -rn` 150 ms; `ls` with line counts 1088 ms cold, 52 ms after a daemon restart; walk share of `find` fell from 33 ms to 10 ms with the validated listing cache (the decision this supports: [src/.dev/decisions.json](src/.dev/decisions.json)). macOS (GitHub Actions virtual M1, noisy, 3000 runs, p50): floor 1734, libc hello 1662, `zazzle version` 1799, `zazzle read` 1736 vs `cat` 1938, `zazzle find` on a small tree 2361 vs `grep -rn` 2471, so `zazzle` costs about what any libSystem program costs and the gain there is in output size, not startup. On macOS the floor is dyld plus libSystem ([why](../../c/zazzle/.dev/decisions.json)), so the invoker can match but not beat a libSystem hello; the MCP front end avoids the spawn entirely.
 
 ## Safety
 
@@ -154,10 +201,10 @@ The daemon answers only the same uid (`SO_PEERCRED` / `getpeereid`; the invoker 
 
 ## Limits
 
-Regex is the Rust dialect (no look-around, no backreferences). `zazzle` itself supports macOS arm64 and Linux x86_64/aarch64; on Intel Macs use `zazzled mcp` or `zazzled run`. Outlines are heuristic for languages without a grammar and for files over 1 MiB (tree-sitter would take about 1.5 s on an 8.7 MB generated parser). `find`, `refs`, `ls` and listing validation run on a thread pool started once per daemon, not on threads spawned per request. `agent-fs` (`afs`) is a separate tool in this repository with overlapping goals.
+Regex is the Rust dialect (no look-around, no backreferences). `zazzle` itself supports macOS arm64 and Linux x86_64/aarch64; on Intel Macs use `zazzled mcp` or `zazzled run`. Outlines are heuristic for languages without a grammar and for files over 1 MiB (tree-sitter would take about 1.5 s on an 8.7 MB generated parser). How parallel work is run (one thread pool per daemon) and why: [src/.dev/decisions.json](src/.dev/decisions.json). `agent-fs` (`afs`) is a separate tool in this repository with overlapping goals.
 
 ## Tests
 
 `cargo test -p zazzled`; branch coverage (nightly, test code excluded, target 95%): `sh zazzled/coverage.sh 95` from `macos/rust` (currently 100%). C invoker: `make unit coverage smoke` in `macos/c/zazzle` (branch coverage of the invoker logic, 100%).
 
-Dependencies, each for one reason: `blake3` (hashing), `ignore` (gitignore-aware walking), `libc` (sockets, descriptors passing, launchd), `memchr`, `regex`, `serde_json` (MCP), `tree-sitter` and five grammars (outlines and `read --symbol`), `ureq` with rustls and the platform verifier (the HTTP side of the MCP proxy).
+Why each dependency: [.dev/decisions.json](.dev/decisions.json).

@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Command-line helpers",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Command-line helpers",
+      "summary": "The logic behind the init, hook and report commands: wiring zazzle and the indexer's redirect hook into a project's Claude Code settings, deciding which raw reads and searches to redirect to zazzle, and summarising the usage log.",
+      "purpose": "Holds three static classes, one per command, that src/Program.cs calls: Init merges zazzle's server when zazzled is installed, the hook and zazzle's permission into .mcp.json and .claude/settings.json; HookPolicy classifies a Claude Code tool call; Report aggregates usage.jsonl into what to improve next.",
+      "boundaries": [
+        "Reading standard input, writing the usage-log record for the hook and choosing the exit code are in src/Program.cs.",
+        "The usage log's format belongs to src/UsageLog.cs (src/.dev/observability.json); Report only reads it."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.FromDir"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        }
+      ]
+    }
+  ]
+}

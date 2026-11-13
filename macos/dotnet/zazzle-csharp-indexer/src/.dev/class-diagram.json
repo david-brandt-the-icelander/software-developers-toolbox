@@ -1,0 +1,260 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer shared classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "The types declared in the project's top-level files. Program.cs uses top-level statements and declares no type.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+      "symbol": "Store"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+      "symbol": "Root"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+      "symbol": "UsageLog"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Proc.cs",
+      "symbol": "Proc"
+    }
+  ],
+  "types": [
+    {
+      "id": "ZazzleIndexer.Engine",
+      "name": "Engine",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs"
+      ],
+      "members": [
+        "const long MaxIndexBytes",
+        "static int ReadyTimeoutMs",
+        "Store Store",
+        "bool Watch",
+        "UsageLog Log",
+        "string StateDir",
+        "string Epoch",
+        "static Engine Open(string? stateDir = null, bool watch = true)",
+        "RootIndex Attach(string path)",
+        "BlobMeta? Blob(int id)",
+        "BlobMeta GetOrAddBlob(byte[] bytes, string path)",
+        "HashSet<int> BlobsDeclaring(string name, bool exact)",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Store",
+      "name": "Store",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Store.cs"
+      ],
+      "members": [
+        "const int ExtractorVersion",
+        "Store(string file)",
+        "int RootId(string path)",
+        "(long? eventId, long? fullScan) RootState(int id)",
+        "void SetEventId(int id, long eventId)",
+        "void SetFullScan(int id, long ticks)",
+        "List<FileEntry> LoadFiles(int rootId)",
+        "void UpsertFile(int rootId, FileEntry e)",
+        "void DeleteFile(int rootId, string path)",
+        "int InsertBlob(string oid, long size, bool binary, string lang, int lines, string digest, string? symbols)",
+        "List<BlobMeta> LoadBlobs()",
+        "List<(int id, string json)> AllSymbols()",
+        "string? Symbols(int blobId)",
+        "int CollectGarbage()"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Root",
+      "name": "Root",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Root.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Path",
+        "RootIndex Index",
+        "static Root Parse(string spec, Engine engine)",
+        "string? Resolve(string relative)",
+        "static string Decode(byte[] bytes)"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.UsageLog",
+      "name": "UsageLog",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs"
+      ],
+      "members": [
+        "UsageLog(string? file)",
+        "static UsageLog Open()",
+        "static string DefaultDir()",
+        "void Record(string session, string tool, JsonNode? args, CallInfo info, long ms, int bytesOut, string? error)"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.CallInfo",
+      "name": "CallInfo",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs"
+      ],
+      "members": [
+        "string Path",
+        "string? Reason",
+        "int Results",
+        "bool Truncated",
+        "int Candidates",
+        "int TotalFiles",
+        "string? Note"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Proc",
+      "name": "Proc",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Proc.cs"
+      ],
+      "members": [
+        "static ProcResult Run(string file, IEnumerable<string> args, int timeoutSeconds, string? workingDir = null)"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.ProcResult",
+      "name": "ProcResult",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Proc.cs"
+      ],
+      "members": [
+        "int ExitCode",
+        "string Stdout",
+        "string Stderr",
+        "bool TimedOut"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Native",
+      "name": "Native",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Native.cs"
+      ],
+      "members": [
+        "static string RealPath(string path)"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.ToolVersion",
+      "name": "ToolVersion",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/ToolVersion.cs"
+      ],
+      "members": [
+        "static readonly string Text"
+      ]
+    },
+    {
+      "id": "Index.RootIndex",
+      "name": "RootIndex",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs"
+      ],
+      "members": [
+        "bool WaitReady(int ms)",
+        "List<FileEntry> Files()"
+      ],
+      "external": true
+    },
+    {
+      "id": "Index.BlobMeta",
+      "name": "BlobMeta",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/BlobMeta.cs"
+      ],
+      "members": [
+        "int Id",
+        "string Oid"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "ZazzleIndexer.Store",
+      "kind": "depends-on",
+      "description": "Opens store.db in the state directory and loads every blob and symbol list at start."
+    },
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "ZazzleIndexer.UsageLog",
+      "kind": "depends-on",
+      "description": "Owns the log every session of the process writes to."
+    },
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "Index.RootIndex",
+      "kind": "depends-on",
+      "description": "One per real root path, created and started on first Attach."
+    },
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "Index.BlobMeta",
+      "kind": "depends-on",
+      "description": "Looked up by blob id and by git oid."
+    },
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "ZazzleIndexer.Native",
+      "kind": "depends-on",
+      "description": "Real path of a root, so two spellings share one index."
+    },
+    {
+      "from": "ZazzleIndexer.Root",
+      "to": "ZazzleIndexer.Engine",
+      "kind": "depends-on",
+      "description": "Attaches its index."
+    },
+    {
+      "from": "ZazzleIndexer.Root",
+      "to": "ZazzleIndexer.Proc",
+      "kind": "depends-on",
+      "description": "git rev-parse and, while the index is cold, git ls-files."
+    },
+    {
+      "from": "ZazzleIndexer.Root",
+      "to": "ZazzleIndexer.CallInfo",
+      "kind": "depends-on",
+      "description": "Marks a cold-index listing as scan / index_cold."
+    },
+    {
+      "from": "ZazzleIndexer.UsageLog",
+      "to": "ZazzleIndexer.CallInfo",
+      "kind": "depends-on",
+      "description": "Writes its fields into the record."
+    },
+    {
+      "from": "ZazzleIndexer.Proc",
+      "to": "ZazzleIndexer.ProcResult",
+      "kind": "depends-on",
+      "description": "Run returns one."
+    }
+  ]
+}

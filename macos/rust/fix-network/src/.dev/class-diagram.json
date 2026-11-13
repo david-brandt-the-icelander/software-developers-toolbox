@@ -1,0 +1,342 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "fix-network types",
+  "folder": "macos/rust/fix-network/src",
+  "description": "The structs, enums and the trait the modules declare: parsed command output, the snapshot, the assessment and its results, the repair gates and actions, the run's session, the machine behind Sys, and the command line. Fake is test-only (cfg(test)).",
+  "sources": [
+    { "path": "macos/rust/fix-network/src/model.rs", "symbol": "Report" },
+    { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts" },
+    { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "Resolver" },
+    { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "Gates" },
+    { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Sys" },
+    { "path": "macos/rust/fix-network/src/main.rs", "symbol": "Cli" }
+  ],
+  "types": [
+    {
+      "id": "sys.Sys",
+      "name": "Sys",
+      "kind": "interface",
+      "sources": ["macos/rust/fix-network/src/sys.rs"],
+      "members": [
+        "run(cmd: &[&str], timeout: u64, sudo: bool) -> (i32, String)",
+        "resolve(name: &str, timeout: u64) -> Result<Vec<IpAddr>, String>",
+        "tcp(addrs: &[IpAddr], port: u16, timeout: u64) -> bool",
+        "pause(secs: u64)",
+        "now() -> u64",
+        "over_ssh() -> bool",
+        "watchdog(dir: &Path, dev: &str, delay: u64) -> io::Result<Child>"
+      ]
+    },
+    {
+      "id": "sys.Real",
+      "name": "Real",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/sys.rs"],
+      "members": []
+    },
+    {
+      "id": "sys.fake.Fake",
+      "name": "Fake",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/sys.rs"],
+      "members": [
+        "answers: RefCell<HashMap<String, VecDeque<(i32, String)>>>",
+        "calls: RefCell<Vec<String>>",
+        "names: RefCell<HashMap<String, Result<Vec<IpAddr>, String>>>",
+        "open: RefCell<Vec<(IpAddr, u16)>>",
+        "ssh: bool",
+        "clock: u64",
+        "watchdog_fails: bool",
+        "watchdog_done: bool",
+        "on(cmd: &str, answers: &[(i32, &str)]) -> &Self",
+        "name(host: &str, addrs: &[&str]) -> &Self",
+        "listen(addr: &str, port: u16) -> &Self",
+        "count(cmd: &str) -> usize"
+      ]
+    },
+    {
+      "id": "parse.Service",
+      "name": "Service",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["name: String", "port: String", "device: String", "is_wifi() -> bool"]
+    },
+    {
+      "id": "parse.IfStatus",
+      "name": "IfStatus",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["active: bool", "ipv4: Option<String>", "ipv6_global: bool"]
+    },
+    {
+      "id": "parse.Route",
+      "name": "Route",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["v6: bool", "dest: String", "gateway: String", "flags: String", "netif: String", "scoped() -> bool", "link_local() -> bool"]
+    },
+    {
+      "id": "parse.Resolver",
+      "name": "Resolver",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["scoped: bool", "domain: Option<String>", "search: Vec<String>", "nameservers: Vec<String>", "iface: Option<String>", "reachable: Option<bool>", "supplemental() -> bool"]
+    },
+    {
+      "id": "parse.Proxy",
+      "name": "Proxy",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["http: Option<(String, u16)>", "https: Option<(String, u16)>", "pac: Option<String>"]
+    },
+    {
+      "id": "parse.VpnService",
+      "name": "VpnService",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["name: String", "state: String", "iface: Option<String>"]
+    },
+    {
+      "id": "parse.Target",
+      "name": "Target",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/parse.rs"],
+      "members": ["host: String", "port: Option<u16>"]
+    },
+    {
+      "id": "facts.Public",
+      "name": "Public",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/facts.rs"],
+      "members": ["captive: bool", "ip_ok: bool", "ip6_ok: Option<bool>", "dns_ok: bool", "direct_dns_ok: Option<bool>", "https_ok: bool"]
+    },
+    {
+      "id": "facts.Internal",
+      "name": "Internal",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/facts.rs"],
+      "members": ["target: Target", "addrs: Result<Vec<IpAddr>, String>", "route_if: Option<String>", "tcp_ok: Option<bool>", "resolver: Option<Resolver>", "direct_ok: Option<bool>"]
+    },
+    {
+      "id": "facts.Facts",
+      "name": "Facts",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/facts.rs"],
+      "members": [
+        "macos: String",
+        "over_ssh: bool",
+        "config_hung: bool",
+        "wake_age: Option<u64>",
+        "phys: Option<Service>",
+        "wifi_power: Option<bool>",
+        "wifi_missing: bool",
+        "link: IfStatus",
+        "dhcp: bool",
+        "gateway: Option<String>",
+        "gateway_ok: Option<bool>",
+        "up_ifaces: Vec<String>",
+        "routes: Vec<Route>",
+        "default_if: Option<String>",
+        "public_if: Option<String>",
+        "resolvers: Vec<Resolver>",
+        "proxy: Proxy",
+        "proxy_down: Vec<String>",
+        "pac_ok: Option<bool>",
+        "vpns: Vec<VpnService>",
+        "public: Public",
+        "internal: Vec<Internal>",
+        "tunnels() -> Vec<String>",
+        "tunnel_defaults() -> Vec<String>",
+        "full_tunnel() -> bool",
+        "connected_vpn() -> Option<&VpnService>",
+        "stale_routes() -> Vec<&Route>",
+        "stale_resolvers() -> Vec<&Resolver>",
+        "vpn_present() -> bool"
+      ]
+    },
+    {
+      "id": "model.State",
+      "name": "State",
+      "kind": "enum",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": ["Healthy", "Failed", "Absent", "Unknown", "NotTested", "Unsupported", "label() -> &'static str"]
+    },
+    {
+      "id": "model.Step",
+      "name": "Step",
+      "kind": "enum",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": [
+        "WifiOn",
+        "FlushDns",
+        "ClearArp",
+        "FixProxy",
+        "ReconnectVpn(String)",
+        "RenewDhcp",
+        "CycleWifi",
+        "FlushRoutes",
+        "name() -> String",
+        "rank() -> u8",
+        "gate() -> Option<&'static str>",
+        "disruptive() -> bool"
+      ]
+    },
+    {
+      "id": "model.Remedy",
+      "name": "Remedy",
+      "kind": "enum",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": ["Steps(Vec<Step>)", "Manual(String)", "Reboot(String)"]
+    },
+    {
+      "id": "model.Finding",
+      "name": "Finding",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": ["code: &'static str", "summary: String", "remedy: Remedy"]
+    },
+    {
+      "id": "model.Check",
+      "name": "Check",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": ["name: &'static str", "state: State", "detail: String"]
+    },
+    {
+      "id": "model.Report",
+      "name": "Report",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/model.rs"],
+      "members": ["checks: Vec<Check>", "findings: Vec<Finding>", "healthy() -> bool", "wifi_reset_needed() -> bool"]
+    },
+    {
+      "id": "assess.Ctx",
+      "name": "Ctx",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/assess.rs"],
+      "members": [
+        "f: &Facts",
+        "tried: &[Step]",
+        "out: Vec<Finding>",
+        "add(code: &'static str, summary: impl Into<String>, remedy: Remedy)",
+        "steps(candidates: Vec<Step>, fallback: Remedy) -> Remedy",
+        "phys_steps(arp: bool) -> Vec<Step>",
+        "vpn_fix(manual: &str) -> Remedy",
+        "vpn_connect() -> Remedy"
+      ]
+    },
+    {
+      "id": "repair.Gates",
+      "name": "Gates",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/repair.rs"],
+      "members": ["vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "over_ssh: bool", "blocked(s: &Step) -> Option<&'static str>"]
+    },
+    {
+      "id": "repair.Action",
+      "name": "Action",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/repair.rs"],
+      "members": ["step: Step", "result: Result<String, String>"]
+    },
+    {
+      "id": "repair.Exec",
+      "name": "Exec",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/repair.rs"],
+      "members": [
+        "sys: &dyn Sys",
+        "log: &dyn Fn(&str)",
+        "dir: &Path",
+        "ok(cmd: &[&str], timeout: u64, sudo: bool) -> Result<String, String>",
+        "wifi_on(dev: &str) -> bool",
+        "vpn_state(name: &str) -> String",
+        "wait_vpn(name: &str, want: &str, tries: u32) -> Result<(), String>"
+      ]
+    },
+    {
+      "id": "repair.StepFn",
+      "name": "StepFn",
+      "kind": "type",
+      "sources": ["macos/rust/fix-network/src/repair.rs"],
+      "members": ["dyn FnMut(&Step, &Facts) -> Result<String, String>"]
+    },
+    {
+      "id": "run.Session",
+      "name": "Session",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/run.rs"],
+      "members": [
+        "dir: PathBuf",
+        "log_path: PathBuf",
+        "original: Map<String, Value>",
+        "quiet: bool",
+        "sensitive: Regex",
+        "at(root: &Path, quiet: bool) -> io::Result<Session>",
+        "redact(text: &str) -> String",
+        "log_to(msg: &str, show: bool)",
+        "log(msg: &str)",
+        "save_original()"
+      ]
+    },
+    {
+      "id": "main.Cli",
+      "name": "Cli",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/main.rs"],
+      "members": ["command: Cmd"]
+    },
+    {
+      "id": "main.Cmd",
+      "name": "Cmd",
+      "kind": "enum",
+      "sources": ["macos/rust/fix-network/src/main.rs"],
+      "members": ["Diagnose(Common)", "Fix(FixArgs)"]
+    },
+    {
+      "id": "main.Common",
+      "name": "Common",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/main.rs"],
+      "members": ["internal_host: Vec<Target>", "json: bool", "verbose: bool"]
+    },
+    {
+      "id": "main.FixArgs",
+      "name": "FixArgs",
+      "kind": "struct",
+      "sources": ["macos/rust/fix-network/src/main.rs"],
+      "members": ["common: Common", "vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "force: bool", "dry_run: bool"]
+    }
+  ],
+  "relationships": [
+    { "from": "sys.Real", "to": "sys.Sys", "kind": "implements", "description": "The real machine." },
+    { "from": "sys.fake.Fake", "to": "sys.Sys", "kind": "implements", "description": "The scripted Mac the tests run against." },
+    { "from": "facts.Facts", "to": "parse.Service", "kind": "depends-on", "description": "The physical service in use." },
+    { "from": "facts.Facts", "to": "parse.IfStatus", "kind": "depends-on", "description": "Its link's addresses." },
+    { "from": "facts.Facts", "to": "parse.Route", "kind": "depends-on", "description": "The routing table." },
+    { "from": "facts.Facts", "to": "parse.Resolver", "kind": "depends-on", "description": "The DNS resolvers." },
+    { "from": "facts.Facts", "to": "parse.Proxy", "kind": "depends-on", "description": "The enabled system proxies." },
+    { "from": "facts.Facts", "to": "parse.VpnService", "kind": "depends-on", "description": "The scutil-managed VPNs." },
+    { "from": "facts.Facts", "to": "facts.Public", "kind": "depends-on", "description": "The public-internet probes." },
+    { "from": "facts.Facts", "to": "facts.Internal", "kind": "depends-on", "description": "One probe per internal host." },
+    { "from": "facts.Internal", "to": "parse.Target", "kind": "depends-on", "description": "The host and port probed." },
+    { "from": "facts.Internal", "to": "parse.Resolver", "kind": "depends-on", "description": "The split-DNS resolver that should answer for it." },
+    { "from": "model.Report", "to": "model.Check", "kind": "depends-on", "description": "One check per dimension." },
+    { "from": "model.Report", "to": "model.Finding", "kind": "depends-on", "description": "The problems found." },
+    { "from": "model.Check", "to": "model.State", "kind": "depends-on", "description": "Its health." },
+    { "from": "model.Finding", "to": "model.Remedy", "kind": "depends-on", "description": "What it takes to resolve it." },
+    { "from": "model.Remedy", "to": "model.Step", "kind": "depends-on", "description": "The steps of a fixable remedy." },
+    { "from": "assess.Ctx", "to": "facts.Facts", "kind": "depends-on", "description": "The snapshot being judged." },
+    { "from": "assess.Ctx", "to": "model.Finding", "kind": "depends-on", "description": "Collects findings; a remedy offers only untried steps." },
+    { "from": "repair.Gates", "to": "model.Step", "kind": "depends-on", "description": "Says which flag blocks a step." },
+    { "from": "repair.Action", "to": "model.Step", "kind": "depends-on", "description": "The step that ran." },
+    { "from": "repair.Exec", "to": "sys.Sys", "kind": "depends-on", "description": "Runs the steps on the machine." },
+    { "from": "repair.StepFn", "to": "facts.Facts", "kind": "depends-on", "description": "Runs a step against a snapshot." },
+    { "from": "main.Cli", "to": "main.Cmd", "kind": "depends-on", "description": "The subcommand." },
+    { "from": "main.Cmd", "to": "main.Common", "kind": "depends-on", "description": "diagnose's options." },
+    { "from": "main.Cmd", "to": "main.FixArgs", "kind": "depends-on", "description": "fix's options." },
+    { "from": "main.FixArgs", "to": "main.Common", "kind": "depends-on", "description": "Flattened shared options." },
+    { "from": "main.Common", "to": "parse.Target", "kind": "depends-on", "description": "Each --internal-host, parsed by parse_target." }
+  ]
+}

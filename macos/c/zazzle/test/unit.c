@@ -46,11 +46,18 @@ static int run(int argc, char **argv, char **envp)
 	return -1000 - M.exit_code;
 }
 
-/* Returns true if the captured stderr contains the text. */
+/* Returns true if the captured stderr starts with the full `zazzle: ` prefix and contains the text. */
 static int err_has(const char *s)
 {
 	M.err[M.err_len] = 0;
-	return strstr(M.err, s) != 0;
+	return strncmp(M.err, "zazzle: ", 8) == 0 && strstr(M.err, s) != 0;
+}
+
+/* Returns true if the captured stderr is exactly the text. */
+static int err_is(const char *s)
+{
+	M.err[M.err_len] = 0;
+	return strcmp(M.err, s) == 0;
 }
 
 /* The environment used by most tests. */
@@ -133,7 +140,7 @@ static void test_path_errors(void)
 	char *long_sock[] = {sock_env, 0};
 	char *long_home[] = {home_env, 0};
 	reset();
-	CHECK(run(1, argv, none) == -1000 - 78 && err_has("HOME is not set"));
+	CHECK(run(1, argv, none) == -1000 - 78 && err_is("zazzle: HOME is not set\n"));
 	reset();
 	CHECK(run(1, argv, long_sock) == -1000 - 78 && err_has("socket path too long"));
 	reset();
@@ -219,7 +226,7 @@ static void test_autostart_failures(void)
 	reset();
 	M.connect_rc[0] = -SYS_ENOENT;
 	M.spawn_rc = -12;
-	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("cannot start daemon (error 12)"));
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_is("zazzle: cannot start daemon (error 12)\n"));
 	reset();
 	M.connect_rc[0] = -SYS_ENOENT;
 	M.spawn_rc = -100;

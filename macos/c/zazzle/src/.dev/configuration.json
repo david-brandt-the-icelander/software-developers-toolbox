@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazzle invoker configuration",
+  "folder": "macos/c/zazzle/src",
+  "entities": [
+    {
+      "id": "ZAZZLE_DAEMON",
+      "title": "ZAZZLE_DAEMON",
+      "summary": "The zazzled executable the invoker starts when nothing listens on the socket, and execs for `zazzle run` and `zazzle proxy`.",
+      "key": "ZAZZLE_DAEMON",
+      "type": "path",
+      "default": "zazzled in the same directory as zazzle's own executable",
+      "sensitive": false,
+      "scope": "One zazzle process, only when it has to start a daemon (it runs `ZAZZLE_DAEMON serve` with zazzle's environment) or when the command is `run` or `proxy` (it becomes `ZAZZLE_DAEMON wrap ...` or `ZAZZLE_DAEMON proxy ...`). The standalone tools are always taken from beside the invoker.",
+      "takesEffect": "per-use",
+      "validation": "Longer than 511 bytes: `ZAZZLE_DAEMON too long`, exit 78. If zazzle cannot find its own path and ZAZZLE_DAEMON is unset: `daemon not running`, exit 69.",
+      "details": "zazzle also reads ZAZZLE_SOCK (with HOME for the default) and ZAZZLE_SESSION; their meaning is the daemon's and is recorded in the daemon's configuration.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "pick_daemon"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "exec_daemon"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "EXE_MAX"
+        },
+        {
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "symbol": "ZAZZLE_DAEMON"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_SOCK"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_SESSION"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_IDLE_SECS",
+          "description": "A daemon zazzle starts inherits zazzle's environment, so ZAZZLE_IDLE_SECS set for zazzle applies to it."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Terse C# view verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "entities": [
+    {
+      "id": "terse-view-rules",
+      "title": "View rules and format",
+      "summary": "Each rule of the view, the cases it must leave alone, the step counts and the line format are checked on source text, without a repository.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/.dev/feature.json",
+          "entityId": "terse-csharp-view"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/.dev/contracts.json",
+          "entityId": "view-format"
+        }
+      ],
+      "criteria": [
+        "Usings collapse to one note, regions and logging disappear, and the remaining lines keep their source numbers",
+        "A constructor that only assigns fields collapses to a note naming its parameters, with its doc comment; one with logic and a static one stay, and an empty one is noted as empty",
+        "A catch that logs and rethrows collapses; one that returns a value stays",
+        "Access modifiers go, var replaces only types spelled out on the right, and changed lines are marked N~",
+        "The steps count what each rule changed, and a file with nothing to shorten comes back unchanged",
+        "Logging is recognised on loggers, Debug, Trace and spans, and not when a statement increments or awaits or the receiver is not a logger; logging as an unbraced if body, or sharing a line with other code, stays",
+        "Long locals get initials or three letters; only the local's own uses are renamed, not a field, member or parameter of the same name; clashes and keywords get a number, and a local used in nameof keeps its name"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_hides_noise_with_source_numbers",
+          "command": "dotnet test tests --filter test_view_hides_noise_with_source_numbers"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_collapses_assigning_constructor",
+          "command": "dotnet test tests --filter test_view_collapses_assigning_constructor"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_constructor_cases",
+          "command": "dotnet test tests --filter test_view_constructor_cases"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_collapses_only_rethrowing_catches",
+          "command": "dotnet test tests --filter test_view_collapses_only_rethrowing_catches"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_shortens_declarations",
+          "command": "dotnet test tests --filter test_view_shortens_declarations"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_counts_steps",
+          "command": "dotnet test tests --filter test_view_counts_steps"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_plain_file_unchanged",
+          "command": "dotnet test tests --filter test_view_plain_file_unchanged"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_is_logging",
+          "command": "dotnet test tests --filter test_view_is_logging"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_logging_edge_cases",
+          "command": "dotnet test tests --filter test_view_logging_edge_cases"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_abbreviate",
+          "command": "dotnet test tests --filter test_view_abbreviate"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_shortens_locals_by_binding",
+          "command": "dotnet test tests --filter test_view_shortens_locals_by_binding"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_shortens_locals_without_clashes",
+          "command": "dotnet test tests --filter test_view_shortens_locals_without_clashes"
+        }
+      ],
+      "details": "The view tool's header and refusals are checked in src/Tools/.dev/verification.json (view-tool).",
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/verification.json",
+          "entityId": "view-tool"
+        }
+      ]
+    }
+  ]
+}

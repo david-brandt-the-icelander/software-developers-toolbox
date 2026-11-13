@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/contacts.schema.json",
+  "title": "Contacts",
+  "description": "Who to reach about what, and how. Roles and channels, not personal details. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "contacts"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "responsibleFor": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "channel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hours": {
+            "type": "string",
+            "minLength": 1
+          },
+          "escalation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role",
+          "channel"
+        ]
+      }
+    }
+  }
+}

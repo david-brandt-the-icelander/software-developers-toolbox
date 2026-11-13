@@ -1,0 +1,134 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "MCP tools decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "entities": [
+    {
+      "id": "token-budgeted-pages",
+      "title": "Compact text, paged where lists grow",
+      "summary": "Tools return plain text lines, never JSON; find_symbol takes limit and offset and ends with a footer saying how many there were or which offset comes next, and zazzled cuts every answer to its token budget.",
+      "status": "accepted",
+      "context": "Every byte a tool returns reaches an agent through zazzle and costs tokens.",
+      "decision": "find_symbol pages with limit (30 by default) and offset and prints \"[n of m; next offset k]\" or \"[n symbols]\"; overview, changed_since, git_log and git_blame return their lines as they are, and zazzled cuts any answer beyond its budget (about 8000 tokens by default, --budget) at a line boundary, saying how to narrow.",
+      "rationale": "The usage log records est_tokens (bytes / 4) for every call, so the cost can be checked; the budget is zazzle's, the same for every tool it offers.",
+      "origin": "AGENTS.md (\"Write code for low token use\"). The token budget inside the indexer went with read, search, find_references and run (decisions.json, tools-beside-zazzle).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+          "symbol": "FindSymbolTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Record"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "cut_to_budget"
+        }
+      ]
+    },
+    {
+      "id": "labelled-fallbacks",
+      "title": "Label how every answer was produced",
+      "summary": "Each call records in the usage log how its answer was produced (path) and why (reason): index, run:git / git, view, and index / gap_report for report_gap.",
+      "status": "accepted",
+      "context": "The tools are meant to be shaped by real use; the owner needs to see how often the index could not answer, and why.",
+      "decision": "Tools set CallInfo.Path and CallInfo.Reason; McpServer writes them into the usage log, and zazzle-csharp-indexer report groups calls by them. overview and find_symbol refuse with index_cold rather than answer from a scan while the index is still building.",
+      "rationale": "Without the label, slow or degraded answers would be indistinguishable from indexed ones in the report.",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs",
+          "symbol": "GitLogTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+          "symbol": "ViewTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+          "symbol": "FindSymbolTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.Build"
+        }
+      ]
+    },
+    {
+      "id": "tools-beside-zazzle",
+      "title": "Agents go through zazzle for everything; the indexer lists no tools",
+      "summary": "tools/list is empty. zazzled calls the tools that remain by name: view for zazzle_read, and overview, find_symbol, changed_since, git_log, git_blame and report_gap as zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap. search, read, find_files, outline, run and find_references are gone; zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle run and zazzle_refs replace them.",
+      "status": "accepted",
+      "context": "Until this decision, McpServer's instructions, init's snippet and the redirect hook sent agents to zazzle to read, search and list files and to the indexer for C# structure, while tools/list still offered all thirteen tools, including search, read, find_files, outline and run, whose descriptions said they replace grep, cat and find. An agent with both servers saw two sets of read and search tools with conflicting advice, and gap reports came only from agents that read run's or report_gap's own description.",
+      "options": [
+        {
+          "title": "Keep every tool as it is",
+          "consequences": "Nothing changes for clients that use the indexer alone; agents with zazzle get conflicting advice about which read and search tools to use."
+        },
+        {
+          "title": "Reword the overlapping tools' descriptions to defer to zazzle",
+          "consequences": "One consistent message; the tools stay for clients without zazzle."
+        },
+        {
+          "title": "Stop listing them, and move the structure tools into zazzle",
+          "consequences": "A client sees no indexer tools; view and the structure tools stay as internal calls zazzled makes. Clients without zazzle lose read and search, run ends, and report_gap moves to zazzle_report_gap."
+        }
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Raised while bringing the indexer's .dev files in line with commit 5ea503c, from the difference between McpServer.Instructions, HookPolicy's messages and the tool descriptions."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.ListTools"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.Instructions"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.SearchMsg"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "code_hits"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs"
+        }
+      ],
+      "decision": "Stop listing them, and move the structure tools into zazzle. McpServer.ListTools returns no tools and the instructions point at zazzle; the tools zazzle already replaced are deleted with everything only they used (the run allowlist and run.unrestricted, the external regex fallback, globs, the token-budgeted output builder, Root.Listing, RootIndex.Barrier and Freshen, the Bloom filters, the search literals and the identifier tables); init no longer registers the indexer as an MCP server and removes an earlier registration; zazzled's cmd/structure.rs and mcp_structure.rs offer the structure tools, and zazzle_refs drops mentions in C# comments and strings, as find_references did.",
+      "rationale": "One front door gives agents one consistent set of tools and one place where answers are capped and deduplicated; the indexer keeps doing what only it can (Roslyn views, the live index), behind zazzle.",
+      "decidedBy": "Owner",
+      "decidedOn": "2026-11-13",
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/feature.json",
+          "entityId": "usage-loop",
+          "description": "Gap reports now come from zazzle_report_gap, which every agent using zazzle is offered."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer internal tools component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "description": "The tools zazzled calls, grouped by where their answers come from: the index, git or the syntax tree of one C# file.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OverviewTool.cs",
+      "symbol": "OverviewTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs",
+      "symbol": "GitLogTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+      "symbol": "ViewTool"
+    }
+  ],
+  "components": [
+    {
+      "id": "tools",
+      "name": "Internal tools",
+      "responsibility": "Everything zazzled can call; tools/list shows none of it.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "index-tools",
+      "name": "Index-backed tools",
+      "responsibility": "overview, find_symbol and changed_since: answers from file records and stored symbols.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "git-tools",
+      "name": "Git tools (GitTools.cs)",
+      "responsibility": "git_log and git_blame with compact formats.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "view-tool",
+      "name": "Terse view tool (ViewTool.cs)",
+      "responsibility": "view: reads one .cs file in a root and returns its terse view under a header with the line count and the changes per step.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "gap",
+      "name": "Gap report (ReportGapTool.cs)",
+      "responsibility": "Puts the agent's one-sentence note into the usage log.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "shared",
+      "name": "Shared helpers (ITool.cs, RootSet.cs)",
+      "responsibility": "The tool contract, argument helpers and root:path references.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools"
+    },
+    {
+      "id": "index",
+      "name": "Live index",
+      "responsibility": "File records, change log, readiness.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/component-diagram.json"
+    },
+    {
+      "id": "analysis",
+      "name": "Content analysis",
+      "responsibility": "The stored symbol format and the symbol name index.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/component-diagram.json"
+    },
+    {
+      "id": "view",
+      "name": "Terse C# view",
+      "responsibility": "Builds and formats the view from the file text.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/View"
+    },
+    {
+      "id": "git",
+      "name": "git command-line tool",
+      "responsibility": "log and blame.",
+      "external": true
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "Calls these tools by name over the daemon socket and offers them to agents as zazzle tools.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "tools",
+      "to": "index-tools",
+      "kind": "contains",
+      "description": "Three tools."
+    },
+    {
+      "from": "tools",
+      "to": "git-tools",
+      "kind": "contains",
+      "description": "Two tools."
+    },
+    {
+      "from": "tools",
+      "to": "view-tool",
+      "kind": "contains",
+      "description": "One tool."
+    },
+    {
+      "from": "tools",
+      "to": "gap",
+      "kind": "contains",
+      "description": "One tool."
+    },
+    {
+      "from": "tools",
+      "to": "shared",
+      "kind": "contains",
+      "description": "Used by every tool."
+    },
+    {
+      "from": "index-tools",
+      "to": "index",
+      "kind": "depends-on",
+      "description": "Files, Sync, ChangesSince, Gen and WaitReady."
+    },
+    {
+      "from": "index-tools",
+      "to": "analysis",
+      "kind": "depends-on",
+      "description": "find_symbol reads stored symbols through the name index; overview reads blob facts."
+    },
+    {
+      "from": "index-tools",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Arguments and references."
+    },
+    {
+      "from": "git-tools",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "git log and git blame through Proc.Run."
+    },
+    {
+      "from": "view-tool",
+      "to": "view",
+      "kind": "depends-on",
+      "description": "TerseView.Build and TerseView.Format."
+    },
+    {
+      "from": "view-tool",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Arguments and root:path references."
+    },
+    {
+      "from": "zazzled",
+      "to": "tools",
+      "kind": "depends-on",
+      "description": "Calls them with tools/call by name: view, overview, find_symbol, changed_since, git_log, git_blame, report_gap."
+    }
+  ]
+}

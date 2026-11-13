@@ -1,0 +1,205 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "free-disk-space contracts",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "What outside this folder relies on: the state file that later runs and later versions reopen, the launchd login item, and the command line that people, the agent skill, CI, the zazzle invoker and the zazzle Homebrew formula call, and the clean progress file the next applying clean reads.",
+  "entities": [
+    {
+      "id": "state-file",
+      "title": "Scan state file",
+      "summary": "A SQLite database, in WAL mode, that a scan writes and that resume, status, list, compress and dedupe read in later runs, possibly of a later version.",
+      "contractType": "persistence",
+      "consumers": [
+        "Later runs of the binary: resume, status, list, compress, dedupe and new (which checks for an unfinished scan)",
+        "Anyone who points --state or FDS_STATE at an existing file"
+      ],
+      "definition": "macos/rust/free-disk-space/src/scan.rs",
+      "guarantees": [
+        "Tables: meta(key, value) with JSON values under cfg, started, stats, elapsed and finished; dirs(id, path, done); cands(path, size, alloc, est_saved, mtime_ns, ino, status, note, saved); files(path, name, size, cloned).",
+        "cands.status is pending, done, skipped or failed.",
+        "Every open runs CREATE TABLE IF NOT EXISTS, so an older file gains any missing table, empty.",
+        "new deletes the file and its -wal and -shm files before starting over."
+      ],
+      "compatibility": "No schema version is stored. A table added later appears empty in an older file, and each command must cope: dedupe refuses a file whose files table is empty and asks for a new scan. Adding a column to an existing table would need a migration, which the code does not have.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "SCHEMA"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "open_db"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "Cfg::to_json"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "remove_state"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/free-disk-space/src/.dev/versions.json",
+          "entityId": "state-file-names",
+          "description": "The change that added file names."
+        }
+      ]
+    },
+    {
+      "id": "login-item",
+      "title": "launchd login item",
+      "summary": "The daemon is the launchd service local.free-disk-space in the user's gui domain, defined by ~/Library/LaunchAgents/local.free-disk-space.plist.",
+      "contractType": "file-format",
+      "consumers": [
+        "launchd, which starts it at load and login and keeps it alive",
+        "daemon status and daemon uninstall of any later version, which find it by that label and path"
+      ],
+      "definition": "macos/rust/free-disk-space/src/daemon.rs",
+      "guarantees": [
+        "Label local.free-disk-space; RunAtLoad and KeepAlive true; ProcessType Background; LowPriorityIO; Nice 10.",
+        "ProgramArguments: the absolute path of the binary that ran install, then daemon run --threshold, --cadence, --dev-root and --targets as given.",
+        "PATH is set to /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin; stdout and stderr go to ~/Library/Logs/free-disk-space.log.",
+        "install replaces an earlier instance (bootout, then bootstrap)."
+      ],
+      "compatibility": "Changing the label or plist path would orphan login items installed by earlier versions: status and uninstall would no longer find them.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "LABEL"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist_path"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "service_target"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        }
+      ]
+    },
+    {
+      "id": "clean-progress",
+      "title": "Clean progress file",
+      "summary": "A text file that an interrupted clean --apply leaves for the next applying clean, listing the steps it finished.",
+      "contractType": "persistence",
+      "consumers": [
+        "Later applying runs of clean, by the user or by the daemon, possibly of a later version"
+      ],
+      "definition": "macos/rust/free-disk-space/src/clean.rs",
+      "guarantees": [
+        "Path ~/.local/state/free-disk-space/clean-progress.txt, under the home directory; --state and FDS_STATE do not move it.",
+        "One key per line: dir:<folder as the code names it, such as ~/Library/Caches>, dev:<artifact path> or target:<target name>.",
+        "A key is appended only after its step finished, and never while the stop flag is set.",
+        "A file last modified more than 12 hours ago is deleted unread; a run that completes removes it; dry runs leave it alone."
+      ],
+      "compatibility": "No version is stored. A key that a later version no longer writes (a renamed folder or target) is simply never matched, so that step runs again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "PROGRESS_MAX_AGE_SECS"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/free-disk-space/src/.dev/backlog.json",
+          "entityId": "clean-resume-ignores-dev-root",
+          "description": "The keys carry no dev root or target list."
+        }
+      ]
+    },
+    {
+      "id": "command-line",
+      "title": "Command line",
+      "summary": "The subcommands, flags, defaults and exit statuses described in operation.json.",
+      "contractType": "cli",
+      "consumers": [
+        "People in a terminal",
+        "agents/skills/free-disk-space/SKILL.md, which tells coding agents which commands to run",
+        ".github/workflows/ci.yml, which runs --help and clean caches as a smoke test",
+        "The zazzle Homebrew formula written by macos/release/formula.sh for the external tap zazzcat/homebrew-z, whose test runs free-disk-space --version",
+        "The zazzle invoker (macos/c/zazzle/), which runs `zazzle free-disk-space ARGS` by replacing itself with this binary and passing ARGS on unchanged",
+        "launchd, through the arguments in the plist"
+      ],
+      "definition": "macos/rust/free-disk-space/src/main.rs",
+      "guarantees": [
+        "clean and dedupe change nothing without --apply.",
+        "Errors exit 1 with `error: ...` on stderr; a second Ctrl-C exits 130.",
+        "daemon run accepts the arguments install writes into the plist."
+      ],
+      "compatibility": "Renaming or removing a subcommand or flag breaks the skill, the CI smoke test, what people type after `zazzle free-disk-space` and installed login items, whose plists hold the old arguments until reinstalled.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "Cli"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "EXAMPLES"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "die"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "Smoke test CLIs"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "test"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "is_tool"
+        },
+        {
+          "path": "agents/skills/free-disk-space/SKILL.md",
+          "symbol": "free-disk-space"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "documents",
+          "path": "macos/rust/free-disk-space/src/.dev/operation.json"
+        }
+      ]
+    }
+  ]
+}

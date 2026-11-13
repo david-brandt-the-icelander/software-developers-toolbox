@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/glossary.schema.json",
+  "title": "Glossary",
+  "description": "Terms, what they mean here, and what they must not be confused with. The title is the term; the summary is its meaning. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "glossary"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "notToBeConfusedWith": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

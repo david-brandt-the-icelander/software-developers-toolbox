@@ -4,14 +4,15 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 ## Tools (macOS, Rust)
 - [`fix-network`](macos/rust/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN (also `zazzle fix-network ...`).
 - [`agent-fs`](macos/rust/agent-fs/README.md): JSON read/search/list/outline tool and MCP server for agents, with session caching (`afs`).
-- [`zazzle`/`zazzled`](macos/rust/zazzled/README.md): file tool and MCP server for agents (find, read, outline, refs, safe edit, `clean` for piped command output, `run` for builds and tests, and `zazzle proxy` to shrink another MCP server's results) with a tiny C invoker, per-session dedupe and a persistent cache.
+- [`zazzle`/`zazzled`](macos/rust/zazzled/README.md): file tool and MCP server for agents (find, read, outline, refs, safe edit, C# structure from the indexer, `clean` for piped command output, `run` for builds and tests, and `zazzle proxy` to shrink another MCP server's results) with a tiny C invoker, per-session dedupe and a persistent cache.
 - [`free-disk-space`](macos/rust/free-disk-space/README.md): scan, compress, dedupe and clean up disk space (also `zazzle free-disk-space ...`; `daemon install` schedules it).
-- [`zazzle-csharp-indexer`](macos/dotnet/zazzle-csharp-indexer/README.md) (C#): MCP server that answers code questions for agents instead of grep and cat.
+- [`zazzle-csharp-indexer`](macos/dotnet/zazzle-csharp-indexer/README.md) (C#): the C# side of zazzle: a per-user daemon with a live index and Roslyn that answers zazzle's terse C# views and structure tools (overview, find-symbol, changed-since, git history), plus `init` and the redirect hook; it offers agents no tools of its own.
+- [`cyberspace-generator`](https://github.com/david-brandt-the-icelander/cyberspace-explorer#cyberspace-generator): validates and maintains a repository's `.dev` files, the views [cyberspace-explorer.com](https://cyberspace-explorer.com) shows. Built in cyberspace-explorer; the release pinned in `macos/release/cyberspace-generator.version` ships here.
 
 Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 
 ```bash
-brew install zazzcat/z/zazzle   # zazzle, zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network
+brew install zazzcat/z/zazzle   # zazzle, zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
 ```
 
 The formula lives in the [`zazzcat/homebrew-z`](https://github.com/zazzcat/homebrew-z) tap; brew adds it on first use. If you tapped the old `toolbox` tap, run `brew untap david-brandt-the-icelander/toolbox`.
@@ -25,7 +26,7 @@ shasum -a 256 -c zazzle-macos-universal.tar.gz.sha256
 tar xzf zazzle-macos-universal.tar.gz
 ```
 
-A file downloaded with `curl` runs as is. Downloaded in a browser, an unsigned binary makes macOS say it "could not verify" it; after checking the checksum, run `xattr -d com.apple.quarantine zazzle zazzled afs fix-network free-disk-space`. Signing and notarization are optional ([`macos/release/`](macos/release/README.md)).
+A file downloaded with `curl` runs as is. Downloaded in a browser, an unsigned binary makes macOS say it "could not verify" it; after checking the checksum, run `xattr -d com.apple.quarantine zazzle zazzled afs fix-network free-disk-space cyberspace-generator`. Signing and notarization are optional ([`macos/release/`](macos/release/README.md)).
 
 Or build with `cd macos/rust && cargo build --release`.
 

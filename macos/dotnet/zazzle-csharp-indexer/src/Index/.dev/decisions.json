@@ -1,0 +1,123 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Live index decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "entities": [
+    {
+      "id": "stat-key",
+      "title": "Skip unchanged files by a stat key",
+      "summary": "Each file record keeps size, modification time and birth time; a file whose stat key is unchanged is not read or hashed again.",
+      "status": "accepted",
+      "context": "Every reconcile walks the whole git listing; reading and hashing every file each time would cost as much as indexing from scratch.",
+      "decision": "FileEntry stores Size, Mtime and Birth (UTC ticks); Reconcile and Analyze re-read a file only when FileEntry.Matches fails or its blob is missing (BlobId -1).",
+      "rationale": "A stat call per file is far cheaper than reading it. ctime is not part of the key because .NET does not expose it (see limitations.json, no-ctime).",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs",
+          "symbol": "FileEntry.Matches"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Analyze"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_state_persists_across_restart"
+        }
+      ]
+    },
+    {
+      "id": "git-decides-files",
+      "title": "Let git decide which files exist",
+      "summary": "The file list is git ls-files -co --exclude-standard, and paths an event reports that the index does not know are filtered with git check-ignore, so ignore rules are git's own.",
+      "status": "accepted",
+      "context": "Agents ask about the code in a work tree, not about build output or dependencies that git ignores.",
+      "decision": "Reconcile lists tracked and untracked-but-not-ignored files with git; Drain sends unknown paths to one git check-ignore --stdin call and analyses only the ones git does not ignore. Symbolic links and missing files are left out.",
+      "rationale": "No second implementation of .gitignore semantics to keep in step with git.",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.GitFiles"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.IgnoredAmong"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_watcher_ignores_gitignored"
+        }
+      ]
+    },
+    {
+      "id": "change-tracking",
+      "title": "Track changes with FSEvents (replayed) or FileSystemWatcher, behind periodic reconciles",
+      "summary": "On macOS an FSEvents stream whose last event id is stored, so a restart can replay what it missed; elsewhere a FileSystemWatcher; events are debounced, and full reconciles are the safety net.",
+      "status": "accepted",
+      "context": "The daemon must notice edits without rescanning, including edits made while it was not running.",
+      "decision": "ChangeSources.Create picks FsEventsSource on macOS and FswSource elsewhere. At start, if the source can replay, an event id is stored and the last full scan is under 24 hours old, the stream starts from that id; when the history-done event arrives within 10 seconds the replayed events are applied, otherwise a full reconcile runs. Events are queued and applied 100 ms after the last one. A change to a .gitignore, .git/HEAD or .git/info/exclude, or a new directory, triggers a full reconcile, and a full reconcile runs every 5 minutes. If the source cannot start, the root relies on the periodic reconcile and says so on standard error.",
+      "rationale": "Replay avoids a full scan after a daemon restart; the periodic reconcile catches whatever the watcher misses. The 24-hour limit on replay is the code's own constant.",
+      "details": "The README says a full reconcile also runs on watcher errors; the code only re-applies queued events on that signal (backlog.json, needs-full-scan-ignored).",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Drain"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.ReplayMaxAgeTicks"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FsEventsSource.cs",
+          "symbol": "FsEventsSource.OnEvents"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FswSource.cs",
+          "symbol": "FswSource.Start"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/backlog.json",
+          "entityId": "needs-full-scan-ignored"
+        }
+      ]
+    },
+    {
+      "id": "change-log",
+      "title": "Number every change with a generation",
+      "summary": "Each add, modify or delete bumps the root's generation and is appended to an in-memory change log, which changed_since reads.",
+      "status": "accepted",
+      "context": "An agent that has read part of a work tree wants to know what changed since, without listing everything again.",
+      "decision": "RootIndex.Log appends (generation, path, A|M|D); when the log passes 50,000 entries the older half is dropped and a cursor older than that is reported as expired. The log is not persisted, so cursors only hold within one engine run.",
+      "rationale": "A bounded, in-memory log is enough for a session's refreshes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Log"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.ChangesSince"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.Epoch"
+        }
+      ]
+    }
+  ]
+}

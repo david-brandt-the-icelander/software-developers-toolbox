@@ -1,4 +1,4 @@
-// Decides whether a Claude Code tool call should be redirected to the zazzle-csharp-indexer tools.
+// Decides whether a Claude Code tool call should be redirected to zazzle, the front door for reading, searching and editing files.
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -16,16 +16,18 @@ public static class HookPolicy
     private static readonly HashSet<string> Readers = ["cat", "head", "tail", "less", "more", "bat", "nl"];
     private static readonly HashSet<string> FindActions = ["-delete", "-exec", "-execdir", "-ok", "-okdir"];
 
-    private const string SearchMsg = "Use the zazzle-csharp-indexer MCP tool `search` (mcp__zazzle-csharp-indexer__search) instead of grep/rg: it is index-accelerated and cheaper in tokens (args: pattern, literal, glob, context, mode=files|count|lines).";
-    private const string FindMsg = "Use the zazzle-csharp-indexer MCP tool `find_files` (mcp__zazzle-csharp-indexer__find_files) instead of find/Glob (args: query, glob).";
-    private const string ReadMsg = "Use the zazzle-csharp-indexer MCP tool `read` (mcp__zazzle-csharp-indexer__read, args: path root:file, start_line, end_line) or `outline` instead of cat/head/tail/sed -n.";
-    private const string Escape = " If these tools cannot do what you need, call `report_gap`, or add the comment `# allow-raw` to the command (logged).";
+    private const string SearchMsg = "Search with zazzle (MCP tool zazzle_find, or `zazzle find PATTERN [PATH..]`): matches grouped by file, capped and deduplicated. For C# declarations, zazzle_find_symbol answers from the indexer's index; zazzle_refs lists uses.";
+    private const string FindMsg = "List files with zazzle (MCP tool zazzle_ls, or `zazzle ls [DIR]`; `zazzle find -l PATTERN` for files containing text).";
+    private const string ReadMsg = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`). C# files come as a terse view with source line numbers; add source=true (`--source`) for the code and the sha every edit needs.";
+    private const string Escape = " If zazzle cannot do what you need, add the comment `# allow-raw` to the command (logged).";
 
-    // Evaluates a tool call given Claude Code's tool name and its tool_input command (for Bash).
-    public static HookDecision Decide(string toolName, string? command)
+    // Evaluates a tool call given Claude Code's tool name, its command (Bash) and its file path (Read).
+    public static HookDecision Decide(string toolName, string? command, string? filePath = null)
     {
         if (Environment.GetEnvironmentVariable("ZAZZLE_INDEXER_HOOK") == "off")
             return new(false, "", "");
+        if (toolName == "Read")
+            return filePath?.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) == true ? new(true, ReadMsg, "Read") : new(false, "", "");
         if (toolName == "Grep")
             return new(true, SearchMsg + Escape, "Grep");
         if (toolName == "Glob")

@@ -1,0 +1,198 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazzle-csharp-indexer commands",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "The command lines Program.cs accepts. With no arguments it prints the usage line and exits with 2; an unknown command or argument exits with 2.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+      "symbol": "usage"
+    }
+  ],
+  "entities": [
+    {
+      "id": "serve",
+      "name": "zazzle-csharp-indexer serve",
+      "description": "The daemon's MCP session over standard input and output, for debugging: it lists no tools, and the internal tools answer when called by name.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "serve"
+      },
+      "action": "query",
+      "transport": "Command line: zazzle-csharp-indexer serve [--no-daemon] [--root name=path]...; MCP on standard input and output",
+      "authorization": "None; runs as the user who starts it. Every root must be inside a git work tree.",
+      "result": "An MCP session over the roots (default: the working directory, named after its last path component) until standard input closes.",
+      "failures": [
+        "An argument other than --no-daemon or --root: \"bad argument\", exit 2.",
+        "No daemon reachable, or one of another version still serving other clients: a note on standard error, then the in-process server.",
+        "A root that is not a directory or not inside a git work tree: the in-process server stops with that error."
+      ]
+    },
+    {
+      "id": "daemon",
+      "name": "zazzle-csharp-indexer daemon",
+      "description": "The shared per-user daemon zazzled talks to, started by zazzled (or serve) when nothing listens.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "daemon"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Start"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::start_daemon"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "daemon"
+      },
+      "action": "command",
+      "transport": "Command line: zazzle-csharp-indexer daemon; clients (zazzled for the view and structure tools, and serve) connect on <state dir>/daemon.sock",
+      "authorization": "None checked; the socket is created readable and writable by its owner only.",
+      "result": "Runs until it has had no clients for the idle period, then removes the socket and exits 0.",
+      "failures": [
+        "Another daemon answers on the socket: it stops with \"a daemon is already running\"."
+      ]
+    },
+    {
+      "id": "init",
+      "name": "zazzle-csharp-indexer init",
+      "description": "Wires zazzle's server (when zazzled is installed), the redirect hook and their permissions into a project's Claude Code settings, and removes an earlier registration of the indexer's own server.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "init"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.FindZazzled"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "init"
+      },
+      "action": "command",
+      "transport": "Command line: zazzle-csharp-indexer init [--dir path]",
+      "authorization": "None; writes as the user who runs it.",
+      "result": "Writes .mcp.json and .claude/settings.json in the directory, prints one line per file and the snippet for AGENTS.md or CLAUDE.md.",
+      "failures": [
+        "An existing settings file that is not valid JSON: the command stops with the parse error.",
+        "No zazzled beside the indexer or on PATH: not an error; the zazzle entries are left out and the first line of output says to install zazzle and run init again."
+      ]
+    },
+    {
+      "id": "report",
+      "name": "zazzle-csharp-indexer report",
+      "description": "A summary of the usage log.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "report"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.FromDir"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "report"
+      },
+      "action": "query",
+      "transport": "Command line: zazzle-csharp-indexer report",
+      "authorization": "None; reads the invoking user's state directory.",
+      "result": "The report text on standard output, or \"no usage recorded yet\".",
+      "failures": []
+    },
+    {
+      "id": "hook",
+      "name": "zazzle-csharp-indexer hook",
+      "description": "Claude Code's PreToolUse hook: decides whether a Bash, Grep, Glob or Read call runs.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "hook"
+      },
+      "action": "query",
+      "transport": "Command line: zazzle-csharp-indexer hook, with the PreToolUse event as JSON on standard input",
+      "authorization": "None; runs as the user Claude Code runs as.",
+      "result": "Exit 0 to allow; exit 2 with a message naming the zazzle tool to use on standard error to block. Blocks and raw allowances are logged.",
+      "failures": [
+        "Input that is not JSON: the command stops with the parse error."
+      ]
+    },
+    {
+      "id": "version",
+      "name": "zazzle-csharp-indexer --version",
+      "description": "Prints the tool version: the release's version, from its tag, or 0.0.0-dev for any other build.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "Version"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+        "symbol": "--version"
+      },
+      "action": "query",
+      "transport": "Command line: zazzle-csharp-indexer --version",
+      "authorization": "None.",
+      "result": "zazzle-csharp-indexer followed by ToolVersion.Text, on one line on standard output.",
+      "failures": []
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/use-case.json",
+      "relationship": "daemon carries the code-question use case, with zazzled as its client."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json",
+      "relationship": "init, hook and report carry the command-line use cases."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "The internal tools a session answers by name."
+    }
+  ]
+}

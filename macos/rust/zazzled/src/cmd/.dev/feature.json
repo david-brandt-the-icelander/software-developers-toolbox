@@ -1,0 +1,528 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle command features",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "description": "The behavior the commands offer beyond answering: bounded output, checked edits, reading one symbol, the terse C# view, C# structure from the indexer and cleaning piped output.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cmd/mod.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/edit.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/read.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cmd/clean.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "capped-output",
+      "name": "Capped, ranked output",
+      "description": "Every answer is bounded and says how to get more.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "cut_to_budget"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "fit"
+        },
+        {
+          "path": "macos/rust/zazzled/src/util.rs",
+          "symbol": "rank"
+        }
+      ],
+      "behavior": "find shows at most 50 matching lines (-m), grouped by file, ordinary files before tests and shallower before deeper, each line clipped to 240 bytes around the match; -l and -c list at most 200 files. ls shows at most 150 entries to depth 2, outline 200 symbols to depth 3, refs 50 uses and 20 definitions. read keeps the head and tail of each file (or terse view) within about 3000 tokens and names the elided range to read next; --full lifts that. clean keeps the head and tail within its own budget (default 8000) and says how much was cut. Any other successful answer is cut at a line boundary at about 8000 tokens (--budget). Each cap ends in a footer that says how to narrow or continue.",
+      "outcome": "An agent gets a bounded answer and the next command to run, instead of a flood that fills its context.",
+      "constraints": [
+        "Tokens are estimated from bytes, about 3.5 bytes per token (tokens.rs from_bytes).",
+        "read's budget applies to each file named; read and clean output is not cut by the global budget.",
+        "Errors, edit results, status, help and version are never cut."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "cut_to_budget"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "render_matches"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/find.rs",
+          "symbol": "render_list"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/ls.rs",
+          "symbol": "Printer"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/outline.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "fit_budget"
+        },
+        {
+          "path": "macos/rust/zazzled/src/util.rs",
+          "symbol": "clip"
+        },
+        {
+          "path": "macos/rust/zazzled/src/tokens.rs",
+          "symbol": "from_bytes"
+        }
+      ]
+    },
+    {
+      "id": "safe-edits",
+      "name": "Checked, confined, atomic edits",
+      "description": "An edit lands only on the file version the caller read, only inside its working directory, and all at once.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "check_precondition"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "commit"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "confine"
+        }
+      ],
+      "behavior": "edit replaces text that must be unique unless --all is given, replaces or deletes a line range, inserts after a line, or creates a new file. Every edit except --create needs proof the caller read the current code: --expect with at least the first four hex digits of the sha `read --source` showed, or, for a line range, --at anchors from `read --source --anchors` that still match. A refusal says to read again with --source and never reveals the current sha or anchors. Just before writing, the file is hashed again and the edit refused if it changed. The new content is written to a temporary file beside it and renamed over it, with its permissions; new text follows the file's line-ending style. Edits in one daemon are serialised. The answer names the lines changed and the new sha, which the caller may use for its next edit.",
+      "outcome": "An agent cannot overwrite changes it has not seen, edit code it only saw as a terse view, write outside the directory it was started in, or leave a half-written file.",
+      "constraints": [
+        "Paths are resolved through symlinks and must lie inside the working directory.",
+        "Binary files are refused.",
+        "A file with several hard links is rewritten in place, not by rename.",
+        "Extended attributes are not carried over by the rename.",
+        "--create refuses an existing file.",
+        "Text given on standard input (--new -) must be UTF-8."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "open_target"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "check_precondition"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "commit"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "write_atomic"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "to_eol"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::edit_guard"
+        }
+      ]
+    },
+    {
+      "id": "symbol-read",
+      "name": "Read one symbol",
+      "description": "`read FILE --symbol NAME` shows one symbol with the doc comments, comments and attributes directly above it.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_symbol"
+        },
+        {
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "find"
+        },
+        {
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "split_query"
+        }
+      ],
+      "behavior": "The outline gives the symbol's range, which is extended upward over the lines directly above it that start like a comment, attribute or decorator for the file's language (`///`, `/* */`, `#[...]`, C# `[...]`, `@decorator`, Python `#`). NAME is the symbol's name or the last parts of its qualified name (`Invoice.Total`, `billing::tax::total`), with containers taken from nesting; `impl Trait for Type` counts as the type and generics are ignored. Exact case is tried first, then any case. Overloads are picked by parameter types, `Total(decimal, int)` or `Total()`: types are compared as written in the declaration with spaces ignored, `Type name` and `name: Type` declarations both work, defaults, attributes and modifiers are ignored, receivers (`self`, `&self`, Python's `self`/`cls`) are not counted, and an untyped parameter matches by name; a list that fits no overload lists the ones there are. Several matches are listed, numbered, with their lines, kind, qualified name and declaration line, and the parameter types or `#N` pick one; no match lists names that contain it, or points at `zazzle outline`. The header names the symbol, and the usual read budget applies; on a C# file the range is shown in the terse view unless --source.",
+      "outcome": "An agent reads exactly the function or type it needs, with its documentation, without first finding its line range.",
+      "constraints": [
+        "--symbol cannot be combined with PATH:A-B, --around, --head or --tail.",
+        "At most 10 candidates are listed.",
+        "Symbols are only as good as the outline: syntax trees for Rust, Python, C, C#, JavaScript, TypeScript and TSX up to 1 MiB, line heuristics otherwise.",
+        "Parameter types are compared as text: `decimal` does not match `System.Decimal`."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_symbol"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "miss_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "find"
+        },
+        {
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "declared"
+        },
+        {
+          "path": "macos/rust/zazzled/src/params.rs",
+          "symbol": "matches"
+        },
+        {
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "lead_start"
+        },
+        {
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "MAX_CANDIDATES"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "read_args"
+        }
+      ]
+    },
+    {
+      "id": "csharp-terse-view",
+      "name": "Terse C# view",
+      "description": "`read FILE.cs` returns zazzle-csharp-indexer's terse behavioural view of the file instead of its code, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "C# terse view"
+        }
+      ],
+      "behavior": "For a .cs file read without --source or --anchors, the daemon asks the indexer's `view` tool for the file (relative to the git work tree that holds it) and shows its lines for the requested range: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden, under a header naming the shortening steps and saying `read --source for the code and its sha`. Ranges, --symbol and the budget work on the view. When there is no view (no indexer, not in a git work tree, an indexer error), the source is returned with a line saying why.",
+      "outcome": "An agent understands C# code from fewer tokens, and still has to read the real code before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The file must be inside a git work tree.",
+        "The indexer is found as $ZAZZLE_INDEXER, else beside zazzled, else on PATH; its daemon is started when nothing listens and may take several seconds the first time."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "view_key"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::locate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view"
+        }
+      ]
+    },
+    {
+      "id": "markup-terse-view",
+      "name": "Terse HTML and Razor view",
+      "description": "`read` on an .html, .htm, .xhtml, .cshtml or .razor file returns a terse view built in zazzled instead of the markup, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "HTML and Razor terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre>, <textarea> and Razor @code, @functions and @{ } blocks are shown as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
+      "outcome": "An agent reads pages and Razor views without paying for styles, drawings, boilerplate and utility-class lists, and still has to read the real markup before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
+        "C# inside Razor code blocks is not shortened."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "shorten"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "verbatim"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        }
+      ]
+    },
+    {
+      "id": "code-terse-view",
+      "name": "Terse Python, TypeScript and Dart view",
+      "description": "`read` on a .py, .pyi, .ts, .mts, .cts, .tsx or .dart file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Python, TypeScript and Dart terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) and catch clauses that only log and rethrow the caught exception; it drops public, private and protected from TypeScript class members and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
+      "outcome": "An agent understands Python, TypeScript and Dart code from fewer tokens, and still has to read the real code before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
+        "A local is renamed only where every place its name appears in its function can be renamed safely; otherwise it keeps its name."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "plan_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_logging"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "stores_only"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "rethrow_catch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "renames"
+        }
+      ]
+    },
+    {
+      "id": "csharp-structure",
+      "name": "C# structure from the indexer",
+      "description": "overview, find-symbol, changed-since, git-log, git-blame and report-gap (zazzle_overview ... zazzle_report_gap) are answered by zazzle-csharp-indexer's daemon, which zazzle reaches as it does for the terse view; the indexer offers agents no tools of its own.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "C# structure"
+        }
+      ],
+      "behavior": "zazzled finds the git work tree that holds the working directory, makes path arguments relative to it (refusing paths outside it), calls the indexer's tool of the same name over the daemon socket with the work tree as the session's root, starting the daemon when nothing listens, and rewrites the `root:path` references at the start of the answer's lines (or after an `A `, `M ` or `D ` mark) as paths relative to the working directory. The answer then goes through the same budget and session dedupe as every command; report-gap's is never deduplicated.",
+      "outcome": "An agent asks one server for files and for structure, and can read what find-symbol or changed-since names with zazzle read straight away.",
+      "constraints": [
+        "The working directory must be inside a git work tree, and the indexer installed ($ZAZZLE_INDEXER, beside zazzled, or on PATH).",
+        "Answers wait up to 45 s for the indexer, which itself waits up to 30 s for a cold index before overview and find-symbol answer.",
+        "Paths with a colon in them are cut at the colon when rewritten.",
+        "The indexer's tools see only the one work tree zazzle attached, so their root filters are not offered."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::locate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::relative"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "localize"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "TOOLS"
+        }
+      ]
+    },
+    {
+      "id": "clean-output",
+      "name": "Clean piped output",
+      "description": "`CMD | zazzle clean` prints what an agent needs from a command's output, with every removal marked.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "clean"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Clean"
+        }
+      ],
+      "behavior": "clean reads standard input (up to 64 MiB) and runs its steps: terminal escapes removed, carriage-return redraws reduced to their last frame, trailing whitespace trimmed and blank runs squeezed; a JSON document or JSON Lines minified outside strings; grep, git grep or rg output regrouped by file in find's layout when every line parses and that is shorter; runs of identical lines collapsed with a count. Unless --lossless, the lossy steps also run: progress-bar runs reduced to their last line, base64 or hex runs of 200+ characters replaced by their length, and (not for JSON) lines over 600 bytes cut to 300. Last, the head and tail are kept within --budget. --as skips detection, --stats adds the steps and the token estimates before and after. The answer is stored with its input for an hour under an `[r:ID]`, and says `read-again r:ID --full` when the input was cut or a lossy step or the budget removed something (see the stored-outputs feature in macos/rust/zazzled/src). The same steps clean `zazzle run` output and the MCP proxy's texts.",
+      "outcome": "An agent can pipe any noisy output through one command and get a shorter text that still says what was removed.",
+      "constraints": [
+        "If the cleaned text would be longer than the input, the input is passed through.",
+        "clean is not an MCP tool.",
+        "A clean answer gets no session id and is never deduplicated; without an output store (no HOME and no ZAZZLE_OUTPUTS_DIR) it carries no id at all."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "clean"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "clean_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "group_grep"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "minify_json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "cuts"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/capability.json",
+      "relationship": "The capability these features belong to."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The operations that carry them."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+      "relationship": "The use case that exercises the checked edits."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/feature.json",
+      "relationship": "The MCP proxy, which applies clean's steps to another server's results."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+      "relationship": "`zazzle run`, which applies a profile and then clean's steps to a command's output."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Stored outputs, which keep clean's answers and inputs for read-again."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
+      "relationship": "The change cursors zazzle_changed_since hands out."
+    }
+  ]
+}

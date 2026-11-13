@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "free-disk-space skill",
+  "folder": "agents/skills/free-disk-space",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "free-disk-space skill",
+      "summary": "The agent skill that tells a coding agent when and how to use the free-disk-space binary to reclaim space on the developer's Mac, and what it may do only with the developer's explicit authorization.",
+      "purpose": "Holds SKILL.md: its front matter says when the skill applies (freeing space, cleaning caches, Downloads, Trash, build artifacts or Docker, deduplicating into clones, compressing), and its body names the binary (free-disk-space, or `zazzle free-disk-space ...` through the zazzle invoker), where a cargo build puts it and the build command, the order of commands for cleanup, compression, dedupe and the daemon, the steps that need explicit authorization, and the rules for reporting results.",
+      "boundaries": [
+        "Instructions only, no code: what the commands do is the binary's, documented in macos/rust/free-disk-space/src/.dev/.",
+        "The binary itself checks no authorization; the skill's authorization rules bind the agent, not the tool.",
+        "AGENTS.md's Skills list points agents here."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "free-disk-space"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"},
+        {"path": "AGENTS.md", "symbol": "Skills"}
+      ],
+      "relationships": [
+        {"relation": "depends-on", "path": "macos/rust/free-disk-space/src/.dev/contracts.json", "entityId": "command-line", "description": "The skill relies on the binary's command line."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,237 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzled features",
+  "folder": "macos/rust/zazzled/src",
+  "description": "Behavior the daemon adds to the commands' answers: session ids and dedupe, read-again, and stored outputs.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/session.rs",
+      "symbol": "Sessions::apply_with"
+    }
+  ],
+  "entities": [
+    {
+      "id": "session-dedupe",
+      "name": "Session ids and dedupe",
+      "description": "Within a session, each query answer has a short id, and an answer already sent recently is replaced by a one-line notice.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Sessions::apply_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Session ids and dedupe"
+        }
+      ],
+      "behavior": "When a request carries a session (ZAZZLE_SESSION through the invoker or `zazzled run`; one random `mcp-...` id per `zazzled mcp` process), a find, read, ls, outline or refs answer starts with `[r:ID]`, ID being at least five characters derived from a hash of the session and the text. If the same session was sent the identical text within its last 40,000 estimated tokens, the answer is `[r:ID] already sent: zazzle CMD ARGS, unchanged. If you no longer have it: read-again r:ID`. --disable-session-deduping (MCP disable_session_deduping) sends it in full again.",
+      "outcome": "An agent is not sent text that is still in its context, and can refer to earlier answers by id.",
+      "constraints": [
+        "No session, no ids and no dedupe.",
+        "Edits, errors, status, help and version are never given an id or deduplicated; clean, `zazzle run` and proxied outputs get no session id either, but an output id of their own (stored-outputs).",
+        "Sessions live in daemon memory only; a restart forgets them.",
+        "At most 64 sessions (the least recently used is dropped) and 512 answers per session (the oldest is dropped)."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Sessions::apply_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "unique_id"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "new_session_id"
+        }
+      ]
+    },
+    {
+      "id": "read-again",
+      "name": "Read again by id",
+      "description": "An answer can be fetched again by its id: a session response unchanged under the same id or current under a new one; a stored output as it was shown, or in full.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Sessions::resend"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Session ids and dedupe"
+        }
+      ],
+      "behavior": "With each id the session table keeps the command line (without --disable-session-deduping) and working directory that produced it. `zazzle read-again r:ID` (MCP zazzle_read_again) runs that request again in its original working directory and session: if the text is the same, it comes back whole under the same id; if not, it comes back under a new id with `r:OLD changed since it was sent; this is the current version`. A read again never reveals more than the original request did: a terse view stays without a sha. An id the session does not hold (or any id, without a session) is looked up in the output store instead: a stored clean, run or proxy output comes back as it was shown, and with --full (or --lines A-B) its whole input comes back as numbered lines within a budget of 3000 tokens (--budget).",
+      "outcome": "An agent can drop an answer from its context, or lose it to compaction, keep only its id, and get it back exactly when needed.",
+      "constraints": [
+        "A session response is rerun only within its session, and only while the session table keeps it (512 per session, daemon memory only).",
+        "A stored output is there for an hour at most (stored-outputs); --full is refused for a session response, which is never cut.",
+        "A read-again is never deduplicated."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "rerun"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "render_full"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Sessions::replay"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Sessions::resend"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "Replay"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "read_again_args"
+        }
+      ]
+    },
+    {
+      "id": "stored-outputs",
+      "name": "Stored outputs",
+      "description": "clean, `zazzle run` and proxied outputs, whose input cannot be had again, are kept for an hour under an id, with the input they came from.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Stored outputs"
+        }
+      ],
+      "behavior": "When clean (in the daemon or `zazzled run`), `zazzled wrap` or `zazzled proxy` has an output store, it saves the text it shows and its whole input under a ten-character id derived from both. clean and run answers start with `[r:ID]`, and end with `[full output: read-again r:ID --full]` when something was cut: input past its cap, a budget, a run profile's dropped lines, progress bars, blobs or long lines. The proxy appends to the result, after its items, one item of its own per text it shortened, `[r:ID shortened by zazzle]` (with `; full text: read-again r:ID --full` when something was cut), so a JSON text stays JSON. `read-again r:ID` returns the output as shown; `--full` returns the input with its line numbers. Each save drops entries older than an hour and, past the size limit, the oldest until half the bytes remain.",
+      "outcome": "An agent can drop a cleaned output from its context, or see what cleaning cut, without running a build or test again or asking the other server again.",
+      "constraints": [
+        "Kept for an hour at most, and less when the store passes its size limit (ZAZZLE_OUTPUTS_MAX_GB, default 2).",
+        "The store is the directory each process finds in its own environment (ZAZZLE_OUTPUTS_DIR, else ~/.zazzle/outputs); a `zazzle run` or proxy output is found only by a daemon using the same one.",
+        "Without HOME or ZAZZLE_OUTPUTS_DIR nothing is stored and outputs carry no id; a save that fails leaves the output with a note that it was not stored.",
+        "Stored outputs are not deduplicated."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "id_of"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine::with_outputs"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "cuts"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::keep"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/capability.json",
+      "relationship": "The capability whose answers it tags."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The read-again and clean operations."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/use-case.json",
+      "relationship": "The MCP use case, where each connection is a session."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/c/zazzle/src",
+      "path": "macos/c/zazzle/src/.dev/use-case.json",
+      "relationship": "The shell use case, where ZAZZLE_SESSION is the session."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+      "relationship": "Getting back what a cleaned output cut, from the output store."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+      "relationship": "`zazzle run`, whose outputs are stored."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/feature.json",
+      "relationship": "The MCP proxy, whose shortened texts are stored."
+    }
+  ]
+}

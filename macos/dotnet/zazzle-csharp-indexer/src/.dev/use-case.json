@@ -1,0 +1,259 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle-csharp-indexer code-question use case",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "How a coding agent's question about C# structure, asked of zazzle, reaches the indexer's live index and comes back.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/indexer.rs",
+      "symbol": "Indexer::ask"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer.Handle"
+    }
+  ],
+  "entities": [
+    {
+      "id": "answer-code-question",
+      "name": "Answer a question about the code's structure",
+      "description": "A coding agent asks zazzle (zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame, or zazzle_read of a .cs file), and zazzled gets the answer from zazzle-csharp-indexer's daemon.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::call"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get a compact, current answer about the code in its work tree, such as its structure, where a symbol is declared, what changed or who changed a line.",
+      "preconditions": [
+        "The agent's MCP client starts zazzled mcp (zazzle-csharp-indexer init registers it), or the agent runs the zazzle command.",
+        "zazzle-csharp-indexer is $ZAZZLE_INDEXER, beside zazzled or on PATH.",
+        "The working directory is inside a git work tree, and git is on PATH."
+      ],
+      "postconditions": [
+        "The agent has the answer as text, with paths relative to its working directory, or an error it can act on.",
+        "The call is in the indexer's usage log, with how the answer was produced."
+      ],
+      "flow": [
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Calls a zazzle structure tool, for example zazzle_find_symbol with a name, or runs zazzle find-symbol NAME.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp_structure.rs",
+              "symbol": "TOOLS"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "locate",
+          "actor": "zazzled",
+          "action": "Finds the git work tree that holds the working directory and the indexer executable, and turns any path argument into one relative to the work tree.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/structure.rs",
+              "symbol": "Target::locate"
+            },
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "Indexer::locate"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "connect",
+          "actor": "zazzled",
+          "action": "Connects to the daemon socket in the indexer's state directory, starting zazzle-csharp-indexer daemon when nothing answers, and sends the indexer's version and the work tree as the root.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "Indexer::connect"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "attach",
+          "actor": "zazzle-csharp-indexer daemon",
+          "action": "Checks the root is inside a git work tree and attaches its index, starting the watcher and the initial reconcile the first time the root is seen; replies ok.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Handshake"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+              "symbol": "Root.Parse"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+              "symbol": "Engine.Attach"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzle-csharp-indexer",
+          "action": "Runs the named internal tool (overview, find_symbol, changed_since, git_log, git_blame or view), which waits for the index when it needs it and answers from the index, git or the file, and logs the call.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.CallTool"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+              "symbol": "UsageLog.Record"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "reply",
+          "actor": "zazzled",
+          "action": "Rewrites root:path references as paths relative to the working directory, cuts the text to its budget and tags it for the session.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "localize"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "follow-up",
+          "actor": "Coding agent",
+          "action": "Reads what it found with zazzle_read, pages on with offset, or says what it could not get with zazzle_report_gap.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp_structure.rs",
+              "symbol": "zazzle_report_gap"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "locate",
+          "condition": "The working directory is not inside a git work tree, or the indexer is not installed.",
+          "outcome": "zazzle answers with an error saying so.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/structure.rs",
+              "symbol": "Target::locate"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "The daemon runs another version and has no other clients.",
+          "outcome": "It stops; zazzled starts a new one and tries again (three attempts in all).",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "Indexer::call"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "No daemon starts within five seconds.",
+          "outcome": "zazzle answers \"the indexer daemon did not start\".",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "Indexer::connect"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The index is still building after the 30-second ready timeout.",
+          "outcome": "overview and find_symbol return index_cold, pointing at zazzle_ls and zazzle_find.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+              "symbol": "Engine.ReadyTimeoutMs"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+              "symbol": "FindSymbolTool.Run"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The tool fails (bad arguments, unknown root, git error, a file that is not C#).",
+          "outcome": "The agent gets an error with the message; the log records the error code.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.CallTool"
+            },
+            {
+              "path": "macos/rust/zazzled/src/indexer.rs",
+              "symbol": "result_text"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "The internal tools zazzled calls in the answer step."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/operation.json",
+      "relationship": "serve and daemon."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/capability.json",
+      "relationship": "The capability this use case exercises."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json",
+      "relationship": "Setting up with init, and the hook, whose redirects send C# declaration and use questions here."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The zazzle commands the agent calls in the call step."
+    }
+  ]
+}

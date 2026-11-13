@@ -1,0 +1,73 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle-csharp-indexer tools features",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "description": "Behaviour the internal tools offer beyond answering one call.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+      "symbol": "ChangedSinceTool"
+    }
+  ],
+  "entities": [
+    {
+      "id": "change-cursors",
+      "name": "Change cursors",
+      "description": "changed_since hands out cursors and lists what changed after one.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_changed_since"
+        }
+      ],
+      "behavior": "A cursor is the engine's epoch and each root's generation. Given one, changed_since reconciles each root, lists the last change kind (A, M or D) per path after that generation, and returns a new cursor.",
+      "outcome": "An agent can refresh what it knows about a work tree without listing it again (zazzle_changed_since).",
+      "constraints": [
+        "A cursor is valid within one engine run (one daemon, or one in-process server); after a restart it is reported expired.",
+        "Only roots named in the cursor are reported.",
+        "The change log keeps at most 50,000 entries; an older cursor gets a line saying to re-list with zazzle_ls."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.ChangesSince"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/capability.json",
+      "relationship": "Part of the code-questions capability."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "Carried by the changed_since operation."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/feature.json",
+      "relationship": "report_gap feeds the usage log that zazzle-csharp-indexer report reads."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/.dev/feature.json",
+      "relationship": "The terse C# view, offered by the view tool."
+    }
+  ]
+}

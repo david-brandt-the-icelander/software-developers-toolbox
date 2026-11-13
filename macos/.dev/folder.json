@@ -1,0 +1,39 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Tools by language",
+  "folder": "macos",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Tools by language",
+      "summary": "The tools' source, grouped by language, and the release scripts.",
+      "purpose": "Groups the Rust workspace (rust/), the zazzle C invoker (c/), the .NET tool zazzle-csharp-indexer (dotnet/) and the release scripts (release/). The folder is named for the tools' primary platform: zazzle, zazzled, zazzle-csharp-indexer and agent-fs also build and run on Linux.",
+      "boundaries": [
+        "A grouping folder: it has no code of its own. How the tools in it use each other is in the repository's folder record."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "symbol": "Layout"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "test"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": ".dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

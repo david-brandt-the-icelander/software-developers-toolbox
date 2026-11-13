@@ -1,0 +1,222 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle MCP proxy use cases",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "description": "Putting the proxy between an MCP client and another MCP server.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+      "symbol": "run_with"
+    },
+    {
+      "path": "macos/rust/zazzled/README.md",
+      "symbol": "MCP proxy"
+    }
+  ],
+  "entities": [
+    {
+      "id": "clean-another-server",
+      "name": "Use another MCP server with cleaned results",
+      "description": "A coding agent's MCP client starts another MCP server through `zazzle proxy`, and gets that server's tool results back cleaned.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "run_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite_text"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "MCP proxy"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Use another MCP server's tools while spending fewer tokens on their results.",
+      "preconditions": [
+        "The MCP client is configured to start `zazzle proxy -- CMD ARGS` as a stdio server (or `zazzled proxy -- CMD ARGS` where there is no invoker).",
+        "CMD is an MCP server that speaks newline-delimited JSON-RPC on its standard streams."
+      ],
+      "postconditions": [
+        "Every tool and resource text the server sent has reached the client, cleaned where that made it shorter; each shortened text is kept for an hour for read-again when the proxy has an output store.",
+        "When the server closes its output the proxy exits with the server's exit code."
+      ],
+      "flow": [
+        {
+          "id": "start",
+          "actor": "Coding agent",
+          "action": "Its MCP client starts `zazzle proxy -- CMD ARGS`; the invoker replaces itself with `zazzled proxy -- CMD ARGS`, keeping the client's environment and streams.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "exec_daemon"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "spawn",
+          "actor": "zazzled proxy",
+          "action": "Parses the options and starts CMD as a child with its stdin and stdout piped and its stderr passed through.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "parse"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "run_with"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "request",
+          "actor": "Coding agent",
+          "action": "Its client sends initialize, lists the server's tools and calls them, as it would talk to the server directly.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "pump_requests"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "record",
+          "actor": "zazzled proxy",
+          "action": "Copies each client line to the server unchanged, recording the ids of tools/call and resources/read requests.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "pump_requests"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Pending::note_text"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "clean",
+          "actor": "zazzled proxy",
+          "action": "Copies each server line back; an answer to a recorded request has its texts replaced by their cleaned form where shorter, with the settings the --config file gives its tool or the command line's, and each shortened text is stored with an `[r:ID shortened by zazzle]` item added after the result's items; with --log a line `zazzled proxy: tools/call NAME ~A→~B tokens` goes to standard error.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "pump_responses"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::rewrite_text"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::keep"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "exit",
+          "actor": "zazzled proxy",
+          "action": "When the server closes its output, waits for it and exits with its exit code.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "run_with"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cli.rs",
+              "symbol": "main"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "start",
+          "condition": "The server is a Streamable HTTP endpoint: the proxy is started with `--upstream URL [--listen ADDR]` and the client is pointed at `http://ADDR/...`.",
+          "outcome": "The proxy listens on ADDR (default 127.0.0.1:8808) and forwards each request to URL, cleaning JSON answers whole and event streams per event, keeping each client connection open for further requests.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/http.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/http.rs",
+              "symbol": "relay"
+            }
+          ]
+        },
+        {
+          "atStep": "spawn",
+          "condition": "The options are wrong, the --config file cannot be read or is not valid, or CMD cannot be started.",
+          "outcome": "`zazzled: ...` on standard error and exit 2; the client sees its server fail to start.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "parse"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+              "symbol": "run_with"
+            }
+          ]
+        },
+        {
+          "atStep": "clean",
+          "condition": "The answer is an error, belongs to a tool named with --skip or skipped by its --config rule (or is a resource read the resources rule skips), carries only structuredContent or non-text items, or cleaning would not save a token.",
+          "outcome": "The server's line is forwarded byte for byte.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::rewrite"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::text"
+            },
+            {
+              "path": "macos/rust/zazzled/src/proxy/mod.rs",
+              "symbol": "Filter::settings"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/operation.json",
+      "relationship": "The proxy operations the steps run."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/feature.json",
+      "relationship": "The cleaning this use case relies on."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/c/zazzle/src",
+      "path": "macos/c/zazzle/src/.dev/use-case.json",
+      "relationship": "How the invoker hands `zazzle proxy` to `zazzled proxy`."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/use-case.json",
+      "relationship": "Getting a shortened text back in full with read-again."
+    }
+  ]
+}

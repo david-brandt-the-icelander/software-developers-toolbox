@@ -1,0 +1,95 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "zazzle-csharp-indexer observability",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "entities": [
+    {
+      "id": "usage-log",
+      "title": "Usage log",
+      "summary": "One JSON line per internal tool call (made by zazzled) and per hook decision that blocked or let a raw command through, in usage.jsonl in the state directory.",
+      "signalType": "event",
+      "name": "usage.jsonl",
+      "meaning": "What an agent asked, how the answer was produced and what it cost: the input zazzle-csharp-indexer report summarises to decide what to build next.",
+      "unit": "one record per call",
+      "dimensions": [
+        "v: record version (1)",
+        "ts: UTC time, ISO 8601",
+        "session: 8-hex id of the MCP session (zazzled opens one per call), or Claude Code's session_id for hook records",
+        "tool: tool name, or hook",
+        "args: argument names with numbers and booleans as given and strings as 12-hex SHA-256 prefixes; in arrays the first element and flags are kept",
+        "path: how the answer was produced (index, run:git, view, hook; scan, fallback:<engine> and run:<program> in records from earlier versions)",
+        "reason: why, when not plainly from the index (git, gap_report, blocked:<program>, allowed_raw:<program>; earlier versions also wrote index_cold, regex_unsupported, passthrough and unchanged_since_last_read)",
+        "ms: duration",
+        "bytes_out and est_tokens (bytes / 4) of the answer",
+        "results, truncated, candidates, files: what the tool reported (candidates and files are -1 when the tool does not count them)",
+        "note: report_gap text (from zazzle_report_gap), cut to 500 characters",
+        "error: the tool's error code, or null"
+      ],
+      "access": "The user who owns the state directory; nothing is sent anywhere.",
+      "retention": "When usage.jsonl passes 20 MiB it is renamed to usage.jsonl.1 (replacing the previous one) before the next write; nothing else is deleted.",
+      "cadence": "Per call.",
+      "excludes": [
+        "Argument text, unless ZAZZLE_INDEXER_LOG_PLAIN=1 (the report_gap note is stored in the note field in plain text either way)",
+        "Answer text",
+        "Hook calls that were simply allowed"
+      ],
+      "details": "Write failures are ignored, and a state directory that cannot be created disables the hook's logging. A user-facing pointer to the log stays in the README's Usage log section.",
+      "origin": "README.md, Usage log (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Record"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.Shape"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.RotateBytes"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "verified-by",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/verification.json",
+          "entityId": "usage-log"
+        }
+      ]
+    },
+    {
+      "id": "stderr-notes",
+      "title": "Notes on standard error",
+      "summary": "serve says when it falls back to serving in process, and the index says when change tracking is unavailable for a root.",
+      "signalType": "log",
+      "meaning": "\"zazzle-csharp-indexer: no daemon (<reason>); serving in-process\" means the shared daemon could not be reached or used; \"zazzle-csharp-indexer: change tracking unavailable for <root> (<message>); relying on periodic reconcile\" means the root is refreshed only every five minutes and by query barriers.",
+      "access": "Whoever reads the process's standard error: the MCP client for serve; for a spawned daemon it goes to /dev/null.",
+      "retention": "Not kept by zazzle-csharp-indexer.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "serving in-process"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SpawnDaemon"
+        }
+      ]
+    }
+  ]
+}

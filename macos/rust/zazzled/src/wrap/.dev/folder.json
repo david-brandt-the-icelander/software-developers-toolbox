@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle run",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle run",
+      "summary": "`zazzled wrap` (reached as `zazzle run`): runs a build, test or install command in the caller's environment and prints its output cleaned for an agent, ending with a footer and the command's own exit code.",
+      "purpose": "mod.rs parses the options, runs the command with standard output and error merged into one pipe and a timeout, and renders the result: the output tidied, passed through the profile for the command, then through clean's steps and budget, with a footer `[exit N in Ts; ...]`; with an output store (src/outputs.rs) the result is stored with the raw output and tagged `[r:ID]`, with a read-again --full hint when something was dropped or cut. profile.rs holds the profiles (cargo, pytest, go, dotnet, js-test, tsc, install): rules that drop and count lines a tool is known to print as noise, drop repeated lines, or group diagnostics under their file, and picks one from the command line, looking through launchers such as npx, uv run, python -m and env.",
+      "boundaries": [
+        "Runs as its own process, never inside the daemon: the invoker execs `zazzled wrap` for `zazzle run` (macos/c/zazzle/src/zazzle_core.h exec_daemon), and the daemon's dispatcher refuses `run`.",
+        "Not to be confused with `zazzled run`, which runs one zazzle command in-process (macos/rust/zazzled/src/cli.rs run_in_process).",
+        "The cleaning after the profile is clean's (macos/rust/zazzled/src/cmd/clean.rs)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "detect"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "PROFILES"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazzled/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "../schemas/limitations.schema.json",
+  "kind": "limitations",
+  "schemaVersion": 1,
+  "title": "Example worker limitations",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "one-hour",
+      "title": "Runs longer than an hour",
+      "summary": "A job may not run for more than an hour.",
+      "impact": "Longer jobs are stopped and recorded as failed.",
+      "workaround": "Split the job into slots."
+    }
+  ]
+}

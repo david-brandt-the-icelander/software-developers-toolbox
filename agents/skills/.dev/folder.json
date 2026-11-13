@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Tool skills",
+  "folder": "agents/skills",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Tool skills",
+      "summary": "One SKILL.md per tool, telling a coding agent when and how to use it: zazzle, agent-fs, fix-network and free-disk-space.",
+      "purpose": "Each subfolder is one skill, named after its directory, with frontmatter an agent matches a task against and short imperative steps. AGENTS.md lists them.",
+      "boundaries": [
+        "A skill wraps its tool's binary; what the tool does is documented in the tool's own folder.",
+        "zazzle-csharp-indexer has no skill here: zazzle-csharp-indexer init prints its own snippet for AGENTS.md or CLAUDE.md."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "agents/directives.md",
+          "symbol": "Skills (agents/skills/<name>/SKILL.md)"
+        },
+        {
+          "path": "AGENTS.md",
+          "symbol": "Skills"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Quick start"
+        }
+      ]
+    }
+  ]
+}

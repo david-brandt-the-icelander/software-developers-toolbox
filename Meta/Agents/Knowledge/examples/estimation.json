@@ -1,0 +1,43 @@
+{
+  "$schema": "../schemas/estimation.schema.json",
+  "kind": "estimation",
+  "schemaVersion": 1,
+  "title": "Example Scheduler estimates",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "alarms-agent",
+      "title": "Failure alarms, agent time",
+      "summary": "Implementation and tests by agents.",
+      "subject": {
+        "path": ".dev/plan.json",
+        "entityId": "alarms"
+      },
+      "unit": "agent-hours",
+      "low": 3,
+      "likely": 6,
+      "high": 14,
+      "confidence": "medium",
+      "method": "Comparison with the run-history work",
+      "assumptions": [
+        "The alerting service accepts events as they are"
+      ],
+      "estimatedBy": "Planning agent",
+      "date": "2026-11-10"
+    },
+    {
+      "id": "alarms-human",
+      "title": "Failure alarms, human time",
+      "summary": "Review and acceptance by a person.",
+      "subject": {
+        "path": ".dev/plan.json",
+        "entityId": "alarms"
+      },
+      "unit": "human-hours",
+      "low": 1,
+      "likely": 2,
+      "high": 4
+    }
+  ]
+}

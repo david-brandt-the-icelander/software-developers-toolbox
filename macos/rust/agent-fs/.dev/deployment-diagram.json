@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "agent-fs deployment diagram",
+  "folder": "macos/rust/agent-fs",
+  "description": "How afs runs: one binary installed on the machine where its user works, started as a short-lived process per `afs call`, or as a long-lived process per session by a shell (`afs jsonl`) or by an MCP client (`afs serve`). It reads the local file system with the running user's permissions and talks to nothing over a network.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "Command" },
+    { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "serve" },
+    { "path": "macos/rust/agent-fs/README.md", "symbol": "Use from an agent" },
+    { "path": ".github/workflows/release.yml", "symbol": "Make universal binaries" },
+    { "path": "macos/release/formula.sh", "symbol": "Zazzle.install" }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "User's machine",
+      "kind": "host",
+      "description": "A Mac or a Linux machine where the developer works and the agent runs; afs is on its PATH."
+    },
+    {
+      "id": "afs",
+      "name": "afs process",
+      "kind": "process",
+      "description": "One process per `afs call` (no session memory), or one per session for `afs jsonl` and `afs serve`, holding that session's state in memory until stdin closes."
+    },
+    {
+      "id": "terminal",
+      "name": "Terminal or script",
+      "kind": "client",
+      "description": "A shell in which the developer, or a script, runs `afs call` or `afs jsonl`.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "mcp-client",
+      "name": "MCP client",
+      "kind": "client",
+      "description": "The coding agent's MCP client (such as Claude Code with an .mcp.json entry running `afs serve`), which starts afs and keeps it for the session.",
+      "actor": "Actors/coding-agent.md"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "afs-binary",
+      "name": "afs",
+      "source": "macos/rust/agent-fs/src/main.rs",
+      "deployedTo": "machine",
+      "description": "The release build of the crate (`cargo build --release -p agent-fs` on Linux or macOS), or the universal macOS binary from the release tarball, which the zazzle Homebrew formula installs with the other tools."
+    }
+  ],
+  "relationships": [
+    { "from": "machine", "to": "afs", "kind": "hosts", "description": "Runs as the user who started it." },
+    { "from": "machine", "to": "terminal", "kind": "hosts", "description": "The developer's shell on the same machine." },
+    { "from": "machine", "to": "mcp-client", "kind": "hosts", "description": "The MCP client runs on the same machine and starts afs as its child process." },
+    { "from": "terminal", "to": "afs", "kind": "connects-to", "description": "Command-line arguments and stdin; replies on stdout, one JSON line each, and the exit code." },
+    { "from": "mcp-client", "to": "afs", "kind": "connects-to", "description": "Starts `afs serve` and speaks MCP (newline-delimited JSON-RPC) over its stdin and stdout." }
+  ]
+}

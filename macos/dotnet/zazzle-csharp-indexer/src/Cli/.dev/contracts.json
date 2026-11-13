@@ -1,0 +1,109 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "Command-line helper contracts",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "init-files",
+      "title": "What init writes into a project",
+      "summary": "init merges zazzle's stdio server, when zazzled is installed, into .mcp.json, and a PreToolUse hook, zazzle's permission and enabled server into .claude/settings.json, removes the indexer's own server, permission and enabled server left by an earlier init, and keeps every other key.",
+      "contractType": "file-format",
+      "consumers": [
+        "Claude Code, the coding agent's harness, which reads the project's .mcp.json and .claude/settings.json"
+      ],
+      "definition": ".mcp.json: mcpServers.zazzle-csharp-indexer is removed (the indexer lists no tools), and, when zazzled is found beside the running zazzle-csharp-indexer or else on PATH, mcpServers.zazzle = {type: \"stdio\", command: <path of zazzled>, args: [\"mcp\"]}. .claude/settings.json: hooks.PreToolUse gets {matcher: \"Bash|Grep|Glob|Read\", hooks: [{type: \"command\", command: \"<path> hook\"}]} after any earlier entry whose command contains zazzle-csharp-indexer and ends in \" hook\" is removed; permissions.allow loses \"mcp__zazzle-csharp-indexer\" and contains \"mcp__zazzle\" when zazzled was found; enabledMcpjsonServers loses \"zazzle-csharp-indexer\" and contains \"zazzle\" when zazzled was found. Files are written as indented JSON with a final newline, creating .claude/ if needed. Without zazzled, init writes everything else and its first output line says to install zazzle and run init again.",
+      "guarantees": [
+        "Running init twice leaves no zazzle-csharp-indexer server, one zazzle server, one zazzle-csharp-indexer hook entry and no duplicate permission or enabled server.",
+        "Unrelated keys and entries in both files are kept.",
+        "A zazzle server entry written by an earlier init stays when zazzled is no longer found; init only adds or replaces it."
+      ],
+      "compatibility": "The keys follow Claude Code's project settings format; the commands are the absolute paths of the binary that ran init and of the zazzled it found. The mcp__zazzle permission and the zazzle server name are what zazzled's MCP tool names (zazzle_read, zazzle_find ...) are allowed under.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.FindZazzled"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.HookMatcher"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_init_idempotent_and_preserving"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_init_without_zazzled"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_find_zazzled"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/operation.json",
+          "entityId": "mcp"
+        }
+      ]
+    },
+    {
+      "id": "hook-protocol",
+      "title": "The hook command",
+      "summary": "zazzle-csharp-indexer hook reads one Claude Code PreToolUse event as JSON on standard input and answers with its exit code: 0 lets the tool call run, 2 blocks it with a message on standard error.",
+      "contractType": "message",
+      "consumers": [
+        "Claude Code's PreToolUse hook, configured by init"
+      ],
+      "definition": "Input fields read: tool_name, tool_input.command (Bash), tool_input.file_path (Read) and session_id. Exit 0 and no output to allow; exit 2 and a message on standard error to block. The message names the zazzle tool to use instead, as an MCP tool and as a zazzle command: zazzle_find for searches (with zazzle_find_symbol for C# declarations and zazzle_refs for uses), zazzle_ls for listings, zazzle_read for reads, saying that C# files come as a terse view and that source=true gives the code and the sha edits need. For Bash, Grep and Glob it adds the # allow-raw escape.",
+      "guarantees": [
+        "Grep and Glob calls are always blocked; Bash commands are blocked when a pipeline segment runs a searcher (grep, egrep, fgrep, rg, ag, ack, zgrep, git grep), find without an action that modifies or executes, a file reader (cat, head, tail, less, more, bat, nl) on a file without redirection (tail -f excepted), or sed -n without -i on a file.",
+        "A Read call is blocked when its file_path ends in .cs, in any letter case, and allowed otherwise; a blocked Read has no escape but ZAZZLE_INDEXER_HOOK=off.",
+        "A command containing # allow-raw is allowed and logged as allowed_raw.",
+        "Every blocked or raw-allowed call is written to the usage log as tool hook with reason blocked:<program> or allowed_raw:<program>.",
+        "ZAZZLE_INDEXER_HOOK=off allows everything."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Classify"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_policy"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_read_tool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_hook_points_at_zazzle"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/operation.json",
+          "entityId": "mcp"
+        }
+      ]
+    }
+  ]
+}

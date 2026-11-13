@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/plan.schema.json",
+  "title": "Plan",
+  "description": "A chosen way to deliver some backlog items: the goal, the scope, the approach and its steps. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "plan"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/reference"
+            }
+          },
+          "approach": {
+            "type": "string",
+            "minLength": 1
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "title"
+              ]
+            }
+          },
+          "outOfScope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "goal"
+        ]
+      }
+    }
+  }
+}

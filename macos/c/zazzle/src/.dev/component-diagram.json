@@ -1,0 +1,101 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle invoker source component diagram",
+  "folder": "macos/c/zazzle/src",
+  "description": "The invoker's logic sits on a syscall layer chosen at compile time: a raw backend per platform, or the test mock.",
+  "sources": [
+    {
+      "path": "macos/c/zazzle/src/zazzle.c",
+      "symbol": "zazzle_main"
+    },
+    {
+      "path": "macos/c/zazzle/src/sys.h",
+      "symbol": "ZAZZLE_TEST"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "zazzle_run"
+    }
+  ],
+  "components": [
+    {
+      "id": "src",
+      "name": "zazzle invoker source",
+      "responsibility": "The zazzle program.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "entry",
+      "name": "Entry (zazzle.c, entry.h)",
+      "responsibility": "The process entry: a raw `_start` that finds argc, argv and envp on the stack (Linux), or `main` (macOS, built with ZAZZLE_LIBSYSTEM); exits with zazzle_run's status.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "core",
+      "name": "Invoker logic (zazzle_core.h)",
+      "responsibility": "Execs a standalone tool, `zazzled wrap` or `zazzled proxy` when argv[1] names one; otherwise builds the request and socket path from argv and the environment, connects to the daemon or starts it, checks its uid, sends the request with descriptors and returns its status byte, spinning briefly before blocking; one-line errors with fixed exit codes.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "sys",
+      "name": "Syscall layer (sys.h)",
+      "responsibility": "Selects the backend for the platform (or the mock under ZAZZLE_TEST), refuses other platforms at compile time, and wraps read, write, close, socket, connect, sendmsg, getuid, exit and a non-blocking one-byte receive.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "linux",
+      "name": "Linux backends (sys_linux.h, sys_linux_x86_64.h, sys_linux_aarch64.h)",
+      "responsibility": "Raw syscalls for x86_64 and aarch64; structure layouts, peer credentials, /proc/self/exe, nanosleep, execve, starting the daemon with clone, setsid and execve, and on x86_64 the clock and pause hint for the spin.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "darwin",
+      "name": "macOS arm64 backend (sys_darwin_arm64.h)",
+      "responsibility": "Raw BSD syscalls through `svc #0x80`, including execve; structure layouts, peer credentials, and libSystem's _NSGetExecutablePath, nanosleep and posix_spawn for the rest.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "arm64-clock",
+      "name": "arm64 spin helpers (sys_arm64_clock.h)",
+      "responsibility": "Reads the generic timer (CNTVCT_EL0, CNTFRQ_EL0) from user space and issues the yield hint, for the spin on macOS arm64 and Linux aarch64.",
+      "folder": "macos/c/zazzle/src"
+    },
+    {
+      "id": "mock",
+      "name": "Syscall mock (test/sys_mock.h)",
+      "responsibility": "Scripted syscall results, a fake clock and recorded effects, compiled in place of the backends for the unit tests.",
+      "folder": "macos/c/zazzle/test"
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled daemon",
+      "responsibility": "Runs the command and writes its output to the passed streams.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "libsystem",
+      "name": "libSystem",
+      "responsibility": "macOS's system library, which a Mach-O executable must link.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "src", "to": "entry", "kind": "contains", "description": "The program's entry." },
+    { "from": "src", "to": "core", "kind": "contains", "description": "The logic." },
+    { "from": "src", "to": "sys", "kind": "contains", "description": "The syscall layer." },
+    { "from": "src", "to": "linux", "kind": "contains", "description": "Linux backends." },
+    { "from": "src", "to": "darwin", "kind": "contains", "description": "macOS backend." },
+    { "from": "src", "to": "arm64-clock", "kind": "contains", "description": "arm64 spin helpers." },
+    { "from": "entry", "to": "core", "kind": "depends-on", "description": "Calls zazzle_run." },
+    { "from": "core", "to": "sys", "kind": "depends-on", "description": "All I/O, sockets, exec, spawning, sleeping and the spin clock." },
+    { "from": "sys", "to": "linux", "kind": "depends-on", "description": "On Linux x86_64 and aarch64." },
+    { "from": "sys", "to": "darwin", "kind": "depends-on", "description": "On macOS arm64." },
+    { "from": "sys", "to": "mock", "kind": "depends-on", "description": "Under ZAZZLE_TEST, instead of a backend." },
+    { "from": "linux", "to": "arm64-clock", "kind": "depends-on", "description": "sys_linux_aarch64.h includes it." },
+    { "from": "darwin", "to": "arm64-clock", "kind": "depends-on", "description": "sys_darwin_arm64.h includes it." },
+    { "from": "darwin", "to": "libsystem", "kind": "depends-on", "description": "Entry, executable path, nanosleep and posix_spawn." },
+    { "from": "core", "to": "zazzled", "kind": "depends-on", "description": "Unix socket, descriptor mode; starts `zazzled serve` when nothing listens; execs `zazzled wrap` and `zazzled proxy`." }
+  ]
+}

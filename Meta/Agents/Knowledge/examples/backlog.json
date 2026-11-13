@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/backlog.schema.json",
+  "kind": "backlog",
+  "schemaVersion": 1,
+  "title": "Example worker backlog",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "failure-alarm",
+      "title": "Alarm on failed runs",
+      "type": "feature",
+      "status": "accepted",
+      "priority": "high",
+      "summary": "Raise an alarm to the operator on duty when a run fails.",
+      "details": "Every failed run raises one alarm, naming the job, the slot and the error. Repeated failures of one job within an hour are grouped.",
+      "origin": {
+        "kind": "requirement",
+        "reference": ".dev/requirements.json#no-silent-failure"
+      },
+      "acceptanceCriteria": [
+        "One alarm per failed run",
+        "Grouped within an hour"
+      ],
+      "links": [
+        {
+          "label": "Alarm design notes",
+          "path": "docs/alarms.md"
+        }
+      ],
+      "evidenceStatus": "proposed"
+    },
+    {
+      "id": "lease-renewal",
+      "title": "Leases expire under long runs",
+      "type": "defect",
+      "status": "proposed",
+      "summary": "A run longer than the lease lets a second worker claim the slot.",
+      "expected": "A running job keeps its lease until it finishes.",
+      "observed": "The lease expires after ten minutes, whatever the run is doing.",
+      "reproduction": [
+        "Schedule a job that sleeps for fifteen minutes",
+        "Start two workers"
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Reviewing agent",
+        "date": "2026-11-10"
+      },
+      "evidenceStatus": "documented"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "Content analysis limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "heuristic-languages",
+      "title": "Only C# is parsed",
+      "summary": "Every language but C# gets symbols from per-line regexes.",
+      "impact": "find_symbol and overview can miss or misread declarations outside C# (multi-line signatures, macros, nested items get no container). Languages without rules (JSON, YAML, TOML, SQL, XML, plain text) get no symbols.",
+      "workaround": "zazzle_outline (tree-sitter for Rust, Python, C, JS/TS) or zazzle_find for what the index misses.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+          "symbol": "HeuristicSymbols.Rules"
+        }
+      ]
+    },
+    {
+      "id": "symbol-size-cap",
+      "title": "No symbols for text over 2 MiB",
+      "summary": "A text blob larger than 2 MiB gets a line count but no symbols.",
+      "impact": "Such files do not appear in find_symbol; their digest says \"too large for symbols\".",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+          "symbol": "BlobAnalyzer.MaxSymbolBytes"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "MCP server backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp",
+  "entities": [
+    {
+      "id": "unexpected-exception-ends-session",
+      "title": "An argument of the wrong type ends the session",
+      "summary": "CallTool turns only ToolException into a tool error; any other exception from a tool escapes Handle and ends the MCP session.",
+      "type": "defect",
+      "priority": "high",
+      "expected": "A tool call with an argument of the wrong JSON type (for example \"limit\": \"10\" or \"what\": 5), a malformed changed_since cursor, or an I/O error while reading a file is answered with an isError result and logged, and the session goes on.",
+      "observed": "Args.Str, Args.Int and Args.Bool call GetValue, which throws InvalidOperationException for a value of another JSON type; ChangedSinceTool parses cursor generations with long.Parse. These exceptions pass through McpServer.CallTool and Handle: in process they end serve; in the daemon, DaemonServer.Serve does not catch them either, so the connection closes and zazzled reports that the indexer closed the connection.",
+      "reproduction": [
+        "Construct McpServer with no roots and UsageLog(null).",
+        "Call Handle with {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"report_gap\",\"arguments\":{\"what\":5}}}.",
+        "InvalidOperationException escapes Handle instead of a result with isError true."
+      ],
+      "acceptanceCriteria": [
+        "A tools/call whose arguments have the wrong types returns isError true with a bad_args-style message and writes a usage-log record with an error code, and a test covers it."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder: read in McpServer.CallTool and Args, and reproduced with the steps above against the built library (not through the tool)."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs",
+          "symbol": "Args.Str"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Serve"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/.dev/contracts.json",
+          "entityId": "mcp-stdio"
+        }
+      ]
+    }
+  ]
+}

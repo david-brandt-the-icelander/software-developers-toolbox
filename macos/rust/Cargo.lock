@@ -19,7 +19,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-fs"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "blake3",
  "clap",
@@ -806,7 +806,7 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "fix-network"
-version = "2.0.0"
+version = "0.0.0-dev"
 dependencies = [
  "chrono",
  "clap",
@@ -855,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "free-disk-space"
-version = "1.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "chrono",
  "clap",
@@ -2309,6 +2309,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-dart"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "973ff905142c61200ef0bf5e226f03a5f20a9a7d3a0ae2c4c86cdb42f98b63eb"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-go"
 version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3176,7 +3186,7 @@ dependencies = [
 
 [[package]]
 name = "zazz-format"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "blake3",
  "miniz_oxide",
@@ -3185,11 +3195,11 @@ dependencies = [
 
 [[package]]
 name = "zazz-sdk"
-version = "0.1.0"
+version = "0.0.0-dev"
 
 [[package]]
 name = "zazz-worker"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "ureq",
  "wasmtime",
@@ -3200,7 +3210,7 @@ dependencies = [
 
 [[package]]
 name = "zazzled"
-version = "0.1.0"
+version = "0.0.0-dev"
 dependencies = [
  "blake3",
  "ignore",
@@ -3215,6 +3225,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-c-sharp",
+ "tree-sitter-dart",
  "tree-sitter-javascript",
  "tree-sitter-python",
  "tree-sitter-rust",

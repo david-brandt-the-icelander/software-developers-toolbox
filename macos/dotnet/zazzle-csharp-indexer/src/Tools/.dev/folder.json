@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Internal tools",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Internal tools",
+      "summary": "The seven tools zazzled calls by name over the daemon socket: view, overview, find_symbol, changed_since, git_log, git_blame and report_gap. tools/list shows none of them; agents reach them through zazzle.",
+      "purpose": "Holds one class per tool behind the ITool contract, with the helpers they share: argument parsing (Args) and root:path references (RootSet). Each tool returns compact text and fills in a CallInfo for the usage log.",
+      "boundaries": [
+        "The tools read the index (src/Index/) and the stored symbols (src/Analysis/, through Engine and Store); they never write the store.",
+        "Dispatch, timing and logging of a call are src/Mcp/; the tools only fill in CallInfo.",
+        "The view tool reads its file from disk and builds the view with src/View/; it does not use the index.",
+        "Agents never call these tools directly: zazzled offers them as zazzle_read (for .cs files), zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap (macos/rust/zazzled/src/cmd/structure.rs).",
+        "view resolves its path through Root.Resolve (src/Root.cs); git_log and git_blame do not (backlog.json, git-paths-unresolved)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs",
+          "symbol": "ITool"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RootSet.cs",
+          "symbol": "RootSet.Split"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        }
+      ]
+    }
+  ]
+}

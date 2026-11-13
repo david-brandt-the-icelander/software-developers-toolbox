@@ -1,0 +1,75 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Content analysis decisions",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "git-blob-id",
+      "title": "Identify content by git's blob id",
+      "summary": "A blob is named by the SHA-1 of \"blob <length>\\0\" followed by the bytes, computed locally, which equals git hash-object.",
+      "status": "accepted",
+      "context": "The store keeps analysis once per distinct content (see the content-addressed store decision in src/.dev/decisions.json), so content needs a stable id that does not depend on the path or the branch.",
+      "decision": "BlobAnalyzer.GitOid computes git's blob object id from the bytes on disk, without calling git.",
+      "rationale": "The id is the one git itself uses, so it is the same for the same bytes in any copy, worktree or branch, and costs one hash of bytes already read.",
+      "origin": "README.md, How it works (moved here).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+          "symbol": "BlobAnalyzer.GitOid"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_oid_matches_git_hash_object"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/decisions.json",
+          "entityId": "content-addressed-store"
+        }
+      ]
+    },
+    {
+      "id": "roslyn-syntax-only",
+      "title": "Parse C# with Roslyn syntax trees; use line regexes elsewhere",
+      "summary": "C# declarations come from a Roslyn syntax tree without compilation and are labelled parsed; every other language uses per-line regex rules and is labelled heuristic.",
+      "status": "accepted",
+      "context": "find_symbol and overview need declarations per blob, for many languages, at indexing speed.",
+      "options": [
+        {
+          "title": "Roslyn syntax tree for C#",
+          "consequences": "Exact declarations; adds the Microsoft.CodeAnalysis.CSharp package and its size to the binary."
+        },
+        {
+          "title": "ctags-style regexes per line",
+          "consequences": "Cheap and broad, but may miss or misread declarations."
+        }
+      ],
+      "decision": "CSharpSymbols for language csharp, HeuristicSymbols for the rest.",
+      "rationale": "The file's own comment: syntax trees without compilation are fast and exact.",
+      "origin": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs (file comment); README.md, Tools.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+          "symbol": "CSharpSymbols.Extract"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+          "symbol": "HeuristicSymbols.Rules"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "Microsoft.CodeAnalysis.CSharp"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+          "symbol": "FindSymbolTool.Run"
+        }
+      ]
+    }
+  ]
+}

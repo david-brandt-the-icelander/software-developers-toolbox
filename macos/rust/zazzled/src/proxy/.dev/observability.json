@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "zazzle MCP proxy signals",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "entities": [
+    {
+      "id": "savings-log",
+      "title": "Cleaning log lines",
+      "summary": "With --log, the proxy writes one line per cleaned answer to its standard error: what it answered and the estimated tokens before and after.",
+      "signalType": "log",
+      "name": "zazzled proxy: tools/call NAME ~A→~B tokens (or resources/read)",
+      "meaning": "One server answer whose texts were shortened, with the estimated size before and after.",
+      "unit": "Estimated tokens.",
+      "dimensions": [
+        "method and tool name",
+        "tokens before",
+        "tokens after"
+      ],
+      "access": "Whoever holds the proxy's standard error; for a stdio proxy that is usually the MCP client's log.",
+      "retention": "Not kept by the proxy.",
+      "cadence": "Per cleaned answer, only with --log.",
+      "excludes": [
+        "The texts themselves, request arguments and answers that were not shortened are not logged."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite_text"
+        }
+      ]
+    },
+    {
+      "id": "listen-line",
+      "title": "HTTP listen line",
+      "summary": "In HTTP mode the proxy writes `zazzled proxy: http://ADDR → URL` to standard error once it listens.",
+      "signalType": "log",
+      "name": "zazzled proxy: http://ADDR → URL",
+      "meaning": "The proxy is listening on ADDR (with the port the system chose, if 0 was asked) and forwards to URL.",
+      "access": "Whoever holds the proxy's standard error.",
+      "retention": "Not kept by the proxy.",
+      "cadence": "Once at start.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "run"
+        }
+      ]
+    }
+  ]
+}

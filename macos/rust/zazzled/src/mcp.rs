@@ -30,11 +30,11 @@ impl Backend for DaemonBackend {
 }
 
 // One exposed tool: how it is described and how its arguments become a command line.
-pub struct Tool {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub schema: fn() -> Value,
-    pub map: fn(&Value) -> Result<Vec<String>, String>,
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) schema: fn() -> Value,
+    pub(crate) map: fn(&Value) -> Result<Vec<String>, String>,
 }
 
 const TOOLS: &[Tool] = &[
@@ -52,7 +52,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read_again",
-        description: "Get a response this session already sent, by its r:ID: the same text if nothing changed, else the current version under a new id. Use it instead of repeating a request whose result you no longer have.",
+        description: "Get a response again by its r:ID: the same text if nothing changed, else the current version under a new id. Outputs of clean, run and proxy are kept for an hour; full=true gives their uncut text. Use it instead of repeating a request whose result you no longer have.",
         schema: read_again_schema,
         map: read_again_args,
     },
@@ -77,13 +77,8 @@ const TOOLS: &[Tool] = &[
     },
 ];
 
-// Every tool: the file tools, then the zazz script tools.
-fn all_tools() -> impl Iterator<Item = &'static Tool> {
-    TOOLS.iter().chain(crate::zazz::mcptools::TOOLS.iter())
-}
-
 // Builds a JSON schema object from properties and required names.
-pub fn object(props: Value, required: &[&str]) -> Value {
+pub(crate) fn object(props: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": props, "required": required})
 }
 
@@ -109,8 +104,8 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
-            "source": {"type": "boolean", "description": "C# files come as a terse view without a sha; true gives the code and its sha, which edits need"},
-            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; #N picks among duplicates) with its doc comments and attributes"},
+            "source": {"type": "boolean", "description": "C#, Python, TypeScript, Dart, HTML and Razor files come as a terse view without a sha; true gives the code and its sha, which edits need"},
+            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
@@ -122,7 +117,15 @@ fn read_schema() -> Value {
 
 // Schema for zazzle_read_again.
 fn read_again_schema() -> Value {
-    object(json!({"id": {"type": "string", "description": "The id from a response's [r:ID] tag"}}), &["id"])
+    object(
+        json!({
+            "id": {"type": "string", "description": "The id from a response's [r:ID] tag"},
+            "full": {"type": "boolean", "description": "For clean, run and proxy outputs (kept for an hour): the uncut text with line numbers"},
+            "lines": {"type": "string", "description": "With full: a line range A-B"},
+            "budget": {"type": "integer", "description": "With full: token budget (default 3000)"}
+        }),
+        &["id"],
+    )
 }
 
 // Schema for zazzle_ls.
@@ -177,7 +180,7 @@ fn edit_schema() -> Value {
 }
 
 // Reads an optional string argument.
-pub fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
+pub(crate) fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -186,7 +189,7 @@ pub fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
 }
 
 // Reads a required string argument.
-pub fn need_str(v: &Value, key: &str) -> Result<String, String> {
+pub(crate) fn need_str(v: &Value, key: &str) -> Result<String, String> {
     get_str(v, key)?.ok_or_else(|| format!("'{key}' is required"))
 }
 
@@ -205,7 +208,7 @@ fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
 }
 
 // Pushes a boolean flag when the argument is true.
-pub fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
+pub(crate) fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(()),
         Some(Value::Bool(true)) => {
@@ -217,7 +220,7 @@ pub fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Res
 }
 
 // Pushes a numeric option when the argument is present.
-fn push_num(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
+pub(crate) fn push_num(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(()),
         Some(n) => {
@@ -319,7 +322,13 @@ fn outline_args(v: &Value) -> Result<Vec<String>, String> {
 
 // Maps zazzle_read_again arguments to a command line.
 fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
-    Ok(vec!["read-again".to_string(), need_str(v, "id")?])
+    let mut a = vec!["read-again".to_string(), need_str(v, "id")?];
+    push_flag(&mut a, v, "full", "--full")?;
+    push_num(&mut a, v, "budget", "--budget")?;
+    if let Some(lines) = get_str(v, "lines")? {
+        a.extend(["--lines".to_string(), lines]);
+    }
+    Ok(a)
 }
 
 // Maps zazzle_refs arguments to a command line.
@@ -372,6 +381,11 @@ fn initialize(params: &Value) -> Value {
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION}
     })
+}
+
+// Every exposed tool: the file tools here, the structure tools answered by zazzle-csharp-indexer, then the zazz script tools.
+fn all_tools() -> impl Iterator<Item = &'static Tool> {
+    TOOLS.iter().chain(crate::mcp_structure::TOOLS).chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
 // Lists the tools with their schemas.
@@ -535,6 +549,14 @@ mod tests {
             json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"r:abcde"}}}),
         );
         assert_eq!(b.calls.borrow().last().expect("call"), &["read-again", "r:abcde"]);
+        ask(
+            &b,
+            json!({"id":5,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"x","full":true,"budget":9,"lines":"2-4"}}}),
+        );
+        assert_eq!(
+            b.calls.borrow().last().expect("call"),
+            &["read-again", "x", "--full", "--budget", "9", "--lines", "2-4"]
+        );
         assert_eq!(ask(&b, json!({"id":3,"method":"nope"}))["error"]["code"], -32601);
     }
 
@@ -800,6 +822,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 14);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
     }
 }

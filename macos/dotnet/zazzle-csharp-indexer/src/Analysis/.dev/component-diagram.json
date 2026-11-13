@@ -1,0 +1,117 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer content analysis component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "description": "From bytes to stored blob facts. Everything here is a static function of its input.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+      "symbol": "BlobAnalyzer.Analyze"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+      "symbol": "Microsoft.CodeAnalysis.CSharp"
+    }
+  ],
+  "components": [
+    {
+      "id": "analysis",
+      "name": "Content analysis",
+      "responsibility": "Everything zazzle-csharp-indexer derives from a file's bytes.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "blob-analyzer",
+      "name": "Blob analyser (BlobAnalyzer.cs)",
+      "responsibility": "Git blob id, language from the extension, binary test (a NUL in the first 8 KiB), line count, digest; calls the extractors.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "csharp",
+      "name": "C# extractor (CSharpSymbols.cs)",
+      "responsibility": "Declarations from a Roslyn syntax tree, without compiling.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "heuristic",
+      "name": "Heuristic extractor (HeuristicSymbols.cs)",
+      "responsibility": "Per-line regex rules for Rust, Python, TypeScript/JavaScript, Go, Java, GDScript, shell, Markdown headings, Swift and C/C++.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "sym",
+      "name": "Symbol format (Sym.cs)",
+      "responsibility": "The Sym record and the compact JSON stored for symbols.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
+    },
+    {
+      "id": "roslyn",
+      "name": "Roslyn C# syntax (NuGet Microsoft.CodeAnalysis.CSharp)",
+      "responsibility": "C# parser, used in process for syntax trees only.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "analysis",
+      "to": "blob-analyzer",
+      "kind": "contains",
+      "description": "The entry point the engine calls."
+    },
+    {
+      "from": "analysis",
+      "to": "csharp",
+      "kind": "contains",
+      "description": "Exact extraction for .cs files."
+    },
+    {
+      "from": "analysis",
+      "to": "heuristic",
+      "kind": "contains",
+      "description": "Extraction for other languages."
+    },
+    {
+      "from": "analysis",
+      "to": "sym",
+      "kind": "contains",
+      "description": "Stored symbol format."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "csharp",
+      "kind": "depends-on",
+      "description": "For language csharp, up to 2 MiB."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "heuristic",
+      "kind": "depends-on",
+      "description": "For every other language, up to 2 MiB."
+    },
+    {
+      "from": "blob-analyzer",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Serialises symbols for the store."
+    },
+    {
+      "from": "csharp",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "CSharpSyntaxTree.ParseText."
+    },
+    {
+      "from": "csharp",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Returns Sym records."
+    },
+    {
+      "from": "heuristic",
+      "to": "sym",
+      "kind": "depends-on",
+      "description": "Returns Sym records."
+    }
+  ]
+}

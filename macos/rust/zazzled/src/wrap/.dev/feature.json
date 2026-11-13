@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle run features",
+  "folder": "macos/rust/zazzled/src/wrap",
+  "description": "What `zazzle run` does to a command's output.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/wrap/mod.rs",
+      "symbol": "render"
+    }
+  ],
+  "entities": [
+    {
+      "id": "profiled-output",
+      "name": "Command output cleaned with a profile",
+      "description": "A build, test or install command's output reaches the agent with the noise its tool is known to print dropped and counted, failures and warnings kept, and a footer with the exit code.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "Profile::apply"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Run"
+        }
+      ],
+      "behavior": "Standard output and error go through one pipe, so their order is kept; standard input is the caller's. When the command ends, its output is stripped of terminal escapes and redraws and tidied, then a profile drops lines it knows are noise and counts them by kind: cargo (progress such as Compiling and Running, `test ... ok`, nextest PASS, empty test runs, std and core frames in backtraces), pytest (session header, PASSED, progress-only lines), go (ok packages, --- PASS, === RUN, packages without tests), dotnet (restore and `->` build lines, banners, Passed tests, System, Microsoft, xUnit and NUnit frames, warnings and errors repeated at the end), js-test (PASS files, ✓ tests, banners), tsc (build progress and the summary table, with diagnostics grouped under their file) and install (download and resolve progress). The profile is detected from the program and subcommand, looking through npx, bunx, env, uv/poetry/pdm/pipenv run, pnpm/yarn exec or dlx and python -m, or named with --profile (none for no profile). Lines a profile does not recognise are always kept. clean's steps and budget follow, and the footer reads like `[exit 101 in 8.4s; cargo profile dropped 6 progress lines, 333 passing tests]`. With an output store, the result starts with `[r:ID]` and is kept with the raw output for an hour; when output was cut, a profile dropped lines or a lossy step or the budget removed something, it ends with `[full output: read-again r:ID --full]`.",
+      "outcome": "An agent sees why a build or test failed without reading every passing test and progress line, and still gets the command's own exit code.",
+      "constraints": [
+        "--lossless turns off the profile and clean's lossy steps.",
+        "At most 64 MiB of output is kept; the footer says when more was not read.",
+        "--timeout (default 3600 s) kills the command and exits 124.",
+        "The store is the one in the caller's environment (ZAZZLE_OUTPUTS_DIR, else ~/.zazzle/outputs); `zazzle read-again` finds the output only through a daemon that uses the same one."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "run_command"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "detect"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "unwrap_launcher"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/profile.rs",
+          "symbol": "PROFILES"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "tidy_lines"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "render_parts"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/operation.json",
+      "relationship": "The operation that carries it."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/use-case.json",
+      "relationship": "The use case it serves."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+      "relationship": "clean's steps, which run after the profile."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Stored outputs, which keep the result and the raw output for read-again."
+    }
+  ]
+}

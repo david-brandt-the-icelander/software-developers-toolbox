@@ -1,0 +1,115 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzled component diagram",
+  "folder": "macos/rust/zazzled",
+  "description": "The zazzled crate and what crosses its boundary: the C invoker and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. The crate's parts are in the src/ diagram.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/Cargo.toml",
+      "symbol": "[[bin]]"
+    },
+    {
+      "path": "macos/rust/zazzled/src/server.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/rust/zazzled/src/mcp.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/rust/zazzled/src/indexer.rs",
+      "symbol": "Indexer::view"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "zazzle_run"
+    }
+  ],
+  "components": [
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "The daemon, its MCP front end, the MCP proxy, the command runner, its installer and the zazzle commands, in one binary.",
+      "folder": "macos/rust/zazzled"
+    },
+    {
+      "id": "src",
+      "name": "zazzled source",
+      "responsibility": "Library and binary entry: front ends, wire protocol, engine, caches, commands, proxy and runner.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle",
+      "name": "zazzle invoker",
+      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzled proxy` and `zazzled wrap`.",
+      "folder": "macos/c/zazzle",
+      "diagram": "macos/c/zazzle/.dev/component-diagram.json"
+    },
+    {
+      "id": "csharp-indexer",
+      "name": "zazzle-csharp-indexer",
+      "responsibility": "The C# tool whose daemon renders the terse view of a C# file and answers the structure tools; it lists no tools of its own.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
+    },
+    {
+      "id": "mcp-client",
+      "name": "MCP client",
+      "responsibility": "The coding agent's client, which starts `zazzled mcp` and calls its tools over standard input and output, or starts `zazzle proxy` in front of another server.",
+      "external": true,
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "upstream-mcp",
+      "name": "Upstream MCP server",
+      "responsibility": "Any other MCP server the proxy sits in front of, run as a child over stdio or reached over Streamable HTTP.",
+      "external": true
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "responsibility": "macOS's service manager: holds an installed LaunchAgent's socket and starts `zazzled serve` on demand.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "zazzled",
+      "to": "src",
+      "kind": "contains",
+      "description": "All of the crate's code."
+    },
+    {
+      "from": "zazzle",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzled serve` when nothing listens, and execs `zazzled proxy` and `zazzled wrap`."
+    },
+    {
+      "from": "mcp-client",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Starts `zazzled mcp` and speaks JSON-RPC to it, or talks to another server through `zazzled proxy`."
+    },
+    {
+      "from": "src",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "launchctl bootstrap and bootout; launch_activate_socket."
+    },
+    {
+      "from": "src",
+      "to": "csharp-indexer",
+      "kind": "depends-on",
+      "description": "Starts its daemon when needed and asks its `view` and structure tools over the daemon's socket."
+    },
+    {
+      "from": "src",
+      "to": "upstream-mcp",
+      "kind": "depends-on",
+      "description": "The proxy relays the client's messages to it and cleans its answers."
+    }
+  ]
+}

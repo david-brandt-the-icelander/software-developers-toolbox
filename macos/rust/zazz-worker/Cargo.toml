@@ -1,6 +1,6 @@
 [package]
 name = "zazz-worker"
-version = "0.1.0"
+version = "0.0.0-dev"
 edition.workspace = true
 # wasmtime follows recent Rust releases, so this crate has its own minimum.
 rust-version = "1.97"

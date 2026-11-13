@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzle invoker decisions",
+  "folder": "macos/c/zazzle",
+  "entities": [
+    {
+      "id": "why-not-freestanding-on-macos",
+      "title": "Why zazzle is not freestanding on macOS",
+      "summary": "On macOS zazzle links libSystem and is entered at main, because the kernel kills a Mach-O without dyld; only its system calls stay raw.",
+      "status": "accepted",
+      "context": "zazzle exists to start as fast as possible, and on Linux it is a static executable with no libc and its own `_start`. The same on macOS would avoid dyld and libSystem.",
+      "options": [
+        {
+          "title": "A static Mach-O with its own entry",
+          "consequences": "A statically linked Mach-O with a valid ad-hoc signature and LC_UNIXTHREAD is killed (`Killed: 9`) on exec on macOS 26, and the linker refuses dynamic executables that skip libSystem."
+        },
+        {
+          "title": "Link libSystem, enter at main, keep raw system calls",
+          "consequences": "The startup floor on macOS is dyld plus libSystem (the README's Measurements give the timings), so zazzle can match but not beat a libSystem hello there."
+        }
+      ],
+      "decision": "On macOS the Makefile defines ZAZZLE_LIBSYSTEM and links normally; entry.h then provides `main`, and the syscalls stay raw.",
+      "rationale": "It is the only kind of executable macOS runs. Where the spawn itself costs too much, `zazzled mcp` avoids it entirely.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/c/zazzle/README.md, section Why not freestanding on macOS (moved here); macos/c/zazzle/Makefile comment"
+      },
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": "ZAZZLE_LIBSYSTEM"
+        },
+        {
+          "path": "macos/c/zazzle/src/entry.h",
+          "symbol": "main"
+        }
+      ],
+      "links": [
+        {
+          "label": "Measurements",
+          "path": "macos/rust/zazzled/README.md",
+          "description": "The macOS startup timings."
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/c/zazzle/src/.dev/decisions.json",
+          "entityId": "raw-darwin-syscalls"
+        }
+      ]
+    }
+  ]
+}

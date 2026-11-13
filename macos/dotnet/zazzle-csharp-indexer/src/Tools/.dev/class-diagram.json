@@ -1,0 +1,276 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer internal tools classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "description": "Seven ITool implementations that zazzled calls by name, and the helpers they share. Every tool takes the session's RootSet (report_gap excepted) and returns text.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs",
+      "symbol": "ITool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+      "symbol": "ViewTool"
+    }
+  ],
+  "types": [
+    {
+      "id": "Tools.ITool",
+      "name": "ITool",
+      "kind": "interface",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Run(JsonNode? args, CallInfo info)"
+      ]
+    },
+    {
+      "id": "Tools.ToolException",
+      "name": "ToolException",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs"
+      ],
+      "members": [
+        "ToolException(string code, string message)",
+        "string Code"
+      ]
+    },
+    {
+      "id": "Tools.Args",
+      "name": "Args",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs"
+      ],
+      "members": [
+        "static string Str(JsonNode? a, string key)",
+        "static string? OptStr(JsonNode? a, string key)",
+        "static int Int(JsonNode? a, string key, int fallback)",
+        "static bool Bool(JsonNode? a, string key, bool fallback)"
+      ]
+    },
+    {
+      "id": "Tools.RootSet",
+      "name": "RootSet",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/RootSet.cs"
+      ],
+      "members": [
+        "RootSet(IReadOnlyList<Root> roots)",
+        "IReadOnlyList<Root> All",
+        "(Root root, string rel) Split(string reference)",
+        "IEnumerable<Root> Select(string? name)"
+      ]
+    },
+    {
+      "id": "Tools.FindSymbolTool",
+      "name": "FindSymbolTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs"
+      ],
+      "members": [
+        "Name = \"find_symbol\""
+      ]
+    },
+    {
+      "id": "Tools.OverviewTool",
+      "name": "OverviewTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/OverviewTool.cs"
+      ],
+      "members": [
+        "Name = \"overview\""
+      ]
+    },
+    {
+      "id": "Tools.ChangedSinceTool",
+      "name": "ChangedSinceTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs"
+      ],
+      "members": [
+        "Name = \"changed_since\""
+      ]
+    },
+    {
+      "id": "Tools.GitLogTool",
+      "name": "GitLogTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs"
+      ],
+      "members": [
+        "Name = \"git_log\""
+      ]
+    },
+    {
+      "id": "Tools.GitBlameTool",
+      "name": "GitBlameTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs"
+      ],
+      "members": [
+        "Name = \"git_blame\""
+      ]
+    },
+    {
+      "id": "Tools.ViewTool",
+      "name": "ViewTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs"
+      ],
+      "members": [
+        "Name = \"view\""
+      ]
+    },
+    {
+      "id": "Tools.ReportGapTool",
+      "name": "ReportGapTool",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReportGapTool.cs"
+      ],
+      "members": [
+        "Name = \"report_gap\""
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Root",
+      "name": "Root",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Root.cs"
+      ],
+      "members": [
+        "string Name",
+        "RootIndex Index",
+        "string? Resolve(string relative)"
+      ],
+      "external": true
+    },
+    {
+      "id": "ZazzleIndexer.CallInfo",
+      "name": "CallInfo",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs"
+      ],
+      "members": [
+        "string Path",
+        "string? Reason",
+        "int Results",
+        "bool Truncated",
+        "int Candidates",
+        "int TotalFiles",
+        "string? Note"
+      ],
+      "external": true
+    },
+    {
+      "id": "ZazzleIndexer.View.TerseView",
+      "name": "TerseView",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs"
+      ],
+      "members": [
+        "static (List<ViewLine> Lines, List<(string Step, int Count)> Steps) Build(string source)",
+        "static string Format(IEnumerable<ViewLine> lines)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Tools.FindSymbolTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "find_symbol."
+    },
+    {
+      "from": "Tools.OverviewTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "overview."
+    },
+    {
+      "from": "Tools.ChangedSinceTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "changed_since."
+    },
+    {
+      "from": "Tools.GitLogTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "git_log."
+    },
+    {
+      "from": "Tools.GitBlameTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "git_blame."
+    },
+    {
+      "from": "Tools.ViewTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "view."
+    },
+    {
+      "from": "Tools.ReportGapTool",
+      "to": "Tools.ITool",
+      "kind": "implements",
+      "description": "report_gap."
+    },
+    {
+      "from": "Tools.ITool",
+      "to": "ZazzleIndexer.CallInfo",
+      "kind": "depends-on",
+      "description": "Run fills in how the answer was produced."
+    },
+    {
+      "from": "Tools.ITool",
+      "to": "Tools.ToolException",
+      "kind": "depends-on",
+      "description": "A tool fails by throwing one, with a short code for the log."
+    },
+    {
+      "from": "Tools.RootSet",
+      "to": "ZazzleIndexer.Root",
+      "kind": "depends-on",
+      "description": "Holds the session's roots and resolves root:path references."
+    },
+    {
+      "from": "Tools.ViewTool",
+      "to": "ZazzleIndexer.View.TerseView",
+      "kind": "depends-on",
+      "description": "Builds the view and formats its lines."
+    },
+    {
+      "from": "Tools.FindSymbolTool",
+      "to": "Tools.RootSet",
+      "kind": "depends-on",
+      "description": "Every tool but report_gap takes the RootSet."
+    },
+    {
+      "from": "Tools.FindSymbolTool",
+      "to": "Tools.Args",
+      "kind": "depends-on",
+      "description": "Arguments; every tool uses Args."
+    }
+  ]
+}

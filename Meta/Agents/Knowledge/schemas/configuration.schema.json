@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/configuration.schema.json",
+  "title": "Configuration",
+  "description": "Settings the code reads: key, type, default, whether it is secret, and when a change takes effect. Never a secret's value. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "configuration"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": {},
+          "sensitive": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "takesEffect": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually at-startup, per-use, on-reload or at-first-use."
+          },
+          "validation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "sensitive"
+        ]
+      }
+    }
+  }
+}

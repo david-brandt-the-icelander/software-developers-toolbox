@@ -1,0 +1,119 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "free-disk-space deployment diagram",
+  "folder": "macos/rust/free-disk-space",
+  "description": "free-disk-space runs on the user's own Mac, nowhere else: as a command in a terminal, and, once installed, as a launchd login item that runs the same binary in the background. It talks to no server; everything it reaches is on the same machine. The binary comes from the zazzle Homebrew formula in the external tap zazzcat/homebrew-z, the zazzle release tarball or a local cargo build; it is started directly or as `zazzle free-disk-space ...`.",
+  "sources": [
+    {"path": "macos/rust/free-disk-space/README.md", "symbol": "free-disk-space"},
+    {"path": "macos/rust/free-disk-space/Cargo.toml", "symbol": "package"},
+    {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "cmd_install"},
+    {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "plist"},
+    {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "default_state"},
+    {"path": ".github/workflows/release.yml", "symbol": "Make universal binaries"},
+    {"path": "macos/release/formula.sh", "symbol": "install"},
+    {"path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "exec_tool"},
+    {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "Progress::load"}
+  ],
+  "nodes": [
+    {
+      "id": "mac",
+      "name": "The user's Mac",
+      "kind": "host",
+      "description": "macOS with an APFS data volume; the binary also builds and partly runs on Linux, where compression, cloning, Finder and launchd steps are unavailable."
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "A person running free-disk-space commands and reading their reports.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "A coding agent running the same commands in the developer's session, as agents/skills/free-disk-space/SKILL.md tells it.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "cli",
+      "name": "free-disk-space command",
+      "kind": "process",
+      "description": "One run of a subcommand: scan, status, list, compress, dedupe, clean, or daemon install, uninstall or status. Runs as the invoking user and exits. Started directly, or through the zazzle invoker (macos/c/zazzle/), which replaces itself with this binary from its own directory and passes the arguments on."
+    },
+    {
+      "id": "launchd",
+      "name": "launchd (user gui domain)",
+      "kind": "process",
+      "description": "macOS's service manager: loads ~/Library/LaunchAgents/local.free-disk-space.plist, starts the daemon at load and at every login, and restarts it if it exits.",
+      "condition": "After daemon install"
+    },
+    {
+      "id": "daemon",
+      "name": "free-disk-space daemon run",
+      "kind": "process",
+      "description": "The same binary as a background process at nice 10 with low-priority I/O; checks free space every cadence of awake time and runs clean --apply below the threshold; writes ~/Library/Logs/free-disk-space.log.",
+      "condition": "After daemon install, until daemon uninstall"
+    },
+    {
+      "id": "state",
+      "name": "Scan state file",
+      "kind": "database",
+      "description": "SQLite, embedded in the binary, in a file at $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3."
+    },
+    {
+      "id": "progress",
+      "name": "Clean progress file",
+      "kind": "database",
+      "description": "Plain text at ~/.local/state/free-disk-space/clean-progress.txt: one line per step an interrupted clean --apply finished, so the next applying run skips them; removed after a complete run, ignored once older than 12 hours.",
+      "condition": "An applying clean was interrupted"
+    },
+    {
+      "id": "tools",
+      "name": "macOS and developer tools",
+      "kind": "external-service",
+      "description": "Programs run as child processes with time limits: ditto, xattr, lsof, ps, pgrep, git, osascript (Finder and Docker Desktop), brew and docker; the ones found on PATH are used only if installed."
+    },
+    {
+      "id": "docker",
+      "name": "Docker Desktop",
+      "kind": "external-service",
+      "description": "Pruned, its containers stopped and asked to quit, through its CLI and osascript.",
+      "condition": "The docker target is chosen and Docker Desktop is already running"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "free-disk-space",
+      "source": "macos/rust/free-disk-space/Cargo.toml",
+      "deployedTo": "mac",
+      "description": "The one binary: cargo build --release -p free-disk-space, or the universal (arm64 and x86_64) build in zazzle-macos-universal.tar.gz from a release, which the zazzle Homebrew formula installs with the toolbox's other binaries."
+    },
+    {
+      "id": "plist",
+      "name": "local.free-disk-space.plist",
+      "source": "macos/rust/free-disk-space/src/daemon.rs",
+      "deployedTo": "launchd",
+      "description": "Written by daemon install into ~/Library/LaunchAgents with the binary's absolute path and the daemon's settings; removed by daemon uninstall."
+    }
+  ],
+  "relationships": [
+    {"from": "mac", "to": "cli", "kind": "hosts", "description": "Runs in the user's session."},
+    {"from": "mac", "to": "launchd", "kind": "hosts", "description": "Part of macOS."},
+    {"from": "mac", "to": "state", "kind": "hosts", "description": "A file in the user's home by default."},
+    {"from": "mac", "to": "progress", "kind": "hosts", "description": "A file in the user's home."},
+    {"from": "launchd", "to": "daemon", "kind": "hosts", "description": "Starts daemon run from the plist at load and login, and keeps it alive."},
+    {"from": "terminal", "to": "cli", "kind": "connects-to", "description": "Runs commands; reads stdout and stderr."},
+    {"from": "agent", "to": "cli", "kind": "connects-to", "description": "Runs the commands the skill names in a shell; reads their output."},
+    {"from": "cli", "to": "state", "kind": "connects-to", "description": "new and resume write it; status, list, compress and dedupe read it; compress and dedupe record outcomes."},
+    {"from": "cli", "to": "progress", "kind": "connects-to", "description": "clean --apply reads it at the start, appends each finished step and removes it when the run completes."},
+    {"from": "daemon", "to": "progress", "kind": "connects-to", "description": "The same, for the clean --apply it runs below the threshold."},
+    {"from": "cli", "to": "launchd", "kind": "connects-to", "description": "daemon install, uninstall and status run /bin/launchctl bootstrap, bootout and print."},
+    {"from": "cli", "to": "tools", "kind": "connects-to", "description": "Child processes for compression (and the probe that checks ditto really compresses), xattrs, open files, git checks, Finder and Homebrew."},
+    {"from": "daemon", "to": "tools", "kind": "connects-to", "description": "The same child processes, when it cleans."},
+    {"from": "cli", "to": "docker", "kind": "connects-to", "description": "clean docker, only if it is already running."},
+    {"from": "daemon", "to": "docker", "kind": "connects-to", "description": "Only if docker is among the daemon's targets and Docker Desktop is running."}
+  ]
+}

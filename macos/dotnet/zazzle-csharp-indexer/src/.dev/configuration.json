@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazzle-csharp-indexer settings",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "Settings read by the top-level files. The daemon's idle period is in src/Daemon/.dev/configuration.json and the hook switch in src/Cli/.dev/configuration.json.",
+  "entities": [
+    {
+      "id": "state-dir",
+      "title": "State directory",
+      "summary": "Where store.db, the usage log and the daemon socket live.",
+      "key": "ZAZZLE_INDEXER_STATE_DIR",
+      "type": "directory path (environment variable)",
+      "default": "~/Library/Application Support/zazzle-csharp-indexer on macOS; elsewhere $XDG_STATE_HOME/zazzle-csharp-indexer, or ~/.local/state/zazzle-csharp-indexer when XDG_STATE_HOME is unset or empty",
+      "sensitive": false,
+      "scope": "per process; processes with the same value share a daemon and a store",
+      "takesEffect": "at-startup",
+      "validation": "An empty value is ignored; the directory is created when needed.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog.DefaultDir"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/contracts.json",
+          "entityId": "state-dir-layout"
+        }
+      ]
+    },
+    {
+      "id": "log-plain",
+      "title": "Plain usage log",
+      "summary": "Keeps argument text readable in the usage log instead of hashing it.",
+      "key": "ZAZZLE_INDEXER_LOG_PLAIN",
+      "type": "the string \"1\" (environment variable)",
+      "default": "unset (strings are hashed)",
+      "sensitive": false,
+      "scope": "the process that writes the record: the daemon (inherited from the process that started it), an in-process server, or the hook",
+      "takesEffect": "at-startup",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+          "symbol": "UsageLog._plain"
+        }
+      ]
+    },
+    {
+      "id": "no-daemon",
+      "title": "Serve without the daemon",
+      "summary": "Makes serve index and answer in its own process instead of connecting to the shared daemon.",
+      "key": "ZAZZLE_INDEXER_NO_DAEMON (or the --no-daemon flag of serve)",
+      "type": "the string \"1\" (environment variable), or a flag",
+      "default": "unset (use the daemon)",
+      "sensitive": false,
+      "scope": "one serve process",
+      "takesEffect": "at-startup",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "ZAZZLE_INDEXER_NO_DAEMON"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazzled backlog",
+  "folder": "macos/rust/zazzled",
+  "entities": [
+    {
+      "id": "readme-response-ids",
+      "title": "README says every response gets a session id",
+      "summary": "The README's \"Session ids and dedupe\" says every response starts with `[r:ID]` when a session is set, but only successful find, read, ls, outline and refs answers (and read-again) get a session id; clean and `zazzle run` answers carry an output id instead, with or without a session.",
+      "type": "defect",
+      "status": "open",
+      "expected": "The README says which answers carry a session `[r:ID]`: successful find, read, ls, outline and refs answers and read-again, not edits, errors, status, help or version; and that clean, run and proxy outputs carry an output id of their own (its Stored outputs section).",
+      "observed": "\"With ZAZZLE_SESSION set (or over MCP, where each connection is a session) every response starts with `[r:ID]`.\" The code gives a session id only to outputs built with Output::ok (find, read, ls, outline, refs); clean, edit, status, help, version and every error use Output::plain or Output::err, which carry none. (The same section does say edits are never deduplicated, and points to Stored outputs for clean, run and proxy.)",
+      "reproduction": [
+        "With ZAZZLE_SESSION set, run `zazzle status` or `zazzle edit FILE --old a --new b --expect SHA`.",
+        "The answer has no `[r:ID]` line."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent documenting the daemon for HASD; re-checked against today's code when the .dev files were reconciled after the rename to zazzled, and again after commit 5ea503c (stored outputs)",
+        "date": "2026-11-12",
+        "reference": "macos/rust/zazzled/src/cmd/mod.rs (Output::plain, Output::err, run)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Session ids and dedupe"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "Output::plain"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "session-dedupe"
+        }
+      ]
+    },
+    {
+      "id": "readme-make-smoke",
+      "title": "README's test command names a make target that does not exist",
+      "summary": "The README's Tests section says to run `make unit coverage smoke` in macos/c/zazzle, but the Makefile has no `smoke` target; the smoke test is `sh test/smoke.sh`.",
+      "type": "defect",
+      "status": "open",
+      "expected": "A command that runs the invoker's unit tests, coverage gate and smoke test, such as `make unit coverage && sh test/smoke.sh` (as AGENTS.md and the invoker's README give it).",
+      "observed": "`make unit coverage smoke` runs the unit tests and the coverage gate, then stops with `make: *** No rule to make target 'smoke'.` The Makefile's targets are all, unit, coverage and clean.",
+      "reproduction": [
+        "In macos/c/zazzle, run `make -n smoke`.",
+        "make reports that there is no rule to make target `smoke`."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent reconciling the daemon's .dev files and README with the code after the rename",
+        "date": "2026-11-13",
+        "reference": "macos/rust/zazzled/README.md, section Tests; macos/c/zazzle/Makefile (.PHONY)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Tests"
+        },
+        {
+          "path": "macos/c/zazzle/Makefile",
+          "symbol": ".PHONY"
+        },
+        {
+          "path": "macos/c/zazzle/README.md",
+          "symbol": "Build and test"
+        }
+      ]
+    }
+  ]
+}

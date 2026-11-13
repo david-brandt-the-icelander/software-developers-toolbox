@@ -34,7 +34,7 @@ public class DaemonTests
     // Two clients share one engine and both get answers from the same index.
     public async Task test_two_clients_share_engine()
     {
-        using var repo = new TempRepo(new() { ["a.txt"] = "shared needle\n" });
+        using var repo = new TempRepo(new() { ["a.cs"] = "class Needle {}\n" });
         var (daemon, sock) = StartDaemon(repo);
         using var _ = daemon;
         var answers = Enumerable.Range(0, 2).Select(_ => Task.Run(() =>
@@ -42,11 +42,11 @@ public class DaemonTests
             var socket = Proxy.TryConnect(sock)!;
             Assert.True(Proxy.Hello(socket, ["r=" + repo.Dir])["ok"]!.GetValue<bool>());
             using var s = new NetworkStream(socket, true);
-            var r = Rpc(s, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\",\"arguments\":{\"pattern\":\"needle\"}}}");
+            var r = Rpc(s, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_symbol\",\"arguments\":{\"name\":\"needle\"}}}");
             return r["result"]!["content"]![0]!["text"]!.GetValue<string>();
         })).ToArray();
         foreach (var a in answers)
-            Assert.Contains("r:a.txt\n1:shared needle", await a);
+            Assert.StartsWith("r:a.cs:1 class Needle", await a);
     }
 
     [Fact]

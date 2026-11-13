@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "Shared daemon backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "hello-reply-utf8",
+      "title": "The handshake reply is decoded byte by byte",
+      "summary": "Proxy.Hello turns each byte of the daemon's reply into a char, so non-ASCII text in an error, such as a root path, is garbled.",
+      "type": "defect",
+      "priority": "low",
+      "expected": "The error the daemon sends (for example \"not a directory: <path>\" for a path with non-ASCII characters) reaches the serve process's standard error as sent.",
+      "observed": "Proxy.Hello appends (char)b for every byte read until the newline, so each multi-byte UTF-8 character becomes several Latin-1 characters in the message serve prints.",
+      "acceptanceCriteria": [
+        "The reply line is decoded as UTF-8, and a test with a non-ASCII root path checks the message."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder, by reading Proxy.Hello; not reproduced."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Hello"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Reply"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "Live index verification",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "entities": [
+    {
+      "id": "reconcile-and-sharing",
+      "title": "Reconcile, sharing and persistence",
+      "summary": "The index lists git's files, shares blobs between copies, tracks changes and survives a restart without re-analysing.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/decisions.json",
+          "entityId": "stat-key"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/decisions.json",
+          "entityId": "change-log"
+        }
+      ],
+      "criteria": [
+        "The initial reconcile indexes every non-ignored file and counts its lines",
+        "Two copies of a repository with the same content share blob ids",
+        "Changing, adding and deleting files updates the index and the change log after a sync",
+        "Stored file records survive a restart and unchanged files are not re-analysed"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_reconcile_indexes_files",
+          "command": "dotnet test tests --filter test_reconcile_indexes_files"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_copies_share_blobs",
+          "command": "dotnet test tests --filter test_copies_share_blobs"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_sync_tracks_changes",
+          "command": "dotnet test tests --filter test_sync_tracks_changes"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_state_persists_across_restart",
+          "command": "dotnet test tests --filter test_state_persists_across_restart"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "watching",
+      "title": "Change sources",
+      "summary": "The live watcher picks up new and edited files and keeps ignored ones out; FSEvents reports a new file and advances its event id.",
+      "subject": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/decisions.json",
+          "entityId": "change-tracking"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/.dev/decisions.json",
+          "entityId": "git-decides-files"
+        }
+      ],
+      "criteria": [
+        "A new file and an edit are seen without an explicit sync",
+        "Ignored files never enter the index, even when the watcher reports them",
+        "On macOS, FSEvents reports a file created under the watched directory and its last event id advances"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_watcher_sees_new_file",
+          "command": "dotnet test tests --filter test_watcher_sees_new_file"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
+          "symbol": "test_watcher_ignores_gitignored",
+          "command": "dotnet test tests --filter test_watcher_ignores_gitignored"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/FsEventsTests.cs",
+          "symbol": "test_fsevents_reports_new_file",
+          "command": "dotnet test tests --filter test_fsevents_reports_new_file",
+          "description": "Returns immediately on systems other than macOS."
+        }
+      ],
+      "details": "Nothing tests replay from a stored event id after a restart, or the reaction to a watcher error.",
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

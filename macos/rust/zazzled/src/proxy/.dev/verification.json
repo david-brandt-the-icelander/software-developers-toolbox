@@ -1,0 +1,211 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle MCP proxy verification",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "entities": [
+    {
+      "id": "filter",
+      "title": "What is cleaned and what is left alone",
+      "summary": "Unit tests parse every option form and error and the --config file, record requests, check that only the texts of recorded tool and resource answers are rewritten, with each tool's settings, and that shortened texts are stored with an id item.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/feature.json",
+          "entityId": "mcp-result-cleaning"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/configuration.json",
+          "entityId": "proxy-options"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/configuration.json",
+          "entityId": "proxy-config-file"
+        }
+      ],
+      "criteria": [
+        "Both upstream forms parse with their defaults; conflicting or missing options are refused.",
+        "tools/call and resources/read requests are recorded by id, in batches too.",
+        "Their answers' texts are cleaned; errors, structuredContent, skipped tools, server requests and unrecorded ids are left alone.",
+        "A config file parses into rules, refuses every kind of mistake with where it is, and gives a tool its exact rule before the longest matching pattern; --config loads it and a bad one stops the proxy.",
+        "A tool's rule decides lossless, budget and skip, and the resources rule resource reads; others use the command line.",
+        "A shortened text is stored with its original and named in an item of its own (with the resource's uri for resource reads), with the --full hint when something was cut, or a note when the store cannot be written."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_parse_forms",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_parse_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_note_text",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_rewrite_cleans_results",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_rewrite_leaves_others",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_rewrite_stores_with_id",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_rewrite_uses_config",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_parse_config_flag",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "test_parse",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "test_parse_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "test_tool_lookup",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "test_load",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "transports",
+      "title": "The stdio and HTTP transports",
+      "summary": "The stdio pumps and a real child server, and the HTTP side against a local upstream, are tested for cleaning, pass-through and failures.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/operation.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
+          "entityId": "clean-another-server"
+        }
+      ],
+      "criteria": [
+        "stdio relays lines both ways, cleans recorded answers and returns the child's exit code; a missing command is reported.",
+        "HTTP cleans JSON and event-stream answers, passes other answers and statuses through, and answers bad requests and other origins with the right status.",
+        "One HTTP connection carries several requests: sized JSON answers, chunked event streams, bodiless 204s and refusals, until the client asks to close; HTTP/1.0 closes unless it asks for keep-alive, and a client that hangs up ends the connection quietly.",
+        "Bad --upstream and --listen values are refused."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "test_pump_requests",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "test_pump_responses",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "test_run_with_child",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "test_run_with_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_read_request_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_origin",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_proxy_cleans_json_and_sse",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_proxy_passes_through",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_proxy_keeps_connection_open",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_proxy_http10_and_hangup",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_proxy_failures",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "test_run_errors",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
+          "description": "`zazzle proxy -- srv` execs `zazzled proxy -- srv` (a stand-in named by ZAZZLE_DAEMON) with its arguments and exit status."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

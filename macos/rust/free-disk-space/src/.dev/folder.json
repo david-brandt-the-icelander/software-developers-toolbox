@@ -1,0 +1,54 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "free-disk-space source",
+  "folder": "macos/rust/free-disk-space/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "free-disk-space source",
+      "summary": "All of the free-disk-space binary's Rust modules, flat: the command line, the resumable scan, verified compression, clone dedupe, cleanups, the background daemon and shared helpers.",
+      "purpose": "Holds the one binary's code. main.rs parses the command line and dispatches; scan.rs keeps the resumable scan in SQLite and answers status and list; compress.rs and dedupe.rs act on what the scan recorded; clean.rs deletes regenerable files and lets an interrupted applying run resume; daemon.rs runs clean on an awake-time cadence and installs itself as a launchd login item; util.rs holds output, subprocess, filesystem and stop-signal helpers; testkit.rs is the test sandbox.",
+      "boundaries": [
+        "Everything outside the process is reached either by running a tool as a subprocess with an argument list and a time limit (ditto, xattr, lsof, ps, pgrep, git, osascript, launchctl, docker, brew) or by a direct system call (clonefile, copyfile, statvfs, utimensat, CoreGraphics' display state); none of them is part of this folder.",
+        "macOS-only calls sit behind cfg(target_os = \"macos\") with stand-ins elsewhere, so the code builds and its tests run on Linux; compress, dedupe --apply and the Finder trash step refuse to run off macOS unless FDS_FORCE is set.",
+        "Besides the temp copies it builds beside the files it replaces, the only files it owns are the scan state database, the clean progress file (~/.local/state/free-disk-space/clean-progress.txt), the launchd plist and the daemon's log; compress also creates and removes a probe directory in the system temp directory. Everything else it touches belongs to the user."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "tool"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "apfs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_trash"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "ditto_compresses"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-user-journey/schema.json",
+  "kind": "user-journey",
+  "title": "agent-fs skill journey",
+  "folder": "agents/skills/agent-fs",
+  "description": "How the skill tells a coding agent to work through a code base with afs, over a session.",
+  "sources": [
+    { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+    { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "INSTRUCTIONS" }
+  ],
+  "entities": [
+    {
+      "id": "explore-with-afs",
+      "name": "Explore and re-read code with afs",
+      "description": "From the first look at a code base to re-reading files that changed, spending as few context tokens as the replies allow.",
+      "sources": [
+        { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" }
+      ],
+      "persona": "Coding agent",
+      "goal": "Find and read the code it needs, and keep up with changes, without re-reading what it already has.",
+      "stages": [
+        {
+          "id": "connect",
+          "context": "Starting work where afs is installed.",
+          "touchpoint": "The afs_* tools of `afs serve` through MCP, or one `afs jsonl` process",
+          "action": "Uses the afs tools instead of shell reads; without MCP, starts `afs jsonl` once and pipes one request per line, since `afs call` has no session memory.",
+          "outcome": "One session that remembers what it has sent.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/main.rs", "symbol": "jsonl" },
+            { "path": "macos/rust/agent-fs/src/mcp.rs", "symbol": "serve" }
+          ]
+        },
+        {
+          "id": "orient",
+          "context": "Looking for where something is defined or used.",
+          "touchpoint": "afs_outline, or afs_search with files_only or fields: [\"line\"]",
+          "action": "Asks for an outline or a compact search first.",
+          "outcome": "[start, end, kind, name] rows per symbol, or file lists and bare line numbers.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/outline.rs", "symbol": "compute" },
+            { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "render_hit" }
+          ]
+        },
+        {
+          "id": "read-ranges",
+          "context": "Knowing which lines matter.",
+          "touchpoint": "afs_read with ranges",
+          "action": "Reads only the ranges it needs, such as [[start, end]] from an outline row.",
+          "outcome": "Just those lines, with the file's etag.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "slice_lines" }
+          ]
+        },
+        {
+          "id": "repeat",
+          "context": "Asking again for something it was already sent.",
+          "touchpoint": "The unchanged marker {\"unchanged\": true, \"ref\": \"rN\"}",
+          "action": "Takes the content from its earlier result rN instead of asking again; passes fresh: true only if it lost that result.",
+          "outcome": "No tokens spent on content it already holds.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.already_sent" }
+          ]
+        },
+        {
+          "id": "changed",
+          "context": "Re-reading a whole file that changed, for instance after an edit.",
+          "touchpoint": "A reply with hunks",
+          "action": "Applies the hunks to its copy from the last `at` to the first (at = old line, del = lines removed, ins = new text).",
+          "outcome": "The current file without reading it again in full.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "try_diff" }
+          ]
+        },
+        {
+          "id": "truncated",
+          "context": "A reply hit its cap.",
+          "touchpoint": "truncated with next_ranges (read) or next_cursor (list)",
+          "action": "Continues with next_ranges or next_cursor, or narrows the query, rather than raising the caps blindly.",
+          "outcome": "The rest of what it needs, in bounded pieces.",
+          "sources": [
+            { "path": "agents/skills/agent-fs/SKILL.md", "symbol": "Use" },
+            { "path": "macos/rust/agent-fs/src/read.rs", "symbol": "run" },
+            { "path": "macos/rust/agent-fs/src/list.rs", "symbol": "compute" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/use-case.json",
+      "relationship": "find-and-read-item carries the orient and read-ranges stages; reread-changed-file carries repeat and changed."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/agent-fs/src",
+      "path": "macos/rust/agent-fs/src/.dev/feature.json",
+      "relationship": "The unchanged, diff and bounded-output features the stages rely on."
+    }
+  ]
+}

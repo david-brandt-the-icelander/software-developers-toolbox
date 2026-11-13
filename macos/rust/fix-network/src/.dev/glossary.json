@@ -1,0 +1,102 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "fix-network glossary",
+  "folder": "macos/rust/fix-network/src",
+  "entities": [
+    {
+      "id": "dimension",
+      "title": "Dimension (check)",
+      "summary": "One of the seven areas the tool judges separately: local network, public internet, VPN connection, routing, corporate DNS, corporate service, proxy. Each gets one state.",
+      "notToBeConfusedWith": ["Finding: a problem found within a dimension, with its remedy."],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/model.rs", "symbol": "Check" }]
+    },
+    {
+      "id": "finding",
+      "title": "Finding",
+      "summary": "One diagnosed problem: a code, a one-line summary and a remedy.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/model.rs", "symbol": "Finding" }]
+    },
+    {
+      "id": "outcome",
+      "title": "Outcome (remedy)",
+      "summary": "What it takes to resolve a finding: fixable (repair steps), not fixable by this tool (manual advice) or reboot needed.",
+      "aliases": ["Remedy"],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/model.rs", "symbol": "Remedy" }]
+    },
+    {
+      "id": "gate",
+      "title": "Gate",
+      "summary": "A flag a repair step needs before fix may run it: --vpn, --fix-proxy, --allow-route-flush, or --allow-remote for disruptive steps over SSH.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/repair.rs", "symbol": "Gates" }]
+    },
+    {
+      "id": "disruptive-step",
+      "title": "Disruptive step",
+      "summary": "A repair step that can cut an SSH or VPN session: VPN reconnect, DHCP renew, Wi-Fi cycle, route flush.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/model.rs", "symbol": "Step::disruptive" }]
+    },
+    {
+      "id": "scutil-vpn",
+      "title": "scutil-managed VPN",
+      "summary": "A VPN service listed by scutil --nc list, whose state the tool can read and which it can stop and start.",
+      "notToBeConfusedWith": ["Tunnel: any utun, ipsec, ppp, tun, tap or wg interface carrying routes, which may belong to a client scutil does not manage."],
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/parse.rs", "symbol": "parse_vpn_list" }]
+    },
+    {
+      "id": "tunnel",
+      "title": "Tunnel",
+      "summary": "An interface whose name starts with utun, ipsec, ppp, tun, tap or wg and that carries non-link-local routes (a scoped default route does not count).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "is_tunnel" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts::tunnels" }
+      ]
+    },
+    {
+      "id": "full-tunnel",
+      "title": "Full tunnel / split tunnel",
+      "summary": "Full tunnel: the route to the public probe address goes into a tunnel. Split tunnel: a tunnel carries routes but public traffic does not use it.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts::full_tunnel" }]
+    },
+    {
+      "id": "split-dns",
+      "title": "Split-DNS resolver",
+      "summary": "A resolver from scutil --dns for one domain, with nameservers, not scoped and not for .arpa or local; the most specific one answers for an internal host.",
+      "aliases": ["Supplemental resolver"],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "Resolver::supplemental" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "match_resolver" }
+      ]
+    },
+    {
+      "id": "stale",
+      "title": "Stale",
+      "summary": "Left behind by a VPN or network that is gone: a route on an interface that is no longer up, a split-DNS resolver whose interface is gone or whose server is unreachable, or a VPN that reports Connected on an interface that no longer exists.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts::stale_routes" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "Facts::stale_resolvers" },
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "vpn" }
+      ]
+    },
+    {
+      "id": "internal-host",
+      "title": "Internal host",
+      "summary": "A corporate name or address, optionally with a port, given with --internal-host to check corporate DNS, routing through the tunnel and TCP.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "Target" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "probe_internal" }
+      ]
+    }
+  ]
+}

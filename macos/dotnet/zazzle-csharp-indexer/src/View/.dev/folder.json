@@ -1,0 +1,41 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Terse C# view",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Terse C# view",
+      "summary": "Builds a shortened view of one C# file that keeps what the code does and its source line numbers, for the view tool.",
+      "purpose": "Holds TerseView, which parses a C# file with Roslyn and applies syntactic rules (collapse usings, field-assigning constructors and log-and-rethrow catches; hide logging and #region lines; drop access modifiers; use var where the type is spelled out; shorten long local names), then renders and formats the view lines.",
+      "boundaries": [
+        "It works on source text only: the view tool in src/Tools/ reads the file, resolves its path and logs the call.",
+        "It never writes files; the view is for reading, and zazzle read says to read with --source for the code and the sha every edit needs.",
+        "Its only dependency is the Roslyn package the project already uses (src/.dev/decisions.json, roslyn-and-sqlite-packages); the semantic model it asks for comes from a compilation of the one file, with no references."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.Build"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "CSharpCompilation.Create"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+          "symbol": "ViewTool.Run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/decisions.json",
+          "entityId": "roslyn-and-sqlite-packages"
+        }
+      ]
+    }
+  ]
+}

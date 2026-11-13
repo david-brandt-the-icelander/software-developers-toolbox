@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle commands",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle commands",
+      "summary": "The commands the daemon runs for zazzle: find, read, ls, outline, refs, edit and clean, the structure commands answered by zazzle-csharp-indexer (overview, find-symbol, changed-since, git-log, git-blame, report-gap), plus read-again, status, help and version.",
+      "purpose": "Runs one zazzle command line. run in mod.rs hands read-again to again.rs, takes out the options every command accepts (--budget, --disable-session-deduping), dispatches to the command's own file, cuts the output to the token budget (not read's or clean's, which keep their own) and hands it to the session table for an id or an \"already sent\" notice, remembering the command line and working directory so read-again can run it again. clean gets no session id: when the engine has an output store, clean.rs keeps its answer and its whole input there for an hour under an `[r:ID]` of its own (src/outputs.rs), and again.rs gives either back. Every front end ends here: the socket server, the MCP server (through the daemon) and `zazzled run`. clean.rs also lends its cleaning steps to `zazzle run` (src/wrap) and the MCP proxy (src/proxy), and its way of storing an output to `zazzle run`.",
+      "boundaries": [
+        "The commands use the engine, the directory walker, the outliner, the symbol finder, the thread pool, the C# indexer bridge and the session table in the parent folder (macos/rust/zazzled/src); they open no sockets of their own and know nothing of launchd or MCP.",
+        "`proxy` and `run` are not run here: the dispatcher answers them with an error pointing at their own processes (`zazzled proxy`, `zazzled wrap`).",
+        "Only edit.rs writes files, and only inside the caller's working directory.",
+        "The commands read their working directory, session and standard input from Ctx, which the front end fills in."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "Ctx"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazzled/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

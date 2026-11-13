@@ -1,0 +1,145 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/delivery.schema.json",
+  "kind": "delivery",
+  "title": "zazzle-csharp-indexer delivery",
+  "folder": "macos/dotnet/zazzle-csharp-indexer",
+  "description": "How the indexer reaches a machine. It has no release of its own: it ships in the toolbox's v* release, whose places (GitHub release, icelander.net downloads, the Homebrew tap) are recorded in macos/release/.dev/delivery.json. These records say only what is particular to the indexer.",
+  "entities": [
+    {
+      "id": "github-release",
+      "title": "In the toolbox release",
+      "summary": "Each release publishes the indexer inside the toolbox's release tarballs, built with the release's version: gzipped for arm64 and x64 in the macOS tarball, and as a plain linux-x64 or linux-arm64 binary in each Linux tarball.",
+      "environment": "The toolbox's GitHub release for each vX.Y.Z tag, and the same tarballs on icelander.net/downloads under zazzle/<tag>/ and zazzle/latest/",
+      "purpose": "Carries the indexer to the Homebrew formula on macOS and to people who install from a Linux tarball.",
+      "deployedBy": ".github/workflows/release.yml runs for a pushed v* tag, or by hand (workflow_dispatch) with bump patch, minor or major, in which case its version job tags the commit with the next version and the run publishes it; bump none only builds. The version job's macos/release/version.sh gives the version (0.0.0-dev when nothing is published). The macos job runs dotnet test tests, then dotnet publish src -c Release for osx-arm64 and osx-x64 with -p:Version set to that version, and gzips each binary as zazzle-csharp-indexer-arm64.gz and zazzle-csharp-indexer-x64.gz into zazzle-macos-universal.tar.gz beside the universal Rust and C binaries; the indexer is not universal and is not among the binaries the optional signing step signs. Each linux matrix job runs dotnet test tests and dotnet publish src -c Release -r linux-x64 or linux-arm64 with the same -p:Version, and puts the binary in zazzle-linux-<arch>.tar.gz with zazzle and zazzled. Every run uploads the tarballs as workflow artifacts; the GitHub release (created without notes), download and formula steps run only when the version job says to publish.",
+      "approvals": [
+        "None in the workflow: anyone who can push a tag matching v* or run the workflow by hand with a bump releases."
+      ],
+      "rollback": "No rollback is recorded. The workflow creates releases and uploads to them but never deletes one, so earlier tags' tarballs stay on the GitHub release and under their tag on icelander.net; going back means installing from an earlier tarball (see user-machine).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "version"
+        },
+        {
+          "path": "macos/release/version.sh",
+          "symbol": "next"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Build the C# indexer for both CPU types"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Sign and notarize"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Build the C# indexer"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Package"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Homebrew formula"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/release/.dev/delivery.json",
+          "entityId": "github-release"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    },
+    {
+      "id": "homebrew",
+      "title": "In the zazzle Homebrew formula",
+      "summary": "The zazzle formula in the zazzcat/homebrew-z tap installs both gzipped indexers and, after install, expands the one for the Mac's CPU over a placeholder bin/zazzle-csharp-indexer.",
+      "environment": "macOS machines that install the zazzle formula",
+      "purpose": "The macOS install path: one formula installs the indexer with zazzle, zazzled and the other tools.",
+      "promotedFrom": "github-release",
+      "deployedBy": "The release workflow's homebrew job writes zazzle.rb into the tap's formula folder with macos/release/formula.sh. Its install step puts zazzle-csharp-indexer-arm64.gz and zazzle-csharp-indexer-x64.gz in libexec/indexer and writes bin/zazzle-csharp-indexer as a placeholder script that says to run brew postinstall zazzle and exits 1, so brew links it; post_install_steps then gunzips the file for uname -m (arm64, else x64) over the placeholder. The formula's test checks that zazzle-csharp-indexer --version prints the tool's name.",
+      "rollback": "No rollback is recorded. Each release overwrites the formula in the tap; brew postinstall zazzle repeats the expansion if it failed.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "post_install_steps"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "def install"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "test do"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Homebrew formula"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "--version"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/release/.dev/delivery.json",
+          "entityId": "homebrew"
+        }
+      ]
+    },
+    {
+      "id": "user-machine",
+      "title": "A developer's machine",
+      "summary": "Where the indexer runs: installed with the zazzle Homebrew formula on macOS, or from a Linux tarball, then wired into each project with zazzle-csharp-indexer init.",
+      "environment": "The developer's own Mac or Linux machine",
+      "purpose": "Runs the daemon zazzled asks for terse C# views and structure, and the hook for the coding agent's sessions (deployment-diagram.json).",
+      "promotedFrom": "homebrew",
+      "deployedBy": "On macOS, brew install zazzcat/z/zazzle; on Linux, the developer extracts zazzle-linux-<arch>.tar.gz and puts the binaries on PATH. Then zazzle-csharp-indexer init in each project records the binary's absolute path (Environment.ProcessPath) in the project's settings, and the path of the zazzled it finds beside that binary or on PATH, which the formula and the Linux tarballs install alongside it.",
+      "rollback": "Install an earlier release's binary at the same path. A daemon already running keeps the old code until it is idle for the idle period, or until a client of a different ToolVersion.Text makes an otherwise idle daemon stop; each release has its own ToolVersion.Text, taken from its tag (decisions.json, tool-version-source). The store survives: blobs from another extractor version are dropped and re-analysed.",
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/release/README.md",
+          "symbol": "brew install zazzcat/z/zazzle"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Quick start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "Environment.ProcessPath"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.FindZazzled"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store.ExtractorVersion"
+        }
+      ]
+    }
+  ]
+}

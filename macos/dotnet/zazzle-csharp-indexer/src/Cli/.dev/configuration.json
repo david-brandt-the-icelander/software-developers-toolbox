@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "Command-line helper settings",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "hook-off",
+      "title": "Redirect hook switch",
+      "summary": "Set to off, the hook allows every tool call.",
+      "key": "ZAZZLE_INDEXER_HOOK",
+      "type": "string; only the value off has an effect",
+      "default": "unset (the hook is active)",
+      "sensitive": false,
+      "scope": "the environment Claude Code runs the hook command in",
+      "takesEffect": "per-use",
+      "details": "Not mentioned in the README; read by HookPolicy.Decide on every call.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        }
+      ]
+    }
+  ]
+}

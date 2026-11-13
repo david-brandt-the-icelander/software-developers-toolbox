@@ -1,0 +1,60 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzled source",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzled source",
+      "summary": "The zazzled library and binary: the daemon, its front ends and the engine the zazzle commands run on.",
+      "purpose": "Holds everything in zazzled except the commands, the MCP proxy and `zazzle run`: the binary's command line (main.rs, cli.rs); the unix-socket daemon (server.rs) and its wire format (proto.rs); the socket client and the MCP stdio server in front of the daemon (client.rs, mcp.rs, with the structure tools' definitions in mcp_structure.rs); launchd socket activation and the LaunchAgent (launchd.rs); and the shared engine: per-file metadata with its in-memory and persistent caches (engine.rs, meta.rs, store.rs), directory walking with a validated listing cache (walk.rs), symbol outlines (outline.rs) parsed in a per-thread arena (arena.rs), symbol lookup by name and parameter types for read --symbol (symbols.rs, params.rs), a thread pool shared by find, refs, ls and listing validation (pool.rs), the bridge to zazzle-csharp-indexer for the terse C# view and the structure tools (indexer.rs), the terse views of HTML and Razor files (markup.rs) and of Python, TypeScript and Dart files (terse.rs, with short local names from locals.rs), session ids, dedupe and replay records (session.rs), the disk store that keeps clean, run and proxy outputs for read-again (outputs.rs), token estimates (tokens.rs), argument parsing (args.rs) and small helpers (util.rs). The commands are in cmd/, the MCP proxy in proxy/, `zazzle run` in wrap/.",
+      "boundaries": [
+        "Owns the wire protocol the C invoker in macos/c/zazzle speaks (contracts.json, wire-protocol).",
+        "Keeps persistent state in two places: the cache directory, with derived data only, never file text; and the output store, which keeps clean, run and proxy outputs and their whole input (which can include file text) for an hour, owner-only (contracts.json, output-store). Sessions live in daemon memory.",
+        "Talks to zazzle-csharp-indexer (macos/dotnet/zazzle-csharp-indexer) only through that tool's daemon socket, calling `view` and the structure tools (overview, find_symbol, changed_since, git_log, git_blame, report_gap) by name, starting the daemon when nothing listens.",
+        "testutil.rs is compiled for tests only."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/lib.rs",
+          "symbol": "testutil"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proto.rs",
+          "symbol": "Request"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "Store"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazzled/.dev/folder.json",
+          "entityId": "folder"
+        },
+        {
+          "relation": "depends-on",
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/contracts.json",
+          "entityId": "handshake",
+          "description": "indexer.rs speaks the indexer daemon's socket handshake."
+        }
+      ]
+    }
+  ]
+}

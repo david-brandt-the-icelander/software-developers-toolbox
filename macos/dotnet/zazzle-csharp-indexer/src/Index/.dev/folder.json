@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Live index",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Live index",
+      "summary": "Keeps one git work tree's file list current: which files git sees, the stat key and blob of each, and a log of what changed, from file-change notifications and reconciles.",
+      "purpose": "Holds RootIndex, one per attached root path, with its change sources (FSEvents on macOS, FileSystemWatcher elsewhere) and the two records it keeps per file and per blob. It decides when a file must be analysed again; the analysis itself is done by src/Analysis/ through Engine.GetOrAddBlob.",
+      "boundaries": [
+        "The SQLite store and the shared blob tables belong to src/ (Store.cs, Engine.cs); this folder reads and writes them only through Store and Engine.",
+        "git decides which files exist and which are ignored; the index never applies ignore rules itself.",
+        "The tools in src/Tools/ call Files, Sync, ChangesSince, Gen and WaitReady; they do not reach into the index's state."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "ChangeSources.Create"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.Attach"
+        }
+      ]
+    }
+  ]
+}
