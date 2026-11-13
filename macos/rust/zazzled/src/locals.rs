@@ -1,14 +1,16 @@
-// Short names for long locals in the Python, TypeScript and Dart terse view: a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
 
 const MIN_LEN: usize = 6;
-const KEYWORDS: [&str; 56] = [
+const KEYWORDS: &[&str] = &[
     "and", "as", "case", "def", "del", "do", "elif", "else", "enum", "for", "from", "get", "if", "in", "is",
     "late", "let", "new", "not", "null", "of", "on", "or", "pass", "set", "this", "true", "try", "type",
     "var", "void", "with", "None", "True", "abs", "all", "any", "bin", "chr", "dir", "hex", "id", "int",
-    "iter", "len", "list", "map", "max", "min", "next", "num", "oct", "ord", "pow", "str", "sum",
+    "iter", "len", "list", "map", "max", "min", "next", "num", "oct", "ord", "pow", "str", "sum", "box",
+    "dyn", "fn", "impl", "loop", "mod", "move", "mut", "pub", "ref", "self", "use", "cap", "chan", "func",
+    "go", "make", "nil", "byte", "char",
 ];
 
 // One local to rename: the byte spans of its declaration and uses, and its new name.
@@ -84,7 +86,7 @@ fn words(text: &str) -> impl Iterator<Item = &str> {
 fn is_scope(kind: &str, lang: Lang) -> bool {
     match lang {
         Lang::Python => kind == "function_definition",
-        Lang::TypeScript | Lang::Tsx => matches!(
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => matches!(
             kind,
             "function_declaration"
                 | "function_expression"
@@ -94,20 +96,32 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
                 | "generator_function"
         ),
         Lang::Dart => matches!(kind, "function_body" | "function_expression_body"),
+        Lang::Rust => matches!(kind, "function_item" | "closure_expression"),
+        Lang::Go => matches!(kind, "function_declaration" | "method_declaration" | "func_literal"),
+        Lang::Java => matches!(kind, "method_declaration" | "constructor_declaration" | "lambda_expression"),
     }
 }
 
 // True for a node kind that is a parameter list.
 fn is_params(kind: &str) -> bool {
-    matches!(kind, "parameters" | "lambda_parameters" | "formal_parameters" | "formal_parameter_list")
+    matches!(
+        kind,
+        "parameters"
+            | "lambda_parameters"
+            | "formal_parameters"
+            | "formal_parameter_list"
+            | "closure_parameters"
+            | "parameter_list"
+            | "inferred_parameters"
+    )
 }
 
 // True when a function reaches its locals by name at run time (eval, locals(), vars(), exec, with), so nothing in it is renamed.
 fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
     let dynamic: &[&str] = match lang {
         Lang::Python => &["locals", "vars", "eval", "exec"],
-        Lang::TypeScript | Lang::Tsx => &["eval"],
-        Lang::Dart => &[],
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => &["eval"],
+        Lang::Dart | Lang::Rust | Lang::Go | Lang::Java => &[],
     };
     nodes.iter().any(|n| {
         n.kind() == "with_statement" && lang != Lang::Python
@@ -141,8 +155,17 @@ fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
         (Lang::Python, "assignment" | "for_statement" | "for_in_clause") => field("left"),
         (Lang::Python, "as_pattern_target") => n.named_child(0),
         (Lang::Python, "named_expression") => field("name"),
-        (Lang::TypeScript | Lang::Tsx, "variable_declarator") => field("name"),
-        (Lang::TypeScript | Lang::Tsx, "for_in_statement") if has_decl_keyword(n) => field("left"),
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java, "variable_declarator") => {
+            field("name")
+        }
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx, "for_in_statement") if has_decl_keyword(n) => {
+            field("left")
+        }
+        (Lang::Java, "enhanced_for_statement") => field("name"),
+        (Lang::Rust, "let_declaration" | "for_expression") => field("pattern"),
+        (Lang::Go, "short_var_declaration") => field("left"),
+        (Lang::Go, "range_clause") if has_decl_keyword(n) => field("left"),
+        (Lang::Go, "var_spec") => return kids(n).filter(|c| c.kind() == "identifier").collect(),
         (Lang::Dart, "initialized_variable_declaration" | "initialized_identifier" | "for_statement") => {
             field("name")
         }
@@ -151,17 +174,24 @@ fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
     target.map(targets).unwrap_or_default()
 }
 
-// True when a for-in or for-of statement declares its variable with const, let or var.
+// True when a for-in or for-of statement declares its variable with const, let or var, or a Go range clause with `:=`.
 fn has_decl_keyword(n: Node) -> bool {
-    (0..n.child_count()).filter_map(|i| n.child(i)).any(|c| matches!(c.kind(), "const" | "let" | "var"))
+    (0..n.child_count())
+        .filter_map(|i| n.child(i))
+        .any(|c| matches!(c.kind(), "const" | "let" | "var" | ":="))
+}
+
+// Returns a node's named children.
+fn kids<'t>(n: Node<'t>) -> impl Iterator<Item = Node<'t>> {
+    (0..n.named_child_count()).filter_map(move |i| n.named_child(i))
 }
 
 // Returns the plain identifiers of an assignment target, looking inside tuple and list patterns.
 fn targets(t: Node) -> Vec<Node> {
     match t.kind() {
         "identifier" => vec![t],
-        "tuple_pattern" | "pattern_list" | "list_pattern" => {
-            (0..t.named_child_count()).filter_map(|i| t.named_child(i)).flat_map(targets).collect()
+        "tuple_pattern" | "pattern_list" | "list_pattern" | "expression_list" => {
+            kids(t).flat_map(targets).collect()
         }
         _ => Vec::new(),
     }
@@ -170,12 +200,22 @@ fn targets(t: Node) -> Vec<Node> {
 // Returns the spans to rename for a local, or None when a use could not be renamed safely.
 fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Option<Vec<(usize, usize)>> {
     let named = |n: &&Node| src[n.byte_range()] == *name;
+    let in_format = |n: &Node| {
+        let t = &src[n.byte_range()];
+        n.kind() == "string_content"
+            && (t.contains(&format!("{{{name}}}")) || t.contains(&format!("{{{name}:")))
+    };
+    if lang == Lang::Rust && nodes.iter().any(in_format) {
+        return None;
+    }
     let mut spans = Vec::new();
     let mut decls = Vec::new();
     for n in nodes.iter().filter(named) {
         match n.kind() {
             "identifier" | "identifier_dollar_escaped" => {}
-            "shorthand_property_identifier" | "shorthand_property_identifier_pattern" => return None,
+            "shorthand_property_identifier"
+            | "shorthand_property_identifier_pattern"
+            | "shorthand_field_identifier" => return None,
             _ => continue,
         }
         let parent = n.parent()?;
@@ -217,15 +257,46 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         (Lang::Python, "keyword_argument") if is_field(parent, "name") => return Role::Other,
         (Lang::Dart, "member_expression") if is_field(parent, "property") => return Role::Other,
         (Lang::Dart, "label" | "cascade_selector") => return Role::Other,
-        (Lang::TypeScript | Lang::Tsx, "arrow_function") if is_field(parent, "parameter") => {
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx, "arrow_function")
+            if is_field(parent, "parameter") =>
+        {
+            return Role::Unsafe
+        }
+        (Lang::Java, "lambda_expression") if is_field(parent, "parameters") => return Role::Unsafe,
+        (Lang::Java, "field_access") if is_field(parent, "field") => return Role::Other,
+        (Lang::Java, "method_invocation") if is_field(parent, "name") => return Role::Other,
+        (Lang::Java | Lang::Rust, "scoped_identifier") if !in_use(parent) => return Role::Other,
+        (Lang::Rust, "macro_invocation") if is_field(parent, "macro") => return Role::Unsafe,
+        (Lang::Rust, "token_tree") if n.prev_sibling().is_some_and(|p| matches!(p.kind(), "::" | ".")) => {
+            return Role::Other
+        }
+        (Lang::Go, "literal_element")
+            if parent.parent().is_some_and(|k| {
+                k.kind() == "keyed_element"
+                    && k.child_by_field_name("key").is_some_and(|c| c.id() == parent.id())
+            }) =>
+        {
             return Role::Unsafe
         }
         (_, "jsx_opening_element" | "jsx_closing_element" | "jsx_self_closing_element") => {
             return Role::Unsafe
         }
-        (_, "function_declaration" | "function_definition" | "class_declaration" | "function_signature") => {
-            return Role::Unsafe
-        }
+        (
+            _,
+            "function_declaration"
+            | "function_definition"
+            | "class_declaration"
+            | "function_signature"
+            | "function_item"
+            | "shorthand_field_initializer"
+            | "method_declaration"
+            | "constructor_declaration"
+            | "labeled_statement"
+            | "break_statement"
+            | "continue_statement"
+            | "marker_annotation"
+            | "annotation",
+        ) => return Role::Unsafe,
         _ => {}
     }
     let mut p = Some(parent);
@@ -239,6 +310,8 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
                     | "import_from_statement"
                     | "class_definition"
                     | "case_clause"
+                    | "use_declaration"
+                    | "class_body"
             );
         let debug_format = x.kind() == "interpolation" && self_documenting(&src[x.byte_range()]);
         if unsafe_kind || debug_format {
@@ -249,6 +322,11 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
     Role::Use
 }
 
+// True when a node is part of a Rust `use` declaration.
+fn in_use(n: Node) -> bool {
+    std::iter::successors(Some(n), |x| x.parent()).any(|x| x.kind() == "use_declaration")
+}
+
 // True for a Python f-string field like `{name=}` that prints the expression's own text.
 fn self_documenting(field: &str) -> bool {
     let inner = field.trim_start_matches('{').trim_end_matches('}');
@@ -256,15 +334,22 @@ fn self_documenting(field: &str) -> bool {
     expr.trim_end().ends_with('=') && !["==", "!=", "<=", ">="].iter().any(|op| expr.trim_end().ends_with(op))
 }
 
-// Returns the block a TypeScript or Dart declaration is visible in: its enclosing block or loop.
+// Returns the block a declaration outside Python is visible in: its enclosing block, loop, or Go if or switch.
 fn block_of(decl: Node) -> Option<Node> {
-    const BLOCKS: [&str; 6] = [
+    const BLOCKS: &[&str] = &[
         "statement_block",
         "block",
         "for_statement",
         "for_in_statement",
         "function_body",
         "function_expression_body",
+        "for_expression",
+        "enhanced_for_statement",
+        "constructor_body",
+        "switch_block",
+        "if_statement",
+        "expression_switch_statement",
+        "type_switch_statement",
     ];
     std::iter::successors(decl.parent(), |x| x.parent()).find(|x| BLOCKS.contains(&x.kind()))
 }
@@ -329,12 +414,7 @@ mod tests {
 
     // Returns each rename as `old->new@count` for a snippet, in order.
     fn renamed(src: &str, lang: Lang) -> Vec<String> {
-        let language: tree_sitter::Language = match lang {
-            Lang::Python => tree_sitter_python::LANGUAGE.into(),
-            Lang::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-            Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
-        };
+        let language = crate::terse::grammar(lang);
         crate::arena::scope(|| {
             let mut parser = Parser::new();
             parser.set_language(&language).expect("grammar");
@@ -464,5 +544,88 @@ mod tests {
         assert!(none("void f() {\n  if (a) { final counter = 1; }\n  print(counter);\n}\n"));
         let member = "void f() {\n  final counter = 1;\n  print(x.counter + counter.abs());\n}\n";
         assert_eq!(renamed(member, Lang::Dart), ["counter->cou@2"]);
+    }
+
+    // Checks Rust locals, closures, paths and fields, and the places that keep a name: format strings, shorthand, shadowing, macro names, use.
+    #[test]
+    fn test_rust() {
+        let src = "fn f(invoice_repo: &Repo) {\n    let invoice_rows = invoice_repo.rows();\n    let mut running_total = 0;\n    for invoice_row in &invoice_rows {\n        running_total += invoice_row.amount;\n    }\n    let total = |value_item: u8| value_item + 1;\n    std::mem::drop(invoice_rows);\n    s.running_total = running_total;\n}\n";
+        assert_eq!(
+            renamed(src, Lang::Rust),
+            ["invoice_rows->ir@3", "running_total->rt@3", "invoice_row->ir2@2"]
+        );
+        let none = |src: &str| renamed(src, Lang::Rust).is_empty();
+        assert!(none("fn f() {\n    let counter = 1;\n    println!(\"{counter}\");\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    format!(\"{counter:>3}\");\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    S { counter }\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    let S { counter, .. } = s;\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    let counter = counter + 1;\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    counter!(x);\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    use a::counter;\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    fn counter() {}\n}\n"));
+        assert!(none("fn f() {\n    let counter = 1;\n    let g = |counter| counter;\n}\n"));
+        assert_eq!(
+            renamed("fn f() {\n    let counter = 1;\n    m!(counter, a::counter);\n}\n", Lang::Rust),
+            ["counter->cou@2"]
+        );
+        assert_eq!(
+            renamed("fn f() {\n    let counter = 1;\n    a::counter(counter);\n}\n", Lang::Rust),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks Go locals from := and var and range, and the places that keep a name: struct keys, redeclared names, if-scoped names.
+    #[test]
+    fn test_go() {
+        let src = "func f(repo Repo) {\n\tinvoiceRows, err := repo.Rows()\n\tvar runningTotal int\n\tfor _, invoiceRow := range invoiceRows {\n\t\trunningTotal += invoiceRow.Amount\n\t}\n\tg := func(valueItem int) int { return valueItem }\n\tuse(err, g, x.runningTotal)\n}\n";
+        assert_eq!(renamed(src, Lang::Go), ["invoiceRows->ir@2", "runningTotal->rt@2", "invoiceRow->ir2@2"]);
+        let none = |src: &str| renamed(src, Lang::Go).is_empty();
+        assert!(none("func f() {\n\tcounter := 1\n\t_ = T{counter: counter}\n}\n"));
+        assert!(none("func f() {\n\tcounter, a := 1, 2\n\tcounter, b := 3, 4\n}\n"));
+        assert!(none("func f() {\n\tif counter := g(); counter > 0 {\n\t}\n\tuse(counter)\n}\n"));
+        assert!(none("func f(counter int) {\n\tcounter := 1\n}\n"));
+        assert!(none("func f() {\n\tfor counter = range xs {\n\t}\n}\n"));
+        assert_eq!(
+            renamed("func f() {\n\tif counter := g(); counter > 0 {\n\t}\n}\n", Lang::Go),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks Java locals and enhanced-for, fields and method names, and the places that keep a name: lambdas, labels, local classes.
+    #[test]
+    fn test_java() {
+        let src = "class A {\n  void f(Repo repo) {\n    List<Row> invoiceRows = repo.rows();\n    int runningTotal = 0;\n    for (Row invoiceRow : invoiceRows) { runningTotal += invoiceRow.amount; }\n    this.runningTotal = runningTotal;\n    invoiceRows.runningTotal();\n  }\n}\n";
+        assert_eq!(
+            renamed(src, Lang::Java),
+            ["invoiceRows->ir@3", "runningTotal->rt@3", "invoiceRow->ir2@2"]
+        );
+        let none = |src: &str| renamed(src, Lang::Java).is_empty();
+        assert!(none("class A {\n  void f() {\n    int counter = 1;\n    g(counter -> counter);\n  }\n}\n"));
+        assert!(none(
+            "class A {\n  void f() {\n    int counter = 1;\n    g((counter, b) -> counter);\n  }\n}\n"
+        ));
+        assert!(none("class A {\n  void f() {\n    int counter = 1;\n    counter: for (;;) { break counter; }\n  }\n}\n"));
+        assert!(none(
+            "class A {\n  void f() {\n    int counter = 1;\n    new Object() { int counter = 2; };\n  }\n}\n"
+        ));
+        assert!(none("class A {\n  void counter() {\n    int counter = 1;\n  }\n}\n"));
+        assert!(none("class A {\n  void f(int counter) {\n    counter = 1;\n  }\n}\n"));
+        assert_eq!(
+            renamed(
+                "class A {\n  A() {\n    int counter = 1;\n    a.b.counter(counter);\n  }\n}\n",
+                Lang::Java
+            ),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks JavaScript locals follow the TypeScript rules.
+    #[test]
+    fn test_javascript() {
+        let src = "function f() {\n  const invoiceRows = g();\n  return invoiceRows;\n}\n";
+        assert_eq!(renamed(src, Lang::JavaScript), ["invoiceRows->ir@2"]);
+        assert!(
+            renamed("function f() {\n  const counter = 1;\n  eval('x');\n}\n", Lang::JavaScript).is_empty()
+        );
     }
 }

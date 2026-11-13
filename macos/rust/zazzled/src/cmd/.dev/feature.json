@@ -316,9 +316,57 @@
       ]
     },
     {
+      "id": "style-terse-view",
+      "name": "Terse CSS and SCSS view",
+      "description": "`read` on a .css or .scss file returns a terse view built in zazzled instead of the stylesheet, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "CSS and SCSS terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS @debug lines; it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "outcome": "An agent reads stylesheets without paying for licence banners, font and animation boilerplate, duplicate prefixes and inline images, and still has to read the real stylesheet before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The rules are line-based: a comment or block sharing its first or last line with other rules is not hidden, and minified files gain little.",
+        "Comments of three lines or fewer stay, since they are usually section titles."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "block_ids"
+        },
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "at_block"
+        },
+        {
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "shorten_data_uris"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        }
+      ]
+    },
+    {
       "id": "code-terse-view",
-      "name": "Terse Python, TypeScript and Dart view",
-      "description": "`read` on a .py, .pyi, .ts, .mts, .cts, .tsx or .dart file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
+      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go and Java view",
+      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go or .java file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/terse.rs",
@@ -330,15 +378,16 @@
         },
         {
           "path": "macos/rust/zazzled/README.md",
-          "symbol": "Python, TypeScript and Dart terse view"
+          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go and Java terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) and catch clauses that only log and rethrow the caught exception; it drops public, private and protected from TypeScript class members and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
-      "outcome": "An agent understands Python, TypeScript and Dart code from fewer tokens, and still has to read the real code before it can edit it.",
+      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) catch clauses that only log and rethrow the caught exception, Go `if err != nil` blocks that only log and return the error (kept on one line), and `if` blocks that only check a log level and log; it drops public, private and protected from TypeScript class members and Java declarations, and Rust pub except on pub use, and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
+      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go and Java code from fewer tokens, and still has to read the real code before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
-        "A local is renamed only where every place its name appears in its function can be renamed safely; otherwise it keeps its name."
+        "A local is renamed only where every place its name appears in its function can be renamed safely; otherwise it keeps its name.",
+        "Go log.Fatal and log.Panic calls are never hidden, since they stop the program."
       ],
       "implementation": [
         {
@@ -364,6 +413,18 @@
         {
           "path": "macos/rust/zazzled/src/locals.rs",
           "symbol": "renames"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_log_macro"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "returns_error"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_access_modifier"
         }
       ]
     },

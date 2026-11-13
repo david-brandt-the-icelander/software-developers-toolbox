@@ -23,6 +23,7 @@ pub mod proxy;
 pub mod server;
 pub mod session;
 pub mod store;
+pub mod styles;
 pub mod symbols;
 pub mod terse;
 pub mod tokens;
