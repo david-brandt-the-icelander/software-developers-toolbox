@@ -62,7 +62,8 @@ jobs:
       # One zazz test at a time with a hard limit, so a test that hangs under the macOS sandbox shows up by name.
       - name: zazz tests one at a time (macOS, 15 minute limit)
         if: runner.os == 'macOS'
-        run: perl -e 'alarm 900; exec @ARGV' cargo test -p zazzled --locked zazz:: -- --test-threads=1
+        run: |
+          perl -e 'alarm 900; exec @ARGV' cargo test -p zazzled --locked zazz:: -- --test-threads=1
       - run: cargo test --workspace --locked
       - name: Name the failing zazzled test (single-threaded rerun)
         if: failure()
