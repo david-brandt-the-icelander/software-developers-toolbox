@@ -3,12 +3,12 @@
   "kind": "configuration",
   "title": "zazzle-csharp-indexer settings",
   "folder": "macos/dotnet/zazzle-csharp-indexer/src",
-  "description": "Settings read by the top-level files. The daemon's idle period is in src/Daemon/.dev/configuration.json, the run switch in src/Tools/.dev/configuration.json and the hook switch in src/Cli/.dev/configuration.json.",
+  "description": "Settings read by the top-level files. The daemon's idle period is in src/Daemon/.dev/configuration.json and the hook switch in src/Cli/.dev/configuration.json.",
   "entities": [
     {
       "id": "state-dir",
       "title": "State directory",
-      "summary": "Where store.db, the usage log, the daemon socket and config.json live.",
+      "summary": "Where store.db, the usage log and the daemon socket live.",
       "key": "ZAZZLE_INDEXER_STATE_DIR",
       "type": "directory path (environment variable)",
       "default": "~/Library/Application Support/zazzle-csharp-indexer on macOS; elsewhere $XDG_STATE_HOME/zazzle-csharp-indexer, or ~/.local/state/zazzle-csharp-indexer when XDG_STATE_HOME is unset or empty",

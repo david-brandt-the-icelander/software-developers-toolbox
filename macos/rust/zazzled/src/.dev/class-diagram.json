@@ -59,7 +59,7 @@
     { "id": "KindRow", "name": "KindRow", "kind": "type", "sources": ["macos/rust/zazzled/src/outline.rs"], "members": ["(&'static str, &'static str, bool): tree-sitter kind, label, contains symbols"] },
     { "id": "Miss", "name": "Miss", "kind": "enum", "sources": ["macos/rust/zazzled/src/symbols.rs"], "members": ["None(Vec<String>)", "Many(usize, Vec<String>)", "Index(usize)"] },
     { "id": "Stored", "name": "Stored", "kind": "struct", "sources": ["macos/rust/zazzled/src/outputs.rs"], "members": ["shown: String", "full: String"] },
-    { "id": "Indexer", "name": "Indexer", "kind": "struct", "sources": ["macos/rust/zazzled/src/indexer.rs"], "members": ["exe: PathBuf", "state: PathBuf", "locate() -> Result<Indexer, String>", "view(path) -> Result<String, String>"] },
+    { "id": "Indexer", "name": "Indexer", "kind": "struct", "sources": ["macos/rust/zazzled/src/indexer.rs"], "members": ["exe: PathBuf", "state: PathBuf", "locate() -> Result<Indexer, String>", "view(path) -> Result<String, String>", "ask(root, tool, args) -> Result<String, String>"] },
     { "id": "Pool", "name": "Pool", "kind": "struct", "sources": ["macos/rust/zazzled/src/pool.rs"], "members": ["tx: Mutex<Sender<Job>>"] },
     { "id": "Job", "name": "Job", "kind": "type", "sources": ["macos/rust/zazzled/src/pool.rs"], "members": ["Box<dyn FnOnce() + Send>"] },
     { "id": "Batch", "name": "Batch", "kind": "struct", "sources": ["macos/rust/zazzled/src/pool.rs"], "members": ["state: Mutex<State>", "idle: Condvar", "work: WorkPtr", "help()", "close() -> Option<Box<dyn Any + Send>>"] },

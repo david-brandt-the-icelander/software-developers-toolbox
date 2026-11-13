@@ -20,7 +20,7 @@ fail() { echo "smoke: $*" >&2; exit 1; }
 
 # A daemon that never listens: the invoker must give up with a clear message.
 if ZAZZLE_SOCK=$tmp/none ZAZZLE_DAEMON=/usr/bin/true "$zazzle" version 2>"$tmp/err"; then fail "expected failure without daemon"; fi
-grep -q "daemon did not start" "$tmp/err" || fail "missing 'daemon did not start': $(cat "$tmp/err")"
+[ "$(cat "$tmp/err")" = "zazzle: daemon did not start" ] || fail "expected 'zazzle: daemon did not start': $(cat "$tmp/err")"
 
 export ZAZZLE_SOCK=$tmp/sock
 "$zazzled" serve --socket "$ZAZZLE_SOCK" &
@@ -104,7 +104,7 @@ rc=0
 out=$(ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" fix-network --verbose x 2>&1) || rc=$?
 [ "$rc" = 3 ] && [ "$out" = "fix-network --verbose x" ] || fail "tool exec: rc=$rc out='$out'"
 if ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" free-disk-space 2>"$tmp/err"; then fail "missing tool must fail"; fi
-grep -q "cannot run the tool" "$tmp/err" || fail "missing tool message: $(cat "$tmp/err")"
+grep -q "^zazzle: cannot run the tool (error " "$tmp/err" || fail "missing tool message: $(cat "$tmp/err")"
 # `zazzle proxy` and `zazzle run` exec `zazzled proxy` and `zazzled wrap` (here a stand-in from $ZAZZLE_DAEMON) with the arguments and exit status.
 printf '#!/bin/sh\necho "zazzled $*"\nexit 4\n' > "$tmp/bin/fake-zazzled"
 chmod +x "$tmp/bin/fake-zazzled"

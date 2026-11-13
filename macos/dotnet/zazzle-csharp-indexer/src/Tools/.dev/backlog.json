@@ -5,49 +5,13 @@
   "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
   "entities": [
     {
-      "id": "outline-path-escape",
-      "title": "outline reads, and indexes, files outside the root",
-      "summary": "outline passes the agent's path to RootIndex.Freshen without Root.Resolve, so a path like ../x or an absolute path is read, analysed and added to the root's file list.",
-      "type": "defect",
-      "priority": "medium",
-      "expected": "A path outside the root is refused with outside_root, as read does, following the rule in macos/dotnet/style.md: resolve every agent-supplied path through Root.Resolve.",
-      "observed": "OutlineTool.Run only uses Root.Resolve to test for a directory; OutlineFile calls Freshen(rel), whose Analyze combines the root with rel, reads any existing file, stores its blob, adds a file record under the escaping path and logs it as added, until the next reconcile removes it. The outline (declarations and signatures) of that file is returned.",
-      "acceptanceCriteria": [
-        "outline of ../x and of an absolute path returns outside_root and leaves the index unchanged, with a test like test_read_rejects_escape."
-      ],
-      "origin": {
-        "kind": "agent",
-        "description": "Found while documenting the folder, by reading OutlineTool and RootIndex.Analyze; not reproduced."
-      },
-      "status": "open",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.OutlineFile"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
-          "symbol": "RootIndex.Freshen"
-        },
-        {
-          "path": "macos/dotnet/style.md",
-          "symbol": "Errors and safety"
-        }
-      ]
-    },
-    {
       "id": "git-paths-unresolved",
       "title": "git_log and git_blame do not resolve paths",
       "summary": "The path argument is passed to git after the root name is split off, without Root.Resolve.",
       "type": "defect",
       "priority": "low",
       "expected": "A path outside the root is refused with outside_root, following macos/dotnet/style.md.",
-      "observed": "GitLogTool.Run and GitBlameTool.Run pass the relative path straight to git -C <root>; when the root is a subdirectory of its repository, ../ paths answer for files elsewhere in the repository, and other escapes surface as git_failed.",
+      "observed": "GitLogTool.Run and GitBlameTool.Run pass the relative path straight to git -C <root>; when the root is a subdirectory of its repository, ../ paths answer for files elsewhere in the repository, and other escapes surface as git_failed. zazzled always attaches the whole work tree and refuses paths outside it, so this matters only to other clients of the socket.",
       "acceptanceCriteria": [
         "Both tools resolve their path through Root.Resolve, with a test."
       ],
@@ -69,45 +33,6 @@
         {
           "path": "macos/dotnet/style.md",
           "symbol": "Errors and safety"
-        }
-      ]
-    },
-    {
-      "id": "index-cold-unlabelled",
-      "title": "An index_cold answer does not say so",
-      "summary": "When the index is still building, search and find_files answer from a plain scan and log scan / index_cold, but the answer itself carries no label.",
-      "type": "defect",
-      "priority": "low",
-      "expected": "The README's How it works section said fallbacks are labelled \"in the log and the answer\"; an agent should be able to tell a cold-index answer apart.",
-      "observed": "Root.Listing and SearchTool.Candidates set CallInfo.Path and Reason only; the footers of search and find_files are the same as for an indexed answer. The external regex fallback and run do label their answers.",
-      "acceptanceCriteria": [
-        "search and find_files answered while the index is cold say so in their footer, or the README no longer claims it."
-      ],
-      "origin": {
-        "kind": "agent",
-        "description": "Found while documenting the folder, by reading the tools against the README; not reproduced."
-      },
-      "status": "open",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
-          "symbol": "Root.Listing"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.Candidates"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindFilesTool.cs",
-          "symbol": "FindFilesTool.Run"
-        }
-      ],
-      "relationships": [
-        {
-          "relation": "affects",
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/decisions.json",
-          "entityId": "labelled-fallbacks"
         }
       ]
     },

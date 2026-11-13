@@ -7,17 +7,17 @@
     {
       "id": "blob-facts",
       "title": "Stored blob facts",
-      "summary": "The shape of what BlobAnalyzer produces and the store keeps per blob: Bloom bytes, symbols as an array of arrays, identifier occurrences as an object of line lists.",
+      "summary": "The shape of what BlobAnalyzer produces and the store keeps per blob: symbols as an array of arrays, a line count and a one-line digest.",
       "contractType": "persistence",
       "consumers": [
         "src/Store.cs (blob table)",
         "src/Engine.cs (symbol name index)",
-        "src/Tools/ (search, outline, find_symbol, find_references, overview)"
+        "src/Tools/ (find_symbol, overview)"
       ],
-      "definition": "symbols: JSON array of [name, kind, container, line, endLine, sig] (Sym.ToJson), sig cut to 140 characters. idents: JSON object from identifier to a list of 1-based line numbers, negative for a declaration, at most 200 per name (Sym.IdentsToJson). bloom: the filter bytes, empty for binary blobs. digest: \"<lang>, <lines> lines\" with up to eight type or heading names and a member count, or \"binary\".",
+      "definition": "symbols: JSON array of [name, kind, container, line, endLine, sig] (Sym.ToJson), sig cut to 140 characters. digest: \"<lang>, <lines> lines\" with up to eight type or heading names and a member count, or \"binary\".",
       "guarantees": [
         "The facts depend only on the bytes and the file extension.",
-        "Binary blobs have no symbols, identifiers or filter; text over 2 MiB has a filter but no symbols or identifiers."
+        "Binary blobs have no symbols; text over 2 MiB has a line count but no symbols."
       ],
       "compatibility": "Any change to what is produced for the same bytes must bump Store.ExtractorVersion: the store deletes blobs written by another version when it opens, and they are analysed again.",
       "evidenceStatus": "source-verified",
@@ -31,10 +31,6 @@
           "symbol": "Sym.ToJson"
         },
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Sym.cs",
-          "symbol": "Sym.IdentsToJson"
-        },
-        {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
           "symbol": "Store.ExtractorVersion"
         }
@@ -45,7 +41,8 @@
           "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/contracts.json",
           "entityId": "store-db"
         }
-      ]
+      ],
+      "details": "Version 4 of the extractor stopped producing the trigram Bloom filter and the identifier tables, which only search and find_references read."
     }
   ]
 }

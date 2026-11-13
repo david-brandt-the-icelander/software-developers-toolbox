@@ -16,7 +16,7 @@ public static class HookPolicy
     private static readonly HashSet<string> Readers = ["cat", "head", "tail", "less", "more", "bat", "nl"];
     private static readonly HashSet<string> FindActions = ["-delete", "-exec", "-execdir", "-ok", "-okdir"];
 
-    private const string SearchMsg = "Search with zazzle (MCP tool zazzle_find, or `zazzle find PATTERN [PATH..]`): matches grouped by file, capped and deduplicated. For C# declarations and uses, the indexer's find_symbol and find_references answer from the index.";
+    private const string SearchMsg = "Search with zazzle (MCP tool zazzle_find, or `zazzle find PATTERN [PATH..]`): matches grouped by file, capped and deduplicated. For C# declarations, zazzle_find_symbol answers from the indexer's index; zazzle_refs lists uses.";
     private const string FindMsg = "List files with zazzle (MCP tool zazzle_ls, or `zazzle ls [DIR]`; `zazzle find -l PATTERN` for files containing text).";
     private const string ReadMsg = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`). C# files come as a terse view with source line numbers; add source=true (`--source`) for the code and the sha every edit needs.";
     private const string Escape = " If zazzle cannot do what you need, add the comment `# allow-raw` to the command (logged).";

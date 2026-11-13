@@ -7,13 +7,13 @@
     {
       "id": "path-order",
       "title": "No relevance ranking and no dependency graph",
-      "summary": "Results come in path order; there is no relevance ranking and no import or dependency graph.",
+      "summary": "find_symbol puts exact matches first and then orders by path; there is no relevance ranking and no import or dependency graph.",
       "impact": "With many matches, the most useful ones may be on a later page.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.Run"
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+          "symbol": "FindSymbolTool.Run"
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
@@ -26,68 +26,11 @@
       ]
     },
     {
-      "id": "name-based-references",
-      "title": "find_references is name-based",
-      "summary": "References are identifier occurrences with the exact name, not type-resolved; same-named symbols are not told apart.",
-      "impact": "A common member name returns uses of every symbol with that name.",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-          "symbol": "FindReferencesTool.Description"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
-          "symbol": "Known limits"
-        }
-      ]
-    },
-    {
-      "id": "search-size-cap",
-      "title": "search does not look inside files over 2 MiB",
-      "summary": "ScanFile skips any file larger than 2 MiB, including the files over 16 MiB that the prefilter always keeps as candidates.",
-      "impact": "Matches in large text files are silently missing from search; the answer does not say a file was skipped.",
-      "workaround": "Use run with grep or rg for large files.",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.MaxFileBytes"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.ScanFile"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.MayMatch"
-        }
-      ]
-    },
-    {
-      "id": "run-guard-best-effort",
-      "title": "The run allowlist is best effort",
-      "summary": "RunPolicy checks the file name of argv[0] and pattern-matches arguments; it does not confine reads to the root.",
-      "impact": "An allowed program can read any file the user can (for example cat with an absolute path), and a program at another path with an allowed file name passes the check.",
-      "details": "The policy's own comment: it guards against agent mistakes, not hostile agents. The README calls it a best-effort guard against edits.",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs",
-          "symbol": "RunPolicy.Check"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
-          "symbol": "RunTool.Run"
-        }
-      ]
-    },
-    {
       "id": "view-unbounded",
-      "title": "view has no size cap and no token budget",
-      "summary": "ViewTool reads the whole .cs file and returns the whole view; unlike read, search and outline it has no file-size limit, no max_tokens and no paging.",
-      "impact": "A very large or generated C# file comes back in full, however long, and is parsed with Roslyn on every call.",
-      "workaround": "Use read with a line range, or outline, for large files.",
+      "title": "view has no size cap and no paging",
+      "summary": "ViewTool reads the whole .cs file and returns the whole view; it has no file-size limit and no paging. zazzle read shows only the asked range under its budget, but the indexer still builds the view of the whole file.",
+      "impact": "A very large or generated C# file is parsed with Roslyn and sent over the socket in full on every read, however little of it is shown.",
+      "workaround": "zazzle read --source with a line range reads the code without asking for the view.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

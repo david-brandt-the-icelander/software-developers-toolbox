@@ -1,4 +1,4 @@
-// Bridge to zazzle-csharp-indexer: asks its daemon for a C# file's terse view, starting the daemon when needed.
+// Bridge to zazzle-csharp-indexer: asks its daemon for a C# file's terse view and for the structure tools, starting the daemon when needed.
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 const BINARY: &str = "zazzle-csharp-indexer";
 const START_WAIT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(20);
+// The indexer waits up to 30 seconds for a cold index before overview and find_symbol answer.
+const INDEX_TIMEOUT: Duration = Duration::from_secs(45);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(20);
 const HELLO_TRIES: usize = 3;
@@ -57,9 +59,14 @@ fn state_dir() -> Option<PathBuf> {
     )
 }
 
-// Returns the git work tree that contains a path.
+// Returns the git work tree that contains a path, or is it.
 pub fn work_tree(path: &Path) -> Option<&Path> {
-    path.ancestors().skip(1).find(|a| a.join(".git").exists())
+    path.ancestors().find(|a| a.join(".git").exists())
+}
+
+// Returns the name the indexer gives a root: the last part of its path.
+fn root_name(root: &Path) -> String {
+    root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "root".into())
 }
 
 // Runs a command with a timeout and returns its standard output.
@@ -171,14 +178,13 @@ impl Indexer {
     }
 
     // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version.
-    fn call(&self, root: &Path, tool: &str, args: Value) -> Result<String, String> {
-        let name =
-            root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "root".into());
+    fn call(&self, root: &Path, tool: &str, args: Value, timeout: Duration) -> Result<String, String> {
+        let name = root_name(root);
         let hello = json!({"version": self.version()?, "roots": [format!("{name}={}", root.display())]});
         for _ in 0..HELLO_TRIES {
             let mut w = self.connect()?;
-            let _ = w.set_read_timeout(Some(IO_TIMEOUT));
-            let _ = w.set_write_timeout(Some(IO_TIMEOUT));
+            let _ = w.set_read_timeout(Some(timeout));
+            let _ = w.set_write_timeout(Some(timeout));
             let mut r = BufReader::new(w.try_clone().map_err(|e| format!("indexer connection: {e}"))?);
             send(&mut w, &hello)?;
             let reply = receive(&mut r)?;
@@ -190,7 +196,9 @@ impl Indexer {
                 return Err(format!("indexer refused: {}", reply["error"].as_str().unwrap_or("no reason")));
             }
             let mut args = args.clone();
-            args["path"] = json!(format!("{name}:{}", args["path"].as_str().unwrap_or_default()));
+            if let Some(rel) = args.get("path").and_then(Value::as_str).map(str::to_string) {
+                args["path"] = json!(format!("{name}:{rel}"));
+            }
             send(
                 &mut w,
                 &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}),
@@ -209,8 +217,30 @@ impl Indexer {
     pub fn view(&self, path: &Path) -> Result<String, String> {
         let root = work_tree(path).ok_or("not inside a git work tree")?;
         let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
-        self.call(root, "view", json!({"path": rel.to_string_lossy()}))
+        self.call(root, "view", json!({"path": rel.to_string_lossy()}), IO_TIMEOUT)
     }
+
+    // Runs one of the indexer's structure tools on a git work tree; a `path` argument is relative to that tree.
+    pub fn ask(&self, root: &Path, tool: &str, args: Value) -> Result<String, String> {
+        self.call(root, tool, args, INDEX_TIMEOUT)
+    }
+}
+
+// Rewrites the indexer's `root:path` references at the start of a line (or after an `A `, `M ` or `D ` change mark) as paths relative to the working directory.
+pub fn localize(text: &str, root: &Path, cwd: &Path) -> String {
+    let tag = format!("{}:", root_name(root));
+    let local = |line: &str| -> String {
+        let (mark, rest) = match line.get(..2) {
+            Some(m @ ("A " | "M " | "D ")) => (m, &line[2..]),
+            _ => ("", line),
+        };
+        let Some(tail) = rest.strip_prefix(&tag).filter(|t| !t.is_empty() && !t.starts_with(' ')) else {
+            return line.to_string();
+        };
+        let end = tail.find(':').unwrap_or(tail.len());
+        format!("{mark}{}{}", crate::util::display(&root.join(&tail[..end]), cwd), &tail[end..])
+    };
+    text.lines().map(local).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(test)]
@@ -354,6 +384,42 @@ pub mod tests {
         let ix = Indexer { exe, state: dir.path().to_path_buf() };
         assert_eq!(ix.view(&f).unwrap_err(), "indexer closed the connection");
         assert_eq!(ix.view(&f).unwrap_err(), "indexer sent something that is not JSON");
+    }
+
+    // A daemon that accepts any hello and echoes the tool name and arguments it was called with.
+    pub fn echoing(_hello: &Value, req: &Value) -> (Value, Option<Value>) {
+        let name = req.pointer("/params/name").unwrap_or(&Value::Null);
+        let text = format!("{name} {}", req.pointer("/params/arguments").unwrap_or(&Value::Null));
+        (
+            json!({"ok": true}),
+            Some(json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}})),
+        )
+    }
+
+    // Checks a structure tool call passes its arguments, and prefixes the root name only to a path.
+    #[test]
+    fn test_ask_passes_arguments() {
+        let fake = FakeIndexer::start(echoing);
+        let (t, _) = repo();
+        let name = t.path().file_name().expect("name").to_string_lossy().into_owned();
+        let ix = fake.indexer();
+        assert_eq!(ix.ask(t.path(), "overview", json!({})).expect("overview"), "\"overview\" {}");
+        let blame =
+            ix.ask(t.path(), "git_blame", json!({"path": "src/C.cs", "start_line": 2})).expect("blame");
+        assert_eq!(blame, format!("\"git_blame\" {{\"path\":\"{name}:src/C.cs\",\"start_line\":2}}"));
+    }
+
+    // Checks root:path references become paths relative to the working directory, and other lines are kept.
+    #[test]
+    fn test_localize() {
+        let root = Path::new("/w/repo");
+        let text = "repo:src/A.cs:4 class repo.A | public class A\nA repo:b.cs\nD repo:sub/c d.cs\nrepo: 3 files\ncursor: e;repo=2\nrepo:";
+        assert_eq!(
+            localize(text, root, root),
+            "src/A.cs:4 class repo.A | public class A\nA b.cs\nD sub/c d.cs\nrepo: 3 files\ncursor: e;repo=2\nrepo:"
+        );
+        assert_eq!(localize("repo:x.cs:1 y", root, Path::new("/w/repo/src")), "/w/repo/x.cs:1 y");
+        assert_eq!(work_tree(Path::new("/nonexistent/a/b")), None);
     }
 
     // Checks the executable and state directory come from the environment, and a missing indexer is explained.

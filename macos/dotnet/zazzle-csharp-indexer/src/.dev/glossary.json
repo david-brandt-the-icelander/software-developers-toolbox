@@ -67,18 +67,6 @@
       ]
     },
     {
-      "id": "barrier",
-      "title": "barrier",
-      "summary": "Applying queued change events and re-checking the stat key of every file a query will use, just before it answers.",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
-          "symbol": "RootIndex.Barrier"
-        }
-      ]
-    },
-    {
       "id": "cursor",
       "title": "cursor",
       "summary": "The value changed_since returns: the engine's epoch followed by each root's generation, valid only within the engine run that issued it.",
@@ -105,23 +93,23 @@
     {
       "id": "parsed-heuristic",
       "title": "parsed / heuristic",
-      "summary": "The label on symbol answers: parsed when they come from a Roslyn syntax tree (C#), heuristic when they come from line regexes or word matches.",
+      "summary": "How symbols were found: parsed when they come from a Roslyn syntax tree (C#), heuristic when they come from line regexes (other languages).",
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.OutlineFile"
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
+          "symbol": "CSharpSymbols.Extract"
         },
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-          "symbol": "FindReferencesTool.Render"
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
+          "symbol": "HeuristicSymbols.Extract"
         }
       ]
     },
     {
       "id": "path-reason",
       "title": "path and reason (usage log)",
-      "summary": "How an answer was produced (index, scan, fallback:<engine>, run:<program>, view, hook) and why, recorded for every call.",
+      "summary": "How an answer was produced (index, run:git, view, hook) and why, recorded for every call.",
       "notToBeConfusedWith": [
         "A file path: the usage log's path field is a resolution path."
       ],
@@ -136,7 +124,7 @@
     {
       "id": "state-dir",
       "title": "state directory",
-      "summary": "The per-user directory holding store.db, the usage log, the daemon socket and config.json.",
+      "summary": "The per-user directory holding store.db, the usage log and the daemon socket.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

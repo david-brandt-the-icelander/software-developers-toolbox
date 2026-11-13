@@ -1,4 +1,4 @@
-// `zazzle-csharp-indexer init`: wires zazzle (the front door for files), the indexer and the redirect hook into a project's Claude Code settings.
+// `zazzle-csharp-indexer init`: wires zazzle (the front door for everything) and the redirect hook into a project's Claude Code settings.
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -23,14 +23,21 @@ public static class Init
             list.Add(name);
     }
 
-    // Writes .mcp.json and .claude/settings.json under dir, registering zazzle when it is installed; returns what it did.
+    // Removes a name from a JSON string array.
+    private static void Remove(JsonArray list, string name)
+    {
+        foreach (var a in list.Where(a => a?.GetValue<string>() == name).ToList())
+            list.Remove(a);
+    }
+
+    // Writes .mcp.json and .claude/settings.json under dir, registering zazzle when it is installed and dropping the indexer's own server, which lists no tools; returns what it did.
     public static List<string> Apply(string dir, string exe, string? zazzled)
     {
         var done = new List<string>();
         var mcp = Path.Combine(dir, ".mcp.json");
         var m = Load(mcp);
         var servers = m["mcpServers"] as JsonObject ?? new JsonObject();
-        servers["zazzle-csharp-indexer"] = new JsonObject { ["type"] = "stdio", ["command"] = exe, ["args"] = new JsonArray("serve") };
+        servers.Remove("zazzle-csharp-indexer");
         if (zazzled is not null)
             servers["zazzle"] = new JsonObject { ["type"] = "stdio", ["command"] = zazzled, ["args"] = new JsonArray("mcp") };
         else
@@ -54,13 +61,13 @@ public static class Init
         s["hooks"] = hooks;
         var perms = s["permissions"] as JsonObject ?? new JsonObject();
         var allow = perms["allow"] as JsonArray ?? new JsonArray();
-        AddOnce(allow, "mcp__zazzle-csharp-indexer");
+        Remove(allow, "mcp__zazzle-csharp-indexer");
         if (zazzled is not null)
             AddOnce(allow, "mcp__zazzle");
         perms["allow"] = allow;
         s["permissions"] = perms;
         var enabled = s["enabledMcpjsonServers"] as JsonArray ?? new JsonArray();
-        AddOnce(enabled, "zazzle-csharp-indexer");
+        Remove(enabled, "zazzle-csharp-indexer");
         if (zazzled is not null)
             AddOnce(enabled, "zazzle");
         s["enabledMcpjsonServers"] = enabled;
@@ -75,7 +82,8 @@ public static class Init
         - Use zazzle (MCP server `zazzle`) instead of grep, rg, find, cat, sed or the built-in Read for C# files: `zazzle_find`, `zazzle_read`, `zazzle_ls`, `zazzle_outline`, `zazzle_refs`, `zazzle_edit`.
         - C# files read as a terse behavioural view with source line numbers and no sha. Read with `source: true` for the code and the sha every edit needs.
         - A reply tagged `[r:ID]` comes back exactly with `zazzle_read_again`; keep ids in notes instead of content.
-        - For C# structure, ask zazzle-csharp-indexer (MCP server `zazzle-csharp-indexer`): `overview`, `find_symbol`, `find_references`, `changed_since`, `git_log`, `git_blame`.
+        - For C# structure, zazzle asks zazzle-csharp-indexer: `zazzle_overview`, `zazzle_find_symbol`, `zazzle_refs`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`.
+        - Say what you needed and could not get with `zazzle_report_gap`.
         """;
 
     // Reads a JSON object file, or an empty object when it does not exist.

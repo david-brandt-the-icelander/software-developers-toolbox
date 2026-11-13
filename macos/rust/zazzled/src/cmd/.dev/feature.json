@@ -3,7 +3,7 @@
   "kind": "feature",
   "title": "zazzle command features",
   "folder": "macos/rust/zazzled/src/cmd",
-  "description": "The behavior the commands offer beyond answering: bounded output, checked edits, reading one symbol, the terse C# view and cleaning piped output.",
+  "description": "The behavior the commands offer beyond answering: bounded output, checked edits, reading one symbol, the terse C# view, C# structure from the indexer and cleaning piped output.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cmd/mod.rs",
@@ -272,6 +272,59 @@
       ]
     },
     {
+      "id": "csharp-structure",
+      "name": "C# structure from the indexer",
+      "description": "overview, find-symbol, changed-since, git-log, git-blame and report-gap (zazzle_overview ... zazzle_report_gap) are answered by zazzle-csharp-indexer's daemon, which zazzle reaches as it does for the terse view; the indexer offers agents no tools of its own.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "C# structure"
+        }
+      ],
+      "behavior": "zazzled finds the git work tree that holds the working directory, makes path arguments relative to it (refusing paths outside it), calls the indexer's tool of the same name over the daemon socket with the work tree as the session's root, starting the daemon when nothing listens, and rewrites the `root:path` references at the start of the answer's lines (or after an `A `, `M ` or `D ` mark) as paths relative to the working directory. The answer then goes through the same budget and session dedupe as every command; report-gap's is never deduplicated.",
+      "outcome": "An agent asks one server for files and for structure, and can read what find-symbol or changed-since names with zazzle read straight away.",
+      "constraints": [
+        "The working directory must be inside a git work tree, and the indexer installed ($ZAZZLE_INDEXER, beside zazzled, or on PATH).",
+        "Answers wait up to 45 s for the indexer, which itself waits up to 30 s for a cold index before overview and find-symbol answer.",
+        "Paths with a colon in them are cut at the colon when rewritten.",
+        "The indexer's tools see only the one work tree zazzle attached, so their root filters are not offered."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::locate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::relative"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "Target::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "localize"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "TOOLS"
+        }
+      ]
+    },
+    {
       "id": "clean-output",
       "name": "Clean piped output",
       "description": "`CMD | zazzle clean` prints what an agent needs from a command's output, with every removal marked.",
@@ -368,6 +421,12 @@
       "folder": "macos/rust/zazzled/src",
       "path": "macos/rust/zazzled/src/.dev/feature.json",
       "relationship": "Stored outputs, which keep clean's answers and inputs for read-again."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
+      "relationship": "The change cursors zazzle_changed_since hands out."
     }
   ]
 }

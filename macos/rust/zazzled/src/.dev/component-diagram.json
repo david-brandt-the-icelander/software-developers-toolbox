@@ -67,8 +67,8 @@
     },
     {
       "id": "mcp",
-      "name": "MCP server (mcp.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the seven zazzle tools, each call forwarded to the daemon under one session per connection.",
+      "name": "MCP server (mcp.rs, mcp_structure.rs)",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the thirteen zazzle tools (seven file tools, six structure tools answered by the indexer), each call forwarded to the daemon under one session per connection.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -122,7 +122,7 @@
     {
       "id": "indexer",
       "name": "C# indexer bridge (indexer.rs)",
-      "responsibility": "Finds zazzle-csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the file's git work tree, and asks its `view` tool for a C# file's terse view.",
+      "responsibility": "Finds zazzle-csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the git work tree, asks its `view` tool for a C# file's terse view and its structure tools for overview, find_symbol, changed_since, git_log, git_blame and report_gap, and rewrites root:path references for the working directory.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -173,7 +173,7 @@
     {
       "id": "csharp-indexer",
       "name": "zazzle-csharp-indexer",
-      "responsibility": "The C# tool in this repository whose daemon answers the `view` tool over its own unix socket.",
+      "responsibility": "The C# tool in this repository whose daemon answers `view` and the structure tools over its own unix socket; it lists no tools to clients.",
       "folder": "macos/dotnet/zazzle-csharp-indexer",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
     }
@@ -411,7 +411,7 @@
       "from": "cmd",
       "to": "indexer",
       "kind": "depends-on",
-      "description": "read's terse C# view."
+      "description": "read's terse C# view and the structure commands."
     },
     {
       "from": "cmd",
@@ -507,7 +507,7 @@
       "from": "indexer",
       "to": "csharp-indexer",
       "kind": "depends-on",
-      "description": "Runs `zazzle-csharp-indexer --version` and `zazzle-csharp-indexer daemon`, and speaks JSON lines on its daemon socket: a hello, then tools/call view."
+      "description": "Runs `zazzle-csharp-indexer --version` and `zazzle-csharp-indexer daemon`, and speaks JSON lines on its daemon socket: a hello, then tools/call of view or a structure tool."
     },
     {
       "from": "symbols",

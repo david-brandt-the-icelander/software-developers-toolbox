@@ -7,48 +7,27 @@
     {
       "id": "heuristic-languages",
       "title": "Only C# is parsed",
-      "summary": "Every language but C# gets symbols from per-line regexes and identifiers from word matches.",
-      "impact": "outline and find_symbol can miss or misread declarations outside C# (multi-line signatures, macros, nested items get no container), and find_references for those languages also counts words in comments and strings. Languages without rules (JSON, YAML, TOML, SQL, XML, plain text) get no symbols, and only code languages get identifier tables.",
-      "workaround": "Use search for what the outline misses.",
+      "summary": "Every language but C# gets symbols from per-line regexes.",
+      "impact": "find_symbol and overview can miss or misread declarations outside C# (multi-line signatures, macros, nested items get no container). Languages without rules (JSON, YAML, TOML, SQL, XML, plain text) get no symbols.",
+      "workaround": "zazzle_outline (tree-sitter for Rust, Python, C, JS/TS) or zazzle_find for what the index misses.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
           "symbol": "HeuristicSymbols.Rules"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
-          "symbol": "HeuristicSymbols.CodeLangs"
         }
       ]
     },
     {
       "id": "symbol-size-cap",
       "title": "No symbols for text over 2 MiB",
-      "summary": "A text blob larger than 2 MiB gets a line count and a Bloom filter but no symbols or identifier table.",
-      "impact": "Such files do not appear in outline, find_symbol or find_references; their digest says \"too large for symbols\".",
+      "summary": "A text blob larger than 2 MiB gets a line count but no symbols.",
+      "impact": "Such files do not appear in find_symbol; their digest says \"too large for symbols\".",
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
           "symbol": "BlobAnalyzer.MaxSymbolBytes"
-        }
-      ]
-    },
-    {
-      "id": "per-name-cap",
-      "title": "At most 200 occurrences per name and file",
-      "summary": "The identifier table keeps the first 200 lines on which a name occurs in a blob.",
-      "impact": "find_references lists at most 200 lines per name in one file.",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/CSharpSymbols.cs",
-          "symbol": "CSharpSymbols.MaxLinesPerName"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/HeuristicSymbols.cs",
-          "symbol": "HeuristicSymbols.Extract"
         }
       ]
     }

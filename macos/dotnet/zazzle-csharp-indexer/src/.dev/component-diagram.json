@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzle-csharp-indexer source component diagram",
   "folder": "macos/dotnet/zazzle-csharp-indexer/src",
-  "description": "The parts of the zazzle-csharp-indexer executable. The same binary is the stdio server, the shared daemon and the init, hook and report commands; one engine per process holds the store and the indexes.",
+  "description": "The parts of the zazzle-csharp-indexer executable. The same binary is the shared daemon zazzled talks to, the stdio server in front of it and the init, hook and report commands; one engine per process holds the store and the indexes.",
   "sources": [
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
@@ -22,7 +22,7 @@
       "symbol": "PackageReference"
     },
     {
-      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
       "symbol": "TerseView.Build"
     }
   ],
@@ -60,7 +60,7 @@
     {
       "id": "analysis",
       "name": "Content analysis",
-      "responsibility": "Blob ids, Bloom filters, symbols and identifiers from file bytes.",
+      "responsibility": "Blob ids, line counts and symbols from file bytes.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/.dev/component-diagram.json"
     },
@@ -81,20 +81,20 @@
     {
       "id": "mcp",
       "name": "MCP server",
-      "responsibility": "JSON-RPC dispatch to the tools, with a usage-log record per call.",
+      "responsibility": "JSON-RPC dispatch to the internal tools by name, with a usage-log record per call; lists no tools.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp"
     },
     {
       "id": "tools",
-      "name": "MCP tools",
-      "responsibility": "The thirteen tools agents and zazzled call.",
+      "name": "Internal tools",
+      "responsibility": "The seven tools zazzled calls: view, overview, find_symbol, changed_since, git_log, git_blame, report_gap.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/component-diagram.json"
     },
     {
       "id": "cli",
       "name": "Command-line helpers",
-      "responsibility": "init, which also registers zazzle's MCP server when zazzled is installed; the redirect hook's policy, which sends raw reads and searches to zazzle; and report.",
+      "responsibility": "init, which registers zazzle's MCP server and the redirect hook; the hook's policy, which sends raw reads and searches to zazzle; and report.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli"
     },
     {
@@ -106,7 +106,7 @@
     {
       "id": "agent",
       "name": "Coding agent's client (for example Claude Code)",
-      "responsibility": "Starts zazzle-csharp-indexer serve as an MCP server and, after init, runs zazzle-csharp-indexer hook before Bash, Grep, Glob and Read calls.",
+      "responsibility": "After init, runs zazzle-csharp-indexer hook before Bash, Grep, Glob and Read calls; it asks zazzle, not the indexer, for answers.",
       "external": true,
       "actor": "Actors/coding-agent.md"
     },
@@ -119,8 +119,15 @@
     {
       "id": "git",
       "name": "git command-line tool",
-      "responsibility": "Work-tree checks, file listings, ignore checks, log, blame and grep.",
+      "responsibility": "Work-tree checks, file listings, ignore checks, log and blame.",
       "external": true
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "Connects to the daemon socket and calls the internal tools by name for zazzle's C# view and structure tools.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
     }
   ],
   "relationships": [
@@ -194,7 +201,7 @@
       "from": "agent",
       "to": "program",
       "kind": "depends-on",
-      "description": "Starts zazzle-csharp-indexer serve and speaks MCP on its standard input and output; runs zazzle-csharp-indexer hook with a JSON event."
+      "description": "Runs zazzle-csharp-indexer hook with a JSON event before its own Bash, Grep, Glob and Read calls."
     },
     {
       "from": "program",
@@ -242,7 +249,7 @@
       "from": "tools",
       "to": "index",
       "kind": "depends-on",
-      "description": "File records, barrier, change log."
+      "description": "File records, readiness, change log."
     },
     {
       "from": "tools",
@@ -285,6 +292,12 @@
       "to": "usage-log",
       "kind": "depends-on",
       "description": "report reads it; Program writes the hook's records."
+    },
+    {
+      "from": "zazzled",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "Handshake and tools/call over daemon.sock, starting zazzle-csharp-indexer daemon when nothing listens."
     }
   ]
 }

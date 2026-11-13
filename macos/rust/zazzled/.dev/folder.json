@@ -11,7 +11,7 @@
       "purpose": "Holds the zazzled crate of the Cargo workspace in macos/rust: Cargo.toml (dependencies, each commented with its one reason), the README with setup, commands, the C# terse view, symbols, clean, run, the MCP proxy, stored outputs, sessions, safety notes, limits, measurements and test commands for zazzle and zazzled together, coverage.sh (the branch-coverage gate) and the source in src/.",
       "boundaries": [
         "The client half, the C invoker `zazzle`, is a separate program in macos/c/zazzle; the two share only the wire protocol, which this crate defines, and the invoker's exec of `zazzled proxy` and `zazzled wrap`.",
-        "The terse C# view comes from zazzle-csharp-indexer (macos/dotnet/zazzle-csharp-indexer), a separate program reached over its own socket.",
+        "The terse C# view and the structure tools' answers come from zazzle-csharp-indexer (macos/dotnet/zazzle-csharp-indexer), a separate program reached over its own socket.",
         "Builds and releases run from the workspace and the repository's workflows, not from this folder."
       ],
       "evidenceStatus": "source-verified",

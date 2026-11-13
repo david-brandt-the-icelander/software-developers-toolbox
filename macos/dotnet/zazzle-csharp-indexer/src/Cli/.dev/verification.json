@@ -26,11 +26,11 @@
         "grep, rg in a pipeline, git grep, find, cat on a file, sed -n on a file, xargs grep and the Grep and Glob tools are blocked",
         "dotnet build, git log, a heredoc to a file, echo grep, sed -i, tail -f, find -exec, # allow-raw commands and other tools are allowed",
         "the built-in Read is blocked for .cs files in any letter case and allowed for other files or no path, and its message names zazzle read",
-        "blocked commands point at zazzle_find, zazzle_ls and zazzle_read and no longer mention report_gap",
-        "init merges into existing settings, is idempotent and keeps unrelated keys; it registers the zazzle server, its permission and enabled server, and the Bash|Grep|Glob|Read matcher",
-        "without zazzled, init still writes the indexer's entries, writes no zazzle server and says zazzled was not found",
+        "blocked commands point at zazzle_find, zazzle_ls and zazzle_read, and C# declarations at zazzle_find_symbol, never at the indexer's removed tools",
+        "init merges into existing settings, is idempotent and keeps unrelated keys; it registers the zazzle server, its permission and enabled server, and the Bash|Grep|Glob|Read matcher, and removes the indexer's server, permission and enabled server left by an earlier init",
+        "without zazzled, init writes no MCP server at all and says zazzled was not found",
         "zazzled beside the indexer is found, and a directory that does not exist is never returned (the PATH lookup itself is not checked)",
-        "report aggregates tools, resolution paths, run patterns, hook blocks and gap notes"
+        "report aggregates tools, resolution paths, hook blocks and gap notes, also from records of tools since removed, and leaves out search selectivity and run commands"
       ],
       "checks": [
         {

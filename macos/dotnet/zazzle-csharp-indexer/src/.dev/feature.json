@@ -14,7 +14,7 @@
     {
       "id": "usage-loop",
       "name": "Usage-shaped improvement loop",
-      "description": "Every call and redirect is recorded locally, agents can say what was missing, and one command turns that into what to build next.",
+      "description": "Every call and redirect is recorded locally, agents can say what was missing with zazzle_report_gap, and one command turns that into what to build next.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
@@ -25,12 +25,16 @@
           "symbol": "ReportGapTool"
         },
         {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "zazzle_report_gap"
+        },
+        {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
           "symbol": "Report.Build"
         }
       ],
-      "behavior": "McpServer logs each tool call with its timing, size, result counts and how the answer was produced; the hook logs each block and each # allow-raw escape; report_gap adds the agent's note; zazzle-csharp-indexer report summarises per tool, per resolution path, run commands, redirected commands, waste signals, errors and the latest gap notes.",
-      "outcome": "The owner can see which tools agents use, where the index could not answer and what they still do by hand, from real sessions.",
+      "behavior": "McpServer logs each internal tool call zazzled makes with its timing, size, result counts and how the answer was produced; the hook logs each block and each # allow-raw escape; gap reports come from zazzle_report_gap (zazzle report-gap), which zazzled hands to the indexer's report_gap tool, which stores the note; zazzle-csharp-indexer report summarises per tool, per resolution path, redirected commands, waste signals, errors and the latest gap notes.",
+      "outcome": "The owner can see which structure tools agents use through zazzle, where the index could not answer, what they still do by hand and what they missed, from real sessions.",
       "constraints": [
         "Free-text arguments are hashed unless ZAZZLE_INDEXER_LOG_PLAIN=1.",
         "The log rotates at 20 MiB, keeping one previous file; report reads both.",
@@ -52,6 +56,10 @@
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
           "symbol": "Report.FromDir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "report_gap"
         }
       ]
     }
@@ -67,7 +75,7 @@
       "kind": "operation",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-      "relationship": "report_gap and run feed it."
+      "relationship": "report_gap feeds it."
     },
     {
       "kind": "operation",

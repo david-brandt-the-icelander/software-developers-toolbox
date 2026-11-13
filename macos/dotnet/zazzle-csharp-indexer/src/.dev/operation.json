@@ -14,7 +14,7 @@
     {
       "id": "serve",
       "name": "zazzle-csharp-indexer serve",
-      "description": "The MCP server an agent's client starts: a proxy to the shared daemon, or an in-process server.",
+      "description": "The daemon's MCP session over standard input and output, for debugging: it lists no tools, and the internal tools answer when called by name.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
@@ -42,7 +42,7 @@
     {
       "id": "daemon",
       "name": "zazzle-csharp-indexer daemon",
-      "description": "The shared per-user daemon, normally started by serve.",
+      "description": "The shared per-user daemon zazzled talks to, started by zazzled (or serve) when nothing listens.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
@@ -53,8 +53,8 @@
           "symbol": "DaemonServer.Start"
         },
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
-          "symbol": "zazzle read"
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::start_daemon"
         }
       ],
       "entrypoint": {
@@ -62,7 +62,7 @@
         "symbol": "daemon"
       },
       "action": "command",
-      "transport": "Command line: zazzle-csharp-indexer daemon; clients (serve, and zazzled for the view tool) connect on <state dir>/daemon.sock",
+      "transport": "Command line: zazzle-csharp-indexer daemon; clients (zazzled for the view and structure tools, and serve) connect on <state dir>/daemon.sock",
       "authorization": "None checked; the socket is created readable and writable by its owner only.",
       "result": "Runs until it has had no clients for the idle period, then removes the socket and exits 0.",
       "failures": [
@@ -72,7 +72,7 @@
     {
       "id": "init",
       "name": "zazzle-csharp-indexer init",
-      "description": "Wires the indexer's server, zazzle's server when zazzled is installed, the redirect hook and their permissions into a project's Claude Code settings.",
+      "description": "Wires zazzle's server (when zazzled is installed), the redirect hook and their permissions into a project's Claude Code settings, and removes an earlier registration of the indexer's own server.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
@@ -180,7 +180,7 @@
       "kind": "use-case",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/use-case.json",
-      "relationship": "serve and daemon carry the code-question use case."
+      "relationship": "daemon carries the code-question use case, with zazzled as its client."
     },
     {
       "kind": "use-case",
@@ -192,7 +192,7 @@
       "kind": "operation",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
-      "relationship": "The tools a serve session offers."
+      "relationship": "The internal tools a session answers by name."
     }
   ]
 }

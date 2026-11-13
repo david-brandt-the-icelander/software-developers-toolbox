@@ -1,4 +1,4 @@
-// Tests for symbol extraction and the navigation tools.
+// Tests for symbol extraction and the structure tools zazzle calls.
 using System.Text.Json.Nodes;
 using ZazzleIndexer.Analysis;
 using ZazzleIndexer.Tools;
@@ -6,7 +6,7 @@ using Xunit;
 
 namespace ZazzleIndexer.Tests;
 
-// Exercises Roslyn and heuristic extraction plus outline, find_symbol, find_references, overview and changed_since.
+// Exercises Roslyn and heuristic extraction plus find_symbol, overview and changed_since.
 public class SymbolTests
 {
     private const string Cs = "namespace Demo;\n\n// Widget is documented here\npublic class Widget\n{\n    private int count;\n    public string Label { get; set; } = \"Widget label\";\n\n    public void Spin(int times)\n    {\n        count += times;\n    }\n}\n\npublic class Other\n{\n    void Use(Widget w) { w.Spin(2); }\n}\n";
@@ -21,7 +21,7 @@ public class SymbolTests
     // Roslyn extraction finds types and members with containers and line spans.
     public void test_csharp_symbols()
     {
-        var (syms, _) = CSharpSymbols.Extract(Cs);
+        var syms = CSharpSymbols.Extract(Cs);
         var spin = syms.Single(s => s.Name == "Spin");
         Assert.Equal(("method", "Demo.Widget", 9, 12), (spin.Kind, spin.Container, spin.Line, spin.EndLine));
         Assert.Contains(syms, s => s is { Name: "Label", Kind: "property" });
@@ -29,37 +29,14 @@ public class SymbolTests
     }
 
     [Fact]
-    // Identifier tables skip comments and strings and flag declarations with negative lines.
-    public void test_csharp_idents_exclude_comments_and_strings()
-    {
-        var (_, idents) = CSharpSymbols.Extract(Cs);
-        Assert.Equal([-4, 17], idents["Widget"]);
-    }
-
-    [Fact]
     // The heuristic extractor finds Rust items and Markdown headings.
     public void test_heuristic_symbols()
     {
-        var (rs, _) = HeuristicSymbols.Extract(Rs, "rust");
+        var rs = HeuristicSymbols.Extract(Rs, "rust");
         Assert.Equal(["Engine", "Engine", "start", "main"], rs.Select(s => s.Name));
         Assert.Equal(["type", "impl", "fn", "fn"], rs.Select(s => s.Kind));
-        var (md, _) = HeuristicSymbols.Extract("# Title\n\n## Usage\n", "markdown");
+        var md = HeuristicSymbols.Extract("# Title\n\n## Usage\n", "markdown");
         Assert.Equal(["Title", "Usage"], md.Select(s => s.Name));
-    }
-
-    [Fact]
-    // outline lists a file's declarations indented, and digests for a directory.
-    public void test_outline_file_and_directory()
-    {
-        using var repo = new TempRepo(Files);
-        var tool = new OutlineTool(new RootSet([repo.Root()]));
-        var file = Call(tool, "{\"path\":\"r:Widget.cs\"}");
-        Assert.Contains("[parsed; csharp, 18 lines", file);
-        Assert.Contains("  9-12 method Spin", file);
-        var dir = Call(tool, "{\"path\":\"r:\"}");
-        Assert.Contains("Widget.cs: csharp, 18 lines; Widget, Other; 4 members", dir);
-        Assert.Contains("engine.rs: rust, 9 lines; Engine; 2 members", dir);
-        Assert.Contains("README.md: markdown", dir);
     }
 
     [Fact]
@@ -72,17 +49,6 @@ public class SymbolTests
         Assert.Contains("r:engine.rs:", Call(tool, "{\"name\":\"engin\"}"));
         Assert.DoesNotContain("Widget.cs", Call(tool, "{\"name\":\"engin\"}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Widget\",\"kind\":\"method\"}"));
-    }
-
-    [Fact]
-    // find_references reports uses and declarations but not the comment or string mentions.
-    public void test_find_references()
-    {
-        using var repo = new TempRepo(Files);
-        var text = Call(new FindReferencesTool(new RootSet([repo.Root()])), "{\"name\":\"Widget\"}");
-        Assert.Contains("r:Widget.cs [parsed]\nD4: public class Widget", text);
-        Assert.Contains("17: void Use(Widget w)", text);
-        Assert.EndsWith("[2 references]", text);
     }
 
     [Fact]

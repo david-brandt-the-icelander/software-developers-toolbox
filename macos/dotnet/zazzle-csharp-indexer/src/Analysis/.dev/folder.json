@@ -7,11 +7,11 @@
     {
       "id": "folder",
       "title": "Content analysis",
-      "summary": "Turns one file's bytes into the facts zazzle-csharp-indexer stores per blob: git blob id, language, line count, trigram Bloom filter, symbols, identifier occurrences and a one-line digest.",
-      "purpose": "Holds the pure functions that depend only on a file's bytes and extension: blob analysis, the trigram Bloom filter, C# extraction with Roslyn, regex-based extraction for other languages, and the extraction of literals a regex must contain. Nothing here reads the disk, the store or the network.",
+      "summary": "Turns one file's bytes into the facts zazzle-csharp-indexer stores per blob: git blob id, language, line count, symbols and a one-line digest.",
+      "purpose": "Holds the pure functions that depend only on a file's bytes and extension: blob analysis, C# extraction with Roslyn and regex-based extraction for other languages. Nothing here reads the disk, the store or the network.",
       "boundaries": [
         "Storing the results is the store's job (src/Store.cs); deciding which files to analyse is the index's (src/Index/).",
-        "The search and reference tools in src/Tools/ use the Bloom filter, the literal extractor and the stored symbol format; they do not change them.",
+        "find_symbol and overview in src/Tools/ read the stored symbols and digests; they do not change them.",
         "A change to what this folder produces for a blob must bump Store.ExtractorVersion (see contracts.json)."
       ],
       "evidenceStatus": "source-verified",

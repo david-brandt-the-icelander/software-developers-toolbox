@@ -89,8 +89,8 @@ public sealed class Engine : IDisposable
         {
             if (_byOid.TryGetValue(oid, out hit))
                 return hit;
-            var id = Store.InsertBlob(d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Bloom, d.Digest, d.Symbols, d.Idents);
-            var meta = new BlobMeta(id, d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Bloom, d.Digest);
+            var id = Store.InsertBlob(d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Digest, d.Symbols);
+            var meta = new BlobMeta(id, d.Oid, d.Size, d.Binary, d.Lang, d.Lines, d.Digest);
             Add(meta);
             IndexSymbols(id, Sym.FromJson(d.Symbols));
             return meta;

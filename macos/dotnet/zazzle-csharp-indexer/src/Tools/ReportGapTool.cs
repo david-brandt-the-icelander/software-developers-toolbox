@@ -1,4 +1,4 @@
-// Tool for the agent to say, in a sentence, what it needed and could not get.
+// Tool for the agent to say, in a sentence, what it needed and could not get; zazzle offers it as zazzle_report_gap.
 using System.Text.Json.Nodes;
 
 namespace ZazzleIndexer.Tools;
@@ -7,8 +7,6 @@ namespace ZazzleIndexer.Tools;
 public sealed class ReportGapTool : ITool
 {
     public string Name => "report_gap";
-    public string Description => "Tell the tool maintainers what you wanted to know about the code but could not get from these tools, or what was slow, wrong or too verbose. One or two sentences; no code or secrets.";
-    public JsonNode Schema => Args.Schema(["what"], ("what", "string", "What was missing or wrong"));
 
     // Records the note.
     public string Run(JsonNode? args, CallInfo info)

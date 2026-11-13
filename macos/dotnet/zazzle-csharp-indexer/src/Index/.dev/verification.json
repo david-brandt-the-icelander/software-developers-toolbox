@@ -22,7 +22,6 @@
         "The initial reconcile indexes every non-ignored file and counts its lines",
         "Two copies of a repository with the same content share blob ids",
         "Changing, adding and deleting files updates the index and the change log after a sync",
-        "Freshen re-analyses just the asked file when its stat key changed",
         "Stored file records survive a restart and unchanged files are not re-analysed"
       ],
       "checks": [
@@ -43,12 +42,6 @@
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
           "symbol": "test_sync_tracks_changes",
           "command": "dotnet test tests --filter test_sync_tracks_changes"
-        },
-        {
-          "type": "automated",
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/IndexTests.cs",
-          "symbol": "test_freshen_detects_edit",
-          "command": "dotnet test tests --filter test_freshen_detects_edit"
         },
         {
           "type": "automated",
