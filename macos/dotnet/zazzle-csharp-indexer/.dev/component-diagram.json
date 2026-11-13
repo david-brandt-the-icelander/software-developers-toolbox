@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer",
+  "description": "zazzle-csharp-indexer as a unit: the executable's project and its tests, sharing one set of build settings.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+      "symbol": "PropertyGroup"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+      "symbol": "AssemblyName"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/tests/tests.csproj",
+      "symbol": "ProjectReference"
+    }
+  ],
+  "components": [
+    {
+      "id": "tool",
+      "name": "zazzle-csharp-indexer",
+      "responsibility": "The tool: one executable, its tests and its README.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer"
+    },
+    {
+      "id": "src",
+      "name": "zazzle-csharp-indexer executable",
+      "responsibility": "Server, daemon, index, tools and the init, hook and report commands.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "diagram": "macos/dotnet/zazzle-csharp-indexer/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "tests",
+      "name": "Tests",
+      "responsibility": "The xunit suite.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/tests"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "tool",
+      "to": "src",
+      "kind": "contains",
+      "description": "Published as the single-file binary."
+    },
+    {
+      "from": "tool",
+      "to": "tests",
+      "kind": "contains",
+      "description": "Run with dotnet test tests."
+    },
+    {
+      "from": "tests",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Project reference; tests call the engine, tools, daemon and CLI helpers in process."
+    }
+  ]
+}

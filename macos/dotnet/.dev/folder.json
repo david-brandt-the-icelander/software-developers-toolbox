@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": ".NET tools",
+  "folder": "macos/dotnet",
+  "entities": [
+    {
+      "id": "folder",
+      "title": ".NET tools",
+      "summary": "One .NET project per C# tool, and style.md, the C# rules for agents; today the only tool is zazzle-csharp-indexer.",
+      "purpose": "Groups the C# tools and their shared rules. Build output (bin/, obj/) is never committed.",
+      "boundaries": [
+        "No code of its own; each tool has its own Directory.Build.props."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Toolchain"
+        },
+        {
+          "path": "macos/dotnet/.gitignore",
+          "symbol": "bin/"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "TargetFramework"
+        }
+      ],
+      "links": [
+        {
+          "label": "C# rules for agents",
+          "path": "macos/dotnet/style.md"
+        }
+      ]
+    }
+  ]
+}

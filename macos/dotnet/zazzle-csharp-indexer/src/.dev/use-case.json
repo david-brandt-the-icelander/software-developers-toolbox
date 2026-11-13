@@ -1,0 +1,271 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle-csharp-indexer code-question use case",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+  "description": "How a coding agent's question about the code reaches the index and comes back.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+      "symbol": "serve"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+      "symbol": "McpServer.Handle"
+    }
+  ],
+  "entities": [
+    {
+      "id": "answer-code-question",
+      "name": "Answer a question about the code",
+      "description": "A coding agent asks zazzle-csharp-indexer, through its MCP client, where something is, what a file contains or what matches a pattern.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Serve"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.CallTool"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get a compact, current answer about the code in its work tree, such as its structure, where a symbol is declared or used, or what changed.",
+      "preconditions": [
+        "The agent's MCP client is configured to start zazzle-csharp-indexer serve, by zazzle-csharp-indexer init or by hand.",
+        "Every root is inside a git work tree, and git is on PATH."
+      ],
+      "postconditions": [
+        "The agent has the answer as text, or a tool error it can act on.",
+        "The call is in the usage log, with how the answer was produced."
+      ],
+      "flow": [
+        {
+          "id": "start",
+          "actor": "Coding agent",
+          "action": "Its MCP client starts zazzle-csharp-indexer serve, with --root arguments or in the project directory.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+              "symbol": "serve"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "connect",
+          "actor": "zazzle-csharp-indexer serve",
+          "action": "Connects to the daemon socket in the state directory, starting the daemon when nothing answers, and sends its version and roots.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+              "symbol": "Proxy.Connect"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "attach",
+          "actor": "zazzle-csharp-indexer daemon",
+          "action": "Checks each root is inside a git work tree and attaches its index, starting the watcher and the initial reconcile the first time the root is seen; replies ok.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Handshake"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+              "symbol": "Root.Parse"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+              "symbol": "Engine.Attach"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "initialize",
+          "actor": "Coding agent",
+          "action": "Initializes the MCP session and lists the tools, receiving the instructions to read, search and edit files through zazzle and to use these tools for C# structure (overview, find_symbol, find_references, changed_since, git_log, git_blame).",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.Initialize"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.ListTools"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Calls a tool, for example search with a pattern or read with root:path and a line range.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.CallTool"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzle-csharp-indexer",
+          "action": "The tool waits for the index, re-checks the files it will use, answers from the index and the files under a token budget, and the server logs the call.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+              "symbol": "SearchTool.Run"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/UsageLog.cs",
+              "symbol": "UsageLog.Record"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "follow-up",
+          "actor": "Coding agent",
+          "action": "Pages on with offset or start_line, or reads what it found; if the tools cannot answer, it may say so with report_gap and fall back to run, as those tools' descriptions invite.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/Output.cs",
+              "symbol": "Output.Finish"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReportGapTool.cs",
+              "symbol": "ReportGapTool.Description"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+              "symbol": "RunTool.Description"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "connect",
+          "condition": "--no-daemon or ZAZZLE_INDEXER_NO_DAEMON=1.",
+          "outcome": "serve opens its own engine and answers in process.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+              "symbol": "ZAZZLE_INDEXER_NO_DAEMON"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "The daemon runs another version and has no other clients.",
+          "outcome": "It stops; serve starts a new one and tries again (three attempts in all).",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+              "symbol": "Proxy.Connect"
+            }
+          ]
+        },
+        {
+          "atStep": "connect",
+          "condition": "No daemon starts within five seconds, or one of another version is still serving other clients.",
+          "outcome": "serve notes it on standard error and answers in process.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+              "symbol": "serving in-process"
+            }
+          ]
+        },
+        {
+          "atStep": "attach",
+          "condition": "A root is not a directory or not inside a git work tree.",
+          "outcome": "The daemon refuses the session; serve falls back to in process, where the same check stops it with the error.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+              "symbol": "Root.Parse"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
+              "symbol": "test_bad_root_rejected"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The index is still building after the 30-second ready timeout.",
+          "outcome": "search and find_files answer from a plain git listing; overview, find_symbol and find_references return index_cold.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
+              "symbol": "Root.Listing"
+            },
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+              "symbol": "Engine.ReadyTimeoutMs"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The tool fails (bad arguments, path outside the root, unknown root, git error, refused command).",
+          "outcome": "The agent gets a result with isError true and the message; the log records the error code.",
+          "sources": [
+            {
+              "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+              "symbol": "McpServer.CallTool"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "The tools the agent calls in the call step."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/operation.json",
+      "relationship": "serve and daemon."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/capability.json",
+      "relationship": "The capability this use case exercises."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
+      "relationship": "Fresh indexed search and unchanged re-reads shape the answers."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json",
+      "relationship": "Setting up with init, and the hook, whose redirects send C# declaration and use questions here."
+    }
+  ]
+}

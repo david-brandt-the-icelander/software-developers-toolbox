@@ -1,0 +1,278 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "free-disk-space verification",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "How the binary's behavior is checked. The unit tests sit at the end of each module and run on macOS and Linux in CI (cargo test --workspace). Each test runs in a testkit::Sandbox: a private HOME and state file, and a bin directory that FDS_TOOLS points the absolute tool paths at, so ditto, xattr, lsof, ps, launchctl and the rest are shell-script fakes. Several compress and dedupe tests are compiled only off macOS and so run only on the Linux CI runner (see their entities). Run them as a non-root user, or the permission tests cannot fail the way they should. Run one with `cargo test -p free-disk-space <test name>` in macos/rust.",
+  "entities": [
+    {
+      "id": "scan",
+      "title": "Scan",
+      "summary": "Candidates are chosen by the documented rules, excluded paths are not entered, and a scan pauses and resumes.",
+      "subject": [
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "resumable-scan"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/ScanState.state-diagram.json"
+        }
+      ],
+      "criteria": [
+        "Every reason a file is rejected as a candidate holds, and a qualifying file is accepted",
+        "Directories are excluded by name, suffix, system prefix and --exclude, on path boundaries",
+        "Compressible data samples to a low ratio",
+        "new refuses a bad root and an unfinished scan unless --force; resume continues a paused scan",
+        "Progress is committed on its interval and unreadable directories count as errors",
+        "status and list report populated and empty state files"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_consider_decisions", "command": "cargo test -p free-disk-space test_consider_decisions"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_dir_excluded_rules", "command": "cargo test -p free-disk-space test_dir_excluded_rules"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_under_boundaries", "command": "cargo test -p free-disk-space test_under_boundaries"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_sample_ratio_compressible", "command": "cargo test -p free-disk-space test_sample_ratio_compressible"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_scan_entry_kinds", "command": "cargo test -p free-disk-space test_scan_entry_kinds"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_cmd_new_full_scan", "command": "cargo test -p free-disk-space test_cmd_new_full_scan"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_cmd_new_guards", "command": "cargo test -p free-disk-space test_cmd_new_guards"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_cmd_resume_cases", "command": "cargo test -p free-disk-space test_cmd_resume_cases"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_run_scan_commit_errors_and_tty", "command": "cargo test -p free-disk-space test_run_scan_commit_errors_and_tty"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_run_scan_unreadable_dir", "command": "cargo test -p free-disk-space test_run_scan_unreadable_dir"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_status_and_list_output", "command": "cargo test -p free-disk-space test_status_and_list_output"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "test_open_db_cases", "command": "cargo test -p free-disk-space test_open_db_cases"}
+      ],
+      "details": "No test scans a root under /System, which is how the defect backlog item scan-root-under-system went unnoticed.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/scan.rs", "symbol": "tests"}
+      ],
+      "relationships": [
+        {"relation": "relates-to", "path": "macos/rust/free-disk-space/src/.dev/backlog.json", "entityId": "scan-root-under-system"}
+      ]
+    },
+    {
+      "id": "compress",
+      "title": "Verified compression",
+      "summary": "Every skip reason, every verification failure and the success path of compression.",
+      "subject": [
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "verified-compression"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/Cand.state-diagram.json"
+        }
+      ],
+      "criteria": [
+        "Every reason a candidate is skipped before compression holds, including an unwritable directory and an open file",
+        "A copy that fails a check never replaces the original",
+        "Planning honours --sample, --max-files and --limit",
+        "Only a y answer confirms",
+        "compress refuses off macOS without FDS_FORCE",
+        "The ditto probe passes only when ditto succeeds and its copy carries the compressed flag",
+        "Skip notes are tallied by their reason, without per-file details"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_in_use_probe", "command": "cargo test -p free-disk-space test_in_use_probe"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_precheck_reasons", "command": "cargo test -p free-disk-space test_precheck_reasons"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_precheck_unwritable_dir", "command": "cargo test -p free-disk-space test_precheck_unwritable_dir"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_verified_outcomes", "command": "cargo test -p free-disk-space test_compress_verified_outcomes"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_one_outcomes", "command": "cargo test -p free-disk-space test_compress_one_outcomes"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_plan_limits", "command": "cargo test -p free-disk-space test_plan_limits"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_confirm_answers", "command": "cargo test -p free-disk-space test_confirm_answers"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_cmd_compress_requires_macos", "command": "cargo test -p free-disk-space test_cmd_compress_requires_macos"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_cmd_compress_planning_modes", "command": "cargo test -p free-disk-space test_cmd_compress_planning_modes"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_cmd_compress_run", "command": "cargo test -p free-disk-space test_cmd_compress_run"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_reason_key_groups", "command": "cargo test -p free-disk-space test_reason_key_groups"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_ditto_compresses_probe", "command": "cargo test -p free-disk-space test_ditto_compresses_probe"}
+      ],
+      "details": "ditto, xattr and lsof are fakes in these tests, so they check the decisions around APFS compression, not APFS compression itself. test_compress_verified_outcomes, test_compress_one_outcomes, test_cmd_compress_run and test_ditto_compresses_probe are compiled only off macOS (cfg(not(target_os = \"macos\"))), where the BSD file flags can be scripted, so they run on Linux only.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "dedupe",
+      "title": "Clone dedupe",
+      "summary": "Which files may be replaced, which is kept, and that a clone is swapped in only after it verifies.",
+      "subject": [
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "clone-dedupe"
+        }
+      ],
+      "criteria": [
+        "System files are recognised by owner and by path prefix",
+        "Unwritable, hard-linked, open, flagged and already-cloned files are kept but not replaced",
+        "A keeper is chosen per set of identical files, and unusable groups are ignored",
+        "A clone whose metadata or hash differs, or whose target changed, is not swapped in",
+        "A dry run past fifty duplicates stops printing but keeps counting",
+        "dedupe refuses a state without file names, and --apply without a process snapshot or off macOS"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_is_system_file_rules", "command": "cargo test -p free-disk-space test_is_system_file_rules"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_sync_metadata_cases", "command": "cargo test -p free-disk-space test_sync_metadata_cases"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_filters", "command": "cargo test -p free-disk-space test_members_filters"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_unwritable", "command": "cargo test -p free-disk-space test_members_unwritable"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_plan_groups", "command": "cargo test -p free-disk-space test_plan_groups"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_clone_verified_outcomes", "command": "cargo test -p free-disk-space test_clone_verified_outcomes"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_clone_over_results", "command": "cargo test -p free-disk-space test_clone_over_results"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_dedupe_group_modes", "command": "cargo test -p free-disk-space test_dedupe_group_modes"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_dedupe_group_many_dry_run", "command": "cargo test -p free-disk-space test_dedupe_group_many_dry_run"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_groups_and_rows", "command": "cargo test -p free-disk-space test_groups_and_rows"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_cmd_dedupe_guards", "command": "cargo test -p free-disk-space test_cmd_dedupe_guards"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_cmd_dedupe_runs", "command": "cargo test -p free-disk-space test_cmd_dedupe_runs"}
+      ],
+      "details": "test_sync_metadata_cases, test_members_filters, test_clone_verified_outcomes, test_clone_over_results, test_dedupe_group_modes and test_cmd_dedupe_runs are compiled only off macOS (cfg(not(target_os = \"macos\"))), so they run on Linux, against the apfs module's plain-copy stand-ins; the real clonefile and copyfile are called by no test. xattr and lsof are fakes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "tests"},
+        {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "apfs"}
+      ]
+    },
+    {
+      "id": "clean",
+      "title": "Cleanup",
+      "summary": "What each target removes, keeps and reports, including every reason a dev artifact is kept.",
+      "subject": [
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "folder-cleanup"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "dev-artifact-cleanup"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "tool-cleanup"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "resumable-cleanup"}
+      ],
+      "criteria": [
+        "all expands to caches, downloads, trash, dev and docker in a fixed order",
+        "Removal never follows symlinks, stops when interrupted, and reports protected entries instead of removing them",
+        "Every reason an artifact directory is kept holds: manifest, lockfile, marker, pycache contents, git work tree, ignored, tracked files, modified today, in use",
+        "An artifact that stops qualifying between the two checks is left in place",
+        "Docker is touched only when its CLI, Desktop process and server all answer, and every Docker failure is reported",
+        "The whole command runs in dry-run and apply modes across every target",
+        "An applying run records each finished step but not one interrupted by a stop, the next applying run sees them, a dry run records nothing, and a complete run forgets them"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_ordered_targets_all", "command": "cargo test -p free-disk-space test_ordered_targets_all"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_rm_tree_symlink_and_missing", "command": "cargo test -p free-disk-space test_rm_tree_symlink_and_missing"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_rm_tree_stops_on_interrupt", "command": "cargo test -p free-disk-space test_rm_tree_stops_on_interrupt"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_rm_tree_protected_entries", "command": "cargo test -p free-disk-space test_rm_tree_protected_entries"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_empty_dir_cases", "command": "cargo test -p free-disk-space test_empty_dir_cases"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_clean_trash_paths", "command": "cargo test -p free-disk-space test_clean_trash_paths"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_clean_brew_paths", "command": "cargo test -p free-disk-space test_clean_brew_paths"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_snapshot_uses", "command": "cargo test -p free-disk-space test_snapshot_uses"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_verify_artifact_decisions", "command": "cargo test -p free-disk-space test_verify_artifact_decisions"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_verify_artifact_rules", "command": "cargo test -p free-disk-space test_verify_artifact_rules"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_verify_artifact_tracked_files", "command": "cargo test -p free-disk-space test_verify_artifact_tracked_files"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_find_artifacts_walk", "command": "cargo test -p free-disk-space test_find_artifacts_walk"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_clean_dev_dry_and_apply", "command": "cargo test -p free-disk-space test_clean_dev_dry_and_apply"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_clean_dev_changed_before_delete", "command": "cargo test -p free-disk-space test_clean_dev_changed_before_delete"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_docker_running_checks", "command": "cargo test -p free-disk-space test_docker_running_checks"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_clean_docker_paths", "command": "cargo test -p free-disk-space test_clean_docker_paths"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_cmd_clean_all_targets", "command": "cargo test -p free-disk-space test_cmd_clean_all_targets"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "test_progress_resume", "command": "cargo test -p free-disk-space test_progress_resume"}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "daemon",
+      "title": "Daemon",
+      "summary": "Settings parse, checks clean only below the threshold, the loop keeps its cadence, and install, status and uninstall drive launchctl.",
+      "subject": [
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "threshold-daemon"}
+      ],
+      "criteria": [
+        "Thresholds parse as sizes and percentages and bad values are refused; cadences parse with each unit",
+        "A check cleans only when free space is below the threshold",
+        "The loop checks at once, then once per cadence, until stopped",
+        "The plist names the program, its arguments and the log, with text escaped",
+        "A failed bootstrap removes the plist; a missing launchctl reads as not running"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_parse_threshold_forms", "command": "cargo test -p free-disk-space test_parse_threshold_forms"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_parse_cadence_forms", "command": "cargo test -p free-disk-space test_parse_cadence_forms"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_check_decisions", "command": "cargo test -p free-disk-space test_check_decisions"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_run_loop_cadence_and_stop", "command": "cargo test -p free-disk-space test_run_loop_cadence_and_stop"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_cmd_run_cleans_and_stops", "command": "cargo test -p free-disk-space test_cmd_run_cleans_and_stops"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_plist_contents", "command": "cargo test -p free-disk-space test_plist_contents"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_install_status_uninstall", "command": "cargo test -p free-disk-space test_install_status_uninstall"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_install_failure_and_missing_launchctl", "command": "cargo test -p free-disk-space test_install_failure_and_missing_launchctl"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "test_install_unwritable_paths", "command": "cargo test -p free-disk-space test_install_unwritable_paths"}
+      ],
+      "details": "launchctl is a fake in these tests; that launchd accepts the plist and starts the item at login is not checked automatically.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "command-line",
+      "title": "Command line",
+      "summary": "Bad command lines are refused and every subcommand reaches its implementation.",
+      "subject": [
+        {"path": "macos/rust/free-disk-space/src/.dev/contracts.json", "entityId": "command-line"}
+      ],
+      "criteria": [
+        "The default state path honours FDS_STATE and falls back to the home directory",
+        "Invalid command lines are refused by the parser",
+        "Every subcommand dispatches to its implementation"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/main.rs", "symbol": "test_default_state_paths", "command": "cargo test -p free-disk-space test_default_state_paths"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/main.rs", "symbol": "test_cli_rejects_bad_arguments", "command": "cargo test -p free-disk-space test_cli_rejects_bad_arguments"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/main.rs", "symbol": "test_run_dispatches_every_command", "command": "cargo test -p free-disk-space test_run_dispatches_every_command"},
+        {"type": "automated", "path": ".github/workflows/ci.yml", "symbol": "Smoke test CLIs", "command": "./target/release/free-disk-space --help && ./target/release/free-disk-space clean caches", "description": "CI runs the release build's help and a dry-run clean of caches on macOS and Linux."}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "tests"},
+        {"path": ".github/workflows/ci.yml", "symbol": "test"}
+      ]
+    },
+    {
+      "id": "on-a-real-mac",
+      "title": "On a real Mac",
+      "summary": "The steps whose effect depends on macOS itself, which the README says have not been run on a real Mac.",
+      "subject": [
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "verified-compression"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "clone-dedupe"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "folder-cleanup"},
+        {"path": "macos/rust/free-disk-space/src/.dev/feature.json", "entityId": "tool-cleanup"}
+      ],
+      "criteria": [
+        "compress --sample 5 compresses files that read back identical, and the free-space change roughly matches the verified saving",
+        "dedupe --sample 5 --apply leaves clones that read back identical with their own metadata, and frees space",
+        "clean trash --apply empties the Trash through Finder",
+        "clean docker --apply prunes, stops the containers and quits a running Docker Desktop"
+      ],
+      "checks": [
+        {"type": "manual", "command": "free-disk-space new --root <dir> --min-size 5M && free-disk-space compress --sample 5", "description": "On an APFS Mac, compare the files' SHA-256 before and after, and the verified saving with the free-space change."},
+        {"type": "manual", "command": "free-disk-space dedupe --sample 5 --apply", "description": "After a scan, check each cloned file's content, mode, owner, times and xattrs, and the free-space change."},
+        {"type": "manual", "command": "free-disk-space clean trash docker --apply", "description": "With something in the Trash and Docker Desktop running, check both are cleaned and Docker has quit."}
+      ],
+      "details": "The README's Caveats say the tool is unit-tested in CI on macOS and Linux and smoke-tested on Linux only for the scan and dry-run paths, and that compress, dedupe --apply, the Finder trash and the Docker steps are untested on a real Mac. The agent skill tells agents to stop on any failure for the same reason. The README's Compress note adds that on macOS 26/27 ditto --hfsCompression reports success but writes uncompressed copies, so there compress stops at its probe and the compression check cannot be made until that changes.",
+      "evidenceStatus": "documented",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "Caveats"},
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "Compress"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+      ]
+    },
+    {
+      "id": "branch-coverage",
+      "title": "Branch coverage",
+      "summary": "The repository's target is 95% of non-test branches and lines; for this crate CI does not enforce it.",
+      "criteria": [
+        "At least 95% of non-test branches and lines are covered"
+      ],
+      "checks": [
+        {"type": "manual", "command": "cargo +nightly llvm-cov --branch -p free-disk-space --summary-only", "description": "Run in macos/rust as a non-root user, with nightly llvm-tools-preview and cargo-llvm-cov installed."}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "AGENTS.md", "symbol": "Commands (run in `macos/rust/`)"},
+        {"path": ".github/workflows/ci.yml", "symbol": "coverage"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "../schemas/folder.schema.json",
+  "kind": "folder",
+  "schemaVersion": 1,
+  "title": "Example worker",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Example worker",
+      "summary": "Runs scheduled jobs, one run per slot.",
+      "purpose": "Claims each due slot, runs its job once and records the outcome.",
+      "boundaries": [
+        "Does not decide schedules; reads them",
+        "Does not deliver alarms; emits events"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/ExampleWorker/Worker.cs",
+          "symbol": "ExampleWorker.Worker"
+        }
+      ]
+    }
+  ]
+}

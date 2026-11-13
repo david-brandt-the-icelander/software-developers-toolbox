@@ -1,0 +1,203 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer live index classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "description": "The root index, its change-source contract with two implementations, and the immutable records for files and blobs.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+      "symbol": "RootIndex"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/IChangeSource.cs",
+      "symbol": "IChangeSource"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs",
+      "symbol": "FileEntry"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/BlobMeta.cs",
+      "symbol": "BlobMeta"
+    }
+  ],
+  "types": [
+    {
+      "id": "Index.RootIndex",
+      "name": "RootIndex",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs"
+      ],
+      "members": [
+        "RootIndex(Engine engine, string path)",
+        "string Path",
+        "int Id",
+        "Engine Engine",
+        "Task Ready",
+        "long Gen",
+        "void Start()",
+        "bool WaitReady(int ms)",
+        "List<FileEntry> Files()",
+        "FileEntry? Get(string rel)",
+        "FileEntry? Freshen(string rel)",
+        "List<(string path, char kind)> ChangesSince(long gen, out bool expired)",
+        "void Barrier(IEnumerable<string> paths)",
+        "void Sync()",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "Index.ChangeSources",
+      "name": "ChangeSources",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs"
+      ],
+      "members": [
+        "static IChangeSource Create()"
+      ]
+    },
+    {
+      "id": "Index.IChangeSource",
+      "name": "IChangeSource",
+      "kind": "interface",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/IChangeSource.cs"
+      ],
+      "members": [
+        "event Action<string[]>? Changed",
+        "event Action? NeedsFullScan",
+        "bool SupportsReplay",
+        "bool HistoryDone",
+        "long? LastEventId",
+        "void Start(string root, long? sinceId)"
+      ]
+    },
+    {
+      "id": "Index.FsEventsSource",
+      "name": "FsEventsSource",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/FsEventsSource.cs"
+      ],
+      "members": [
+        "FsEventsSource()",
+        "void Start(string root, long? sinceId)",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "Index.FswSource",
+      "name": "FswSource",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/FswSource.cs"
+      ],
+      "members": [
+        "void Start(string root, long? sinceId)",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "Index.FileEntry",
+      "name": "FileEntry",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/FileEntry.cs"
+      ],
+      "members": [
+        "string Path",
+        "long Size",
+        "long Mtime",
+        "long Birth",
+        "int BlobId",
+        "bool Matches(FileInfo fi)",
+        "static FileEntry From(string path, FileInfo fi, int blobId)"
+      ]
+    },
+    {
+      "id": "Index.BlobMeta",
+      "name": "BlobMeta",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Index/BlobMeta.cs"
+      ],
+      "members": [
+        "int Id",
+        "string Oid",
+        "long Size",
+        "bool Binary",
+        "string Lang",
+        "int Lines",
+        "byte[] Bloom",
+        "string Digest"
+      ]
+    },
+    {
+      "id": "ZazzleIndexer.Engine",
+      "name": "Engine",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs"
+      ],
+      "members": [
+        "BlobMeta GetOrAddBlob(byte[] bytes, string path)",
+        "Store Store",
+        "bool Watch"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Index.FsEventsSource",
+      "to": "Index.IChangeSource",
+      "kind": "implements",
+      "description": "Replaying source for macOS."
+    },
+    {
+      "from": "Index.FswSource",
+      "to": "Index.IChangeSource",
+      "kind": "implements",
+      "description": "Non-replaying source for other systems."
+    },
+    {
+      "from": "Index.ChangeSources",
+      "to": "Index.IChangeSource",
+      "kind": "depends-on",
+      "description": "Creates the platform's source."
+    },
+    {
+      "from": "Index.RootIndex",
+      "to": "Index.ChangeSources",
+      "kind": "depends-on",
+      "description": "Gets a source when the engine watches."
+    },
+    {
+      "from": "Index.RootIndex",
+      "to": "Index.IChangeSource",
+      "kind": "depends-on",
+      "description": "Subscribes to its events and persists its last event id."
+    },
+    {
+      "from": "Index.RootIndex",
+      "to": "Index.FileEntry",
+      "kind": "depends-on",
+      "description": "Keeps one per indexed path."
+    },
+    {
+      "from": "Index.RootIndex",
+      "to": "ZazzleIndexer.Engine",
+      "kind": "depends-on",
+      "description": "Analyses new content and reads and writes the store."
+    },
+    {
+      "from": "ZazzleIndexer.Engine",
+      "to": "Index.BlobMeta",
+      "kind": "depends-on",
+      "description": "Holds one per analysed blob, looked up by id and by blob id."
+    }
+  ]
+}

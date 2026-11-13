@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "MCP server limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Mcp",
+  "entities": [
+    {
+      "id": "no-roots-list",
+      "title": "MCP roots are not used",
+      "summary": "The server never asks the client for roots/list; its roots are the --root arguments, or the working directory the client starts it in.",
+      "impact": "An MCP client's own idea of the workspace roots is ignored; a session started elsewhere answers about that directory.",
+      "workaround": "Pass --root name=path to serve in the client's server configuration.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.Handle"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "--root"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    },
+    {
+      "id": "tools-only",
+      "title": "Tools only",
+      "summary": "The server offers tools; it has no resources, prompts or other MCP capabilities, and announces only tools in initialize.",
+      "impact": "Clients see zazzle-csharp-indexer only through tools/list and tools/call.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer.Initialize"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/delivery.schema.json",
+  "kind": "delivery",
+  "title": "Where a release goes",
+  "folder": "macos/release",
+  "description": "Every tool (zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space) is released together, one version for all, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
+  "entities": [
+    {
+      "id": "github-release",
+      "title": "GitHub release",
+      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (five universal binaries and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, zazzled, zazzle-csharp-indexer), their checksums and the Homebrew bottle.",
+      "environment": "GitHub releases of this repository",
+      "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
+      "deployedBy": "The release workflow (macos, linux and homebrew jobs)",
+      "rollback": "No rollback is automated or documented. Each tag keeps its own release, so an earlier version stays downloadable.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Publish release"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux: Attach to the GitHub release"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "homebrew: Build the bottle and add it to the release"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/c/zazzle/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/agent-fs/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/fix-network/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/free-disk-space/.dev/folder.json",
+          "entityId": "folder",
+          "description": "A tool this release delivers."
+        }
+      ]
+    },
+    {
+      "id": "downloads",
+      "title": "icelander.net/downloads",
+      "summary": "The same tarballs and checksums, copied to the download bucket under zazzle/<tag>/ and zazzle/latest/, served at https://icelander.net/downloads/zazzle/.",
+      "environment": "The icelander-downloads bucket on Cloudflare R2",
+      "purpose": "A stable latest/ link for the README's curl install, and one folder per version.",
+      "deployedBy": "The release workflow, with the secret CLOUDFLARE_R2_TOKEN",
+      "promotedFrom": "The same job's build; there is no staging.",
+      "rollback": "No rollback is automated or documented. latest/ is overwritten by each release; zazzle/<tag>/ keeps every version.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Publish to icelander.net"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux: Publish to icelander.net"
+        },
+        {
+          "path": "README.md",
+          "symbol": "Tools (macOS, Rust)"
+        }
+      ]
+    },
+    {
+      "id": "homebrew",
+      "title": "Homebrew tap zazzcat/homebrew-z",
+      "summary": "One formula, zazzle, in the external tap zazzcat/homebrew-z, pointing at the release's tarball and bottle; it installs every macOS binary and expands the C# indexer for the Mac's CPU after install. Users run brew install zazzcat/z/zazzle, which adds the tap on first use.",
+      "environment": "Formula/zazzle.rb on the default branch of zazzcat/homebrew-z, read by brew",
+      "purpose": "Installs and upgrades without a Gatekeeper prompt, since Homebrew does not quarantine what a formula installs.",
+      "deployedBy": "The release workflow's homebrew job, pushing to the tap with the secret HOMEBREW_TAP_TOKEN",
+      "rollback": "No rollback is automated or documented. Each release moves the formula to the new tag; the tap's git history keeps the earlier formulas.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "homebrew: Write and push the formula"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "bottle_block"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
+        },
+        {
+          "path": "README.md",
+          "symbol": "Tools (macOS, Rust)"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "bottles"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/release/.dev/decisions.json",
+          "entityId": "external-tap"
+        }
+      ]
+    }
+  ]
+}

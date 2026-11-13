@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "agent-fs component diagram",
+  "folder": "macos/rust/agent-fs",
+  "description": "The agent-fs crate: the afs binary's source and the tests that run the built binary. The modules inside the binary are drawn in the source folder's diagram.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "afs" }
+  ],
+  "components": [
+    {
+      "id": "agent-fs",
+      "name": "agent-fs crate",
+      "responsibility": "Builds the afs binary and its tests.",
+      "folder": "macos/rust/agent-fs"
+    },
+    {
+      "id": "src",
+      "name": "afs source",
+      "responsibility": "The command line, the MCP server, the request engine, the six operations, session state and file loading.",
+      "folder": "macos/rust/agent-fs/src",
+      "diagram": "macos/rust/agent-fs/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "tests",
+      "name": "End-to-end tests",
+      "responsibility": "Run the built binary through its command line, the JSONL loop and the MCP server.",
+      "folder": "macos/rust/agent-fs/tests"
+    }
+  ],
+  "relationships": [
+    { "from": "agent-fs", "to": "src", "kind": "contains", "description": "src/main.rs is the [[bin]] target afs." },
+    { "from": "agent-fs", "to": "tests", "kind": "contains", "description": "Cargo integration tests." },
+    { "from": "tests", "to": "src", "kind": "depends-on", "description": "Start the afs binary (CARGO_BIN_EXE_afs) and talk to it over arguments, stdin and stdout." }
+  ]
+}

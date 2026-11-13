@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "afs source",
+  "folder": "macos/rust/agent-fs/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "afs source",
+      "summary": "Every Rust module of the afs binary, flat in one folder: the command line, the MCP server, the request engine, the six operations, the session state and the file loaders.",
+      "purpose": "Holds the whole tool. main.rs parses the command line and runs one of three front ends (call, jsonl, serve); engine.rs turns a JSON request into one of six operations (read, search, list, stat, outline, diff_since); state.rs keeps what one session has already sent, the file versions it can diff against and its cached results; fsio.rs, uring.rs and aio.rs load files; walk.rs and par.rs walk directories and spread work over the cores.",
+      "boundaries": [
+        "Only reads: no operation writes, renames or deletes a file.",
+        "A session lives in one process's memory and ends with it; nothing is written to disk.",
+        "uring.rs is compiled only on Linux and aio.rs only on macOS (the #[cfg(target_os)] attributes on their mod lines in main.rs)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/agent-fs/src/main.rs",
+          "symbol": "Command"
+        },
+        {
+          "path": "macos/rust/agent-fs/src/engine.rs",
+          "symbol": "Engine.dispatch"
+        },
+        {
+          "path": "macos/rust/agent-fs/src/state.rs",
+          "symbol": "State"
+        }
+      ]
+    }
+  ]
+}

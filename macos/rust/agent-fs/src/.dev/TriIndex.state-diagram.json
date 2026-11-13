@@ -1,0 +1,79 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Trigram index state diagram",
+  "folder": "macos/rust/agent-fs/src",
+  "description": "The life of one TriIndex, the in-memory trigram index a session keeps per walk configuration (search paths, globs, hidden and no_ignore; not the pattern). The state is derived from its `queries` counter and `disabled` flag. Only searches whose result is computed move it: a search answered from the session's result cache never reaches find_hits. Outside this machine, State.put_index drops every other index when the session already holds 8 configurations; a later search on a dropped configuration starts again with a new TriIndex. Nothing is kept on disk.",
+  "sources": [
+    { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.warm" },
+    { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.usable" },
+    { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.begin" },
+    { "path": "macos/rust/agent-fs/src/index.rs", "symbol": "TriIndex.finish" },
+    { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "find_hits" },
+    { "path": "macos/rust/agent-fs/src/search.rs", "symbol": "run" },
+    { "path": "macos/rust/agent-fs/src/state.rs", "symbol": "State.put_index" }
+  ],
+  "machine": "TriIndex (index.rs), driven by search::find_hits",
+  "initialState": "new",
+  "states": [
+    {
+      "id": "new",
+      "description": "Created by State.take_index for a configuration the session has no index for: no files, queries = 0."
+    },
+    {
+      "id": "primed",
+      "description": "One computed search has been counted (queries = 1); it was a plain full scan and nothing is indexed yet."
+    },
+    {
+      "id": "indexed",
+      "description": "From the second computed search on: holds an entry per walked file (trigram postings, or marked always-scan or binary) with the stamp it was built from."
+    },
+    {
+      "id": "disabled",
+      "description": "The posting entries exceeded the budget (MAX_ENTRIES, 30,000,000); the index was emptied and every later search on it is a full scan.",
+      "terminal": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "new",
+      "to": "primed",
+      "trigger": "A computed search on this configuration",
+      "action": "warm() counts it and returns false; scan_all reads and scans every walked file."
+    },
+    {
+      "from": "primed",
+      "to": "indexed",
+      "trigger": "The next computed search",
+      "guard": "Posting entries stay within MAX_ENTRIES after finish()",
+      "action": "warm() returns true; begin() marks every file stale; each is read once, scanned and classified (Update::classify) in the same pass; files over 2 MiB or inside the 2-second racy window are marked always-scan, binary files are left out."
+    },
+    {
+      "from": "primed",
+      "to": "disabled",
+      "trigger": "The next computed search",
+      "guard": "Posting entries exceed MAX_ENTRIES after finish()",
+      "action": "The index is reset with disabled = true and find_hits falls back to a full scan."
+    },
+    {
+      "from": "indexed",
+      "to": "indexed",
+      "trigger": "A computed search",
+      "guard": "Posting entries stay within MAX_ENTRIES after finish()",
+      "action": "begin() keeps entries whose stamp is equal and was not racy, re-reads the rest; finish() drops files that left the walk and compacts ids when dead ones outnumber half the live ones plus 1024; only the plan's candidates and always-scan files are scanned."
+    },
+    {
+      "from": "indexed",
+      "to": "disabled",
+      "trigger": "A computed search",
+      "guard": "Posting entries exceed MAX_ENTRIES after finish()",
+      "action": "The index is reset with disabled = true and find_hits falls back to a full scan."
+    },
+    {
+      "from": "disabled",
+      "to": "disabled",
+      "trigger": "A computed search",
+      "action": "usable() is false, so find_hits scans every file without counting or updating the index."
+    }
+  ]
+}

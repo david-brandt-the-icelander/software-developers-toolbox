@@ -1,0 +1,25 @@
+{
+  "$schema": "../schemas/tasks.schema.json",
+  "kind": "tasks",
+  "schemaVersion": 1,
+  "title": "Example Scheduler tasks",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "alert-rule",
+      "title": "Add the alert rule",
+      "summary": "Page the operator on run-failed events.",
+      "state": "doing",
+      "assignee": {
+        "kind": "agent",
+        "name": "Implementation agent"
+      },
+      "partOf": {
+        "path": ".dev/plan.json",
+        "entityId": "alarms"
+      },
+      "branch": "alarms/alert-rule"
+    }
+  ]
+}

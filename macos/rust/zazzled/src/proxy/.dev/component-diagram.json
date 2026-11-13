@@ -1,0 +1,99 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle MCP proxy component diagram",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "description": "The proxy's two transports share one filter, which decides which server answers to clean, with the settings the config file gives each tool, hands their texts to clean's steps and stores what it shortened for read-again. The MCP client and the upstream server are outside the repository.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/proxy/mod.rs",
+      "symbol": "parse"
+    },
+    {
+      "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+      "symbol": "run_with"
+    },
+    {
+      "path": "macos/rust/zazzled/src/proxy/http.rs",
+      "symbol": "exchange"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    }
+  ],
+  "components": [
+    {
+      "id": "proxy",
+      "name": "zazzle MCP proxy",
+      "responsibility": "Cleans another MCP server's tool results and resource reads on their way to the client.",
+      "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "filter",
+      "name": "Options and filter (mod.rs)",
+      "responsibility": "Parses the proxy options; records pending tools/call and resources/read requests by id; rewrites the texts of the responses that answer them, single or batched, with the rule for their tool or for resource reads, unless skipped; stores each shortened text with its original and adds an item with its id; logs the savings with --log.",
+      "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "stdio",
+      "name": "stdio transport (stdio.rs)",
+      "responsibility": "Starts the server command as a child with stderr passed through, copies client lines to it while recording requests, copies its lines back while cleaning answers, and returns its exit code.",
+      "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "http",
+      "name": "Streamable HTTP transport (http.rs)",
+      "responsibility": "Listens on a TCP address and serves requests one after another on each connection until the client closes it, asks to, sends something unreadable or is idle for 60 seconds; refuses other web origins, forwards each request with its end-to-end headers to the upstream URL, and relays the answer: JSON cleaned whole, event streams cleaned per event, anything else copied; answers of unknown length are chunked on a connection kept open.",
+      "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "config",
+      "name": "Per-tool settings (config.rs)",
+      "responsibility": "Reads the --config JSON file, refusing unknown sections, settings and types, and gives a tool's rule by exact name or the longest matching `*` pattern, and the rule for resource reads.",
+      "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "outputs",
+      "name": "Output store",
+      "responsibility": "outputs.rs in the parent folder: keeps each shortened text with its original for an hour for read-again.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "clean",
+      "name": "clean's steps",
+      "responsibility": "shrink_steps and cuts: the cleaning applied to each text, and whether it cut something.",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "diagram": "macos/rust/zazzled/src/cmd/.dev/component-diagram.json"
+    },
+    {
+      "id": "client",
+      "name": "MCP client",
+      "responsibility": "The coding agent's client, which starts `zazzle proxy -- CMD` or connects to the proxy's HTTP address.",
+      "external": true,
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "upstream",
+      "name": "Upstream MCP server",
+      "responsibility": "Any MCP server: a command speaking stdio, or a Streamable HTTP endpoint.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "proxy", "to": "filter", "kind": "contains", "description": "Options, request tracking and rewriting." },
+    { "from": "proxy", "to": "stdio", "kind": "contains", "description": "The stdio transport." },
+    { "from": "proxy", "to": "http", "kind": "contains", "description": "The HTTP transport." },
+    { "from": "proxy", "to": "config", "kind": "contains", "description": "The --config file." },
+    { "from": "client", "to": "stdio", "kind": "depends-on", "description": "Starts the proxy and speaks newline-delimited JSON-RPC on its standard streams." },
+    { "from": "client", "to": "http", "kind": "depends-on", "description": "Sends Streamable HTTP requests to the listen address." },
+    { "from": "stdio", "to": "filter", "kind": "depends-on", "description": "Pending::note_text on client lines; Filter::rewrite_text on server lines." },
+    { "from": "http", "to": "filter", "kind": "depends-on", "description": "Pending::note_text on the request body; Filter::rewrite_text on JSON bodies and event data." },
+    { "from": "filter", "to": "clean", "kind": "depends-on", "description": "clean::shrink_steps with the lossless and budget settings for the answer, and clean::cuts." },
+    { "from": "filter", "to": "config", "kind": "depends-on", "description": "config::load for --config; Config::tool and the resources rule for each answer." },
+    { "from": "filter", "to": "outputs", "kind": "depends-on", "description": "outputs::dir at start; outputs::id_of and save for each shortened text." },
+    { "from": "stdio", "to": "upstream", "kind": "depends-on", "description": "Runs the server command as a child process." },
+    { "from": "http", "to": "upstream", "kind": "depends-on", "description": "HTTP or HTTPS through one ureq agent shared by all connections, with the operating system's trust store and the environment's proxy settings." }
+  ]
+}

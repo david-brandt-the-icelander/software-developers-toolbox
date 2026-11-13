@@ -1,0 +1,196 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle-csharp-indexer tools features",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+  "description": "Behaviour the tools offer beyond answering one call.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+      "symbol": "SearchTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs",
+      "symbol": "ReadTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+      "symbol": "ChangedSinceTool"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+      "symbol": "RunTool"
+    }
+  ],
+  "entities": [
+    {
+      "id": "fresh-indexed-search",
+      "name": "Index-accelerated search that sees fresh edits",
+      "description": "search reads only files the Bloom prefilter keeps, after re-checking the files it will consider.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.Candidates"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
+          "symbol": "test_search_uses_index_and_sees_fresh_edit"
+        }
+      ],
+      "behavior": "For each root, search waits for the index, applies the barrier to the files the glob selects, keeps the files whose Bloom filter may hold every required trigram (and files too large to analyse), and matches the regex per line on those files in path order. A pattern .NET rejects is run by rg -P or git grep -P instead.",
+      "outcome": "The agent gets grep-like results, including an edit made a moment ago, while most files are never read.",
+      "constraints": [
+        "Files over 2 MiB and binary files are not scanned.",
+        "A line whose match exceeds the 2-second regex timeout ends the scan of that file.",
+        "Results are in path order, 50 by default, under a 4000-token budget; offset pages on.",
+        "The external fallback applies glob, ignore_case, offset and the budget, but not context or mode.",
+        "While the index is still building, every listed file is scanned."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.MayMatch"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
+          "symbol": "SearchTool.ScanFile"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ExternalSearch.cs",
+          "symbol": "ExternalSearch.Try"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Barrier"
+        }
+      ]
+    },
+    {
+      "id": "unchanged-reread",
+      "name": "Unchanged repeat reads cost one line",
+      "description": "read remembers, per session, which ranges it returned in full and the blob they came from.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs",
+          "symbol": "ReadTool.Run"
+        }
+      ],
+      "behavior": "When a session reads the same path and range again and the file's blob id is unchanged, read returns \"unchanged since your last read\" with the short blob id instead of the text, and logs reason unchanged_since_last_read.",
+      "outcome": "An agent that re-reads a file it already has spends a line, not the file, and is told the content has not moved.",
+      "constraints": [
+        "Only a read that was not truncated is remembered.",
+        "The same range must be asked for: start_line and end_line make up the key.",
+        "The memory lasts for one MCP session (one McpServer)."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs",
+          "symbol": "ReadTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
+          "symbol": "McpServer"
+        }
+      ]
+    },
+    {
+      "id": "change-cursors",
+      "name": "Change cursors",
+      "description": "changed_since hands out cursors and lists what changed after one.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SymbolTests.cs",
+          "symbol": "test_changed_since"
+        }
+      ],
+      "behavior": "A cursor is the engine's epoch and each root's generation. Given one, changed_since reconciles each root, lists the last change kind (A, M or D) per path after that generation, and returns a new cursor.",
+      "outcome": "An agent can refresh what it knows about a work tree without listing it again.",
+      "constraints": [
+        "A cursor is valid within one engine run (one daemon, or one in-process server); after a restart it is reported expired.",
+        "Only roots named in the cursor are reported.",
+        "The change log keeps at most 50,000 entries; an older cursor gets a line saying to re-list."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
+          "symbol": "ChangedSinceTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.ChangesSince"
+        }
+      ]
+    },
+    {
+      "id": "guarded-passthrough",
+      "name": "Guarded command passthrough",
+      "description": "run executes allowed read-only commands without a shell, so questions the tools cannot answer still go through the server and are logged.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+          "symbol": "RunTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_run_tool"
+        }
+      ],
+      "behavior": "run checks argv against RunPolicy, runs the program with Proc.Run in the root with a timeout, caps standard output to the token budget, appends exit status and standard error, and points at search, find_files and read when the program was one they replace. The usage log keeps the program and its flags.",
+      "outcome": "The agent is never stuck, and the owner sees in zazzle-csharp-indexer report which commands it still needed.",
+      "constraints": [
+        "Default allowlist: grep, egrep, fgrep, rg, find, sed, awk, cat, head, tail, wc, ls, sort, uniq, diff, cut, tr, file, stat, du, nl, git, basename, dirname, tree.",
+        "sed -i and w/e commands, awk system() and output redirection, find actions that modify or execute, rg --pre, git -c, --output and --exec-path, and git subcommands outside the read-only list are refused.",
+        "Timeout 30 seconds by default, between 1 and 120; output budget 4000 tokens by default.",
+        "run.unrestricted lifts every check."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
+          "symbol": "RunTool.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs",
+          "symbol": "RunPolicy.Check"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Proc.cs",
+          "symbol": "Proc.Run"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/capability.json",
+      "relationship": "Part of the code-questions capability."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "Carried by the search, read, changed_since and run operations."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/feature.json",
+      "relationship": "run and report_gap feed the usage log that zazzle-csharp-indexer report reads."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/.dev/feature.json",
+      "relationship": "The terse C# view, offered by the view tool."
+    }
+  ]
+}

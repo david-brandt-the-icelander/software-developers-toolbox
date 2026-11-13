@@ -1,0 +1,81 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "Terse C# view feature",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/View",
+  "description": "What the view of a C# file shows and leaves out.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+      "symbol": "TerseView.Build"
+    }
+  ],
+  "entities": [
+    {
+      "id": "terse-csharp-view",
+      "name": "Terse behavioural view of a C# file",
+      "description": "A C# file shown with what does not change its behaviour hidden, collapsed or shortened, keeping each remaining line's source number.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.Build"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "view"
+        }
+      ],
+      "behavior": "TerseView parses the file with Roslyn and, in order, collapses each block of using directives, each non-static constructor that is empty or only stores identifiers (x = y, or x = y ?? throw …), and each unfiltered catch that only logs and then rethrows into one note line; hides statements that only log or trace, if (….IsEnabled(…)) blocks that only log, and #region and #endregion lines; drops public, private, protected and internal from declarations; writes var where a local's type is spelled out on the right (new T(…), (T)x, x as T); and renames locals of six or more characters to the initials of their words, or the first three letters of one word. It then counts the changes per step, shrinks runs of blank lines to one and marks every changed line.",
+      "outcome": "A reader, such as an agent using zazzle read, sees what a C# file does in fewer lines and tokens, and every line number it sees is the file's own.",
+      "constraints": [
+        "A node is hidden or collapsed only when its lines hold nothing else, apart from a trailing // comment, and the lines are not already hidden; collapses run before line-level hiding, so they win.",
+        "A change is applied only when it stays within one line.",
+        "Only logging statements directly inside a block or switch section are hidden; one that is the whole body of an if without braces stays.",
+        "Logging is recognised by receiver and method name: Debug and Trace, receivers named log, logs, logging or ending in logger with Log… or level-named methods, and receivers containing activity or span with tag, event, status, baggage or exception methods; a using var of StartActivity counts too. A statement that assigns, increments, decrements or awaits is never treated as logging.",
+        "Hidden logging statements and #region lines leave no note: the line numbers simply skip them. Collapsed usings, constructors and catches leave an A-B note.",
+        "Parameters keep their names; a local used in nameof keeps its name; a short name already used in the member, or a keyword, gets a number.",
+        "A doc comment directly above a collapsed node is folded into its note."
+      ],
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.Build"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.IsLogging"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "TerseView.ShortenLocals"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "Plan.Hide"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "Plan.Render"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
+          "symbol": "ViewTool.Run"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "Offered through the view operation."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/capability.json",
+      "relationship": "Part of the code-questions capability."
+    }
+  ]
+}

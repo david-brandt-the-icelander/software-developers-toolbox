@@ -1,0 +1,333 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "free-disk-space source component diagram",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "The modules of the one free-disk-space binary and what each reaches outside the process. The scan records directories, file names and compression candidates in a SQLite state file; compress and dedupe act only on what it recorded; clean and the daemon work without it. All modules are compiled into one process; none is deployed on its own.",
+  "sources": [
+    {
+      "path": "macos/rust/free-disk-space/src/main.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/scan.rs",
+      "symbol": "SCHEMA"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "cmd_compress"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/dedupe.rs",
+      "symbol": "cmd_dedupe"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/clean.rs",
+      "symbol": "cmd_clean"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/clean.rs",
+      "symbol": "Progress"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/daemon.rs",
+      "symbol": "cmd_run"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/util.rs",
+      "symbol": "run"
+    }
+  ],
+  "components": [
+    {
+      "id": "source",
+      "name": "free-disk-space source",
+      "responsibility": "The binary's code: one module per command family plus shared helpers.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs)",
+      "responsibility": "Parses the subcommands and flags with clap, fills in defaults such as the state path, and dispatches to the command modules.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "scan",
+      "name": "Scan (scan.rs)",
+      "responsibility": "Walks a root directory, recording every directory, every file's path, leaf name and size, and the compression candidates, in the state file; resumable after Ctrl-C; also status and list.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "compress",
+      "name": "Compression (compress.rs)",
+      "responsibility": "Compresses pending candidates in place: a verified ditto --hfsCompression copy into a temp file beside the original, swapped in by rename; first checks with a probe file that ditto really compresses, and tallies skips by reason.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "dedupe",
+      "name": "Clone dedupe (dedupe.rs)",
+      "responsibility": "Hashes same-named, same-sized files the scan recorded and replaces identical ones with verified copy-on-write clones of one kept copy.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "clean",
+      "name": "Cleanup (clean.rs)",
+      "responsibility": "Deletes regenerable files per target: caches, Xcode derived data, Downloads, Trash, dev build artifacts, Homebrew's cache and Docker's images and build cache, with a running total; records the steps an applying run finishes so an interrupted run resumes after them; also the process snapshot dedupe reuses.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "daemon",
+      "name": "Daemon (daemon.rs)",
+      "responsibility": "Checks free space on an awake-time cadence and runs clean when it is below a threshold; installs, removes and reports itself as a launchd login item.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "util",
+      "name": "Helpers (util.rs)",
+      "responsibility": "Output and colour, sizes, progress lines, the Ctrl-C stop flag, subprocesses with time limits, free space, awake time, display state, BSD file flags, hashes and xattr names.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "state",
+      "name": "Scan state file",
+      "responsibility": "A SQLite database (bundled by rusqlite) at $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3, holding the scan's settings, progress, directories, file names and candidates.",
+      "external": true
+    },
+    {
+      "id": "progress",
+      "name": "Clean progress file",
+      "responsibility": "A text file at ~/.local/state/free-disk-space/clean-progress.txt, one finished step per line (dir:, dev: or target: and its name), kept only while an applying clean is interrupted and for at most 12 hours.",
+      "external": true
+    },
+    {
+      "id": "apfs",
+      "name": "APFS clone and metadata calls",
+      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write and copy its ACL, mode, owner, flags, times and xattrs.",
+      "external": true
+    },
+    {
+      "id": "file-tools",
+      "name": "macOS file tools",
+      "responsibility": "/usr/bin/ditto (compressed copy, and a probe copy in the temp directory) and /usr/bin/xattr (extended attribute names and removal).",
+      "external": true
+    },
+    {
+      "id": "process-tools",
+      "name": "Process listing tools",
+      "responsibility": "lsof (open files and working directories) and ps (command lines) of running processes.",
+      "external": true
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "responsibility": "Tells whether a build artifact directory is inside a work tree, ignored and untracked.",
+      "external": true
+    },
+    {
+      "id": "finder",
+      "name": "Finder",
+      "responsibility": "Empties the Trash when asked through osascript.",
+      "external": true
+    },
+    {
+      "id": "docker",
+      "name": "Docker Desktop",
+      "responsibility": "Prunes images and build cache, stops containers and quits, through the docker CLI and osascript.",
+      "external": true
+    },
+    {
+      "id": "brew",
+      "name": "Homebrew",
+      "responsibility": "Removes its old downloads and versions (brew cleanup --prune=all -s).",
+      "external": true
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "responsibility": "Starts the daemon at login and keeps it running, from the plist the install writes; driven with /bin/launchctl.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "source",
+      "to": "cli",
+      "kind": "contains",
+      "description": "The entry point."
+    },
+    {
+      "from": "source",
+      "to": "scan",
+      "kind": "contains",
+      "description": "Scan, status and list."
+    },
+    {
+      "from": "source",
+      "to": "compress",
+      "kind": "contains",
+      "description": "Verified compression."
+    },
+    {
+      "from": "source",
+      "to": "dedupe",
+      "kind": "contains",
+      "description": "Clone dedupe."
+    },
+    {
+      "from": "source",
+      "to": "clean",
+      "kind": "contains",
+      "description": "Cleanup targets."
+    },
+    {
+      "from": "source",
+      "to": "daemon",
+      "kind": "contains",
+      "description": "Background mode."
+    },
+    {
+      "from": "source",
+      "to": "util",
+      "kind": "contains",
+      "description": "Shared helpers used by every module."
+    },
+    {
+      "from": "cli",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "new, resume, status and list call cmd_new, cmd_resume, cmd_status and cmd_list."
+    },
+    {
+      "from": "cli",
+      "to": "compress",
+      "kind": "depends-on",
+      "description": "compress calls cmd_compress with CompressOpts."
+    },
+    {
+      "from": "cli",
+      "to": "dedupe",
+      "kind": "depends-on",
+      "description": "dedupe calls cmd_dedupe with DedupeOpts."
+    },
+    {
+      "from": "cli",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "clean calls cmd_clean with the target names."
+    },
+    {
+      "from": "cli",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "daemon run, install, uninstall and status; options are validated into daemon::Settings first."
+    },
+    {
+      "from": "compress",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "Opens the state with open_db and warns when the scan has not finished."
+    },
+    {
+      "from": "dedupe",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "Opens the state with open_db, and reuses under and SKIP_PREFIXES to recognise system files."
+    },
+    {
+      "from": "dedupe",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "Reuses clean::Snapshot to skip files a running process has open."
+    },
+    {
+      "from": "daemon",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "Runs clean::cmd_clean with --apply on its targets when free space is below the threshold."
+    },
+    {
+      "from": "scan",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Creates the schema and writes directories, files, candidates and progress, committing about every 2 seconds."
+    },
+    {
+      "from": "compress",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads pending candidates and writes each one's status, note and verified saving."
+    },
+    {
+      "from": "dedupe",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads name groups from the files table and marks replaced files cloned."
+    },
+    {
+      "from": "clean",
+      "to": "progress",
+      "kind": "depends-on",
+      "description": "Progress::load reads it for an applying run, mark appends each finished step, finish removes it after a complete run."
+    },
+    {
+      "from": "compress",
+      "to": "file-tools",
+      "kind": "depends-on",
+      "description": "ditto --hfsCompression of a probe file before the run, then into each temp file; xattr to compare attribute names."
+    },
+    {
+      "from": "compress",
+      "to": "process-tools",
+      "kind": "depends-on",
+      "description": "lsof -t on each file before compressing it."
+    },
+    {
+      "from": "dedupe",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "clonefile into the temp file, copyfile to give it the target's metadata (macOS only; a plain copy elsewhere)."
+    },
+    {
+      "from": "dedupe",
+      "to": "file-tools",
+      "kind": "depends-on",
+      "description": "xattr to compare attribute names and remove ones the target lacks."
+    },
+    {
+      "from": "clean",
+      "to": "process-tools",
+      "kind": "depends-on",
+      "description": "Snapshot::capture runs lsof and ps once per run."
+    },
+    {
+      "from": "clean",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "rev-parse, check-ignore and ls-files on each artifact's parent, with optional locks off."
+    },
+    {
+      "from": "clean",
+      "to": "finder",
+      "kind": "depends-on",
+      "description": "The trash target, with --apply on macOS."
+    },
+    {
+      "from": "clean",
+      "to": "docker",
+      "kind": "depends-on",
+      "description": "The docker target, only if Docker Desktop is already running."
+    },
+    {
+      "from": "clean",
+      "to": "brew",
+      "kind": "depends-on",
+      "description": "The brew target, if brew is on PATH."
+    },
+    {
+      "from": "daemon",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "install writes the plist and runs launchctl bootout then bootstrap; uninstall runs bootout; status runs print."
+    }
+  ]
+}

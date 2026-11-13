@@ -1,0 +1,84 @@
+{
+  "$schema": "schema.json",
+  "kind": "user-journey",
+  "title": "Example worker journeys",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "docs/operator-guide.md",
+      "symbol": "Running a nightly job"
+    }
+  ],
+  "entities": [
+    {
+      "id": "nightly-job",
+      "name": "Run a nightly job",
+      "description": "An operator sets up a job, leaves it overnight and checks it in the morning.",
+      "sources": [
+        {
+          "path": "docs/operator-guide.md",
+          "symbol": "Running a nightly job"
+        }
+      ],
+      "persona": "Operator",
+      "goal": "A job that must run every night does so without being watched.",
+      "stages": [
+        {
+          "id": "set-up",
+          "context": "A new report must be produced every night.",
+          "touchpoint": "Admin page",
+          "action": "Submits the job with a nightly schedule.",
+          "outcome": "The job appears in the schedule with its next run time.",
+          "sources": [
+            {
+              "path": "src/ExampleWorker/JobsController.cs",
+              "symbol": "ExampleWorker.JobsController.Submit"
+            }
+          ]
+        },
+        {
+          "id": "overnight",
+          "context": "Nobody is watching.",
+          "touchpoint": "Paging service",
+          "action": "Is paged only if the run fails.",
+          "outcome": "A failure reaches the operator on duty.",
+          "sources": [
+            {
+              "path": "docs/operator-guide.md",
+              "symbol": "Alarms"
+            }
+          ]
+        },
+        {
+          "id": "morning",
+          "context": "The next working day.",
+          "touchpoint": "Admin page",
+          "action": "Reads the run history.",
+          "outcome": "The operator sees the run finished, or why it did not.",
+          "sources": [
+            {
+              "path": "docs/operator-guide.md",
+              "symbol": "Run history"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/example-operator.md",
+      "supportingActors": [
+        {
+          "name": "Alerting service",
+          "actorDocument": "Actors/example-alerting-service.md"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "src/ExampleWorker",
+      "path": "src/ExampleWorker/.dev/use-case.json",
+      "relationship": "The use case behind the set-up stage."
+    }
+  ]
+}

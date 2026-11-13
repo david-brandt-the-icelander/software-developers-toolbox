@@ -1,0 +1,108 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "free-disk-space decisions",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "Choices the code makes that a change could undo, and questions only the owner can answer. Where the code or README gives no reason, none is recorded.",
+  "entities": [
+    {
+      "id": "today-boundary",
+      "title": "Which day protects dev artifacts",
+      "summary": "Dev artifacts modified today are kept, and today starts at midnight UTC (Atlantic/Reykjavik) for every user, whatever the Mac's own time zone.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "clean_dev keeps any artifact with something modified since today_start_ts, which is midnight UTC; the README and the skill both say \"today (Atlantic/Reykjavik)\". The binary is published through Homebrew and release tarballs, so it may run in any time zone. East of UTC the protected day starts after local midnight (at 10:00 at UTC+10), so build output from that morning can be deleted; west of UTC it starts on the previous local day, which only keeps more.",
+      "options": [
+        {
+          "title": "Keep the fixed UTC day",
+          "consequences": "The same rule everywhere, as documented; users east of UTC get less protection than the word today suggests."
+        },
+        {
+          "title": "Use the Mac's local day",
+          "consequences": "Today means what the user expects; the README, the skill and the KEEP_TODAY text change, and the tests need a time zone."
+        },
+        {
+          "title": "Use a rolling window (such as the last 24 hours)",
+          "consequences": "Independent of time zones; changes the documented rule."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "today_start_ts"},
+        {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "KEEP_TODAY"},
+        {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "clean_dev"},
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "Clean"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"}
+      ]
+    },
+    {
+      "id": "tool-override-in-release",
+      "title": "Whether FDS_TOOLS stays in release builds",
+      "summary": "The test seam that redirects /usr/bin/ditto, /usr/bin/xattr, /bin/launchctl and the other absolute tool paths is read by release builds too.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "util::tool rewrites any absolute program path to $FDS_TOOLS/<name> when that variable is set; its comment says it is there so tests can fake macOS tools. It is not behind cfg(test), so in normal use whatever sets FDS_TOOLS in the environment decides which programs compress, dedupe, trash and the daemon install run.",
+      "options": [
+        {
+          "title": "Keep it in every build",
+          "consequences": "Tests and manual experiments can fake tools without rebuilding; the environment can redirect what the tool runs."
+        },
+        {
+          "title": "Compile it only for tests",
+          "consequences": "Release builds always run the system's tools; manual runs against fake tools need a test build."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "tool"},
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "run"}
+      ]
+    },
+    {
+      "id": "verify-then-swap",
+      "title": "Change files only by swapping in a verified copy",
+      "summary": "compress and dedupe never write into a user's file: they build a temp copy beside it, check it, and rename it over the original.",
+      "status": "accepted",
+      "context": "Both commands replace files the user may care about, on a file system that also holds snapshots and clones.",
+      "decision": "Write .fds-<pid>-<name>.tmp in the same directory; check mode, owner, group, xattr names and SHA-256 against the original (and size, for compression) (and, for compression, the compressed flag and the gain); re-read the original's size, mtime, inode and link count; then rename. Any mismatch leaves the original and removes the temp file.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "compress_verified"},
+        {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "clone_verified"},
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "temp_beside"},
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "remove_temp"}
+      ]
+    },
+    {
+      "id": "abort-after-three",
+      "title": "Abort after three failures in a row",
+      "summary": "compress and dedupe stop the run when three files in a row fail.",
+      "status": "accepted",
+      "context": "A failure leaves the file untouched, but a run of them suggests something is wrong with the machine or the tool rather than with one file.",
+      "decision": "Count consecutive failures; reset on success; at three, print `3 consecutive failures - aborting for safety.` and stop.",
+      "rationale": "Safety, as the message says; the README and the skill tell users and agents to stop on failure while compress and dedupe are untested on real Macs.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
+        {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "dedupe_group"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+      ]
+    },
+    {
+      "id": "awake-time-cadence",
+      "title": "The daemon counts awake time and skips maintenance wakes",
+      "summary": "The daemon's cadence runs on a clock that stops while the Mac sleeps, it never schedules a wake, and it skips a check while the display is asleep.",
+      "status": "accepted",
+      "context": "A Mac wakes briefly in the background for maintenance with its display off; a cleanup is a burst of disk work and deletion.",
+      "decision": "Measure the cadence with CLOCK_UPTIME_RAW on macOS; read free space only when CGDisplayIsAsleep says the main display is awake; otherwise log the check as skipped.",
+      "rationale": "The README names maintenance wakes as the case the display check excludes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "awake_secs"},
+        {"path": "macos/rust/free-disk-space/src/util.rs", "symbol": "display_awake"},
+        {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "cmd_run"},
+        {"path": "macos/rust/free-disk-space/README.md", "symbol": "Daemon"}
+      ]
+    }
+  ]
+}

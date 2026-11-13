@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/delivery.schema.json",
+  "title": "Delivery",
+  "description": "Where the deployable runs and how a version gets there: each environment, how it is promoted to, and how it is rolled back. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "delivery"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "environment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deployedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "promotedFrom": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "rollback": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "environment",
+          "rollback"
+        ]
+      }
+    }
+  }
+}

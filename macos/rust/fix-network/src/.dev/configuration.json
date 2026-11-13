@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "fix-network configuration",
+  "folder": "macos/rust/fix-network/src",
+  "description": "Environment variables the tool reads. Command-line flags are in operation.json.",
+  "entities": [
+    {
+      "id": "fixnet-state",
+      "title": "State root",
+      "summary": "Where each run's state directory is created.",
+      "key": "FIXNET_STATE",
+      "type": "path",
+      "default": "$HOME/.local/state/fix-network",
+      "sensitive": false,
+      "scope": "One run",
+      "takesEffect": "at-startup",
+      "validation": "None; if the directory cannot be created the run stops with exit status 1.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "state_root_from" },
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "state_root" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "prepare" }
+      ]
+    },
+    {
+      "id": "no-color",
+      "title": "No colour",
+      "summary": "When set to anything, the terminal report is printed without ANSI colours; colours are used only when stdout is a terminal anyway.",
+      "key": "NO_COLOR",
+      "type": "presence",
+      "default": "unset (colour on a terminal)",
+      "sensitive": false,
+      "scope": "Each printed line",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "c" },
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "color_enabled" }
+      ]
+    },
+    {
+      "id": "ssh-session",
+      "title": "SSH session detection",
+      "summary": "SSH_CONNECTION or SSH_TTY being set marks the run as inside an SSH session, so steps that can cut it need --allow-remote.",
+      "key": "SSH_CONNECTION, SSH_TTY",
+      "type": "presence",
+      "default": "unset (not over SSH)",
+      "sensitive": false,
+      "scope": "One snapshot",
+      "takesEffect": "per-use",
+      "details": "Set by sshd rather than by the person, but reading them changes what fix may do.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "ssh_from" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "Real::over_ssh" },
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "Gates::blocked" }
+      ]
+    }
+  ]
+}

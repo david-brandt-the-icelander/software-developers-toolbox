@@ -1,0 +1,144 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazzle MCP proxy configuration",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "entities": [
+    {
+      "id": "proxy-options",
+      "title": "zazzled proxy options",
+      "summary": "Command-line options of `zazzled proxy`: how texts are cleaned, which tools are left alone, a file of per-tool settings, logging, and where the server is.",
+      "key": "--lossless, --budget T, --skip TOOL, --config FILE, --log, -- CMD ARGS.., --upstream URL, --listen ADDR",
+      "type": "flags; integer (tokens); string (repeatable); path; command line; URL; socket address",
+      "default": "lossy cleaning; --budget 8000; no tools skipped; no config file; no log; --listen 127.0.0.1:8808 with --upstream",
+      "sensitive": false,
+      "scope": "One proxy process.",
+      "takesEffect": "at-startup",
+      "validation": "Exactly one of `-- CMD ARGS..` (non-empty, without --listen) or --upstream must be given; --budget must be a number of at least 1; --upstream must start with http:// or https://; a --config file that cannot be read or is not valid stops the proxy (proxy-config-file); an unknown option is refused with the usage line.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "DEFAULT_BUDGET"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "DEFAULT_LISTEN"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "run"
+        }
+      ]
+    },
+    {
+      "id": "proxy-config-file",
+      "title": "zazzled proxy --config FILE",
+      "summary": "A JSON file of per-tool settings: for each tool (by exact name, else the longest matching `*` pattern) and for resource reads, whether to clean losslessly, the budget per text, and whether to leave the answer alone.",
+      "key": "--config FILE: {\"tools\": {NAME_OR_PATTERN: RULE, ..}, \"resources\": RULE}, where RULE has lossless (true or false), budget (a number of at least 1) and skip (true or false)",
+      "type": "path to a JSON file",
+      "default": "no file: every answer uses the command line's --lossless, --budget and --skip",
+      "sensitive": false,
+      "scope": "One proxy process. A setting a rule leaves out comes from the command line; a tool named with --skip is skipped whatever its rule says.",
+      "takesEffect": "at-startup",
+      "validation": "Read once when the options are parsed. Text that is not JSON, a top level that is not an object, a section other than tools and resources, a setting other than lossless, budget and skip, a flag that is not true or false, or a budget that is not a number of at least 1 stops the proxy with `--config FILE: ...` naming the place, exit 2.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "rule"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "Config::tool"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "matches"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::settings"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "--config FILE"
+        }
+      ]
+    },
+    {
+      "id": "proxy-output-store",
+      "title": "Output store for shortened texts",
+      "summary": "The proxy stores each text it shortens, with the original, in the output store it finds at start: ZAZZLE_OUTPUTS_DIR, else ~/.zazzle/outputs.",
+      "key": "ZAZZLE_OUTPUTS_DIR, ZAZZLE_OUTPUTS_MAX_GB (and HOME)",
+      "type": "path; number (gigabytes)",
+      "default": "$HOME/.zazzle/outputs; 2 GB",
+      "sensitive": false,
+      "scope": "One proxy process: the directory is read when the options are parsed, the size limit on each save. Their meaning is owned by macos/rust/zazzled/src (configuration.json).",
+      "takesEffect": "at-startup",
+      "validation": "Without a directory nothing is stored and no id items are added; a save that fails adds `[shortened by zazzle; not stored for read-again: ...]` instead.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::keep"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_OUTPUTS_DIR"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_OUTPUTS_MAX_GB"
+        }
+      ]
+    },
+    {
+      "id": "upstream-proxy-env",
+      "title": "Proxy environment variables for the upstream",
+      "summary": "In HTTP mode the upstream client honours the environment's proxy settings, such as HTTPS_PROXY and NO_PROXY.",
+      "key": "HTTPS_PROXY, NO_PROXY (and the other proxy variables the ureq crate reads)",
+      "type": "URL; host list",
+      "default": "unset: direct connections",
+      "sensitive": false,
+      "scope": "Connections from `zazzled proxy --upstream` to the upstream URL.",
+      "takesEffect": "at-startup",
+      "details": "http.rs builds its client with the library's environment proxy lookup left on (agent(true)); which variables are read, and how, is the ureq crate's behaviour and was not checked here. A proxy URL may carry credentials; it is the user's own setting and is never logged by the proxy.",
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "agent"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "MCP proxy"
+        }
+      ]
+    }
+  ]
+}

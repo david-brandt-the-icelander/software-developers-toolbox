@@ -1,0 +1,119 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-indexer live index component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "description": "One RootIndex per work tree, fed by git listings and a platform change source, writing file records to the store and analysing new content through the engine.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+      "symbol": "RootIndex.Start"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+      "symbol": "RootIndex.Reconcile"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+      "symbol": "RootIndex.Drain"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/IChangeSource.cs",
+      "symbol": "IChangeSource"
+    }
+  ],
+  "components": [
+    {
+      "id": "index",
+      "name": "Live index",
+      "responsibility": "Keeps the work trees' file records current.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index"
+    },
+    {
+      "id": "root-index",
+      "name": "Root index (RootIndex.cs)",
+      "responsibility": "Initial and periodic reconcile, debounced handling of change events, the barrier before queries, the generation counter and change log.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index"
+    },
+    {
+      "id": "fsevents",
+      "name": "FSEvents source (FsEventsSource.cs)",
+      "responsibility": "File-level FSEvents stream on macOS; replays history from a stored event id.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index"
+    },
+    {
+      "id": "fsw",
+      "name": "FileSystemWatcher source (FswSource.cs)",
+      "responsibility": "Recursive .NET watcher on every other system; no replay.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index"
+    },
+    {
+      "id": "engine",
+      "name": "Engine and store",
+      "responsibility": "Shared blob tables, blob analysis on first sight of new content, and the SQLite store of roots and file records.",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src"
+    },
+    {
+      "id": "git",
+      "name": "git command-line tool",
+      "responsibility": "ls-files -co --exclude-standard lists the files; check-ignore --stdin filters unknown event paths.",
+      "external": true
+    },
+    {
+      "id": "coreservices",
+      "name": "macOS CoreServices FSEvents API",
+      "responsibility": "Delivers file-system events with persistent event ids.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "index",
+      "to": "root-index",
+      "kind": "contains",
+      "description": "One per attached root."
+    },
+    {
+      "from": "index",
+      "to": "fsevents",
+      "kind": "contains",
+      "description": "Chosen on macOS by ChangeSources.Create."
+    },
+    {
+      "from": "index",
+      "to": "fsw",
+      "kind": "contains",
+      "description": "Chosen elsewhere by ChangeSources.Create."
+    },
+    {
+      "from": "root-index",
+      "to": "fsevents",
+      "kind": "depends-on",
+      "description": "Changed and NeedsFullScan events; LastEventId persisted for replay."
+    },
+    {
+      "from": "root-index",
+      "to": "fsw",
+      "kind": "depends-on",
+      "description": "Changed and NeedsFullScan events."
+    },
+    {
+      "from": "root-index",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "Listing on every reconcile; ignore check for event paths it does not know."
+    },
+    {
+      "from": "root-index",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Engine.GetOrAddBlob for changed content; Store for root id, event id, last full scan and file records."
+    },
+    {
+      "from": "fsevents",
+      "to": "coreservices",
+      "kind": "depends-on",
+      "description": "P/Invoke to FSEventStreamCreate and friends."
+    }
+  ]
+}

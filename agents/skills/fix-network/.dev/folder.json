@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "fix-network skill",
+  "folder": "agents/skills/fix-network",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "fix-network skill",
+      "summary": "The agent skill that tells a coding agent when and how to use the fix-network binary to diagnose and repair a Mac's network.",
+      "purpose": "Holds SKILL.md: its front matter says when the skill applies (no internet, failing DNS, captive portal, a VPN that is connected but the intranet unreachable, broken networking after sleep); its body gives the steps (read-only diagnosis first, relay each outcome as given, dry run, then repair with only the flags the diagnosis supports) and the rules the agent must keep.",
+      "boundaries": [
+        "It holds instructions only, no code: everything it describes is done by the binary in macos/rust/fix-network.",
+        "It is listed in the repository's AGENTS.md under Skills."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "description" },
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Steps" },
+        { "path": "agents/skills/fix-network/SKILL.md", "symbol": "Rules" },
+        { "path": "AGENTS.md", "symbol": "Skills" }
+      ],
+      "relationships": [
+        { "relation": "documents", "path": "macos/rust/fix-network/.dev/folder.json", "entityId": "folder", "description": "The tool the skill wraps." }
+      ]
+    }
+  ]
+}

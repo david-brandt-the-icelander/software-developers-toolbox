@@ -1,0 +1,200 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "fix-network verification",
+  "folder": "macos/rust/fix-network/src",
+  "description": "How the tool is checked. Every command, lookup and connection goes through the Sys trait, so the tests drive the whole tool (gathering, diagnosis, each repair step, both commands) against a scripted Mac, and the real implementation against localhost. Results and coverage figures are readings and are not kept here.",
+  "entities": [
+    {
+      "id": "end-to-end-scripted-mac",
+      "title": "Both commands against a scripted Mac",
+      "summary": "diagnose and fix run end to end through main.rs's run on sys::fake::Fake, a Mac whose command answers, names, open ports, clock and SSH flag are scripted.",
+      "subject": [
+        { "path": "macos/rust/fix-network/src/.dev/operation.json", "entityId": "diagnose" },
+        { "path": "macos/rust/fix-network/src/.dev/operation.json", "entityId": "fix" },
+        { "path": "macos/rust/fix-network/src/.dev/operation.json", "entityId": "fix-dry-run" }
+      ],
+      "criteria": [
+        "Repeated --internal-host and the fix flags parse; a bad port is refused",
+        "Anything but macOS is refused with status 2 before any command runs",
+        "A healthy diagnosis exits 0, runs no sudo and no Wi-Fi change, and saves original.json",
+        "A broken VPN service exits 1 and names fix --vpn",
+        "A state directory that cannot be created exits 1",
+        "fix on a healthy Mac runs nothing and exits 0",
+        "fix --vpn reconnects the VPN, verifies the intranet again and exits 0 without cycling Wi-Fi",
+        "A failed reconnect exits 1, is logged FAILED and ends in manual advice",
+        "Dry runs change nothing and list blocked steps; the --force ladder comes first without repeats",
+        "A Mac with no network service still produces a diagnosis"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_cli_parses_fix_flags", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_run_refuses_other_os", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_diagnose_healthy", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_diagnose_broken_vpn_json", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_prepare_state_dir_error", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_fix_healthy_noop", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_fix_vpn_reconnect_end_to_end", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_fix_vpn_reconnect_fails", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_fix_dry_run_plans", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_start_plan_merges", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests::test_diagnose_without_any_service", "command": "cargo test -p fix-network" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "tests" },
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "fake::Fake" }
+      ]
+    },
+    {
+      "id": "diagnosis-scenarios",
+      "title": "Diagnosis scenarios",
+      "summary": "assess.rs and corp.rs judge hand-built snapshots of healthy and broken Macs, and facts.rs gathers snapshots from the scripted Mac.",
+      "subject": [
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "per-dimension-health" },
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "internal-host-diagnosis" },
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "finding-outcomes" },
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "wake-hint" }
+      ],
+      "criteria": [
+        "A healthy network has no findings and leaves corporate checks NOT TESTED",
+        "Healthy public internet does not hide a broken VPN service",
+        "A corporate DNS failure with a dead VPN DNS server suggests a VPN reconnect, not Wi-Fi",
+        "A resolver fault answered directly by the server escalates from a flush to a reboot",
+        "An internal host routed outside the tunnel is a routing failure",
+        "A dead full tunnel is blamed instead of the Wi-Fi; two tunnels claiming the default route are a conflict",
+        "A third-party tunnel is UNSUPPORTED, never HEALTHY",
+        "Stale VPN state after sleep is tagged with the wake time",
+        "Unreachable proxies are fixable; a dead PAC file is manual",
+        "A name resolving to a sinkhole address is flagged",
+        "Gathering reads hung configd, missing dig, IPv6-only and wired Macs correctly"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/assess.rs", "description": "The scenario tests in module tests, for example test_assess_public_ok_vpn_broken, test_assess_full_tunnel_dead, test_assess_third_party_tunnel and test_assess_stale_after_wake.", "command": "cargo test -p fix-network assess::" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/corp.rs", "description": "The corporate DNS, corporate service and proxy scenarios in module tests.", "command": "cargo test -p fix-network corp::" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/facts.rs", "description": "Gathering against the scripted Mac and the snapshot helpers, in module tests.", "command": "cargo test -p fix-network facts::" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/assess.rs", "symbol": "tests" },
+        { "path": "macos/rust/fix-network/src/corp.rs", "symbol": "tests" },
+        { "path": "macos/rust/fix-network/src/facts.rs", "symbol": "tests" }
+      ]
+    },
+    {
+      "id": "repair-steps",
+      "title": "Gates, plan, fix loop and every repair step",
+      "summary": "repair.rs's tests check the gates, the plan's order, the fix loop and each step's commands and failures against the scripted Mac.",
+      "subject": [
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "adaptive-repair" },
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "wifi-watchdog" }
+      ],
+      "criteria": [
+        "Gated steps need their flag; over SSH, disruptive steps need --allow-remote",
+        "Plans are deduplicated, sorted least disruptive first and skip manual remedies",
+        "A healthy network runs no step without --force; --force runs the ladder and skips what SSH blocks",
+        "A VPN-only fault reconnects the VPN and never cycles Wi-Fi; without --vpn it runs nothing and names the flag",
+        "A failed step is logged FAILED and the loop moves on",
+        "Each step reports success, and failure with the command, including Wi-Fi that stays off and a watchdog that cannot start",
+        "VPN reconnects succeed through stop and start, and fail when the VPN never disconnects or never connects"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_gates_blocked", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_plan_dedupes_and_sorts", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_vpn_fault_spares_wifi", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_vpn_needs_flag", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_failed_step_recorded", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_exec_cycle_wifi", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests::test_exec_vpn_reconnect_failures", "command": "cargo test -p fix-network" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/repair.rs", "symbol": "tests" }
+      ]
+    },
+    {
+      "id": "parsers",
+      "title": "Parsers against documented output formats",
+      "summary": "parse.rs's tests parse fixtures written to follow documented macOS output formats for netstat, scutil, networksetup, ifconfig, sysctl and dig, and the --internal-host forms.",
+      "criteria": [
+        "Routes parse in both families, with and without the older Refs and Use columns",
+        "Split-DNS and scoped resolvers, IPv6 nameservers, proxies, VPN lists and states, services and interfaces parse",
+        "Targets parse as HOST, HOST:PORT, [V6]:PORT and bare IPv6; junk is refused"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/parse.rs", "description": "The fixture tests in module tests.", "command": "cargo test -p fix-network parse::" }
+      ],
+      "details": "The fixtures were not captured from a real Mac: see limitations.json, scripted-not-real.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/parse.rs", "symbol": "tests" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/fix-network/src/.dev/limitations.json", "entityId": "scripted-not-real" }
+      ]
+    },
+    {
+      "id": "real-machine-layer",
+      "title": "The real Sys implementation against localhost",
+      "summary": "sys.rs's tests run Real against this machine without touching its network settings: sudo prefixing, bounded commands, name lookups, TCP to a local listener, the clock and the watchdog script.",
+      "criteria": [
+        "sudo is added only when not root, with -n when there is no terminal",
+        "Commands return their exit code and combined output, time out with 124 and report a missing binary as 127",
+        "Lookups handle literals, localhost, empty answers, errors and timeouts",
+        "TCP succeeds against a local listener and fails against port 1, where nothing listens (a freed ephemeral port could be reused as the client's own source port)",
+        "The watchdog script runs, logs, and quotes the device name"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests::test_argv_sudo", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests::test_exec_outcomes", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests::test_resolve_paths", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests::test_tcp_local", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests::test_real_misc_and_watchdog", "command": "cargo test -p fix-network" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/sys.rs", "symbol": "tests" }
+      ]
+    },
+    {
+      "id": "session-and-redaction",
+      "title": "Session, log and redaction",
+      "summary": "run.rs's tests check the state root, the private state directory, the log, redaction of secret-looking lines and original.json.",
+      "subject": [
+        { "path": "macos/rust/fix-network/src/.dev/feature.json", "entityId": "run-record" }
+      ],
+      "criteria": [
+        "FIXNET_STATE overrides the state root; otherwise it is under HOME",
+        "Lines assigning a password, PSK or token are dropped; ordinary lines mentioning a password are kept",
+        "The state directory is mode 0700 and original.json is written",
+        "Colour only on a terminal without NO_COLOR"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/fix-network/src/run.rs", "symbol": "tests::test_state_root_from", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/run.rs", "symbol": "tests::test_session_log_redact_save", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "macos/rust/fix-network/src/run.rs", "symbol": "tests::test_paint", "command": "cargo test -p fix-network" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/fix-network/src/run.rs", "symbol": "tests" }
+      ]
+    },
+    {
+      "id": "coverage-gate",
+      "title": "Branch and line coverage gate",
+      "summary": "CI fails when fix-network's non-test line or branch coverage drops below 95%; test modules are kept out of the figures.",
+      "criteria": [
+        "At least 95% of lines and of branches are covered, test code excluded"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "fix-network needs 95% line and branch coverage", "command": "cargo +nightly llvm-cov --branch -p fix-network --summary-only" }
+      ],
+      "details": "Each test module carries `#[cfg_attr(coverage_nightly, coverage(off))]`, and `Cargo.toml` declares the `coverage_nightly` cfg that cargo llvm-cov sets.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": ".github/workflows/ci.yml", "symbol": "coverage" },
+        { "path": "macos/rust/fix-network/Cargo.toml", "symbol": "lints.rust" },
+        { "path": "macos/rust/fix-network/src/main.rs", "symbol": "coverage_attribute" }
+      ]
+    }
+  ]
+}

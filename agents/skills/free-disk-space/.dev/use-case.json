@@ -1,0 +1,190 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "free-disk-space skill use cases",
+  "folder": "agents/skills/free-disk-space",
+  "description": "What a coding agent does, following the skill, when the developer asks it to free disk space. The agent's steps and the authorization rules come from SKILL.md; the binary's steps are its code, described in macos/rust/free-disk-space/src/.dev/.",
+  "sources": [
+    {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "free-disk-space"},
+    {"path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "exec_tool"}
+  ],
+  "entities": [
+    {
+      "id": "free-space-for-developer",
+      "name": "Free disk space for the developer",
+      "description": "The agent previews, applies only what the developer authorized, goes on to dedupe and compression by samples, and reports honestly.",
+      "sources": [
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+      ],
+      "actor": "Coding agent",
+      "goal": "Reclaim the space the developer asked for, changing only what they authorized, and tell them truthfully what happened.",
+      "preconditions": [
+        "The developer has asked the agent to free disk space on their Mac.",
+        "The binary is available as free-disk-space or as `zazzle free-disk-space ...`, or is built at macos/rust/target/release/free-disk-space (cd macos/rust && cargo build --release)."
+      ],
+      "postconditions": [
+        "Only authorized targets and steps were applied.",
+        "The developer has the initial and final free space, what was deleted or compressed, protected entries, failures and uncertain items left untouched."
+      ],
+      "flow": [
+        {
+          "id": "preview",
+          "actor": "Coding agent",
+          "action": "Runs clean all without --apply.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "report-preview",
+          "actor": "free-disk-space",
+          "action": "Reports per target what would be deleted, kept or left as uncertain, and changes nothing.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/clean.rs", "symbol": "cmd_clean"}
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "authorize",
+          "actor": "Developer",
+          "action": "Says which targets and steps the agent may apply.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"},
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "apply",
+          "actor": "Coding agent",
+          "action": "Runs clean with only the authorized targets and --apply.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "scan",
+          "actor": "Coding agent",
+          "action": "If more space is wanted, runs new (and resume after an interruption), then status and list.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Compression (resumable)"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "dedupe",
+          "actor": "Coding agent",
+          "action": "Before compressing, previews dedupe, applies it to a sample of 5, checks the files and the free-space change, then applies it fully.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Dedupe (after a scan, before compress)"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "compress",
+          "actor": "Coding agent",
+          "action": "Runs compress --sample 5, compares the verified saving with the free-space change, then compress --limit 20G --yes.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Compression (resumable)"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "verify-and-change",
+          "actor": "free-disk-space",
+          "action": "Compresses or clones each file through a verified temp copy, and reports the summed saving beside the volume's free-space change.",
+          "sources": [
+            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "compress_verified"},
+            {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "clone_verified"}
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "report",
+          "actor": "Coding agent",
+          "action": "Tells the developer the initial and final free space, what was deleted or compressed, protected entries and failures, and lists uncertain items it left; never presents summed file sizes as reclaimed space.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "apply",
+          "condition": "The downloads target is wanted, or --include-system for dedupe.",
+          "outcome": "Applied only with the developer's explicit authorization: downloads empties ~/Downloads fully, and --include-system reaches files the developer does not own or that sit under system paths.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"},
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Dedupe (after a scan, before compress)"}
+          ]
+        },
+        {
+          "atStep": "dedupe",
+          "condition": "The state file comes from a scan made before version 1.1 and holds no file names.",
+          "outcome": "dedupe refuses; the agent reruns new.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Dedupe (after a scan, before compress)"},
+            {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "cmd_dedupe"}
+          ]
+        },
+        {
+          "atStep": "compress",
+          "condition": "compress exits because ditto --hfsCompression wrote an uncompressed test copy (the binary names macOS 26/27).",
+          "outcome": "Nothing was changed; the agent stops compressing, as the skill's rules say on any failure, and reports it.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"},
+            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "ditto_compresses"}
+          ]
+        },
+        {
+          "atStep": "verify-and-change",
+          "condition": "Any failure in compress or dedupe.",
+          "outcome": "The agent stops, because both are untested on real Macs beyond the sample step; the binary itself aborts after three failures in a row.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"},
+            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
+            {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "dedupe_group"}
+          ]
+        },
+        {
+          "atStep": "report",
+          "condition": "The developer wants cleaning to happen on its own.",
+          "outcome": "The agent installs the daemon only with explicit authorization, since it deletes on its own, and adds trash, downloads or docker to its targets only with explicit authorization.",
+          "sources": [
+            {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Background daemon (launchd login item)"},
+            {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "cmd_install"}
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md",
+      "supportingActors": [
+        {"name": "Developer", "actorDocument": "Actors/developer.md"}
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The same commands as a developer runs them, with the binary's branches."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/free-disk-space/src",
+      "path": "macos/rust/free-disk-space/src/.dev/operation.json",
+      "relationship": "The commands the agent runs."
+    }
+  ]
+}

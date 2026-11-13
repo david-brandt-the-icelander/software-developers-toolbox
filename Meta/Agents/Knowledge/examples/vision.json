@@ -1,0 +1,37 @@
+{
+  "$schema": "../schemas/vision.schema.json",
+  "kind": "vision",
+  "schemaVersion": 1,
+  "title": "Example Scheduler vision",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "vision",
+      "title": "Jobs run on time, and someone knows when they don't",
+      "summary": "A small team's scheduled jobs run reliably, and every failure reaches a person who can act on it.",
+      "problem": "Jobs live in crontabs on three machines, fail silently and are rediscovered weeks later.",
+      "audience": [
+        "Developers who write jobs",
+        "The operator on duty"
+      ],
+      "outcome": "Every job is registered in one place, runs at most once per schedule slot and reports its outcome.",
+      "nonGoals": [
+        "General workflow orchestration",
+        "Jobs longer than one hour"
+      ],
+      "successMeasures": [
+        "No silent failures for a quarter",
+        "A new job is added in under ten minutes"
+      ],
+      "fundedBy": "The platform team's budget",
+      "shutDownWhen": "The hosting platform offers the same guarantees",
+      "evidenceStatus": "documented",
+      "origin": {
+        "kind": "document",
+        "by": "Product owner",
+        "reference": "Kick-off notes"
+      }
+    }
+  ]
+}

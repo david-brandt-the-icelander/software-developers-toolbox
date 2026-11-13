@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/decisions.schema.json",
+  "kind": "decisions",
+  "schemaVersion": 1,
+  "title": "Example worker decisions",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "lease-store",
+      "title": "Store leases in the database",
+      "summary": "Slot leases live in the jobs database, not in a cache.",
+      "status": "accepted",
+      "context": "Workers must agree on who runs a slot, even after a restart.",
+      "options": [
+        {
+          "title": "Database row lock",
+          "consequences": "One more write per run; survives restarts."
+        },
+        {
+          "title": "In-memory cache",
+          "consequences": "Fast; lost on restart, so slots can run twice."
+        }
+      ],
+      "decision": "Database row lock.",
+      "rationale": "A double run costs more than a write.",
+      "decidedBy": "Owner",
+      "decidedOn": "2026-11-02",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/ExampleWorker/Worker.cs",
+          "symbol": "ExampleWorker.Worker.RunAsync"
+        }
+      ]
+    },
+    {
+      "id": "alarm-grouping",
+      "title": "Group repeated alarms per hour or per day",
+      "summary": "How long repeated failures of one job are grouped.",
+      "status": "open",
+      "context": "Grouping per hour may page too often for a job that fails all night.",
+      "waitingOn": "Owner",
+      "options": [
+        {
+          "title": "Per hour"
+        },
+        {
+          "title": "Per day"
+        }
+      ],
+      "blocks": [
+        {
+          "path": "src/ExampleWorker/.dev/backlog.json",
+          "entityId": "failure-alarm"
+        }
+      ]
+    }
+  ]
+}

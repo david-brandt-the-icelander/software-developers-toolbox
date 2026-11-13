@@ -1,0 +1,39 @@
+{
+  "$schema": "../schemas/plan.schema.json",
+  "kind": "plan",
+  "schemaVersion": 1,
+  "title": "Example Scheduler plans",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "alarms",
+      "title": "Failure alarms",
+      "summary": "Deliver alarms on failed runs before run history.",
+      "goal": "Every failed run reaches the operator on duty.",
+      "status": "in-progress",
+      "scope": [
+        {
+          "path": "src/ExampleWorker/.dev/backlog.json",
+          "entityId": "failure-alarm"
+        }
+      ],
+      "approach": "Emit a failure event from the worker and let the existing alerting service page on it.",
+      "steps": [
+        {
+          "id": "event",
+          "title": "Emit run-failed events",
+          "status": "done"
+        },
+        {
+          "id": "rule",
+          "title": "Add the alert rule",
+          "status": "todo"
+        }
+      ],
+      "outOfScope": [
+        "Alarm suppression"
+      ]
+    }
+  ]
+}

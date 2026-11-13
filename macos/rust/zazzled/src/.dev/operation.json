@@ -1,0 +1,217 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazzled operations",
+  "folder": "macos/rust/zazzled/src",
+  "description": "The zazzled binary's own subcommands. The zazzle commands they serve are described in cmd/; `zazzled proxy` and `zazzled wrap` in proxy/ and wrap/. A failure prints `zazzled: ...` on standard error and exits 2.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/rust/zazzled/src/cli.rs",
+      "symbol": "finish"
+    }
+  ],
+  "entities": [
+    {
+      "id": "serve",
+      "name": "zazzled serve",
+      "description": "Runs the daemon on the unix socket until it has been idle long enough.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "serve_main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "serve"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cli.rs",
+        "symbol": "serve_main"
+      },
+      "action": "command",
+      "transport": "zazzled serve [--socket PATH] [--idle SECS]; started by the invoker, by the MCP front end or by launchd",
+      "authorization": "Whoever can run the binary; the socket it creates is mode 0600 in a 0700 directory, and each connection is served only if its peer has the daemon's uid.",
+      "result": "Serves connections; exits after --idle seconds (default from ZAZZLE_IDLE_SECS, else 1800) with no connection open, flushing the cache and removing a socket it bound itself (launchd's socket stays).",
+      "failures": [
+        "A daemon already answers on the socket: `a daemon is already running`.",
+        "The socket cannot be bound, or HOME is unset when no socket is given.",
+        "A bad --socket or --idle value, or an unknown option."
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "zazzled mcp",
+      "description": "An MCP server on standard input and output in front of the daemon.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "mcp_main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "handle_line"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cli.rs",
+        "symbol": "mcp_main"
+      },
+      "action": "command",
+      "transport": "zazzled mcp, started by an MCP client; newline-delimited JSON-RPC: initialize, ping, tools/list, tools/call",
+      "authorization": "The MCP client that started the process; tool calls go to the daemon as the same user, with this process's working directory as the root.",
+      "result": "Tools zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs and zazzle_edit, each answered with the command's text and isError when its status is not 0; runs until standard input closes.",
+      "failures": [
+        "A line that is not JSON: error -32700.",
+        "An unknown method: -32601; an unknown tool: -32602.",
+        "A wrong argument type or a missing required argument: a tool result with isError and `error: ...`.",
+        "The daemon cannot be reached or started: a tool result with isError and `error: cannot reach zazzled: ...`."
+      ]
+    },
+    {
+      "id": "install",
+      "name": "zazzled install",
+      "description": "Installs the LaunchAgent so launchd owns the socket and starts the daemon on demand.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "agent_cmd"
+        },
+        {
+          "path": "macos/rust/zazzled/src/launchd.rs",
+          "symbol": "install"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/launchd.rs",
+        "symbol": "install"
+      },
+      "action": "command",
+      "transport": "zazzled install",
+      "authorization": "The user, in their own gui launchd domain; nothing else is checked.",
+      "result": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist for this executable and the socket path, unloads any loaded copy and bootstraps it; prints `installed PATH`.",
+      "failures": [
+        "Not macOS: `install is for macOS launchd; elsewhere the invoker starts zazzled on demand`.",
+        "The plist cannot be written.",
+        "launchctl bootstrap fails or takes more than 10 seconds."
+      ]
+    },
+    {
+      "id": "uninstall",
+      "name": "zazzled uninstall",
+      "description": "Unloads the LaunchAgent and removes its plist.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/launchd.rs",
+          "symbol": "uninstall"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/launchd.rs",
+        "symbol": "uninstall"
+      },
+      "action": "command",
+      "transport": "zazzled uninstall",
+      "authorization": "The user, in their own gui launchd domain.",
+      "result": "`removed PATH`, or `not installed` when there was no plist.",
+      "failures": [
+        "Not macOS.",
+        "The plist exists but cannot be removed."
+      ]
+    },
+    {
+      "id": "run",
+      "name": "zazzled run",
+      "description": "Runs one zazzle command in this process, without a daemon.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "run_in_process"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cli.rs",
+        "symbol": "run_in_process"
+      },
+      "action": "command",
+      "transport": "zazzled run CMD .. (not `zazzle run`, which is `zazzled wrap`)",
+      "authorization": "The caller's own permissions; edits are confined to the current directory as for any caller.",
+      "result": "The command's output on standard output, or its error on standard error, and its status as the exit code; uses ZAZZLE_SESSION, standard input and the current directory but no persistent cache. clean outputs go to the output store, and read-again finds them there.",
+      "failures": [
+        "Whatever the command itself refuses (see cmd/)."
+      ]
+    },
+    {
+      "id": "version",
+      "name": "zazzled version",
+      "description": "Prints the daemon's version.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/Cargo.toml",
+          "symbol": "version"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "VERSION"
+        },
+        {
+          "path": "macos/release/set-version.sh",
+          "symbol": "version"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cli.rs",
+        "symbol": "main"
+      },
+      "action": "query",
+      "transport": "zazzled version, zazzled --version",
+      "authorization": "None.",
+      "result": "`zazzled VERSION`: the crate's version, `0.0.0-dev` in the repository; release builds write the tag's version into it first (macos/release/set-version.sh). `zazzle version` is answered by the daemon as `zazzle VERSION`, with the same version.",
+      "failures": []
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/use-case.json",
+      "relationship": "The use cases that call mcp and install."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/operation.json",
+      "relationship": "The zazzle commands that serve, mcp and run carry."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/operation.json",
+      "relationship": "`zazzled proxy`."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/operation.json",
+      "relationship": "`zazzled wrap`, which `zazzle run` execs."
+    },
+    {
+      "kind": "deployment",
+      "folder": "macos/rust/zazzled",
+      "path": "macos/rust/zazzled/.dev/deployment-diagram.json",
+      "relationship": "Where each of these runs."
+    }
+  ]
+}

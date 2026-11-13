@@ -1,0 +1,81 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-indexer command-line helper classes",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Cli",
+  "description": "One static class per command and the hook's decision record. They share nothing with each other.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
+      "symbol": "HookPolicy"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
+      "symbol": "Init"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
+      "symbol": "Report"
+    }
+  ],
+  "types": [
+    {
+      "id": "Cli.HookDecision",
+      "name": "HookDecision",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs"
+      ],
+      "members": [
+        "bool Block",
+        "string Message",
+        "string Program"
+      ]
+    },
+    {
+      "id": "Cli.HookPolicy",
+      "name": "HookPolicy",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs"
+      ],
+      "members": [
+        "static HookDecision Decide(string toolName, string? command, string? filePath = null)",
+        "static List<List<string>> Segments(string cmd)"
+      ]
+    },
+    {
+      "id": "Cli.Init",
+      "name": "Init",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs"
+      ],
+      "members": [
+        "static string? FindZazzled(string exe)",
+        "static List<string> Apply(string dir, string exe, string? zazzled)",
+        "const string AgentsSnippet"
+      ]
+    },
+    {
+      "id": "Cli.Report",
+      "name": "Report",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs"
+      ],
+      "members": [
+        "static string FromDir(string stateDir)",
+        "static string Build(List<JsonNode> all)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Cli.HookPolicy",
+      "to": "Cli.HookDecision",
+      "kind": "depends-on",
+      "description": "Decide returns one."
+    }
+  ]
+}

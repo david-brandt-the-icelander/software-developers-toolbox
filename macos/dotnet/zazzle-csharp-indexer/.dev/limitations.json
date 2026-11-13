@@ -1,0 +1,93 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzle-csharp-indexer limitations",
+  "folder": "macos/dotnet/zazzle-csharp-indexer",
+  "description": "Limits of the tool as a whole. Limits of its parts are in the limitations.json of src/Index, src/Analysis, src/Tools, src/View, src/Mcp and src/Cli. The README's Known limits section stays the reader's list.",
+  "entities": [
+    {
+      "id": "platforms",
+      "title": "macOS first, Linux second, Windows untested",
+      "summary": "macOS is the primary target and Linux is built and tested; Windows is untested.",
+      "impact": "Releases build osx-arm64, osx-x64, linux-x64 and linux-arm64 only. Some code paths already step aside on Windows (realpath, socket permissions, spawning the daemon), but nothing checks that they work there.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Build the C# indexer for both CPU types"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "rid: linux-arm64"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SpawnDaemon"
+        }
+      ]
+    },
+    {
+      "id": "large-unsigned-binary",
+      "title": "A large, unsigned binary",
+      "summary": "The published file is large (self-contained, with Roslyn, ReadyToRun, untrimmed) and is not Developer ID signed: the release signs the other tools when signing is configured, but not the indexer.",
+      "impact": "A big file per platform; the release gzips the macOS ones.",
+      "workaround": "Install it with the zazzle Homebrew formula: Homebrew does not quarantine what a formula installs, so it runs without a Gatekeeper prompt.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
+          "symbol": "PublishReadyToRun"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Sign and notarize"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "quarantine"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    },
+    {
+      "id": "dev-builds-share-version",
+      "title": "Builds outside a release all say 0.0.0-dev",
+      "summary": "Only the release workflow passes a version to the build, so every local or CI build reports 0.0.0-dev, and the daemon handshake sees two such builds as the same version.",
+      "impact": "A daemon started by one development build keeps serving serve and zazzled clients of a newer development build until it is idle for the idle period; the new code is not used meanwhile. A release build and a development build differ, so either replaces an idle daemon of the other.",
+      "workaround": "End the running daemon process before trying a development build. serve --no-daemon (ZAZZLE_INDEXER_NO_DAEMON=1) avoids the daemon for MCP sessions, but zazzled always goes through it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/Directory.Build.props",
+          "symbol": "Version"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Program.cs",
+          "symbol": "ZAZZLE_INDEXER_NO_DAEMON"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    }
+  ]
+}

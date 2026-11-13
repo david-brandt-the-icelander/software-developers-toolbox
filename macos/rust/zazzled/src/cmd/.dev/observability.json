@@ -1,0 +1,80 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "zazzle command signals",
+  "folder": "macos/rust/zazzled/src/cmd",
+  "entities": [
+    {
+      "id": "status",
+      "title": "status line",
+      "summary": "`zazzle status` reports the daemon's version, pid, uptime, cache, walk and session counters in one line.",
+      "signalType": "health-check",
+      "name": "status",
+      "meaning": "Whether a daemon answers, which process it is, and how its caches are doing: hot and stored metadata records, cache hits and misses, directory walks scanned and reused, and sessions tracked.",
+      "unit": "Counts; uptime in seconds.",
+      "dimensions": [
+        "version",
+        "pid",
+        "uptime",
+        "cache hot and stored records",
+        "hits and misses",
+        "walks scanned and reused",
+        "sessions"
+      ],
+      "access": "Any caller of the daemon's own uid, through `zazzle status`. It is not an MCP tool; `zazzled run status` reports a fresh in-process engine, so its counters start at zero.",
+      "retention": "Kept in daemon memory only; reset when the daemon exits.",
+      "cadence": "On request.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "status"
+        },
+        {
+          "path": "macos/rust/zazzled/src/engine.rs",
+          "symbol": "Engine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/walk.rs",
+          "symbol": "WalkCache"
+        },
+        {
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "symbol": "status"
+        }
+      ]
+    },
+    {
+      "id": "clean-stats",
+      "title": "clean --stats line",
+      "summary": "`zazzle clean --stats` ends its answer with the token estimate before and after and the steps that changed the text.",
+      "signalType": "metric",
+      "name": "[clean ~A→~B tokens; steps: ...]",
+      "meaning": "How much cleaning saved for this one input, and which steps did it (ansi, whitespace, json, grep, repeats, progress, blobs, long-lines, budget), or `none`.",
+      "unit": "Estimated tokens.",
+      "dimensions": [
+        "tokens before",
+        "tokens after",
+        "steps"
+      ],
+      "access": "The caller of that clean command, in its answer.",
+      "retention": "Part of the answer, so it is kept with it in the output store for an hour when the answer is stored (macos/rust/zazzled/src/outputs.rs MAX_AGE); not kept otherwise.",
+      "cadence": "Per clean call with --stats.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "step"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "store"
+        }
+      ]
+    }
+  ]
+}

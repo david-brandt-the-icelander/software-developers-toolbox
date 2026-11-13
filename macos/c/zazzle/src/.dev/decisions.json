@@ -1,0 +1,108 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzle invoker source decisions",
+  "folder": "macos/c/zazzle/src",
+  "entities": [
+    {
+      "id": "raw-darwin-syscalls",
+      "title": "Keep raw BSD syscalls on macOS?",
+      "summary": "On macOS the invoker links libSystem anyway, but still makes its I/O, socket and exec calls as raw BSD syscalls, an interface its own header calls unsupported by Apple and a spike.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "sys_darwin_arm64.h issues read, write, open, close, socket, connect, sendmsg, recvmsg, getsockopt, getuid, execve and exit through `svc #0x80` with hard-coded syscall numbers and the carry-flag error convention; its header says \"the BSD syscall ABI is unsupported by Apple, so the spike measures it\". Since a freestanding Mach-O is killed on exec (macos/c/zazzle/.dev/decisions.json, why-not-freestanding-on-macos), the program links libSystem and already calls its _NSGetExecutablePath, nanosleep and posix_spawn. Whether the raw calls are meant to stay once the spike has been measured is not written down; since then the non-blocking receive for the spin and the execve for the standalone tools, run and proxy have been added as raw calls too.",
+      "options": [
+        {
+          "title": "Keep the raw syscalls",
+          "consequences": "One code path shape on both platforms; relies on syscall numbers and conventions Apple does not promise to keep, so a macOS update could break zazzle there."
+        },
+        {
+          "title": "Call libSystem's wrappers on macOS",
+          "consequences": "Uses Apple's supported interface at no extra linking cost; the macOS backend no longer exercises the raw path, and the Linux and macOS backends differ more."
+        }
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent documenting the invoker for HASD",
+        "date": "2026-11-12",
+        "reference": "macos/c/zazzle/src/sys_darwin_arm64.h, header comment"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/sys_darwin_arm64.h",
+          "symbol": "sys_call"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_darwin_arm64.h",
+          "symbol": "sys_exec"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_darwin_arm64.h",
+          "symbol": "posix_spawn"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys.h",
+          "symbol": "sys_recv_nowait"
+        },
+        {
+          "path": "macos/c/zazzle/README.md",
+          "symbol": "zazzle (invoker)"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/c/zazzle/.dev/decisions.json",
+          "entityId": "why-not-freestanding-on-macos"
+        }
+      ]
+    },
+    {
+      "id": "spin-before-block",
+      "title": "Spin briefly before blocking on the reply",
+      "summary": "The invoker polls for the daemon's status byte without sleeping for up to 25 µs before it blocks on the read.",
+      "status": "accepted",
+      "context": "Many daemon commands (a read of a cached file) finish in microseconds, and putting the invoker to sleep on the socket and waking it again costs about as much as the work itself.",
+      "options": [
+        {
+          "title": "Block on the read at once",
+          "consequences": "No wasted CPU, but every fast reply pays a sleep and a wake-up."
+        },
+        {
+          "title": "Poll for a short, fixed time, then block",
+          "consequences": "Fast replies skip the sleep and wake-up; slow commands lose at most the spin time of CPU."
+        }
+      ],
+      "decision": "read_status polls with a non-blocking one-byte recvmsg for up to SPIN_US (25 µs), timed with CNTVCT_EL0 on arm64 and clock_gettime on x86_64 and with a pause or yield hint between polls, then falls back to a blocking read. An error other than would-block ends the spin at once.",
+      "rationale": "Per the README and the commit that introduced it, fast replies skip a sleep and wake-up that cost about as much as the daemon's work on a Linux VM, and slow commands lose at most 25 µs of CPU; the readings are in the README.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/c/zazzle/README.md, section What it does (rationale moved here); commit 2bb253d"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "read_status"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "SPIN_US"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_arm64_clock.h",
+          "symbol": "sys_clock_after_us"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys_linux_x86_64.h",
+          "symbol": "sys_clock_now"
+        },
+        {
+          "path": "macos/c/zazzle/src/sys.h",
+          "symbol": "sys_recv_nowait"
+        }
+      ]
+    }
+  ]
+}

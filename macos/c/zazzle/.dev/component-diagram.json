@@ -1,0 +1,85 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle invoker component diagram",
+  "folder": "macos/c/zazzle",
+  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, and the standalone tools the invoker runs for `zazzle free-disk-space` and `zazzle fix-network`.",
+  "sources": [
+    {
+      "path": "macos/c/zazzle/Makefile",
+      "symbol": "all"
+    },
+    {
+      "path": "macos/c/zazzle/test/smoke.sh",
+      "symbol": "ZAZZLED"
+    },
+    {
+      "path": "macos/c/zazzle/bench/run.sh",
+      "symbol": "ZAZZLED"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "is_tool"
+    }
+  ],
+  "components": [
+    {
+      "id": "zazzle",
+      "name": "zazzle invoker",
+      "responsibility": "Builds and tests the zazzle program.",
+      "folder": "macos/c/zazzle"
+    },
+    {
+      "id": "src",
+      "name": "Invoker source",
+      "responsibility": "The program: logic, entry and per-platform syscalls.",
+      "folder": "macos/c/zazzle/src",
+      "diagram": "macos/c/zazzle/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "test",
+      "name": "Tests",
+      "responsibility": "Host unit tests against a mock syscall layer, the gcov branch gate and the end-to-end smoke test.",
+      "folder": "macos/c/zazzle/test"
+    },
+    {
+      "id": "bench",
+      "name": "Benchmarks",
+      "responsibility": "Spawn-latency measurements of zazzle against a startup floor, a libc hello, grep and cat, and cold and warm refs timings.",
+      "folder": "macos/c/zazzle/bench"
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "The daemon the invoker talks to, and the binary it execs for `run` and `proxy`.",
+      "folder": "macos/rust/zazzled",
+      "diagram": "macos/rust/zazzled/.dev/component-diagram.json"
+    },
+    {
+      "id": "free-disk-space",
+      "name": "free-disk-space",
+      "responsibility": "The standalone tool `zazzle free-disk-space` runs.",
+      "folder": "macos/rust/free-disk-space",
+      "diagram": "macos/rust/free-disk-space/.dev/component-diagram.json"
+    },
+    {
+      "id": "fix-network",
+      "name": "fix-network",
+      "responsibility": "The standalone tool `zazzle fix-network` runs.",
+      "folder": "macos/rust/fix-network",
+      "diagram": "macos/rust/fix-network/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "zazzle", "to": "src", "kind": "contains", "description": "The program." },
+    { "from": "zazzle", "to": "test", "kind": "contains", "description": "Its tests." },
+    { "from": "zazzle", "to": "bench", "kind": "contains", "description": "Its benchmarks." },
+    { "from": "src", "to": "zazzled", "kind": "depends-on", "description": "Sends every daemon command over its socket and starts it when nothing listens; execs `zazzled wrap` and `zazzled proxy`." },
+    { "from": "src", "to": "free-disk-space", "kind": "depends-on", "description": "Execs the free-disk-space binary beside itself." },
+    { "from": "src", "to": "fix-network", "kind": "depends-on", "description": "Execs the fix-network binary beside itself." },
+    { "from": "test", "to": "src", "kind": "depends-on", "description": "unit.c includes zazzle_core.h with the mock; smoke.sh runs build/zazzle." },
+    { "from": "test", "to": "zazzled", "kind": "depends-on", "description": "smoke.sh runs the release zazzled (ZAZZLED)." },
+    { "from": "bench", "to": "src", "kind": "depends-on", "description": "exit0.c reuses entry.h; run.sh and refs.sh time build/zazzle." },
+    { "from": "bench", "to": "zazzled", "kind": "depends-on", "description": "run.sh and refs.sh start the release zazzled on a temporary socket; refs.sh also times `zazzled run refs` cold." }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "../schemas/delivery.schema.json",
+  "kind": "delivery",
+  "schemaVersion": 1,
+  "title": "Example worker delivery",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "production",
+      "title": "Production",
+      "summary": "The worker the operators rely on.",
+      "environment": "production",
+      "purpose": "Runs every registered job.",
+      "deployedBy": "The release pipeline",
+      "promotedFrom": "staging",
+      "approvals": [
+        "The operator on duty"
+      ],
+      "rollback": "Redeploy the previous image tag; leases expire on their own within ten minutes."
+    }
+  ]
+}

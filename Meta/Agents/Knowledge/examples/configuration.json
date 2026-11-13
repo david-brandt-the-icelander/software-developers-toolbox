@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/configuration.schema.json",
+  "kind": "configuration",
+  "schemaVersion": 1,
+  "title": "Example worker configuration",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "lease-duration",
+      "title": "Lease duration",
+      "summary": "How long a claimed slot stays claimed without renewal.",
+      "key": "Worker:LeaseDuration",
+      "type": "duration",
+      "default": "00:10:00",
+      "sensitive": false,
+      "scope": "per worker",
+      "takesEffect": "at-startup",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/ExampleWorker/Worker.cs",
+          "symbol": "ExampleWorker.Worker"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Content analysis",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Content analysis",
+      "summary": "Turns one file's bytes into the facts zazzle-csharp-indexer stores per blob: git blob id, language, line count, trigram Bloom filter, symbols, identifier occurrences and a one-line digest.",
+      "purpose": "Holds the pure functions that depend only on a file's bytes and extension: blob analysis, the trigram Bloom filter, C# extraction with Roslyn, regex-based extraction for other languages, and the extraction of literals a regex must contain. Nothing here reads the disk, the store or the network.",
+      "boundaries": [
+        "Storing the results is the store's job (src/Store.cs); deciding which files to analyse is the index's (src/Index/).",
+        "The search and reference tools in src/Tools/ use the Bloom filter, the literal extractor and the stored symbol format; they do not change them.",
+        "A change to what this folder produces for a blob must bump Store.ExtractorVersion (see contracts.json)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
+          "symbol": "BlobAnalyzer.Analyze"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Engine.cs",
+          "symbol": "Engine.GetOrAddBlob"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Store.cs",
+          "symbol": "Store.ExtractorVersion"
+        }
+      ]
+    }
+  ]
+}

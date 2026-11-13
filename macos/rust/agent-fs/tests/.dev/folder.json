@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "afs end-to-end tests",
+  "folder": "macos/rust/agent-fs/tests",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "afs end-to-end tests",
+      "summary": "cli.rs runs the built afs binary as a child process and checks its arguments, stdin, exit codes, the JSONL loop and the MCP server.",
+      "purpose": "Checks the binary from the outside, as a shell or an MCP client sees it; the unit tests beside the code in src/ check the modules.",
+      "boundaries": [
+        "Starts the binary Cargo builds for the test (CARGO_BIN_EXE_afs) and writes fixtures only to temporary directories."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/agent-fs/tests/cli.rs", "symbol": "afs" }
+      ]
+    }
+  ]
+}

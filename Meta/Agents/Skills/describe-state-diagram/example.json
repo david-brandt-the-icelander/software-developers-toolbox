@@ -1,0 +1,40 @@
+{
+  "$schema": "schema.json",
+  "kind": "state",
+  "title": "Example worker state diagram",
+  "folder": "src/ExampleWorker",
+  "description": "Fictional example; not a description of this repository.",
+  "sources": [
+    {
+      "path": "src/ExampleWorker/Worker.cs",
+      "symbol": "ExampleWorker.Worker"
+    }
+  ],
+  "machine": "ExampleWorker.Worker",
+  "initialState": "idle",
+  "states": [
+    {
+      "id": "idle",
+      "description": "No message being processed."
+    },
+    {
+      "id": "processing",
+      "description": "Processing a message."
+    }
+  ],
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "processing",
+      "trigger": "Receive(message)",
+      "guard": "Message available",
+      "action": "Store current message."
+    },
+    {
+      "from": "processing",
+      "to": "idle",
+      "trigger": "Complete()",
+      "action": "Clear current message."
+    }
+  ]
+}

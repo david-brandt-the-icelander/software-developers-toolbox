@@ -1,0 +1,56 @@
+{
+  "$schema": "../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "software-developers-toolbox",
+  "folder": ".",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "software-developers-toolbox",
+      "summary": "A collection of command-line tools for a developer's own machine, mostly macOS: four Rust crates, the zazzle C invoker, and the C# indexer zazzle-csharp-indexer.",
+      "purpose": "Holds the tools, the workflows that test and release them, and the agent skills and instructions for using them. The tools share a repository, a Cargo workspace and one release, not an architecture. Where one uses another, the code says so: the zazzle invoker is the client of the zazzled daemon and hands `zazzle free-disk-space` and `zazzle fix-network` to those binaries, and zazzled asks zazzle-csharp-indexer's daemon for the terse view of C# files. agent-fs, fix-network and free-disk-space call no other tool.",
+      "boundaries": [
+        "Each tool is documented in its own folder: macos/rust/fix-network, macos/rust/free-disk-space, macos/rust/agent-fs, macos/rust/zazzled with macos/c/zazzle, and macos/dotnet/zazzle-csharp-indexer.",
+        "The Homebrew formula is not kept here: the release writes it into the external tap zazzcat/homebrew-z; macos/release documents how.",
+        "Meta/Agents/ is a copy of human-assisted-software-development's Agents/Skills and Agents/Knowledge. It is changed in that repository and copied here, and has no .dev folder.",
+        "The download site icelander.net/downloads, the GitHub releases and the tap are outside the repository; the release workflow publishes to them."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "README.md",
+          "symbol": "Tools (macOS, Rust)"
+        },
+        {
+          "path": "AGENTS.md",
+          "symbol": "Layout"
+        },
+        {
+          "path": "macos/rust/Cargo.toml",
+          "symbol": "workspace.members"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "exec_tool"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "homebrew"
+        }
+      ],
+      "links": [
+        {
+          "label": "Agent instructions",
+          "path": "AGENTS.md"
+        },
+        {
+          "label": "Human-assisted software development",
+          "url": "https://github.com/david-brandt-the-icelander/human-assisted-software-development"
+        }
+      ]
+    }
+  ]
+}

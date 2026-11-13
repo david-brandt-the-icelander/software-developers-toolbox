@@ -1,0 +1,27 @@
+{
+  "$schema": "../schemas/risks.schema.json",
+  "kind": "risks",
+  "schemaVersion": 1,
+  "title": "Example Scheduler risks",
+  "folder": ".",
+  "description": "Fictional example of the Example Scheduler, a made-up job scheduler; not a description of any real system.",
+  "entities": [
+    {
+      "id": "double-run",
+      "title": "A job runs twice in one slot",
+      "summary": "Two workers claim the same slot after a network partition.",
+      "likelihood": "low",
+      "impact": "high: some jobs send invoices",
+      "status": "mitigated",
+      "mitigation": "Slots are claimed with a lease in the database; a second claim fails.",
+      "owner": "Platform team",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/ExampleWorker/.dev/backlog.json",
+          "entityId": "lease-renewal"
+        }
+      ]
+    }
+  ]
+}

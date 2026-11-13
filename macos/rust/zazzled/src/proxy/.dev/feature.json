@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle MCP proxy features",
+  "folder": "macos/rust/zazzled/src/proxy",
+  "description": "What the proxy does to the traffic it relays.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/proxy/mod.rs",
+      "symbol": "Filter::rewrite_text"
+    }
+  ],
+  "entities": [
+    {
+      "id": "mcp-result-cleaning",
+      "name": "Cleaned MCP results",
+      "description": "The texts another MCP server returns for tool calls and resource reads reach the client cleaned by clean's steps.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::result"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "MCP proxy"
+        }
+      ],
+      "behavior": "The proxy records each client request that is a tools/call (with its tool name) or a resources/read, by JSON-RPC id, in single messages and batches. When a server message answers one of them with a result, the `text` of each `content` item of type text (or without a type) and of each embedded `resource` item, or the `text` of each `contents` item of a resource read, is replaced by clean's output when that is at least one estimated token shorter. The settings are those of the --config rule for the tool (its exact name, else the longest matching `*` pattern) or for resource reads, and the command line's --lossless and --budget for whatever a rule leaves out. Each shortened text is stored with its original in the output store, and an item of its own is appended after the result's items: a text item reading `[r:ID shortened by zazzle]` in a tool result, or an item with the shortened item's uri and mimeType text/plain in a resource read, with `; full text: read-again r:ID --full` when something was cut; `read-again r:ID` returns the shortened text and `--full` the original. Everything else is forwarded as it came: requests in both directions, server requests and notifications, error answers, structuredContent, images and other binary items, answers to tools named with --skip or whose rule says skip, resource reads when the resources rule says skip, and any message that is not valid JSON. Over HTTP, JSON bodies are cleaned whole and text/event-stream bodies one event at a time, flushed as they arrive, and a client connection carries one request after another until the client closes it.",
+      "outcome": "An agent spends fewer tokens on another server's verbose results without changing that server or its client.",
+      "constraints": [
+        "Only results to requests the proxy saw are cleaned; responses are matched by id.",
+        "--budget, and a rule's budget, applies to each text, not to a whole result.",
+        "A shortened text is kept for read-again for an hour at most, and only when the proxy has an output store.",
+        "Over HTTP, JSON bodies over 64 MiB and compressed bodies are passed through uncleaned."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Pending::note_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite_text"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/stdio.rs",
+          "symbol": "pump_responses"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "relay"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/http.rs",
+          "symbol": "write_event"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::settings"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::keep"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/config.rs",
+          "symbol": "Config::tool"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/operation.json",
+      "relationship": "The two ways the proxy runs."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/proxy",
+      "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
+      "relationship": "The use case it serves."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/cmd",
+      "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+      "relationship": "clean's steps, which it applies."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src",
+      "path": "macos/rust/zazzled/src/.dev/feature.json",
+      "relationship": "Stored outputs, which keep the texts it shortened for read-again."
+    }
+  ]
+}

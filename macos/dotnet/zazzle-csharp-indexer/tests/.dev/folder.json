@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-csharp-indexer tests",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/tests",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-csharp-indexer tests",
+      "summary": "The xunit suite for zazzle-csharp-indexer, run with dotnet test tests from the tool's folder.",
+      "purpose": "Checks the tool in process, without a published binary: TempRepo creates a throwaway git repository with given files and an engine on a temporary state directory, and the test classes exercise the index, analysis, tools, the terse C# view, daemon (on a temporary socket), hook policy, init and report against it; ViewTests also builds views from source text without a repository. Tests are named test_<unit>_<case> and must pass on Linux and macOS; the FSEvents test returns immediately elsewhere.",
+      "boundaries": [
+        "What each test class checks is recorded in the verification.json of the folder it checks: src/Index, src/Analysis, src/Tools, src/View, src/Daemon, src/Cli and src/.",
+        "The tests need git on PATH. The external-regex test checks the fallback only where rg or a PCRE-enabled git grep is installed, and accepts bad_regex otherwise."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/tests.csproj",
+          "symbol": "ProjectReference"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/TempRepo.cs",
+          "symbol": "TempRepo"
+        },
+        {
+          "path": "macos/dotnet/style.md",
+          "symbol": "Testing"
+        }
+      ]
+    }
+  ]
+}

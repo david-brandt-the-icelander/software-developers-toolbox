@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/observability.schema.json",
+  "kind": "observability",
+  "title": "zazzled signals",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "stderr",
+      "title": "Daemon error lines",
+      "summary": "zazzled writes one line per problem it survives to its standard error, prefixed `zazzled: `.",
+      "signalType": "log",
+      "name": "zazzled: ...",
+      "meaning": "A connection that failed (a peer of another uid, a malformed or oversize request, too many descriptors, a missing working directory), an accept error other than would-block, a failed cache write, or a cache that could not be opened (`cache disabled`).",
+      "access": "Whoever holds the daemon's standard error. A daemon the invoker or the MCP front end starts has it on /dev/null, and the LaunchAgent plist names no log file, so these lines are seen only when `zazzled serve` runs in a terminal.",
+      "retention": "Not kept by zazzled.",
+      "cadence": "When the problem happens.",
+      "excludes": [
+        "Requests, file paths read and command output are not logged."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "worker"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "report_accept_error"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "flush_quietly"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/client.rs",
+          "symbol": "spawn_daemon"
+        },
+        {
+          "path": "macos/rust/zazzled/src/launchd.rs",
+          "symbol": "plist"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/cmd/.dev/observability.json",
+          "entityId": "status"
+        },
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/proxy/.dev/observability.json",
+          "entityId": "savings-log"
+        }
+      ]
+    }
+  ]
+}

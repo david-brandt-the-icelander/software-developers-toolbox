@@ -1,0 +1,69 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzled verification",
+  "folder": "macos/rust/zazzled",
+  "entities": [
+    {
+      "id": "tests-and-coverage",
+      "title": "Unit tests and the branch-coverage gate",
+      "summary": "All zazzled tests run with `cargo test -p zazzled`; coverage.sh fails unless branch coverage of non-test code reaches a threshold, 95 in CI.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/verification.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/verification.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/verification.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/.dev/verification.json"
+        }
+      ],
+      "criteria": [
+        "Every unit test in the crate passes.",
+        "Branch coverage of the crate, test code excluded, is at least the given percentage (95 by default)."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "command": "cargo test -p zazzled (in macos/rust)",
+          "description": "Runs every unit test; CI runs it on macOS and Linux, and the release runs it again on Linux."
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/coverage.sh",
+          "command": "sh zazzled/coverage.sh 95 (in macos/rust; nightly toolchain with cargo-llvm-cov)",
+          "description": "Reads the branch percentage from cargo llvm-cov's JSON summary and fails below the threshold. Test modules are marked coverage(off)."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "Rust branch coverage (at least 95%)",
+          "description": "CI's coverage job runs coverage.sh with 95."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/coverage.sh",
+          "symbol": "min"
+        },
+        {
+          "path": "macos/rust/zazzled/src/lib.rs",
+          "symbol": "coverage_nightly"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "coverage"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Test zazzled"
+        }
+      ]
+    }
+  ]
+}

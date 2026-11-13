@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "Live index backlog",
+  "folder": "macos/dotnet/zazzle-csharp-indexer/src/Index",
+  "entities": [
+    {
+      "id": "needs-full-scan-ignored",
+      "title": "A watcher error does not trigger a full reconcile",
+      "summary": "When a change source asks for a rescan (FileSystemWatcher error, FSEvents must-scan flags), the index only applies the events already queued.",
+      "type": "defect",
+      "priority": "medium",
+      "expected": "A full reconcile runs when the watcher reports an error or events were dropped, as the README's How it works section said (\"a full reconcile runs on .gitignore/HEAD changes, watcher errors and every 5 minutes\").",
+      "observed": "RootIndex.Start subscribes NeedsFullScan to the debounce timer, which calls Drain; Drain reconciles only when the queued paths include a .gitignore, .git/HEAD, .git/info/exclude or a new directory. Changes the watcher dropped stay invisible until the five-minute periodic reconcile, or until a query's barrier re-checks the file.",
+      "acceptanceCriteria": [
+        "Raising NeedsFullScan with an empty queue leads to a Reconcile, and a test covers it."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder, by reading RootIndex.Start and RootIndex.Drain against the README; not reproduced."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Drain"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FswSource.cs",
+          "symbol": "FswSource.Start"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/FsEventsSource.cs",
+          "symbol": "FsEventsSource.MustScan"
+        }
+      ]
+    },
+    {
+      "id": "watcher-same-stat-key",
+      "title": "The watcher does not catch a rewrite that keeps the stat key",
+      "summary": "The README's Known limits say a rewrite keeping size, mtime and birth time is caught by the watcher; the code skips it on a watcher event too.",
+      "type": "defect",
+      "priority": "low",
+      "expected": "A change event for a known file re-reads it, so a rewrite that keeps size, modification time and birth time gets its new analysis (README, Known limits: \"caught by the watcher but not by a restart reconcile\").",
+      "observed": "Drain calls RootIndex.Analyze for a known path, and Analyze returns without reading the file when FileEntry.Matches holds, exactly as a reconcile does.",
+      "acceptanceCriteria": [
+        "Either a watcher event for a known file re-hashes it regardless of the stat key, with a test, or the README's Known limits no longer say the watcher catches it."
+      ],
+      "origin": {
+        "kind": "agent",
+        "description": "Found while documenting the folder, by reading RootIndex.Drain and RootIndex.Analyze against the README; not reproduced."
+      },
+      "status": "open",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Drain"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
+          "symbol": "RootIndex.Analyze"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "symbol": "Known limits"
+        }
+      ]
+    }
+  ]
+}

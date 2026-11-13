@@ -1,0 +1,239 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazzled contracts",
+  "folder": "macos/rust/zazzled/src",
+  "entities": [
+    {
+      "id": "wire-protocol",
+      "title": "zazzle wire protocol",
+      "summary": "One request per connection on the daemon's unix socket: a length-prefixed block of NUL-terminated fields, optionally with the caller's standard streams and working directory passed as descriptors; answered by a status byte.",
+      "contractType": "message",
+      "consumers": [
+        "The C invoker, macos/c/zazzle/src/zazzle_core.h (descriptor mode)",
+        "The MCP front end through macos/rust/zazzled/src/client.rs (relay mode)"
+      ],
+      "definition": "macos/rust/zazzled/src/proto.rs and macos/rust/zazzled/src/server.rs",
+      "details": "**Request.** A 4-byte length in native byte order, then the fields, each UTF-8 and NUL-terminated: working directory, session, then the command's arguments. At most 1 MiB (MAX_REQUEST); at least the two first fields.\n\n**Descriptor mode** (the invoker). The first message carries, as SCM_RIGHTS, the caller's descriptors 0, 1 and 2 and a descriptor of its working directory, in that order, and the working-directory field is empty: the daemon takes the directory's path from the descriptor. The daemon writes the command's text and a newline straight to the passed standard output when the status is 0, else to the passed standard error, then sends one status byte on the socket and closes.\n\n**Relay mode** (no descriptors). The working-directory field is set; the daemon sends the status byte and then the text on the socket and closes.\n\n**Status.** 0 for success, 2 for a command error (one `error:` line).\n\n`zazzle proxy`, `zazzle run`, `zazzle free-disk-space` and `zazzle fix-network` never become requests: the invoker execs another program for them.",
+      "guarantees": [
+        "Only a peer running as the daemon's own uid is served; the socket is created mode 0600 in a 0700 directory.",
+        "More than four descriptors, or truncated control data, is rejected.",
+        "A malformed, oversize, truncated or non-UTF-8 request closes that connection without stopping the daemon.",
+        "The session field may be empty; then the answer has no session id, is not deduplicated and cannot be rerun by read-again. Outputs stored in the output store (clean's) carry their own id either way."
+      ],
+      "compatibility": "The frame has no version field and uses native byte order, so both ends must come from the same build of this repository and run on the same machine; a change lands in proto.rs, server.rs and zazzle_core.h together.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proto.rs",
+          "symbol": "decode"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proto.rs",
+          "symbol": "frame_len"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "read_request"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "recv_with_fds"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "working_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "respond"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "handle"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "build_request"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "send_request"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "zazzle_run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "verified-by",
+          "path": "macos/rust/zazzled/src/.dev/verification.json",
+          "entityId": "wire-protocol"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tools",
+      "title": "MCP tools",
+      "summary": "`zazzled mcp` offers seven tools over MCP's stdio transport: zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs and zazzle_edit.",
+      "contractType": "mcp-server",
+      "consumers": [
+        "MCP clients started with `zazzled mcp` (the README's example is Claude Code)",
+        "agents/skills/zazzle/SKILL.md, which names the tools"
+      ],
+      "definition": "macos/rust/zazzled/src/mcp.rs (TOOLS and the *_schema functions)",
+      "guarantees": [
+        "Server name `zazzle`; protocol versions 2025-06-18, 2025-03-26 and 2024-11-05, the newest when the client asks for another.",
+        "Each tool's input schema names its arguments; zazzle_find needs pattern, zazzle_read and zazzle_outline need paths, zazzle_read_again needs id, zazzle_refs needs symbol, zazzle_edit needs path and new. zazzle_read also takes symbol and source; zazzle_read_again also takes full, lines and budget.",
+        "A result is one text item with the command's output, and isError when the command's status is not 0.",
+        "Notifications get no answer; methods other than initialize, ping, tools/list and tools/call get -32601."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "VERSIONS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "initialize"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "handle_line"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "tool_result"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "read_again_schema"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "documents",
+          "path": "macos/rust/zazzled/src/cmd/.dev/operation.json"
+        }
+      ]
+    },
+    {
+      "id": "cache-log",
+      "title": "Cache log paths.log",
+      "summary": "The persistent cache is one append-only file, paths.log, in the cache directory: a header and checksummed per-path records of derived summaries.",
+      "contractType": "persistence",
+      "consumers": [
+        "Later zazzled processes on the same machine"
+      ],
+      "definition": "macos/rust/zazzled/src/store.rs (encode, decode_body, parse_log)",
+      "details": "The file starts with the 8 bytes `ZZLPATH1`. Each record is a 4-byte little-endian length, then the path's length (2 bytes) and bytes, the file's device, inode and size (8 bytes each), its modification time in nanoseconds (8 bytes), 32 bytes kept as zeros (formerly the content hash), its line count (4 bytes) and a flags byte (binary 1, minified 2, CRLF 4, racy 8), then a 4-byte FNV-1a checksum of the record. The last record for a path wins.",
+      "guarantees": [
+        "Derived data only, never file text; no content hash is stored, so `ls` and `find` can fill it without hashing files.",
+        "A record is used only while the file's device, inode, size and modification time are unchanged, and never when it was taken within 2 seconds of that modification time.",
+        "A damaged or torn tail is cut off at the last good record when the log is opened.",
+        "On open, a log of at least 1000 records holding more than twice as many records as live paths is rewritten with one record per path."
+      ],
+      "compatibility": "The directory name v1 and the header name the format. A file with another header is discarded and rebuilt, so a format change costs a cold cache, not an error. The zeroed 32-byte slot keeps the record layout unchanged.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "MAGIC"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "encode"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "parse_log"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "Store::open"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "Store::get"
+        },
+        {
+          "path": "macos/rust/zazzled/src/store.rs",
+          "symbol": "default_dir"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/decisions.json",
+          "entityId": "cache-design"
+        }
+      ]
+    },
+    {
+      "id": "output-store",
+      "title": "Output store",
+      "summary": "Outputs that cannot be produced again are kept as two files per id in the output store directory: `ID.shown`, the text the caller was shown, and `ID.full`, the whole input it came from.",
+      "contractType": "persistence",
+      "consumers": [
+        "The daemon's read-again (macos/rust/zazzled/src/cmd/again.rs), which loads what clean, `zazzled wrap` and `zazzled proxy` saved, from other processes of the same build"
+      ],
+      "definition": "macos/rust/zazzled/src/outputs.rs (save, load, id_of, reap)",
+      "details": "An id is ten characters of the base-32 alphabet `0123456789abcdefghjkmnpqrstvwxyz`, taken from the BLAKE3 hash of the shown text, a NUL and the full text; anything else is refused as a file name. Each file is written to a temporary name and renamed into place, readable by its owner only, in a directory created mode 0700. Every save then removes entries older than an hour (MAX_AGE), and if the remaining files hold more bytes than the limit (ZAZZLE_OUTPUTS_MAX_GB, default 2 GB), the oldest until half the bytes remain.",
+      "guarantees": [
+        "A stored output is returned as it was shown, and its full text as it was given, until it ages out or is trimmed.",
+        "Only well-formed ids name files, so an id cannot reach outside the directory.",
+        "The same shown and full text always get the same id."
+      ],
+      "compatibility": "No header or version: writers and readers must come from the same build. Entries live at most an hour, so a format change costs at most an hour of stored outputs.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "id_of"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "is_id"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "write_private"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outputs.rs",
+          "symbol": "MAX_AGE"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/decisions.json",
+          "entityId": "stored-outputs"
+        },
+        {
+          "relation": "verified-by",
+          "path": "macos/rust/zazzled/src/.dev/verification.json",
+          "entityId": "output-store"
+        }
+      ]
+    }
+  ]
+}

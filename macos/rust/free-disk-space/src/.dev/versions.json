@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/versions.schema.json",
+  "kind": "versions",
+  "title": "Scan state file versions",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "Changes to the stored shape of the scan state file. Application releases are not recorded here.",
+  "entities": [
+    {
+      "id": "state-file-names",
+      "title": "File names recorded for dedupe",
+      "summary": "From version 1.1 a scan records every file's path, leaf name and size in a files table; state files from version 1.0 scans have none, and dedupe asks for a new scan.",
+      "version": "1.1",
+      "versionOf": "format",
+      "date": "2026-11-10",
+      "changes": [
+        "New table files(path, name, size, cloned) with an index on (name, size), filled by every scan.",
+        "status reports the file names recorded and how many were replaced by clones.",
+        "A 1.0 state file opened by 1.1 gets an empty files table; dedupe exits with `no file names recorded in this scan state; run new to rescan`."
+      ],
+      "details": "The change was made in the Python predecessor (commit 2dec6fb, which raised its VERSION from 1.0 to 1.1); the Rust port kept the same schema, and the crate's version is 1.1.0. The state file itself stores no version number.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "SCHEMA"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "cmd_status"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        },
+        {
+          "path": "macos/rust/free-disk-space/Cargo.toml",
+          "symbol": "version"
+        },
+        {
+          "path": "agents/skills/free-disk-space/SKILL.md",
+          "symbol": "Dedupe (after a scan, before compress)"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/free-disk-space/src/.dev/contracts.json",
+          "entityId": "state-file"
+        }
+      ]
+    }
+  ]
+}

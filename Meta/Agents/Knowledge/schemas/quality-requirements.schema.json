@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/david-brandt-the-icelander/human-assisted-software-development/main/Agents/Knowledge/schemas/quality-requirements.schema.json",
+  "title": "Quality requirements",
+  "description": "How well the solution must run: availability, latency, capacity, security, privacy, cost and the like, each measurable. Fields not named here are allowed.",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/document"
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "quality-requirements"
+    },
+    "entities": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "common.schema.json#/$defs/entity"
+          }
+        ],
+        "properties": {
+          "area": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "measuredBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "met": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Usually met, not-met or not-checked."
+          }
+        },
+        "required": [
+          "area",
+          "requirement",
+          "measuredBy"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,233 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "free-disk-space limitations",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "What the binary does not do, or cannot know. The README's Caveats state the user-facing ones; these records trace them to the code.",
+  "entities": [
+    {
+      "id": "shared-blocks-unseen",
+      "title": "Shared blocks are invisible",
+      "summary": "The tool cannot tell whether a file already shares blocks with another (an APFS clone), so dedupe's saving is an upper bound and summed sizes can differ from the space actually freed.",
+      "impact": "A dedupe or cleanup can report more than the volume gains; snapshots and other writers widen the gap.",
+      "workaround": "Compare the free-space change on a --sample run before going broad; each command prints it beside the summed sizes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/README.md",
+          "symbol": "Caveats"
+        }
+      ]
+    },
+    {
+      "id": "macos-only-steps",
+      "title": "Compression, cloning and Finder are macOS only",
+      "summary": "compress, dedupe --apply and emptying the Trash refuse to run elsewhere; the daemon install needs launchd.",
+      "impact": "Off macOS the scan, its reports, the dry runs and the folder and dev cleanups work; compression, cloning, emptying the Trash and the daemon install do not.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_trash"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "launchctl"
+        }
+      ]
+    },
+    {
+      "id": "same-name-only",
+      "title": "Dedupe compares only same-named files",
+      "summary": "Only files with the same leaf name and size, among those the last scan recorded, are hashed; identical files under different names, or outside the scanned tree, are never found.",
+      "impact": "Some duplicate space is left unclaimed.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "groups"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "group_rows"
+        }
+      ]
+    },
+    {
+      "id": "compressed-not-deduped",
+      "title": "Compressed files are not deduped",
+      "summary": "A file that carries the compressed flag is never replaced by a clone, so dedupe should run before compress.",
+      "impact": "Running compress first removes those files from dedupe's reach.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "members"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "NO_TOUCH_FLAGS"
+        },
+        {
+          "path": "macos/rust/free-disk-space/README.md",
+          "symbol": "Dedupe"
+        }
+      ]
+    },
+    {
+      "id": "docker-left-alone",
+      "title": "Docker is cleaned only when already running",
+      "summary": "The tool never starts Docker Desktop, and never deletes containers or volumes; when it does clean, it stops every running container and quits Docker Desktop.",
+      "impact": "Docker's disk image is not shrunk when Docker is not running; when it is, running containers are stopped.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_docker"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "docker_running"
+        }
+      ]
+    },
+    {
+      "id": "daemon-awake-only",
+      "title": "The daemon checks only while the Mac is awake and in use",
+      "summary": "The cadence counts awake time, the daemon never schedules a wake, and a check falling while the display sleeps is skipped.",
+      "impact": "A Mac that is mostly asleep, or runs with its display off, is rarely or never checked.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "awake_secs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "display_awake"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        }
+      ]
+    },
+    {
+      "id": "daemon-fixed-binary",
+      "title": "The login item holds one binary's path",
+      "summary": "The plist names the absolute path of the binary that ran install, and the settings given then.",
+      "impact": "Moving or upgrading the binary, or changing a setting, needs another daemon install.",
+      "workaround": "Run daemon install again after moving or upgrading the binary.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "macos/rust/free-disk-space/README.md",
+          "symbol": "Daemon"
+        }
+      ]
+    },
+    {
+      "id": "daemon-log-grows",
+      "title": "The daemon's log is never rotated",
+      "summary": "Each check adds a line and each cleanup its whole report to ~/Library/Logs/free-disk-space.log; nothing trims it.",
+      "impact": "The log grows for as long as the login item runs.",
+      "workaround": "Delete or truncate the log by hand.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_uninstall"
+        }
+      ]
+    },
+    {
+      "id": "downloads-whole",
+      "title": "Downloads is emptied whole",
+      "summary": "The downloads target removes everything in ~/Downloads, hidden files included, with no age or type filter, and all includes it.",
+      "impact": "clean all --apply deletes every download.",
+      "workaround": "Name the targets instead of all.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "ordered_targets"
+        }
+      ]
+    },
+    {
+      "id": "compress-needs-working-ditto",
+      "title": "Compression needs a ditto that really compresses",
+      "summary": "Where ditto --hfsCompression reports success but writes plain copies (the code and README name macOS 26/27), compress refuses to run.",
+      "impact": "No files are compressed on such a system; the scan, dedupe and clean are unaffected.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "ditto_compresses"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/README.md",
+          "symbol": "Compress"
+        }
+      ]
+    },
+    {
+      "id": "clean-resume-window",
+      "title": "A resumed clean trusts steps up to 12 hours old",
+      "summary": "Within 12 hours of an interrupted applying clean, the next applying run skips the folders, artifacts and targets it finished, even if they have filled again since.",
+      "impact": "Space that came back into a folder emptied before the interruption is not reclaimed by the resumed run.",
+      "workaround": "Run clean --apply again after the resumed run completes; it starts afresh.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "PROGRESS_MAX_AGE_SECS"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ]
+    }
+  ]
+}

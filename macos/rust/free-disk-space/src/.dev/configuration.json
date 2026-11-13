@@ -1,0 +1,343 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "free-disk-space settings",
+  "folder": "macos/rust/free-disk-space/src",
+  "description": "Environment variables and the flags whose defaults shape what the binary touches. Every flag and its default is also in `free-disk-space <command> --help`. Nothing here is secret.",
+  "entities": [
+    {
+      "id": "fds-state",
+      "title": "Scan state path",
+      "summary": "Where the scan state database lives; --state on new, resume, status, list, compress and dedupe overrides it.",
+      "key": "FDS_STATE",
+      "type": "environment variable (file path)",
+      "default": "~/.local/state/free-disk-space/scan.sqlite3",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "details": "Read when clap builds the --state default; the parent directory is created on first open.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "default_state"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "StateArg"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "open_db"
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "title": "Home directory",
+      "summary": "HOME locates the default state file, the clean progress file, the default scan root, the cache folders, ~/Downloads, ~/.Trash, the default dev root and the launchd plist and log.",
+      "key": "HOME",
+      "type": "environment variable (directory)",
+      "default": "/ when unset",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "home"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "expand"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist_path"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        }
+      ]
+    },
+    {
+      "id": "path",
+      "title": "Executable search path",
+      "summary": "PATH decides whether git, brew and docker are found and which lsof, ps, pgrep, git and docker run; tools named by absolute path (ditto, xattr, osascript, launchctl, lsof in compress) are not looked up.",
+      "key": "PATH",
+      "type": "environment variable",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "details": "The installed login item runs with PATH set in its plist to Homebrew's and the system's bin directories.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "which"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "Snapshot::capture"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        }
+      ]
+    },
+    {
+      "id": "fds-force",
+      "title": "Force macOS-only steps elsewhere",
+      "summary": "When set, compress, dedupe --apply and the Finder trash step run off macOS, where clonefile is a plain copy; meant for tests.",
+      "key": "FDS_FORCE",
+      "type": "environment variable (presence)",
+      "default": "unset",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_trash"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/testkit.rs",
+          "symbol": "ENV_KEYS"
+        }
+      ]
+    },
+    {
+      "id": "fds-tools",
+      "title": "Tool directory override",
+      "summary": "When set, every tool the code names by absolute path (/usr/bin/ditto, /usr/bin/xattr, /usr/sbin/lsof, /usr/bin/osascript, /bin/launchctl, and brew once found on PATH) is run from this directory instead, by file name; it exists so tests can fake macOS tools.",
+      "key": "FDS_TOOLS",
+      "type": "environment variable (directory)",
+      "default": "unset",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "details": "It is read in release builds too, so whoever sets it in the environment chooses which programs the compress, dedupe, trash and daemon steps run.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "tool"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/testkit.rs",
+          "symbol": "Sandbox::new"
+        }
+      ]
+    },
+    {
+      "id": "no-color",
+      "title": "No colour",
+      "summary": "When set, output has no ANSI colours even on a terminal; off a terminal it never has them.",
+      "key": "NO_COLOR",
+      "type": "environment variable (presence)",
+      "default": "unset",
+      "sensitive": false,
+      "scope": "per invocation",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "c"
+        }
+      ]
+    },
+    {
+      "id": "scan-thresholds",
+      "title": "Scan thresholds",
+      "summary": "new --root (default the home directory), --min-size (1M), --min-age-days (14) and --min-savings-pct (25) decide where the scan looks and what becomes a candidate; --cross-devices and --exclude widen or narrow it.",
+      "key": "new --root, --min-size, --min-age-days, --min-savings-pct, --cross-devices, --exclude",
+      "type": "command-line flags",
+      "default": {
+        "root": "$HOME",
+        "min-size": "1M",
+        "min-age-days": 14,
+        "min-savings-pct": 25,
+        "cross-devices": false
+      },
+      "sensitive": false,
+      "scope": "per scan; stored in the state file's meta cfg and reused by resume",
+      "takesEffect": "at-startup",
+      "validation": "--root must be a directory; --min-size must parse as a size (K, M, G, T suffixes, binary multiples).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "NewArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/scan.rs",
+          "symbol": "Cfg"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/util.rs",
+          "symbol": "parse_size"
+        }
+      ]
+    },
+    {
+      "id": "compress-margins",
+      "title": "Compression safety margins",
+      "summary": "compress --min-age-days (14) re-checks age, --min-gain (64K) is the least verified saving worth keeping, and --reserve (2G) is free space kept beyond the temp copy.",
+      "key": "compress --min-age-days, --min-gain, --reserve",
+      "type": "command-line flags",
+      "default": {
+        "min-age-days": 14,
+        "min-gain": "64K",
+        "reserve": "2G"
+      },
+      "sensitive": false,
+      "scope": "per run",
+      "takesEffect": "per-use",
+      "validation": "--min-gain and --reserve must parse as sizes; clap refuses the command line otherwise.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "CompressArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "precheck"
+        }
+      ]
+    },
+    {
+      "id": "dev-root",
+      "title": "Dev root",
+      "summary": "The tree the dev target searches for build artifacts.",
+      "key": "--dev-root (clean, daemon run, daemon install)",
+      "type": "command-line flag (directory; a leading ~ is expanded)",
+      "default": "~/dev",
+      "sensitive": false,
+      "scope": "per run; for the installed daemon, fixed in the plist",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "CleanArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "DaemonOpts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        }
+      ]
+    },
+    {
+      "id": "docker-stop-timeout",
+      "title": "Docker stop grace",
+      "summary": "Seconds each running container is given to stop before Docker Desktop is asked to quit.",
+      "key": "clean --docker-stop-timeout",
+      "type": "command-line flag (seconds)",
+      "default": 30,
+      "sensitive": false,
+      "scope": "per run; the daemon always uses 30",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "CleanArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        }
+      ]
+    },
+    {
+      "id": "daemon-threshold",
+      "title": "Daemon threshold",
+      "summary": "Free space below which the daemon cleans: a size, or a percentage of the data volume.",
+      "key": "daemon --threshold",
+      "type": "size (such as 30G) or percentage (such as 10%)",
+      "default": "30G",
+      "sensitive": false,
+      "scope": "per daemon; written into the plist at install",
+      "takesEffect": "at-startup",
+      "validation": "A size must be positive; a percentage must be between 0 and 100, exclusive.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "DaemonOpts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "parse_threshold"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "Threshold::limit"
+        }
+      ]
+    },
+    {
+      "id": "daemon-cadence",
+      "title": "Daemon cadence",
+      "summary": "Awake time between checks: seconds, minutes or hours; a bare number is minutes.",
+      "key": "daemon --cadence",
+      "type": "duration (such as 90s, 15m, 2h)",
+      "default": "15m",
+      "sensitive": false,
+      "scope": "per daemon; written into the plist at install",
+      "takesEffect": "at-startup",
+      "validation": "Must be a positive number with an optional s, m or h suffix.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "DaemonOpts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "parse_cadence"
+        }
+      ]
+    },
+    {
+      "id": "daemon-targets",
+      "title": "Daemon targets",
+      "summary": "What the daemon cleans when below the threshold; any clean target, all included.",
+      "key": "daemon --targets",
+      "type": "list of clean targets",
+      "default": ["caches", "dev"],
+      "sensitive": false,
+      "scope": "per daemon; written into the plist at install",
+      "takesEffect": "at-startup",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "DaemonOpts"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "Target"
+        }
+      ]
+    }
+  ]
+}
