@@ -578,6 +578,12 @@ fn snapshot() {
         run(&["zazz", "pack", "x"]);
         assert_eq!(run(&["zazz", "add", "x.zazz"])["error"]["code"], "invalid_wasm");
         assert_eq!(run(&["zazz", "ls"]).as_array().map(Vec::len), Some(1));
+        e.zazz.set_trust_paths(&t.path().join("trust"), &t.path().join("policy.json"));
+        t.write("policy.json", br#"{"require_tests": true}"#);
+        t.write("y/zazz.json", br#"{"zazz":1,"name":"y","kind":"wasm","entry":"y.wasm"}"#);
+        t.write("y/y.wasm", &wasm);
+        run(&["zazz", "pack", "y"]);
+        assert_eq!(run(&["zazz", "add", "y.zazz"])["error"]["code"], "tests_missing");
     }
 
     // Checks the registry and worker overrides, and the missing-worker error.

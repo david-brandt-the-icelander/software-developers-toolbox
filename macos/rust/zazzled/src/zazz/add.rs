@@ -88,6 +88,12 @@ fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) ->
     let built = pipeline::build_and_test(reg, &z.worker()?, &a, &m, &scratch, None);
     let _ = std::fs::remove_dir_all(&scratch);
     let mut built = built?;
+    if built.tests.is_none() && super::trust::policy(z)["require_tests"] == true {
+        return Err(err(
+            "tests_missing",
+            "this machine's policy requires tests; add tests/*.rs (see `zazz new`)",
+        ));
+    }
     if verdict.as_ref().is_some_and(|v| v["trusted"] != true) {
         built.warnings.push("the signer is not a trusted authority here; the script runs as unsigned".into());
     }
