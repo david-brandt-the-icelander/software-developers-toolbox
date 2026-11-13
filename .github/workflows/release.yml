@@ -19,7 +19,7 @@ jobs:
       run:
         working-directory: macos/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -106,7 +106,7 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64, rid: linux-arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Test and build zazzled
         working-directory: macos/rust
@@ -166,8 +166,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: zazzcat/homebrew-z
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
