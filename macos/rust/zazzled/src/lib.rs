@@ -9,6 +9,7 @@ pub mod cmd;
 pub mod engine;
 pub mod indexer;
 pub mod launchd;
+pub mod locals;
 pub mod markup;
 pub mod mcp;
 pub mod mcp_structure;

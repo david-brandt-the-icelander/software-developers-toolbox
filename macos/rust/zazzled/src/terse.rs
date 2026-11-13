@@ -1,4 +1,4 @@
-// Terse view of Python, TypeScript and Dart files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow, and drops TypeScript access modifiers, keeping source line numbers.
+// Terse view of Python, TypeScript and Dart files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow, drops TypeScript access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -208,6 +208,14 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
                 .find(|c: char| !c.is_whitespace())
                 .map_or(src.len(), |i| n.end_byte() + i);
             plan.change(n.start_byte(), end, String::new(), "access modifiers");
+        }
+    }
+    for r in crate::locals::renames(root, lang, src) {
+        let shown: Vec<(usize, usize)> =
+            r.spans.into_iter().filter(|&(a, _)| !plan.is_hidden(plan.line(a))).collect();
+        if !shown.is_empty() {
+            plan.changes.extend(shown.into_iter().map(|(a, b)| (a, b, r.name.clone())));
+            plan.count("locals shortened");
         }
     }
     if plan.steps.is_empty() {
@@ -675,6 +683,14 @@ class InvoiceRepository {
             .iter()
             .any(|l| l.starts_with("20\t") || l.starts_with("21\t") || l.starts_with("18\t")));
         assert!(lines.contains(&"33\t    print('count');".to_string()));
+        assert!(
+            lines.contains(
+                &"23~\t      final res = await client.get(Uri.parse('/invoices/$id'));".to_string()
+            ),
+            "{lines:?}"
+        );
+        assert!(lines.contains(&"24~\t      return res.body;".to_string()));
+        assert!(view("f", DART, Lang::Dart).expect("view").contains(", 1 locals shortened"));
     }
 
     // Checks which statements count as logging.
