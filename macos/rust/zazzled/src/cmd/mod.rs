@@ -157,6 +157,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
+        "zazz" => crate::zazz::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),

@@ -39,6 +39,8 @@ tree-sitter-python = "0.23"
 tree-sitter-rust = "0.23"
 # TypeScript and TSX grammars for outlines.
 tree-sitter-typescript = "0.23"
+# .zazz archives, manifests and script ids, shared with the zazz tools.
+zazz-format = { path = "../zazz-format" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

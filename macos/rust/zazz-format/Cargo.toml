@@ -1,0 +1,22 @@
+[package]
+name = "zazz-format"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "zazz_format"
+path = "src/lib.rs"
+
+# Each dependency has one reason; std covers everything else.
+[dependencies]
+# Script ids and content digests.
+blake3 = "1"
+# Raw deflate for .zazz archives, built in so no system unzip is ever used.
+miniz_oxide = "0.9"
+# Manifest parsing.
+serde_json = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

@@ -112,6 +112,8 @@ jobs:
             || { echo "::error::fix-network branch coverage is below 95%"; exit 1; }
       - name: Rust branch coverage (at least 95%)
         run: sh zazzled/coverage.sh 95
+      - name: zazz crates branch coverage (at least 95%)
+        run: sh zazzled/coverage.sh 95 zazz-format
       - name: C invoker branch coverage (at least 95%)
         working-directory: macos/c/zazzle
         run: make coverage
