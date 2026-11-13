@@ -6,11 +6,10 @@ const BINARY_SNIFF: usize = 8000;
 const MINIFIED_LINE: usize = 5000;
 const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
-// The light, persistable summary of a file's content.
+// The light, persistable summary of a file's content; it carries no hash, so computing it never hashes the file.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Info {
     pub size: u64,
-    pub hash: [u8; 32],
     pub binary: bool,
     pub minified: bool,
     pub crlf: bool,
@@ -67,27 +66,52 @@ pub fn looks_binary(data: &[u8]) -> bool {
     memchr(0, &data[..data.len().min(BINARY_SNIFF)]).is_some()
 }
 
+// Line count and the minified and CRLF flags of text, from one scan over its newlines.
+struct TextFlags {
+    lines: usize,
+    minified: bool,
+    crlf: bool,
+}
+
+// Scans text once: counts lines like line_starts, and measures the longest line and CRLF endings like line_bytes.
+fn text_flags(data: &[u8]) -> TextFlags {
+    let (mut lines, mut longest, mut crlf_lines, mut start) = (0, 0, 0, 0);
+    for nl in memchr::memchr_iter(b'\n', data) {
+        let cr = nl > start && data[nl - 1] == b'\r';
+        lines += 1;
+        crlf_lines += usize::from(cr);
+        longest = longest.max(nl - start - usize::from(cr));
+        start = nl + 1;
+    }
+    if start < data.len() {
+        lines += 1;
+        longest = longest.max(data.len() - start - usize::from(data.last() == Some(&b'\r')));
+    }
+    TextFlags { lines, minified: longest > MINIFIED_LINE, crlf: crlf_lines * 2 > lines }
+}
+
+impl Info {
+    // Computes the summary that ls and find need: size, binary flag, line count and flags, without hashing or indexing lines.
+    pub fn compute(data: &[u8]) -> Info {
+        let size = data.len() as u64;
+        if looks_binary(data) {
+            return Info { size, binary: true, minified: false, crlf: false, lines: 0 };
+        }
+        let f = text_flags(data);
+        Info { size, binary: false, minified: f.minified, crlf: f.crlf, lines: f.lines as u32 }
+    }
+}
+
 impl Meta {
-    // Computes the metadata for file content.
+    // Computes the full metadata for file content: hash and line index as well as the summary flags.
     pub fn compute(data: &[u8]) -> Meta {
         let hash = *blake3::hash(data).as_bytes();
         let size = data.len() as u64;
         if looks_binary(data) {
             return Meta { size, hash, binary: true, minified: false, crlf: false, starts: vec![] };
         }
-        let starts = line_starts(data);
-        let mut longest = 0;
-        let mut crlf_lines = 0;
-        for n in 1..=starts.len() {
-            let line = line_bytes(data, &starts, n);
-            longest = longest.max(line.len());
-            let end = line_end(data, &starts, n);
-            if end < data.len() && end > 0 && data[end - 1] == b'\r' {
-                crlf_lines += 1;
-            }
-        }
-        let crlf = crlf_lines * 2 > starts.len();
-        Meta { size, hash, binary: false, minified: longest > MINIFIED_LINE, crlf, starts }
+        let f = text_flags(data);
+        Meta { size, hash, binary: false, minified: f.minified, crlf: f.crlf, starts: line_starts(data) }
     }
 
     // Returns the number of lines.
@@ -99,7 +123,6 @@ impl Meta {
     pub fn info(&self) -> Info {
         Info {
             size: self.size,
-            hash: self.hash,
             binary: self.binary,
             minified: self.minified,
             crlf: self.crlf,
@@ -205,7 +228,38 @@ mod tests {
         let m = Meta::compute(b"a\r\nb\r\n");
         let i = m.info();
         assert_eq!((i.lines, i.size, i.crlf, i.binary, i.minified), (2, 6, true, false, false));
-        assert_eq!(i.hash, m.hash);
+    }
+
+    // Checks the hash-free summary matches the full metadata's summary across line-ending and length edge cases.
+    #[test]
+    fn test_info_compute_matches_meta() {
+        let long = format!("{}\nshort\n", "x".repeat(MINIFIED_LINE + 1));
+        let edge = format!("{}\r\n", "y".repeat(MINIFIED_LINE));
+        let cases: [&[u8]; 15] = [
+            b"",
+            b"a",
+            b"a\n",
+            b"a\nb",
+            b"\n\n",
+            b"\r\n",
+            b"\r",
+            b"a\r",
+            b"a\r\nb\r\nc\n",
+            b"a\r\nb\nc\n",
+            b"\nabc\r\ndef\r\n",
+            b"ab\0cd",
+            long.as_bytes(),
+            edge.as_bytes(),
+            b"x\r\ny\r",
+        ];
+        for data in cases {
+            assert_eq!(
+                Info::compute(data),
+                Meta::compute(data).info(),
+                "{:?}",
+                String::from_utf8_lossy(data)
+            );
+        }
     }
 
     // Checks the empty file has no lines.
