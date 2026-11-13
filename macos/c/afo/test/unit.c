@@ -32,6 +32,7 @@ static void reset(void)
 	M.peer_uid = 1000;
 	M.cwd_rc = 9;
 	M.read_rc = 1;
+	M.recv_rc = -SYS_EAGAIN;
 	M.status = 0;
 	M.self_exe_rc = (long)strlen("/opt/bin/afo");
 	strcpy(M.self_exe, "/opt/bin/afo");
@@ -266,6 +267,27 @@ static void test_read_status_failure(void)
 	CHECK(run(1, argv, env_home) == -1000 - 70 && err_has("closed without answering"));
 }
 
+/* Checks the spin-wait: a fast reply skips the blocking read, a slow one falls back to it after SPIN_US, and errors stop spinning. */
+static void test_spin_wait(void)
+{
+	char *argv[] = {"afo", 0};
+	reset();
+	M.recv_rc = 1;
+	M.status = 3;
+	CHECK(run(1, argv, env_home) == 3 && M.recv_calls == 1 && M.read_calls == 0);
+	reset();
+	M.status = 4;
+	CHECK(run(1, argv, env_home) == 4 && M.recv_calls == SPIN_US && M.relax_calls == SPIN_US && M.read_calls == 1);
+	reset();
+	M.recv_rc = 0;
+	M.read_rc = 0;
+	CHECK(run(1, argv, env_home) == -1000 - 70 && M.recv_calls == 1 && M.read_calls == 1);
+	reset();
+	M.recv_rc = -104;
+	M.status = 5;
+	CHECK(run(1, argv, env_home) == 5 && M.recv_calls == 1 && M.relax_calls == 0 && M.read_calls == 1);
+}
+
 /* Runs every test and reports. */
 int main(void)
 {
@@ -282,6 +304,7 @@ int main(void)
 	test_wait_failures();
 	test_send_paths();
 	test_read_status_failure();
+	test_spin_wait();
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }
