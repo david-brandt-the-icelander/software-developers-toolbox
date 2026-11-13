@@ -113,7 +113,9 @@ jobs:
       - name: Rust branch coverage (at least 95%)
         run: sh zazzled/coverage.sh 95
       - name: zazz crates branch coverage (at least 95%)
-        run: sh zazzled/coverage.sh 95 zazz-format
+        run: |
+          sh zazzled/coverage.sh 95 zazz-format
+          sh zazzled/coverage.sh 95 zazz-sdk
       - name: C invoker branch coverage (at least 95%)
         working-directory: macos/c/zazzle
         run: make coverage
