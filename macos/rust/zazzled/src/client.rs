@@ -99,7 +99,7 @@ mod tests {
         let srv = Running::start(Duration::from_secs(30));
         let (status, text) = call(&srv.sock, &version_req()).expect("call");
         assert_eq!(status, 0);
-        assert!(text.starts_with("zazzle 0."));
+        assert!(text.starts_with(&format!("zazzle {}", crate::cmd::VERSION)));
         srv.finish().expect("finish");
     }
 
