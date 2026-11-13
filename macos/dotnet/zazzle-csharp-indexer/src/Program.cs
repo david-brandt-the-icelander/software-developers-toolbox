@@ -23,7 +23,7 @@ if (args[0] == "report")
 if (args[0] == "init")
 {
     var dir = args.Length > 2 && args[1] == "--dir" ? args[2] : Directory.GetCurrentDirectory();
-    foreach (var line in Init.Apply(Path.GetFullPath(dir), Environment.ProcessPath!))
+    foreach (var line in Init.Apply(Path.GetFullPath(dir), Environment.ProcessPath!, Init.FindZazzled(Environment.ProcessPath!)))
         Console.WriteLine(line);
     Console.WriteLine("\nAdd this to AGENTS.md or CLAUDE.md:\n\n" + Init.AgentsSnippet);
     return 0;
@@ -32,7 +32,7 @@ if (args[0] == "hook")
 {
     var input = JsonNode.Parse(Console.In.ReadToEnd());
     var tool = input?["tool_name"]?.GetValue<string>() ?? "";
-    var decision = HookPolicy.Decide(tool, input?["tool_input"]?["command"]?.GetValue<string>());
+    var decision = HookPolicy.Decide(tool, input?["tool_input"]?["command"]?.GetValue<string>(), input?["tool_input"]?["file_path"]?.GetValue<string>());
     if (decision.Program != "")
         UsageLog.Open().Record(input?["session_id"]?.GetValue<string>() ?? "", "hook", new JsonObject { ["tool"] = tool, ["program"] = decision.Program }, new CallInfo { Path = "hook", Reason = (decision.Block ? "blocked:" : "allowed_raw:") + decision.Program.Replace("allow-raw:", "") }, 0, 0, null);
     if (!decision.Block)

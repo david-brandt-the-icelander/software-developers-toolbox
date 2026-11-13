@@ -4,10 +4,10 @@ Single-file MCP server that answers code questions for agents over one or more g
 
 ## Quick start
 ```bash
-zazzle-csharp-indexer init            # in a project: writes .mcp.json and .claude/settings.json (server, permission, redirect hook)
+zazzle-csharp-indexer init            # in a project: writes .mcp.json and .claude/settings.json (zazzle and indexer servers, permissions, redirect hook)
 zazzle-csharp-indexer report          # after some use: what to improve next
 ```
-`init` prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle-csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and points at the matching MCP tool; add `# allow-raw` to a command to bypass it (logged).
+`zazzle` is the front door: agents read, search, list and edit files through it, and it asks the indexer for C# terse views. `init` registers both MCP servers (`zazzle` via `zazzled mcp`, found beside the indexer or on `PATH`, and this indexer for C# structure: `overview`, `find_symbol`, `find_references`, `changed_since`, git history) and prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle-csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and the built-in Read on `.cs` files, and points at the matching zazzle tool; add `# allow-raw` to a command to bypass it (logged).
 
 ## Commands
 - `serve [--root name=path]...` stdio MCP server (default root: current directory). Connects to the shared daemon, starting it if needed; `--no-daemon` or `ZAZZLE_INDEXER_NO_DAEMON=1` serves in-process.
