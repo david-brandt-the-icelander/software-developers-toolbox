@@ -1,5 +1,6 @@
 // Command dispatch: picks the subcommand, runs it and shapes failures for the wire.
 use crate::engine::Engine;
+use crate::session::Replay;
 use crate::tokens;
 use std::cell::RefCell;
 use std::io::Read;
@@ -27,6 +28,7 @@ edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect S
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 proxy [--lossless] [--budget T] [--skip TOOL].. [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
+read-again r:ID  the response with that id again: the same text if nothing changed, else the current version under a new id
 status  daemon info
 C# files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
@@ -142,24 +144,66 @@ fn describe(cmd: &str, rest: &[String]) -> String {
     format!("zazzle {cmd} {}", rest.join(" ")).trim_end().chars().take(MAX_DESC).collect()
 }
 
-// Runs one command line and returns its output, tagged or deduplicated for the caller's session.
-pub fn run(ctx: &Ctx, args: &[String]) -> Output {
-    let Some((cmd, rest)) = args.split_first() else { return Output::plain(HELP.into()) };
+// Runs a command and applies the output budget, without the session layer; also returns the description and dedupe choice.
+fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String, bool) {
     let (rest, globals) = match split_globals(cmd, rest) {
         Ok(x) => x,
-        Err(e) => return Output::err(&e),
+        Err(e) => return (Output::err(&e), String::new(), true),
     };
     let mut out = match dispatch(ctx, cmd, &rest) {
         Ok(o) => o,
         Err(msg) => Output::err(&msg),
     };
+    if out.idable && !matches!(cmd, "read" | "cat" | "clean") {
+        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
+    }
+    (out, describe(cmd, &rest), globals.dedupe)
+}
+
+// Runs one command line and returns its output, tagged or deduplicated for the caller's session, remembering how to run it again.
+pub fn run(ctx: &Ctx, args: &[String]) -> Output {
+    let Some((cmd, rest)) = args.split_first() else { return Output::plain(HELP.into()) };
+    if cmd == "read-again" {
+        return read_again(ctx, rest).unwrap_or_else(|e| Output::err(&e));
+    }
+    let (mut out, desc, dedupe) = produce(ctx, cmd, rest);
     if out.idable {
-        if !matches!(cmd.as_str(), "read" | "cat" | "clean") {
-            out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
-        }
-        out.text = ctx.engine.sessions.apply(&ctx.session, &describe(cmd, &rest), out.text, globals.dedupe);
+        let kept: Vec<String> = args.iter().filter(|a| *a != "--disable-session-deduping").cloned().collect();
+        let replay = Replay { args: kept, cwd: ctx.cwd.clone() };
+        out.text = ctx.engine.sessions.apply_with(&ctx.session, &desc, Some(replay), out.text, dedupe);
     }
     out
+}
+
+// Runs the request behind an earlier response again: the same text under the same id if nothing changed, else the current version under a new id.
+fn read_again(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
+    let [id] = rest else { return Err("usage: read-again r:ID".into()) };
+    let id = id.trim_matches(['[', ']']).trim_start_matches("r:");
+    if ctx.session.is_empty() {
+        return Err("read-again needs a session: set ZAZZLE_SESSION, or use the MCP server".into());
+    }
+    let Some((replay, desc)) = ctx.engine.sessions.replay(&ctx.session, id) else {
+        return Err(format!(
+            "no response r:{id} in this session (it may have aged out); run the command again"
+        ));
+    };
+    let (cmd, args) = replay.args.split_first().expect("replays hold a command");
+    if cmd == "clean" {
+        return Err(format!(
+            "r:{id} came from clean, whose input is gone; run the command that produced it again"
+        ));
+    }
+    let again = Ctx {
+        engine: ctx.engine,
+        cwd: replay.cwd.clone(),
+        session: ctx.session.clone(),
+        stdin: RefCell::new(None),
+    };
+    let (mut out, _, _) = produce(&again, cmd, args);
+    if out.idable {
+        out.text = ctx.engine.sessions.resend(&ctx.session, id, &desc, replay, out.text);
+    }
+    Ok(out)
 }
 
 // Routes the first argument to a command.
@@ -183,9 +227,9 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
-        other => {
-            Err(format!("unknown command '{other}'; try: find read ls outline refs edit clean status help"))
-        }
+        other => Err(format!(
+            "unknown command '{other}'; try: find read read-again ls outline refs edit clean status help"
+        )),
     }
 }
 
@@ -243,9 +287,64 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read ls outline refs edit clean status help"
+            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean status help"
         );
         assert!(!o.idable);
+    }
+
+    // Checks read-again returns the same response unchanged, the current version after a change, and an explanation for misses.
+    #[test]
+    fn test_read_again() {
+        let t = TempDir::new();
+        t.write("a.txt", b"one\n");
+        let e = Engine::new();
+        let go = |args: &[&str]| crate::testutil::run_cmd_with(&e, t.path(), "sess", args).text;
+        let first = go(&["read", "a.txt", "--disable-session-deduping"]);
+        let id = first[3..8].to_string();
+        assert!(go(&["read", "a.txt"]).contains("already sent"));
+        assert_eq!(go(&["read-again", &format!("r:{id}")]), first);
+        assert_eq!(go(&["read-again", &format!("[r:{id}]")]), first);
+        t.write("a.txt", b"one\ntwo\n");
+        let changed = go(&["read-again", &id]);
+        assert!(
+            changed.contains(&format!(
+                "] r:{id} changed since it was sent; this is the current version\na.txt 2 lines"
+            )),
+            "{changed}"
+        );
+        assert_eq!(
+            go(&["read-again", "zzzzz"]),
+            "error: no response r:zzzzz in this session (it may have aged out); run the command again"
+        );
+        assert_eq!(go(&["read-again"]), "error: usage: read-again r:ID");
+        let found = go(&["find", "one"]);
+        assert_eq!(go(&["read-again", &found[3..8]]), found);
+        assert_eq!(
+            run_cmd(t.path(), &["read-again", &id]).text,
+            "error: read-again needs a session: set ZAZZLE_SESSION, or use the MCP server"
+        );
+    }
+
+    // Checks a clean response cannot be read again, since its input is gone.
+    #[test]
+    fn test_read_again_refuses_clean() {
+        let t = TempDir::new();
+        let e = Engine::new();
+        let ctx = Ctx {
+            engine: &e,
+            cwd: t.path().to_path_buf(),
+            session: "s".into(),
+            stdin: RefCell::new(Some(Box::new(&b"some output\n"[..]))),
+        };
+        let cleaned = run(&ctx, &["clean".to_string()]).text;
+        let id = cleaned[3..8].to_string();
+        let again = crate::testutil::run_cmd_with(&e, t.path(), "s", &["read-again", &id]).text;
+        assert_eq!(
+            again,
+            format!(
+                "error: r:{id} came from clean, whose input is gone; run the command that produced it again"
+            )
+        );
     }
 
     // Checks proxy is refused inside the daemon with a pointer to the right entry point.
@@ -390,9 +489,8 @@ mod tests {
         let first = go(&["read", "a.txt"]);
         assert!(first.starts_with("[r:") && first.contains("1\thello"));
         let second = go(&["read", "a.txt"]);
-        assert!(second.contains(
-            "already sent: zazzle read a.txt, unchanged. Re-run with --disable-session-deduping to resend."
-        ));
+        assert!(second
+            .contains("already sent: zazzle read a.txt, unchanged. If you no longer have it: read-again r:"));
         assert_eq!(go(&["read", "a.txt", "--disable-session-deduping"]), first);
         let sha = first[first.find("sha ").expect("sha") + 4..][..8].to_string();
         let edited = go(&["edit", "a.txt", "--old", "hello", "--new", "bye", "--expect", &sha]);

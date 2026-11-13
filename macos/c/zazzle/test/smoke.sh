@@ -58,7 +58,9 @@ first=$(ZAZZLE_SESSION=smoke "$zazzle" read src/a.txt)
 case $first in "[r:"*"]
 src/a.txt 3 lines"*) ;; *) fail "session read: '$first'" ;; esac
 second=$(ZAZZLE_SESSION=smoke "$zazzle" read src/a.txt)
-case $second in "[r:"*"] already sent: zazzle read src/a.txt, unchanged. Re-run with --disable-session-deduping to resend.") ;; *) fail "dedupe notice: '$second'" ;; esac
+case $second in "[r:"*"] already sent: zazzle read src/a.txt, unchanged. If you no longer have it: read-again r:"*) ;; *) fail "dedupe notice: '$second'" ;; esac
+id=$(printf '%s' "$first" | sed -n '1s/^\[r:\([0-9a-z]*\)\].*/\1/p')
+[ "$(ZAZZLE_SESSION=smoke "$zazzle" read-again "r:$id")" = "$first" ] || fail "read-again differs"
 again=$(ZAZZLE_SESSION=smoke "$zazzle" read src/a.txt --disable-session-deduping)
 [ "$again" = "$first" ] || fail "resend differs"
 

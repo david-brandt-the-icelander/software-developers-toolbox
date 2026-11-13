@@ -50,6 +50,12 @@ const TOOLS: &[Tool] = &[
         schema: read_schema,
         map: read_args,
     },
+    Tool {
+        name: "zazzle_read_again",
+        description: "Get a response this session already sent, by its r:ID: the same text if nothing changed, else the current version under a new id. Use it instead of repeating a request whose result you no longer have.",
+        schema: read_again_schema,
+        map: read_again_args,
+    },
     Tool { name: "zazzle_ls", description: "Compact directory tree with file counts and line counts.", schema: ls_schema, map: ls_args },
     Tool {
         name: "zazzle_outline",
@@ -107,6 +113,11 @@ fn read_schema() -> Value {
         }),
         &["paths"],
     )
+}
+
+// Schema for zazzle_read_again.
+fn read_again_schema() -> Value {
+    object(json!({"id": {"type": "string", "description": "The id from a response's [r:ID] tag"}}), &["id"])
 }
 
 // Schema for zazzle_ls.
@@ -299,6 +310,11 @@ fn outline_args(v: &Value) -> Result<Vec<String>, String> {
     a.push("--".into());
     a.extend(paths);
     Ok(a)
+}
+
+// Maps zazzle_read_again arguments to a command line.
+fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
+    Ok(vec!["read-again".to_string(), need_str(v, "id")?])
 }
 
 // Maps zazzle_refs arguments to a command line.
@@ -509,6 +525,12 @@ mod tests {
         assert!(
             names.contains(&"zazzle_find") && names.contains(&"zazzle_read") && names.contains(&"zazzle_ls")
         );
+        assert!(names.contains(&"zazzle_read_again"));
+        ask(
+            &b,
+            json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"r:abcde"}}}),
+        );
+        assert_eq!(b.calls.borrow().last().expect("call"), &["read-again", "r:abcde"]);
         assert_eq!(ask(&b, json!({"id":3,"method":"nope"}))["error"]["code"], -32601);
     }
 
@@ -760,6 +782,7 @@ mod tests {
         };
         assert_eq!(text("zazzle_outline", json!({})), "error: 'paths' is required");
         assert_eq!(text("zazzle_refs", json!({})), "error: 'symbol' is required");
+        assert_eq!(text("zazzle_read_again", json!({})), "error: 'id' is required");
         assert_eq!(text("zazzle_edit", json!({"new": "x"})), "error: 'path' is required");
         assert_eq!(text("zazzle_edit", json!({"path": "a", "old": 5})), "error: 'old' must be a string");
         assert!(b.calls.borrow().is_empty());
@@ -773,6 +796,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 6);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 7);
     }
 }

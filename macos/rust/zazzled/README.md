@@ -111,7 +111,9 @@ claude mcp add --transport http example http://127.0.0.1:8808/mcp
 
 ## Session ids and dedupe
 
-With `ZAZZLE_SESSION` set (or over MCP, where each connection is a session) every response starts with `[r:ID]`. Repeating a request whose response is identical and was sent within the last 40,000 estimated tokens returns `[r:ID] already sent: zazzle read a.rs:1-20, unchanged. Re-run with --disable-session-deduping to resend.` Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
+With `ZAZZLE_SESSION` set (or over MCP, where each connection is a session) every response starts with `[r:ID]`. Repeating a request whose response is identical and was sent within the last 40,000 estimated tokens returns `[r:ID] already sent: zazzle read a.rs:1-20, unchanged. If you no longer have it: read-again r:ID`.
+
+`zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean` responses cannot be read again, since their input is gone. Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
 
 ## Cache
 
