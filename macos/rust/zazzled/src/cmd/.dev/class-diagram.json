@@ -24,6 +24,18 @@
   ],
   "types": [
     {
+      "id": "Caller",
+      "name": "Caller",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/mod.rs"
+      ],
+      "members": [
+        "stdio: [OwnedFd; 3]",
+        "conn: Option<RawFd>"
+      ]
+    },
+    {
       "id": "Ctx",
       "name": "Ctx",
       "kind": "struct",
@@ -35,6 +47,7 @@
         "cwd: PathBuf",
         "session: String",
         "stdin: RefCell<Option<Box<dyn Read>>>",
+        "caller: RefCell<Option<Caller>>",
         "read_stdin() -> Result<Vec<u8>, String>",
         "read_stdin_max(max) -> Result<(Vec<u8>, bool), String>"
       ]
@@ -50,9 +63,11 @@
         "text: String",
         "status: u8",
         "idable: bool",
+        "raw: bool",
         "ok(text) -> Output",
         "plain(text) -> Output",
-        "err(msg) -> Output"
+        "err(msg) -> Output",
+        "raw(text, status) -> Output"
       ]
     },
     {
@@ -377,6 +392,12 @@
       "to": "Engine",
       "kind": "depends-on",
       "description": "Every command runs on the shared engine."
+    },
+    {
+      "from": "Ctx",
+      "to": "Caller",
+      "kind": "depends-on",
+      "description": "The invoker's own streams and connection, taken by commands that hand them to a zazz script."
     },
     {
       "from": "find.FileResult",

@@ -14,7 +14,7 @@
       ],
       "guarantees": [
         "Named zazzle-VERSION.all.bottle.tar.gz (one hyphen), the name Homebrew downloads from a plain root_url",
-        "Holds exactly zazzle/VERSION/: bin/ with zazzle, zazzled, afs, fix-network, free-disk-space, cyberspace-generator and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
+        "Holds exactly zazzle/VERSION/: bin/ with zazzle, zazz, zazzled, zazz-worker, afs, fix-network, free-disk-space, cyberspace-generator and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
         "The placeholder is identical to the one the formula's install writes",
         "Reproducible: the same files give the same archive",
         "The formula's bottle block names the release's download folder as root_url, one sha256 tagged all, with cellar :any_skip_relocation"
@@ -39,15 +39,15 @@
     {
       "id": "formula-version-name",
       "title": "Each binary names itself in its version output",
-      "summary": "The formula's test block runs zazzle version and --version on the other five binaries, and expects each output to contain the binary's name (agent-fs for afs).",
+      "summary": "The formula's test block runs zazzle version, zazz help, zazz-worker version and --version on the other binaries, and expects each output to contain the binary's name (agent-fs for afs, zazz for zazz).",
       "contractType": "command-line output",
       "consumers": [
         "The formula's test block (brew test zazzle)"
       ],
       "guarantees": [
-        "zazzle version prints zazzle; zazzled, fix-network, free-disk-space, zazzle-csharp-indexer and cyberspace-generator --version print their names; afs --version prints agent-fs"
+        "zazzle version prints zazzle; zazz help prints zazz; zazz-worker version prints zazz-worker; zazzled, fix-network, free-disk-space, zazzle-csharp-indexer and cyberspace-generator --version print their names; afs --version prints agent-fs"
       ],
-      "compatibility": "Renaming a crate or binary changes what it prints and breaks brew test. formula.test.sh checks that the test block runs these six commands, but its stand-in answers for the binaries, so a mismatch with what they really print is not caught there.",
+      "compatibility": "Renaming a crate or binary changes what it prints and breaks brew test. formula.test.sh checks that the test block runs these nine commands, but its stand-in answers for the binaries, so a mismatch with what they really print is not caught there.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

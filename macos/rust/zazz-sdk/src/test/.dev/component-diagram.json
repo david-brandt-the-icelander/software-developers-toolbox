@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz::test component diagram",
+  "folder": "macos/rust/zazz-sdk/src/test",
+  "description": "The zazz::test library a script's tests use: the harness runs the script's Handlers in-process the way the launcher does, over fakes for the filesystem, network, stdio, clock and environment, and the checks compare outputs with expected JSON, golden snapshots and the script's own OpenAPI schemas. mod.rs re-exports the public parts of fakes.rs and check.rs. Compiled into the SDK library on every target.",
+  "sources": [
+    { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness" },
+    { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "FakeFs" },
+    { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "FakeHttp" },
+    { "path": "macos/rust/zazz-sdk/src/test/check.rs", "symbol": "assert_snapshot" }
+  ],
+  "components": [
+    {
+      "id": "test-src",
+      "name": "zazz::test",
+      "responsibility": "The test module of the SDK; mod.rs declares fakes and check and re-exports assert_json_eq, assert_snapshot, check_schema, json_diff, response_schema, normalize, FakeFs, FakeHttp and FsPolicy.",
+      "folder": "macos/rust/zazz-sdk/src/test"
+    },
+    {
+      "id": "harness",
+      "name": "Harness (mod.rs)",
+      "folder": "macos/rust/zazz-sdk/src/test",
+      "responsibility": "Harness::new (everything allowed, working directory /work, clock at 2024-01-01) or Harness::from_manifest (applies the manifest's sandbox read, write and network and its cli spec); runs json_command, service_call and openapi as an agent and human(argv) as a person, builds each Call over the fakes with captured stdout and stderr, settable stdin, clock, environment and a cancel-after count, and records the last Outcome."
+    },
+    {
+      "id": "fakes",
+      "name": "Fakes (fakes.rs)",
+      "folder": "macos/rust/zazz-sdk/src/test",
+      "responsibility": "FakeFs: an in-memory filesystem with paths normalised to $CWD, $TMP, $HOME or absolute, applying the sandbox policy, a deny list and injected write failures, and recording what was written. FakeHttp: a scripted network that applies the network policy, records requests, answers from expectations (or a recorded tests/http.json) and panics on an unexpected request."
+    },
+    {
+      "id": "check",
+      "name": "Checks (check.rs)",
+      "folder": "macos/rust/zazz-sdk/src/test",
+      "responsibility": "assert_json_eq! and json_diff, golden snapshots under tests/snapshots, and a JSON Schema subset (type, enum, required, properties, additionalProperties false, items, local $ref) for a response schema found by operationId in an OpenAPI document."
+    },
+    {
+      "id": "sdk-src",
+      "name": "zazz SDK source",
+      "responsibility": "The SDK modules the test library drives: Handlers, Call and its edge traits, the cli parser and renderer, http::check and Json.",
+      "folder": "macos/rust/zazz-sdk/src",
+      "diagram": "macos/rust/zazz-sdk/src/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "test-src", "to": "harness", "kind": "contains", "description": "mod.rs." },
+    { "from": "test-src", "to": "fakes", "kind": "contains", "description": "mod fakes." },
+    { "from": "test-src", "to": "check", "kind": "contains", "description": "mod check." },
+    { "from": "harness", "to": "fakes", "kind": "depends-on", "description": "Owns a FakeFs and a FakeHttp, sets their policies from the manifest and puts clones in each Call." },
+    { "from": "harness", "to": "check", "kind": "depends-on", "description": "assert_schema uses response_schema and check_schema." },
+    { "from": "harness", "to": "sdk-src", "kind": "depends-on", "description": "Calls Handlers::command, service_call and openapi_doc; builds Call; parses argv with cliargs::Spec and renders with render::render." },
+    { "from": "fakes", "to": "sdk-src", "kind": "depends-on", "description": "Implement the Fs and Http traits; apply http::check; return SDK Errors." },
+    { "from": "check", "to": "sdk-src", "kind": "depends-on", "description": "Compares and reads Json." }
+  ]
+}

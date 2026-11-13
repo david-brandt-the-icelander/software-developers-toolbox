@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzled source component diagram",
   "folder": "macos/rust/zazzled/src",
-  "description": "The parts of the zazzled crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. All of it is one binary.",
+  "description": "The parts of the zazzled crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. The `zazz` command line goes to the zazz scripts module, which builds, tests and runs scripts in zazz-worker processes and adds its tools to the MCP server. All of it is one binary.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/lib.rs",
@@ -32,6 +32,10 @@
     {
       "path": "macos/rust/zazzled/src/params.rs",
       "symbol": "matches"
+    },
+    {
+      "path": "macos/rust/zazzled/src/lib.rs",
+      "symbol": "zazz"
     }
   ],
   "components": [
@@ -50,7 +54,7 @@
     {
       "id": "server",
       "name": "Socket server (server.rs)",
-      "responsibility": "Binds the private socket (or takes launchd's), serves connections on 2 to 8 worker threads, checks the peer's uid, receives the request and passed descriptors, runs the command and answers; flushes the cache every 100 ms and exits when idle.",
+      "responsibility": "Binds the private socket (or takes launchd's), serves connections on 2 to 8 worker threads (script calls and human runs on a thread of their own), checks the peer's uid, receives the request and passed descriptors, runs the command with copies of the caller's streams for a script to use, and answers; flushes the cache every 100 ms and exits when idle.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -68,7 +72,7 @@
     {
       "id": "mcp",
       "name": "MCP server (mcp.rs, mcp_structure.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the thirteen zazzle tools (seven file tools, six structure tools answered by the indexer), each call forwarded to the daemon under one session per connection.",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines), each call forwarded to the daemon under one session per connection.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -80,7 +84,7 @@
     {
       "id": "engine",
       "name": "Engine (engine.rs, meta.rs)",
-      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock and the counters.",
+      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock, the counters and the zazz state (script store, worker binary and warm workers).",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -183,6 +187,13 @@
       "diagram": "macos/rust/zazzled/src/wrap/.dev/component-diagram.json"
     },
     {
+      "id": "zazz",
+      "name": "zazz scripts",
+      "responsibility": "`zazz ...`: packs, builds, tests once, registers and runs sandboxed scripts by hash, installs them as commands, and signs and trusts them; the MCP tools zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls.",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "diagram": "macos/rust/zazzled/src/zazz/.dev/component-diagram.json"
+    },
+    {
       "id": "launchd-service",
       "name": "launchd",
       "responsibility": "macOS's service manager: owns the socket of an installed LaunchAgent and starts `zazzled serve` on the first connection; driven with launchctl.",
@@ -194,6 +205,13 @@
       "responsibility": "The C# tool in this repository whose daemon answers `view` and the structure tools over its own unix socket; it lists no tools to clients.",
       "folder": "macos/dotnet/zazzle-csharp-indexer",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker",
+      "responsibility": "The WebAssembly host binary in this repository that compiles, tests and runs scripts, started by the zazz module.",
+      "folder": "macos/rust/zazz-worker",
+      "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
     }
   ],
   "relationships": [
@@ -340,6 +358,12 @@
       "to": "wrap",
       "kind": "contains",
       "description": "zazzle run."
+    },
+    {
+      "from": "src",
+      "to": "zazz",
+      "kind": "contains",
+      "description": "zazz scripts."
     },
     {
       "from": "cli",
@@ -568,6 +592,42 @@
       "to": "params",
       "kind": "depends-on",
       "description": "Picks overloads by parameter types."
+    },
+    {
+      "from": "cmd",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "The dispatcher hands `zazz ...` command lines to zazz::run."
+    },
+    {
+      "from": "mcp",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "Lists and maps the zazz tools (zazz::mcptools::TOOLS) after its own."
+    },
+    {
+      "from": "engine",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "Holds the zazz state every request shares."
+    },
+    {
+      "from": "zazz",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Takes the command context, with the caller's streams, and answers with an Output (raw for human runs)."
+    },
+    {
+      "from": "zazz",
+      "to": "zazz-worker",
+      "kind": "depends-on",
+      "description": "Runs `zazz-worker compile`, `test` and `serve` under the OS sandbox."
+    },
+    {
+      "from": "zazz",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "Defines its tools with mcp's Tool and argument helpers."
     }
   ]
 }

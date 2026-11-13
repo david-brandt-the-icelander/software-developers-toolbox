@@ -151,7 +151,7 @@ human:  zazz install /tmp/csv-sum.zazz && csv-sum -d ';' a.csv | sort
   ```json
   {"v":1,"alg":"ecdsa-p256-sha256","digest":"b3:<hex>","sig":"<base64 DER>","chain":["<base64 DER cert>", "…"]}
   ```
-  - `digest` is the BLAKE3 hash of every other entry, encoded canonically: sorted by name, then for each entry the name, the length as `u64` LE and the bytes.
+  - `digest` is the BLAKE3 hash of every other entry, encoded canonically: sorted by name, then for each entry the name, a 0 byte, the length as `u64` LE and the bytes.
   - The signature covers `zazz-sig-v1\0` followed by the digest.
   - `chain` is the signer's certificate and any intermediate certificates, so trust can be evaluated without a network lookup on the hot path.
 - **Algorithm** (D9): ECDSA P-256. It is the only curve the Secure Enclave supports, and the one AD Certificate Services, MDM profiles and `SecTrust` handle everywhere. Verification uses the `p256` crate on both operating systems.
@@ -288,9 +288,10 @@ Plain `std::fs` still works in production but cannot be faked.
 ### Transports
 1. **zazzled ↔ native script and zazzled ↔ `zazz-worker`:** frames of `u32` LE length + JSON on fd 3, with the caller's fds 0/1/2 attached to each call via `SCM_RIGHTS` (code moves from `server.rs` to `fdpass.rs`).
 2. **`zazz-worker` ↔ WASM guest:** **host imports** in the core-wasm module `zazz_host`, usable from any language without bindings:
-   - `recv(ptr, cap) -> i64`: the call message, or `-needed`;
+   - `request_len() -> i64`: the length of the call message waiting in the host's inbox;
+   - `take(ptr, cap) -> i64`: copies the inbox (the call message, or the last `http` reply) into guest memory;
    - `send(ptr, len)`: result, progress or test-report;
-   - `http(req_ptr, req_len, resp_ptr, resp_cap) -> i64`: JSON head + body. The allowlist is enforced here. Unsigned scripts get `network_denied`; the import is always linked, so behaviour is the same in tests and in production;
+   - `http(req_ptr, req_len) -> i64`: sends a request (JSON head + body) and returns the reply's length, read with `take`. The allowlist is enforced here. Unsigned scripts get `network_denied`; the import is always linked, so behaviour is the same in tests and in production;
    - `cancelled() -> i32`.
    - The guest's stdin/stdout/stderr are the caller's real fds, wrapped as WASI streams with `isatty`-based terminal flags.
 3. **Components (later):** the WIT world `zazz:script@1` mirrors these functions; `wasi:http` is linked only for signed scripts, with the same host check.

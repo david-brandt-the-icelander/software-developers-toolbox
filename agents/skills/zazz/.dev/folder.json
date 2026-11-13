@@ -1,0 +1,64 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz agent skill",
+  "folder": "agents/skills/zazz",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz agent skill",
+      "summary": "The skill that tells a coding agent how to write, test, pack, register and call zazz scripts (small sandboxed programs zazzled builds, tests once and runs by hash), install them as commands for humans, and what the sandbox and signing allow.",
+      "purpose": "SKILL.md, with the front matter an agent matches a task against, says where the docs and the design are (zazzled's README, section zazz scripts, and ZAZZ-PLAN.md); how to start a script with `zazz new` and write it in Rust against std and the zazz SDK, with its handlers in a function tests can call and its edge I/O through the call context so tests can fake it, or as any WASI preview 1 command with `\"kind\": \"wasm\"`; how to test with zazz::test's Harness and `zazz test` (diagnostics and failed tests come back as JSON); how to ship with `zazz pack` and `zazz add`, call with `zazz call` or the zazz MCP tools, inspect with describe, ls and rm, and install a command for humans; and that a script reads and writes only its manifest's paths, gets network only when signed by an authority the machine trusts, and that `zazz doctor` names what is missing. It is listed in the repository's AGENTS.md.",
+      "boundaries": [
+        "The skill describes; the behaviour it relies on is zazzled's (macos/rust/zazzled/src/zazz/ and its .dev/), the SDK's (macos/rust/zazz-sdk) and zazz-worker's (macos/rust/zazz-worker); the MCP tool names are a contract of macos/rust/zazzled/src/.dev/contracts.json (mcp-tools).",
+        "Changes to the skill follow agents/directives.md."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "agents/skills/zazz/SKILL.md",
+          "symbol": "description"
+        },
+        {
+          "path": "agents/skills/zazz/SKILL.md",
+          "symbol": "Write"
+        },
+        {
+          "path": "agents/skills/zazz/SKILL.md",
+          "symbol": "Test"
+        },
+        {
+          "path": "agents/skills/zazz/SKILL.md",
+          "symbol": "Ship and run"
+        },
+        {
+          "path": "agents/skills/zazz/SKILL.md",
+          "symbol": "Sandbox"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "zazz scripts"
+        },
+        {
+          "path": "AGENTS.md",
+          "symbol": "Skills"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "documents",
+          "path": "macos/rust/zazzled/src/.dev/contracts.json",
+          "entityId": "mcp-tools"
+        },
+        {
+          "relation": "documents",
+          "path": "macos/rust/zazzled/src/zazz/.dev/component-diagram.json"
+        },
+        {
+          "relation": "documents",
+          "path": "macos/rust/zazz-sdk/.dev/component-diagram.json"
+        }
+      ]
+    }
+  ]
+}

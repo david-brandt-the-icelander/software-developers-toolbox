@@ -113,6 +113,14 @@ static void test_argv0_dispatch(void)
 	char *zazz_tool[] = {"zazz", "free-disk-space", 0};
 	CHECK(run(2, zazz_tool, env_home) == 0);
 	CHECK(memcmp(M.sent + 4, "\0\0zazz\0free-disk-space\0", 23) == 0);
+	reset();
+	char *zazz_run[] = {"zazz", "run", "csv-sum", 0};
+	CHECK(run(3, zazz_run, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0run\0csv-sum\0", 19) == 0);
+	reset();
+	char *script_proxy[] = {"csv-sum", "proxy", 0};
+	CHECK(run(2, script_proxy, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0csv-sum\0proxy\0", 31) == 0);
 }
 
 /* Checks ZAZZLE_SOCK overrides HOME and lookalike variables are ignored. */

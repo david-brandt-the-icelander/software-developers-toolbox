@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz::test",
+  "folder": "macos/rust/zazz-sdk/src/test",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz::test",
+      "summary": "The SDK's test library: a harness, fakes and checks that let a script's tests run its handlers the way the launcher would, with nothing real touched.",
+      "purpose": "Lets script authors test handlers without a sandbox, a network or a launcher, and with the manifest's own sandbox applied, so tests that pass here fail where production would refuse. mod.rs holds the Harness, fakes.rs the filesystem and network fakes, check.rs the JSON, snapshot and schema assertions.",
+      "boundaries": [
+        "Part of the zazz library on every target, so the same tests compile natively and to WASM; zazzled embeds these three files with the rest of the SDK.",
+        "Runs handlers in-process and never frames messages: the launcher protocol and its backends are not exercised here.",
+        "Reads the manifest's sandbox and cli sections itself rather than through zazz-format, which the SDK cannot depend on."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness::from_manifest" },
+        { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "pub mod test" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "FILES" }
+      ]
+    }
+  ]
+}

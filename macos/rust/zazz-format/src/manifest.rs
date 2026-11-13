@@ -221,7 +221,7 @@ fn parse_tests(m: Option<&Map<String, Value>>, kind: Kind) -> Result<Option<Test
     match (kind, paths.is_empty(), &module) {
         (Kind::Wasm, _, None) => return Err("tests.module: required for kind \"wasm\"".into()),
         (Kind::Rust | Kind::NativeBin, true, _) => {
-            return Err("tests.paths: required for kind \"rust\"".into())
+            return Err("tests.paths: required for kinds \"rust\" and \"native-bin\"".into())
         }
         _ => {}
     }
@@ -249,7 +249,7 @@ fn parse_kind(m: &Map<String, Value>) -> Result<Kind, String> {
         "rust" => Ok(Kind::Rust),
         "wasm" => Ok(Kind::Wasm),
         "native-bin" => Ok(Kind::NativeBin),
-        other => Err(format!("kind: '{other}' must be \"rust\" or \"wasm\"")),
+        other => Err(format!("kind: '{other}' must be \"rust\", \"wasm\" or \"native-bin\"")),
     }
 }
 

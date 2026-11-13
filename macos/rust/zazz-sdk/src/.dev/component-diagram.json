@@ -1,0 +1,124 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz SDK source component diagram",
+  "folder": "macos/rust/zazz-sdk/src",
+  "description": "The modules of the zazz SDK and how a call flows through them. A script registers Handlers and calls zazz::serve, which picks a backend by target: on Unix the native backend reads length-prefixed JSON frames from the control socket on fd 3 with the caller's stdio passed as descriptors; on WASM the backend takes its one call message through the zazz_host imports. Either builds a Call (the per-call context with filesystem, network, clock and environment behind traits) and has Handlers dispatch the message, then answers with a result frame. The zazz::test library in test/ drives the same Handlers over fakes. Everything compiles into the one library; native.rs and fdpass.rs only on Unix, wasm.rs only on WASM.",
+  "sources": [
+    { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "serve" },
+    { "path": "macos/rust/zazz-sdk/src/native.rs", "symbol": "serve_on" },
+    { "path": "macos/rust/zazz-sdk/src/wasm.rs", "symbol": "serve" },
+    { "path": "macos/rust/zazz-sdk/src/handlers.rs", "symbol": "Handlers::dispatch" },
+    { "path": "macos/rust/zazz-sdk/src/call.rs", "symbol": "Call::real" },
+    { "path": "macos/rust/zazz-sdk/src/proto.rs", "symbol": "write_frame" }
+  ],
+  "components": [
+    {
+      "id": "sdk-src",
+      "name": "zazz SDK source",
+      "responsibility": "The zazz library's modules; lib.rs declares them, re-exports Call, Mode, Error, Result, Handlers, Request, Response and Json, and defines VERSION and serve.",
+      "folder": "macos/rust/zazz-sdk/src"
+    },
+    {
+      "id": "entry",
+      "name": "Entry point (lib.rs serve)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "zazz::serve(handlers): runs the WASM backend on WASM targets and the native backend on Unix."
+    },
+    {
+      "id": "handlers",
+      "name": "Handlers (handlers.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "The script's json-command handler, optional OpenAPI document and service-call operations by operationId; lists the messages they answer and dispatches json-command, openapi and service-call messages, reading the call's mode (agent or human)."
+    },
+    {
+      "id": "call",
+      "name": "Call context (call.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Everything a handler can touch during one call: id, mode, exit status, stdio, the Fs, Http, Clock and Env edges with their real implementations (StdFs rooted at the caller's directory, NoHttp, SystemClock, StdEnv), progress notes and the cancellation probe."
+    },
+    {
+      "id": "proto",
+      "name": "Launcher protocol (proto.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Frames of a u32 little-endian length and compact JSON, at most 16 MiB, and the hello, ready, result and progress messages; protocol version 1."
+    },
+    {
+      "id": "native",
+      "name": "Native backend (native.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Serves frames on the control socket, fd 3, until shutdown or end of stream: answers hello with ready, runs each call with the three descriptors received with it as stdio, ignores cancel frames (a waiting frame is what the cancellation probe sees), turns a handler panic into a failed result and stops, and exits 70 when the channel fails."
+    },
+    {
+      "id": "fdpass",
+      "name": "Descriptor passing (fdpass.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "sendmsg and recvmsg with SCM_RIGHTS through hand-declared C structs for Linux and macOS (no libc crate), at most 8 descriptors per message, and a non-blocking peek for waiting bytes."
+    },
+    {
+      "id": "wasm",
+      "name": "WASM backend (wasm.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Serves the single call an instance is created for through the zazz_host imports request_len, take, send, http and cancelled; stdio are the caller's, wired by the host; network requests go through zazz_host.http, where the host applies the allowlist."
+    },
+    {
+      "id": "http",
+      "name": "HTTP (http.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Request and Response, their framed wire layout for the zazz_host ABI, https-only URL parsing (no credentials or IP literals), host patterns and the NetPolicy check shared by the WASM host and the fakes."
+    },
+    {
+      "id": "values",
+      "name": "JSON and errors (json.rs, error.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "The Json value with insertion-ordered objects, a strict parser limited to 128 levels of nesting, compact and pretty printers and the json! macro; Error, a stable code and a message, with constructors for the codes the launcher understands."
+    },
+    {
+      "id": "human",
+      "name": "Human command line (cliargs.rs, render.rs)",
+      "folder": "macos/rust/zazz-sdk/src",
+      "responsibility": "Turns argv into a script's JSON input from the manifest's cli spec (flags, positionals, types, defaults, help) and renders a returned output for a person: strings as they are, lists of flat objects as a table, anything else as pretty JSON."
+    },
+    {
+      "id": "test",
+      "name": "zazz::test",
+      "folder": "macos/rust/zazz-sdk/src/test",
+      "responsibility": "The test library scripts use: a harness that runs the handlers the way the launcher does over a fake filesystem, network, stdio, clock and environment, with JSON, snapshot and schema assertions.",
+      "diagram": "macos/rust/zazz-sdk/src/test/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "sdk-src", "to": "entry", "kind": "contains", "description": "lib.rs." },
+    { "from": "sdk-src", "to": "handlers", "kind": "contains", "description": "pub mod handlers." },
+    { "from": "sdk-src", "to": "call", "kind": "contains", "description": "pub mod call." },
+    { "from": "sdk-src", "to": "proto", "kind": "contains", "description": "pub mod proto." },
+    { "from": "sdk-src", "to": "native", "kind": "contains", "description": "pub mod native, #[cfg(unix)]." },
+    { "from": "sdk-src", "to": "fdpass", "kind": "contains", "description": "pub mod fdpass, #[cfg(unix)]." },
+    { "from": "sdk-src", "to": "wasm", "kind": "contains", "description": "mod wasm, #[cfg(target_family = \"wasm\")]." },
+    { "from": "sdk-src", "to": "http", "kind": "contains", "description": "pub mod http." },
+    { "from": "sdk-src", "to": "values", "kind": "contains", "description": "pub mod json and pub mod error." },
+    { "from": "sdk-src", "to": "human", "kind": "contains", "description": "pub mod cliargs and pub mod render." },
+    { "from": "sdk-src", "to": "test", "kind": "contains", "description": "pub mod test." },
+    { "from": "entry", "to": "native", "kind": "depends-on", "description": "native::serve on Unix." },
+    { "from": "entry", "to": "wasm", "kind": "depends-on", "description": "wasm::serve on WASM targets." },
+    { "from": "native", "to": "proto", "kind": "depends-on", "description": "Frame lengths, bodies, ready, result and progress messages." },
+    { "from": "native", "to": "fdpass", "kind": "depends-on", "description": "recv_with_fds for each frame's descriptors; pending as the cancellation probe." },
+    { "from": "native", "to": "handlers", "kind": "depends-on", "description": "messages for ready, dispatch for each call, mode_of." },
+    { "from": "native", "to": "call", "kind": "depends-on", "description": "Call::real rooted at the current directory, with NoHttp." },
+    { "from": "wasm", "to": "proto", "kind": "depends-on", "description": "ready, result and progress messages." },
+    { "from": "wasm", "to": "handlers", "kind": "depends-on", "description": "messages and dispatch." },
+    { "from": "wasm", "to": "call", "kind": "depends-on", "description": "Call::real with HostHttp, an Http over zazz_host.http." },
+    { "from": "wasm", "to": "http", "kind": "depends-on", "description": "Request::encode and Response::decode for the host ABI." },
+    { "from": "handlers", "to": "call", "kind": "depends-on", "description": "Each handler gets the &mut Call." },
+    { "from": "handlers", "to": "proto", "kind": "depends-on", "description": "proto::kind reads a message's type." },
+    { "from": "call", "to": "http", "kind": "depends-on", "description": "The Http edge sends Request and returns Response." },
+    { "from": "call", "to": "values", "kind": "depends-on", "description": "Errors, and input_json." },
+    { "from": "proto", "to": "values", "kind": "depends-on", "description": "Frames carry Json; results carry Error::to_json." },
+    { "from": "http", "to": "values", "kind": "depends-on", "description": "JSON heads and network_denied errors." },
+    { "from": "human", "to": "values", "kind": "depends-on", "description": "Builds the input Json; renders an output Json." },
+    { "from": "test", "to": "handlers", "kind": "depends-on", "description": "Runs json-command, service-call and openapi on the script's Handlers." },
+    { "from": "test", "to": "call", "kind": "depends-on", "description": "Builds each Call over the fakes." },
+    { "from": "test", "to": "human", "kind": "depends-on", "description": "Harness::human parses argv with the manifest's cli spec and renders the output." },
+    { "from": "test", "to": "http", "kind": "depends-on", "description": "FakeHttp applies the NetPolicy with http::check." }
+  ]
+}

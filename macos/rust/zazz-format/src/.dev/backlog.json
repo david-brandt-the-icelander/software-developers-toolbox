@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazz-format source backlog",
+  "folder": "macos/rust/zazz-format/src",
+  "entities": [
+    {
+      "id": "registered-pen",
+      "title": "Move the zazz OIDs to a registered enterprise number",
+      "summary": "The code-signing EKU and the grants extension OIDs sit under IANA's example enterprise number 32473 until a registered Private Enterprise Number replaces it.",
+      "type": "debt",
+      "status": "open",
+      "compromise": "EKU_OID and GRANTS_OID use the arc 1.3.6.1.4.1.32473.7979, under the example enterprise number RFC 5612 reserves for documentation.",
+      "cost": "The example arc is not unique to zazz, and every certificate issued with these OIDs must be reissued once they change.",
+      "acceptanceCriteria": [
+        "EKU_OID and GRANTS_OID are under a registered Private Enterprise Number.",
+        "The contracts record signature-envelope states the new OIDs."
+      ],
+      "origin": {
+        "kind": "code",
+        "reference": "macos/rust/zazz-format/src/sig.rs",
+        "description": "The comment on EKU_OID (\"replace with a registered PEN\"), repeated in the implementation status of macos/rust/zazzled/ZAZZ-PLAN.md."
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazz-format/src/sig.rs",
+          "symbol": "EKU_OID"
+        },
+        {
+          "path": "macos/rust/zazz-format/src/sig.rs",
+          "symbol": "GRANTS_OID"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "affects",
+          "path": "macos/rust/zazz-format/src/.dev/contracts.json",
+          "entityId": "signature-envelope"
+        }
+      ]
+    }
+  ]
+}

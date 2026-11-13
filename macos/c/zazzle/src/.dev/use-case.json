@@ -18,7 +18,7 @@
     {
       "id": "run-a-command",
       "name": "Run a zazzle command in a shell",
-      "description": "A coding agent runs `zazzle CMD ...`; the invoker hands the command to the daemon, starting it if needed, and exits with the daemon's status, or becomes the program that runs it.",
+      "description": "A coding agent runs `zazzle CMD ...` (or `zazz CMD ...`, or an installed zazz script by its name); the invoker hands the command to the daemon, starting it if needed, and exits with the daemon's status, or becomes the program that runs it.",
       "sources": [
         {
           "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -37,7 +37,7 @@
       ],
       "postconditions": [
         "The command's text is on zazzle's standard output, or its error on standard error, written there by the daemon (or by the program zazzle became).",
-        "zazzle's exit status is the daemon's status byte, 0 or 2, or that program's own status."
+        "zazzle's exit status is the daemon's status byte (0 or 2 for zazzle and zazz commands; a zazz script run as a command answers with its own exit status), or that program's own status."
       ],
       "flow": [
         {
@@ -56,7 +56,7 @@
         {
           "id": "dispatch",
           "actor": "zazzle",
-          "action": "Looks at CMD: free-disk-space, fix-network, proxy and run are not daemon requests; anything else is.",
+          "action": "Looks at the name it was started under and at CMD: free-disk-space, fix-network, proxy and run (each only as zazzle) are not daemon requests; anything else is, so `zazz run NAME` and a script's own `run` argument reach the daemon.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -65,6 +65,10 @@
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
               "symbol": "is_tool"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "own_name"
             }
           ],
           "participantKind": "system"
@@ -72,7 +76,7 @@
         {
           "id": "build",
           "actor": "zazzle",
-          "action": "Builds the request: an empty working-directory field, the session from ZAZZLE_SESSION, then its arguments; and the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock.",
+          "action": "Builds the request: an empty working-directory field, the session from ZAZZLE_SESSION, then `zazz` when it runs as zazz, or `zazz exec-name NAME` when it runs under any other name NAME, then its arguments; and the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -148,12 +152,27 @@
         },
         {
           "atStep": "dispatch",
-          "condition": "CMD is run or proxy.",
+          "condition": "CMD is run or proxy and the invoker runs as zazzle.",
           "outcome": "zazzle replaces itself with `zazzled wrap ARGS` or `zazzled proxy ARGS` (ZAZZLE_DAEMON, or the zazzled beside it), keeping the caller's environment, streams and exit status. If it cannot be run: `cannot run zazzled (error N)`, exit 69.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
               "symbol": "exec_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "dispatch",
+          "condition": "zazzle runs as `zazz`, or under another name (a shim made by `zazz install`), and CMD is not run or proxy.",
+          "outcome": "The request goes to the daemon's zazz command: `zazz ARGS`, or `zazz exec-name NAME ARGS` for a shim, which runs that installed script with the caller's streams and answers with its exit status; free-disk-space and fix-network are passed on as arguments, not exec'd.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "build_request"
+            },
+            {
+              "path": "macos/rust/zazzled/src/zazz/human.rs",
+              "symbol": "run"
             }
           ]
         },
@@ -254,6 +273,12 @@
       "folder": "macos/rust/zazzled/src",
       "path": "macos/rust/zazzled/src/.dev/feature.json",
       "relationship": "Session ids, dedupe and read-again, keyed by ZAZZLE_SESSION."
+    },
+    {
+      "kind": "component",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/component-diagram.json",
+      "relationship": "What the daemon does with `zazz` and `zazz exec-name` requests."
     },
     {
       "kind": "use-case",

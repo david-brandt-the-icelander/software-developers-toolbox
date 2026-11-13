@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzle invoker component diagram",
   "folder": "macos/c/zazzle",
-  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, and the standalone tools the invoker runs for `zazzle free-disk-space` and `zazzle fix-network`.",
+  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, and the standalone tools the invoker runs for `zazzle free-disk-space` and `zazzle fix-network`. The same program, run as `zazz` or under an installed script's name, sends zazz requests to the daemon.",
   "sources": [
     {
       "path": "macos/c/zazzle/Makefile",
@@ -20,6 +20,10 @@
     {
       "path": "macos/c/zazzle/src/zazzle_core.h",
       "symbol": "is_tool"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "build_request"
     }
   ],
   "components": [
@@ -39,7 +43,7 @@
     {
       "id": "test",
       "name": "Tests",
-      "responsibility": "Host unit tests against a mock syscall layer, the gcov branch gate and the end-to-end smoke test.",
+      "responsibility": "Host unit tests against a mock syscall layer, the gcov branch gate and the end-to-end smoke test, which also runs the invoker as `zazz` and as a script's shim.",
       "folder": "macos/c/zazzle/test"
     },
     {
@@ -51,7 +55,7 @@
     {
       "id": "zazzled",
       "name": "zazzled",
-      "responsibility": "The daemon the invoker talks to, and the binary it execs for `run` and `proxy`.",
+      "responsibility": "The daemon the invoker talks to, for zazzle commands and (as zazz or a shim) zazz commands, and the binary it execs for `run` and `proxy`.",
       "folder": "macos/rust/zazzled",
       "diagram": "macos/rust/zazzled/.dev/component-diagram.json"
     },
@@ -74,7 +78,7 @@
     { "from": "zazzle", "to": "src", "kind": "contains", "description": "The program." },
     { "from": "zazzle", "to": "test", "kind": "contains", "description": "Its tests." },
     { "from": "zazzle", "to": "bench", "kind": "contains", "description": "Its benchmarks." },
-    { "from": "src", "to": "zazzled", "kind": "depends-on", "description": "Sends every daemon command over its socket and starts it when nothing listens; execs `zazzled wrap` and `zazzled proxy`." },
+    { "from": "src", "to": "zazzled", "kind": "depends-on", "description": "Sends every daemon command over its socket (prefixed `zazz` or `zazz exec-name NAME` when run under another name) and starts it when nothing listens; execs `zazzled wrap` and `zazzled proxy`." },
     { "from": "src", "to": "free-disk-space", "kind": "depends-on", "description": "Execs the free-disk-space binary beside itself." },
     { "from": "src", "to": "fix-network", "kind": "depends-on", "description": "Execs the fix-network binary beside itself." },
     { "from": "test", "to": "src", "kind": "depends-on", "description": "unit.c includes zazzle_core.h with the mock; smoke.sh runs build/zazzle." },

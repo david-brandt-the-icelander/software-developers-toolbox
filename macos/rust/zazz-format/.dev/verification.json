@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazz-format verification",
+  "folder": "macos/rust/zazz-format",
+  "description": "Checks that cover the whole crate. The tests are unit tests in each module of src/; results are readings and live with CI.",
+  "entities": [
+    {
+      "id": "tests-on-both-platforms",
+      "title": "Unit tests on macOS and Linux",
+      "summary": "Each module's tests (archive round trips and refusals, manifest parsing, packing, the envelope and script ids) run in the workspace test on both platforms.",
+      "subject": [
+        { "path": "macos/rust/zazz-format/src/.dev/contracts.json" }
+      ],
+      "criteria": [
+        "Every test in zazz-format passes on macOS and on Linux"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.test", "command": "cargo test --workspace --locked", "description": "Matrix of macos-latest and ubuntu-24.04." },
+        { "type": "automated", "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "tests" },
+        { "type": "automated", "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "tests" },
+        { "type": "automated", "path": "macos/rust/zazz-format/src/pack.rs", "symbol": "tests" },
+        { "type": "automated", "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "tests" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": ".github/workflows/ci.yml", "symbol": "jobs.test" }
+      ]
+    },
+    {
+      "id": "coverage-gate",
+      "title": "Branch coverage of at least 95%",
+      "summary": "CI fails when the tests cover less than 95% of zazz-format's branches, test code excluded.",
+      "criteria": [
+        "cargo llvm-cov reports at least 95% branch coverage for -p zazz-format"
+      ],
+      "checks": [
+        { "type": "automated", "path": "macos/rust/zazzled/coverage.sh", "symbol": "min", "command": "sh zazzled/coverage.sh 95 zazz-format", "description": "Run in macos/rust by the coverage job (nightly toolchain); test modules carry coverage(off)." }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": ".github/workflows/ci.yml", "symbol": "jobs.coverage" },
+        { "path": "macos/rust/zazzled/coverage.sh", "symbol": "crate" }
+      ]
+    },
+    {
+      "id": "msrv",
+      "title": "Builds with the workspace's minimum Rust",
+      "summary": "The crate compiles with Rust 1.85, the workspace's rust-version.",
+      "criteria": [
+        "cargo check succeeds with the 1.85 toolchain"
+      ],
+      "checks": [
+        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.msrv", "command": "cargo check --workspace --exclude zazz-worker --locked" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/Cargo.toml", "symbol": "rust-version" }
+      ]
+    }
+  ]
+}

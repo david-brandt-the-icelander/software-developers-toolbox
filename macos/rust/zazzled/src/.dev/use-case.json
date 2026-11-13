@@ -38,13 +38,13 @@
         }
       ],
       "actor": "Coding agent",
-      "goal": "Search, read, outline and edit the project's files, and ask about its C# structure and history, through tools, with short answers it is not sent twice and can fetch again by id.",
+      "goal": "Search, read, outline and edit the project's files, ask about its C# structure and history, and build, test and call zazz scripts, through tools, with short answers it is not sent twice and can fetch again by id.",
       "preconditions": [
         "The MCP client is configured to start `zazzled mcp` (for example `claude mcp add zazzle -- zazzled mcp`), in the project directory.",
         "The zazzled binary can start `zazzled serve` from its own path, or a daemon already listens on the socket."
       ],
       "postconditions": [
-        "Each tool call has been answered with the command's text, tagged with a response id for this connection's session.",
+        "Each tool call has been answered with the command's text; a zazzle query answer is tagged with a response id for this connection's session, while zazz replies never are.",
         "One daemon serves every call; the MCP process spawns nothing per call."
       ],
       "flow": [
@@ -80,11 +80,15 @@
         {
           "id": "list",
           "actor": "Coding agent",
-          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap with their input schemas.",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/mcp.rs",
               "symbol": "list_tools"
+            },
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "all_tools"
             }
           ],
           "participantKind": "actor",
@@ -115,6 +119,10 @@
             {
               "path": "macos/rust/zazzled/src/mcp.rs",
               "symbol": "TOOLS"
+            },
+            {
+              "path": "macos/rust/zazzled/src/zazz/mcptools.rs",
+              "symbol": "call_args"
             }
           ],
           "participantKind": "system"

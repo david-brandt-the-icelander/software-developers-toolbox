@@ -55,6 +55,10 @@
         {
           "path": "macos/rust/zazzled/src/mcp.rs",
           "symbol": "handle_line"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/mcptools.rs",
+          "symbol": "TOOLS"
         }
       ],
       "entrypoint": {
@@ -64,7 +68,7 @@
       "action": "command",
       "transport": "zazzled mcp, started by an MCP client; newline-delimited JSON-RPC: initialize, ping, tools/list, tools/call",
       "authorization": "The MCP client that started the process; tool calls go to the daemon as the same user, with this process's working directory as the root.",
-      "result": "Tools zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, each answered with the command's text and isError when its status is not 0; runs until standard input closes.",
+      "result": "Tools zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, and the zazz script tools zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, each answered with the command's text and isError when its status is not 0; runs until standard input closes.",
       "failures": [
         "A line that is not JSON: error -32700.",
         "An unknown method: -32601; an unknown tool: -32602.",

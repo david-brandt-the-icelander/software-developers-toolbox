@@ -58,6 +58,11 @@ case $("$tmp/zazz" help) in "zazz: sandboxed scripts"*) ;; *) fail "zazz help" ;
 ln -s "$zazzle" "$tmp/no-such-script"
 if "$tmp/no-such-script" 2>"$tmp/err"; then fail "an unknown script must fail"; fi
 grep -q "no-such-script: not_found" "$tmp/err" || fail "shim stderr: $(cat "$tmp/err")"
+# Only zazzle execs `zazzled wrap` for run: `zazz run NAME` and a script given `run` reach the zazz command.
+if "$tmp/zazz" run no-such-script 2>"$tmp/err"; then fail "zazz run of an unknown script must fail"; fi
+grep -q "no-such-script: not_found" "$tmp/err" || fail "zazz run stderr: $(cat "$tmp/err")"
+if "$tmp/no-such-script" run 2>"$tmp/err"; then fail "a script given run must not exec wrap"; fi
+grep -q "no-such-script: not_found" "$tmp/err" || fail "shim run stderr: $(cat "$tmp/err")"
 
 if "$zazzle" bogus 2>"$tmp/err"; then fail "expected nonzero status"; fi
 grep -q "error: unknown command 'bogus'" "$tmp/err" || fail "stderr: $(cat "$tmp/err")"

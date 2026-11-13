@@ -10,18 +10,18 @@
       "summary": "One request per connection on the daemon's unix socket: a length-prefixed block of NUL-terminated fields, optionally with the caller's standard streams and working directory passed as descriptors; answered by a status byte.",
       "contractType": "message",
       "consumers": [
-        "The C invoker, macos/c/zazzle/src/zazzle_core.h (descriptor mode)",
+        "The C invoker, macos/c/zazzle/src/zazzle_core.h (descriptor mode), run as zazzle, as zazz or as an installed script's shim",
         "The MCP front end through macos/rust/zazzled/src/client.rs (relay mode)"
       ],
       "definition": "macos/rust/zazzled/src/proto.rs and macos/rust/zazzled/src/server.rs",
-      "details": "**Request.** A 4-byte length in native byte order, then the fields, each UTF-8 and NUL-terminated: working directory, session, then the command's arguments. At most 1 MiB (MAX_REQUEST); at least the two first fields.\n\n**Descriptor mode** (the invoker). The first message carries, as SCM_RIGHTS, the caller's descriptors 0, 1 and 2 and a descriptor of its working directory, in that order, and the working-directory field is empty: the daemon takes the directory's path from the descriptor. The daemon writes the command's text and a newline straight to the passed standard output when the status is 0, else to the passed standard error, then sends one status byte on the socket and closes.\n\n**Relay mode** (no descriptors). The working-directory field is set; the daemon sends the status byte and then the text on the socket and closes.\n\n**Status.** 0 for success, 2 for a command error (one `error:` line).\n\n`zazzle proxy`, `zazzle run`, `zazzle free-disk-space` and `zazzle fix-network` never become requests: the invoker execs another program for them.",
+      "details": "**Request.** A 4-byte length in native byte order, then the fields, each UTF-8 and NUL-terminated: working directory, session, then the command's arguments. At most 1 MiB (MAX_REQUEST); at least the two first fields.\n\n**Descriptor mode** (the invoker). The first message carries, as SCM_RIGHTS, the caller's descriptors 0, 1 and 2 and a descriptor of its working directory, in that order, and the working-directory field is empty: the daemon takes the directory's path from the descriptor. The daemon writes the command's text and a newline straight to the passed standard output when the status is 0, else to the passed standard error, then sends one status byte on the socket and closes. A raw output (a zazz script run for a human: `zazz run` or an installed shim) goes to standard output exactly as it is, with no newline added, whatever its status. For `zazz call`, `zazz run` and `zazz exec-name` the daemon keeps copies of the passed streams for the script to read and write, watches the connection for a hang-up to cancel the call, and serves the request on a thread of its own.\n\n**Relay mode** (no descriptors). The working-directory field is set; the daemon sends the status byte and then the text on the socket and closes.\n\n**Status.** 0 for success, 2 for a command error (one `error:` line, or `{\"error\": ...}` for a zazz command). A zazz script run for a human answers with the script's own exit status (0 to 255), 1 when the call fails and 127 when no such script is installed.\n\n`zazzle proxy`, `zazzle run`, `zazzle free-disk-space` and `zazzle fix-network` never become requests: the invoker execs another program for them.",
       "guarantees": [
         "Only a peer running as the daemon's own uid is served; the socket is created mode 0600 in a 0700 directory.",
         "More than four descriptors, or truncated control data, is rejected.",
         "A malformed, oversize, truncated or non-UTF-8 request closes that connection without stopping the daemon.",
-        "The session field may be empty; then the answer has no session id, is not deduplicated and cannot be rerun by read-again. Outputs stored in the output store (clean's) carry their own id either way."
+        "The session field may be empty; then the answer has no session id, is not deduplicated and cannot be rerun by read-again. Outputs stored in the output store (clean's) carry their own id either way. zazz replies are never given a session id or deduplicated."
       ],
-      "compatibility": "The frame has no version field and uses native byte order, so both ends must come from the same build of this repository and run on the same machine; a change lands in proto.rs, server.rs and zazzle_core.h together.",
+      "compatibility": "The frame has no version field and uses native byte order, so both ends must come from the same build of this repository and run on the same machine; a change lands in proto.rs, server.rs and zazzle_core.h together. The invoker's argv[0] dispatch (zazz, shims) adds fields in front of the arguments; the frame itself is unchanged.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -63,6 +63,22 @@
         {
           "path": "macos/c/zazzle/src/zazzle_core.h",
           "symbol": "zazzle_run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "long_running"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "caller_of"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "Output::raw"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/human.rs",
+          "symbol": "run"
         }
       ],
       "relationships": [
@@ -76,17 +92,19 @@
     {
       "id": "mcp-tools",
       "title": "MCP tools",
-      "summary": "`zazzled mcp` offers thirteen tools over MCP's stdio transport: zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap; the last six are answered by zazzle-csharp-indexer.",
+      "summary": "`zazzled mcp` offers twenty tools over MCP's stdio transport: zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, the six structure tools answered by zazzle-csharp-indexer; then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls for zazz scripts.",
       "contractType": "mcp-server",
       "consumers": [
         "MCP clients started with `zazzled mcp` (the README's example is Claude Code)",
         "agents/skills/zazzle/SKILL.md, which names the tools",
+        "agents/skills/zazz/SKILL.md, which names the zazz tools",
         "zazzle-csharp-indexer's instructions, init snippet and redirect hook, which send agents to these names (macos/dotnet/zazzle-csharp-indexer/src/Mcp/.dev/contracts.json)"
       ],
-      "definition": "macos/rust/zazzled/src/mcp.rs (TOOLS and the *_schema functions) for the file tools, and macos/rust/zazzled/src/mcp_structure.rs (TOOLS) for the structure tools.",
+      "definition": "macos/rust/zazzled/src/mcp.rs (TOOLS and the *_schema functions) for the file tools, macos/rust/zazzled/src/mcp_structure.rs (TOOLS) for the structure tools, and macos/rust/zazzled/src/zazz/mcptools.rs (TOOLS) for the zazz tools, listed in that order by mcp.rs's all_tools.",
       "guarantees": [
         "Server name `zazzle`; protocol versions 2025-06-18, 2025-03-26 and 2024-11-05, the newest when the client asks for another.",
         "Each tool's input schema names its arguments; zazzle_find needs pattern, zazzle_read and zazzle_outline need paths, zazzle_read_again needs id, zazzle_refs needs symbol, zazzle_edit needs path and new. zazzle_read also takes symbol and source; zazzle_read_again also takes full, lines and budget. zazzle_find_symbol needs name and takes exact, kind, limit and offset; zazzle_changed_since takes cursor; zazzle_git_log takes path, n and grep; zazzle_git_blame needs path and takes start_line and end_line; zazzle_report_gap needs what; zazzle_overview takes nothing.",
+        "zazz_new needs name; zazz_test needs path and takes update; zazz_pack needs dir and takes output; zazz_add needs file; zazz_call needs id and takes input, or operation with params and body; zazz_describe needs id; zazz_ls takes nothing. Their results are the zazz command's JSON reply; a script called over MCP gets pipes, not the caller's streams, so its output is captured into the reply. `zazz trust` is not offered.",
         "A result is one text item with the command's output, and isError when the command's status is not 0.",
         "Notifications get no answer; methods other than initialize, ping, tools/list and tools/call get -32601.",
         "The structure tools answer for the git work tree that holds the server's working directory, with the indexer's root:path references rewritten as paths relative to it."
@@ -119,6 +137,14 @@
         },
         {
           "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "all_tools"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/mcptools.rs",
           "symbol": "TOOLS"
         }
       ],
