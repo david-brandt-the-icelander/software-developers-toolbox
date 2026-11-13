@@ -3,7 +3,7 @@
   "kind": "delivery",
   "title": "Where a release goes",
   "folder": "macos/release",
-  "description": "Every tool (zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space) is released together, one version for all, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
+  "description": "Every tool (zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in macos/release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
   "entities": [
     {
       "id": "github-release",

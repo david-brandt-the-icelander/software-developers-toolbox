@@ -14,7 +14,7 @@
       ],
       "guarantees": [
         "Named zazzle-VERSION.all.bottle.tar.gz (one hyphen), the name Homebrew downloads from a plain root_url",
-        "Holds exactly zazzle/VERSION/: bin/ with zazzle, zazzled, afs, fix-network, free-disk-space and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
+        "Holds exactly zazzle/VERSION/: bin/ with zazzle, zazzled, afs, fix-network, free-disk-space, cyberspace-generator and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
         "The placeholder is identical to the one the formula's install writes",
         "Reproducible: the same files give the same archive",
         "The formula's bottle block names the release's download folder as root_url, one sha256 tagged all, with cellar :any_skip_relocation"
@@ -45,7 +45,7 @@
         "The formula's test block (brew test zazzle)"
       ],
       "guarantees": [
-        "zazzle version prints zazzle; zazzled, fix-network, free-disk-space and zazzle-csharp-indexer --version print their names; afs --version prints agent-fs"
+        "zazzle version prints zazzle; zazzled, fix-network, free-disk-space, zazzle-csharp-indexer and cyberspace-generator --version print their names; afs --version prints agent-fs"
       ],
       "compatibility": "Renaming a crate or binary changes what it prints and breaks brew test. formula.test.sh checks that the test block runs these six commands, but its stand-in answers for the binaries, so a mismatch with what they really print is not caught there.",
       "evidenceStatus": "source-verified",

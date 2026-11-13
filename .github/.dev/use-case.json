@@ -27,7 +27,7 @@
       ],
       "actor": "Owner",
       "actorDocument": "Actors/owner.md",
-      "goal": "Make a new version of zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network and free-disk-space installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
+      "goal": "Make a new version of zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
       "preconditions": [
         "The change is on main: main takes only pull requests.",
         "The repository holds the secrets CLOUDFLARE_R2_TOKEN and HOMEBREW_TAP_TOKEN; the Apple signing secrets are optional.",

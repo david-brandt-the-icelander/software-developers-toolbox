@@ -63,7 +63,7 @@
     {
       "id": "one-formula",
       "title": "One formula for every tool, at the release's version",
-      "summary": "A single zazzle formula installs zazzle, zazzled, afs, fix-network, free-disk-space and zazzle-csharp-indexer, and takes the release tag as its version.",
+      "summary": "A single zazzle formula installs zazzle, zazzled, afs, fix-network, free-disk-space, zazzle-csharp-indexer and cyberspace-generator, and takes the release tag as its version.",
       "status": "accepted",
       "context": "Every tool ships in one tarball from one tag.",
       "decision": "formula.sh writes Formula/zazzle.rb, installing all the binaries and versioned with the tag without its v.",

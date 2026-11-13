@@ -10,7 +10,7 @@
       "summary": "Lints, tests and builds every tool on macOS and Linux, checks the release scripts, the minimum Rust version and branch coverage.",
       "trigger": "A push to main, any pull request, or a manual run (ci.yml). A newer run on the same ref cancels the older one.",
       "checks": [
-        "lint (Linux): cargo fmt --all --check; shellcheck of the release scripts, pgo.sh and the version scripts included; macos/release/sign-and-notarize.test.sh, formula.test.sh and version.test.sh; cargo clippy --workspace --all-targets, warnings as errors",
+        "lint (Linux): cargo fmt --all --check; shellcheck of the release scripts, pgo.sh and the version scripts included; macos/release/sign-and-notarize.test.sh, formula.test.sh, version.test.sh and fetch-cyberspace-generator.test.sh; cargo clippy --workspace --all-targets, warnings as errors",
         "test (macOS and Linux): cargo test --workspace, a release build, and a smoke run of afs, fix-network --help and free-disk-space clean caches (a dry run)",
         "msrv (Linux): cargo check --workspace with Rust 1.85, the workspace's rust-version",
         "zazzle-c (macOS and Linux): build zazzled, then make, make unit and test/smoke.sh for the C invoker",
@@ -49,7 +49,7 @@
         "macos and linux: set-version.sh writes the version into every crate's manifest and Cargo.lock entry; the indexer is published with -p:Version",
         "macos: cargo test --workspace; pgo.sh trains a clang profile for zazzled's C code; release builds for arm64 and x86_64 with that profile; make, make unit and test/smoke.sh for the zazzle invoker (arm64 only); lipo into universal binaries",
         "macos: dotnet test, then zazzle-csharp-indexer published for osx-arm64 and osx-x64 and gzipped, one file per CPU type",
-        "macos: sign-and-notarize.sh on zazzle, zazzled, afs, fix-network and free-disk-space; it skips with a warning when the Apple secrets are missing, and fails when the variable REQUIRE_SIGNING is true",
+        "macos: sign-and-notarize.sh on zazzle, zazzled, afs, fix-network, free-disk-space and cyberspace-generator (fetched by fetch-cyberspace-generator.sh and merged with lipo); it skips with a warning when the Apple secrets are missing, and fails when the variable REQUIRE_SIGNING is true",
         "macos: pack zazzle-macos-universal.tar.gz (the five binaries and the two gzipped indexers) with its .sha256; create the GitHub release, with no release notes; copy both to the download bucket under zazzle/<tag>/ and zazzle/latest/",
         "linux (x86_64 and aarch64, after macos): cargo test -p zazzled; build zazzled with a PGO profile; build and test the invoker; dotnet test and publish the indexer; attach zazzle-linux-<arch>.tar.gz (zazzle, zazzled, zazzle-csharp-indexer) to the release and copy it to the same bucket folders",
         "homebrew (after macos): bottle.sh, upload the bottle to the release, formula.sh writes Formula/zazzle.rb into a checkout of the zazzcat/homebrew-z tap and pushes it there"
@@ -143,6 +143,31 @@
         {
           "path": ".github/dependabot.yml",
           "symbol": "updates"
+        }
+      ]
+    },
+    {
+      "id": "bump-cyberspace-generator",
+      "title": "Daily cyberspace-generator pin bump",
+      "summary": "Opens a pull request that moves macos/release/cyberspace-generator.version to the newest generator-v* release of cyberspace-explorer, so the next zazzle release ships it.",
+      "trigger": "Daily at 05:17 UTC, by hand, or a repository_dispatch of type cyberspace-generator-released.",
+      "checks": [
+        "The newest release has all four binaries (both macOS CPU types, static Linux x86_64 and aarch64) and they match its SHA256SUMS (fetch-cyberspace-generator.sh).",
+        "It dispatches ci.yml on the new branch, because a pull request opened with GITHUB_TOKEN starts no workflows."
+      ],
+      "blocks": "Nothing: it only opens a pull request; skips when the pin is current or the branch already exists.",
+      "notChecked": [
+        "That the new release passes the zazzle formula's test block: only a zazzle release runs it."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/bump-cyberspace-generator.yml",
+          "symbol": "bump"
+        },
+        {
+          "path": "macos/release/fetch-cyberspace-generator.sh",
+          "symbol": "fetch-cyberspace-generator.sh"
         }
       ]
     }
