@@ -73,10 +73,11 @@ Every removal leaves a marker. Input that is not recognised only gets the lossle
 | go | `go test`, `go vet`, `go build` | `ok` packages, `--- PASS`, `=== RUN`, packages without tests |
 | dotnet | `dotnet …` | restore and `->` build lines, banners, `Passed` tests, System/Microsoft/xUnit/NUnit frames, the repeated warnings and errors MSBuild prints again at the end |
 | js-test | `jest`, `vitest`, `mocha`, `npm test` and the like | `PASS` files, `✓` tests, banners |
+| tsc | `tsc`, `vue-tsc` (also through `npx`) | `tsc -b --verbose` progress and the `--pretty` per-file summary table; diagnostics are grouped under their file (`src/a.ts` then `1:14 error TS2322: …`), code frames kept |
 | install | `npm/pnpm/yarn/bun install`, `pip install`, `uv pip install` | download and resolve progress |
 
 - Then `clean`'s steps and budget apply (`--lossless` turns off the profile and the lossy steps), and a footer says what happened: `[exit 101 in 8.4s; cargo profile dropped 6 progress lines, 333 passing tests]`.
-- Measured: this crate's `cargo test` (334 passing tests) goes from about 5,300 tokens to about 80.
+- Measured: this crate's `cargo test` (334 passing tests) goes from about 5,300 tokens to about 80; 40 `tsc` errors across 4 files go from about 1,300 tokens to 850 (2,800 to 1,500 with `--pretty`).
 
 ## MCP proxy
 

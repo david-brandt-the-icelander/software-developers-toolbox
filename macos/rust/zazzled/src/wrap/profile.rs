@@ -8,9 +8,10 @@ use std::sync::OnceLock;
 enum Action {
     Drop,
     DropRepeat,
+    Group,
 }
 
-// One rule: the lines it matches, what it does with them and how the dropped lines are counted.
+// One rule: the lines it matches, what it does with them, and how dropped lines are counted or, for Group, the template a line becomes under its `path` heading.
 struct Rule {
     action: Action,
     pattern: &'static str,
@@ -92,6 +93,26 @@ const INSTALL: &[Rule] = &[
     drop(r"^npm (http fetch|sill|timing|verb) ", PROGRESS),
 ];
 
+const TSC: &[Rule] = &[
+    drop(
+        r"^\d{1,2}:\d{2}:\d{2}( [AP]M)? - (Projects in this build|Project '.+' is (out of date|up to date|being forcibly rebuilt)|Building project|Updating (unchanged )?output|Skipping build)",
+        PROGRESS,
+    ),
+    drop(r"^\s+\* \S+\.json$", PROGRESS),
+    drop(r"^Errors\s+Files$", "summary rows"),
+    drop(r"^\s+\d+\s+\S+:\d+$", "summary rows"),
+    Rule {
+        action: Action::Group,
+        pattern: r"^(?P<path>[^\s(]+\.(?:[cm]?[jt]sx?|vue))\((?P<line>\d+),(?P<col>\d+)\): (?P<msg>.+)$",
+        label: "${line}:${col} ${msg}",
+    },
+    Rule {
+        action: Action::Group,
+        pattern: r"^(?P<path>\S+\.(?:[cm]?[jt]sx?|vue)):(?P<line>\d+):(?P<col>\d+) - (?P<msg>.+)$",
+        label: "${line}:${col} ${msg}",
+    },
+];
+
 pub const PROFILES: &[Profile] = &[
     Profile { name: "cargo", rules: CARGO },
     Profile { name: "pytest", rules: PYTEST },
@@ -99,6 +120,7 @@ pub const PROFILES: &[Profile] = &[
     Profile { name: "dotnet", rules: DOTNET },
     Profile { name: "js-test", rules: JS_TEST },
     Profile { name: "install", rules: INSTALL },
+    Profile { name: "tsc", rules: TSC },
 ];
 
 // Returns a profile by name.
@@ -141,6 +163,7 @@ pub fn detect(argv: &[String]) -> Option<&'static Profile> {
         ("pytest" | "py.test", _) => "pytest",
         ("go", Some("test" | "vet" | "build")) => "go",
         ("dotnet", _) => "dotnet",
+        ("tsc" | "vue-tsc", _) => "tsc",
         ("jest" | "vitest" | "mocha", _) => "js-test",
         ("npm" | "pnpm" | "yarn" | "bun", Some("test" | "t")) => "js-test",
         ("npm" | "pnpm" | "yarn" | "bun", Some("install" | "i" | "ci" | "add")) => "install",
@@ -178,14 +201,26 @@ impl Dropped {
 }
 
 impl Profile {
-    // Drops the lines this profile's rules match and counts them; every other line is kept as it is.
+    // Drops the lines this profile's rules match and counts them, groups diagnostics under their file, and keeps every other line as it is.
     pub fn apply(&self, lines: Vec<String>) -> (Vec<String>, Dropped) {
         let at = PROFILES.iter().position(|p| p.name == self.name).expect("profile is listed");
         let patterns = &compiled()[at];
         let (mut kept, mut dropped, mut seen) =
             (Vec::with_capacity(lines.len()), Dropped::default(), HashSet::new());
+        let mut heading = String::new();
         'lines: for line in lines {
             for (rule, re) in self.rules.iter().zip(patterns) {
+                if rule.action == Action::Group {
+                    let Some(c) = re.captures(&line) else { continue };
+                    if heading != c["path"] {
+                        heading = c["path"].to_string();
+                        kept.push(heading.clone());
+                    }
+                    let mut grouped = String::new();
+                    c.expand(rule.label, &mut grouped);
+                    kept.push(grouped);
+                    continue 'lines;
+                }
                 if !re.is_match(&line) {
                     continue;
                 }
@@ -234,6 +269,8 @@ mod tests {
         assert_eq!(d(&["pip3", "install", "x"]), Some("install"));
         assert_eq!(d(&["uv", "pip", "install", "x"]), Some("install"));
         assert_eq!(d(&["python", "-m", "pip", "install", "x"]), Some("install"));
+        assert_eq!(d(&["npx", "tsc", "--noEmit"]), Some("tsc"));
+        assert_eq!(d(&["vue-tsc", "-b"]), Some("tsc"));
         assert_eq!(d(&["go", "run", "."]), None);
         assert_eq!(d(&["npm", "run", "build"]), None);
         assert_eq!(d(&["make"]), None);
@@ -293,6 +330,30 @@ mod tests {
         let (kept, dropped) = run("install", "Collecting x\n  Downloading x-1.whl (1 MB)\nnpm sill fetch\nERROR: no matching distribution\nSuccessfully installed x-1");
         assert_eq!(kept, "ERROR: no matching distribution\nSuccessfully installed x-1");
         assert_eq!(dropped, "3 progress lines");
+    }
+
+    // Checks plain tsc diagnostics are grouped under their file and build-mode progress is dropped.
+    #[test]
+    fn test_tsc_plain() {
+        let out = "1:27:38 PM - Projects in this build: \n    * tsconfig.json\n1:27:38 PM - Project 'tsconfig.json' is being forcibly rebuilt\n1:27:38 PM - Building project '/x/tsconfig.json'...\nsrc/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/a.ts(3,41): error TS2339: Property 'foo' does not exist on type 'string'.\nsrc/b.vue(2,14): error TS2322: Type 'number' is not assignable to type 'string'.\nsrc/a.ts(9,1): error TS1005: ';' expected.";
+        let (kept, dropped) = run("tsc", out);
+        assert_eq!(
+            kept,
+            "src/a.ts\n1:14 error TS2322: Type 'string' is not assignable to type 'number'.\n3:41 error TS2339: Property 'foo' does not exist on type 'string'.\nsrc/b.vue\n2:14 error TS2322: Type 'number' is not assignable to type 'string'.\nsrc/a.ts\n9:1 error TS1005: ';' expected."
+        );
+        assert_eq!(dropped, "4 progress lines");
+    }
+
+    // Checks pretty tsc diagnostics keep their code frames under the file heading and the summary table goes.
+    #[test]
+    fn test_tsc_pretty() {
+        let out = "src/a.ts:1:14 - error TS2322: Type 'string' is not assignable to type 'number'.\n\n1 export const a: number = \"x\";\n               ~\n\nsrc/a.ts:2:14 - error TS2322: Nope.\n\nFound 2 errors in 1 file.\n\nErrors  Files\n     2  src/a.ts:1";
+        let (kept, dropped) = run("tsc", out);
+        assert_eq!(
+            kept,
+            "src/a.ts\n1:14 error TS2322: Type 'string' is not assignable to type 'number'.\n\n1 export const a: number = \"x\";\n               ~\n\n2:14 error TS2322: Nope.\n\nFound 2 errors in 1 file.\n"
+        );
+        assert_eq!(dropped, "2 summary rows");
     }
 
     // Checks the description of nothing dropped is empty.
