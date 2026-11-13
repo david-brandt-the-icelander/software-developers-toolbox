@@ -11,6 +11,7 @@ pub mod compile;
 pub mod human;
 pub mod install;
 pub mod manage;
+pub mod mcptools;
 pub mod pack;
 pub mod pipeline;
 pub mod pool;
@@ -18,10 +19,12 @@ pub mod proc;
 pub mod registry;
 pub mod sandbox;
 pub mod sdk;
+pub mod setup;
 pub mod testcmd;
 pub mod tools;
 
 const HELP: &str = "zazz: sandboxed scripts for agents (JSON replies)
+new NAME                 create NAME/ with a manifest, src/main.rs and tests/basic.rs to start from
 pack DIR [-o FILE]       pack a script directory into a deterministic .zazz (default DIR.zazz beside DIR)
 test DIR|FILE [--update]  build and run the script's tests; nothing is registered (--update rewrites snapshots)
 add FILE.zazz            build, test once and register; replies with the script id (b3:...)
@@ -30,12 +33,13 @@ call ID OP [--params JSON] [--body JSON|-]  run one service-call operation
 ls                       registered scripts
 describe ID              what a script is, how it runs and what it may touch
 rm ID                    remove a registered script (and any installed names for it)
+doctor                   check the toolchain, WASM target, worker, sandbox and paths
 humans:
 install FILE.zazz|ID [--as NAME]  make the script a command: ~/.zazzle/bin/NAME runs it with plain output
 run NAME|ID [ARGS...]    run a script as a human would (flags parsed from its manifest; --json for raw JSON)
 uninstall NAME           remove an installed command
 list                     installed commands";
-const COMMANDS: &str = "pack test add call ls describe rm install run uninstall list help";
+const COMMANDS: &str = "new pack test add call ls describe rm doctor install run uninstall list help";
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -125,6 +129,8 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Result<Output, String> {
             Some((name, args)) => Ok(human::run(ctx, name, args)),
             None => Err("usage: zazz run NAME|ID [ARGS...]".into()),
         },
+        "new" => Ok(reply(setup::new(&ctx.cwd, rest))),
+        "doctor" => Ok(reply(Ok(setup::doctor(z)))),
         "install" => Ok(install::install(z, &ctx.cwd, rest)),
         "uninstall" => Ok(install::uninstall(z, rest)),
         "list" => Ok(install::list(z)),
@@ -421,6 +427,30 @@ fn snapshot() {
         assert_eq!(run(&["zazz", "describe"])["error"]["code"], "usage");
         assert_eq!(run(&["zazz", "rm", "ffffffffffffffff"])["error"]["code"], "not_found");
         assert_eq!(run(&["zazz", "ls"]), Value::Array(vec![]));
+    }
+
+    // Checks a script's OpenAPI document is cached at add, listed by describe, and its operations are callable.
+    #[test]
+    fn test_openapi_and_service_call() {
+        let t = TempDir::new();
+        let e = zazz_engine(&t);
+        t.write("svc/zazz.json", br#"{"zazz":1,"name":"svc","kind":"rust","entry":"src/main.rs","messages":["json-command","openapi","service-call"]}"#);
+        t.write(
+            "svc/src/main.rs",
+            b"// A service.\nuse zazz::{json, Handlers, Json};\n// Entry point.\nfn main() {\n    zazz::serve(Handlers::new()\n        .json_command(|_, i| Ok(i))\n        .openapi(|| json!({\"openapi\": \"3.1.0\", \"paths\": {\"/double\": {\"post\": {\"operationId\": \"double\"}}}}))\n        .service(\"double\", |_, p, _| Ok(Json::Int(p.need_i64(\"n\")? * 2))));\n}\n",
+        );
+        let run = |args: &[&str]| reply_of(&run_cmd_with(&e, t.path(), "", args));
+        run(&["zazz", "pack", "svc"]);
+        let added = run(&["zazz", "add", "svc.zazz"]);
+        let id = added["hash"].as_str().expect("hash").to_string();
+        assert_eq!(run(&["zazz", "describe", &id])["operations"], serde_json::json!(["double"]));
+        assert_eq!(run(&["zazz", "call", &id, "double", "--params", r#"{"n":21}"#]), serde_json::json!(42));
+        t.write("bad/zazz.json", br#"{"zazz":1,"name":"bad","kind":"rust","entry":"src/main.rs","messages":["json-command","openapi"]}"#);
+        t.write("bad/src/main.rs", b"// No document.\nfn main() {\n    zazz::serve(zazz::Handlers::new().json_command(|_, i| Ok(i)));\n}\n");
+        run(&["zazz", "pack", "bad"]);
+        assert_eq!(run(&["zazz", "add", "bad.zazz"])["error"]["code"], "invalid_openapi");
+        assert_eq!(run(&["zazz", "ls"]).as_array().map(Vec::len), Some(1));
+        e.zazz.pool.shutdown();
     }
 
     // Checks a prebuilt WASM script registers, and a script whose build fails is not registered.

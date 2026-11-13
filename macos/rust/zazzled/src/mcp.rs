@@ -30,11 +30,11 @@ impl Backend for DaemonBackend {
 }
 
 // One exposed tool: how it is described and how its arguments become a command line.
-struct Tool {
-    name: &'static str,
-    description: &'static str,
-    schema: fn() -> Value,
-    map: fn(&Value) -> Result<Vec<String>, String>,
+pub struct Tool {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub schema: fn() -> Value,
+    pub map: fn(&Value) -> Result<Vec<String>, String>,
 }
 
 const TOOLS: &[Tool] = &[
@@ -71,8 +71,13 @@ const TOOLS: &[Tool] = &[
     },
 ];
 
+// Every tool: the file tools, then the zazz script tools.
+fn all_tools() -> impl Iterator<Item = &'static Tool> {
+    TOOLS.iter().chain(crate::zazz::mcptools::TOOLS.iter())
+}
+
 // Builds a JSON schema object from properties and required names.
-fn object(props: Value, required: &[&str]) -> Value {
+pub fn object(props: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": props, "required": required})
 }
 
@@ -159,7 +164,7 @@ fn edit_schema() -> Value {
 }
 
 // Reads an optional string argument.
-fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
+pub fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -168,7 +173,7 @@ fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
 }
 
 // Reads a required string argument.
-fn need_str(v: &Value, key: &str) -> Result<String, String> {
+pub fn need_str(v: &Value, key: &str) -> Result<String, String> {
     get_str(v, key)?.ok_or_else(|| format!("'{key}' is required"))
 }
 
@@ -187,7 +192,7 @@ fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
 }
 
 // Pushes a boolean flag when the argument is true.
-fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
+pub fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(()),
         Some(Value::Bool(true)) => {
@@ -348,8 +353,7 @@ fn initialize(params: &Value) -> Value {
 
 // Lists the tools with their schemas.
 fn list_tools() -> Value {
-    let tools: Vec<Value> = TOOLS
-        .iter()
+    let tools: Vec<Value> = all_tools()
         .map(|t| json!({"name": t.name, "description": t.description, "inputSchema": (t.schema)()}))
         .collect();
     json!({"tools": tools})
@@ -363,7 +367,7 @@ fn tool_result(text: &str, is_error: bool) -> Value {
 // Runs a tool call and returns its result, or a protocol error for an unknown tool.
 fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-    let Some(tool) = TOOLS.iter().find(|t| t.name == name) else {
+    let Some(tool) = all_tools().find(|t| t.name == name) else {
         return Err(format!("unknown tool '{name}'"));
     };
     let empty = json!({});
@@ -763,6 +767,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 6);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 13);
     }
 }
