@@ -19,7 +19,7 @@ jobs:
       run:
         working-directory: macos/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -44,7 +44,7 @@ jobs:
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
           cp ../c/zazzle/build/zazzle dist/zazzle
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       # The indexer is a self-contained single file per CPU type (not universal); the formula expands the matching one.
@@ -71,7 +71,7 @@ jobs:
         run: |
           tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zazzle-macos-universal
           path: |
@@ -102,11 +102,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: ubuntu-latest, arch: x86_64, rid: linux-x64 }
+          - { runner: ubuntu-24.04, arch: x86_64, rid: linux-x64 }
           - { runner: ubuntu-24.04-arm, arch: aarch64, rid: linux-arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Test and build zazzled
         working-directory: macos/rust
@@ -119,7 +119,7 @@ jobs:
           make
           make unit
           sh test/smoke.sh
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Build the C# indexer
@@ -133,7 +133,7 @@ jobs:
           cp macos/rust/target/release/zazzled macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
           tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zazzle-linux-${{ matrix.arch }}
           path: |
@@ -164,15 +164,15 @@ jobs:
   homebrew:
     needs: macos
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: zazzcat/homebrew-z
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: zazzle-macos-universal
           path: dist

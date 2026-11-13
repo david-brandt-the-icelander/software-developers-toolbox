@@ -6,7 +6,7 @@ On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and
 
 The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/homebrew-z` and pushes it to that repo's default branch.
 
-- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`) and the formula's `post_install` expands the one matching the Mac into `bin/`.
+- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`). `bin/zazzle-csharp-indexer` starts as a placeholder so brew links it, and the formula's `post_install_steps` replace it with the binary for this Mac (`brew postinstall zazzle` reruns that).
 - `bottle.sh` packs the bottle (`zazzle-<version>.all.bottle.tar.gz`, one, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
 - The formula takes the release tag as its version, so every release is an upgrade.
 - Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.

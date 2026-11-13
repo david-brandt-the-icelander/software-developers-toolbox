@@ -9,6 +9,8 @@ trap 'rm -rf "$tmp"' EXIT
 failures=0
 sha=$(printf '%064d' 7 | tr 0 a)
 bins="zazzle zazzled afs fix-network free-disk-space"
+placeholder=$(printf '#!/bin/sh\necho "zazzle-csharp-indexer is not set up yet; run: brew postinstall zazzle" >&2\nexit 1\nX')
+placeholder=${placeholder%X}
 
 # Record a failed expectation.
 fail() {
@@ -28,12 +30,13 @@ out=$(bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/Formula")
 case "$out" in *"for v2.1.0"*) ;; *) fail "summary line: $out" ;; esac
 [ "$(find "$tmp/Formula" -name '*.rb' | wc -l)" -eq 1 ] || fail "wrote other than 1 formula"
 
-# 3. Load the formula under a stand-in Homebrew Formula class and check every DSL value, install, post_install and test.
+# 3. Load the formula under a stand-in Homebrew Formula class and check every DSL value, install, the post-install step and test.
 cat >"$tmp/check.rb" <<'RUBY'
-# Stand-in for Homebrew's Formula: records DSL values, installs into a fake prefix, runs post_install and the test block.
+# Stand-in for Homebrew's Formula: records DSL values, installs into a fake prefix, runs the post-install step and the test block.
 require "digest"
 require "fileutils"
 require "pathname"
+require "zlib"
 class Formula
   class << self
     attr_reader :values, :test_block
@@ -44,6 +47,12 @@ class Formula
     def test(&block) = @test_block = block
     def bottle(&block) = (@bottle = BottleSpec.new).instance_eval(&block)
     def bottle_spec = @bottle
+    def post_install_steps(&block) = block ? (@steps = block) : @steps
+  end
+  # Records the steps of a post_install_steps block.
+  class Steps
+    attr_reader :list
+    def run(command, **opts) = (@list ||= []) << [command, opts]
   end
   # Records a bottle block's root_url and sha256 entries.
   class BottleSpec
@@ -56,6 +65,7 @@ class Formula
     attr_reader :installed, :path
     def initialize(path) = @path = Pathname(path)
     def install(*files) = (@installed ||= []).concat(files)
+    def write(text) = (@path.dirname.mkpath; @path.write(text))
     def to_s = @path.to_s
     def /(other) = Dir_.new(@path / other)
   end
@@ -69,19 +79,15 @@ class Formula
   def libexec = @libexec_root.tap { |d| d.define_singleton_method(:/) { |o| @installs ||= {}; (@installs[o] ||= Dir_.new(@path / o)) } }
   def shell_output(cmd) = ((@commands ||= []) << cmd) && "#{cmd.split("/").last.split.first == "afs" ? "agent-fs" : cmd.split("/").last.split.first} 2.1.0\n"
   def assert_match(pattern, text) = (text.include?(pattern) or raise "#{pattern.inspect} not in #{text.inspect}")
-  def system(*args) = ((@systems ||= []) << args) && true
-end
-module Hardware
-  # Reports the CPU type chosen by the test.
-  module CPU
-    def self.arm? = ENV.fetch("ARCH") == "arm64"
-  end
+  def chmod(mode, path) = File.chmod(mode, path.to_s)
 end
 
 file, sha = ARGV
 load file
 f = Zazzle
 v = f.values
+prefix = ENV.fetch("PREFIX")
+FileUtils.rm_rf prefix
 repo = "https://github.com/david-brandt-the-icelander/software-developers-toolbox"
 raise "url #{v[:url]}" unless v[:url] == "#{repo}/releases/download/v2.1.0/zazzle-macos-universal.tar.gz"
 raise "version #{v[:version]}" unless v[:version] == "2.1.0"
@@ -96,12 +102,28 @@ want = %w[zazzle zazzled afs fix-network free-disk-space]
 raise "installed #{inst.bin.installed}" unless inst.bin.installed == want
 indexer = inst.libexec / "indexer"
 raise "indexer files #{indexer.installed}" unless indexer.installed == %w[zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz]
-inst.post_install
-sh = inst.systems.first
+# The placeholder brew links at pour time, then the one post-install step run for real against a fake keg and uname.
+raise "legacy post_install" if Zazzle.method_defined?(:post_install)
+indexer_bin = "#{prefix}/bin/zazzle-csharp-indexer"
+raise "placeholder" unless File.read(indexer_bin) == ENV.fetch("PLACEHOLDER") && File.stat(indexer_bin).mode & 0o777 == 0o755
+steps = Formula::Steps.new.tap { |s| s.instance_eval(&f.post_install_steps) }.list
+raise "post_install_steps #{steps}" unless steps.length == 1 && steps[0][0] == "/bin/sh"
+opts = steps[0][1]
+raise "writable #{opts}" unless opts[:writable_base] == :bin &&
+                                 opts[:writable_paths] == %w[zazzle-csharp-indexer zazzle-csharp-indexer.tmp]
+raise "args not literal strings #{opts[:args]}" unless opts[:args].all?(String) && opts[:args].none? { |a| a.include?(prefix) }
+FileUtils.mkdir_p "#{prefix}/libexec/indexer"
+%w[arm64 x64].each { |a| Zlib::GzipWriter.open("#{prefix}/libexec/indexer/zazzle-csharp-indexer-#{a}.gz") { |z| z.write "indexer-#{a}" } }
 arch = ENV.fetch("ARCH")
-raise "post_install #{sh}" unless sh[0, 3] == ["sh", "-c", 'gunzip -c "$1" > "$2" && chmod 755 "$2"'] &&
-                                  sh[4].to_s.end_with?("libexec/indexer/zazzle-csharp-indexer-#{arch}.gz") &&
-                                  sh[5].to_s.end_with?("bin/zazzle-csharp-indexer")
+fake = "#{prefix}/fake-bin"
+FileUtils.mkdir_p fake
+File.write("#{fake}/uname", "#!/bin/sh\necho #{arch == "arm64" ? "arm64" : "x86_64"}\n")
+File.chmod(0o755, "#{fake}/uname")
+args = opts[:args].map { |a| a.gsub("{{libexec}}", "#{prefix}/libexec").gsub("{{bin}}", "#{prefix}/bin") }
+raise "post-install step failed" unless Kernel.system({ "PATH" => "#{fake}:#{ENV.fetch("PATH")}" }, "/bin/sh", *args)
+raise "expanded #{File.read(indexer_bin).inspect}" unless File.read(indexer_bin) == "indexer-#{arch}"
+raise "mode" unless File.stat(indexer_bin).mode & 0o777 == 0o755
+raise "temporary file left" if File.exist?("#{indexer_bin}.tmp")
 inst.instance_eval(&f.test_block)
 need = %w[zazzle zazzled fix-network free-disk-space afs zazzle-csharp-indexer]
 raise "test ran #{inst.commands}" unless inst.commands.length == need.length
@@ -128,7 +150,7 @@ check() {
   local file="$tmp/Formula/zazzle.rb" arch
   ruby -c "$file" >/dev/null || fail "zazzle.rb is not valid Ruby"
   for arch in arm64 x64; do
-    ARCH=$arch PREFIX="$tmp/prefix" BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$sha" >/dev/null || fail "zazzle.rb failed the DSL check ($arch)"
+    ARCH=$arch PREFIX="$tmp/prefix" PLACEHOLDER="$placeholder" BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$sha" >/dev/null || fail "zazzle.rb failed the DSL check ($arch)"
   done
   for b in $bins; do
     grep -q "for bin in .*\b$b\b" "$root/.github/workflows/release.yml" || grep -q "dist/$b\b" "$root/.github/workflows/release.yml" || fail "release.yml does not build $b"
@@ -155,12 +177,14 @@ file="$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz"
 grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  zazzle-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "printed sha256"
 cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "bottle is not reproducible"
 listing=$(tar tzf "$file" | grep -v '/$' | tr '\n' ' ')
-want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
+want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzle-csharp-indexer zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
 [ "$listing" = "$want" ] || fail "contents $listing"
 tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/afs$" || fail "binary not 0755 root-owned"
 # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
 mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
-[ "$(ls -A "$tmp/x")" = "zazzle" ] && [ "$(ls -A "$tmp/x/zazzle")" = "2.1.0" ] || fail "not NAME/VERSION only"
+if [ "$(ls -A "$tmp/x")" != "zazzle" ] || [ "$(ls -A "$tmp/x/zazzle")" != "2.1.0" ]; then fail "not NAME/VERSION only"; fi
+[ "$(cat "$tmp/x/zazzle/2.1.0/bin/zazzle-csharp-indexer"; printf X)" = "${placeholder}X" ] || fail "bottle placeholder differs from the formula's"
+tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/zazzle-csharp-indexer$" || fail "placeholder not 0755"
 
 # 5. Formula with the bottle: it gets a bottle block pointing at its file, checked under the stand-in Formula.
 bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/Formula" "$tmp/bottles" >/dev/null
