@@ -14,6 +14,7 @@ pub mod pipeline;
 pub mod pool;
 pub mod proc;
 pub mod registry;
+pub mod sandbox;
 pub mod sdk;
 pub mod testcmd;
 pub mod tools;

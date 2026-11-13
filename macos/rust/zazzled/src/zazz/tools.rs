@@ -1,5 +1,7 @@
 // Finds the tools zazz needs at fixed places (never PATH, which launchd leaves empty): rustc and zazz-worker.
 use super::proc;
+use super::sandbox::{self, Policy};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -49,13 +51,42 @@ pub fn rustc_version(rustc: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&r.stdout).trim().to_string())
 }
 
+// Returns the toolchain's sysroot.
+pub fn sysroot(rustc: &Path) -> Option<PathBuf> {
+    let r = proc::run(rustc_env(Command::new(rustc).args(["--print", "sysroot"])), None, PROBE).ok()?;
+    r.ok().then(|| PathBuf::from(String::from_utf8_lossy(&r.stdout).trim()))
+}
+
 // True when the toolchain has the standard library for a target.
 pub fn has_target(rustc: &Path, target: &str) -> bool {
-    let Ok(r) = proc::run(rustc_env(Command::new(rustc).args(["--print", "sysroot"])), None, PROBE) else {
-        return false;
-    };
-    let sysroot = PathBuf::from(String::from_utf8_lossy(&r.stdout).trim());
-    r.ok() && sysroot.join("lib/rustlib").join(target).join("lib").is_dir()
+    sysroot(rustc).is_some_and(|s| s.join("lib/rustlib").join(target).join("lib").is_dir())
+}
+
+// A home-relative directory from an environment variable, else under HOME.
+fn home_dir(var: &str, rel: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rel)))
+}
+
+// rustc inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain, writes only `build`.
+pub fn rustc_command(
+    rustc: &Path,
+    build: &Path,
+    reads: &[PathBuf],
+    args: &[OsString],
+) -> Result<Command, String> {
+    let sysroot = sysroot(rustc).ok_or_else(|| format!("{} --print sysroot failed", rustc.display()))?;
+    let (rustup, cargo) = (home_dir("RUSTUP_HOME", ".rustup"), home_dir("CARGO_HOME", ".cargo"));
+    let policy = Policy::for_program(rustc)
+        .reading(
+            rustup.iter().chain(cargo.iter()).cloned().chain(reads.iter().cloned()).chain([sysroot.clone()]),
+        )
+        .executing([sysroot].into_iter().chain(cargo.map(|c| c.join("bin"))))
+        .writing([build.to_path_buf()]);
+    let mut cmd = sandbox::command(rustc, args, &policy)?;
+    rustc_env(&mut cmd).current_dir(build).env("TMPDIR", build);
+    Ok(cmd)
 }
 
 #[cfg(test)]

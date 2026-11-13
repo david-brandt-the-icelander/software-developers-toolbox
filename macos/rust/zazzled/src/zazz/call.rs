@@ -81,14 +81,28 @@ fn spec(z: &Zazz, reg: &Registry, hex: &str, m: &Manifest, cwd: &Path) -> Result
         "t": "hello", "proto": 1, "call_ms": m.call_ms, "memory_mb": m.memory_mb, "network": "none",
         "args": [m.name], "env": {}, "preopens": preopens(m, cwd, &tmp),
     });
-    let worker = z.worker()?.to_string_lossy().into_owned();
+    let worker = z.worker()?;
+    super::sandbox::available().map_err(|e| err("sandbox_unavailable", &e))?;
+    let mounts = hello["preopens"].as_array().cloned().unwrap_or_default();
+    let host = |write: bool| {
+        mounts
+            .iter()
+            .filter(|p| p["write"] == write)
+            .filter_map(|p| p["host"].as_str().map(PathBuf::from))
+            .collect::<Vec<_>>()
+    };
+    let policy = super::sandbox::Policy::for_program(&worker)
+        .reading(host(false))
+        .writing(host(true).into_iter().chain([tmp]));
     let key = format!("{hex}\n{}\n{hello}", cwd.display());
+    let program = vec![worker.to_string_lossy().into_owned(), "serve".into()];
     Ok(Spec {
         key,
-        program: vec![worker, "serve".into()],
+        program,
         module: Some(reg.wasm_path(hex, "cwasm")),
         cwd: cwd.to_path_buf(),
         hello,
+        sandbox: Some(policy),
     })
 }
 

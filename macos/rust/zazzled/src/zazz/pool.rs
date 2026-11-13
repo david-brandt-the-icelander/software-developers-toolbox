@@ -27,6 +27,7 @@ pub struct Spec {
     pub module: Option<PathBuf>,
     pub cwd: PathBuf,
     pub hello: Value,
+    pub sandbox: Option<super::sandbox::Policy>,
 }
 
 // A running worker process and its control socket.
@@ -222,6 +223,7 @@ mod tests {
             module: None,
             cwd: cwd.to_path_buf(),
             hello: serde_json::json!({"t": "hello"}),
+            sandbox: None,
         }
     }
 

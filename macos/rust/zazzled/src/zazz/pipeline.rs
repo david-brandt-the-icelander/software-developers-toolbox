@@ -1,10 +1,10 @@
 // The shared build-and-test pipeline behind `zazz add` and `zazz test`: extract, compile, AOT, run the tests.
 use super::compile::{self, Failure};
 use super::registry::Registry;
+use super::sandbox::{self, Policy};
 use super::{proc, sdk, tools};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 use zazz_format::manifest::{Kind, Manifest};
 use zazz_format::zip::Archive;
@@ -109,29 +109,34 @@ fn run_tests(
     let cwd = scratch.join("cwd");
     std::fs::create_dir_all(&cwd).map_err(|e| err("build_failed", &e.to_string()))?;
     let t = m.tests.as_ref().expect("only scripts with tests get here");
-    let mut cmd = Command::new(worker);
-    cmd.env_clear().arg("test").arg(tests_wasm).arg("--cwd").arg(&cwd);
-    cmd.args([
-        "--timeout-ms",
-        &t.timeout_ms.to_string(),
-        "--memory-mb",
-        &m.memory_mb.max(TEST_MEMORY_MB).to_string(),
+    let mut args: Vec<std::ffi::OsString> =
+        vec!["test".into(), tests_wasm.into(), "--cwd".into(), cwd.clone().into()];
+    args.extend([
+        "--timeout-ms".into(),
+        t.timeout_ms.to_string().into(),
+        "--memory-mb".into(),
+        m.memory_mb.max(TEST_MEMORY_MB).to_string().into(),
     ]);
     if m.kind == Kind::Rust {
-        cmd.arg("--libtest");
+        args.push("--libtest".into());
     }
     let snap = snaps.clone().unwrap_or(Snapshots { dir: src.join(SNAPSHOTS), update: false });
     if snap.update {
         std::fs::create_dir_all(&snap.dir)
             .map_err(|e| err("build_failed", &format!("{}: {e}", snap.dir.display())))?;
-        cmd.arg("--update");
+        args.push("--update".into());
     }
     if snap.dir.is_dir() {
-        cmd.arg("--snapshots").arg(&snap.dir);
+        args.extend(["--snapshots".into(), snap.dir.clone().into()]);
     }
-    if src.join(REPLAY).is_file() {
-        cmd.arg("--http-replay").arg(src.join(REPLAY));
+    let replay = src.join(REPLAY);
+    if replay.is_file() {
+        args.extend(["--http-replay".into(), replay.clone().into()]);
     }
+    let mut policy = Policy::for_program(worker).reading([tests_wasm.to_path_buf(), replay]).writing([cwd]);
+    policy = if snap.update { policy.writing([snap.dir]) } else { policy.reading([snap.dir]) };
+    let mut cmd = sandbox::command(worker, &args, &policy).map_err(|e| err("sandbox_unavailable", &e))?;
+    cmd.env_clear();
     let r = proc::run(&mut cmd, None, Duration::from_millis(t.timeout_ms) + Duration::from_secs(120))
         .map_err(|e| err("tests_failed", &e))?;
     if !r.ok() {

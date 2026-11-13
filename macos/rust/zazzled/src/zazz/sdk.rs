@@ -2,7 +2,6 @@
 use super::proc;
 use super::tools;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 const BUILD_TIMEOUT: Duration = Duration::from_secs(300);
@@ -67,8 +66,7 @@ pub fn ensure_rlib(root: &Path, rustc: &Path, key: &str, target: &str) -> Result
     let staging = root.join("tmp").join(format!("sdk-{key}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
     write_sources(&staging)?;
-    let mut cmd = Command::new(rustc);
-    tools::rustc_env(&mut cmd).current_dir(&staging).args([
+    let args: Vec<std::ffi::OsString> = [
         "--edition",
         "2021",
         "--crate-type",
@@ -84,7 +82,11 @@ pub fn ensure_rlib(root: &Path, rustc: &Path, key: &str, target: &str) -> Result
         "src/lib.rs",
         "--out-dir",
         "out",
-    ]);
+    ]
+    .iter()
+    .map(|s| s.into())
+    .collect();
+    let mut cmd = tools::rustc_command(rustc, &staging, &[], &args)?;
     let r = proc::run(&mut cmd, None, BUILD_TIMEOUT)?;
     if !r.ok() {
         let _ = std::fs::remove_dir_all(&staging);

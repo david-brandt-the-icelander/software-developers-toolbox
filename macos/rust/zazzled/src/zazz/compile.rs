@@ -4,7 +4,6 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 use zazz_format::manifest::Manifest;
 use zazz_format::zip::Archive;
@@ -149,20 +148,15 @@ fn rustc(
 ) -> Result<Vec<u8>, Failure> {
     let extern_arg = format!("zazz={}", sdk.join("libzazz.rlib").display());
     let dep = format!("dependency={}", sdk.display());
-    let mut cmd = Command::new(&tc.0);
-    tools::rustc_env(&mut cmd)
-        .current_dir(dir)
-        .args([
-            "--edition",
-            edition,
-            "--target",
-            tools::WASM_TARGET,
-            "--error-format=json",
-            "-C",
-            "debuginfo=0",
-        ])
-        .args(["-L", &dep, "--extern", &extern_arg, "-o", out])
-        .args(args);
+    let mut argv: Vec<std::ffi::OsString> =
+        ["--edition", edition, "--target", tools::WASM_TARGET, "--error-format=json", "-C", "debuginfo=0"]
+            .iter()
+            .chain(["-L", dep.as_str(), "--extern", extern_arg.as_str(), "-o", out].iter())
+            .chain(args.iter())
+            .map(|s| s.into())
+            .collect();
+    argv.shrink_to_fit();
+    let mut cmd = tools::rustc_command(&tc.0, dir, &[sdk.to_path_buf()], &argv).map_err(Failure::Message)?;
     let r = proc::run(&mut cmd, None, RUSTC_TIMEOUT).map_err(Failure::Message)?;
     if r.timed_out {
         return Err(Failure::Message("rustc ran past its time limit".into()));
@@ -213,7 +207,9 @@ pub fn rust_to_wasm(
 
 // Ahead-of-time compiles a WASM module with zazz-worker, which also checks its imports.
 pub fn aot(worker: &Path, wasm: &[u8]) -> Result<Vec<u8>, String> {
-    let r = proc::run(Command::new(worker).arg("compile").env_clear(), Some(wasm.to_vec()), AOT_TIMEOUT)?;
+    let mut cmd =
+        super::sandbox::command(worker, &["compile".into()], &super::sandbox::Policy::for_program(worker))?;
+    let r = proc::run(cmd.env_clear(), Some(wasm.to_vec()), AOT_TIMEOUT)?;
     if !r.ok() {
         let msg = r.err_text();
         return Err(msg.strip_prefix("zazz-worker: ").unwrap_or(&msg).to_string());
@@ -300,13 +296,12 @@ mod tests {
         assert!(test_files(&none, &a).is_empty());
     }
 
-    // Checks AOT failures report the worker's message, and a missing worker is an error.
+    // Checks AOT failures report the worker's message without its prefix, and a missing worker is an error.
     #[test]
     fn test_aot_errors() {
         let t = TempDir::new();
-        let fake = t.write("w", b"#!/bin/sh\necho 'zazz-worker: invalid WebAssembly: x' >&2\nexit 1\n");
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
-        assert_eq!(aot(&fake, b"x").unwrap_err(), "invalid WebAssembly: x");
+        let e = aot(&crate::testutil::worker_bin(), b"x").unwrap_err();
+        assert!(e.starts_with("invalid WebAssembly"), "{e}");
         assert!(aot(&t.path().join("missing"), b"x").is_err());
     }
 }
