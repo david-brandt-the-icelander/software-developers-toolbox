@@ -442,8 +442,13 @@ fn clean_dev(apply: bool, ctx: &mut Ctx, dev_root: &str) {
         }
         if !apply {
             let size = tree_size(cand).0;
-            println!("  ~ would delete {:>10}  {}", human_i(size), cand.display());
             ctx.bytes += size;
+            println!(
+                "  ~ would delete {:>10}  total {:>10}  {}",
+                human_i(size),
+                human_i(ctx.bytes),
+                cand.display()
+            );
             continue;
         }
         // Recheck right before deleting.
@@ -460,7 +465,12 @@ fn clean_dev(apply: bool, ctx: &mut Ctx, dev_root: &str) {
         } else {
             format!("  ({} protected)", res.protected.len())
         };
-        println!("  - deleted {:>10}  {}{note}", human_i(res.bytes), cand.display());
+        println!(
+            "  - deleted {:>10}  total {:>10}  {}{note}",
+            human_i(res.bytes),
+            human_i(ctx.bytes),
+            cand.display()
+        );
         ctx.protected.extend(res.protected);
     }
     println!("  {} candidates examined, {kept} kept/uncertain", cands.len());
