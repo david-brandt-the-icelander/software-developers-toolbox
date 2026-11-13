@@ -26,6 +26,7 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
 | `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` with `--expect SHA` or `--at` anchors, `--after`, `--create`; atomic, CRLF-preserving, confined to the working directory |
+| `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
 | `status` | daemon, cache and session counters |
@@ -57,6 +58,25 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 | budget | above `--budget` (default 8000 tokens) the head and tail stay and the middle becomes one line saying how much was cut | always |
 
 Every removal leaves a marker. Input that is not recognised only gets the lossless steps, and if the markers would make the text longer, the input is passed through. `--as` skips detection (`text` turns off the json and grep steps). `--stats` adds `[clean ~A→~B tokens; steps: …]`. Repeating the same cleaned output in a session gets the usual `already sent` notice. `clean` is not an MCP tool: an MCP client already holds the text. To clean what another MCP server returns, use the [MCP proxy](#mcp-proxy).
+
+## Run
+
+`zazzle run -- cargo test` runs a command in the caller's environment and prints what an agent needs from its output. The invoker `exec`s `zazzled wrap ARGS` (on Intel Macs run `zazzled wrap` directly); it never runs inside the daemon.
+
+- stdout and stderr go through one pipe, so their order is kept; stdin is the caller's. The exit status is the command's (128 + N for a signal); `--timeout SECS` (default 3600) kills it and exits 124. Up to 64 MiB of output is read.
+- A profile, picked from the command (through `npx`, `uv run`, `python -m`, `env VAR=x`, …) or named with `--profile`, drops only lines it knows are noise and counts them. Lines it does not recognise are always kept.
+
+| profile | commands | drops |
+|---|---|---|
+| cargo | `cargo …`, `cargo-nextest` | progress (`Compiling`, `Running`, `Downloaded`, …), `test … ok`, nextest `PASS`, empty test runs, std/core frames in backtraces |
+| pytest | `pytest`, `python -m pytest` | session header, `PASSED` lines, progress lines with no failure |
+| go | `go test`, `go vet`, `go build` | `ok` packages, `--- PASS`, `=== RUN`, packages without tests |
+| dotnet | `dotnet …` | restore and `->` build lines, banners, `Passed` tests, System/Microsoft/xUnit/NUnit frames, the repeated warnings and errors MSBuild prints again at the end |
+| js-test | `jest`, `vitest`, `mocha`, `npm test` and the like | `PASS` files, `✓` tests, banners |
+| install | `npm/pnpm/yarn/bun install`, `pip install`, `uv pip install` | download and resolve progress |
+
+- Then `clean`'s steps and budget apply (`--lossless` turns off the profile and the lossy steps), and a footer says what happened: `[exit 101 in 8.4s; cargo profile dropped 6 progress lines, 333 passing tests]`.
+- Measured: this crate's `cargo test` (334 passing tests) goes from about 5,300 tokens to about 80.
 
 ## MCP proxy
 

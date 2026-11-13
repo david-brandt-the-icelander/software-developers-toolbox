@@ -7,6 +7,7 @@ use crate::mcp::{self, DaemonBackend};
 use crate::proxy::{self, Upstream};
 use crate::server::{self, Config};
 use crate::store::{self, Store};
+use crate::wrap;
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | install | uninstall | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | wrap .. | install | uninstall | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -27,6 +28,7 @@ pub enum Cli {
     Uninstall,
     Run(Vec<String>),
     Proxy(proxy::Opts),
+    Wrap(Vec<String>),
     Version,
 }
 
@@ -58,6 +60,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "uninstall" => Ok(Cli::Uninstall),
         "run" => Ok(Cli::Run(rest.to_vec())),
         "proxy" => proxy::parse(rest).map(Cli::Proxy),
+        "wrap" => Ok(Cli::Wrap(rest.to_vec())),
         "version" | "--version" => Ok(Cli::Version),
         _ => Err(USAGE.into()),
     }
@@ -185,6 +188,10 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Wrap(rest) => match wrap::main(&rest, &mut std::io::stdout()) {
+            Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
+            Err(e) => finish(Err(e)),
+        },
         Cli::Proxy(o) => match o.upstream {
             Upstream::Command(c) => match proxy::stdio::run(&c, &o.filter) {
                 Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
@@ -232,6 +239,7 @@ mod tests {
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));
         assert!(matches!(parse(&v(&["proxy", "--", "srv"])), Ok(Cli::Proxy(_))));
+        assert_eq!(parse(&v(&["wrap", "make"])), Ok(Cli::Wrap(v(&["make"]))));
         assert!(parse(&v(&["proxy"])).unwrap_err().starts_with("give either"));
         assert_eq!(parse(&v(&["serve"])), Ok(Cli::Serve { socket: None, idle: Duration::from_secs(1800) }));
     }

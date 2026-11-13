@@ -20,6 +20,7 @@ pub mod symbols;
 pub mod tokens;
 pub mod util;
 pub mod walk;
+pub mod wrap;
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

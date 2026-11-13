@@ -26,6 +26,7 @@ refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their e
 edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 proxy [--lossless] [--budget T] [--skip TOOL].. [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
+run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, installs; exits with its code (own process)
 status  daemon info
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
@@ -174,6 +175,10 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
             Err("proxy runs as its own process: start it with `zazzle proxy ..` (or `zazzled proxy ..`)"
                 .into())
         }
+        "run" => Err(
+            "run executes in the caller's environment: use `zazzle run -- CMD ..` (or `zazzled wrap CMD ..`)"
+                .into(),
+        ),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
@@ -249,6 +254,15 @@ mod tests {
         let o = run_cmd(t.path(), &["proxy", "--", "srv"]);
         assert_eq!(o.status, 2);
         assert!(o.text.starts_with("error: proxy runs as its own process: start it with `zazzle proxy ..`"));
+    }
+
+    // Checks run is refused inside the daemon with a pointer to the right entry point.
+    #[test]
+    fn test_run_points_to_own_process() {
+        let t = TempDir::new();
+        assert!(run_cmd(t.path(), &["run", "--", "make"])
+            .text
+            .starts_with("error: run executes in the caller's environment"));
     }
 
     // Checks the aliases route to the same commands.

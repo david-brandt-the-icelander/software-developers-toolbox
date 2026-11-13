@@ -402,6 +402,15 @@ fn clean(input: &str, kind: Kind, lossy: bool, budget: usize) -> Cleaned {
     Cleaned { lines, steps }
 }
 
+// Strips terminal escapes and redraws and tidies whitespace, leaving every line's content as it is.
+pub fn tidy_lines(input: &str) -> Vec<String> {
+    if input.contains('\x1b') {
+        tidy(&strip_ansi(input))
+    } else {
+        tidy(input)
+    }
+}
+
 // Cleans one block of text with detection on, for callers other than the command line such as the MCP proxy.
 pub fn shrink(input: &str, lossy: bool, budget: usize) -> String {
     clean(input, Kind::Auto, lossy, budget).lines.join("\n")
@@ -732,6 +741,13 @@ mod tests {
     fn test_shrink() {
         assert_eq!(shrink("{ \"a\": 1 }", true, 100), "{\"a\":1}");
         assert_eq!(shrink("x  \r\ny\n", false, 100), "x\ny");
+    }
+
+    // Checks tidy_lines strips escapes and redraws but leaves grep-like lines ungrouped.
+    #[test]
+    fn test_tidy_lines() {
+        assert_eq!(tidy_lines("\x1b[1ma.rs:1:x\x1b[0m  \na.rs:2:y\r\n"), v(&["a.rs:1:x", "a.rs:2:y"]));
+        assert_eq!(tidy_lines("p 1%\rp 100%\n\n\n"), v(&["p 100%"]));
     }
 
     // Checks input over the size cap is cut and says so.
