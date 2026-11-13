@@ -1,5 +1,7 @@
 // Cleanup of caches, Downloads, Trash, dev build artifacts, Homebrew and Docker.
+use std::collections::HashSet;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,6 +21,7 @@ const CACHE_DIRS: &[&str] = &[
 const XCODE_DIRS: &[&str] = &["~/Library/Developer/Xcode/DerivedData"];
 const JS_LOCKS: &[&str] = &["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock"];
 const DOTNET: &[&str] = &["*.csproj", "*.fsproj", "*.vbproj"];
+const PROGRESS_MAX_AGE_SECS: u64 = 12 * 3600;
 const KEEP_TODAY: &str = "modified today (Atlantic/Reykjavik)";
 const KEEP_IN_USE: &str = "in use by a running process/session";
 
@@ -67,9 +70,66 @@ const ARTIFACTS: &[Artifact] = &[
     },
 ];
 
+// Steps finished by an interrupted applying run, persisted so the next run resumes after them.
+#[derive(Default)]
+struct Progress {
+    path: Option<PathBuf>,
+    done: HashSet<String>,
+}
+
+impl Progress {
+    // Load recent progress from the file; dry runs get a disabled tracker.
+    fn load(apply: bool) -> Self {
+        if !apply {
+            return Self::default();
+        }
+        let path = PathBuf::from(util::home()).join(".local/state/free-disk-space/clean-progress.txt");
+        let age = fs::metadata(&path).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+        if age.is_some_and(|a| a.as_secs() > PROGRESS_MAX_AGE_SECS) {
+            let _ = fs::remove_file(&path);
+        }
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        let done: HashSet<String> = text.lines().map(str::to_string).collect();
+        if !done.is_empty() {
+            println!("  resuming an interrupted run: {} steps already done ({})", done.len(), path.display());
+        }
+        Self { path: Some(path), done }
+    }
+
+    // Tell whether a step finished in the interrupted run.
+    fn is_done(&self, key: &str) -> bool {
+        self.done.contains(key)
+    }
+
+    // Record a finished step unless the run was interrupted during it.
+    fn mark(&mut self, key: String) {
+        let Some(path) = &self.path else {
+            return;
+        };
+        if util::stopped() {
+            return;
+        }
+        if let Some(dir) = path.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{key}");
+        }
+        self.done.insert(key);
+    }
+
+    // Forget all progress after a complete run.
+    fn finish(&self) {
+        if let Some(path) = self.path.as_ref().filter(|_| !util::stopped()) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 // Totals and problem lists collected across cleanup targets.
 #[derive(Default)]
 pub struct Ctx {
+    progress: Progress,
     bytes: i64,
     protected: Vec<String>,
     failures: Vec<String>,
@@ -192,9 +252,15 @@ fn empty_dir(path: &str, apply: bool, label: &str) -> Removal {
 fn clean_dirs(title: &str, dirs: &[&str], apply: bool, ctx: &mut Ctx) {
     println!("{}", c("1", title));
     for d in dirs {
+        let key = format!("dir:{d}");
+        if ctx.progress.is_done(&key) {
+            println!("  - {d}: done before the interruption");
+            continue;
+        }
         let r = empty_dir(d, apply, d);
         ctx.bytes += r.bytes;
         ctx.protected.extend(r.protected);
+        ctx.progress.mark(key);
     }
 }
 
@@ -431,10 +497,15 @@ fn clean_dev(apply: bool, ctx: &mut Ctx, dev_root: &str) {
         if util::stopped() {
             break;
         }
+        let key = format!("dev:{}", cand.display());
+        if ctx.progress.is_done(&key) {
+            continue;
+        }
         if let Err(why) = verify_artifact(cand, cutoff, &snap) {
             kept += 1;
             if why == KEEP_TODAY || why == KEEP_IN_USE {
                 println!("  keep   {}  [{why}]", cand.display());
+                ctx.progress.mark(key);
             } else {
                 ctx.uncertain.push(format!("{} [{why}]", cand.display()));
             }
@@ -472,6 +543,7 @@ fn clean_dev(apply: bool, ctx: &mut Ctx, dev_root: &str) {
             cand.display()
         );
         ctx.protected.extend(res.protected);
+        ctx.progress.mark(key);
     }
     println!("  {} candidates examined, {kept} kept/uncertain", cands.len());
 }
@@ -587,12 +659,16 @@ pub fn cmd_clean(targets: &[String], apply: bool, dev_root: &str, docker_stop_ti
     }
     util::install_sigint();
     let free0 = util::report_free("Initial");
-    let mut ctx = Ctx::default();
+    let mut ctx = Ctx { progress: Progress::load(apply), ..Ctx::default() };
     let mut docker_status = None;
     let t0 = now();
     for t in targets {
         if util::stopped() {
             break;
+        }
+        if ctx.progress.is_done(&format!("target:{t}")) {
+            println!("  {t}: done before the interruption");
+            continue;
         }
         match t {
             "caches" => clean_dirs("Caches", CACHE_DIRS, apply, &mut ctx),
@@ -603,8 +679,10 @@ pub fn cmd_clean(targets: &[String], apply: bool, dev_root: &str, docker_stop_ti
             "brew" => clean_brew(apply),
             _ => docker_status = Some(clean_docker(apply, &mut ctx, docker_stop_timeout, 180.0)),
         }
+        ctx.progress.mark(format!("target:{t}"));
         println!("  [elapsed {} | free now {}]", hms(now() - t0), human_i(util::free_bytes()));
     }
+    ctx.progress.finish();
     let free1 = util::report_free("Final  ");
     println!("{}", c("1", "Summary"));
     let verb = if apply { "deleted" } else { "would delete" };
@@ -1172,5 +1250,23 @@ mod tests {
         cmd_clean(&["trash".to_string()], true, &dev, 5);
         util::set_stop(true);
         cmd_clean(&all, true, &dev, 5);
+    }
+
+    // Check progress persists finished steps, ignores interrupted ones and clears when finished.
+    #[test]
+    fn test_progress_resume() {
+        let sb = Sandbox::new();
+        let mut first = Progress::load(true);
+        first.mark("dir:a".into());
+        util::set_stop(true);
+        first.mark("dir:b".into());
+        first.finish();
+        util::set_stop(false);
+        let second = Progress::load(true);
+        assert!(second.is_done("dir:a") && !second.is_done("dir:b"));
+        assert!(Progress::load(false).path.is_none());
+        second.finish();
+        assert!(!Progress::load(true).is_done("dir:a"));
+        drop(sb);
     }
 }
