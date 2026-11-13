@@ -402,6 +402,11 @@ fn clean(input: &str, kind: Kind, lossy: bool, budget: usize) -> Cleaned {
     Cleaned { lines, steps }
 }
 
+// Cleans one block of text with detection on, for callers other than the command line such as the MCP proxy.
+pub fn shrink(input: &str, lossy: bool, budget: usize) -> String {
+    clean(input, Kind::Auto, lossy, budget).lines.join("\n")
+}
+
 // Reads standard input, cleans it and reports what changed if asked.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
@@ -720,6 +725,13 @@ mod tests {
         assert!(go(&["--bogus"], "").text.contains("usage: CMD | zazzle clean"));
         let t = crate::testutil::TempDir::new();
         assert_eq!(crate::testutil::run_cmd(t.path(), &["clean"]).text, "error: no standard input available");
+    }
+
+    // Checks the library entry point detects JSON and joins lines.
+    #[test]
+    fn test_shrink() {
+        assert_eq!(shrink("{ \"a\": 1 }", true, 100), "{\"a\":1}");
+        assert_eq!(shrink("x  \r\ny\n", false, 100), "x\ny");
     }
 
     // Checks input over the size cap is cut and says so.

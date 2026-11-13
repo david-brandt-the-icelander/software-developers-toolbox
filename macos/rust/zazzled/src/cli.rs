@@ -4,6 +4,7 @@ use crate::cmd::{self, Ctx};
 use crate::engine::Engine;
 use crate::launchd;
 use crate::mcp::{self, DaemonBackend};
+use crate::proxy::{self, Upstream};
 use crate::server::{self, Config};
 use crate::store::{self, Store};
 use std::cell::RefCell;
@@ -14,8 +15,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str =
-    "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | install | uninstall | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | install | uninstall | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -26,6 +26,7 @@ pub enum Cli {
     Install,
     Uninstall,
     Run(Vec<String>),
+    Proxy(proxy::Opts),
     Version,
 }
 
@@ -56,6 +57,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "install" => Ok(Cli::Install),
         "uninstall" => Ok(Cli::Uninstall),
         "run" => Ok(Cli::Run(rest.to_vec())),
+        "proxy" => proxy::parse(rest).map(Cli::Proxy),
         "version" | "--version" => Ok(Cli::Version),
         _ => Err(USAGE.into()),
     }
@@ -183,6 +185,15 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Proxy(o) => match o.upstream {
+            Upstream::Command(c) => match proxy::stdio::run(&c, &o.filter) {
+                Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
+                Err(e) => finish(Err(e)),
+            },
+            Upstream::Http { url, listen } => {
+                finish(proxy::http::run(&url, &listen, &o.filter).map(|()| String::new()))
+            }
+        },
         Cli::Run(rest) => {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
             let session = std::env::var("ZAZZLE_SESSION").unwrap_or_default();
@@ -220,6 +231,8 @@ mod tests {
         assert_eq!(parse(&v(&["version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));
+        assert!(matches!(parse(&v(&["proxy", "--", "srv"])), Ok(Cli::Proxy(_))));
+        assert!(parse(&v(&["proxy"])).unwrap_err().starts_with("give either"));
         assert_eq!(parse(&v(&["serve"])), Ok(Cli::Serve { socket: None, idle: Duration::from_secs(1800) }));
     }
 
