@@ -65,6 +65,7 @@ static inline long sys_peer_uid(int fd)
 	return r < 0 ? -1 : (long)cred[1];
 }
 
+#define SYS_execve 59
 #define SYS_ENOENT 2
 #define SYS_ECONNREFUSED 61
 #define SYS_EAGAIN 35
@@ -118,4 +119,10 @@ static inline long sys_spawn_daemon(const char *path, char **envp)
 	posix_spawnattr_setflags(&attr, 0x400); /* POSIX_SPAWN_SETSID */
 	int rc = posix_spawn(&pid, path, &fa, &attr, argv, envp);
 	return rc == 0 ? pid : -rc;
+}
+
+/* Replaces this process with path (argv[0] is the first element); returns a negative errno only if that fails. */
+static inline long sys_exec(const char *path, char **argv, char **envp)
+{
+	return sys_call(SYS_execve, (long)path, (long)argv, (long)envp, 0, 0);
 }
