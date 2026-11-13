@@ -505,7 +505,8 @@
         "Logging with side effects, print, and calls on non-loggers are kept.",
         "Constructors and catches that do anything else are kept.",
         "Code that shares a line with what a rule would hide is kept.",
-        "Files with nothing to shorten, or too big to parse, come back as source with a sha."
+        "Files with nothing to shorten, or too big to parse, come back as source with a sha.",
+        "Long locals are renamed at every use, and names that cannot be renamed everywhere safely keep theirs."
       ],
       "checks": [
         {
@@ -572,6 +573,42 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "test_code_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_abbreviate",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_python",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_python_unsafe",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_typescript",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_nested_scopes",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_dart",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],

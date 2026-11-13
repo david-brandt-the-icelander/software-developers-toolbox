@@ -126,6 +126,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "locals",
+      "name": "Short locals (locals.rs)",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, TypeScript or Dart syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "pool",
       "name": "Thread pool (pool.rs)",
       "responsibility": "One pool of threads per process, started on first use; par_map runs borrowed work on the caller and pool helpers and returns results in item order.",
@@ -274,6 +280,18 @@
       "to": "terse",
       "kind": "contains",
       "description": "Terse view of Python, TypeScript and Dart."
+    },
+    {
+      "from": "src",
+      "to": "locals",
+      "kind": "contains",
+      "description": "Short local names for the code terse view."
+    },
+    {
+      "from": "terse",
+      "to": "locals",
+      "kind": "depends-on",
+      "description": "Applies the renames to lines it does not hide."
     },
     {
       "from": "src",

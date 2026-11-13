@@ -333,12 +333,12 @@
           "symbol": "Python, TypeScript and Dart terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) and catch clauses that only log and rethrow the caught exception; it drops public, private and protected from TypeScript class members. read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) and catch clauses that only log and rethrow the caught exception; it drops public, private and protected from TypeScript class members and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
       "outcome": "An agent understands Python, TypeScript and Dart code from fewer tokens, and still has to read the real code before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
-        "Local variable names are not shortened in these languages."
+        "A local is renamed only where every place its name appears in its function can be renamed safely; otherwise it keeps its name."
       ],
       "implementation": [
         {
@@ -360,6 +360,10 @@
         {
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "renames"
         }
       ]
     },
