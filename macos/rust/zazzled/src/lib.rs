@@ -13,6 +13,7 @@ pub mod mcp;
 pub mod meta;
 pub mod outline;
 pub mod outputs;
+pub mod params;
 pub mod pool;
 pub mod proto;
 pub mod proxy;

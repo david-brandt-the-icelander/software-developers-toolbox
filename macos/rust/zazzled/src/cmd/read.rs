@@ -215,7 +215,10 @@ fn miss_text(shown: &str, query: &str, miss: Miss) -> String {
         }
         Miss::None(near) => format!("{shown}: no symbol '{query}'; similar:\n{}", near.join("\n")),
         Miss::Many(n, list) => {
-            format!("{shown}: '{query}' matches {n} symbols; add #N to pick one:\n{}", list.join("\n"))
+            format!(
+                "{shown}: '{query}' matches {n} symbols; pick one with its parameter types, Name(T1, T2), or #N:\n{}",
+                list.join("\n")
+            )
         }
         Miss::Index(n) => format!("{shown}: '{query}' has {n} match(es); pick #1 to #{n}"),
     }
@@ -478,7 +481,7 @@ mod tests {
         assert_eq!(many.status, 2);
         assert_eq!(
             many.text,
-            "error: m.rs: 'new' matches 2 symbols; add #N to pick one:\n#1 6-8 fn A.new: fn new() -> A {\n#2 14-16 fn B.new: fn new() -> B {"
+            "error: m.rs: 'new' matches 2 symbols; pick one with its parameter types, Name(T1, T2), or #N:\n#1 6-8 fn A.new: fn new() -> A {\n#2 14-16 fn B.new: fn new() -> B {"
         );
         assert_eq!(
             run_cmd(t.path(), &["read", "m.rs", "-s", "ne"]).text,

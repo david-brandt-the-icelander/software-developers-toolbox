@@ -1,5 +1,6 @@
-// Symbol lookup for read --symbol: dotted names, #N for duplicates, and the doc comments and attributes above.
+// Symbol lookup for read --symbol: dotted names, parameter types or #N for overloads, and the doc comments and attributes above.
 use crate::outline::{Lang, Symbol};
+use crate::params;
 use crate::util::clip;
 
 const MAX_CANDIDATES: usize = 10;
@@ -40,13 +41,24 @@ fn paths(syms: &[Symbol]) -> Vec<Vec<String>> {
     out
 }
 
-// Splits a query into its segments and an optional 1-based pick from `#N`.
-fn parse_query(query: &str) -> (Vec<String>, Option<usize>) {
+// The parts of a query: name segments, parameter types from `(T1, T2)`, and a 1-based pick from `#N`.
+type Query = (Vec<String>, Option<Vec<String>>, Option<usize>);
+
+// Splits a query like `Invoice.Total(decimal, int)#2` into its parts.
+fn parse_query(query: &str) -> Query {
     let (name, pick) = match query.rsplit_once('#') {
         Some((n, k)) if k.parse::<usize>().is_ok() => (n, k.parse().ok()),
         _ => (query, None),
     };
-    (segments(name), pick)
+    let (name, types) = params::split_query(name);
+    (segments(name), types, pick)
+}
+
+// Returns a symbol's declared parameters, read from the lines where it is declared; None when it has no parameter list.
+fn declared_params(s: &Symbol, line: &dyn Fn(usize) -> String) -> Option<Vec<String>> {
+    let last = s.end.min(s.start + SIGNATURE_SCAN * 4);
+    let text: Vec<String> = (s.start..=last).map(line).collect();
+    params::declared(&text.join("\n"), &s.name)
 }
 
 // True when the query segments are the last segments of the path, compared with the given equality.
@@ -77,7 +89,7 @@ fn describe(s: &Symbol, path: &[String], line: &dyn Fn(usize) -> String) -> Stri
 
 // Finds the index of the one symbol a query names, exact case first, then any case; `line` gives a file line by number.
 pub fn find(syms: &[Symbol], query: &str, line: &dyn Fn(usize) -> String) -> Result<usize, Miss> {
-    let (want, pick) = parse_query(query);
+    let (want, types, pick) = parse_query(query);
     let all = paths(syms);
     let exact = |a: &str, b: &str| a == b;
     let loose = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
@@ -87,6 +99,13 @@ pub fn find(syms: &[Symbol], query: &str, line: &dyn Fn(usize) -> String) -> Res
     }
     let list =
         |ids: &[usize]| ids.iter().take(MAX_CANDIDATES).map(|&i| describe(&syms[i], &all[i], line)).collect();
+    if let Some(types) = &types {
+        let named = hits.clone();
+        hits.retain(|&i| declared_params(&syms[i], line).is_some_and(|d| params::matches(types, &d)));
+        if hits.is_empty() && !named.is_empty() {
+            return Err(Miss::None(list(&named)));
+        }
+    }
     match (hits.len(), pick) {
         (0, _) => {
             let last = want.last().map(|w| w.to_ascii_lowercase()).unwrap_or_default();
@@ -191,12 +210,48 @@ mod tests {
         assert_eq!(p[7], v(&["billing", "tax", "total"]));
     }
 
-    // Checks queries with dots, double colons and #N picks.
+    // Checks queries with dots, double colons, parameter types and #N picks.
     #[test]
     fn test_parse_query() {
-        assert_eq!(parse_query("Invoice.total"), (v(&["Invoice", "total"]), None));
-        assert_eq!(parse_query("tax::total#2"), (v(&["tax", "total"]), Some(2)));
-        assert_eq!(parse_query("a#b"), (v(&["a#b"]), None));
+        assert_eq!(parse_query("Invoice.total"), (v(&["Invoice", "total"]), None, None));
+        assert_eq!(parse_query("tax::total#2"), (v(&["tax", "total"]), None, Some(2)));
+        assert_eq!(parse_query("a#b"), (v(&["a#b"]), None, None));
+        assert_eq!(
+            parse_query("A.f(int, Dictionary<string, int>)#1"),
+            (v(&["A", "f"]), Some(v(&["int", "Dictionary<string, int>"])), Some(1))
+        );
+    }
+
+    // Checks overloads are picked by parameter types, untyped ones by name, and a list that fits none shows the overloads.
+    #[test]
+    fn test_find_by_parameter_types() {
+        let src = [
+            "class C {",
+            "  decimal Total(decimal rate) => rate;",
+            "  decimal Total(decimal rate,",
+            "                int digits) => rate;",
+            "  int Total() => 0;",
+            "  class Total {}",
+            "}",
+        ];
+        let line = |n: usize| src[n - 1].to_string();
+        let o = vec![
+            sym("class", "C", 1, 7, 0),
+            sym("method", "Total", 2, 2, 1),
+            sym("method", "Total", 3, 4, 1),
+            sym("method", "Total", 5, 5, 1),
+            sym("class", "Total", 6, 6, 1),
+        ];
+        assert_eq!(super::find(&o, "Total(decimal)", &line), Ok(1));
+        assert_eq!(super::find(&o, "C.Total(decimal, int)", &line), Ok(2));
+        assert_eq!(super::find(&o, "Total()", &line), Ok(3));
+        assert_eq!(super::find(&o, "Total(decimal)#1", &line), Ok(1));
+        let Err(Miss::None(near)) = super::find(&o, "Total(string)", &line) else {
+            panic!("expected a miss")
+        };
+        assert_eq!(near.len(), 4);
+        assert!(near[1].ends_with("decimal Total(decimal rate,"), "{near:?}");
+        assert!(matches!(super::find(&o, "Nothing(int)", &line), Err(Miss::None(_))));
     }
 
     // Checks unique names, qualified names, any-case fallback and #N picks resolve.
