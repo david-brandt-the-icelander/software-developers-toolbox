@@ -118,7 +118,7 @@ pub fn host_triple(version: &str) -> Option<String> {
     version.lines().find_map(|l| l.strip_prefix("host: ")).map(str::to_string)
 }
 
-// rustc inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain (and the linker for native builds), writes only `build`.
+// The toolchain's own rustc (never a rustup proxy) inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain (and the linker for native builds), writes only `build`.
 pub fn rustc_command(
     rustc: &Path,
     build: &Path,
@@ -128,14 +128,15 @@ pub fn rustc_command(
 ) -> Result<Command, String> {
     let sysroot = sysroot(rustc).ok_or_else(|| format!("{} --print sysroot failed", rustc.display()))?;
     let (rustup, cargo) = (home_dir("RUSTUP_HOME", ".rustup"), home_dir("CARGO_HOME", ".cargo"));
-    let policy = Policy::for_program(rustc)
+    let program = first_file(vec![Some(sysroot.join("bin/rustc"))]).unwrap_or(rustc.to_path_buf());
+    let policy = Policy::for_program(&program)
         .reading(
             rustup.iter().chain(cargo.iter()).cloned().chain(reads.iter().cloned()).chain([sysroot.clone()]),
         )
         .executing([sysroot].into_iter().chain(cargo.map(|c| c.join("bin"))))
         .writing([build.to_path_buf()]);
     let policy = if native { with_linker(policy) } else { policy };
-    let mut cmd = sandbox::command(rustc, args, &policy)?;
+    let mut cmd = sandbox::command(&program, args, &policy)?;
     rustc_env(&mut cmd).current_dir(build).env("TMPDIR", build);
     Ok(cmd)
 }

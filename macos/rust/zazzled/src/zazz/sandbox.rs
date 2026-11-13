@@ -60,7 +60,7 @@ impl Policy {
     }
 }
 
-// Builds a sandbox-exec profile on Apple's bsd.sb base whose paths arrive resolved (the sandbox sees /private/var, not /var) as -D parameters, so no path can change the profile's meaning.
+// Builds a sandbox-exec profile on Apple's bsd.sb base whose paths arrive as -D parameters, each also resolved (the sandbox sees /private/var, not /var), so no path can change the profile's meaning.
 pub fn sbpl(p: &Policy) -> (String, Vec<(String, String)>) {
     let mut text =
         String::from("(version 1)\n(deny default)\n(import \"bsd.sb\")\n(allow signal (target self))\n(allow sysctl-read)\n");
@@ -69,11 +69,14 @@ pub fn sbpl(p: &Policy) -> (String, Vec<(String, String)>) {
     let mut params = Vec::new();
     let mut rule = |kind: &str, prefix: &str, list: &[PathBuf], params: &mut Vec<(String, String)>| {
         for (i, path) in list.iter().enumerate() {
-            let name = format!("{prefix}{i}");
             let op = if path.is_dir() { "subpath" } else { "literal" };
-            text.push_str(&format!("(allow {kind} ({op} (param \"{name}\")))\n"));
             let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-            params.push((name, real.to_string_lossy().into_owned()));
+            let forms = if real == *path { vec![real] } else { vec![path.clone(), real] };
+            for (j, form) in forms.iter().enumerate() {
+                let name = if j == 0 { format!("{prefix}{i}") } else { format!("{prefix}{i}r") };
+                text.push_str(&format!("(allow {kind} ({op} (param \"{name}\")))\n"));
+                params.push((name, form.to_string_lossy().into_owned()));
+            }
         }
     };
     rule("file-read*", "R", &p.read, &mut params);
@@ -363,6 +366,15 @@ mod tests {
         assert_eq!(params[0], ("R0".to_string(), t.path().to_string_lossy().into_owned()));
         let (net, _) = sbpl(&Policy { network: true, ..p });
         assert!(net.contains("(allow network-outbound)"));
+        let link = t.path().join("link");
+        std::os::unix::fs::symlink(&f, &link).expect("symlink");
+        let (text, params) = sbpl(&Policy { exec: vec![link.clone()], ..Policy::default() });
+        assert!(text.contains("(param \"X0\")") && text.contains("(param \"X0r\")"));
+        assert_eq!(
+            params[1],
+            ("X0r".to_string(), std::fs::canonicalize(&f).expect("real").to_string_lossy().into_owned())
+        );
+        assert_eq!(params[0].1, link.to_string_lossy());
     }
 
     // Checks the builder keeps only existing paths.
