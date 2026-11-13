@@ -7,7 +7,13 @@ cold=${1:-20}
 warm=${2:-100}
 bin=$root/build
 zazzled=${ZAZZLED:-$root/../../rust/target/release/zazzled}
-src=$(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/ 2>/dev/null | head -1)
+src=""
+for d in "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/; do
+	if [ -d "$d" ]; then
+		src=$d
+		break
+	fi
+done
 [ -n "$src" ] || { echo "no cargo registry sources; build zazzled first" >&2; exit 1; }
 tmp=$(mktemp -d)
 dpid=

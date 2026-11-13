@@ -6,8 +6,19 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 rust=$here/../rust
 out=${PGO_DIR:-$rust/target/pgo}
-corpus=${1:-$(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/ 2>/dev/null | head -1)}
-[ -n "$corpus" ] && [ -d "$corpus" ] || { echo "pgo.sh: no training corpus; build zazzled once first" >&2; exit 1; }
+corpus=${1:-}
+if [ -z "$corpus" ]; then
+	for d in "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/; do
+		if [ -d "$d" ]; then
+			corpus=$d
+			break
+		fi
+	done
+fi
+if [ -z "$corpus" ] || [ ! -d "$corpus" ]; then
+	echo "pgo.sh: no training corpus; build zazzled once first" >&2
+	exit 1
+fi
 
 # Runs llvm-profdata from the same toolchain as clang (Xcode's on macOS).
 profdata() {
