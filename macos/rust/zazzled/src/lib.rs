@@ -1,6 +1,7 @@
 // Library root for the zazzle daemon: engine, commands, wire protocol and front ends.
 #![cfg_attr(all(coverage_nightly, test), feature(coverage_attribute))]
 
+pub mod arena;
 pub mod args;
 pub mod cli;
 pub mod client;

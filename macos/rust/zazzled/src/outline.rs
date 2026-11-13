@@ -197,12 +197,14 @@ fn parse_outline(lang: Lang, data: &[u8]) -> Option<Vec<Symbol>> {
         return None;
     }
     let (language, kinds) = grammar(lang)?;
-    let mut parser = Parser::new();
-    parser.set_language(&language).ok()?;
-    let tree = parser.parse(data, None)?;
-    let mut out = Vec::new();
-    collect(tree.root_node(), kinds, data, 0, 0, &mut out);
-    Some(out)
+    crate::arena::scope(|| {
+        let mut parser = Parser::new();
+        parser.set_language(&language).ok()?;
+        let tree = parser.parse(data, None)?;
+        let mut out = Vec::new();
+        collect(tree.root_node(), kinds, data, 0, 0, &mut out);
+        Some(out)
+    })
 }
 
 // Returns the lines of a file as text, with undecodable lines blanked.
