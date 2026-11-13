@@ -198,6 +198,15 @@ static void exec_tool(char **argv, char **envp)
 	die_errno("cannot run the tool", -r, 69);
 }
 
+/* Replaces this process with `zazzled proxy ARGS`: the MCP proxy is long-lived and needs the caller's environment, so it is not a daemon request. */
+static void exec_proxy(char **argv, char **envp)
+{
+	pick_daemon(envp);
+	argv[0] = daemon_path;
+	long r = sys_exec(daemon_path, argv, envp);
+	die_errno("cannot run the proxy", -r, 69);
+}
+
 /* Connects to the daemon, starting it and retrying with backoff if it is not running. */
 static int connect_daemon(size_t pathlen, char **envp)
 {
@@ -275,11 +284,13 @@ static int read_status(int fd)
 	return b;
 }
 
-/* Runs a tool as its own process (exec), or one request/answer round trip, and returns the daemon's exit status. */
+/* Runs a tool or the MCP proxy as its own process (exec), or one request/answer round trip, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && is_tool(argv[1]))
 		exec_tool(argv, envp);
+	if (argc > 1 && str_eq(argv[1], "proxy"))
+		exec_proxy(argv, envp);
 	size_t total = build_request(argc, argv, envp);
 	size_t pathlen = build_path(envp);
 	int fd = connect_daemon(pathlen, envp);

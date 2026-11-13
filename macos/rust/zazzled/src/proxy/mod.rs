@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub mod http;
 pub mod stdio;
 
-pub const USAGE: &str = "usage: zazzled proxy [--lossless] [--budget T] [--skip TOOL].. [--log] \
+pub const USAGE: &str = "usage: zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--log] \
 (-- CMD ARGS.. | --upstream URL [--listen ADDR])";
 const DEFAULT_BUDGET: usize = 8000;
 const DEFAULT_LISTEN: &str = "127.0.0.1:8808";

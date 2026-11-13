@@ -98,4 +98,10 @@ out=$(ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" fix-network --verbose x 2>&1) || r
 [ "$rc" = 3 ] && [ "$out" = "fix-network --verbose x" ] || fail "tool exec: rc=$rc out='$out'"
 if ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" free-disk-space 2>"$tmp/err"; then fail "missing tool must fail"; fi
 grep -q "cannot run the tool" "$tmp/err" || fail "missing tool message: $(cat "$tmp/err")"
+# `zazzle proxy` execs `zazzled proxy` (here a stand-in from $ZAZZLE_DAEMON) with the arguments and its exit status.
+printf '#!/bin/sh\necho "zazzled $*"\nexit 4\n' > "$tmp/bin/fake-zazzled"
+chmod +x "$tmp/bin/fake-zazzled"
+rc=0
+out=$(ZAZZLE_SOCK=$tmp/none ZAZZLE_DAEMON=$tmp/bin/fake-zazzled "$tmp/bin/zazzle" proxy -- srv 2>&1) || rc=$?
+[ "$rc" = 4 ] && [ "$out" = "zazzled proxy -- srv" ] || fail "proxy exec: rc=$rc out='$out'"
 echo "smoke ok"
