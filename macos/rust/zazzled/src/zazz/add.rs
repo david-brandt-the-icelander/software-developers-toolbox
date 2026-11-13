@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use zazz_format::manifest::{Manifest, SIGNATURE};
+use zazz_format::manifest::Manifest;
 use zazz_format::zip::{self, Limits};
 
 // Reads a file once, refusing symlinks, non-regular files and oversized files.
@@ -43,6 +43,8 @@ fn reply(meta: &Value, status: &str) -> Value {
         "runtime": meta["runtime"],
         "tests": meta["tests"],
         "warnings": meta["warnings"],
+        "signer": meta["signer"],
+        "trusted": meta["verdict"]["trusted"] == true,
     })
 }
 
@@ -80,12 +82,14 @@ fn fetch_openapi(z: &Zazz, reg: &Registry, hex: &str) -> Result<Value, Value> {
 fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) -> Result<Value, Value> {
     let a = zip::read(bytes, &Limits::DEFAULT).map_err(|e| err("invalid_archive", &e))?;
     let m = Manifest::of(&a).map_err(|e| err("invalid_manifest", &e))?;
+    let envelope = super::signing::check_signature(&a)?;
+    let verdict = envelope.as_ref().map(|e| super::trust::evaluate(z, &e.chain));
     let scratch = reg.scratch(hex).map_err(|e| err("store", &e))?;
     let built = pipeline::build_and_test(reg, &z.worker()?, &a, &m, &scratch, None);
     let _ = std::fs::remove_dir_all(&scratch);
     let mut built = built?;
-    if a.get(SIGNATURE).is_some() {
-        built.warnings.push("zazz.sig is not verified yet; the script runs as unsigned".into());
+    if verdict.as_ref().is_some_and(|v| v["trusted"] != true) {
+        built.warnings.push("the signer is not a trusted authority here; the script runs as unsigned".into());
     }
     let manifest: Value = serde_json::from_slice(a.get("zazz.json").expect("checked"))
         .map_err(|e| err("invalid_manifest", &e.to_string()))?;
@@ -101,7 +105,9 @@ fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) ->
         "tests": built.tests,
         "warnings": built.warnings,
         "openapi": null,
-        "signer": null,
+        "signer": verdict.as_ref().map(|v| v["signer"].clone()),
+        "signature": envelope.as_ref().map(|e| e.to_json()),
+        "verdict": verdict,
         "added_at": now_secs(),
         "source": source.to_string_lossy(),
     });

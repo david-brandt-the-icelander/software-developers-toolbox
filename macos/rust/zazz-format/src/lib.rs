@@ -3,6 +3,7 @@
 
 pub mod manifest;
 pub mod pack;
+pub mod sig;
 pub mod zip;
 
 // Returns the script id of a .zazz file: "b3:" and the BLAKE3 hash of its exact bytes.

@@ -81,13 +81,72 @@ pub fn preopens(m: &Manifest, cwd: &Path, tmp: &Path) -> Vec<Value> {
     out.into_iter().map(|(h, g, w)| json!({"host": h.to_string_lossy(), "guest": g, "write": w})).collect()
 }
 
+// What the script may use after its signer's grants: the network (as worker JSON) and a manifest narrowed to the granted paths.
+pub fn granted(z: &Zazz, m: &Manifest, verdict: &Value) -> (Value, Manifest) {
+    use super::trust;
+    let (net, fs, _) = trust::effective(z, verdict);
+    let wanted = json!({"native": false, "network": trust::net_json(&m.sandbox.network)});
+    let network = trust::intersect(&wanted, &json!({"native": false, "network": net}))["network"].clone();
+    let mut m = m.clone();
+    if let Some(fs) = fs {
+        let list = |k: &str| {
+            fs[k]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+        let reads = [list("read"), list("write")].concat();
+        m.sandbox.read = trust::paths_within(&m.sandbox.read, &reads);
+        m.sandbox.write = trust::paths_within(&m.sandbox.write, &list("write"));
+    }
+    (network, m)
+}
+
+// Re-evaluates a signed script's verdict in the background when it has expired; the current call keeps the old one.
+fn refresh_if_stale(z: &Zazz, reg: &Registry, hex: &str, meta: &Value) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static RUNNING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    let stale = meta["verdict"]["valid_until"].as_u64().is_some_and(|t| t < super::trust::now());
+    let Some(sig) = meta.get("signature").filter(|s| s.is_object() && stale) else { return };
+    let Ok(env) = zazz_format::sig::Envelope::parse(sig.to_string().as_bytes()) else { return };
+    if !RUNNING.lock().expect("refresh lock").get_or_insert_with(HashSet::new).insert(hex.to_string()) {
+        return;
+    }
+    let (dir, dir_check) = z.trust_dir();
+    let (policy, _) = z.policy_path();
+    let (reg, hex) = (reg.clone(), hex.to_string());
+    std::thread::spawn(move || {
+        let local = Zazz::default();
+        if dir_check {
+            local.set_trust_paths_checked(&dir, &policy);
+        } else {
+            local.set_trust_paths(&dir, &policy);
+        }
+        let verdict = super::trust::evaluate(&local, &env.chain);
+        if let Some(mut meta) = reg.read_meta(&hex) {
+            meta["verdict"] = verdict;
+            let _ = reg.write_meta(&hex, &meta);
+        }
+        RUNNING.lock().expect("refresh lock").get_or_insert_with(HashSet::new).remove(&hex);
+    });
+}
+
 // The worker spec for a script, caller directory and policy.
-fn spec(z: &Zazz, reg: &Registry, hex: &str, m: &Manifest, cwd: &Path) -> Result<Spec, Value> {
+fn spec(
+    z: &Zazz,
+    reg: &Registry,
+    hex: &str,
+    m: &Manifest,
+    cwd: &Path,
+    verdict: &Value,
+) -> Result<Spec, Value> {
     let tmp = reg.root.join("tmp").join(format!("run-{}", &hex[..16]));
     std::fs::create_dir_all(&tmp).map_err(|e| err("store", &e.to_string()))?;
+    let (network, m) = granted(z, m, verdict);
     let hello = json!({
-        "t": "hello", "proto": 1, "call_ms": m.call_ms, "memory_mb": m.memory_mb, "network": "none",
-        "args": [m.name], "env": {}, "preopens": preopens(m, cwd, &tmp),
+        "t": "hello", "proto": 1, "call_ms": m.call_ms, "memory_mb": m.memory_mb, "network": network,
+        "args": [m.name], "env": {}, "preopens": preopens(&m, cwd, &tmp),
     });
     let worker = z.worker()?;
     super::sandbox::available().map_err(|e| err("sandbox_unavailable", &e))?;
@@ -99,9 +158,10 @@ fn spec(z: &Zazz, reg: &Registry, hex: &str, m: &Manifest, cwd: &Path) -> Result
             .filter_map(|p| p["host"].as_str().map(PathBuf::from))
             .collect::<Vec<_>>()
     };
-    let policy = super::sandbox::Policy::for_program(&worker)
+    let mut policy = super::sandbox::Policy::for_program(&worker)
         .reading(host(false))
         .writing(host(true).into_iter().chain([tmp]));
+    policy.network = hello["network"] != "none";
     let key = format!("{hex}\n{}\n{hello}", cwd.display());
     let program = vec![worker.to_string_lossy().into_owned(), "serve".into()];
     Ok(Spec {
@@ -209,7 +269,8 @@ pub fn execute(z: &Zazz, hex: &str, cwd: &Path, mut msg: Value, streams: Streams
     let meta = reg.read_meta(hex).ok_or_else(|| err("not_found", &format!("no script b3:{hex}")))?;
     let m =
         Manifest::parse(meta["manifest"].to_string().as_bytes()).map_err(|e| err("invalid_manifest", &e))?;
-    let spec = spec(z, &reg, hex, &m, cwd)?;
+    refresh_if_stale(z, &reg, hex, &meta);
+    let spec = spec(z, &reg, hex, &m, cwd, &meta["verdict"])?;
     msg["id"] = json!(NEXT_ID.fetch_add(1, Ordering::SeqCst));
     let mut w = z.pool.acquire(&spec).map_err(|e| err("script_crashed", &e))?;
     let (stdio, conn, pipes) = match streams {
@@ -536,6 +597,53 @@ mod tests {
         assert!(started.elapsed() >= WATCHDOG_EXTRA);
         drop(keep_in);
         assert_eq!(e.zazz.pool.idle_count(), 0);
+    }
+
+    // Checks granted filesystem paths narrow the manifest's sandbox.
+    #[test]
+    fn test_granted_fs() {
+        let z = Zazz::default();
+        let t = TempDir::new();
+        z.set_trust_paths(&t.path().join("trust"), &t.path().join("policy.json"));
+        let m = Manifest::parse(br#"{"zazz":1,"name":"s","kind":"wasm","entry":"w.wasm","sandbox":{"read":["$CWD","/etc"],"write":["$CWD/out","$TMP"]}}"#).expect("m");
+        let verdict = json!({"trusted": true, "grants": {"network": "all", "fs": {"read": ["/etc"], "write": ["$CWD"]}}});
+        let (net, g) = granted(&z, &m, &verdict);
+        assert_eq!(
+            (net, g.sandbox.read, g.sandbox.write),
+            (json!("none"), vec!["$CWD".to_string(), "/etc".to_string()], vec!["$CWD/out".to_string()])
+        );
+    }
+
+    // Checks an expired verdict is re-evaluated in the background and written back.
+    #[test]
+    fn test_refresh_if_stale() {
+        let t = TempDir::new();
+        let e = crate::testutil::zazz_engine(&t);
+        e.zazz.set_trust_paths(&t.path().join("trust"), &t.path().join("policy.json"));
+        let reg = e.zazz.registry().expect("reg");
+        let k = super::super::crypto::generate_key();
+        let cert = super::super::crypto::self_signed(&k, "ci", 30, &json!({})).expect("cert");
+        let env = zazz_format::sig::Envelope { digest: "d".into(), sig: vec![1], chain: vec![cert] };
+        let hex = "ab".repeat(32);
+        let meta = json!({"signature": env.to_json(), "verdict": {"trusted": true, "valid_until": 1}});
+        reg.write_meta(&hex, &meta).expect("meta");
+        refresh_if_stale(&e.zazz, &reg, &hex, &meta);
+        refresh_if_stale(&e.zazz, &reg, &hex, &meta);
+        let fresh = (0..200).find_map(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            reg.read_meta(&hex).filter(|m| m["verdict"]["trusted"] == false)
+        });
+        assert!(fresh.is_some(), "the verdict was re-evaluated");
+        refresh_if_stale(
+            &e.zazz,
+            &reg,
+            &hex,
+            &json!({"signature": {"bad": 1}, "verdict": {"valid_until": 1}}),
+        );
+        refresh_if_stale(&e.zazz, &reg, &hex, &json!({"verdict": {"valid_until": 1}}));
+        e.zazz.set_trust_paths_checked(&t.path().join("trust"), &t.path().join("policy.json"));
+        refresh_if_stale(&e.zazz, &reg, &"cd".repeat(32), &meta);
+        std::thread::sleep(Duration::from_millis(200));
     }
 
     // Checks agent replies: plain output, output with captured streams, and errors.

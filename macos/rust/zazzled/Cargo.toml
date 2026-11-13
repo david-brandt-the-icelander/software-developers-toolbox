@@ -19,6 +19,14 @@ path = "src/main.rs"
 blake3 = "1"
 # gitignore-aware directory walking.
 ignore = "0.4"
+# P-256 keys and ECDSA signatures for signed zazz scripts.
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+# Randomness for generating signing keys.
+rand_core = { version = "0.6", features = ["getrandom"] }
+# The SHA-256 algorithm identifier that ECDSA certificates name (only the "oid" feature is needed).
+sha2 = { version = "0.10", features = ["oid"] }
+# X.509 certificates for zazz authorities: building, parsing and chain checks.
+x509-cert = { version = "0.2", features = ["builder", "pem"] }
 # Raw socket calls, SCM_RIGHTS, getpeereid and launchd activation.
 libc = "0.2"
 # Fast newline and substring scans (NEON on Apple Silicon).
@@ -43,6 +51,10 @@ tree-sitter-typescript = "0.23"
 zazz-format = { path = "../zazz-format" }
 # The script protocol: frames, descriptor passing, the human CLI parser and output rendering.
 zazz-sdk = { path = "../zazz-sdk" }
+
+# The Keychain: evaluating certificate trust and setting trust for an authority.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
 
 [dev-dependencies]
 # Hand-written WebAssembly text for zazz tests.

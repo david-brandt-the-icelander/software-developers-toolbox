@@ -8,6 +8,7 @@ use std::sync::Mutex;
 pub mod add;
 pub mod call;
 pub mod compile;
+pub mod crypto;
 pub mod human;
 pub mod install;
 pub mod manage;
@@ -20,8 +21,10 @@ pub mod registry;
 pub mod sandbox;
 pub mod sdk;
 pub mod setup;
+pub mod signing;
 pub mod testcmd;
 pub mod tools;
+pub mod trust;
 
 const HELP: &str = "zazz: sandboxed scripts for agents (JSON replies)
 new NAME                 create NAME/ with a manifest, src/main.rs and tests/basic.rs to start from
@@ -33,13 +36,17 @@ call ID OP [--params JSON] [--body JSON|-]  run one service-call operation
 ls                       registered scripts
 describe ID              what a script is, how it runs and what it may touch
 rm ID                    remove a registered script (and any installed names for it)
+keygen NAME [--native] [--network none|all|HOST,...] [--read P,...] [--write P,...]  make a signing authority (key + certificate)
+sign FILE.zazz [--key NAME] [-o OUT]  sign a script (writes zazz.sig into a copy)
+trust ls | add CERT | rm NAME  the authorities this machine trusts (add and rm need root)
 doctor                   check the toolchain, WASM target, worker, sandbox and paths
 humans:
 install FILE.zazz|ID [--as NAME]  make the script a command: ~/.zazzle/bin/NAME runs it with plain output
 run NAME|ID [ARGS...]    run a script as a human would (flags parsed from its manifest; --json for raw JSON)
 uninstall NAME           remove an installed command
 list                     installed commands";
-const COMMANDS: &str = "new pack test add call ls describe rm doctor install run uninstall list help";
+const COMMANDS: &str =
+    "new pack test add call ls describe rm keygen sign trust doctor install run uninstall list help";
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -50,6 +57,8 @@ pub struct Zazz {
     worker: Mutex<Option<PathBuf>>,
     bin: Mutex<Option<PathBuf>>,
     invoker: Mutex<Option<PathBuf>>,
+    trust: Mutex<Option<(PathBuf, PathBuf, bool)>>,
+    keys: Mutex<Option<PathBuf>>,
     pub pool: std::sync::Arc<pool::Pool>,
 }
 
@@ -86,6 +95,46 @@ impl Zazz {
         }
         let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
         ["zazz", "zazzle"].iter().map(|n| dir.join(n)).find(|p| p.exists())
+    }
+
+    // Uses a fixed trust directory and policy file without the root-ownership check (tests only reach this).
+    pub fn set_trust_paths(&self, dir: &Path, policy: &Path) {
+        *self.trust.lock().expect("zazz trust lock") = Some((dir.to_path_buf(), policy.to_path_buf(), false));
+    }
+
+    // Uses a fixed trust directory and policy file, keeping the root-ownership check.
+    pub fn set_trust_paths_checked(&self, dir: &Path, policy: &Path) {
+        *self.trust.lock().expect("zazz trust lock") = Some((dir.to_path_buf(), policy.to_path_buf(), true));
+    }
+
+    // The trust directory and whether its ownership is checked: /etc/zazzle/trust.d, checked, by default.
+    pub fn trust_dir(&self) -> (PathBuf, bool) {
+        match self.trust.lock().expect("zazz trust lock").clone() {
+            Some((d, _, check)) => (d, check),
+            None => (PathBuf::from(trust::SYSTEM_TRUST_DIR), true),
+        }
+    }
+
+    // The global policy file and whether its ownership is checked: /etc/zazzle/policy.json, checked, by default.
+    pub fn policy_path(&self) -> (PathBuf, bool) {
+        match self.trust.lock().expect("zazz trust lock").clone() {
+            Some((_, p, check)) => (p, check),
+            None => (PathBuf::from(trust::SYSTEM_POLICY), true),
+        }
+    }
+
+    // Uses a fixed directory for signing keys.
+    pub fn set_keys_dir(&self, dir: &Path) {
+        *self.keys.lock().expect("zazz keys lock") = Some(dir.to_path_buf());
+    }
+
+    // The directory of signing keys and certificates: ~/.zazzle/keys.
+    pub fn keys_dir(&self) -> PathBuf {
+        let fixed = self.keys.lock().expect("zazz keys lock").clone();
+        fixed.unwrap_or_else(|| {
+            crate::util::home_path(None, std::env::var_os("HOME"), ".zazzle/keys")
+                .unwrap_or_else(|_| PathBuf::from(".zazzle/keys"))
+        })
     }
 
     // Opens the registry.
@@ -131,6 +180,9 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Result<Output, String> {
         },
         "new" => Ok(reply(setup::new(&ctx.cwd, rest))),
         "doctor" => Ok(reply(Ok(setup::doctor(z)))),
+        "keygen" => Ok(reply(signing::keygen(z, rest))),
+        "sign" => Ok(reply(signing::sign(z, &ctx.cwd, rest))),
+        "trust" => Ok(reply(signing::trust_cmd(z, &ctx.cwd, rest))),
         "install" => Ok(install::install(z, &ctx.cwd, rest)),
         "uninstall" => Ok(install::uninstall(z, rest)),
         "list" => Ok(install::list(z)),
