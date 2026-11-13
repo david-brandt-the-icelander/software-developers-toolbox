@@ -11,7 +11,7 @@
       "type": "defect",
       "priority": "high",
       "expected": "A tool call with an argument of the wrong JSON type (for example \"limit\": \"10\" or \"what\": 5), a malformed changed_since cursor, or an I/O error while reading a file is answered with an isError result and logged, and the session goes on.",
-      "observed": "Args.Str, Args.Int and Args.Bool call GetValue, which throws InvalidOperationException for a value of another JSON type; ChangedSinceTool parses cursor generations with long.Parse. These exceptions pass through McpServer.CallTool and Handle: in process they end serve; in the daemon, DaemonServer.Serve does not catch them either, so the connection closes and the client's server goes away.",
+      "observed": "Args.Str, Args.Int and Args.Bool call GetValue, which throws InvalidOperationException for a value of another JSON type; ChangedSinceTool parses cursor generations with long.Parse. These exceptions pass through McpServer.CallTool and Handle: in process they end serve; in the daemon, DaemonServer.Serve does not catch them either, so the connection closes and zazzled reports that the indexer closed the connection.",
       "reproduction": [
         "Construct McpServer with no roots and UsageLog(null).",
         "Call Handle with {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"report_gap\",\"arguments\":{\"what\":5}}}.",

@@ -7,7 +7,7 @@
     {
       "id": "usage-log",
       "title": "Usage log",
-      "summary": "One JSON line per MCP tool call and per hook decision that blocked or let a raw command through, in usage.jsonl in the state directory.",
+      "summary": "One JSON line per internal tool call (made by zazzled) and per hook decision that blocked or let a raw command through, in usage.jsonl in the state directory.",
       "signalType": "event",
       "name": "usage.jsonl",
       "meaning": "What an agent asked, how the answer was produced and what it cost: the input zazzle-csharp-indexer report summarises to decide what to build next.",
@@ -15,15 +15,15 @@
       "dimensions": [
         "v: record version (1)",
         "ts: UTC time, ISO 8601",
-        "session: 8-hex id of the MCP session, or Claude Code's session_id for hook records",
+        "session: 8-hex id of the MCP session (zazzled opens one per call), or Claude Code's session_id for hook records",
         "tool: tool name, or hook",
         "args: argument names with numbers and booleans as given and strings as 12-hex SHA-256 prefixes; in arrays the first element and flags are kept",
-        "path: how the answer was produced (index, scan, fallback:rg, fallback:git-grep, run:<program>, view, hook)",
-        "reason: why, when not plainly from the index (index_cold, regex_unsupported, passthrough, git, unchanged_since_last_read, gap_report, blocked:<program>, allowed_raw:<program>)",
+        "path: how the answer was produced (index, run:git, view, hook; scan, fallback:<engine> and run:<program> in records from earlier versions)",
+        "reason: why, when not plainly from the index (git, gap_report, blocked:<program>, allowed_raw:<program>; earlier versions also wrote index_cold, regex_unsupported, passthrough and unchanged_since_last_read)",
         "ms: duration",
         "bytes_out and est_tokens (bytes / 4) of the answer",
         "results, truncated, candidates, files: what the tool reported (candidates and files are -1 when the tool does not count them)",
-        "note: report_gap text, cut to 500 characters",
+        "note: report_gap text (from zazzle_report_gap), cut to 500 characters",
         "error: the tool's error code, or null"
       ],
       "access": "The user who owns the state directory; nothing is sent anywhere.",

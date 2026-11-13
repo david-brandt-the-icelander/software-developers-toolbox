@@ -8,7 +8,7 @@ description: Read, search, outline and edit files with the `zazzle` tool (or its
 Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`.
 
 ## Use
-- MCP (best, no process spawn): add the server `zazzled mcp`; tools `zazzle_find`, `zazzle_read`, `zazzle_ls`, `zazzle_outline`, `zazzle_refs`, `zazzle_edit`.
+- MCP (best, no process spawn): add the server `zazzled mcp`; tools `zazzle_find`, `zazzle_read`, `zazzle_ls`, `zazzle_outline`, `zazzle_refs`, `zazzle_edit`, and from the C# indexer `zazzle_overview`, `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`, `zazzle_report_gap`.
 - CLI: `zazzle find|read|ls|outline|refs|edit ...`; run `zazzle help` for flags. Set `ZAZZLE_SESSION=<any stable id>` in the shell so repeats are deduplicated.
 - Locate first, read second: `zazzle outline FILE` (ranges per symbol), `zazzle find PATTERN`, `zazzle refs SYMBOL` (definitions first, each use shows its enclosing symbol), then `zazzle read FILE:A-B`, or read one symbol with its doc comments directly: `zazzle read FILE --symbol Type.method` (overloads by parameter types, `Type.method(int, string)`, which stay right when code moves, or `#N`; a miss lists the candidates).
 - A reply starting `[r:ID]` was sent to you. A later `[r:ID] already sent: ...` means that content is still in your context; do not request it again. If you no longer have it (dropped or compacted), `zazzle read-again r:ID` (MCP `zazzle_read_again`) returns it exactly, or the current version if it changed; keep ids in your notes instead of content. `clean`, `run` and proxied outputs carry `[r:ID]` too and are kept for an hour; when a reply says something was cut, `zazzle read-again r:ID --full --lines A-B` gives the uncut lines.
@@ -19,6 +19,7 @@ Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`
 
 - Python, TypeScript and Dart files read as a terse view too, without a sha: imports, logging, region markers, field-only constructors and log-and-rethrow catches are hidden; read `--source` before editing.
 - HTML and Razor files (`.html`, `.cshtml`, `.razor`) read as a terse view too, without a sha: long comments, `<style>`, `<svg>`, head tags and `@using` runs are hidden and long `class`/`style` values cut; read `--source` before editing.
+- Structure from `zazzle-csharp-indexer`'s index of the git work tree: `zazzle overview` on an unfamiliar repository, `zazzle find-symbol NAME` for where something is declared, `zazzle changed-since [CURSOR]` to refresh after edits, `zazzle git-log [PATH]`, `zazzle git-blame FILE --start A --end B`. Say what you needed and could not get with `zazzle report-gap TEXT`.
 - C# files read as a terse behavioural view with source line numbers and no sha (`N~` lines are changed, `A-B ⋯` lines are hidden, long locals have short names); use it to understand code, and `zazzle read FILE --source` before editing.
 
 ## Edit

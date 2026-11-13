@@ -1,9 +1,9 @@
-// The refs command: where a symbol is defined and used, definitions first, with the enclosing symbol of each use.
-use super::find::{build_regex, search_all, FileResult, Plan};
+// The refs command: where a symbol is defined and used, definitions first, with the enclosing symbol of each use; C# hits in comments and strings are dropped.
+use super::find::{build_regex, search_all, FileResult, Hit, Plan};
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
-use crate::outline::{enclosing, Symbol};
+use crate::outline::{csharp_identifier_lines, enclosing, lang_of, Lang, Symbol};
 use crate::pool::{cpus, par_map};
 use crate::util::{clip, display, resolve, MAX_LINE};
 use crate::walk::{self, WalkOpts};
@@ -37,14 +37,14 @@ struct FileRefs {
 
 // Splits a file's hits into definitions (declaration lines) and plain uses.
 fn classify(
-    file: &FileResult,
+    hits: &[&Hit],
     data: &[u8],
     starts: &[u32],
     syms: &[Symbol],
     name: &str,
 ) -> (Vec<Symbol>, Vec<Occurrence>) {
     let (mut defs, mut uses) = (Vec::new(), Vec::new());
-    for h in &file.hits {
+    for h in hits {
         if let Some(d) = syms.iter().find(|s| s.start == h.line && declares(s, name)) {
             defs.push(d.clone());
             continue;
@@ -56,11 +56,21 @@ fn classify(
     (defs, uses)
 }
 
-// Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read.
-fn file_refs(engine: &Engine, path: &Path, hits: &FileResult, name: &str, cwd: &Path) -> Option<FileRefs> {
+// Drops the hits of a C# file that are only in comments or strings, keeping lines that use the name as an identifier.
+fn code_hits<'a>(path: &Path, data: &[u8], name: &str, file: &'a FileResult) -> Vec<&'a Hit> {
+    let lines = (lang_of(path) == Lang::CSharp).then(|| csharp_identifier_lines(data, name)).flatten();
+    file.hits.iter().filter(|h| lines.as_ref().is_none_or(|l| l.binary_search(&h.line).is_ok())).collect()
+}
+
+// Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read or has none left.
+fn file_refs(engine: &Engine, path: &Path, file: &FileResult, name: &str, cwd: &Path) -> Option<FileRefs> {
     let loaded = engine.load(path).ok()?;
+    let hits = code_hits(path, &loaded.data, name, file);
+    if hits.is_empty() {
+        return None;
+    }
     let syms = engine.outline(path, &loaded);
-    let (defs, uses) = classify(hits, &loaded.data, &loaded.meta.starts, &syms, name);
+    let (defs, uses) = classify(&hits, &loaded.data, &loaded.meta.starts, &syms, name);
     Some(FileRefs { path: display(path, cwd), rank: crate::util::rank(path), defs, uses })
 }
 
@@ -213,6 +223,23 @@ mod tests {
         let t = project();
         let o = run_cmd(t.path(), &["refs", "parse", "-u"]);
         assert_eq!(o.status, 0);
+    }
+
+    // Checks C# mentions in comments and strings are not references, and a file with only those is left out.
+    #[test]
+    fn test_refs_csharp_skips_comments_and_strings() {
+        let t = TempDir::new();
+        t.write(
+            "W.cs",
+            b"// Widget is documented here\npublic class Widget\n{\n    string Label = \"Widget label\";\n    void Use(Widget w) { }\n}\n",
+        );
+        t.write("Doc.cs", b"/* Widget */\nclass Other { string s = \"Widget\"; }\n");
+        t.write("notes.txt", b"Widget\n");
+        let o = run_cmd(t.path(), &["refs", "Widget"]).text;
+        assert_eq!(
+            o,
+            "defs\nW.cs:2-6 class Widget\nrefs\nW.cs\n5 [Use]     void Use(Widget w) { }\nnotes.txt\n1 Widget\n-- 1 defs, 2 refs in 2 files (3 searched)"
+        );
     }
 
     // Checks symbols that are only used, never defined, list just references.

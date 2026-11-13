@@ -72,7 +72,7 @@
       "id": "no-symlinks",
       "title": "Symbolic links are not indexed",
       "summary": "A path that is a symbolic link is skipped by reconcile and removed by analysis, even when git tracks it.",
-      "impact": "Files reached through a symlink are absent from find_files, outline, search and the other index-backed tools.",
+      "impact": "Files reached through a symlink are absent from overview, find_symbol and changed_since.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -89,7 +89,7 @@
       "id": "large-files",
       "title": "Files over 16 MiB are listed but not analysed",
       "summary": "A file larger than Engine.MaxIndexBytes gets a file record with blob id 0 and no analysis.",
-      "impact": "It appears in find_files and as \"large file\" in a directory outline, but has no symbols, identifiers or Bloom filter.",
+      "impact": "It counts in overview's file total, but has no symbols and no line count.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -99,10 +99,6 @@
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
           "symbol": "RootIndex.Analyze"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.OutlineDir"
         }
       ]
     }

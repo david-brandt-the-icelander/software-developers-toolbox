@@ -30,11 +30,11 @@ impl Backend for DaemonBackend {
 }
 
 // One exposed tool: how it is described and how its arguments become a command line.
-struct Tool {
-    name: &'static str,
-    description: &'static str,
-    schema: fn() -> Value,
-    map: fn(&Value) -> Result<Vec<String>, String>,
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) schema: fn() -> Value,
+    pub(crate) map: fn(&Value) -> Result<Vec<String>, String>,
 }
 
 const TOOLS: &[Tool] = &[
@@ -78,7 +78,7 @@ const TOOLS: &[Tool] = &[
 ];
 
 // Builds a JSON schema object from properties and required names.
-fn object(props: Value, required: &[&str]) -> Value {
+pub(crate) fn object(props: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": props, "required": required})
 }
 
@@ -180,7 +180,7 @@ fn edit_schema() -> Value {
 }
 
 // Reads an optional string argument.
-fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
+pub(crate) fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -189,7 +189,7 @@ fn get_str(v: &Value, key: &str) -> Result<Option<String>, String> {
 }
 
 // Reads a required string argument.
-fn need_str(v: &Value, key: &str) -> Result<String, String> {
+pub(crate) fn need_str(v: &Value, key: &str) -> Result<String, String> {
     get_str(v, key)?.ok_or_else(|| format!("'{key}' is required"))
 }
 
@@ -208,7 +208,7 @@ fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
 }
 
 // Pushes a boolean flag when the argument is true.
-fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
+pub(crate) fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(()),
         Some(Value::Bool(true)) => {
@@ -220,7 +220,7 @@ fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<
 }
 
 // Pushes a numeric option when the argument is present.
-fn push_num(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
+pub(crate) fn push_num(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(()),
         Some(n) => {
@@ -383,10 +383,14 @@ fn initialize(params: &Value) -> Value {
     })
 }
 
+// Every exposed tool: the file tools here, then the structure tools answered by zazzle-csharp-indexer.
+fn all_tools() -> impl Iterator<Item = &'static Tool> {
+    TOOLS.iter().chain(crate::mcp_structure::TOOLS)
+}
+
 // Lists the tools with their schemas.
 fn list_tools() -> Value {
-    let tools: Vec<Value> = TOOLS
-        .iter()
+    let tools: Vec<Value> = all_tools()
         .map(|t| json!({"name": t.name, "description": t.description, "inputSchema": (t.schema)()}))
         .collect();
     json!({"tools": tools})
@@ -400,7 +404,7 @@ fn tool_result(text: &str, is_error: bool) -> Value {
 // Runs a tool call and returns its result, or a protocol error for an unknown tool.
 fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-    let Some(tool) = TOOLS.iter().find(|t| t.name == name) else {
+    let Some(tool) = all_tools().find(|t| t.name == name) else {
         return Err(format!("unknown tool '{name}'"));
     };
     let empty = json!({});
@@ -818,6 +822,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 7);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 13);
     }
 }

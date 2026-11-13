@@ -96,39 +96,6 @@
       ]
     },
     {
-      "id": "barrier",
-      "title": "Re-check touched files before answering",
-      "summary": "Before search and find_references answer, the index applies queued events and re-stats every file the query will look at, so an edit made a moment ago is seen even if its event has not arrived.",
-      "status": "accepted",
-      "context": "Change events arrive with a delay (debounce, FSEvents latency); an agent that has just edited a file and searches for the edit must find it.",
-      "decision": "RootIndex.Barrier drains the event queue and re-analyses each given path whose stat key changed, in parallel. search and find_references call it with the files their glob selects; outline re-checks the one file it outlines (Freshen); changed_since runs a full reconcile (Sync) instead.",
-      "rationale": "A stat per candidate file is cheap next to a stale answer.",
-      "origin": "README.md, How it works (moved here).",
-      "evidenceStatus": "source-verified",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Index/RootIndex.cs",
-          "symbol": "RootIndex.Barrier"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.Candidates"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-          "symbol": "FindReferencesTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
-          "symbol": "ChangedSinceTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/tests/SearchIndexTests.cs",
-          "symbol": "test_search_uses_index_and_sees_fresh_edit"
-        }
-      ]
-    },
-    {
       "id": "change-log",
       "title": "Number every change with a generation",
       "summary": "Each add, modify or delete bumps the root's generation and is appended to an in-memory change log, which changed_since reads.",

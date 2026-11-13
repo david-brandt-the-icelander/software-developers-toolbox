@@ -21,8 +21,8 @@
   "entities": [
     {
       "id": "wire-into-project",
-      "name": "Wire zazzle and zazzle-csharp-indexer into a project",
-      "description": "A developer makes Claude Code start zazzle and zazzle-csharp-indexer for a project and redirect raw search and read calls to zazzle.",
+      "name": "Wire zazzle and the redirect hook into a project",
+      "description": "A developer makes Claude Code start zazzle for a project and redirect raw search and read calls to it.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
@@ -38,13 +38,13 @@
         }
       ],
       "actor": "Developer",
-      "goal": "Have the coding agent use zazzle for files and zazzle-csharp-indexer for C# structure in this project without further setup.",
+      "goal": "Have the coding agent use zazzle for files and for C# structure, which zazzle gets from zazzle-csharp-indexer, in this project without further setup.",
       "preconditions": [
         "zazzle-csharp-indexer is installed on the developer's machine, and zazzled beside it or on PATH.",
         "The developer is in the project directory, or names it with --dir."
       ],
       "postconditions": [
-        "The project's .mcp.json starts zazzle-csharp-indexer serve and zazzled mcp over stdio, and .claude/settings.json enables both servers, allows their tools and runs zazzle-csharp-indexer hook before Bash, Grep, Glob and Read calls.",
+        "The project's .mcp.json starts zazzled mcp over stdio and no longer names zazzle-csharp-indexer, and .claude/settings.json enables the zazzle server, allows its tools and runs zazzle-csharp-indexer hook before Bash, Grep, Glob and Read calls.",
         "Other settings in both files are unchanged."
       ],
       "flow": [
@@ -64,7 +64,7 @@
         {
           "id": "write-mcp",
           "actor": "zazzle-csharp-indexer",
-          "action": "Looks for zazzled beside its own executable, then on PATH, and merges the zazzle-csharp-indexer stdio server (this binary's path, serve) and the zazzle stdio server (zazzled's path, mcp) into .mcp.json.",
+          "action": "Looks for zazzled beside its own executable, then on PATH, merges the zazzle stdio server (zazzled's path, mcp) into .mcp.json and removes a zazzle-csharp-indexer server an earlier init wrote.",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
@@ -80,7 +80,7 @@
         {
           "id": "write-settings",
           "actor": "zazzle-csharp-indexer",
-          "action": "Replaces any earlier zazzle-csharp-indexer hook entry with one for Bash|Grep|Glob|Read, and adds the mcp__zazzle-csharp-indexer and mcp__zazzle permissions and both enabled servers to .claude/settings.json.",
+          "action": "Replaces any earlier zazzle-csharp-indexer hook entry with one for Bash|Grep|Glob|Read, adds the mcp__zazzle permission and enabled server to .claude/settings.json, and removes the indexer's own.",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
@@ -92,7 +92,7 @@
         {
           "id": "print-snippet",
           "actor": "zazzle-csharp-indexer",
-          "action": "Prints what it did, one line per file, and a snippet for AGENTS.md or CLAUDE.md telling agents to read, search, list and edit through the zazzle server's tools, that C# files read as a terse view, that [r:ID] replies come back with zazzle_read_again, and to ask zazzle-csharp-indexer for C# structure and git history.",
+          "action": "Prints what it did, one line per file, and a snippet for AGENTS.md or CLAUDE.md telling agents to read, search, list and edit through the zazzle server's tools, that C# files read as a terse view, that [r:ID] replies come back with zazzle_read_again, to ask zazzle for C# structure and git history (zazzle_overview, zazzle_find_symbol, zazzle_refs, zazzle_changed_since, zazzle_git_log, zazzle_git_blame) and to report gaps with zazzle_report_gap.",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
@@ -123,7 +123,7 @@
         {
           "atStep": "write-mcp",
           "condition": "No zazzled beside the indexer or on PATH.",
-          "outcome": "init writes no zazzle server, permission or enabled server, and its first line of output says to install zazzle and run init again; the indexer's server and the hook are written as usual (backlog.json, hook-without-zazzle).",
+          "outcome": "init writes no zazzle server, permission or enabled server, and its first line of output says to install zazzle and run init again; the hook is written as usual (backlog.json, hook-without-zazzle).",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs",
@@ -237,7 +237,7 @@
         {
           "id": "use-tool",
           "actor": "Coding agent",
-          "action": "Calls the named zazzle tool instead, through the zazzle MCP server (see zazzled's MCP use case), or the indexer's find_symbol or find_references for C# declarations and uses.",
+          "action": "Calls the named zazzle tool instead, through the zazzle MCP server (see zazzled's MCP use case), or zazzle_find_symbol or zazzle_refs for C# declarations and uses.",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs",
@@ -344,7 +344,7 @@
         {
           "id": "summarise",
           "actor": "zazzle-csharp-indexer",
-          "action": "Prints calls and sessions, per-tool counts, timings, tokens, truncations and errors, how answers were produced and why not from the index, search selectivity, run commands (program and flags), redirected raw commands, waste signals (retries, repeats, unchanged reads), errors and the latest 20 gap reports.",
+          "action": "Prints calls and sessions, per-tool counts, timings, tokens, truncations and errors, how answers were produced and why not from the index, redirected raw commands, waste signals (retries, repeats), errors and the latest 20 gap reports.",
           "sources": [
             {
               "path": "macos/dotnet/zazzle-csharp-indexer/src/Cli/Report.cs",
@@ -385,7 +385,7 @@
       "kind": "use-case",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/use-case.json",
-      "relationship": "For C# declarations and uses, the redirect message sends the agent to the indexer's find_symbol and find_references."
+      "relationship": "For C# declarations and uses, the redirect message sends the agent to zazzle_find_symbol and zazzle_refs, which zazzle answers with the indexer's help."
     },
     {
       "kind": "feature",

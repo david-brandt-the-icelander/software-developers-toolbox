@@ -7,14 +7,14 @@
     {
       "id": "init-files",
       "title": "What init writes into a project",
-      "summary": "init merges the indexer's stdio server, and zazzle's when zazzled is installed, into .mcp.json, and a PreToolUse hook, their permissions and enabled servers into .claude/settings.json, keeping every other key.",
+      "summary": "init merges zazzle's stdio server, when zazzled is installed, into .mcp.json, and a PreToolUse hook, zazzle's permission and enabled server into .claude/settings.json, removes the indexer's own server, permission and enabled server left by an earlier init, and keeps every other key.",
       "contractType": "file-format",
       "consumers": [
         "Claude Code, the coding agent's harness, which reads the project's .mcp.json and .claude/settings.json"
       ],
-      "definition": ".mcp.json: mcpServers.zazzle-csharp-indexer = {type: \"stdio\", command: <path of the running zazzle-csharp-indexer>, args: [\"serve\"]}, and, when zazzled is found beside that binary or else on PATH, mcpServers.zazzle = {type: \"stdio\", command: <path of zazzled>, args: [\"mcp\"]}. .claude/settings.json: hooks.PreToolUse gets {matcher: \"Bash|Grep|Glob|Read\", hooks: [{type: \"command\", command: \"<path> hook\"}]} after any earlier entry whose command contains zazzle-csharp-indexer and ends in \" hook\" is removed; permissions.allow contains \"mcp__zazzle-csharp-indexer\", and \"mcp__zazzle\" when zazzled was found; enabledMcpjsonServers contains \"zazzle-csharp-indexer\", and \"zazzle\" when zazzled was found. Files are written as indented JSON with a final newline, creating .claude/ if needed. Without zazzled, init writes everything else and its first output line says to install zazzle and run init again.",
+      "definition": ".mcp.json: mcpServers.zazzle-csharp-indexer is removed (the indexer lists no tools), and, when zazzled is found beside the running zazzle-csharp-indexer or else on PATH, mcpServers.zazzle = {type: \"stdio\", command: <path of zazzled>, args: [\"mcp\"]}. .claude/settings.json: hooks.PreToolUse gets {matcher: \"Bash|Grep|Glob|Read\", hooks: [{type: \"command\", command: \"<path> hook\"}]} after any earlier entry whose command contains zazzle-csharp-indexer and ends in \" hook\" is removed; permissions.allow loses \"mcp__zazzle-csharp-indexer\" and contains \"mcp__zazzle\" when zazzled was found; enabledMcpjsonServers loses \"zazzle-csharp-indexer\" and contains \"zazzle\" when zazzled was found. Files are written as indented JSON with a final newline, creating .claude/ if needed. Without zazzled, init writes everything else and its first output line says to install zazzle and run init again.",
       "guarantees": [
-        "Running init twice leaves one zazzle-csharp-indexer server, one zazzle server, one zazzle-csharp-indexer hook entry and no duplicate permission or enabled server.",
+        "Running init twice leaves no zazzle-csharp-indexer server, one zazzle server, one zazzle-csharp-indexer hook entry and no duplicate permission or enabled server.",
         "Unrelated keys and entries in both files are kept.",
         "A zazzle server entry written by an earlier init stays when zazzled is no longer found; init only adds or replaces it."
       ],
@@ -62,7 +62,7 @@
       "consumers": [
         "Claude Code's PreToolUse hook, configured by init"
       ],
-      "definition": "Input fields read: tool_name, tool_input.command (Bash), tool_input.file_path (Read) and session_id. Exit 0 and no output to allow; exit 2 and a message on standard error to block. The message names the zazzle tool to use instead, as an MCP tool and as a zazzle command: zazzle_find for searches (with the indexer's find_symbol and find_references for C# declarations and uses), zazzle_ls for listings, zazzle_read for reads, saying that C# files come as a terse view and that source=true gives the code and the sha edits need. For Bash, Grep and Glob it adds the # allow-raw escape.",
+      "definition": "Input fields read: tool_name, tool_input.command (Bash), tool_input.file_path (Read) and session_id. Exit 0 and no output to allow; exit 2 and a message on standard error to block. The message names the zazzle tool to use instead, as an MCP tool and as a zazzle command: zazzle_find for searches (with zazzle_find_symbol for C# declarations and zazzle_refs for uses), zazzle_ls for listings, zazzle_read for reads, saying that C# files come as a terse view and that source=true gives the code and the sha edits need. For Bash, Grep and Glob it adds the # allow-raw escape.",
       "guarantees": [
         "Grep and Glob calls are always blocked; Bash commands are blocked when a pipeline segment runs a searcher (grep, egrep, fgrep, rg, ag, ack, zgrep, git grep), find without an action that modifies or executes, a file reader (cat, head, tail, less, more, bat, nl) on a file without redirection (tail -f excepted), or sed -n without -i on a file.",
         "A Read call is blocked when its file_path ends in .cs, in any letter case, and allowed otherwise; a blocked Read has no escape but ZAZZLE_INDEXER_HOOK=off.",

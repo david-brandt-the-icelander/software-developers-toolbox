@@ -7,8 +7,6 @@ namespace ZazzleIndexer.Tools;
 public sealed class GitLogTool(RootSet roots) : ITool
 {
     public string Name => "git_log";
-    public string Description => "Recent commits as 'hash date author subject', optionally for one path (root:path), with an optional message filter. Replaces git log.";
-    public JsonNode Schema => Args.Schema([], ("path", "string", "root:path to limit history"), ("root", "string", "Root when no path is given"), ("n", "integer", "Number of commits (default 20)"), ("grep", "string", "Only commits whose message matches"));
 
     // Runs git log with a compact format.
     public string Run(JsonNode? args, CallInfo info)
@@ -33,8 +31,6 @@ public sealed class GitLogTool(RootSet roots) : ITool
 public sealed class GitBlameTool(RootSet roots) : ITool
 {
     public string Name => "git_blame";
-    public string Description => "Who last changed each line of a range: 'hash author date line text'. Replaces git blame.";
-    public JsonNode Schema => Args.Schema(["path"], ("path", "string", "root:path"), ("start_line", "integer", "First line (default 1)"), ("end_line", "integer", "Last line (default start+39)"));
 
     // Runs git blame for the range.
     public string Run(JsonNode? args, CallInfo info)

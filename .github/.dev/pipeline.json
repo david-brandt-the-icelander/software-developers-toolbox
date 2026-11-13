@@ -15,7 +15,7 @@
         "msrv (Linux): cargo check --workspace with Rust 1.85, the workspace's rust-version",
         "zazzle-c (macOS and Linux): build zazzled, then make, make unit and test/smoke.sh for the C invoker",
         "coverage (Linux, nightly): agent-fs and fix-network fail below 95% of lines and of branches; zazzled/coverage.sh 95; make coverage for the C invoker",
-        "dotnet (macOS and Linux): dotnet test tests, dotnet publish, and a smoke run of zazzle-csharp-indexer serve (initialize and the overview tool) and zazzle-csharp-indexer report"
+        "dotnet (macOS and Linux): dotnet test tests, dotnet publish, and a smoke run of zazzle-csharp-indexer serve (initialize, an empty tools/list and the overview tool called by name) and zazzle-csharp-indexer report"
       ],
       "blocks": "Nothing on its own: whether main waits for it is set in the repository's rules on GitHub, outside this repository.",
       "notChecked": [

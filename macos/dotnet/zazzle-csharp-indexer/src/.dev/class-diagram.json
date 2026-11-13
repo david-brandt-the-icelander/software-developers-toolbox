@@ -67,11 +67,10 @@
         "List<FileEntry> LoadFiles(int rootId)",
         "void UpsertFile(int rootId, FileEntry e)",
         "void DeleteFile(int rootId, string path)",
-        "int InsertBlob(string oid, long size, bool binary, string lang, int lines, byte[] bloom, string digest, string? symbols, string? idents)",
+        "int InsertBlob(string oid, long size, bool binary, string lang, int lines, string digest, string? symbols)",
         "List<BlobMeta> LoadBlobs()",
         "List<(int id, string json)> AllSymbols()",
         "string? Symbols(int blobId)",
-        "string? Idents(int blobId)",
         "int CollectGarbage()"
       ]
     },
@@ -87,7 +86,6 @@
         "string Path",
         "RootIndex Index",
         "static Root Parse(string spec, Engine engine)",
-        "List<string> Listing(CallInfo info)",
         "string? Resolve(string relative)",
         "static string Decode(byte[] bytes)"
       ]

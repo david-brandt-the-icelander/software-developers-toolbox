@@ -3,19 +3,11 @@
   "kind": "component",
   "title": "zazzle-csharp-indexer content analysis component diagram",
   "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis",
-  "description": "From bytes to stored blob facts, and the literal extraction that lets search use the Bloom filters. Everything here is a static function of its input.",
+  "description": "From bytes to stored blob facts. Everything here is a static function of its input.",
   "sources": [
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/BlobAnalyzer.cs",
       "symbol": "BlobAnalyzer.Analyze"
-    },
-    {
-      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/Bloom.cs",
-      "symbol": "Bloom"
-    },
-    {
-      "path": "macos/dotnet/zazzle-csharp-indexer/src/Analysis/RegexLiterals.cs",
-      "symbol": "RegexLiterals.Required"
     },
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/zazzle-csharp-indexer.csproj",
@@ -32,37 +24,25 @@
     {
       "id": "blob-analyzer",
       "name": "Blob analyser (BlobAnalyzer.cs)",
-      "responsibility": "Git blob id, language from the extension, binary test (a NUL in the first 8 KiB), line count, digest; calls the filter and the extractors.",
-      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
-    },
-    {
-      "id": "bloom",
-      "name": "Trigram Bloom filter (Bloom.cs)",
-      "responsibility": "Builds a per-blob filter of ASCII-lowercased byte trigrams and tests whether all of a query's trigrams may be present.",
+      "responsibility": "Git blob id, language from the extension, binary test (a NUL in the first 8 KiB), line count, digest; calls the extractors.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
     },
     {
       "id": "csharp",
       "name": "C# extractor (CSharpSymbols.cs)",
-      "responsibility": "Declarations and identifier tokens from a Roslyn syntax tree, without compiling.",
+      "responsibility": "Declarations from a Roslyn syntax tree, without compiling.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
     },
     {
       "id": "heuristic",
       "name": "Heuristic extractor (HeuristicSymbols.cs)",
-      "responsibility": "Per-line regex rules for Rust, Python, TypeScript/JavaScript, Go, Java, GDScript, shell, Markdown headings, Swift and C/C++, and word-based identifier tables for code languages.",
-      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
-    },
-    {
-      "id": "literals",
-      "name": "Regex literal extractor (RegexLiterals.cs)",
-      "responsibility": "The literal runs every match of a pattern must contain, conservatively: none when unsure.",
+      "responsibility": "Per-line regex rules for Rust, Python, TypeScript/JavaScript, Go, Java, GDScript, shell, Markdown headings, Swift and C/C++.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
     },
     {
       "id": "sym",
       "name": "Symbol format (Sym.cs)",
-      "responsibility": "The Sym record and the compact JSON stored for symbols and identifier occurrences.",
+      "responsibility": "The Sym record and the compact JSON stored for symbols.",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Analysis"
     },
     {
@@ -81,12 +61,6 @@
     },
     {
       "from": "analysis",
-      "to": "bloom",
-      "kind": "contains",
-      "description": "Search prefilter."
-    },
-    {
-      "from": "analysis",
       "to": "csharp",
       "kind": "contains",
       "description": "Exact extraction for .cs files."
@@ -99,21 +73,9 @@
     },
     {
       "from": "analysis",
-      "to": "literals",
-      "kind": "contains",
-      "description": "Query side of the prefilter."
-    },
-    {
-      "from": "analysis",
       "to": "sym",
       "kind": "contains",
       "description": "Stored symbol format."
-    },
-    {
-      "from": "blob-analyzer",
-      "to": "bloom",
-      "kind": "depends-on",
-      "description": "Builds the filter for every text blob."
     },
     {
       "from": "blob-analyzer",
@@ -131,7 +93,7 @@
       "from": "blob-analyzer",
       "to": "sym",
       "kind": "depends-on",
-      "description": "Serialises symbols and identifiers for the store."
+      "description": "Serialises symbols for the store."
     },
     {
       "from": "csharp",

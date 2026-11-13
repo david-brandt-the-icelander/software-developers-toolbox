@@ -3,7 +3,7 @@
   "kind": "deployment",
   "title": "zazzle / zazzled deployment diagram",
   "folder": "macos/rust/zazzled",
-  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads the daemon starts and talks to the zazzle-csharp-indexer daemon. The release tarballs ship zazzle and zazzled side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
+  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the zazzle-csharp-indexer daemon. The release tarballs ship zazzle and zazzled side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cli.rs",
@@ -128,8 +128,8 @@
       "id": "indexer",
       "name": "zazzle-csharp-indexer daemon process",
       "kind": "process",
-      "description": "The C# indexer's own daemon, listening on daemon.sock in its state directory; started detached by zazzled when a C# file is read and nothing listens.",
-      "condition": "C# reads, with zazzle-csharp-indexer installed"
+      "description": "The C# indexer's own daemon, listening on daemon.sock in its state directory; started detached by zazzled when a C# file is read or a structure command runs and nothing listens.",
+      "condition": "C# reads and structure commands, with zazzle-csharp-indexer installed"
     },
     {
       "id": "launchd",
@@ -178,7 +178,7 @@
     { "from": "zazzle", "to": "proxy", "kind": "connects-to", "description": "`zazzle proxy` replaces itself (exec) with `zazzled proxy`." },
     { "from": "mcp", "to": "daemon", "kind": "connects-to", "description": "Unix socket, relay mode: the request with its working directory; the status byte and text come back on the socket. When nothing listens, starts `zazzled serve` from its own executable and retries for up to 3 s." },
     { "from": "proxy", "to": "upstream-http", "kind": "connects-to", "description": "HTTP or HTTPS, one upstream request per client request, through one client shared by every connection." },
-    { "from": "daemon", "to": "indexer", "kind": "connects-to", "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call view. When nothing listens, starts `zazzle-csharp-indexer daemon` detached and waits up to 5 s." },
+    { "from": "daemon", "to": "indexer", "kind": "connects-to", "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call of view or a structure tool (overview, find_symbol, changed_since, git_log, git_blame, report_gap). When nothing listens, starts `zazzle-csharp-indexer daemon` detached and waits up to 5 s." },
     { "from": "launchd", "to": "daemon", "kind": "hosts", "description": "Starts `zazzled serve` on a connection and passes it the listening socket." },
     { "from": "daemon", "to": "outputs", "kind": "connects-to", "description": "clean saves its answer and input; read-again loads stored outputs, including those wrap and proxy saved." },
     { "from": "wrap", "to": "outputs", "kind": "connects-to", "description": "Saves each run's result and raw output, reaping old entries." },

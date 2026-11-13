@@ -1,26 +1,24 @@
-// The contract every MCP tool implements, plus shared argument helpers.
+// The contract every internal tool implements, plus shared argument helpers.
 using System.Text.Json.Nodes;
 
 namespace ZazzleIndexer.Tools;
 
-// A failure the agent should see as a tool error, with a short code for the log.
+// A failure the caller should see as a tool error, with a short code for the log.
 public sealed class ToolException(string code, string message) : Exception(message)
 {
     public string Code { get; } = code;
 }
 
-// One callable MCP tool.
+// One tool zazzled calls by name; clients are not shown it.
 public interface ITool
 {
     string Name { get; }
-    string Description { get; }
-    JsonNode Schema { get; }
 
     // Runs the tool and returns compact text; records its path and counts in info.
     string Run(JsonNode? args, CallInfo info);
 }
 
-// Argument and output helpers shared by tools.
+// Argument helpers shared by tools.
 public static class Args
 {
     // Reads a required string argument.
@@ -35,16 +33,4 @@ public static class Args
 
     // Reads an optional boolean argument with a default.
     public static bool Bool(JsonNode? a, string key, bool fallback) => a?[key]?.GetValue<bool>() ?? fallback;
-
-    // Builds an object schema from property name to JSON-schema type, with required names.
-    public static JsonNode Schema(string[] required, params (string name, string type, string doc)[] props)
-    {
-        var p = new JsonObject();
-        foreach (var (name, type, doc) in props)
-            p[name] = new JsonObject { ["type"] = type, ["description"] = doc };
-        var req = new JsonArray();
-        foreach (var r in required)
-            req.Add(r);
-        return new JsonObject { ["type"] = "object", ["properties"] = p, ["required"] = req };
-    }
 }

@@ -247,6 +247,22 @@
       ]
     },
     {
+      "id": "structure.Target",
+      "name": "Target",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/structure.rs"
+      ],
+      "members": [
+        "indexer: Indexer",
+        "root: PathBuf",
+        "cwd: PathBuf",
+        "locate(ctx) -> Result<Target, String>",
+        "relative(arg) -> Result<String, String>",
+        "ask(tool, args) -> Result<Output, String>"
+      ]
+    },
+    {
       "id": "clean.Kind",
       "name": "Kind",
       "kind": "enum",
@@ -342,6 +358,17 @@
       "members": [
         "find_iter(data)"
       ]
+    },
+    {
+      "id": "Indexer",
+      "name": "Indexer",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/indexer.rs"
+      ],
+      "members": [
+        "ask(root, tool, args) -> Result<String, String>"
+      ]
     }
   ],
   "relationships": [
@@ -428,6 +455,18 @@
       "to": "clean.Hit",
       "kind": "depends-on",
       "description": "grep output is parsed into hits before it is regrouped."
+    },
+    {
+      "from": "structure.Target",
+      "to": "Indexer",
+      "kind": "depends-on",
+      "description": "Calls the indexer's tool for the work tree."
+    },
+    {
+      "from": "structure.Target",
+      "to": "Output",
+      "kind": "depends-on",
+      "description": "Wraps the rewritten answer."
     }
   ]
 }

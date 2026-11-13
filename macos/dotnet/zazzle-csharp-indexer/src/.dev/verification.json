@@ -7,7 +7,7 @@
     {
       "id": "usage-log",
       "title": "Usage log records",
-      "summary": "A tool call writes a record that hides its pattern, and a gap report is stored in plain text.",
+      "summary": "A tool call writes a record that hides its free text, and a gap report is stored in plain text.",
       "subject": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/observability.json",
@@ -15,15 +15,15 @@
         }
       ],
       "criteria": [
-        "The server lists thirteen tools, and a search writes a record naming the tool without the pattern text",
+        "The server lists no tools, and a find_symbol called by name writes a record naming the tool without the name it was asked for",
         "report_gap's note appears in the log's note field"
       ],
       "checks": [
         {
           "type": "automated",
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/ToolTests.cs",
-          "symbol": "test_server_lists_tools_and_logs",
-          "command": "dotnet test tests --filter test_server_lists_tools_and_logs"
+          "symbol": "test_server_lists_no_tools_and_logs",
+          "command": "dotnet test tests --filter test_server_lists_no_tools_and_logs"
         },
         {
           "type": "automated",

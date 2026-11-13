@@ -105,7 +105,7 @@
       "title": "A developer's machine",
       "summary": "Where the indexer runs: installed with the zazzle Homebrew formula on macOS, or from a Linux tarball, then wired into each project with zazzle-csharp-indexer init.",
       "environment": "The developer's own Mac or Linux machine",
-      "purpose": "Runs serve, the daemon and the hook for the coding agent's sessions, and the daemon zazzled asks for terse C# views (deployment-diagram.json).",
+      "purpose": "Runs the daemon zazzled asks for terse C# views and structure, and the hook for the coding agent's sessions (deployment-diagram.json).",
       "promotedFrom": "homebrew",
       "deployedBy": "On macOS, brew install zazzcat/z/zazzle; on Linux, the developer extracts zazzle-linux-<arch>.tar.gz and puts the binaries on PATH. Then zazzle-csharp-indexer init in each project records the binary's absolute path (Environment.ProcessPath) in the project's settings, and the path of the zazzled it finds beside that binary or on PATH, which the formula and the Linux tarballs install alongside it.",
       "rollback": "Install an earlier release's binary at the same path. A daemon already running keeps the old code until it is idle for the idle period, or until a client of a different ToolVersion.Text makes an otherwise idle daemon stop; each release has its own ToolVersion.Text, taken from its tag (decisions.json, tool-version-source). The store survives: blobs from another extractor version are dropped and re-analysed.",

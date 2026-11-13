@@ -3,7 +3,7 @@
   "kind": "operation",
   "title": "zazzle command operations",
   "folder": "macos/rust/zazzled/src/cmd",
-  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzled mcp` (except clean and status), or in-process as `zazzled run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2.",
+  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzled mcp` (except clean and status; the structure commands' tools are named with underscores, zazzle_find_symbol for find-symbol), or in-process as `zazzled run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cmd/mod.rs",
@@ -136,7 +136,7 @@
     {
       "id": "refs",
       "name": "refs",
-      "description": "Where a symbol is defined and used.",
+      "description": "Where a symbol is defined and used; in C# files only where it is used as an identifier, not in comments or strings.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/cmd/refs.rs",
@@ -145,6 +145,14 @@
         {
           "path": "macos/rust/zazzled/src/mcp.rs",
           "symbol": "refs_args"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/refs.rs",
+          "symbol": "code_hits"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "csharp_identifier_lines"
         }
       ],
       "entrypoint": {
@@ -154,7 +162,7 @@
       "action": "query",
       "transport": "zazzle refs SYMBOL [PATH..] [-g GLOB] [-m N] [-u]; MCP tool zazzle_refs",
       "authorization": "Callers of the daemon's own uid; reads any file the user can read.",
-      "result": "`defs` (up to 20, with their ranges and kinds) then `refs` grouped by file, each use with its line, its enclosing symbol and the clipped line, at most 50 uses unless -m, with a footer; `no references to NAME in N files` when there are none.",
+      "result": "`defs` (up to 20, with their ranges and kinds) then `refs` grouped by file, each use with its line, its enclosing symbol and the clipped line, at most 50 uses unless -m, with a footer; `no references to NAME in N files` when there are none. In a .cs file, a line whose only mentions are in comments or strings is left out, and a file left with none is not listed.",
       "failures": [
         "No symbol: the usage line.",
         "A bad glob, or a path that does not exist."
@@ -193,6 +201,185 @@
         "The file changed between loading and writing: `file changed while editing; read it again`.",
         "--create on an existing file.",
         "A text of `-` with no standard input, or input that is not UTF-8."
+      ]
+    },
+    {
+      "id": "overview",
+      "name": "overview",
+      "description": "A compact map of the git work tree from zazzle-csharp-indexer's index; agents call it zazzle_overview.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "overview"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "overview_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "overview"
+      },
+      "action": "query",
+      "transport": "zazzle overview; MCP tool zazzle_overview",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "The indexer's overview of the work tree: `<root>: N files`, then languages, top directories, entry and project files, and the largest files.",
+      "failures": [
+        "Any argument: the usage line.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so.",
+        "The index is still building after 30 s: the indexer's index_cold error."
+      ]
+    },
+    {
+      "id": "find-symbol",
+      "name": "find-symbol",
+      "description": "Declarations by name from the indexer's index; agents call it zazzle_find_symbol.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "find_symbol"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "find_symbol_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "find_symbol"
+      },
+      "action": "query",
+      "transport": "zazzle find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]; MCP tool zazzle_find_symbol {name, exact?, kind?, limit?, offset?}",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "`path:line kind container.name | signature` per declaration, paths relative to the working directory, exact matches first, 30 by default, then a footer with the count or the next offset.",
+      "failures": [
+        "No name, or more than one: the usage line.",
+        "A number flag that is not a number: `--limit needs a number`.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
+      ]
+    },
+    {
+      "id": "changed-since",
+      "name": "changed-since",
+      "description": "Files added, modified or deleted in the work tree since a cursor; agents call it zazzle_changed_since.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "changed_since"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "changed_since_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "changed_since"
+      },
+      "action": "query",
+      "transport": "zazzle changed-since [CURSOR]; MCP tool zazzle_changed_since {cursor?}",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "Without a cursor, `cursor: ...`; with one, `A|M|D path` lines (relative to the working directory) and a new cursor. A cursor from an earlier run of the indexer's daemon is reported expired with a new one.",
+      "failures": [
+        "More than one cursor: the usage line.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
+      ]
+    },
+    {
+      "id": "git-log",
+      "name": "git-log",
+      "description": "Recent commits, optionally for one path and filtered by message; agents call it zazzle_git_log.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "git_log"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "git_log_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "git_log"
+      },
+      "action": "query",
+      "transport": "zazzle git-log [PATH] [-n N] [--grep TEXT]; MCP tool zazzle_git_log {path?, n?, grep?}",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "`hash date author subject` per commit, 20 by default.",
+      "failures": [
+        "A path outside the git work tree: `error: PATH: outside the git work tree`.",
+        "git fails: git's message.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
+      ]
+    },
+    {
+      "id": "git-blame",
+      "name": "git-blame",
+      "description": "Who last changed each line of a range of a file; agents call it zazzle_git_blame.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "git_blame"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "git_blame_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "git_blame"
+      },
+      "action": "query",
+      "transport": "zazzle git-blame PATH [--start N] [--end N]; MCP tool zazzle_git_blame {path, start_line?, end_line?}",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "git blame -w output for the range, 40 lines from --start by default.",
+      "failures": [
+        "No path: the usage line.",
+        "A path outside the git work tree: `error: PATH: outside the git work tree`.",
+        "git fails: git's message.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
+      ]
+    },
+    {
+      "id": "report-gap",
+      "name": "report-gap",
+      "description": "The agent's sentence on what it needed and could not get; agents call it zazzle_report_gap.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "report_gap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp_structure.rs",
+          "symbol": "report_gap_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/structure.rs",
+        "symbol": "report_gap"
+      },
+      "action": "command",
+      "transport": "zazzle report-gap TEXT; MCP tool zazzle_report_gap {what}",
+      "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
+      "result": "`recorded`, never deduplicated; the indexer stores the note in its usage log, where zazzle-csharp-indexer report lists it.",
+      "failures": [
+        "No text: the usage line.",
+        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
+        "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]
     },
     {
@@ -315,6 +502,12 @@
       "folder": "macos/rust/zazzled/src",
       "path": "macos/rust/zazzled/src/.dev/use-case.json",
       "relationship": "How an MCP client reaches these operations."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
+      "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "The indexer's internal tools the structure commands call."
     }
   ]
 }

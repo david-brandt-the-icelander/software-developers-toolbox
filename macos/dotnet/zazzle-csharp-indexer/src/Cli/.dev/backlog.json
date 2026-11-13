@@ -10,7 +10,7 @@
       "summary": "init installs the hook for Bash, Grep, Glob and Read and prints the zazzle snippet even when it found no zazzled, so agents are blocked and pointed at zazzle tools the project does not have.",
       "type": "defect",
       "priority": "medium",
-      "expected": "In a project where init did not register zazzle, a blocked call names something the agent can use (for example the indexer's own search, find_files and read tools), or init leaves out the redirects that only zazzle can answer, and the printed snippet does not name MCP tools that are not configured.",
+      "expected": "In a project where init did not register zazzle, init leaves out the redirects that only zazzle can answer (the indexer has no read or search tools of its own any more), and the printed snippet does not name MCP tools that are not configured.",
       "observed": "Init.Apply skips the zazzle server, its permission and its enabled-server entry when zazzled is null, but always writes the hook with matcher Bash|Grep|Glob|Read; HookPolicy's messages always name zazzle_find, zazzle_ls or zazzle_read and the zazzle command; Program prints Init.AgentsSnippet, which tells agents to use the zazzle server, either way. A Read of a .cs file is then refused with no escape but ZAZZLE_INDEXER_HOOK=off.",
       "reproduction": [
         "Run zazzle-csharp-indexer init in a project on a machine with no zazzled beside the indexer or on PATH.",

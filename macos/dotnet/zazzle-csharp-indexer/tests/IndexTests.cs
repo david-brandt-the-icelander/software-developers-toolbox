@@ -62,17 +62,6 @@ public class IndexTests
     }
 
     [Fact]
-    // Freshen re-analyses just the asked file when its stat key changed.
-    public void test_freshen_detects_edit()
-    {
-        using var repo = new TempRepo(Files);
-        var idx = repo.Root().Index;
-        var old = idx.Get("a.txt")!.BlobId;
-        File.WriteAllText(Path.Combine(repo.Dir, "a.txt"), "different content\n");
-        Assert.NotEqual(old, idx.Freshen("a.txt")!.BlobId);
-    }
-
-    [Fact]
     // Stored file records survive a restart and unchanged files are not re-analysed.
     public void test_state_persists_across_restart()
     {

@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzled component diagram",
   "folder": "macos/rust/zazzled",
-  "description": "The zazzled crate and what crosses its boundary: the C invoker and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views, and as the MCP proxy talks to other MCP servers. The crate's parts are in the src/ diagram.",
+  "description": "The zazzled crate and what crosses its boundary: the C invoker and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. The crate's parts are in the src/ diagram.",
   "sources": [
     {
       "path": "macos/rust/zazzled/Cargo.toml",
@@ -50,7 +50,7 @@
     {
       "id": "csharp-indexer",
       "name": "zazzle-csharp-indexer",
-      "responsibility": "The C# tool whose daemon renders the terse view of a C# file.",
+      "responsibility": "The C# tool whose daemon renders the terse view of a C# file and answers the structure tools; it lists no tools of its own.",
       "folder": "macos/dotnet/zazzle-csharp-indexer",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
     },
@@ -103,7 +103,7 @@
       "from": "src",
       "to": "csharp-indexer",
       "kind": "depends-on",
-      "description": "Starts its daemon when needed and asks its `view` tool over the daemon's socket."
+      "description": "Starts its daemon when needed and asks its `view` and structure tools over the daemon's socket."
     },
     {
       "from": "src",

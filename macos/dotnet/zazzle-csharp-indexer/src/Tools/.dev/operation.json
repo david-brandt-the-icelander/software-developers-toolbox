@@ -1,9 +1,9 @@
 {
   "$schema": "../../../../../../Meta/Agents/Skills/describe-operation/schema.json",
   "kind": "operation",
-  "title": "zazzle-csharp-indexer MCP tools",
+  "title": "zazzle-csharp-indexer internal tools",
   "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
-  "description": "The tools an MCP client can call with tools/call. Paths are root:relative/path; with one root the prefix may be left out. No tool checks who is calling: the stdio server answers whoever started it, and the daemon socket can only be opened by its owner.",
+  "description": "The tools zazzled calls by name with tools/call over the daemon socket; tools/list is empty, so clients are not shown them, and agents use the zazzle tools named below. Paths are root:relative/path; with one root the prefix may be left out. No tool checks who is calling: the daemon socket can only be opened by its owner, and the stdio server answers whoever started it.",
   "sources": [
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Mcp/McpServer.cs",
@@ -12,13 +12,17 @@
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RootSet.cs",
       "symbol": "RootSet.Split"
+    },
+    {
+      "path": "macos/rust/zazzled/src/indexer.rs",
+      "symbol": "Indexer::ask"
     }
   ],
   "entities": [
     {
       "id": "overview",
       "name": "overview",
-      "description": "A compact map of a root: file and line counts by language, top-level directories, entry points and project files, largest files.",
+      "description": "A compact map of a root: file and line counts by language, top-level directories, entry points and project files, largest files; agents ask for it with zazzle_overview.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OverviewTool.cs",
@@ -31,45 +35,17 @@
       },
       "action": "query",
       "transport": "MCP tools/call overview {root?}",
-      "authorization": "None checked beyond being a client of the server.",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server.",
       "result": "Five lines per root, computed from the index without reading file contents.",
       "failures": [
-        "Index still building after the ready timeout: error index_cold (\"use find_files\").",
+        "Index still building after the ready timeout: error index_cold (\"list files with zazzle_ls\").",
         "Unknown root name: error bad_root."
-      ]
-    },
-    {
-      "id": "outline",
-      "name": "outline",
-      "description": "A file's declarations with line ranges and signatures, or a one-line digest per file for a directory.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.OutlineFile"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-          "symbol": "OutlineTool.OutlineDir"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs",
-        "symbol": "OutlineTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call outline {path, limit?, offset?}",
-      "authorization": "None checked beyond being a client of the server; the file is re-checked through RootIndex.Freshen without Root.Resolve (backlog.json, outline-path-escape).",
-      "result": "For a file, a header tagged parsed (C#) or heuristic with the digest, then one indented line per declaration; for a directory (path ending in /, or root:), a paged digest list.",
-      "failures": [
-        "No such file: error not_found.",
-        "Binary or over 16 MiB: error no_outline.",
-        "Several roots and no root prefix: error bad_path."
       ]
     },
     {
       "id": "find-symbol",
       "name": "find_symbol",
-      "description": "Declarations whose name contains (or equals, with exact) the query, case-insensitively, optionally of one kind.",
+      "description": "Declarations whose name contains (or equals, with exact) the query, case-insensitively, optionally of one kind; agents ask for it with zazzle_find_symbol.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
@@ -86,134 +62,17 @@
       },
       "action": "query",
       "transport": "MCP tools/call find_symbol {name, exact?, kind?, root?, limit?, offset?}",
-      "authorization": "None checked beyond being a client of the server.",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server.",
       "result": "root:path:line kind container.name | signature, exact matches first, then by path; paged, 30 by default.",
       "failures": [
         "Missing name: error bad_args.",
-        "Index still building: error index_cold (\"use search\")."
-      ]
-    },
-    {
-      "id": "find-references",
-      "name": "find_references",
-      "description": "Lines where an exact identifier occurs, declarations marked D; parsed for C#, word matches elsewhere.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-          "symbol": "FindReferencesTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-          "symbol": "FindReferencesTool.Render"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs",
-        "symbol": "FindReferencesTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call find_references {name, root?, glob?, limit?, offset?, max_tokens?}",
-      "authorization": "None checked beyond being a client of the server.",
-      "result": "Per file a header tagged [parsed] or [heuristic], then line: text, after a barrier over the selected files; paged, 60 lines and 4000 tokens by default.",
-      "failures": [
-        "Missing name: error bad_args.",
-        "Index still building: error index_cold."
-      ]
-    },
-    {
-      "id": "search",
-      "name": "search",
-      "description": "A .NET regex (or literal text) matched per line, prefiltered by the index, in path order.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-          "symbol": "SearchTool.Candidates"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ExternalSearch.cs",
-          "symbol": "ExternalSearch.Try"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs",
-        "symbol": "SearchTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call search {pattern, literal?, ignore_case?, glob?, root?, mode?, context?, max_results?, offset?, max_tokens?}",
-      "authorization": "None checked beyond being a client of the server.",
-      "result": "mode lines: each file's label, then line:text with line-text context lines; mode files: matching files; mode count: file:count. A footer gives the count or the next offset. 50 results and 4000 tokens by default.",
-      "failures": [
-        "Missing pattern: error bad_args.",
-        "Pattern rejected by .NET and by rg -P or git grep -P: error bad_regex with the dialect notes.",
-        "Index still building: answered from a plain scan of the git listing (logged as scan / index_cold, not said in the answer).",
-        "Unknown root name: error bad_root."
-      ]
-    },
-    {
-      "id": "read",
-      "name": "read",
-      "description": "A line range of a text file with line numbers, under a token budget.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs",
-          "symbol": "ReadTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
-          "symbol": "Root.Resolve"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs",
-        "symbol": "ReadTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call read {path, start_line?, end_line?, max_tokens?}",
-      "authorization": "None checked beyond being a client of the server; the path must resolve inside the root, symlinks included.",
-      "result": "n<TAB>text lines and a footer \"root:path lines a-b of n\"; when truncated, a hint to continue at the next start_line. A repeat of a fully read range whose content is unchanged returns a one-line unchanged note instead.",
-      "failures": [
-        "Missing path: error bad_args.",
-        "Path outside the root: error outside_root.",
-        "No such file: error not_found.",
-        "Binary file: error binary.",
-        "Several roots and no root prefix: error bad_path."
-      ]
-    },
-    {
-      "id": "find-files",
-      "name": "find_files",
-      "description": "Files git tracks or would track, filtered by a case-insensitive path substring and a glob.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindFilesTool.cs",
-          "symbol": "FindFilesTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Root.cs",
-          "symbol": "Root.Listing"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindFilesTool.cs",
-        "symbol": "FindFilesTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call find_files {query?, glob?, root?, limit?, offset?}",
-      "authorization": "None checked beyond being a client of the server.",
-      "result": "root:path per line, paged (100 by default), with a footer.",
-      "failures": [
-        "Unknown root name: error bad_root.",
-        "Index still building: answered from git ls-files directly (logged as scan / index_cold)."
+        "Index still building: error index_cold (\"search with zazzle_find\")."
       ]
     },
     {
       "id": "changed-since",
       "name": "changed_since",
-      "description": "Files added, modified or deleted since a cursor; without a cursor, a starting cursor.",
+      "description": "Files added, modified or deleted since a cursor; without a cursor, a starting cursor; agents ask for it with zazzle_changed_since.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ChangedSinceTool.cs",
@@ -230,17 +89,17 @@
       },
       "action": "query",
       "transport": "MCP tools/call changed_since {cursor?}",
-      "authorization": "None checked beyond being a client of the server.",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server.",
       "result": "A|M|D root:path lines after a full reconcile of each root, then a new cursor epoch;root=gen;...",
       "failures": [
         "Cursor from another engine run: \"cursor expired (daemon restarted)\" and a new cursor.",
-        "Change log no longer reaches back to the cursor: a line saying to re-list with find_files."
+        "Change log no longer reaches back to the cursor: a line saying to re-list with zazzle_ls."
       ]
     },
     {
       "id": "git-log",
       "name": "git_log",
-      "description": "Recent commits, optionally for one path and filtered by message.",
+      "description": "Recent commits, optionally for one path and filtered by message; agents ask for it with zazzle_git_log.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs",
@@ -253,7 +112,7 @@
       },
       "action": "query",
       "transport": "MCP tools/call git_log {path?, root?, n?, grep?}",
-      "authorization": "None checked beyond being a client of the server; the path is not resolved against the root (backlog.json, git-paths-unresolved).",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server; the path is not resolved against the root (backlog.json, git-paths-unresolved).",
       "result": "hash date author subject per commit, 20 by default.",
       "failures": [
         "git exits non-zero: error git_failed with git's message."
@@ -262,7 +121,7 @@
     {
       "id": "git-blame",
       "name": "git_blame",
-      "description": "Who last changed each line of a range.",
+      "description": "Who last changed each line of a range; agents ask for it with zazzle_git_blame.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/GitTools.cs",
@@ -275,39 +134,11 @@
       },
       "action": "query",
       "transport": "MCP tools/call git_blame {path, start_line?, end_line?}",
-      "authorization": "None checked beyond being a client of the server; the path is not resolved against the root (backlog.json, git-paths-unresolved).",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server; the path is not resolved against the root (backlog.json, git-paths-unresolved).",
       "result": "git blame -w output for the range, 40 lines from start_line by default.",
       "failures": [
         "Missing path: error bad_args.",
         "git exits non-zero: error git_failed with git's message."
-      ]
-    },
-    {
-      "id": "run",
-      "name": "run",
-      "description": "An allowed read-only program run with an argument list in a root, for questions the other tools cannot answer.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
-          "symbol": "RunTool.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs",
-          "symbol": "RunPolicy.Check"
-        }
-      ],
-      "entrypoint": {
-        "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs",
-        "symbol": "RunTool.Run"
-      },
-      "action": "query",
-      "transport": "MCP tools/call run {argv: [program, args...], root?, timeout?, max_tokens?}",
-      "authorization": "RunPolicy.Check: the program's file name must be on the read-only allowlist, with edit and exec options refused for sed, awk, find and rg and only read-only git subcommands; run.unrestricted in config.json or ZAZZLE_INDEXER_RUN_UNRESTRICTED=1 lifts every check, and then the operation can change anything the user can.",
-      "result": "Standard output under the token budget, then [timed out], [exit n] with standard error, [output truncated] and, for grep, find, cat, head, tail and sed, a hint to use the dedicated tools.",
-      "failures": [
-        "Missing argv: error bad_args.",
-        "Refused by the policy: error run_denied with the reason.",
-        "Program not found: [exit 127] in the answer."
       ]
     },
     {
@@ -317,15 +148,15 @@
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",
-          "symbol": "ViewTool.Description"
+          "symbol": "ViewTool.Run"
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
           "symbol": "TerseView.Format"
         },
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
-          "symbol": "zazzle read"
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view"
         }
       ],
       "entrypoint": {
@@ -334,7 +165,7 @@
       },
       "action": "query",
       "transport": "MCP tools/call view {path}",
-      "authorization": "None checked beyond being a client of the server; the path is resolved with Root.Resolve, so it stays inside the root.",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server; the path is resolved with Root.Resolve, so it stays inside the root.",
       "result": "A header \"root:path N lines; terse: <count> <step>, ...\" (or \"nothing to shorten\"), then the view: N for an unchanged line, N~ for a changed one, A-B with a note for collapsed lines (src/View/.dev/contracts.json, view-format). The file is read from disk, not through the index, and the usage log records path view.",
       "failures": [
         "Missing path: error bad_args.",
@@ -347,7 +178,7 @@
     {
       "id": "report-gap",
       "name": "report_gap",
-      "description": "The agent's one- or two-sentence note on what it could not get, or what was slow, wrong or too verbose.",
+      "description": "The agent's one- or two-sentence note on what it could not get, or what was slow, wrong or too verbose; agents ask for it with zazzle_report_gap.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReportGapTool.cs",
@@ -360,7 +191,7 @@
       },
       "action": "command",
       "transport": "MCP tools/call report_gap {what}",
-      "authorization": "None checked beyond being a client of the server.",
+      "authorization": "None checked beyond being a client of the daemon or the stdio server.",
       "result": "\"recorded\"; the note goes into the usage-log record's note field (cut to 500 characters), where zazzle-csharp-indexer report lists it.",
       "failures": [
         "Missing what: error bad_args."
@@ -378,13 +209,13 @@
       "kind": "feature",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/.dev/feature.json",
-      "relationship": "The behaviour search, read, changed_since and run offer."
+      "relationship": "The behaviour changed_since offers."
     },
     {
       "kind": "use-case",
       "folder": "macos/dotnet/zazzle-csharp-indexer/src",
       "path": "macos/dotnet/zazzle-csharp-indexer/src/.dev/use-case.json",
-      "relationship": "The coding agent calls these to answer code questions."
+      "relationship": "zazzle calls these to answer the coding agent's code questions."
     }
   ]
 }

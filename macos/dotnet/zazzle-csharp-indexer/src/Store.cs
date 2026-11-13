@@ -7,7 +7,7 @@ namespace ZazzleIndexer;
 // Thread-safe store; every operation opens a pooled connection and writes are serialised.
 public sealed class Store
 {
-    public const int ExtractorVersion = 3;
+    public const int ExtractorVersion = 4;
     private readonly string _cs;
     private readonly object _write = new();
 
@@ -22,7 +22,7 @@ public sealed class Store
             Exec(c, """
                 CREATE TABLE IF NOT EXISTS root(id INTEGER PRIMARY KEY, path TEXT UNIQUE, event_id INTEGER, full_scan INTEGER);
                 CREATE TABLE IF NOT EXISTS blob(id INTEGER PRIMARY KEY, oid TEXT UNIQUE, ver INTEGER, size INTEGER, binary INTEGER,
-                    lang TEXT, lines INTEGER, bloom BLOB, digest TEXT, symbols TEXT, idents TEXT);
+                    lang TEXT, lines INTEGER, digest TEXT, symbols TEXT);
                 CREATE TABLE IF NOT EXISTS file(root_id INTEGER, path TEXT, size INTEGER, mtime INTEGER, birth INTEGER, blob_id INTEGER,
                     PRIMARY KEY(root_id, path)) WITHOUT ROWID;
                 """);
@@ -124,13 +124,13 @@ public sealed class Store
     public void DeleteFile(int rootId, string path) => Write("DELETE FROM file WHERE root_id=@r AND path=@p", ("@r", rootId), ("@p", path));
 
     // Inserts an analysed blob and returns its id.
-    public int InsertBlob(string oid, long size, bool binary, string lang, int lines, byte[] bloom, string digest, string? symbols, string? idents)
+    public int InsertBlob(string oid, long size, bool binary, string lang, int lines, string digest, string? symbols)
     {
         lock (_write)
         {
             using var c = Open();
-            using var cmd = Bind(c, "INSERT OR IGNORE INTO blob(oid, ver, size, binary, lang, lines, bloom, digest, symbols, idents) VALUES(@o,@v,@s,@bi,@l,@n,@bl,@d,@sy,@id)",
-                [("@o", oid), ("@v", ExtractorVersion), ("@s", size), ("@bi", binary ? 1 : 0), ("@l", lang), ("@n", lines), ("@bl", bloom), ("@d", digest), ("@sy", symbols), ("@id", idents)]);
+            using var cmd = Bind(c, "INSERT OR IGNORE INTO blob(oid, ver, size, binary, lang, lines, digest, symbols) VALUES(@o,@v,@s,@bi,@l,@n,@d,@sy)",
+                [("@o", oid), ("@v", ExtractorVersion), ("@s", size), ("@bi", binary ? 1 : 0), ("@l", lang), ("@n", lines), ("@d", digest), ("@sy", symbols)]);
             cmd.ExecuteNonQuery();
             using var q = Bind(c, "SELECT id FROM blob WHERE oid=@o", [("@o", oid)]);
             return (int)(long)q.ExecuteScalar()!;
@@ -142,10 +142,10 @@ public sealed class Store
     {
         var list = new List<BlobMeta>();
         using var c = Open();
-        using var cmd = Bind(c, "SELECT id, oid, size, binary, lang, lines, bloom, digest FROM blob", []);
+        using var cmd = Bind(c, "SELECT id, oid, size, binary, lang, lines, digest FROM blob", []);
         using var r = cmd.ExecuteReader();
         while (r.Read())
-            list.Add(new BlobMeta(r.GetInt32(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3) == 1, r.GetString(4), r.GetInt32(5), (byte[])r["bloom"], r.GetString(7)));
+            list.Add(new BlobMeta(r.GetInt32(0), r.GetString(1), r.GetInt64(2), r.GetInt32(3) == 1, r.GetString(4), r.GetInt32(5), r.GetString(6)));
         return list;
     }
 
@@ -163,9 +163,6 @@ public sealed class Store
 
     // Reads the symbols JSON of a blob.
     public string? Symbols(int blobId) => Scalar("SELECT symbols FROM blob WHERE id=@i", ("@i", blobId)) as string;
-
-    // Reads the identifier-occurrence JSON of a blob.
-    public string? Idents(int blobId) => Scalar("SELECT idents FROM blob WHERE id=@i", ("@i", blobId)) as string;
 
     // Deletes blobs no file refers to and returns how many were removed.
     public int CollectGarbage()

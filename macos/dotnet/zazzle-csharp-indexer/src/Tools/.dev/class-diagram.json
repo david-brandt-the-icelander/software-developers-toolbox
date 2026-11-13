@@ -1,9 +1,9 @@
 {
   "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
   "kind": "class",
-  "title": "zazzle-csharp-indexer MCP tools classes",
+  "title": "zazzle-csharp-indexer internal tools classes",
   "folder": "macos/dotnet/zazzle-csharp-indexer/src/Tools",
-  "description": "Thirteen ITool implementations and the helpers they share. Every tool takes the session's RootSet (report_gap excepted) and returns text.",
+  "description": "Seven ITool implementations that zazzled calls by name, and the helpers they share. Every tool takes the session's RootSet (report_gap excepted) and returns text.",
   "sources": [
     {
       "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ITool.cs",
@@ -28,8 +28,6 @@
       ],
       "members": [
         "string Name",
-        "string Description",
-        "JsonNode Schema",
         "string Run(JsonNode? args, CallInfo info)"
       ]
     },
@@ -56,22 +54,7 @@
         "static string Str(JsonNode? a, string key)",
         "static string? OptStr(JsonNode? a, string key)",
         "static int Int(JsonNode? a, string key, int fallback)",
-        "static bool Bool(JsonNode? a, string key, bool fallback)",
-        "static JsonNode Schema(string[] required, params (string name, string type, string doc)[] props)"
-      ]
-    },
-    {
-      "id": "Tools.Output",
-      "name": "Output",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/Output.cs"
-      ],
-      "members": [
-        "Output(int maxTokens)",
-        "bool Full",
-        "bool Add(string line)",
-        "string Finish(string footer)"
+        "static bool Bool(JsonNode? a, string key, bool fallback)"
       ]
     },
     {
@@ -89,90 +72,6 @@
       ]
     },
     {
-      "id": "Tools.Glob",
-      "name": "Glob",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/Glob.cs"
-      ],
-      "members": [
-        "static Regex ToRegex(string glob)"
-      ]
-    },
-    {
-      "id": "Tools.FindFilesTool",
-      "name": "FindFilesTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindFilesTool.cs"
-      ],
-      "members": [
-        "Name = \"find_files\""
-      ]
-    },
-    {
-      "id": "Tools.ReadTool",
-      "name": "ReadTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ReadTool.cs"
-      ],
-      "members": [
-        "Name = \"read\"",
-        "Dictionary<string, string> _seen (range key to blob id, per session)"
-      ]
-    },
-    {
-      "id": "Tools.SearchTool",
-      "name": "SearchTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs"
-      ],
-      "members": [
-        "Name = \"search\"",
-        "const long MaxFileBytes",
-        "List<(Root root, string rel)> Candidates(JsonNode? args, Regex? glob, List<int> grams, CallInfo info)",
-        "static bool MayMatch(Root root, int blobId, List<int> grams)",
-        "static FileHits? ScanFile(Root root, string rel, Regex regex)"
-      ]
-    },
-    {
-      "id": "Tools.SearchTool.FileHits",
-      "name": "SearchTool.FileHits",
-      "kind": "record",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/SearchTool.cs"
-      ],
-      "members": [
-        "string Label",
-        "string[] Text",
-        "List<int> Matches"
-      ]
-    },
-    {
-      "id": "Tools.ExternalSearch",
-      "name": "ExternalSearch",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/ExternalSearch.cs"
-      ],
-      "members": [
-        "static string? Try(IEnumerable<Root> roots, string pattern, bool ignoreCase, string? glob, int limit, int skip, int maxTokens, CallInfo info)"
-      ]
-    },
-    {
-      "id": "Tools.OutlineTool",
-      "name": "OutlineTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/OutlineTool.cs"
-      ],
-      "members": [
-        "Name = \"outline\""
-      ]
-    },
-    {
       "id": "Tools.FindSymbolTool",
       "name": "FindSymbolTool",
       "kind": "class",
@@ -181,17 +80,6 @@
       ],
       "members": [
         "Name = \"find_symbol\""
-      ]
-    },
-    {
-      "id": "Tools.FindReferencesTool",
-      "name": "FindReferencesTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindReferencesTool.cs"
-      ],
-      "members": [
-        "Name = \"find_references\""
       ]
     },
     {
@@ -239,29 +127,6 @@
       ]
     },
     {
-      "id": "Tools.RunTool",
-      "name": "RunTool",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunTool.cs"
-      ],
-      "members": [
-        "Name = \"run\""
-      ]
-    },
-    {
-      "id": "Tools.RunPolicy",
-      "name": "RunPolicy",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-indexer/src/Tools/RunPolicy.cs"
-      ],
-      "members": [
-        "static bool Unrestricted(string stateDir)",
-        "static string? Check(IReadOnlyList<string> argv, bool unrestricted)"
-      ]
-    },
-    {
       "id": "Tools.ViewTool",
       "name": "ViewTool",
       "kind": "class",
@@ -293,7 +158,6 @@
       "members": [
         "string Name",
         "RootIndex Index",
-        "List<string> Listing(CallInfo info)",
         "string? Resolve(string relative)"
       ],
       "external": true
@@ -331,40 +195,10 @@
   ],
   "relationships": [
     {
-      "from": "Tools.FindFilesTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "find_files."
-    },
-    {
-      "from": "Tools.ReadTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "read."
-    },
-    {
-      "from": "Tools.SearchTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "search."
-    },
-    {
-      "from": "Tools.OutlineTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "outline."
-    },
-    {
       "from": "Tools.FindSymbolTool",
       "to": "Tools.ITool",
       "kind": "implements",
       "description": "find_symbol."
-    },
-    {
-      "from": "Tools.FindReferencesTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "find_references."
     },
     {
       "from": "Tools.OverviewTool",
@@ -389,12 +223,6 @@
       "to": "Tools.ITool",
       "kind": "implements",
       "description": "git_blame."
-    },
-    {
-      "from": "Tools.RunTool",
-      "to": "Tools.ITool",
-      "kind": "implements",
-      "description": "run."
     },
     {
       "from": "Tools.ViewTool",
@@ -427,52 +255,22 @@
       "description": "Holds the session's roots and resolves root:path references."
     },
     {
-      "from": "Tools.SearchTool",
-      "to": "Tools.ExternalSearch",
+      "from": "Tools.ViewTool",
+      "to": "ZazzleIndexer.View.TerseView",
       "kind": "depends-on",
-      "description": "Fallback for patterns .NET rejects."
+      "description": "Builds the view and formats its lines."
     },
     {
-      "from": "Tools.SearchTool",
-      "to": "Tools.SearchTool.FileHits",
-      "kind": "depends-on",
-      "description": "One per matching file."
-    },
-    {
-      "from": "Tools.SearchTool",
-      "to": "Tools.Output",
-      "kind": "depends-on",
-      "description": "Token-budgeted page; read, find_references, ExternalSearch and run use it too."
-    },
-    {
-      "from": "Tools.SearchTool",
-      "to": "Tools.Glob",
-      "kind": "depends-on",
-      "description": "glob argument; find_files and find_references use it too."
-    },
-    {
-      "from": "Tools.SearchTool",
+      "from": "Tools.FindSymbolTool",
       "to": "Tools.RootSet",
       "kind": "depends-on",
       "description": "Every tool but report_gap takes the RootSet."
     },
     {
-      "from": "Tools.RunTool",
-      "to": "Tools.RunPolicy",
-      "kind": "depends-on",
-      "description": "Checks argv and the unrestricted switch before running."
-    },
-    {
-      "from": "Tools.SearchTool",
+      "from": "Tools.FindSymbolTool",
       "to": "Tools.Args",
       "kind": "depends-on",
-      "description": "Arguments and schema; every tool uses Args."
-    },
-    {
-      "from": "Tools.ViewTool",
-      "to": "ZazzleIndexer.View.TerseView",
-      "kind": "depends-on",
-      "description": "Builds the view and formats its lines."
+      "description": "Arguments; every tool uses Args."
     }
   ]
 }

@@ -14,6 +14,7 @@ pub mod ls;
 pub mod outline;
 pub mod read;
 pub mod refs;
+pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_BUDGET: usize = 8000;
@@ -24,12 +25,19 @@ find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search 
 read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
 outline PATH.. [-d N] [-m N]  symbols with line ranges
-refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
+refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol; in C# files, not in comments or strings
 edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
+From zazzle-csharp-indexer's index of the git work tree that holds the working directory:
+overview  languages, top directories, entry points, largest files
+find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]  declarations by name
+changed-since [CURSOR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
+git-log [PATH] [-n N] [--grep TEXT]  recent commits
+git-blame PATH [--start N] [--end N]  who last changed each line
+report-gap TEXT  tell the maintainers what you needed and could not get
 status  daemon info
 C#, Python, TypeScript, Dart, HTML and Razor files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
@@ -186,6 +194,12 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "refs" => refs::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
         "clean" => clean::run(ctx, rest),
+        "overview" => structure::overview(ctx, rest),
+        "find-symbol" => structure::find_symbol(ctx, rest),
+        "changed-since" => structure::changed_since(ctx, rest),
+        "git-log" => structure::git_log(ctx, rest),
+        "git-blame" => structure::git_blame(ctx, rest),
+        "report-gap" => structure::report_gap(ctx, rest),
         "proxy" => {
             Err("proxy runs as its own process: start it with `zazzle proxy ..` (or `zazzled proxy ..`)"
                 .into())
@@ -198,7 +212,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
         other => Err(format!(
-            "unknown command '{other}'; try: find read read-again ls outline refs edit clean status help"
+            "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status help"
         )),
     }
 }
@@ -257,7 +271,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean status help"
+            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status help"
         );
         assert!(!o.idable);
     }

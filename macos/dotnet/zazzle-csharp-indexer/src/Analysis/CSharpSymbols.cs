@@ -1,4 +1,4 @@
-// C# symbol and identifier extraction with Roslyn's syntax trees (no compilation, so it is fast and exact).
+// C# symbol extraction with Roslyn's syntax trees (no compilation, so it is fast and exact).
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -8,10 +8,8 @@ namespace ZazzleIndexer.Analysis;
 // Static extractor.
 public static class CSharpSymbols
 {
-    private const int MaxLinesPerName = 200;
-
-    // Parses source text and returns its declared symbols and identifier occurrences.
-    public static (List<Sym> syms, Dictionary<string, List<int>> idents) Extract(string source)
+    // Parses source text and returns its declared symbols.
+    public static List<Sym> Extract(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source);
         var text = tree.GetText();
@@ -20,15 +18,7 @@ public static class CSharpSymbols
         foreach (var node in root.DescendantNodes())
             if (Declare(node) is { } d)
                 syms.Add(new Sym(d.name, d.kind, Container(node), Line(text, d.token), text.Lines.GetLinePosition(node.Span.End).Line + 1, text.Lines[text.Lines.GetLinePosition(d.token.SpanStart).Line].ToString().Trim() is { Length: > 140 } l ? l[..140] : text.Lines[text.Lines.GetLinePosition(d.token.SpanStart).Line].ToString().Trim()));
-        var idents = new Dictionary<string, List<int>>();
-        foreach (var t in root.DescendantTokens().Where(t => t.IsKind(SyntaxKind.IdentifierToken)))
-        {
-            if (!idents.TryGetValue(t.ValueText, out var lines))
-                idents[t.ValueText] = lines = [];
-            if (lines.Count < MaxLinesPerName)
-                lines.Add(IsDeclaration(t) ? -Line(text, t) : Line(text, t));
-        }
-        return (syms, idents);
+        return syms;
     }
 
     // Returns the 1-based line of a token.
@@ -53,21 +43,6 @@ public static class CSharpSymbols
         VariableDeclaratorSyntax { Parent.Parent: FieldDeclarationSyntax } x => (x.Identifier.Text, "field", x.Identifier),
         VariableDeclaratorSyntax { Parent.Parent: EventFieldDeclarationSyntax } x => (x.Identifier.Text, "event", x.Identifier),
         _ => null,
-    };
-
-    // Reports whether an identifier token is the name being declared by its parent.
-    private static bool IsDeclaration(SyntaxToken t) => t.Parent switch
-    {
-        BaseTypeDeclarationSyntax x => x.Identifier == t,
-        MethodDeclarationSyntax x => x.Identifier == t,
-        ConstructorDeclarationSyntax x => x.Identifier == t,
-        PropertyDeclarationSyntax x => x.Identifier == t,
-        EventDeclarationSyntax x => x.Identifier == t,
-        EnumMemberDeclarationSyntax x => x.Identifier == t,
-        DelegateDeclarationSyntax x => x.Identifier == t,
-        VariableDeclaratorSyntax x => x.Identifier == t,
-        ParameterSyntax x => x.Identifier == t,
-        _ => false,
     };
 
     // Builds the dotted container name from enclosing namespaces and types.
