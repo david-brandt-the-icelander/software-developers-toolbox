@@ -124,6 +124,40 @@
           "symbol": "find_exe"
         }
       ]
+    },
+    {
+      "id": "markup-view-line-based",
+      "title": "The HTML and Razor view works on whole lines",
+      "summary": "markup.rs does not parse markup: it hides comments and <style>/<svg> elements only when they start and end their own lines, keeps <script>, <pre>, <textarea> and Razor code blocks unchanged, and leaves C# inside Razor code blocks unshortened.",
+      "impact": "Minified or single-line HTML, and Razor views that are mostly C#, gain little from the view.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "verbatim"
+        }
+      ]
+    },
+    {
+      "id": "code-view-syntactic",
+      "title": "The Python, TypeScript and Dart view is syntactic",
+      "summary": "terse.rs works from the syntax tree alone: loggers are recognised by name, nothing is resolved across files, local variables keep their names, and only what stands alone on its lines is hidden.",
+      "impact": "Logging through a differently named object, or helper wrappers, stays visible, and these views are less compact than the C# view, which also shortens locals.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_logging"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "plan_view"
+        }
+      ]
     }
   ]
 }

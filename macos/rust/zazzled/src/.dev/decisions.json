@@ -158,7 +158,7 @@
       "summary": "While a tree-sitter parse runs, its allocations go to a per-thread bump arena with size-class free lists instead of the system allocator.",
       "status": "accepted",
       "context": "Outlining is the costly part of refs and outline over many files, and a parse makes many small allocations that all die with the tree.",
-      "decision": "arena.rs installs tree-sitter allocator hooks once. Inside arena::scope (each parse_outline), a thread's allocations of up to 1 KiB come from its arena: 256 MiB of reserved address space, pointer bumping, free lists for seven size classes, and up to 5 MiB of touched pages kept between parses. Larger requests and anything outside a parse use libc. A parse whose blocks outlive it abandons that thread's arena rather than reuse memory still in use. Files over 1 MiB are not parsed at all; they get the line-based outline.",
+      "decision": "arena.rs installs tree-sitter allocator hooks once. Inside arena::scope (each parse_outline and each terse view parse, which must not let its tree outlive the scope), a thread's allocations of up to 1 KiB come from its arena: 256 MiB of reserved address space, pointer bumping, free lists for seven size classes, and up to 5 MiB of touched pages kept between parses. Larger requests and anything outside a parse use libc. A parse whose blocks outlive it abandons that thread's arena rather than reuse memory still in use. Files over 1 MiB are not parsed at all; they get the line-based outline.",
       "rationale": "Per the commit that introduced it, single-threaded parsing and cold refs became about 10% faster on a Linux VM, for a few MB more peak memory, with identical output.",
       "origin": {
         "kind": "commit",

@@ -43,6 +43,22 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Kept: everything else, including catches that return or convert, constructors with logic, and logging that shares a line with other code. Lines keep their source numbers: `N` unchanged, `N~` changed, `A-B ⋯ note` hidden. Ranges, `--symbol` and the budget work on the view.
 - The bridge: `zazzled` connects to the indexer daemon's socket (in `$ZAZZLE_INDEXER_STATE_DIR` or the indexer's default state directory), starting `zazzle-csharp-indexer daemon` when nothing listens, and asks its `view` tool. The indexer is `$ZAZZLE_INDEXER`, else beside `zazzled`, else on `PATH`. The file must be inside a git work tree. When there is no view (no indexer, not in git, an error), the source is returned with a line saying why. The first read starts the daemon (about 0.5 s); later ones take a few milliseconds.
 
+## HTML and Razor terse view
+
+`zazzle read` on `.html`, `.htm`, `.xhtml`, `.cshtml` and `.razor` files returns a terse view built inside `zazzled`, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
+
+- Hidden: comments of 3+ lines (`<!-- -->`, Razor `@* *@`), `<style>` and `<svg>` elements that start and end their own lines, runs of 2+ `<meta>`/`<link>`/`<base>` lines, and in Razor runs of 2+ `@using`/`@addTagHelper`/`@removeTagHelper` lines.
+- Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
+- Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@code`, `@functions` and `@{ }` blocks (C# in them is not shortened). A comment or element that shares its first or last line with other markup is not hidden.
+
+## Python, TypeScript and Dart terse view
+
+`zazzle read` on `.py`, `.pyi`, `.ts`, `.mts`, `.cts`, `.tsx` and `.dart` files returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.
+
+- Hidden or collapsed: runs of 2+ lines of top-level imports (`1-6 ⋯ 3 import(s)`); logging statements on loggers (`log`, `logger`, `_logger`, `self.logger`, `this.logger?`, ...), TypeScript `console.log/debug/info/warn/error/trace` and Dart `debugPrint`/`log`, when they are alone on their lines and have no assignment, await, yield, increment or decrement in their arguments; region markers (`# region`, `// #region`, `//#endregion`); multi-line constructors that only store parameters (`__init__` with `self.x = name`, docstrings, `pass` and `super().__init__(..)`; TypeScript `this.x = name` and `super(..)`; Dart constructors without a body whose initializers are `field = name` or `super(..)`) as `12-17 ⋯ __init__(self, api, cache): only assigns fields`; and catches that only log and rethrow (bare `raise`, `throw e` of the caught name, `rethrow`), whole when the clause has its own lines, else as `} catch (e) { ⋯ logs and rethrows }`.
+- Shortened: `public`/`private`/`protected` on TypeScript class members; constructor parameter properties keep theirs.
+- Kept: everything else, including `print`, logging that shares a line with other code, and local variable names (no locals are shortened in these languages).
+
 ## C# structure
 
 `zazzle-csharp-indexer` lists no tools of its own: agents ask zazzle, and `zazzled` calls the indexer's daemon over the same bridge as the terse view (starting it when nothing listens), for the git work tree that holds the working directory. Answers come from the index the daemon keeps current, so they need no file reads. `root:path` in the indexer's answers becomes a path relative to the working directory.

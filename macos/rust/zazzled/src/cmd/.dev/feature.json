@@ -272,6 +272,98 @@
       ]
     },
     {
+      "id": "markup-terse-view",
+      "name": "Terse HTML and Razor view",
+      "description": "`read` on an .html, .htm, .xhtml, .cshtml or .razor file returns a terse view built in zazzled instead of the markup, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "HTML and Razor terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre>, <textarea> and Razor @code, @functions and @{ } blocks are shown as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
+      "outcome": "An agent reads pages and Razor views without paying for styles, drawings, boilerplate and utility-class lists, and still has to read the real markup before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
+        "C# inside Razor code blocks is not shortened."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "shorten"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "verbatim"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        }
+      ]
+    },
+    {
+      "id": "code-terse-view",
+      "name": "Terse Python, TypeScript and Dart view",
+      "description": "`read` on a .py, .pyi, .ts, .mts, .cts, .tsx or .dart file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Python, TypeScript and Dart terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) and catch clauses that only log and rethrow the caught exception; it drops public, private and protected from TypeScript class members. read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
+      "outcome": "An agent understands Python, TypeScript and Dart code from fewer tokens, and still has to read the real code before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
+        "Local variable names are not shortened in these languages."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "plan_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_logging"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "stores_only"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "rethrow_catch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        }
+      ]
+    },
+    {
       "id": "csharp-structure",
       "name": "C# structure from the indexer",
       "description": "overview, find-symbol, changed-since, git-log, git-blame and report-gap (zazzle_overview ... zazzle_report_gap) are answered by zazzle-csharp-indexer's daemon, which zazzle reaches as it does for the terse view; the indexer offers agents no tools of its own.",

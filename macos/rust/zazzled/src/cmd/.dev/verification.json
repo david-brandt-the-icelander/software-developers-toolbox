@@ -429,6 +429,155 @@
       ]
     },
     {
+      "id": "markup-terse-view",
+      "title": "Terse HTML and Razor view",
+      "summary": "markup.rs is tested rule by rule on small HTML and Razor texts, and read is tested end to end on files of each kind.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "markup-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each hiding rule turns its lines into one `A-B ⋯ note` line with the source numbers.",
+        "Long class and style values are shortened and marked `N~`; dynamic values are not.",
+        "Script, pre and Razor code blocks are unchanged.",
+        "Blocks that do not close cleanly, and files with nothing to shorten, come back as source with a sha."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_view_html",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_view_razor",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_shorten",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_verbatim",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_unclosed",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_markup_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "code-terse-view",
+      "title": "Terse Python, TypeScript and Dart view",
+      "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "code-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each language's sample class shows imports, logging, regions, the constructor and the log-and-rethrow catch collapsed with source line numbers.",
+        "Logging with side effects, print, and calls on non-loggers are kept.",
+        "Constructors and catches that do anything else are kept.",
+        "Code that shares a line with what a rule would hide is kept.",
+        "Files with nothing to shorten, or too big to parse, come back as source with a sha."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_python",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_typescript",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_dart",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_logging",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_constructor_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_catch",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_shared_lines",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_is_region",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_render_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_lang_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_code_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "csharp-structure",
       "title": "C# structure commands",
       "summary": "The structure commands are tested against a stand-in indexer daemon that echoes each call, and their MCP tools against the argument mapping.",
