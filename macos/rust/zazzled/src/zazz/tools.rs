@@ -83,12 +83,40 @@ fn home_dir(var: &str, rel: &str) -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rel)))
 }
 
-// rustc inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain, writes only `build`.
+// Native builds link with the system C toolchain: let rustc run it and read its files.
+fn with_linker(p: Policy) -> Policy {
+    let toolchain = [
+        "/usr/bin",
+        "/bin",
+        "/usr/libexec",
+        "/usr/lib",
+        "/usr/local/bin",
+        "/Library/Developer/CommandLineTools",
+        "/Applications/Xcode.app",
+    ];
+    let reads = [
+        "/usr/include",
+        "/usr/local/lib",
+        "/etc",
+        "/private/var/db/xcode_select_link",
+        "/private/var/select",
+    ];
+    p.executing(toolchain.iter().map(PathBuf::from))
+        .reading(reads.iter().chain(toolchain.iter()).map(PathBuf::from))
+}
+
+// The host target triple from `rustc -vV`.
+pub fn host_triple(version: &str) -> Option<String> {
+    version.lines().find_map(|l| l.strip_prefix("host: ")).map(str::to_string)
+}
+
+// rustc inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain (and the linker for native builds), writes only `build`.
 pub fn rustc_command(
     rustc: &Path,
     build: &Path,
     reads: &[PathBuf],
     args: &[OsString],
+    native: bool,
 ) -> Result<Command, String> {
     let sysroot = sysroot(rustc).ok_or_else(|| format!("{} --print sysroot failed", rustc.display()))?;
     let (rustup, cargo) = (home_dir("RUSTUP_HOME", ".rustup"), home_dir("CARGO_HOME", ".cargo"));
@@ -98,6 +126,7 @@ pub fn rustc_command(
         )
         .executing([sysroot].into_iter().chain(cargo.map(|c| c.join("bin"))))
         .writing([build.to_path_buf()]);
+    let policy = if native { with_linker(policy) } else { policy };
     let mut cmd = sandbox::command(rustc, args, &policy)?;
     rustc_env(&mut cmd).current_dir(build).env("TMPDIR", build);
     Ok(cmd)

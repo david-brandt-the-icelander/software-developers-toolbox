@@ -86,7 +86,7 @@ pub fn ensure_rlib(root: &Path, rustc: &Path, key: &str, target: &str) -> Result
     .iter()
     .map(|s| s.into())
     .collect();
-    let mut cmd = tools::rustc_command(rustc, &staging, &[], &args)?;
+    let mut cmd = tools::rustc_command(rustc, &staging, &[], &args, target != tools::WASM_TARGET)?;
     let r = proc::run(&mut cmd, None, BUILD_TIMEOUT)?;
     if !r.ok() {
         let _ = std::fs::remove_dir_all(&staging);

@@ -13,6 +13,7 @@ pub mod human;
 pub mod install;
 pub mod manage;
 pub mod mcptools;
+pub mod native;
 pub mod pack;
 pub mod pipeline;
 pub mod pool;
@@ -426,6 +427,48 @@ fn snapshot() {
         let mut printed = String::new();
         out_r.read_to_string(&mut printed).expect("read");
         format!("{printed}{}", called.result)
+    }
+
+    // Checks a script signed by an authority trusted for native code builds, tests and runs natively, and falls back to WASM.
+    #[test]
+    fn test_native_tier() {
+        let t = TempDir::new();
+        let e = zazz_engine(&t);
+        e.zazz.set_keys_dir(&t.path().join("keys"));
+        e.zazz.set_trust_paths(&t.path().join("trust"), &t.path().join("policy.json"));
+        demo(&t, TEST);
+        let native = MANIFEST.replace(r#""entry":"src/main.rs","#, r#""entry":"src/main.rs","native":true,"#);
+        t.write("sum/zazz.json", native.as_bytes());
+        t.write("sum/tests/snapshots/b.json", b"{\n  \"total\": 4\n}\n");
+        let run = |args: &[&str]| reply_of(&run_cmd_with(&e, t.path(), "", args));
+        let cert = run(&["zazz", "keygen", "dev", "--native"])["cert"].as_str().expect("cert").to_string();
+        run(&["zazz", "pack", "sum"]);
+        let unsigned = run(&["zazz", "add", "sum.zazz"]);
+        assert_eq!(unsigned["runtime"], "wasm", "{unsigned}");
+        run(&["zazz", "rm", unsigned["hash"].as_str().expect("hash")]);
+        run(&["zazz", "trust", "add", &cert]);
+        run(&["zazz", "sign", "sum.zazz"]);
+        let added = run(&["zazz", "add", "sum.zazz"]);
+        assert_eq!(
+            (added["runtime"].as_str(), added["trusted"].as_bool()),
+            (Some("native"), Some(true)),
+            "{added}"
+        );
+        let id = added["hash"].as_str().expect("hash").to_string();
+        t.write("a.txt", b"2 3");
+        assert_eq!(run(&["zazz", "call", &id, r#"{"files":["a.txt"]}"#]), serde_json::json!({"total": 5}));
+        let reg = e.zazz.registry().expect("reg");
+        let hex = &id[3..];
+        assert!(reg.bin_path(hex).is_file());
+        let mut meta = reg.read_meta(hex).expect("meta");
+        meta["verdict"]["trusted"] = serde_json::json!(false);
+        reg.write_meta(hex, &meta).expect("write");
+        assert_eq!(
+            run(&["zazz", "call", &id, r#"{"files":["a.txt"]}"#]),
+            serde_json::json!({"total": 5}),
+            "WASM fallback"
+        );
+        e.zazz.pool.shutdown();
     }
 
     // Checks compile errors come back as short diagnostics and failing tests as a report.

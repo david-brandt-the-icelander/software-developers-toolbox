@@ -148,6 +148,15 @@ fn spec(
         "t": "hello", "proto": 1, "call_ms": m.call_ms, "memory_mb": m.memory_mb, "network": network,
         "args": [m.name], "env": {}, "preopens": preopens(&m, cwd, &tmp),
     });
+    let (_, _, native_ok) = super::trust::effective(z, verdict);
+    let bin = reg.bin_path(hex);
+    if native_ok && bin.is_file() {
+        let any_net = original_net(&m) && super::trust::effective(z, verdict).0 != "none";
+        let mounts = hello["preopens"].as_array().cloned().unwrap_or_default();
+        let (program, policy) = super::native::worker(&bin, &mounts, tmp, any_net);
+        let key = format!("{hex}\nnative\n{}\n{hello}", cwd.display());
+        return Ok(Spec { key, program, module: None, cwd: cwd.to_path_buf(), hello, sandbox: Some(policy) });
+    }
     let worker = z.worker()?;
     super::sandbox::available().map_err(|e| err("sandbox_unavailable", &e))?;
     let mounts = hello["preopens"].as_array().cloned().unwrap_or_default();
@@ -172,6 +181,11 @@ fn spec(
         hello,
         sandbox: Some(policy),
     })
+}
+
+// True when the manifest asks for any network at all.
+fn original_net(m: &Manifest) -> bool {
+    m.sandbox.network != zazz_format::manifest::Network::None
 }
 
 // Pipes for a captured call: the child ends to pass, and threads collecting stdout and stderr.

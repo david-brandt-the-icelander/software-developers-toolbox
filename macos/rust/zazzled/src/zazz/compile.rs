@@ -145,18 +145,21 @@ fn rustc(
     edition: &str,
     args: &[&str],
     out: &str,
+    target: &str,
 ) -> Result<Vec<u8>, Failure> {
     let extern_arg = format!("zazz={}", sdk.join("libzazz.rlib").display());
     let dep = format!("dependency={}", sdk.display());
     let mut argv: Vec<std::ffi::OsString> =
-        ["--edition", edition, "--target", tools::WASM_TARGET, "--error-format=json", "-C", "debuginfo=0"]
+        ["--edition", edition, "--target", target, "--error-format=json", "-C", "debuginfo=0"]
             .iter()
             .chain(["-L", dep.as_str(), "--extern", extern_arg.as_str(), "-o", out].iter())
             .chain(args.iter())
             .map(|s| s.into())
             .collect();
     argv.shrink_to_fit();
-    let mut cmd = tools::rustc_command(&tc.0, dir, &[sdk.to_path_buf()], &argv).map_err(Failure::Message)?;
+    let native = target != tools::WASM_TARGET;
+    let mut cmd =
+        tools::rustc_command(&tc.0, dir, &[sdk.to_path_buf()], &argv, native).map_err(Failure::Message)?;
     let r = proc::run(&mut cmd, None, RUSTC_TIMEOUT).map_err(Failure::Message)?;
     if r.timed_out {
         return Err(Failure::Message("rustc ran past its time limit".into()));
@@ -180,13 +183,29 @@ pub fn rust_to_wasm(
     tc: &(PathBuf, String),
     sdk: &Path,
 ) -> Result<Products, Failure> {
+    rust_build(dir, m, a, tc, sdk, tools::WASM_TARGET)
+}
+
+// Compiles a Rust script and its tests for a target: WASM, or the host for natively trusted scripts.
+pub fn rust_build(
+    dir: &Path,
+    m: &Manifest,
+    a: &Archive,
+    tc: &(PathBuf, String),
+    sdk: &Path,
+    target: &str,
+) -> Result<Products, Failure> {
+    let (ext, opt) =
+        if target == tools::WASM_TARGET { ("wasm", "opt-level=s") } else { ("bin", "opt-level=2") };
+    let script = format!("script.{ext}");
     let wasm = rustc(
         tc,
         dir,
         sdk,
         &m.edition,
-        &["--crate-type", "bin", "--crate-name", "script", "-C", "opt-level=s", &m.entry],
-        "script.wasm",
+        &["--crate-type", "bin", "--crate-name", "script", "-C", opt, &m.entry],
+        &script,
+        target,
     )?;
     let files = test_files(m, a);
     if files.is_empty() {
@@ -194,13 +213,15 @@ pub fn rust_to_wasm(
     }
     let (root, text) = test_root(&m.entry, &files);
     std::fs::write(dir.join(&root), text).map_err(|e| Failure::Message(format!("{root}: {e}")))?;
+    let tests_out = format!("tests.{ext}");
     let tests = rustc(
         tc,
         dir,
         sdk,
         &m.edition,
         &["--test", "--crate-name", "script_tests", "-C", "opt-level=1", &root],
-        "tests.wasm",
+        &tests_out,
+        target,
     )?;
     Ok(Products { wasm, tests: Some(tests) })
 }

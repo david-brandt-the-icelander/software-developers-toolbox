@@ -91,6 +91,18 @@ fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) ->
     if verdict.as_ref().is_some_and(|v| v["trusted"] != true) {
         built.warnings.push("the signer is not a trusted authority here; the script runs as unsigned".into());
     }
+    let native_ok = verdict.as_ref().is_some_and(|v| super::trust::effective(z, v).2);
+    let mut native_tests = Value::Null;
+    if m.native && native_ok {
+        let scratch = reg.scratch(&format!("{hex}-native")).map_err(|e| err("store", &e))?;
+        let r = super::native::build_and_test(reg, &a, &m, &scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (bin, report) = r?;
+        super::native::write_exe(&reg.bin_path(hex), &bin).map_err(|e| err("store", &e))?;
+        native_tests = report.unwrap_or(Value::Null);
+    } else if m.native {
+        built.warnings.push("native was requested, but the signer is not trusted for native code here; the script runs as WASM".into());
+    }
     let manifest: Value = serde_json::from_slice(a.get("zazz.json").expect("checked"))
         .map_err(|e| err("invalid_manifest", &e.to_string()))?;
     let meta = json!({
@@ -99,7 +111,8 @@ fn register(z: &Zazz, reg: &Registry, bytes: &[u8], hex: &str, source: &Path) ->
         "version": m.version,
         "description": m.description,
         "kind": manifest["kind"],
-        "runtime": "wasm",
+        "runtime": if native_tests.is_null() && !(m.native && native_ok) { "wasm" } else { "native" },
+        "native_tests": native_tests,
         "messages": m.messages,
         "manifest": manifest,
         "tests": built.tests,
