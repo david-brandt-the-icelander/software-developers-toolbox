@@ -6,7 +6,8 @@ FREE := -Os -ffreestanding -fno-builtin -fno-stack-protector -fno-asynchronous-u
 
 ifeq ($(UNAME_S),Linux)
 FREE += -fno-pie
-LINK := -static -nostdlib -no-pie -Wl,--gc-sections -Wl,-z,norelro -Wl,--build-id=none -s
+# noseparate-code packs the binary into two LOAD segments (R+X, RW), one page fault fewer per spawn.
+LINK := -static -nostdlib -no-pie -Wl,--gc-sections -Wl,-z,norelro -Wl,--build-id=none -Wl,-z,noseparate-code -s
 else
 # macOS rejects Mach-O executables without dyld/libSystem, so the entry is main() and only the syscalls are raw.
 FREE += -DAFO_LIBSYSTEM
