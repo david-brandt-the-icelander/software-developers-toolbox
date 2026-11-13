@@ -468,6 +468,14 @@ fn snapshot() {
             serde_json::json!({"total": 5}),
             "WASM fallback"
         );
+        t.write("sum/tests/basic.rs", b"#[test]\nfn only_in_wasm() {\n    assert!(cfg!(target_family = \"wasm\"), \"native differs\");\n}\n");
+        let _ = std::fs::remove_file(t.path().join("sum.zazz"));
+        run(&["zazz", "pack", "sum"]);
+        run(&["zazz", "sign", "sum.zazz"]);
+        let failed = run(&["zazz", "add", "sum.zazz"]);
+        let code = (failed["error"]["code"].as_str(), failed["error"]["message"].as_str());
+        assert_eq!(code, (Some("tests_failed"), Some("native tests failed")), "{failed}");
+        assert_eq!(failed["error"]["tests"]["failed"][0]["message"], "native differs");
         e.zazz.pool.shutdown();
     }
 
