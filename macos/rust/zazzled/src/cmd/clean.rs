@@ -16,6 +16,7 @@ const DEFAULT_BUDGET: usize = 8000;
 const LONG_LINE: usize = 600;
 const CLIP_TO: usize = 300;
 const MIN_BLOB: usize = 200;
+const LOSSY: [&str; 4] = ["progress", "blobs", "long-lines", "budget"];
 const BAR: &str = "█▉▊▋▌▍▎▏░▒▓■□#=";
 
 // How the input should be read.
@@ -411,6 +412,33 @@ pub fn tidy_lines(input: &str) -> Vec<String> {
     }
 }
 
+// True when the cleaning dropped content that read-again --full can bring back.
+pub fn cuts(steps: &[&str]) -> bool {
+    steps.iter().any(|s| LOSSY.contains(s))
+}
+
+// Stores an output and its full input for read-again, tagging it with the id and, when content was cut, how to get it all.
+pub fn store(dir: &std::path::Path, shown: String, full: &str, cut: bool) -> String {
+    let id = crate::outputs::id_of(&shown, full);
+    let hint = if cut { format!("\n[full output: read-again r:{id} --full]") } else { String::new() };
+    match crate::outputs::save(dir, &id, &format!("{shown}{hint}"), full, crate::outputs::limit()) {
+        Ok(()) => format!("[r:{id}]\n{shown}{hint}"),
+        Err(e) => format!("{shown}\n[output not stored for read-again: {e}]"),
+    }
+}
+
+// Splits text into lines with terminal escapes and redraws removed, keeping every line so numbers match the original.
+pub fn plain_lines(input: &str) -> Vec<String> {
+    let text = if input.contains('\x1b') { strip_ansi(input) } else { input.to_string() };
+    text.lines().map(|l| last_frame(l).trim_end().to_string()).collect()
+}
+
+// Cleans one block of text and returns which steps changed it.
+pub fn shrink_steps(input: &str, lossy: bool, budget: usize) -> (String, Vec<&'static str>) {
+    let c = clean(input, Kind::Auto, lossy, budget);
+    (c.lines.join("\n"), c.steps)
+}
+
 // Cleans one block of text with detection on, for callers other than the command line such as the MCP proxy.
 pub fn shrink(input: &str, lossy: bool, budget: usize) -> String {
     clean(input, Kind::Auto, lossy, budget).lines.join("\n")
@@ -439,7 +467,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         let (before, after) = (tokens::estimate(&input), tokens::estimate(&text));
         text.push_str(&format!("\n[clean ~{before}→~{after} tokens; steps: {steps}]"));
     }
-    Ok(Output::ok(text))
+    Ok(Output::plain(match &ctx.engine.outputs {
+        Some(dir) => store(dir, text, &input, cut || cuts(&c.steps)),
+        None => text,
+    }))
 }
 
 #[cfg(test)]

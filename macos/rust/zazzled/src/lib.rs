@@ -12,6 +12,7 @@ pub mod launchd;
 pub mod mcp;
 pub mod meta;
 pub mod outline;
+pub mod outputs;
 pub mod pool;
 pub mod proto;
 pub mod proxy;

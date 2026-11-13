@@ -109,11 +109,18 @@ claude mcp add --transport http example http://127.0.0.1:8808/mcp
 - stdio: the server runs as a child with stderr passed through; the proxy exits with its exit code when it closes its output.
 - HTTP: one request per connection. JSON replies are cleaned whole (up to 64 MiB, larger ones are passed through), `text/event-stream` replies event by event as they stream, and anything else (including compressed bodies) is copied. Headers such as `Mcp-Session-Id` and `Authorization` pass both ways; hop-by-hop headers are dropped, bodies are requested uncompressed, redirects and error statuses are returned to the client. `Origin` headers from hosts other than localhost are refused (403). It listens on `127.0.0.1:8808` unless told otherwise; request bodies need `Content-Length`. Upstream TLS uses the operating system's trust store, and `HTTPS_PROXY`/`NO_PROXY` are honoured.
 
+## Stored outputs
+
+`clean`, `run` and `proxy` outputs cannot be produced again (their input was a pipe, a command's output or another server's reply), so they are stored on disk under an id: `clean` and `run` replies start with `[r:ID]`, and the proxy adds an item `[r:ID shortened by zazzle]` after each text it shortened (its own item, so JSON text stays JSON). When something was cut (a budget, a profile, progress bars, blobs, long lines), the reply says `read-again r:ID --full`.
+
+- `zazzle read-again r:ID` returns the output exactly as it was shown; `--full` returns the uncut text with its line numbers (terminal escapes removed), with `--lines A-B` and `--budget T` (default 3000).
+- The store is `~/.zazzle/outputs` (`$ZAZZLE_OUTPUTS_DIR`), mode 0700 with 0600 files. Each save reaps entries older than an hour; if the store then holds more than `$ZAZZLE_OUTPUTS_MAX_GB` gigabytes (default 2), the oldest go until half the bytes remain. A failed save keeps the output and says it was not stored.
+
 ## Session ids and dedupe
 
 With `ZAZZLE_SESSION` set (or over MCP, where each connection is a session) every response starts with `[r:ID]`. Repeating a request whose response is identical and was sent within the last 40,000 estimated tokens returns `[r:ID] already sent: zazzle read a.rs:1-20, unchanged. If you no longer have it: read-again r:ID`.
 
-`zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean` responses cannot be read again, since their input is gone. Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
+`zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a session response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean`, `run` and `proxy` outputs come from the output store instead (see [Stored outputs](#stored-outputs)). Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
 
 ## Cache
 

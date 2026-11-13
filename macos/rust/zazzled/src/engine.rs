@@ -52,6 +52,7 @@ pub struct Engine {
     edit_lock: Mutex<()>,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
+    pub outputs: Option<PathBuf>,
 }
 
 impl Default for Engine {
@@ -79,12 +80,18 @@ impl Engine {
             edit_lock: Mutex::new(()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
+            outputs: None,
         }
     }
 
     // Creates an engine backed by a persistent store.
     pub fn with_store(store: Store) -> Engine {
         Engine { store: Some(store), ..Engine::new() }
+    }
+
+    // Returns the engine with an output store directory for clean, run and proxy outputs.
+    pub fn with_outputs(self, dir: Option<PathBuf>) -> Engine {
+        Engine { outputs: dir, ..self }
     }
 
     // Returns the hot cached metadata when the stat still matches and the entry is trustworthy.

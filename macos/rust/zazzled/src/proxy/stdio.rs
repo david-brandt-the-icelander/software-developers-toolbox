@@ -77,7 +77,7 @@ mod tests {
 
     // A filter with the default settings.
     fn filter() -> Filter {
-        Filter { lossy: true, budget: 8000, skip: Vec::new(), log: false }
+        Filter { lossy: true, budget: 8000, skip: Vec::new(), log: false, store: None }
     }
 
     // A writer that always fails.

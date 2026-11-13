@@ -52,7 +52,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read_again",
-        description: "Get a response this session already sent, by its r:ID: the same text if nothing changed, else the current version under a new id. Use it instead of repeating a request whose result you no longer have.",
+        description: "Get a response again by its r:ID: the same text if nothing changed, else the current version under a new id. Outputs of clean, run and proxy are kept for an hour; full=true gives their uncut text. Use it instead of repeating a request whose result you no longer have.",
         schema: read_again_schema,
         map: read_again_args,
     },
@@ -117,7 +117,15 @@ fn read_schema() -> Value {
 
 // Schema for zazzle_read_again.
 fn read_again_schema() -> Value {
-    object(json!({"id": {"type": "string", "description": "The id from a response's [r:ID] tag"}}), &["id"])
+    object(
+        json!({
+            "id": {"type": "string", "description": "The id from a response's [r:ID] tag"},
+            "full": {"type": "boolean", "description": "For clean, run and proxy outputs (kept for an hour): the uncut text with line numbers"},
+            "lines": {"type": "string", "description": "With full: a line range A-B"},
+            "budget": {"type": "integer", "description": "With full: token budget (default 3000)"}
+        }),
+        &["id"],
+    )
 }
 
 // Schema for zazzle_ls.
@@ -314,7 +322,13 @@ fn outline_args(v: &Value) -> Result<Vec<String>, String> {
 
 // Maps zazzle_read_again arguments to a command line.
 fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
-    Ok(vec!["read-again".to_string(), need_str(v, "id")?])
+    let mut a = vec!["read-again".to_string(), need_str(v, "id")?];
+    push_flag(&mut a, v, "full", "--full")?;
+    push_num(&mut a, v, "budget", "--budget")?;
+    if let Some(lines) = get_str(v, "lines")? {
+        a.extend(["--lines".to_string(), lines]);
+    }
+    Ok(a)
 }
 
 // Maps zazzle_refs arguments to a command line.
@@ -531,6 +545,14 @@ mod tests {
             json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"r:abcde"}}}),
         );
         assert_eq!(b.calls.borrow().last().expect("call"), &["read-again", "r:abcde"]);
+        ask(
+            &b,
+            json!({"id":5,"method":"tools/call","params":{"name":"zazzle_read_again","arguments":{"id":"x","full":true,"budget":9,"lines":"2-4"}}}),
+        );
+        assert_eq!(
+            b.calls.borrow().last().expect("call"),
+            &["read-again", "x", "--full", "--budget", "9", "--lines", "2-4"]
+        );
         assert_eq!(ask(&b, json!({"id":3,"method":"nope"}))["error"]["code"], -32601);
     }
 
