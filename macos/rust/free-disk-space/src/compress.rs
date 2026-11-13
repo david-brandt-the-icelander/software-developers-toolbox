@@ -204,9 +204,10 @@ pub fn cmd_compress(o: &CompressOpts) {
         let tail: String = cand.path.chars().rev().take(60).collect::<Vec<_>>().into_iter().rev().collect();
         tk.tick(
             &format!(
-                "[{}/{}] {tail} | saved {} | {}",
+                "[{}/{}] compressed {n_done} | not compressed {} | {tail} | saved {} | {}",
                 i + 1,
                 chosen.len(),
+                n_skip + n_fail,
                 human_i(saved_total),
                 hms(now() - t0)
             ),
@@ -223,11 +224,9 @@ pub fn cmd_compress(o: &CompressOpts) {
                 n_done += 1;
                 saved_total += saved;
                 streak = 0;
-                println!("{} {:<10} {}", c("32", "done  "), format!("-{}", human_i(saved)), cand.path);
             }
             "skipped" => {
                 n_skip += 1;
-                println!("{} {}: {note}", c("2", "skip  "), cand.path);
             }
             _ => {
                 n_fail += 1;
@@ -241,9 +240,10 @@ pub fn cmd_compress(o: &CompressOpts) {
         }
         if !util::is_tty() && now() - tk.last >= 15.0 {
             let msg = format!(
-                "progress: {}/{} files, verified saved {}",
+                "progress: {}/{} files, compressed {n_done}, not compressed {}, verified saved {}",
                 i + 1,
                 chosen.len(),
+                n_skip + n_fail,
                 human_i(saved_total)
             );
             tk.tick(&msg, true);
