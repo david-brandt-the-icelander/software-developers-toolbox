@@ -1,36 +1,59 @@
 # Plan: `zazz` scripts for zazzle(d)
 
-Status: draft, not implemented. Revision 2: scripts run as WASM by default; native Rust only when signed by an accepted authority. Open decisions are D6–D8 at the end.
+Status: draft, not implemented. Revision 3:
+- scripts run as WASM by default, and as native Rust only when signed by an accepted authority;
+- trust lives in the OS store (Keychain) and is checked off the hot path;
+- `.zazz` files carry unit tests that must pass once per machine;
+- a standard test library fakes the edges (filesystem, network, stdio, clock);
+- `keygen` and `sign` are scripts themselves.
+
+Open decisions are D9–D12 at the end.
 
 ## 1. What it is
 
-Agents write a small program, pack it into one compressed file (`NAME.zazz`) and give zazzled its absolute path. zazzled hashes it, compiles it once, and from then on runs it by hash through a fixed JSON protocol.
+Agents write a small program, pack it into one compressed file (`NAME.zazz`) and give zazzled its absolute path. zazzled then:
+- hashes it;
+- builds it;
+- **runs its unit tests once on this machine**;
+- from then on runs it by hash through a fixed JSON protocol.
 
-- **Default:** the script runs as **WebAssembly** inside a worker process that is itself OS-sandboxed (`sandbox-exec` on macOS, Landlock + seccomp on Linux). That gives two layers of access control: WASI capabilities and the OS sandbox.
-- **Exception:** a script **signed by an accepted authority** may run as **native Rust**, limited only by the OS sandbox.
+How a script runs:
+- **Default:** as **WebAssembly** (wasmtime) inside a worker process that is itself OS-sandboxed (`sandbox-exec` on macOS, Landlock + seccomp on Linux). That gives two layers of access control: WASI/host imports, then the OS sandbox.
+- **Signed by an accepted authority:** the script may run as **native Rust**, limited only by the OS sandbox.
 
 Humans can install the same scripts as ordinary commands with parsed flags and normal stdin/stdout.
 
 ```
-agent:  zazz pack ./csv-sum -o /tmp/csv-sum.zazz         # deterministic, our own deflate
-        zazz add /tmp/csv-sum.zazz                        # -> {"hash":"b3:9f2c…","runtime":"wasm",…}
+agent:  zazz new csv-sum && $EDITOR csv-sum/src/main.rs csv-sum/tests/*.rs
+        zazz test ./csv-sum                               # build + run tests, nothing registered
+        zazz pack ./csv-sum -o /tmp/csv-sum.zazz          # deterministic, our own deflate
+        zazz add /tmp/csv-sum.zazz                        # build, test once, register -> {"hash":"b3:9f2c…",…}
         zazz call 9f2c41d0a7e1 '{"files":["a.csv"]}'      # json in, json out
-signer: zazz pack ./gh-sync --sign ~/.zazzle/keys/me.key  # signature embedded in the .zazz
-human:  zazz install /tmp/csv-sum.zazz                    # shim ~/.zazzle/bin/csv-sum
-        csv-sum -d ';' --header a.csv | sort              # parsed flags, real pipes
+signer: zazz sign /tmp/gh-sync.zazz                       # key in the Keychain / Secure Enclave
+human:  zazz install /tmp/csv-sum.zazz && csv-sum -d ';' a.csv | sort
 ```
 
 ## 2. Settled decisions
 
 - **D1 WASM in place of Rust source:** a `.zazz` may carry a prebuilt `.wasm` built from any language and any WASM-compatible crates. It may also carry Rust source, which we compile ourselves (std + SDK only).
-- **D2 What we read is what we compile:**
-  - The file is read once into memory.
-  - The hash, the signature check, extraction and compilation all use those same bytes. The path is never opened again.
-  - So the output always comes from the bytes we hashed, whatever happens to the file meanwhile.
-- **D3 Linux:** unsigned scripts need the full OS sandbox (Landlock + seccomp) and are refused without it. Signed native scripts bypass that rule and run with whatever sandboxing the OS offers.
-- **D4 Network:** a script gets network access only when its manifest asks for it **and** it is signed by an accepted authority. An authority may be limited to certain hosts and paths. Those limits are enforced by the WASM layer; they do not apply to native Rust, because the OS sandbox cannot filter by host.
+- **D2 What we read is what we build:** the file is read once into memory. The hash, signature check, extraction, build and tests all use those same bytes. The path is never opened again.
+- **D3 Linux:** unsigned scripts need Landlock + seccomp and are refused without them. Signed native scripts run with whatever sandboxing the OS offers.
+- **D4 Network:**
+  - A script gets network access only when its manifest asks for it **and** it is signed by an accepted authority.
+  - An authority's host and filesystem limits are enforced by the WASM layer; they do not apply to native Rust.
 - **D5 Script id:** BLAKE3 of the exact `.zazz` bytes.
-- Earlier fixed points still hold:
+- **D6 Trust store:** wherever the OS keeps trust.
+  - **macOS:** the Keychain, which covers MDM- and AD-managed certificates as well as user trust settings.
+  - **Linux:** root-owned `/etc/zazzle/trust.d/`.
+- **D7 Signature format:** our own envelope. `keygen` and `sign` run through zazzled as zazz scripts (§6).
+- **D8 WASM runtime:** wasmtime, in a separate `zazz-worker` binary.
+- **Trust is never on the critical path:**
+  - A trust verdict is cached for `trust_ttl` seconds and refreshed in the background.
+  - Launches use the last verdict and never wait.
+  - Revocation is done by the external system (for example AD/MDM removing or distrusting a certificate). We pick it up at the next refresh.
+- **Tests:** a `.zazz` should include unit tests. A script whose tests fail is never run. Tests run once per script hash per machine.
+- **Test library:** included automatically. It makes edge interactions (filesystem, network, stdio, clock, cancellation) easy to fake and assert.
+- **Earlier fixed points still hold:**
   - one compressed file, decompressed with our own built-in code;
   - no copy of the `.zazz` is kept;
   - script processes start on demand and are recycled at our discretion;
@@ -39,34 +62,48 @@ human:  zazz install /tmp/csv-sum.zazz                    # shim ~/.zazzle/bin/c
 
 ## 3. Execution tiers
 
-| | unsigned (or untrusted signer) | signed, accepted, WASM | signed, accepted for `native`, Rust |
+| | unsigned / not accepted | accepted, WASM | accepted for `native`, Rust |
 |---|---|---|---|
-| runtime | WASM (wasmtime) in `zazz-worker` | WASM (wasmtime) in `zazz-worker` | native binary |
-| access-control layers | WASI + OS | WASI + OS | OS only |
-| network | never | manifest hosts ∩ authority hosts, enforced per request by the WASM host | on/off at OS level if the manifest asks and the authority grants any network; host list **not** enforced |
-| filesystem | global ∩ manifest | global ∩ manifest ∩ authority | global ∩ manifest (authority fs limits not applied) |
-| Linux without Landlock | refuse | refuse | run, with a warning in `doctor`/`status` |
-| source forms | `.wasm`, or Rust compiled to `wasm32-wasip1` | same | Rust compiled natively |
+| runtime | WASM in `zazz-worker` | WASM in `zazz-worker` | native binary (a WASM build is kept as fallback) |
+| access-control layers | host imports/WASI + OS | host imports/WASI + OS | OS only |
+| network | never | manifest hosts ∩ authority hosts, checked per request by the host | OS-level on/off; host list not enforced |
+| filesystem | global ∩ manifest | global ∩ manifest ∩ authority | global ∩ manifest |
+| Linux without Landlock | refuse | refuse | run, flagged in `status` |
 
-- A Rust script that asks for `"native": true` but is not signed by an authority trusted for native code is **compiled to WASM instead**; the same SDK source builds both ways. `add` reports `"runtime":"wasm","native_denied":"<reason>"`.
-- Trust is checked again **at every launch**, not only at `add`. A revoked or expired signer means:
-  - native scripts are refused (`untrusted_signer`; re-add to get a WASM build);
+### Trust verdicts (off the hot path)
+
+- **What a verdict holds:** `{signer, authority, grants, checked_at, valid_until, source}`.
+  - It is first computed during `add`, which is not latency-sensitive, and persisted in `meta/<hash>.json`.
+  - It is kept in memory by zazzled.
+- **Launch:** reads the verdict from memory (or from the metadata after a daemon restart) and **never blocks on it**. An expired verdict is still used for that launch, and a refresh is queued.
+- **Refresher:** a background thread in zazzled re-evaluates verdicts of recently used scripts every `trust_ttl` (default 600 s, set in the global policy). On macOS that is `SecTrustEvaluateWithError`, which may do OCSP/CRL network I/O; that is why it stays off the hot path.
+- **When a refresh changes a verdict:**
+  - the metadata is updated;
+  - new launches use the new pool key (§8);
+  - workers under the old verdict drain and are recycled.
+- **Revoked or expired signer** (D10):
+  - native scripts fall back to their WASM build;
   - WASM scripts drop to the unsigned tier (no network).
-- Giving an authority `native` trusts it with everything the OS sandbox allows, including any host once it asks for network. `zazz trust add` says so.
+  - Nothing that was runnable becomes unrunnable because of a trust lookup.
 
 ## 4. The `.zazz` file
 
-- **Format:** ZIP, limited to *stored* and *deflate* entries. Inflate and deflate come from `miniz_oxide`, built into zazzled; CRC-32 is our own table. Agents can create the file with `zazz pack` (preferred, deterministic: sorted entries, fixed timestamps, deflate level 9) or with any zip tool.
-- **Limits**, checked before anything is extracted:
-  - at most 32 MiB compressed, 128 MiB uncompressed, 512 entries, 64 MiB per entry, and a compression ratio of at most 100:1;
-  - no zip64, encryption, multi-disk archives or symlink entries;
-  - names must be relative UTF-8 with `/` only; no `..`, empty or `.` components, backslashes or NUL, and no two names that are equal after case folding.
+- **Format:** ZIP, limited to stored and deflate entries. Inflate and deflate use `miniz_oxide`, built in; CRC-32 is our own table. `zazz pack` is deterministic: sorted entries, fixed timestamps, level 9.
+- **Limits:**
+  - at most 32 MiB compressed, 128 MiB uncompressed, 1024 entries, 64 MiB per entry, and a compression ratio of at most 100:1;
+  - no zip64, encryption, multi-disk archives or symlinks;
+  - names must be relative UTF-8 with `/` only; no `..`, empty or `.` components, backslashes or NUL, and no two names equal after case folding.
 - **Layout:**
   ```
-  zazz.json        manifest (required)
-  zazz.sig         signature (optional, §5)
-  src/**.rs        kind "rust": sources, entry named in the manifest
-  NAME.wasm        kind "wasm": one core module (wasip1/wasip2 command) or component
+  zazz.json              manifest (required)
+  zazz.sig               signature envelope (optional, §5)
+  src/**.rs              kind "rust": sources
+  tests/**.rs            kind "rust": unit/integration tests, compiled with --test against the test library
+  NAME.wasm              kind "wasm": the module
+  NAME.tests.wasm        kind "wasm": the test module (any language, §9)
+  tests/fixtures/**      read-only files for tests (preopened as the test cwd)
+  tests/http.json        recorded request -> response pairs for the fake network
+  tests/snapshots/**     golden outputs for assert_snapshot
   ```
 
 ### Manifest `zazz.json`
@@ -77,16 +114,12 @@ human:  zazz install /tmp/csv-sum.zazz                    # shim ~/.zazzle/bin/c
   "name": "gh-sync",
   "version": "0.1.0",
   "description": "Sync issue labels from a JSON file.",
-  "kind": "wasm",
-  "entry": "gh-sync.wasm",
+  "kind": "rust",
+  "entry": "src/main.rs",
   "native": false,
+  "tests": { "paths": ["tests"], "timeout_ms": 120000 },
   "messages": ["json-command", "openapi", "service-call"],
-  "sandbox": {
-    "read": ["$CWD"],
-    "write": [],
-    "network": { "hosts": ["api.github.com"] },
-    "exec": false
-  },
+  "sandbox": { "read": ["$CWD"], "write": [], "network": { "hosts": ["api.github.com"] }, "exec": false },
   "limits": { "call_ms": 30000, "memory_mb": 256 },
   "cli": {
     "usage": "gh-sync [--dry-run] FILE",
@@ -98,232 +131,260 @@ human:  zazz install /tmp/csv-sum.zazz                    # shim ~/.zazzle/bin/c
 }
 ```
 
-- `kind` is `"wasm"` or `"rust"`. `native` is meaningful only for `"rust"`.
+- For `kind: "wasm"`, `tests` is `{"module": "NAME.tests.wasm"}`.
 - `network` is `"none"` (the default), `{"hosts": [...]}` or `"all"`.
 
 ## 5. Signing and trust
 
-- **Signature:**
-  - `zazz.sig` is JSON: `{"alg":"ed25519","key":"ed25519:<base64 pubkey>","digest":"b3:<hex>","sig":"<base64>"}`.
-  - `digest` is the BLAKE3 hash of every *other* entry, encoded canonically: sorted by name, then for each entry the name, the length as `u64` LE and the bytes.
-  - The signature is over the `digest`, prefixed with the domain string `zazz-sig-v1\0`.
-  - Verification uses `ed25519-dalek`, built in, on the in-memory bytes (D2).
-- **Hash vs signature:** the script id (D5) is the hash of the whole file, including `zazz.sig`. Signing changes the file's id, never its content digest.
-- **Keys:**
-  - `zazz keygen NAME` writes `~/.zazzle/keys/NAME.key` (0600) and prints the public key.
-  - `zazz pack DIR --sign KEY` or `zazz sign FILE --key KEY` signs.
-- **Trust store** (D6): `/etc/zazzle/trust.json`, which must be owned by root and not writable by group or others; otherwise it is ignored with a warning. Root ownership is the boundary: an agent running as you cannot give itself trust. Entries:
+- **Envelope** `zazz.sig` (our own format):
   ```json
-  { "authorities": [
-      { "name": "kisi-ci", "key": "ed25519:…", "native": false,
-        "network": { "hosts": ["api.github.com", "*.githubusercontent.com"] },
-        "fs": { "read": ["$CWD", "$HOME/data"], "write": ["$CWD"] },
-        "expires": "2027-06-30" } ] }
+  {"v":1,"alg":"ecdsa-p256-sha256","digest":"b3:<hex>","sig":"<base64 DER>","chain":["<base64 DER cert>", "…"]}
   ```
-  - `sudo zazz trust add NAME KEY [--native] [--hosts …] [--read …] [--write …] [--expires …]`, `sudo zazz trust rm NAME`, `zazz trust ls`.
-  - Host patterns allow only a single leading `*.` label.
-- **Global ceiling:** `/etc/zazzle/policy.json`, with the same ownership rules; a built-in default applies when it is missing. It caps filesystem access for every tier and can turn off native or network entirely (`"native": false`, `"network": false`).
+  - `digest` is the BLAKE3 hash of every other entry, encoded canonically: sorted by name, then for each entry the name, the length as `u64` LE and the bytes.
+  - The signature covers `zazz-sig-v1\0` followed by the digest.
+  - `chain` is the signer's certificate and any intermediate certificates, so trust can be evaluated without a network lookup on the hot path.
+- **Algorithm** (D9): ECDSA P-256. It is the only curve the Secure Enclave supports, and the one AD Certificate Services, MDM profiles and `SecTrust` handle everywhere. Verification uses the `p256` crate on both operating systems.
+- **Authority = a certificate trusted for zazz signing:**
+  - The leaf carries our Extended Key Usage OID `zazz-code-signing`.
+  - An optional custom extension holds the grants as JSON: `{"native":bool,"network":{"hosts":[…]}|"all"|"none","fs":{"read":[…],"write":[…]}}`. Without it, the default grant is no native and no network.
+- **macOS trust:** `SecTrustCreateWithCertificates` with the chain, plus the basic X.509 policy and our EKU check. Anchors and trust settings come from the Keychain:
+  - an org CA pushed by MDM or AD;
+  - a user's self-signed authority whose trust was set by `zazz trust add`. macOS itself asks the human to authenticate before it changes trust settings, so an agent cannot quietly grant itself trust.
+  - Revocation (OCSP/CRL, MDM removing a certificate, AD) is whatever the OS does; we only re-evaluate on schedule.
+- **Linux trust:** PEM anchors in root-owned `/etc/zazzle/trust.d/*.pem`, chain validation with `rustls-webpki` (P-256, custom EKU), and CRLs in `/etc/zazzle/crl.d/` when present.
+- **Global ceiling:** a root-owned policy at the OS's natural location: `/Library/Managed Preferences/net.icelander.zazz.plist`, deployable by MDM, or `/etc/zazzle/policy.json` on Linux. It holds the filesystem ceiling, `trust_ttl`, `require_tests`, and switches to disable native or network. A built-in default applies when it is missing.
 
-## 6. `zazz add PATH`
+## 6. Built-in scripts: `keygen`, `sign`, `trust`
 
-1. Open with `O_RDONLY|O_NOFOLLOW|O_CLOEXEC`; the caller must already be able to read the file. Require a regular file within the size limit. Read it **once** into memory (D2).
-2. `hash = BLAKE3(bytes)`; the id is `b3:<64 hex>`. Commands accept any unique prefix of at least 12 hex characters.
-3. If the artifacts for `hash` exist and the build key matches, reply `cached`.
+- `zazz keygen`, `zazz sign` and `zazz trust` are **zazz scripts that run through zazzled** and its normal registry, pool and protocol.
+- They are embedded in the zazzled binary as `.zazz` bytes and registered on first use.
+- They are signed by the **zazzle release authority**, whose public key is pinned in zazzled. That authority's grant is fixed in code and covers only what these scripts need:
+  - Keychain access (`mach-lookup` for `securityd`/`ctkd`);
+  - reading the input path;
+  - writing the output path.
+- **`keygen [--name N] [--csr]`:** creates a non-exportable P-256 key in the Secure Enclave (or as a Keychain software key where no enclave exists), then either:
+  - a self-signed authority certificate with the zazz EKU, or
+  - a CSR for the org CA.
+  - On Linux the key is a 0600 file in `~/.zazzle/keys/`.
+- **`sign FILE [-o OUT] [--key N]`:** reads the archive, computes the digest, signs with the Keychain key and writes a new `.zazz` that includes `zazz.sig`. The input file keeps its own hash; the output gets a new one.
+- **`trust add CERT [--grants …]` / `trust ls` / `trust rm`:** set Keychain trust settings for our policy (macOS prompts the human); on Linux this needs root.
+- **Exception to D2's build-from-source rule** (D12): these built-ins carry a **prebuilt universal native binary**, because a machine may have no Rust toolchain. Only the pinned release authority may ship `kind: "native-bin"`. Its signature covers the binary, so it is still exactly what we read.
+
+## 7. `zazz add PATH`
+
+1. Open with `O_RDONLY|O_NOFOLLOW|O_CLOEXEC`; the caller must be able to read the file. Require a regular file within the limit. Read it **once** (D2).
+2. `hash = BLAKE3(bytes)`; the id is `b3:<64 hex>`; commands accept unique prefixes of at least 12 hex characters.
+3. If the artifacts and a **passing test record** exist for `hash` with a matching build key, reply `cached`.
 4. Otherwise take an exclusive `flock` on `locks/<hash>.lock` and check step 3 again.
-5. Validate the archive and manifest. Verify `zazz.sig` if present and record the signer key; trust is not decided here (§3).
-6. Extract from memory into a fresh `tmp/<hash>.<pid>/` (0700, every file `O_CREAT|O_EXCL|O_NOFOLLOW`).
-7. Build according to `kind` and trust (§7), inside the compile sandbox.
-8. Instantiate the result once in its runtime and fetch `openapi` if declared; cache it in the metadata.
-9. Publish atomically (temp file + rename): the metadata and the artifacts.
-10. Delete `tmp/<hash>.<pid>/`, which holds the sources and the original `.wasm` copy, then release the lock.
+5. Validate the archive and manifest. If `zazz.sig` is present, verify the signature over the in-memory bytes and compute the first trust verdict.
+6. Extract from memory into a fresh `tmp/<hash>.<pid>/` (0700, every file `O_EXCL|O_NOFOLLOW`).
+7. Build (§8), inside the compile sandbox: the script, and its tests.
+8. **Run the tests** (§9) in the script's runtime tier, but always with no network and a scratch copy of `tests/fixtures/` as cwd.
+   - Any failure: nothing is published, and the reply lists the failures.
+   - Pass: record `{passed, failed:0, duration_ms, build_key}`.
+   - No tests: `"tests":0` with a warning, or refusal when the policy sets `require_tests` (D11).
+9. Fetch `openapi` if declared and cache it.
+10. Publish atomically (temp file + rename): the metadata, the verdict, the test record and the artifacts.
+11. Delete the temp directory (sources, test binaries, fixtures) and release the lock.
 
-**What stays:** compiled artifacts only, never the `.zazz` itself:
-- `wasm/<hash>.wasm`: the validated module, or the module we compiled from Rust source;
-- `wasm/<hash>.cwasm`: the AOT cache, which can be rebuilt from `.wasm` after a wasmtime upgrade;
-- `bin/<hash>`: the native binary;
+**What stays:**
+- `wasm/<hash>.wasm` and `wasm/<hash>.cwasm` (the AOT cache, which can be rebuilt from `.wasm`);
+- `bin/<hash>` (native, plus its WASM fallback build);
 - `meta/<hash>.json`.
 
-A native binary cannot be rebuilt once the toolchain changes; it is marked `stale` and keeps running until it is re-added.
+A `.cwasm` rebuilt after a wasmtime upgrade does not re-run tests (same module); a new native build is impossible without the sources, so the native binary is marked `stale`. The store lives in `~/.zazzle/v1/zazz/` (0700).
 
-**Store** `~/.zazzle/v1/zazz/` (0700): `wasm/`, `bin/`, `meta/`, `names/`, `locks/`, `tmp/` (anything older than 1 h is purged at start-up) and `sdk/<buildkey>/`.
+## 8. Building
 
-## 7. Building
+- **WASM:**
+  - Validate the module. Imports must be from the allowlist: `wasi_snapshot_preview1`, WASI 0.2 `cli`/`filesystem`/`clocks`/`random`/`io`, our `zazz_host` module (§10), and `wasi:http/outgoing-handler` only for signed scripts.
+  - AOT-compile to `.cwasm` in `zazz-worker compile`, under the compile sandbox.
+  - **Build key:** wasmtime version + target + CPU features + worker version.
+- **Rust → WASM** (default):
+  - `rustc --edition E --target wasm32-wasip1 --crate-type bin -C opt-level=s --error-format=json --extern zazz=<sdk rlib> src/main.rs`.
+  - Tests: `rustc --test …` per test file, the same way, linked with the SDK's `zazz::test` module.
+  - Requires `rustup target add wasm32-wasip1`; `doctor` checks for it.
+- **Rust → native** (accepted for native, and policy allows native): the same commands for the host target, with the linker resolved once to an absolute clang. **The WASM build is produced as well**, so a revoked trust verdict can fall back to it (§3). Tests run for both builds.
+- **Toolchain lookup:** `$ZAZZ_RUSTC`, then `~/.cargo/bin/rustc`, then `/opt/homebrew/bin/rustc`; never `PATH`, which is empty under launchd.
+- **All builds:** argument lists only, a 120 s timeout and a cleared environment. Diagnostics are condensed to `{level,file,line,col,msg,hint}`, at most 20.
+- **Compile sandbox:** read the toolchain, the SDK and the build directory; write only the build directory; no network. No `build.rs`, Cargo dependencies or proc-macros; crates come in through `.wasm` (D1).
 
-### WASM (no toolchain needed)
-- Validate the module with wasmtime and check its imports against an allowlist:
-  - `wasi_snapshot_preview1` or WASI 0.2 `cli`, `filesystem`, `clocks`, `random` and `io`;
-  - `wasi:http/outgoing-handler` only if the network tier can be granted.
-  - Unknown imports fail with a list of the offending names.
-- AOT-compile to `.cwasm` with Cranelift in `zazz-worker compile`, under the compile sandbox (untrusted WASM is parsed only inside a sandbox). Bytes come in and the `.cwasm` goes out over pipes.
-- **Build key:** wasmtime version + target + CPU features + `zazz-worker` version.
+## 9. Tests and the test library
 
-### Rust → WASM (default for `kind: "rust"`)
-- `rustc --edition E --target wasm32-wasip1 --crate-type bin -C opt-level=s --error-format=json --extern zazz=sdk/<key>/wasm32-wasip1/libzazz.rlib src/main.rs`, then the WASM steps above.
-- This needs `rustup target add wasm32-wasip1`; `doctor` checks for it.
-- **Toolchain lookup:** `$ZAZZ_RUSTC`, then `~/.cargo/bin/rustc`, then `/opt/homebrew/bin/rustc`. Never `PATH`, which is empty under launchd.
+### Running tests
+- **When:** once per script hash per machine, during `add`, and also with `zazz test DIR|FILE` (build + test, nothing registered) for the agent's edit loop.
+- **Where:** the same runtime tier the script will use. Network is always off; the only network is the fake one. The cwd is a scratch copy of `tests/fixtures/`. Time limit: `tests.timeout_ms`.
+- **Rust:** the libtest harness built with `--test`. We parse `test NAME ... ok|FAILED|ignored` lines and the failure sections into `{"passed":N,"failed":[{"name","message","file","line"}],"ignored":N}`, with at most 20 failures and every message capped.
+- **Other languages:** `NAME.tests.wasm` is a WASI command. It reports through `zazz_host.send` as `{"t":"test-report","passed":N,"failed":[…]}`. Without a report, exit status 0 counts as passed.
+- **Never run:** a hash without a passing record cannot be called (`tests_failed` / `tests_missing`).
 
-### Rust → native (signed, authority trusted for native, global allows native)
-- Same `rustc` call for the host target with `-C opt-level=2`. The linker is resolved once to an absolute clang (via `xcrun -f clang`) and cached in the build key.
+### `zazz::test`, the edge-faking library (part of the SDK, always available to tests)
 
-### All builds
-- Argument lists only, a 120 s timeout and a cleared environment.
-- Diagnostics are condensed to `{"level","file","line","col","msg","hint"}`, at most 20.
-- **Compile sandbox:** read only the toolchain, the SDK, the build directory and the system SDK; write only the build directory; no network. This blocks `include_str!` exfiltration.
-- No `build.rs`, Cargo dependencies or proc-macros for Rust source; crates come in through the `.wasm` route (D1).
+**Production side:** the SDK routes edge I/O through the call context, so tests can swap implementations:
+- `call.fs()` (open, read, write, list, metadata);
+- `call.http()` (request → response);
+- `call.stdin()/stdout()/stderr()`, `call.clock()`, `call.env()`, `call.cancelled()`.
 
-## 8. Running
+Plain `std::fs` still works in production but cannot be faked.
+
+**Test side:**
+- **`Harness`** builds a fake call context and runs the script's handlers exactly as the launcher would:
+  - `h.json_command(run, json!({…}))` returns `Result<Json>`;
+  - `h.service_call("op", params, body)`;
+  - `h.human(&["-d", ";", "a.csv"])` uses the **same `cliargs` parser as the launcher** and the manifest's `cli` spec, then checks stdout, stderr and the exit code.
+- **`FakeFs`:**
+  - an in-memory tree built from literals, or `from_fixtures("tests/fixtures/x")`;
+  - records every write (`h.fs().written("out.csv")`);
+  - can inject errors: `deny("secrets/")`, `fail_write("out", Io::NoSpace)`.
+- **`FakeHttp`:**
+  - expectations: `expect(GET, "https://api.github.com/repos/a/b").respond(200, json!(…))`, or replay from `tests/http.json`;
+  - an unmatched request fails the test with the full request shown;
+  - `h.http().requests()` lets the test assert on what was sent;
+  - helpers for latency and timeouts.
+- **Policy simulation:** `Harness::from_manifest()` applies the manifest's `sandbox` to the fakes. A read outside `read` returns `sandbox_denied`, and a request to a host not in `network.hosts` returns `network_denied`, with the same error codes as production. Policy mistakes show up in tests, not in use.
+- **Other fakes:** `FakeStdio` (stdin bytes, captured output, `tty(true)`), `FakeClock` (set or advance), `FakeEnv`, and `h.cancel_after(n)` to test cancellation.
+- **Assertions:**
+  - `assert_json_eq!` (reports the paths that differ);
+  - `assert_snapshot!("name", value)` against `tests/snapshots/name.json` (`zazz test --update` rewrites them locally; `add` never updates them);
+  - `assert_schema(output, "operationId")` checks the output against the script's OpenAPI document (a JSON Schema subset: type, properties, required, items, enum).
+- **Any language through the host:** for WASM test modules, `zazz-worker` in test mode serves `zazz_host.http` from `tests/http.json` and preopens the scratch fixtures as cwd, so the network and filesystem fakes work without our SDK.
+
+## 10. Running
 
 ### Processes
-- **Pool key** = (hash, runtime, effective policy instantiated for the caller's cwd). The OS sandbox is fixed when a process starts, so a worker never serves a different cwd or policy.
+- **Pool key** = (hash, runtime, verdict id, effective policy instantiated for the caller's cwd).
 - **WASM:**
-  - `zazzled` spawns `zazz-worker serve` under the OS sandbox and passes the `.cwasm` as a descriptor, so the worker needs no read access to the store.
-  - The worker mmaps the module once and makes a **fresh wasmtime `Store` and instance per call**, using the pooling allocator, so calls share no state.
-  - Limits: `StoreLimits` for memory and epoch interruption for `call_ms`.
-- **Native:** `bin/<hash>` is spawned directly under the OS sandbox and serves calls in sequence through the SDK.
+  - zazzled spawns `zazz-worker serve` under the OS sandbox and passes the `.cwasm` as a descriptor;
+  - a **fresh `Store` and instance per call**, with the pooling allocator;
+  - limits: `StoreLimits` for memory, epoch interruption for `call_ms`.
+- **Native:** `bin/<hash>` under the OS sandbox serves calls in sequence through the SDK.
 - **Both:**
-  - the process gets the caller's cwd, fds 0/1/2 on `/dev/null`, **fd 3** as the control socketpair and a scrubbed environment (`LANG`, `TMPDIR`/`HOME` = per-worker tmp, `ZAZZ_PROTO=1`);
-  - before exec: `setsid`, `RLIMIT_CORE=0`, `RLIMIT_NOFILE`, `RLIMIT_FSIZE`, and closing every descriptor above 3.
-- **Recycling:** a worker is retired after 60 s idle or 1000 calls, when its RSS is over the limit, after a protocol error or timeout, or when there are more than 32 warm workers (least recently used first). Shutdown is `{"t":"shutdown"}`, then SIGKILL after 200 ms. Scripts must not rely on state between calls.
-- **Daemon threads:** calls run on dedicated threads, never on the accept workers that serve `find`/`read`. When the caller hangs up (`POLLHUP`), zazzled sends `cancel` and kills the worker after 200 ms. When zazzled exits, it shuts down every worker.
+  - the caller's cwd, fds 0/1/2 on `/dev/null`, **fd 3** as the control socketpair, and a scrubbed environment;
+  - `setsid`, rlimits, and every descriptor above 3 closed before exec.
+- **Recycling:** a worker is retired after 60 s idle or 1000 calls, when RSS is over the limit, after an error or timeout, when its verdict changes, or when there are more than 32 warm workers (LRU).
+- **Daemon threads:** calls run on dedicated threads, never on the accept workers. On `POLLHUP` from the caller: `cancel`, then SIGKILL after 200 ms.
 
-### Protocol: one message set, three transports
+### Protocol: one message set
+- `hello`/`ready`
+- `json-command` (required)
+- `openapi`
+- `service-call`
+- `progress`
+- `cancel`, `shutdown`
+- `test-report`
+- results `{"t":"result","id":N,"ok":…,"output"|"error":…,"exit":…}`
 
-Messages (JSON):
+### Transports
+1. **zazzled ↔ native script and zazzled ↔ `zazz-worker`:** frames of `u32` LE length + JSON on fd 3, with the caller's fds 0/1/2 attached to each call via `SCM_RIGHTS` (code moves from `server.rs` to `fdpass.rs`).
+2. **`zazz-worker` ↔ WASM guest:** **host imports** in the core-wasm module `zazz_host`, usable from any language without bindings:
+   - `recv(ptr, cap) -> i64`: the call message, or `-needed`;
+   - `send(ptr, len)`: result, progress or test-report;
+   - `http(req_ptr, req_len, resp_ptr, resp_cap) -> i64`: JSON head + body. The allowlist is enforced here. Unsigned scripts get `network_denied`; the import is always linked, so behaviour is the same in tests and in production;
+   - `cancelled() -> i32`.
+   - The guest's stdin/stdout/stderr are the caller's real fds, wrapped as WASI streams with `isatty`-based terminal flags.
+3. **Components (later):** the WIT world `zazz:script@1` mirrors these functions; `wasi:http` is linked only for signed scripts, with the same host check.
 
-| message | reply |
-|---|---|
-| `{"t":"hello","proto":1}` | `{"t":"ready","messages":[…],"sdk":"…"}` |
-| `{"t":"json-command","id":N,"mode":"agent"\|"human","input":{…},"deadline_ms":…}` | `{"t":"result","id":N,"ok":true,"output":…,"exit":0}` or `{"ok":false,"error":{"code","message"}}` |
-| `{"t":"openapi","id":N}` | an OpenAPI 3.1 document in `output` |
-| `{"t":"service-call","id":N,"operation":"…","params":{…},"body":…}` | as `json-command` |
-| `{"t":"progress","id":N,"msg":"…"}` (script → launcher, optional) · `{"t":"cancel","id":N}` · `{"t":"shutdown"}` | |
+### Front ends
+- **Agent mode:** zazzled prints `output` as JSON on the caller's stdout.
+- **MCP:** pipes in place of fds, with output capped to the budget.
+- **Launcher error codes:** `script_crashed`, `timeout`, `out_of_memory`, `sandbox_denied`, `network_denied`, `tests_failed`, `tests_missing`, `protocol`, `busy`.
 
-Transports:
+## 11. Access control: two layers
 
-1. **zazzled ↔ native script, and zazzled ↔ `zazz-worker`:** frames of `u32` LE length + JSON on fd 3, with the caller's fds 0/1/2 attached to each call via `SCM_RIGHTS`. The descriptor-passing code in `server.rs` moves to `fdpass.rs`.
-2. **`zazz-worker` ↔ WASI command module** (works for every language with WASI):
-   - per call, a fresh tmp directory is preopened as `/.zazz/`, holding `request.json` (the message above);
-   - the guest writes `/.zazz/response.json`;
-   - the guest's stdin/stdout/stderr **are the caller's real fds**, wrapped as WASI streams, with terminal flags set from `isatty`;
-   - `proc_exit` becomes `exit` when there is no response.
-3. **`zazz-worker` ↔ component (later phase):** a WIT world `zazz:script@1` that exports `handle: func(request: string) -> string` and carries the same messages without temp files.
+- **WASM layer:**
+  - filesystem only through preopens (global ∩ manifest ∩ authority);
+  - network only through `zazz_host.http` / `wasi:http`, with `https` only, exact or `*.` host match, no redirects to other hosts and no IP literals;
+  - no process spawning.
+- **OS layer, macOS:**
+  - SBPL from a fixed template; every path passed as `-D`;
+  - deny by default; no fork or exec;
+  - `network-outbound` to `*:443` only for network-granted WASM workers and native scripts;
+  - `dynamic-code-generation` only for `zazz-worker`;
+  - Keychain `mach-lookup` only for the built-in authority's scripts.
+- **OS layer, Linux:** Landlock, seccomp, `NO_NEW_PRIVS`, and a network namespace when network is denied.
 
-- **Agent mode:** zazzled prints `output` as JSON on the caller's stdout once the result arrives. Scripts use stderr for anything else.
-- **MCP** has no fds: zazzled makes pipes, feeds the tool's `stdin` string and returns stdout and stderr capped to the reply budget.
-- The **SDK** (`zazz` crate, std-only, two backends from one API: fd-3 frames for native, `/.zazz/` files for wasip1) handles:
-  - framing, `catch_unwind`, a small `Json` type;
-  - `Call::{stdin, stdout, stderr, read_input("-"), println, progress, is_human, cancelled}`.
-- Error codes the launcher adds: `script_crashed`, `timeout`, `out_of_memory`, `sandbox_denied`, `network_denied` (with the host), `untrusted_signer`, `protocol`, `busy`.
-
-## 9. Access control: two layers
-
-### WASI layer (WASM tiers)
-- **Filesystem:** preopens only. `$CWD` is read-only unless write is granted; there is also `/.zazz/` and the per-worker tmp. Effective set = global ∩ manifest (∩ authority when signed).
-- **Network:**
-  - **Unsigned:** no `wasi:http` or `wasi:sockets` is linked at all, so a module that imports them fails at `add`.
-  - **Signed:**
-    - `wasi:http/outgoing-handler` is linked with a `send_request` hook that allows only `https` to hosts in manifest ∩ authority (exact or `*.` match), with no redirects to other hosts and no IP literals;
-    - TLS is done by the host;
-    - raw `wasi:sockets` stays off in v1.
-- No process spawning exists in WASI; clocks and random are allowed.
-
-### OS layer (all tiers)
-- **macOS:** SBPL generated from a fixed template, with every path passed as `-D` (`(subpath (param "CWD"))`), never by string interpolation. `/usr/bin/sandbox-exec` is called by absolute path. Rules:
-  - deny by default; read the system libraries and the policy paths; write only `$TMP` and the granted paths;
-  - no fork or exec;
-  - `network-outbound` to `*:443` only for WASM workers of network-granted scripts (the WASM layer narrows it per host), or for native scripts granted network;
-  - JIT: allow `dynamic-code-generation` only for `zazz-worker`.
-- **Linux:** Landlock rulesets for the same paths; seccomp denies `socket`, `connect` and `fork` unless granted; `PR_SET_NO_NEW_PRIVS`; an unshared network namespace when network is denied.
-  - WASM tiers are refused without Landlock and seccomp (D3).
-  - Signed native runs with what is available and is flagged in `status`.
-
-## 10. The `zazz` command
+## 12. The `zazz` command
 
 The **invoker** is the existing C binary, dispatched on `basename(argv[0])`:
 - `zazzle` works as today;
 - `zazz` prepends `zazz` to the args;
-- any other name (a shim symlinked to `zazz`) prepends `zazz exec-name <argv0>`.
+- any other name (a shim) prepends `zazz exec-name <argv0>`.
 
-The release ships the `zazz` symlink and the `zazz-worker` binary. zazz requests are never session-deduped.
+zazz requests are never session-deduped.
 
-| agent command | reply |
+| command | reply |
 |---|---|
-| `zazz pack DIR [-o FILE] [--sign KEY]` | `{"path","hash","bytes","signed"}`; validates locally |
-| `zazz add PATH` | `{"hash","status":"compiled"\|"cached","runtime":"wasm"\|"native","signer","network","warnings":[…]}` or `{"error":{"code":"compile_failed","diagnostics":[…]}}` |
-| `zazz call HASH [JSON\|-]` / `zazz call HASH OPERATION [--params JSON] [--body JSON\|-]` | the output |
-| `zazz describe HASH` | manifest summary, tier, effective policy, operations |
-| `zazz ls` · `zazz rm HASH` · `zazz gc` · `zazz status` · `zazz doctor` · `zazz new NAME [--wasm]` | short JSON |
+| `zazz new NAME [--wasm]` | template: manifest, `src/main.rs`, `tests/basic.rs` using `zazz::test` |
+| `zazz test DIR\|FILE [--update]` | `{"passed","failed":[…],"ignored","build":"ok"\|diagnostics}` |
+| `zazz pack DIR [-o FILE]` | `{"path","hash","bytes"}` |
+| `zazz add PATH` | `{"hash","status","runtime","tests":{…},"trust":{…},"warnings":[…]}` or an error with diagnostics or test failures |
+| `zazz call HASH [JSON\|-]` · `zazz call HASH OP [--params] [--body]` | output |
+| `zazz describe` · `ls` · `rm` · `gc` · `status` · `doctor` | short JSON |
+| `zazz keygen` · `sign` · `trust ls\|add\|rm` | built-in scripts (§6) |
 
-- **Trust commands:** `zazz keygen`, `zazz sign`, `zazz trust ls|add|rm`. `trust add` and `trust rm` need root and are never offered over MCP.
-- **MCP:** `zazz_add`, `zazz_call`, `zazz_describe` and `zazz_ls`. Exposing each script's operations as MCP tools comes later.
+- **MCP:** `zazz_test`, `zazz_add`, `zazz_call`, `zazz_describe` and `zazz_ls`. `trust add`/`rm` are never offered over MCP.
 - **Humans:**
-  - `zazz install PATH|HASH [--as NAME]` creates the shim `~/.zazzle/bin/NAME -> zazz`; also `zazz uninstall NAME`, `zazz list` and `zazz run NAME ARGS…`.
-  - **Argument parsing:** the launcher parses `ARGS` against `cli.args`. Types: `bool`, `count`, `string`, `int`, `float`, `enum` and `path` (made absolute against the cwd; `-` means stdin). Each can be `multiple`, have a `default` or be `required`.
-  - `--` and combined short flags work, and `--help` is generated. Parse errors exit 2.
-  - Without a `cli` section, flags are derived from the OpenAPI input schema; with neither, the script gets `{"argv":[…]}`.
-  - **Output:** the script writes straight to the real stdout. If it returns an `output`, the launcher renders it: a string raw, flat object arrays as a table on a TTY or TSV otherwise, anything else as JSON. `--json` forces raw JSON.
-  - Ctrl-C gives exit 130 after `cancel`.
+  - `zazz install PATH|HASH [--as NAME]` creates the shim `~/.zazzle/bin/NAME`; also `uninstall`, `list`, `run`.
+  - **Arguments:** parsed by the launcher against `cli.args` (shared with the test library), with `--help` generated.
+  - **Output:** the script writes to the real stdout, or returned output is rendered (string raw, table on a TTY or TSV otherwise, JSON); `--json` forces raw JSON.
+  - Ctrl-C gives exit 130.
 
-## 11. Security checklist
-
-- **Hostile archives:** limits are checked before allocating, names before extracting, and every file is opened `O_EXCL|O_NOFOLLOW`.
-- **D2:** a single read; the hash, signature check and build all use the same bytes.
-- **Untrusted code paths:** Cranelift and `rustc` only ever see untrusted input inside the compile sandbox. No build scripts or proc-macros.
-- **Trust and policy files:** owned by root and checked on every load. The authority key, grants and expiry are checked at every launch.
-- **Unsigned scripts:** no network capability linked at all; WASM and the OS sandbox both confine the filesystem.
-- **Sandbox profiles:** SBPL from parameters only; scrubbed environment; no inherited descriptors above 3; per-call WASM instances.
-- **Shims and output:** shim names cannot shadow subcommands. Script output and diagnostics are capped to a budget before they reach an agent.
-
-## 12. Code layout
+## 13. Code layout
 
 ```
-macos/rust/zazz-sdk/          std-only SDK crate (native + wasip1 backends), embedded in zazzled
-macos/rust/zazz-worker/       wasmtime host: serve (calls) + compile (AOT); the only crate with wasmtime
+macos/rust/zazz-sdk/            std-only SDK + zazz::test (native and wasip1 backends), embedded in zazzled
+macos/rust/zazz-worker/         wasmtime host: serve, compile, test mode (fake http, fixtures)
+macos/rust/zazz-builtins/       keygen, sign, trust (built as prebuilt universal binaries, packed as signed .zazz)
 macos/rust/zazzled/src/fdpass.rs
 macos/rust/zazzled/src/zazz/
-  mod.rs  archive.rs  manifest.rs  sign.rs  trust.rs  registry.rs  compile.rs
-  policy.rs  sbpl.rs  landlock.rs  wire.rs  pool.rs  cliargs.rs  render.rs
+  mod.rs  archive.rs  manifest.rs  sign.rs  verdict.rs  trust_macos.rs  trust_linux.rs
+  registry.rs  compile.rs  testrun.rs  policy.rs  sbpl.rs  landlock.rs  wire.rs  pool.rs  cliargs.rs  render.rs
 macos/c/zazzle/src/zazzle_core.h   argv[0] dispatch
 agents/skills/zazz/SKILL.md
 ```
 
 - **New dependencies:**
-  - in zazzled: `miniz_oxide` (zip) and `ed25519-dalek` (signatures);
-  - in zazz-worker: `wasmtime`, `wasmtime-wasi` and `wasmtime-wasi-http`.
-- Keeping wasmtime out of zazzled keeps the daemon's size, start time and coverage as they are.
+  - zazzled: `miniz_oxide` (zip), `p256` (signature verification), `rustls-webpki` (Linux chain validation), `security-framework` (macOS SecTrust and Keychain; or our own small FFI behind `cfg(macos)`);
+  - zazz-worker: `wasmtime`, `wasmtime-wasi`, `wasmtime-wasi-http`.
 
-## 13. Phases (each ships green: fmt, clippy, tests, coverage ≥ 95%)
+## 14. Phases (each ships green: fmt, clippy, tests, coverage ≥ 95%)
 
 1. **Archive, manifest, `pack`.** Tests for malicious zips and determinism.
-2. **Signing and trust:** `sign.rs`, `trust.rs`, `keygen`/`sign`, policy intersection, as pure functions with full tests.
-3. **SDK:** both backends, tested over a socketpair and with wasip1 under wasmtime.
-4. **`zazz-worker`:** AOT compile, per-call instances, fd-backed stdio, `/.zazz/` transport, limits, the http hook with host allowlist.
-5. **Registry and builds:** WASM validation and AOT, Rust → wasip1, Rust → native for trusted signers, locks, atomic publish, diagnostics.
-6. **Pool and wire:** spawn, recycle, cancel, timeouts, fd forwarding, dedicated call threads.
-7. **OS sandbox:** SBPL generator (pure) and macOS backend, the compile sandbox, Linux Landlock + seccomp. A test matrix per tier (fs outside scope, network, host not allowed, fork).
-8. **Agent front ends:** argv[0] dispatch, the subcommands, MCP tools, `doctor`, `new`.
-9. **Humans:** install, shims, `cliargs`, `--help`, renderer, Ctrl-C.
-10. **`openapi`/`service-call`** caching and `describe`; CLI derived from the schema; then the component transport.
-11. **Docs and release:** README, skill, AGENTS.md line, `zazz` symlink, `zazz-worker` in the tarball and formula, signing entitlements.
+2. **SDK and `zazz::test`:** call context with edge traits, fakes, harness, assertions, `cliargs`; both backends.
+3. **`zazz-worker`:** AOT compile, per-call instances, `zazz_host` imports, fd-backed stdio, limits, test mode.
+4. **Build and test pipeline:** WASM validation, Rust → wasip1 (plus tests), the libtest report parser, `zazz test`, test records.
+5. **Registry and `add`:** locks, atomic publish, `cached`, diagnostics.
+6. **Signing and verdicts:** envelope, `p256`, verdict cache and refresher, macOS SecTrust, Linux webpki, the tier decision, native build + WASM fallback.
+7. **Built-ins:** `zazz-builtins` (keygen in the Secure Enclave, sign, trust), the release authority, `native-bin`, release packaging.
+8. **Pool and wire:** spawn, recycle on verdict change, cancel, timeouts, fd forwarding, dedicated threads.
+9. **OS sandbox:** SBPL generator, macOS backend, compile sandbox, Linux Landlock + seccomp; a test matrix per tier.
+10. **Front ends:** argv[0] dispatch, subcommands, MCP, `doctor`, `new`.
+11. **Humans:** install, shims, rendering, `--help`, Ctrl-C.
+12. **`openapi`/`service-call`**, `assert_schema`, CLI derived from the schema; then components.
+13. **Docs and release:** README, skill, AGENTS.md line, `zazz` symlink, `zazz-worker`, entitlements.
 
-## 14. Risks and spikes (do first)
+## 15. Risks and spikes (do first)
 
-- **wasmtime under `sandbox-exec`:** loading `.cwasm` needs executable memory. Find the minimal SBPL (`dynamic-code-generation`?) and, for notarized releases, the hardened-runtime entitlement (`com.apple.security.cs.allow-jit` or `allow-unsigned-executable-memory`) for `zazz-worker` only.
-- **SCM_RIGHTS and received-fd I/O** in a deny-default profile, and the minimal `mach-lookup` set.
-- **Latency:** worker cold start (sandbox + exec + module mmap) and per-call instantiation with the pooling allocator. The aim is for a warm call to cost about a socket round trip plus tens of µs.
-- **MSRV:** wasmtime follows recent Rust. Expect to raise `rust-version` for the workspace, or give `zazz-worker` its own (CI `msrv` job).
-- **macOS linker:** native and wasip1 builds need the Command Line Tools or rustup targets; `.wasm` scripts need neither.
-- **`sandbox-exec` deprecation:** keep the backend behind `policy.rs`; fallback is `sandbox_init_with_parameters`.
-- **Coverage:** macOS-only and wasmtime paths are measured on the matching CI job; keep the decision logic in pure functions.
+- **wasmtime under `sandbox-exec`:** executable memory for `.cwasm` (`dynamic-code-generation`) and the hardened-runtime entitlement for `zazz-worker` only.
+- **Secure Enclave and Keychain from a sandboxed process:** the minimal `mach-lookup` set, and whether keychain access groups need a signed, entitled binary (likely: the built-ins must be codesigned with a keychain access group, which ties them to the release signing in `macos/release/`).
+- **`SecTrust` with a custom EKU OID and a custom grants extension:** check that evaluation accepts them, and measure how long OCSP takes (it runs off the hot path, but it bounds refresh time).
+- **SCM_RIGHTS and received-fd I/O** in a deny-default profile.
+- **libtest on wasm32-wasip1:** check that panics, output capture and the report format parse reliably.
+- **Latency:** worker cold start, per-call instantiation, and how long `add` takes now that it includes tests.
+- **MSRV:** wasmtime will force a higher `rust-version`, at least for `zazz-worker`.
+- **`sandbox-exec` deprecation:** keep the backend behind `policy.rs`.
 
-## 15. Open decisions
+## 16. Open decisions
 
-- **D6 Where trust lives.**
-  - Recommended: root-owned `/etc/zazzle/trust.json` + `policy.json`, managed with `sudo zazz trust …`, because an agent running as you cannot then grant itself trust.
-  - Alternative: `~/.zazzle/`, which is convenient but writable by any unsandboxed agent running as you.
-- **D7 Signature format.**
-  - Recommended: our own Ed25519 (`zazz keygen`/`sign`).
-  - Alternatives: SSH signatures (`ssh-keygen -Y sign`, reuses existing git signing keys, `allowed_signers`-style trust), or Apple Developer ID / codesign identities.
-- **D8 WASM runtime.**
-  - Recommended: wasmtime in a separate `zazz-worker` binary (Cranelift AOT, WASI 0.2, wasi-http hook, epochs, pooling).
-  - Alternative: `wasmi`, an interpreter: small and pure Rust, but much slower and without wasi-http.
+- **D9 Signature algorithm.**
+  - Recommended: ECDSA P-256 (Secure Enclave, Keychain/SecTrust, AD CS and MDM certificates).
+  - Alternative: Ed25519, which is simpler but cannot live in the Secure Enclave and is rarely issued by enterprise PKI.
+- **D10 After a refresh says "revoked".**
+  - Recommended: native falls back to the WASM build and WASM drops to unsigned; launch is never blocked. Default `trust_ttl` = 600 s.
+  - Alternative: refuse scripts whose signer is revoked (still never blocking on the lookup itself).
+- **D11 Are tests mandatory?**
+  - Recommended: optional by default, with `add` warning on `tests: 0`, a policy `require_tests` switch, and tests always required for native scripts.
+  - Alternative: required for every script.
+- **D12 Built-ins as prebuilt native binaries.**
+  - Recommended: `keygen`/`sign`/`trust` ship prebuilt and signed by the pinned release authority (the only `native-bin` exception), so they work on machines with no Rust toolchain.
+  - Alternative: compile them from source like any other script and require `rustc`.
