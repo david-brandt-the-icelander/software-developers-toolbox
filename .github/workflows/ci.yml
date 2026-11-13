@@ -64,7 +64,9 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           perl -e 'alarm 900; exec @ARGV' cargo test -p zazzled --locked zazz:: -- --test-threads=1
+      # Runs even when the macOS zazz step failed, so failures in the other crates show up in the same run.
       - run: cargo test --workspace --locked
+        if: always()
       - name: Name the failing zazzled test (single-threaded rerun)
         if: failure()
         run: cargo test -p zazzled --locked -- --test-threads=1 2>&1 | tail -25
