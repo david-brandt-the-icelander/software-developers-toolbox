@@ -1,4 +1,4 @@
-# Build universal macOS binaries (signed when configured) and Linux afo/afod tarballs; publish them to a GitHub release, icelander.net/downloads and the Homebrew formulas on version tags.
+# Build universal macOS binaries (signed when configured) and Linux tarballs; publish them to a GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap on version tags.
 name: Release
 
 on:
@@ -29,21 +29,33 @@ jobs:
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --workspace --release --locked --target "$t"
           done
-      - name: Build and smoke test the afo invoker (arm64 only; Intel Macs use afod mcp or afod run)
+      - name: Build and smoke test the zazzle invoker (arm64 only; Intel Macs use zazzled mcp or zazzled run)
         env:
-          AFOD: target/aarch64-apple-darwin/release/afod
+          ZAZZLED: target/aarch64-apple-darwin/release/zazzled
         run: |
-          make -C ../c/afo
-          make -C ../c/afo unit
-          sh ../c/afo/test/smoke.sh
+          make -C ../c/zazzle
+          make -C ../c/zazzle unit
+          sh ../c/zazzle/test/smoke.sh
       - name: Make universal binaries
         run: |
           mkdir -p dist
-          for bin in afod afs fix-network free-disk-space; do
+          for bin in zazzled afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
-          cp ../c/afo/build/afo dist/afo
+          cp ../c/zazzle/build/zazzle dist/zazzle
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      # The indexer is a self-contained single file per CPU type (not universal); the formula expands the matching one.
+      - name: Build the C# indexer for both CPU types
+        working-directory: macos/dotnet/zazzle-csharp-indexer
+        run: |
+          dotnet test tests
+          for pair in arm64:osx-arm64 x64:osx-x64; do
+            dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}"
+            gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "../../rust/dist/zazzle-csharp-indexer-${pair%%:*}.gz"
+          done
       # Optional Developer ID signature and Apple notarization (macos/release/README.md): skipped with a
       # warning without the Apple secrets, unless the repository variable REQUIRE_SIGNING is "true".
       - name: Sign and notarize
@@ -54,24 +66,24 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist afo afod afs fix-network free-disk-space
+        run: ../release/sign-and-notarize.sh dist zazzle zazzled afs fix-network free-disk-space
       - name: Package
         run: |
-          tar -C dist -czf toolbox-macos-universal.tar.gz afo afod afs fix-network free-disk-space
-          shasum -a 256 toolbox-macos-universal.tar.gz > toolbox-macos-universal.tar.gz.sha256
+          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: toolbox-macos-universal
+          name: zazzle-macos-universal
           path: |
-            macos/rust/toolbox-macos-universal.tar.gz
-            macos/rust/toolbox-macos-universal.tar.gz.sha256
+            macos/rust/zazzle-macos-universal.tar.gz
+            macos/rust/zazzle-macos-universal.tar.gz.sha256
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME" --generate-notes
-          toolbox-macos-universal.tar.gz toolbox-macos-universal.tar.gz.sha256
+          zazzle-macos-universal.tar.gz zazzle-macos-universal.tar.gz.sha256
       - name: Publish to icelander.net
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -79,10 +91,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
           for dir in "$GITHUB_REF_NAME" latest; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-macos-universal.tar.gz" \
-              --file toolbox-macos-universal.tar.gz --content-type application/gzip --remote
-            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-macos-universal.tar.gz.sha256" \
-              --file toolbox-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz" \
+              --file zazzle-macos-universal.tar.gz --content-type application/gzip --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" \
+              --file zazzle-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
           done
 
   linux:
@@ -90,42 +102,50 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: ubuntu-latest, arch: x86_64 }
-          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+          - { runner: ubuntu-latest, arch: x86_64, rid: linux-x64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64, rid: linux-arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test and build afod
+      - name: Test and build zazzled
         working-directory: macos/rust
         run: |
-          cargo test -p afod --locked
-          cargo build --release -p afod --locked
-      - name: Build and smoke test the afo invoker
-        working-directory: macos/c/afo
+          cargo test -p zazzled --locked
+          cargo build --release -p zazzled --locked
+      - name: Build and smoke test the zazzle invoker
+        working-directory: macos/c/zazzle
         run: |
           make
           make unit
           sh test/smoke.sh
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build the C# indexer
+        working-directory: macos/dotnet/zazzle-csharp-indexer
+        run: |
+          dotnet test tests
+          dotnet publish src -c Release -r ${{ matrix.rid }} -o out
       - name: Package
         run: |
           mkdir -p dist
-          cp macos/rust/target/release/afod macos/c/afo/build/afo dist/
-          tar -C dist -czf toolbox-linux-${{ matrix.arch }}.tar.gz afo afod
-          sha256sum toolbox-linux-${{ matrix.arch }}.tar.gz > toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+          cp macos/rust/target/release/zazzled macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
+          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer
+          sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: toolbox-linux-${{ matrix.arch }}
+          name: zazzle-linux-${{ matrix.arch }}
           path: |
-            toolbox-linux-${{ matrix.arch }}.tar.gz
-            toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+            zazzle-linux-${{ matrix.arch }}.tar.gz
+            zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - name: Attach to the GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release upload "$GITHUB_REF_NAME" --clobber
-          toolbox-linux-${{ matrix.arch }}.tar.gz toolbox-linux-${{ matrix.arch }}.tar.gz.sha256
+          zazzle-linux-${{ matrix.arch }}.tar.gz zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - name: Publish to icelander.net
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -133,52 +153,45 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
           for dir in "$GITHUB_REF_NAME" latest; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-linux-${{ matrix.arch }}.tar.gz" \
-              --file toolbox-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
-            npx --yes wrangler@4 r2 object put "icelander-downloads/toolbox/$dir/toolbox-linux-${{ matrix.arch }}.tar.gz.sha256" \
-              --file toolbox-linux-${{ matrix.arch }}.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" \
+              --file zazzle-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" \
+              --file zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
           done
 
-  # Point the Homebrew formulas in Formula/ at this release; users tap this repository (README.md).
-  # main only takes pull requests, so this pushes straight to main only with HOMEBREW_DEPLOY_KEY, a deploy key
-  # with write access that the main ruleset lets bypass; otherwise it opens a pull request with the formulas.
+  # Write the zazzle formula for this release into the zazzcat/homebrew-z tap. HOMEBREW_TAP_TOKEN is a fine-grained
+  # token with "Contents: read and write" on that repository only; GITHUB_TOKEN cannot push to another account.
   homebrew:
     needs: macos
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: main
-          ssh-key: ${{ secrets.HOMEBREW_DEPLOY_KEY }}
+          repository: zazzcat/homebrew-z
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
       - uses: actions/download-artifact@v4
         with:
-          name: toolbox-macos-universal
+          name: zazzle-macos-universal
           path: dist
       # Bottles let brew pour the binaries without its build-from-source checks (Command Line Tools).
-      - name: Build bottles and add them to the release
+      - name: Build the bottle and add it to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tar -xzf dist/toolbox-macos-universal.tar.gz -C dist
+          tar -xzf dist/zazzle-macos-universal.tar.gz -C dist
           bash macos/release/bottle.sh "$GITHUB_REF_NAME" dist bottles
           gh release upload "$GITHUB_REF_NAME" bottles/*.bottle.tar.gz --clobber
-      - name: Write and publish the formulas
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Write and push the formula
         run: |
-          sha=$(cut -d' ' -f1 dist/toolbox-macos-universal.tar.gz.sha256)
-          bash macos/release/formula.sh "$GITHUB_REF_NAME" "$sha" Formula bottles
+          sha=$(cut -d' ' -f1 dist/zazzle-macos-universal.tar.gz.sha256)
+          bash macos/release/formula.sh "$GITHUB_REF_NAME" "$sha" tap/Formula bottles
+          cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Homebrew: formulas for $GITHUB_REF_NAME"
-          if git push origin HEAD:main; then exit 0; fi
-          branch="homebrew/$GITHUB_REF_NAME"
-          git push --force origin "HEAD:refs/heads/$branch"
-          gh pr create --base main --head "$branch" --title "Homebrew: formulas for $GITHUB_REF_NAME" \
-            --body "Points Formula/ at the $GITHUB_REF_NAME release (sha256 $sha). Merge it so \`brew upgrade\` sees the release."
+          git commit -m "zazzle $GITHUB_REF_NAME"
+          git push origin HEAD

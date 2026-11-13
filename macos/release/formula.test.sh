@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test formula.sh: valid Ruby, correct DSL values under a stand-in Formula class, and consistency with the crates and release.yml.
+# Test formula.sh and bottle.sh: valid Ruby, correct DSL values under a stand-in Formula class, and consistency with release.yml.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -8,6 +8,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failures=0
 sha=$(printf '%064d' 7 | tr 0 a)
+bins="zazzle zazzled afs fix-network free-disk-space"
 
 # Record a failed expectation.
 fail() {
@@ -22,14 +23,17 @@ for args in "" "2.0.0 $sha $tmp/x" "v2.0.0 ABC $tmp/x" "v2.0.0 $sha"; do
 done
 [ ! -e "$tmp/x" ] || fail "bad input wrote files"
 
-# 2. Generate the formulas for a release.
+# 2. Generate the formula for a release.
 out=$(bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/Formula")
 case "$out" in *"for v2.1.0"*) ;; *) fail "summary line: $out" ;; esac
-[ "$(find "$tmp/Formula" -name '*.rb' | wc -l)" -eq 3 ] || fail "wrote other than 3 formulas"
+[ "$(find "$tmp/Formula" -name '*.rb' | wc -l)" -eq 1 ] || fail "wrote other than 1 formula"
 
-# 3. Load each formula under a stand-in Homebrew Formula class and check every DSL value, install and test.
+# 3. Load the formula under a stand-in Homebrew Formula class and check every DSL value, install, post_install and test.
 cat >"$tmp/check.rb" <<'RUBY'
-# Stand-in for Homebrew's Formula: records DSL values, installs into a fake bin, runs the test block.
+# Stand-in for Homebrew's Formula: records DSL values, installs into a fake prefix, runs post_install and the test block.
+require "digest"
+require "fileutils"
+require "pathname"
 class Formula
   class << self
     attr_reader :values, :test_block
@@ -47,36 +51,60 @@ class Formula
     def root_url(url) = @url = url
     def sha256(**tags) = (@checksums ||= []) << tags
   end
-  # Records installed file names.
-  class Bin
-    attr_reader :installed
+  # A directory that records the files installed into it.
+  class Dir_
+    attr_reader :installed, :path
+    def initialize(path) = @path = Pathname(path)
     def install(*files) = (@installed ||= []).concat(files)
-    def to_s = "/opt/homebrew/bin"
+    def to_s = @path.to_s
+    def /(other) = Dir_.new(@path / other)
   end
-  attr_reader :bin, :commands
-  def initialize = (@bin = Bin.new)
-  def shell_output(cmd) = ((@commands ||= []) << cmd) && "#{ENV.fetch("VERSION_NAME")} 2.1.0\n"
+  attr_reader :bin, :libexec, :commands, :systems
+  def initialize
+    prefix = Pathname(ENV.fetch("PREFIX"))
+    @bin = Dir_.new(prefix / "bin")
+    @libexec_root = Dir_.new(prefix / "libexec")
+    @installs = {}
+  end
+  def libexec = @libexec_root.tap { |d| d.define_singleton_method(:/) { |o| @installs ||= {}; (@installs[o] ||= Dir_.new(@path / o)) } }
+  def shell_output(cmd) = ((@commands ||= []) << cmd) && "#{cmd.split("/").last.split.first == "afs" ? "agent-fs" : cmd.split("/").last.split.first} 2.1.0\n"
   def assert_match(pattern, text) = (text.include?(pattern) or raise "#{pattern.inspect} not in #{text.inspect}")
+  def system(*args) = ((@systems ||= []) << args) && true
+end
+module Hardware
+  # Reports the CPU type chosen by the test.
+  module CPU
+    def self.arm? = ENV.fetch("ARCH") == "arm64"
+  end
 end
 
-file, klass, binary, version_name, sha = ARGV
+file, sha = ARGV
 load file
-f = Object.const_get(klass)
+f = Zazzle
 v = f.values
 repo = "https://github.com/david-brandt-the-icelander/software-developers-toolbox"
-raise "url #{v[:url]}" unless v[:url] == "#{repo}/releases/download/v2.1.0/toolbox-macos-universal.tar.gz"
+raise "url #{v[:url]}" unless v[:url] == "#{repo}/releases/download/v2.1.0/zazzle-macos-universal.tar.gz"
 raise "version #{v[:version]}" unless v[:version] == "2.1.0"
 raise "sha256" unless v[:sha256] == sha
 raise "license" unless v[:license] == "Unlicense"
 raise "depends_on" unless v[:depends_on] == :macos
-raise "homepage #{v[:homepage]}" unless v[:homepage].start_with?("#{repo}/tree/main/macos/rust/")
-raise "desc" unless v[:desc].is_a?(String) && v[:desc].length.between?(20, 80) && !v[:desc].end_with?(".")
+raise "homepage #{v[:homepage]}" unless v[:homepage] == repo
+raise "desc" unless v[:desc].is_a?(String) && v[:desc].length.between?(20, 100) && !v[:desc].end_with?(".")
 inst = f.new
 inst.install
-raise "installed #{inst.bin.installed}" unless inst.bin.installed == [binary]
-ENV["VERSION_NAME"] = version_name
+want = %w[zazzle zazzled afs fix-network free-disk-space]
+raise "installed #{inst.bin.installed}" unless inst.bin.installed == want
+indexer = inst.libexec / "indexer"
+raise "indexer files #{indexer.installed}" unless indexer.installed == %w[zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz]
+inst.post_install
+sh = inst.systems.first
+arch = ENV.fetch("ARCH")
+raise "post_install #{sh}" unless sh[0, 3] == ["sh", "-c", 'gunzip -c "$1" > "$2" && chmod 755 "$2"'] &&
+                                  sh[4].to_s.end_with?("libexec/indexer/zazzle-csharp-indexer-#{arch}.gz") &&
+                                  sh[5].to_s.end_with?("bin/zazzle-csharp-indexer")
 inst.instance_eval(&f.test_block)
-raise "test ran #{inst.commands}" unless inst.commands == ["/opt/homebrew/bin/#{binary} --version"]
+need = %w[zazzle zazzled fix-network free-disk-space afs zazzle-csharp-indexer]
+raise "test ran #{inst.commands}" unless inst.commands.length == need.length
 bottles = ENV.fetch("BOTTLES", "")
 spec = f.bottle_spec
 if bottles.empty?
@@ -88,68 +116,60 @@ else
   entry = spec.checksums.first
   raise "cellar #{entry}" unless entry[:cellar] == :any_skip_relocation && entry.keys.sort == [:all, :cellar]
   # Homebrew downloads root_url/NAME-VERSION.TAG.bottle.tar.gz for a plain root_url (Bottle::Filename#url_encode).
-  name = File.basename(file, ".rb")
-  path = File.join(bottles, "#{name}-#{v[:version]}.all.bottle.tar.gz")
+  path = File.join(bottles, "zazzle-#{v[:version]}.all.bottle.tar.gz")
   raise "Homebrew would fetch #{File.basename(path)}, which bottle.sh did not write" unless File.exist?(path)
-  require "digest"
   raise "bottle sha256 mismatch" unless entry[:all] == Digest::SHA256.file(path).hexdigest
 end
-puts "ok #{klass}"
+puts "ok"
 RUBY
 
-# Check one formula: file name, class, binary, the crate folder whose Cargo.toml name --version prints.
+# Check the formula for both CPU types: valid Ruby, DSL values, and that release.yml builds every binary.
 check() {
-  local file="$tmp/Formula/$1.rb" crate_name
-  ruby -c "$file" >/dev/null || fail "$1.rb is not valid Ruby"
-  crate_name=$(sed -n 's/^name = "\(.*\)"/\1/p' "$root/macos/rust/$4/Cargo.toml" | head -1)
-  BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$2" "$3" "$crate_name" "$sha" >/dev/null || fail "$1.rb failed the DSL check"
-  grep -q "for bin in .*\b$3\b" "$root/.github/workflows/release.yml" || fail "release.yml does not build $3"
-  grep -q "tree/main/macos/rust/$4\"" "$file" || fail "$1.rb homepage is not macos/rust/$4"
+  local file="$tmp/Formula/zazzle.rb" arch
+  ruby -c "$file" >/dev/null || fail "zazzle.rb is not valid Ruby"
+  for arch in arm64 x64; do
+    ARCH=$arch PREFIX="$tmp/prefix" BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$sha" >/dev/null || fail "zazzle.rb failed the DSL check ($arch)"
+  done
+  for b in $bins; do
+    grep -q "for bin in .*\b$b\b" "$root/.github/workflows/release.yml" || grep -q "dist/$b\b" "$root/.github/workflows/release.yml" || fail "release.yml does not build $b"
+  done
 }
-check fix-network FixNetwork fix-network fix-network
-check free-disk-space FreeDiskSpace free-disk-space free-disk-space
-check agent-fs AgentFs afs agent-fs
+check
 
-# 4. Bottles: bad input, then one reproducible bottle per tool in exactly the layout Homebrew pours.
+# 4. Bottle: bad input, then one reproducible bottle in exactly the layout Homebrew pours.
 for args in "" "2.1.0 $tmp/bins $tmp/b" "v2.1.0 $tmp/none $tmp/b"; do
   # shellcheck disable=SC2086
   if bash "$here/bottle.sh" $args >/dev/null 2>&1; then fail "bottle.sh accepted bad input: '$args'"; fi
 done
 mkdir -p "$tmp/bins"
-printf '#!/bin/sh\n' >"$tmp/bins/fix-network"
+printf '#!/bin/sh\n' >"$tmp/bins/zazzle"
 if bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/partial" >/dev/null 2>&1; then fail "bottle.sh accepted a missing binary"; fi
-for b in afs free-disk-space; do printf '#!/bin/sh\n' >"$tmp/bins/$b"; done
+for b in $bins; do printf '#!/bin/sh\n' >"$tmp/bins/$b"; done
 chmod 0644 "$tmp/bins/afs"
+if bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/partial" >/dev/null 2>&1; then fail "bottle.sh accepted a missing indexer"; fi
+for a in arm64 x64; do printf 'gz' >"$tmp/bins/zazzle-csharp-indexer-$a.gz"; done
 bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/bottles" >"$tmp/bottle.out"
 bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/again" >/dev/null
-for pair in fix-network:fix-network free-disk-space:free-disk-space agent-fs:afs; do
-  name=${pair%%:*} binary=${pair##*:} file="$tmp/bottles/${pair%%:*}-2.1.0.all.bottle.tar.gz"
-  [ -f "$file" ] || { fail "no bottle for $name"; continue; }
-  grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  $name-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "$name: printed sha256"
-  cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "$name: bottle is not reproducible"
-  listing=$(tar tzf "$file" | tr '\n' ' ')
-  [ "$listing" = "$name/ $name/2.1.0/ $name/2.1.0/bin/ $name/2.1.0/bin/$binary " ] || fail "$name: contents $listing"
-  tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* $name/2.1.0/bin/$binary$" || fail "$name: binary not 0755 root-owned"
-  # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
-  rm -rf "$tmp/x" && mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
-  [ "$(ls -A "$tmp/x")" = "$name" ] && [ "$(ls -A "$tmp/x/$name")" = "2.1.0" ] || fail "$name: not NAME/VERSION only"
-done
+file="$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz"
+[ -f "$file" ] || fail "no bottle"
+grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  zazzle-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "printed sha256"
+cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "bottle is not reproducible"
+listing=$(tar tzf "$file" | grep -v '/$' | tr '\n' ' ')
+want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
+[ "$listing" = "$want" ] || fail "contents $listing"
+tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/afs$" || fail "binary not 0755 root-owned"
+# Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
+mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
+[ "$(ls -A "$tmp/x")" = "zazzle" ] && [ "$(ls -A "$tmp/x/zazzle")" = "2.1.0" ] || fail "not NAME/VERSION only"
 
-# 5. Formulas with bottles: each gets a bottle block pointing at its file, checked under the stand-in Formula.
+# 5. Formula with the bottle: it gets a bottle block pointing at its file, checked under the stand-in Formula.
 bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/Formula" "$tmp/bottles" >/dev/null
 bottles="$tmp/bottles"
-check fix-network FixNetwork fix-network fix-network
-check free-disk-space FreeDiskSpace free-disk-space free-disk-space
-check agent-fs AgentFs afs agent-fs
+check
 bottles=""
-mv "$tmp/bottles/agent-fs-2.1.0.all.bottle.tar.gz" "$tmp/agent-fs.bottle"
+mv "$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz" "$tmp/zazzle.bottle"
 if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F2" "$tmp/bottles" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle"; fi
 if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F3" "$tmp/no-such-dir" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle dir"; fi
-
-# 6. A wrong --version name must be caught by the formula's own test block.
-if VERSION_NAME=x ruby "$tmp/check.rb" "$tmp/Formula/agent-fs.rb" AgentFs afs afs "$sha" >/dev/null 2>&1; then
-  fail "the agent-fs test block accepted 'afs 2.1.0' though the binary prints 'agent-fs'"
-fi
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed"

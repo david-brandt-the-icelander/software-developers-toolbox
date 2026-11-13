@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Write one Homebrew formula per tool for a release: formula.sh TAG SHA256 DIR [BOTTLE_DIR]
+# Write the zazzle Homebrew formula for a release: formula.sh TAG SHA256 DIR [BOTTLE_DIR]
 #
-# Each formula installs its prebuilt universal binary from the release tarball of TAG on GitHub.
-# With BOTTLE_DIR (bottle.sh output, uploaded to the same release) each also gets a bottle block, so
-# brew pours the bottle and skips its build-from-source checks, such as up-to-date Command Line Tools.
+# The formula installs the prebuilt universal binaries from the release tarball of TAG on GitHub, and the
+# compressed C# indexer for both CPU types; post_install expands the one that matches this Mac.
+# With BOTTLE_DIR (bottle.sh output, uploaded to the same release) it also gets a bottle block, so brew
+# pours the bottle and skips its build-from-source checks, such as up-to-date Command Line Tools.
 # Homebrew does not quarantine what a formula installs, so Gatekeeper lets unsigned binaries run.
-# Every formula takes the release tag as its version, so each release is an upgrade for all of them.
 set -euo pipefail
 
 repo="david-brandt-the-icelander/software-developers-toolbox"
@@ -23,25 +23,22 @@ if [ -n "$bottles" ] && [ ! -d "$bottles" ]; then
 fi
 mkdir -p "$dir"
 
-# Print the bottle block for a formula, or nothing without bottles; fails if its bottle is missing.
+# Print the bottle block, or nothing without bottles; fails if the bottle is missing.
 bottle_block() {
   [ -n "$bottles" ] || return 0
-  local file="$bottles/$1-${tag#v}.all.bottle.tar.gz"
+  local file="$bottles/zazzle-${tag#v}.all.bottle.tar.gz"
   [ -f "$file" ] || { echo "missing bottle: $file" >&2; return 1; }
   printf '\n\n  bottle do\n    root_url "https://github.com/%s/releases/download/%s"\n' "$repo" "$tag"
   printf '    sha256 cellar: :any_skip_relocation, all: "%s"\n  end\n' "$(sha256sum "$file" | cut -d' ' -f1)"
 }
 
-# Write one formula: name, Ruby class, binary, version-output name, description, source folder.
-formula() {
-  local block
-  block=$(bottle_block "$1")
-  cat >"$dir/$1.rb" <<EOF
-# Homebrew formula for $1; written by macos/release/formula.sh on each release.
-class $2 < Formula
-  desc "$5"
-  homepage "https://github.com/$repo/tree/main/macos/rust/$6"
-  url "https://github.com/$repo/releases/download/$tag/toolbox-macos-universal.tar.gz"
+block=$(bottle_block)
+cat >"$dir/zazzle.rb" <<RUBY
+# Homebrew formula for zazzle; written by macos/release/formula.sh on each release.
+class Zazzle < Formula
+  desc "Agent file tools: zazzle, its zazzled daemon, a C# code indexer, free-disk-space and fix-network"
+  homepage "https://github.com/$repo"
+  url "https://github.com/$repo/releases/download/$tag/zazzle-macos-universal.tar.gz"
   version "${tag#v}"
   sha256 "$sha"
   license "Unlicense"$block
@@ -49,20 +46,25 @@ class $2 < Formula
   depends_on :macos
 
   def install
-    bin.install "$3"
+    bin.install "zazzle", "zazzled", "afs", "fix-network", "free-disk-space"
+    (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
+  end
+
+  # Expand the C# indexer for this CPU (compressed to keep the download and the bottle small).
+  def post_install
+    arch = Hardware::CPU.arm? ? "arm64" : "x64"
+    system "sh", "-c", 'gunzip -c "\$1" > "\$2" && chmod 755 "\$2"', "sh",
+           libexec/"indexer/zazzle-csharp-indexer-#{arch}.gz", bin/"zazzle-csharp-indexer"
   end
 
   test do
-    assert_match "$4", shell_output("#{bin}/$3 --version")
+    assert_match "zazzle", shell_output("#{bin}/zazzle version")
+    assert_match "zazzled", shell_output("#{bin}/zazzled --version")
+    assert_match "fix-network", shell_output("#{bin}/fix-network --version")
+    assert_match "free-disk-space", shell_output("#{bin}/free-disk-space --version")
+    assert_match "agent-fs", shell_output("#{bin}/afs --version")
+    assert_match "zazzle-csharp-indexer", shell_output("#{bin}/zazzle-csharp-indexer --version")
   end
 end
-EOF
-}
-
-formula fix-network FixNetwork fix-network fix-network \
-  "Diagnose and repair macOS Wi-Fi, DNS, routing, proxy and VPN problems" fix-network
-formula free-disk-space FreeDiskSpace free-disk-space free-disk-space \
-  "Reclaim disk space on APFS: compress, dedupe and clean caches safely" free-disk-space
-formula agent-fs AgentFs afs agent-fs \
-  "Read, search and outline files with cached JSON replies for agents (afs)" agent-fs
-echo "wrote $dir/fix-network.rb, $dir/free-disk-space.rb, $dir/agent-fs.rb for $tag"
+RUBY
+echo "wrote $dir/zazzle.rb for $tag"
