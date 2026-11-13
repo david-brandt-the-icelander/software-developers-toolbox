@@ -10,6 +10,9 @@ use crate::clean::Snapshot;
 use crate::scan::{finished, open_db, under, SKIP_PREFIXES};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
+// Number of duplicates a dry run lists before it only counts.
+const DRY_RUN_LIST: u64 = 50;
+
 const SYSTEM_PREFIXES: &[&str] = &["/Library", "/Applications", "/private", "/etc", "/var", "/tmp"];
 
 // Options for the dedupe command.
@@ -218,7 +221,13 @@ fn clone_over(keeper: &str, target: &Member, digest: &str) -> Result<(), String>
 }
 
 // Clone or preview the duplicates of one name group, updating the tally, and return false to stop.
-fn dedupe_group(db: &Connection, group: Vec<Member>, o: &DedupeOpts, tally: &mut Tally) -> bool {
+fn dedupe_group(
+    db: &Connection,
+    group: Vec<Member>,
+    o: &DedupeOpts,
+    tally: &mut Tally,
+    tk: &mut util::Ticker,
+) -> bool {
     for (digest, keeper, targets) in plan(group) {
         for target in targets {
             if util::stopped() || o.sample.is_some_and(|n| tally.files >= n) {
@@ -228,6 +237,7 @@ fn dedupe_group(db: &Connection, group: Vec<Member>, o: &DedupeOpts, tally: &mut
             if let Err(note) = result {
                 tally.failed += 1;
                 tally.streak += 1;
+                tk.clear();
                 println!("{} {}: {note}", c("31", "FAILED"), target.path);
                 if tally.streak >= 3 {
                     println!("{}", c("31", "3 consecutive failures - aborting for safety."));
@@ -242,9 +252,13 @@ fn dedupe_group(db: &Connection, group: Vec<Member>, o: &DedupeOpts, tally: &mut
             tally.streak = 0;
             tally.files += 1;
             tally.bytes += size;
-            if o.apply || tally.files <= 50 {
+            if o.apply || tally.files <= DRY_RUN_LIST {
+                tk.clear();
                 let verb = if o.apply { "cloned" } else { "~ would clone" };
                 println!("{verb} {:>10}  {} <- {keeper}", human_i(size), target.path);
+                if !o.apply && tally.files == DRY_RUN_LIST {
+                    println!("... listed the first {DRY_RUN_LIST}; still hashing, totals at the end");
+                }
             }
         }
     }
@@ -316,8 +330,7 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
             false,
         );
         let rows = group_rows(&db, name, *size);
-        tk.clear();
-        if !dedupe_group(&db, members(rows, *size, o, &snap), o, &mut tally) {
+        if !dedupe_group(&db, members(rows, *size, o, &snap), o, &mut tally, &mut tk) {
             break;
         }
     }
@@ -586,21 +599,21 @@ mod tests {
         let db = open_db(&sb.state(), false);
         let dry = opts(&sb, false);
         let mut tally = Tally::default();
-        assert!(dedupe_group(&db, group(&dry), &dry, &mut tally));
+        assert!(dedupe_group(&db, group(&dry), &dry, &mut tally, &mut util::Ticker::new()));
         assert_eq!((tally.files, tally.failed), (4, 0));
         let sampled = DedupeOpts { sample: Some(2), ..opts(&sb, true) };
         let mut tally = Tally::default();
-        assert!(!dedupe_group(&db, group(&sampled), &sampled, &mut tally));
+        assert!(!dedupe_group(&db, group(&sampled), &sampled, &mut tally, &mut util::Ticker::new()));
         assert_eq!(tally.files, 2);
         let cloned: i64 = db.query_row("SELECT SUM(cloned) FROM files", [], |r| r.get(0)).unwrap();
         assert_eq!(cloned, 2);
         sb.tool("xattr", "exit 1");
         let apply = opts(&sb, true);
         let mut tally = Tally::default();
-        assert!(!dedupe_group(&db, group(&apply), &apply, &mut tally));
+        assert!(!dedupe_group(&db, group(&apply), &apply, &mut tally, &mut util::Ticker::new()));
         assert_eq!((tally.failed, tally.files), (3, 0));
         util::set_stop(true);
-        assert!(!dedupe_group(&db, group(&dry), &dry, &mut Tally::default()));
+        assert!(!dedupe_group(&db, group(&dry), &dry, &mut Tally::default(), &mut util::Ticker::new()));
     }
 
     // Check a dry run past fifty duplicates stops printing but keeps counting.
@@ -615,7 +628,7 @@ mod tests {
         let group = members(rows, 6000, &dry, &snap);
         let db = open_db(&sb.state(), false);
         let mut tally = Tally::default();
-        assert!(dedupe_group(&db, group, &dry, &mut tally));
+        assert!(dedupe_group(&db, group, &dry, &mut tally, &mut util::Ticker::new()));
         assert_eq!(tally.files, 52);
     }
 
