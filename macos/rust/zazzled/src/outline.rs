@@ -105,17 +105,20 @@ pub fn worth_outlining(path: &Path) -> bool {
     lang_of(path) != Lang::Generic || CODE.contains(&ext.as_str())
 }
 
-// Returns the tree-sitter grammar and kind table for a language.
-fn grammar(lang: Lang) -> Option<(Language, &'static [KindRow])> {
-    Some(match lang {
-        Lang::Rust => (tree_sitter_rust::LANGUAGE.into(), RUST),
-        Lang::Python => (tree_sitter_python::LANGUAGE.into(), PYTHON),
-        Lang::C => (tree_sitter_c::LANGUAGE.into(), C),
-        Lang::JavaScript => (tree_sitter_javascript::LANGUAGE.into(), JS),
-        Lang::TypeScript => (tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), TS),
-        Lang::Tsx => (tree_sitter_typescript::LANGUAGE_TSX.into(), TS),
+// Returns the tree-sitter grammar for a language and its kind-id table, which is built once per process.
+fn grammar(lang: Lang) -> Option<(Language, &'static [Class])> {
+    static TABLES: [OnceLock<Vec<Class>>; 6] = [const { OnceLock::new() }; 6];
+    let (slot, language, kinds): (usize, Language, &[KindRow]) = match lang {
+        Lang::Rust => (0, tree_sitter_rust::LANGUAGE.into(), RUST),
+        Lang::Python => (1, tree_sitter_python::LANGUAGE.into(), PYTHON),
+        Lang::C => (2, tree_sitter_c::LANGUAGE.into(), C),
+        Lang::JavaScript => (3, tree_sitter_javascript::LANGUAGE.into(), JS),
+        Lang::TypeScript => (4, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), TS),
+        Lang::Tsx => (5, tree_sitter_typescript::LANGUAGE_TSX.into(), TS),
         _ => return None,
-    })
+    };
+    let table = TABLES[slot].get_or_init(|| class_table(&language, kinds));
+    Some((language, table))
 }
 
 // Returns a node's source text.
@@ -149,15 +152,41 @@ fn name_of(node: Node, data: &[u8]) -> Option<String> {
     }
 }
 
+// What a node kind means for the outline, looked up by kind id instead of comparing kind names per node.
+#[derive(Clone, Copy)]
+enum Class {
+    Plain,
+    VarDecl,
+    Symbol(&'static str, bool),
+}
+
+// Builds the kind-id table for a grammar, so classify does one array lookup per node.
+fn class_table(language: &Language, kinds: &[KindRow]) -> Vec<Class> {
+    (0..language.node_kind_count() as u16)
+        .map(|id| match language.node_kind_for_id(id) {
+            Some("variable_declarator") => Class::VarDecl,
+            Some(k) => {
+                kinds.iter().find(|(n, _, _)| *n == k).map_or(Class::Plain, |(_, l, c)| Class::Symbol(l, *c))
+            }
+            None => Class::Plain,
+        })
+        .collect()
+}
+
 // Decides whether a node is a symbol, returning its label, name and whether it contains symbols.
-fn classify(node: Node, kinds: &[KindRow], data: &[u8]) -> Option<(&'static str, String, bool)> {
-    if node.kind() == "variable_declarator" {
-        let is_fn = node.child_by_field_name("value").is_some_and(|v| FUNCTION_VALUES.contains(&v.kind()));
-        return is_fn.then(|| ("fn", text(node.child_by_field_name("name").unwrap_or(node), data), false));
+fn classify(node: Node, table: &[Class], data: &[u8]) -> Option<(&'static str, String, bool)> {
+    match table.get(usize::from(node.kind_id())).copied().unwrap_or(Class::Plain) {
+        Class::Plain => None,
+        Class::VarDecl => {
+            let is_fn =
+                node.child_by_field_name("value").is_some_and(|v| FUNCTION_VALUES.contains(&v.kind()));
+            is_fn.then(|| ("fn", text(node.child_by_field_name("name").unwrap_or(node), data), false))
+        }
+        Class::Symbol(label, container) => {
+            let name = name_of(node, data).filter(|n| !n.is_empty())?;
+            Some((label, name, container))
+        }
     }
-    let (_, label, container) = kinds.iter().find(|(k, _, _)| *k == node.kind())?;
-    let name = name_of(node, data).filter(|n| !n.is_empty())?;
-    Some((label, name, *container))
 }
 
 // Returns the last line a node covers, ignoring a trailing newline.
@@ -167,7 +196,7 @@ fn last_row(node: Node) -> usize {
 }
 
 // Walks the tree collecting symbols, descending into containers and plain nodes but not into leaf symbols.
-fn collect(node: Node, kinds: &[KindRow], data: &[u8], depth: usize, level: usize, out: &mut Vec<Symbol>) {
+fn collect(node: Node, kinds: &[Class], data: &[u8], depth: usize, level: usize, out: &mut Vec<Symbol>) {
     if level > MAX_LEVEL {
         return;
     }
@@ -196,13 +225,13 @@ fn parse_outline(lang: Lang, data: &[u8]) -> Option<Vec<Symbol>> {
     if data.len() > MAX_PARSE_BYTES {
         return None;
     }
-    let (language, kinds) = grammar(lang)?;
+    let (language, classes) = grammar(lang)?;
     crate::arena::scope(|| {
         let mut parser = Parser::new();
         parser.set_language(&language).ok()?;
         let tree = parser.parse(data, None)?;
         let mut out = Vec::new();
-        collect(tree.root_node(), kinds, data, 0, 0, &mut out);
+        collect(tree.root_node(), classes, data, 0, 0, &mut out);
         Some(out)
     })
 }
@@ -588,5 +617,21 @@ mod tests {
         let big = small.repeat(MAX_PARSE_BYTES / small.len() + 1);
         let starts = line_starts(&big);
         assert_eq!(outline(p, &big, &starts), generic_outline(&text_lines(&big, &starts)));
+    }
+
+    // Checks the kind-id table marks symbol kinds and variable declarators, and leaves other kinds plain.
+    #[test]
+    fn test_class_table_by_kind_id() {
+        let (language, table) = grammar(Lang::Rust).expect("rust grammar");
+        let at = |kind: &str| table[usize::from(language.id_for_node_kind(kind, true))];
+        assert!(matches!(at("function_item"), Class::Symbol("fn", false)));
+        assert!(matches!(at("impl_item"), Class::Symbol("impl", true)));
+        assert!(matches!(at("block"), Class::Plain));
+        let (js, js_table) = grammar(Lang::JavaScript).expect("js grammar");
+        assert!(matches!(
+            js_table[usize::from(js.id_for_node_kind("variable_declarator", true))],
+            Class::VarDecl
+        ));
+        assert!(grammar(Lang::Markdown).is_none());
     }
 }
