@@ -71,7 +71,7 @@ jobs:
         run: |
           tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zazzle-macos-universal
           path: |
@@ -133,7 +133,7 @@ jobs:
           cp macos/rust/target/release/zazzled macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
           tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zazzle-linux-${{ matrix.arch }}
           path: |
