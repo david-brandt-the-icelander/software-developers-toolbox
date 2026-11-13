@@ -75,14 +75,15 @@
     {
       "id": "terse-view",
       "title": "terse view",
-      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs) or a Python, TypeScript or Dart file (terse.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
+      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS or SCSS file (styles.rs) or a Python, JavaScript, TypeScript, Dart, Rust, Go or Java file (terse.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
       "notToBeConfusedWith": ["An outline, which lists symbols and their ranges, not code."],
       "evidenceStatus": "source-verified",
       "sources": [
         { "path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "render_terse" },
         { "path": "macos/rust/zazzled/src/indexer.rs", "symbol": "Indexer::view" },
         { "path": "macos/rust/zazzled/src/markup.rs", "symbol": "view" },
-        { "path": "macos/rust/zazzled/src/terse.rs", "symbol": "view" }
+        { "path": "macos/rust/zazzled/src/terse.rs", "symbol": "view" },
+        { "path": "macos/rust/zazzled/src/styles.rs", "symbol": "view" }
       ]
     },
     {

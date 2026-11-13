@@ -5,6 +5,7 @@ use crate::indexer::Indexer;
 use crate::markup;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::outline;
+use crate::styles;
 use crate::symbols::{self, Miss};
 use crate::terse;
 use crate::tokens;
@@ -173,14 +174,16 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, Python, TypeScript or Dart file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Python, JavaScript, TypeScript, Dart, Rust, Go or Java file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
-    match (markup::kind_of(path), terse::lang_of(path)) {
-        (Some(kind), _) => markup::view(shown, &text, kind),
-        (None, Some(lang)) => terse::view(shown, &text, lang),
-        (None, None) => None,
+    if let Some(kind) = markup::kind_of(path) {
+        return markup::view(shown, &text, kind);
     }
+    if let Some(kind) = styles::kind_of(path) {
+        return styles::view(shown, &text, kind);
+    }
+    terse::lang_of(path).and_then(|lang| terse::view(shown, &text, lang))
 }
 
 // Returns the source lines a terse view line covers, from its key: `N`, `N~` or `A-B`.
@@ -597,6 +600,20 @@ mod tests {
         );
         assert!(run_cmd(t.path(), &["read", "c.dart"]).text.starts_with("c.dart 1 lines, sha "));
         assert!(run_cmd(t.path(), &["read", "a.py", "--source"]).text.contains("1\timport os"));
+    }
+
+    // Checks CSS and SCSS files read as the stylesheet terse view.
+    #[test]
+    fn test_style_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.css"), "@import \"x.css\";\n@import \"y.css\";\na { color: red; }\n")
+            .expect("write");
+        std::fs::write(t.path().join("b.scss"), "a { color: red; }\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.css"]).text,
+            "a.css 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
+        );
+        assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

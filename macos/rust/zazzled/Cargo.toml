@@ -35,6 +35,10 @@ tree-sitter-c = "0.24"
 tree-sitter-c-sharp = "0.23"
 # Dart grammar for the terse view.
 tree-sitter-dart = "0.3"
+# Go grammar for the terse view.
+tree-sitter-go = "0.23"
+# Java grammar for the terse view.
+tree-sitter-java = "0.23"
 # JavaScript grammar for outlines.
 tree-sitter-javascript = "0.23"
 # Python grammar for outlines.

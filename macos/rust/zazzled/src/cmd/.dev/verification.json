@@ -491,8 +491,57 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "style-terse-view",
+      "title": "Terse CSS and SCSS view",
+      "summary": "styles.rs is tested on a stylesheet that exercises every rule, on SCSS, and on what must be kept; read is tested end to end on a CSS file and on a SCSS file with nothing to shorten.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "style-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each rule turns its lines into one `A-B ⋯ note` line, hides prefixed duplicates or marks shortened data URIs `N~`, with source line numbers.",
+        "Short comments, single imports, blocks that share lines, prefixes without a plain property in the same block and short data URIs are kept.",
+        "A file with nothing to shorten comes back as source with a sha."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_view_css",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_view_scss",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_style_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
-      "title": "Terse Python, TypeScript and Dart view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go and Java view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
       "subject": [
         {
@@ -506,7 +555,8 @@
         "Constructors and catches that do anything else are kept.",
         "Code that shares a line with what a rule would hide is kept.",
         "Files with nothing to shorten, or too big to parse, come back as source with a sha.",
-        "Long locals are renamed at every use, and names that cannot be renamed everywhere safely keep theirs."
+        "Long locals are renamed at every use, and names that cannot be renamed everywhere safely keep theirs.",
+        "Rust, Go and Java sample files show imports, logging, the field-only constructor, Go error returns, the rethrowing Java catch, access modifiers and short locals with source line numbers, and JavaScript follows the TypeScript rules."
       ],
       "checks": [
         {
@@ -609,6 +659,72 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/locals.rs",
           "symbol": "test_dart",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_rust",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_go",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_java",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_javascript",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_logging_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_kept_new_languages",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_more_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_rust",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_go",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_java",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_javascript",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],

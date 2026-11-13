@@ -1,4 +1,4 @@
-// Terse view of Python, TypeScript and Dart files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow, drops TypeScript access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go and Java files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java and Rust access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -31,29 +31,48 @@ const SIDE_EFFECTS: [&str; 7] =
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Lang {
     Python,
+    JavaScript,
     TypeScript,
     Tsx,
     Dart,
+    Rust,
+    Go,
+    Java,
+}
+
+impl Lang {
+    // True for JavaScript and TypeScript, which share their grammar's node kinds.
+    pub fn is_script(self) -> bool {
+        matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
+    }
 }
 
 // Returns the language of a path from its extension, if this view handles it.
 pub fn lang_of(path: &Path) -> Option<Lang> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "py" | "pyi" => Some(Lang::Python),
+        "js" | "jsx" | "mjs" | "cjs" => Some(Lang::JavaScript),
         "ts" | "mts" | "cts" => Some(Lang::TypeScript),
         "tsx" => Some(Lang::Tsx),
         "dart" => Some(Lang::Dart),
+        "rs" => Some(Lang::Rust),
+        "go" => Some(Lang::Go),
+        "java" => Some(Lang::Java),
         _ => None,
     }
 }
 
 // Returns the tree-sitter grammar for a language.
-fn grammar(lang: Lang) -> Language {
+pub(crate) fn grammar(lang: Lang) -> Language {
     match lang {
         Lang::Python => tree_sitter_python::LANGUAGE.into(),
+        Lang::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
         Lang::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
+        Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Lang::Go => tree_sitter_go::LANGUAGE.into(),
+        Lang::Java => tree_sitter_java::LANGUAGE.into(),
     }
 }
 
@@ -197,13 +216,13 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
         catch(n, lang, &mut plan);
     }
     for &n in &nodes {
-        if is_logging(n, lang, src)
-            && n.parent().is_some_and(|p| matches!(p.kind(), "block" | "statement_block"))
-        {
+        let in_block =
+            n.parent().is_some_and(|p| matches!(p.kind(), "block" | "statement_block" | "constructor_body"));
+        if (is_logging(n, lang, src) || is_log_guard(n, lang, src)) && in_block {
             plan.hide_node(n, None, "log statements");
-        } else if n.kind() == "comment" && is_region(&src[n.byte_range()]) {
+        } else if matches!(n.kind(), "comment" | "line_comment") && is_region(&src[n.byte_range()]) {
             plan.hide_node(n, None, "regions");
-        } else if n.kind() == "accessibility_modifier" && n.parent().is_some_and(|p| is_member(p.kind())) {
+        } else if is_access_modifier(n, lang) {
             let end = src[n.end_byte()..]
                 .find(|c: char| !c.is_whitespace())
                 .map_or(src.len(), |i| n.end_byte() + i);
@@ -226,12 +245,21 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
     Some(format!("{shown} {total} lines; terse: {}\n{}", steps.join(", "), plan.render().join("\n")))
 }
 
-// True for a TypeScript class member that can carry an access modifier, as opposed to a constructor parameter.
-fn is_member(kind: &str) -> bool {
-    matches!(
-        kind,
-        "public_field_definition" | "method_definition" | "method_signature" | "abstract_method_signature"
-    )
+// True for an access modifier on a declaration: TypeScript class members (not constructor parameters), Java's public, private and protected, and Rust's pub.
+fn is_access_modifier(n: Node, lang: Lang) -> bool {
+    let parent = n.parent().map(|p| p.kind()).unwrap_or_default();
+    match (lang, n.kind()) {
+        (Lang::TypeScript | Lang::Tsx, "accessibility_modifier") => matches!(
+            parent,
+            "public_field_definition"
+                | "method_definition"
+                | "method_signature"
+                | "abstract_method_signature"
+        ),
+        (Lang::Java, "public" | "private" | "protected") => parent == "modifiers",
+        (Lang::Rust, "visibility_modifier") => parent != "use_declaration",
+        _ => false,
+    }
 }
 
 // True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`.
@@ -245,8 +273,10 @@ fn is_region(comment: &str) -> bool {
 fn imports(root: Node, lang: Lang, plan: &mut Plan) {
     let is_import = |k: &str| match lang {
         Lang::Python => matches!(k, "import_statement" | "import_from_statement" | "future_import_statement"),
-        Lang::TypeScript | Lang::Tsx => k == "import_statement",
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => k == "import_statement",
         Lang::Dart => matches!(k, "import_or_export" | "part_directive" | "part_of_directive"),
+        Lang::Rust => matches!(k, "use_declaration" | "extern_crate_declaration"),
+        Lang::Go | Lang::Java => k == "import_declaration",
     };
     let kids: Vec<Node> = (0..root.child_count()).filter_map(|i| root.child(i)).collect();
     let mut i = 0;
@@ -256,11 +286,18 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
             let (first, last) = (kids[i], kids[i + run - 1]);
             let (a, b) = (first.start_position().row, last.end_position().row);
             if b > a && plan.alone(first) && plan.alone(last) {
-                plan.hide(a, b, Some(format!("{run} import(s)")), "imports");
+                let count: usize = kids[i..i + run].iter().map(|k| import_count(*k)).sum();
+                plan.hide(a, b, Some(format!("{count} import(s)")), "imports");
             }
         }
         i += run.max(1);
     }
+}
+
+// Returns how many imports a declaration makes: one, or each spec of a Go `import (..)` block.
+fn import_count(n: Node) -> usize {
+    let specs = kids(n).find(|c| c.kind() == "import_spec_list").map_or(0, |l| kids(l).count());
+    specs.max(1)
 }
 
 // Returns a call's callee text, such as `self._log.debug` or `console.error`, for an expression statement that is only a call.
@@ -270,31 +307,89 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
     }
     let call = stmt.named_child(0)?;
     let callee = match (lang, call.kind()) {
-        (Lang::Python, "call") | (Lang::TypeScript | Lang::Tsx, "call_expression") => {
-            call.child_by_field_name("function")?
+        (Lang::Python, "call")
+        | (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Go, "call_expression") => {
+            call.child_by_field_name("function")?.byte_range()
         }
-        (Lang::Dart, "call_expression") => call.named_child(0)?,
+        (Lang::Dart, "call_expression") => call.named_child(0)?.byte_range(),
+        (Lang::Rust, "macro_invocation") => call.child_by_field_name("macro")?.byte_range(),
+        (Lang::Java, "method_invocation") => {
+            let name = call.child_by_field_name("name")?;
+            call.child_by_field_name("object").map_or(name.start_byte(), |o| o.start_byte())..name.end_byte()
+        }
         _ => return None,
     };
-    Some((call, &src[callee.byte_range()]))
+    Some((call, &src[callee]))
 }
 
 // True for a statement that only logs, with no side effects in its arguments.
 fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     let Some((call, callee)) = call_target(stmt, lang, src) else { return false };
-    if has_side_effects(call) {
+    if lang == Lang::Rust {
+        return is_log_macro(callee) && !macro_side_effects(call, src);
+    }
+    if has_side_effects(call) || lang == Lang::Go && src[call.byte_range()].contains("<-") {
         return false;
     }
     let Some((receiver, method)) = callee.rsplit_once('.') else {
         return lang == Lang::Dart && matches!(callee, "debugPrint" | "log");
     };
-    let last = receiver.rsplit('.').next().unwrap_or(receiver).trim_end_matches(['?', '!']);
+    let last = receiver.rsplit('.').next().unwrap_or(receiver).trim().trim_end_matches(['?', '!']);
     if last == "console" {
-        return lang != Lang::Python && lang != Lang::Dart && CONSOLE_METHODS.contains(&method);
+        return lang.is_script() && CONSOLE_METHODS.contains(&method);
     }
     let r = last.trim_start_matches('_').to_ascii_lowercase();
-    let logger = matches!(r.as_str(), "log" | "logs" | "logging") || r.ends_with("logger");
+    let logger = matches!(r.as_str(), "log" | "logs" | "logging" | "slog") || r.ends_with("logger");
+    let method = method.trim();
+    if lang == Lang::Go {
+        let m = method.to_ascii_lowercase();
+        let base = m.trim_end_matches("context").trim_end_matches("ln").trim_end_matches(['f', 'w']);
+        let exits = base.starts_with("fatal") || base.starts_with("panic");
+        return logger && !exits && (LOG_METHODS.contains(&base) || base == "print" || base == "logattrs");
+    }
     logger && (LOG_METHODS.contains(&method) || method.starts_with("log"))
+}
+
+// True for a Rust logging macro: `debug!`, `info!`, `warn!`, `error!`, `trace!` or `event!`, bare or under `log::` or `tracing::`.
+fn is_log_macro(callee: &str) -> bool {
+    let (path, name) = callee.rsplit_once("::").unwrap_or(("", callee));
+    matches!(path, "" | "log" | "tracing")
+        && matches!(name, "debug" | "info" | "warn" | "error" | "trace" | "event")
+}
+
+// True when a Rust macro's arguments, outside string literals, contain an assignment, `?` or `.await`.
+fn macro_side_effects(call: Node, src: &str) -> bool {
+    let Some(args) = kids(call).find(|c| c.kind() == "token_tree") else { return false };
+    let mut code = src[args.byte_range()].to_string();
+    let mut stack = vec![args];
+    while let Some(n) = stack.pop() {
+        if n.kind().contains("string_literal") || n.kind() == "char_literal" {
+            let (a, b) = (n.start_byte() - args.start_byte(), n.end_byte() - args.start_byte());
+            code.replace_range(a..b, &" ".repeat(b - a));
+        } else {
+            stack.extend(kids(n));
+        }
+    }
+    let assigns =
+        code.replace("==", "").replace("!=", "").replace("<=", "").replace(">=", "").replace("=>", "");
+    assigns.contains('=') || code.contains('?') || code.contains("await")
+}
+
+// True for an `if` with no else whose condition asks whether a log level is on and whose body only logs.
+fn is_log_guard(n: Node, lang: Lang, src: &str) -> bool {
+    const GUARDS: [&str; 6] =
+        ["isDebugEnabled", "isTraceEnabled", "isInfoEnabled", "IsEnabled", "isEnabledFor", "isLoggable"];
+    if n.kind() != "if_statement" || n.child_by_field_name("alternative").is_some() {
+        return false;
+    }
+    let (Some(cond), Some(body)) = (n.child_by_field_name("condition"), n.child_by_field_name("consequence"))
+    else {
+        return false;
+    };
+    let body = statements(body);
+    GUARDS.iter().any(|g| src[cond.byte_range()].contains(g))
+        && !body.is_empty()
+        && body.iter().all(|s| is_logging(*s, lang, src))
 }
 
 // True when a node contains an assignment, await, yield, increment or decrement.
@@ -342,10 +437,45 @@ fn stores_only<'s>(n: Node, lang: Lang, src: &'s str) -> Option<(String, &'s str
             let ok = text(name) == "__init__" && statements(body).iter().all(|s| py_store(*s, src));
             ok.then(|| (text(name).to_string(), text(params)))
         }
-        (Lang::TypeScript | Lang::Tsx, "method_definition") => {
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx, "method_definition") => {
             let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
             let ok = text(name) == "constructor" && statements(body).iter().all(|s| ts_store(*s, src));
             ok.then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Java, "constructor_declaration") => {
+            let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
+            let ok = statements(body).iter().all(|s| java_store(*s, src));
+            ok.then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Rust, "function_item") => {
+            let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
+            let [only] = statements(body)[..] else { return None };
+            let inits = only.child_by_field_name("body").filter(|_| only.kind() == "struct_expression")?;
+            let plain = |f: Node| {
+                f.kind() == "shorthand_field_initializer"
+                    || f.kind() == "field_initializer"
+                        && f.child_by_field_name("value").is_some_and(|v| is_value(v.kind()))
+            };
+            kids(inits).all(plain).then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Go, "function_declaration") => {
+            let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
+            let [ret] = statements(body)[..] else { return None };
+            let [value] = kids(ret.named_child(0)?).collect::<Vec<_>>()[..] else { return None };
+            let lit = if value.kind() == "unary_expression" {
+                value.child_by_field_name("operand")?
+            } else {
+                value
+            };
+            let elements = lit.child_by_field_name("body").filter(|_| lit.kind() == "composite_literal")?;
+            let plain = |e: Node| {
+                e.kind() == "keyed_element"
+                    && e.child_by_field_name("value")
+                        .and_then(|v| v.named_child(0))
+                        .is_some_and(|v| is_value(v.kind()))
+            };
+            (ret.kind() == "return_statement" && kids(elements).all(plain))
+                .then(|| (text(name).to_string(), text(params)))
         }
         (Lang::Dart, "member_declaration") => {
             let decl = n.named_child(0).filter(|d| d.kind() == "declaration")?;
@@ -371,7 +501,7 @@ fn is_plain_init(e: &str) -> bool {
 
 // Returns the named statements of a block, skipping comments.
 fn statements(block: Node) -> Vec<Node> {
-    kids(block).filter(|s| s.kind() != "comment").collect()
+    kids(block).filter(|s| !s.kind().contains("comment")).collect()
 }
 
 // True for a Python constructor statement that is a docstring, `pass`, a super().__init__ call or `self.x = name`.
@@ -399,6 +529,17 @@ fn ts_store(s: Node, src: &str) -> bool {
     }
 }
 
+// True for a Java constructor statement that is a super(..) or this(..) call or `this.x = name`.
+fn java_store(s: Node, src: &str) -> bool {
+    match (s.kind(), s.named_child(0).map(|e| (e, e.kind()))) {
+        ("explicit_constructor_invocation", _) => !has_side_effects(s),
+        ("expression_statement", Some((e, "assignment_expression"))) => {
+            stores_name(e, "this.", src).unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
 // True for an assignment of a plain name or literal to a member of the instance, `self.x = x` or `this.x = x`.
 fn stores_name(e: Node, owner: &str, src: &str) -> Option<bool> {
     let (l, r) = (e.child_by_field_name("left")?, e.child_by_field_name("right")?);
@@ -419,6 +560,15 @@ fn is_value(kind: &str) -> bool {
             | "float"
             | "number"
             | "string"
+            | "integer_literal"
+            | "float_literal"
+            | "string_literal"
+            | "boolean_literal"
+            | "int_literal"
+            | "interpreted_string_literal"
+            | "nil"
+            | "null_literal"
+            | "decimal_integer_literal"
     )
 }
 
@@ -426,20 +576,28 @@ fn is_value(kind: &str) -> bool {
 fn catch(n: Node, lang: Lang, plan: &mut Plan) {
     let src = plan.src;
     let Some((start, block)) = rethrow_catch(n, lang, src) else { return };
+    let (inline, step) = if lang == Lang::Go {
+        let body = statements(block);
+        let logs = if body.len() > 1 { "⋯ logs; " } else { "" };
+        let ret = body.last().map_or(String::new(), |l| one_line(&src[l.byte_range()]));
+        (format!("{{ {logs}{ret} }}"), "error returns")
+    } else {
+        ("{ ⋯ logs and rethrows }".to_string(), "log-and-rethrow catches")
+    };
     let header = src[start..block.start_byte()].trim().trim_end_matches(':').trim_end();
     let (first, last) = (plan.line(start), block.end_position().row);
     let open_line = plan.line(block.start_byte());
     let starts_line = src[plan.starts[first]..start].trim().is_empty();
     let block_ends_line = plan.text(last)[block.end_position().column..].trim().is_empty();
-    if starts_line && block_ends_line {
-        plan.hide(first, last, Some(format!("{header}: logs and rethrows")), "log-and-rethrow catches");
+    if starts_line && block_ends_line && lang != Lang::Go {
+        plan.hide(first, last, Some(format!("{header}: logs and rethrows")), step);
     } else if lang != Lang::Python
         && plan.text(open_line)[block.start_position().column + 1..].trim().is_empty()
         && plan.text(last).trim() == "}"
-        && plan.hide(open_line + 1, last, None, "log-and-rethrow catches")
+        && plan.hide(open_line + 1, last, None, step)
     {
         let end = plan.starts[open_line] + plan.text(open_line).len();
-        plan.changes.push((block.start_byte(), end, "{ ⋯ logs and rethrows }".to_string()));
+        plan.changes.push((block.start_byte(), end, inline));
     }
 }
 
@@ -447,20 +605,52 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
 fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<'t>)> {
     let (start, block) = match (lang, n.kind()) {
         (Lang::Python, "except_clause") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
-        (Lang::TypeScript | Lang::Tsx, "catch_clause") => (n.start_byte(), n.child_by_field_name("body")?),
+        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java, "catch_clause") => {
+            (n.start_byte(), n.child_by_field_name("body")?)
+        }
+        (Lang::Go, "if_statement") if n.child_by_field_name("alternative").is_none() => {
+            (n.start_byte(), n.child_by_field_name("consequence")?)
+        }
         (Lang::Dart, "catch_clause") => {
             let on = n.prev_sibling().and_then(|t| t.prev_sibling()).filter(|t| t.kind() == "on");
             (on.unwrap_or(n).start_byte(), n.next_named_sibling().filter(|b| b.kind() == "block")?)
         }
         _ => return None,
     };
-    let caught = n.child_by_field_name("parameter").map(|p| &src[p.byte_range()]);
+    let caught = match lang {
+        Lang::Java => {
+            kids(n).find(|c| c.kind() == "catch_formal_parameter").and_then(|p| p.child_by_field_name("name"))
+        }
+        Lang::Go => nil_check(n),
+        _ => n.child_by_field_name("parameter"),
+    }
+    .map(|p| &src[p.byte_range()]);
     let last_ok = |l: &Node| match lang {
         Lang::Python => l.kind() == "raise_statement" && l.named_child_count() == 0,
         Lang::Dart => l.kind() == "rethrow_statement",
+        Lang::Go => l.kind() == "return_statement" && returns_error(*l, caught, src),
         _ => l.kind() == "throw_statement" && l.named_child(0).map(|e| &src[e.byte_range()]) == caught,
     };
+    if lang == Lang::Go && caught.is_none() {
+        return None;
+    }
     rethrows(block, &last_ok, lang, src).then_some((start, block))
+}
+
+// Returns the name a Go `if` checks with `name != nil`, if that is its whole condition.
+fn nil_check(n: Node) -> Option<Node> {
+    let cond = n.child_by_field_name("condition").filter(|c| c.kind() == "binary_expression")?;
+    let (left, right) = (cond.child_by_field_name("left")?, cond.child_by_field_name("right")?);
+    let op = cond.child_by_field_name("operator")?;
+    (left.kind() == "identifier" && right.kind() == "nil" && op.kind() == "!=").then_some(left)
+}
+
+// True for a Go return whose last value is the checked error and whose other values are plain names or literals.
+fn returns_error(ret: Node, err: Option<&str>, src: &str) -> bool {
+    let values: Vec<Node> = ret.named_child(0).map(|l| kids(l).collect()).unwrap_or_default();
+    values.split_last().is_some_and(|(last, rest)| {
+        Some(&src[last.byte_range()]) == err && rest.iter().all(|v| is_value(v.kind()))
+    })
 }
 
 // Returns a node's named children.
@@ -550,6 +740,86 @@ export class InvoiceRepository {
   }
 }
 "#;
+    const RUST: &str = r#"use std::io;
+use std::fmt::{self, Write};
+
+pub struct Repo { api: Api, retries: u32 }
+
+impl Repo {
+    pub fn new(api: Api, retries: u32) -> Self {
+        Self { api, retries: retries }
+    }
+
+    // region loading
+    pub(crate) fn load(&self, id: &str) -> Result<u32, Error> {
+        log::debug!("loading {}", id);
+        info!(target: "x", "y {id:?}");
+        let response_body = self.api.get(id)?;
+        let total_sum = response_body.len() + self.retries as u32;
+        println!("{total_sum}");
+        Ok(total_sum)
+    }
+}
+"#;
+    const GO: &str = r#"package repo
+
+import (
+	"fmt"
+	"log"
+)
+
+type Repo struct {
+	api     Api
+	retries int
+}
+
+func NewRepo(api Api, retries int) *Repo {
+	return &Repo{
+		api:     api,
+		retries: retries,
+	}
+}
+
+func (r *Repo) Load(id string) (int, error) {
+	log.Printf("loading %s", id)
+	responseBody, err := r.api.Get(id)
+	if err != nil {
+		r.logger.Error("failed", "err", err)
+		return 0, err
+	}
+	totalSum := len(responseBody) + r.retries
+	fmt.Println(totalSum)
+	return totalSum, nil
+}
+"#;
+    const JAVA: &str = r#"package repo;
+
+import java.util.List;
+import java.util.Map;
+
+public class Repo {
+    private final Api api;
+    private static final Logger LOG = LoggerFactory.getLogger(Repo.class);
+
+    public Repo(Api api, int retries) {
+        super();
+        this.api = api;
+    }
+
+    //region loading
+    public int load(String id) throws IOException {
+        LOG.debug("loading {}", id);
+        try {
+            String responseBody = api.get(id);
+            for (String lineItem : responseBody.lines()) { System.out.println(lineItem); }
+            return responseBody.length();
+        } catch (IOException e) {
+            log.error("failed", e);
+            throw e;
+        }
+    }
+}
+"#;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -606,7 +876,11 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.mts")), Some(Lang::TypeScript));
         assert_eq!(lang_of(Path::new("b.tsx")), Some(Lang::Tsx));
         assert_eq!(lang_of(Path::new("b.dart")), Some(Lang::Dart));
-        assert_eq!(lang_of(Path::new("b.js")), None);
+        assert_eq!(lang_of(Path::new("b.jsx")), Some(Lang::JavaScript));
+        assert_eq!(lang_of(Path::new("b.rs")), Some(Lang::Rust));
+        assert_eq!(lang_of(Path::new("b.go")), Some(Lang::Go));
+        assert_eq!(lang_of(Path::new("B.java")), Some(Lang::Java));
+        assert_eq!(lang_of(Path::new("b.kt")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
 
@@ -854,5 +1128,196 @@ class InvoiceRepository {
         assert!(untouched(&big, Lang::Python));
         assert_eq!(one_line("(\n  a,\n  b,\n)"), "(a, b)");
         assert_eq!(one_line("({\n  required this.a,\n})"), "({required this.a})");
+    }
+
+    // Checks the Rust rules on a whole impl: use runs, the field-only `new`, pub, log macros and short locals.
+    #[test]
+    fn test_view_rust() {
+        let v = view("a.rs", RUST, Lang::Rust).expect("view");
+        assert!(v.starts_with("a.rs 20 lines; terse: 1 imports, 1 constructors, 2 access modifiers, 1 regions, 2 log statements, 1 locals shortened\n"), "{v}");
+        let lines = body(RUST, Lang::Rust);
+        for want in [
+            "1-2\t⋯ 2 import(s)",
+            "4~\tstruct Repo { api: Api, retries: u32 }",
+            "7-9\t⋯ new(api: Api, retries: u32): only assigns fields",
+            "12~\t    fn load(&self, id: &str) -> Result<u32, Error> {",
+            "15~\t        let rb = self.api.get(id)?;",
+            "17\t        println!(\"{total_sum}\");",
+        ] {
+            assert!(lines.contains(&want.to_string()), "{want}: {lines:?}");
+        }
+    }
+
+    // Checks the Go rules: an import block, a field-only constructor, logging, an `if err != nil` return and short locals.
+    #[test]
+    fn test_view_go() {
+        let lines = body(GO, Lang::Go);
+        for want in [
+            "3-6\t⋯ 2 import(s)",
+            "13-18\t⋯ NewRepo(api Api, retries int): only assigns fields",
+            "23~\t\tif err != nil { ⋯ logs; return 0, err }",
+            "27~\t\tts := len(rb) + r.retries",
+            "28~\t\tfmt.Println(ts)",
+        ] {
+            assert!(lines.contains(&want.to_string()), "{want}: {lines:?}");
+        }
+        assert!(!lines.iter().any(|l| l.starts_with("21\t") || l.starts_with("24") || l.starts_with("25")));
+        let quiet =
+            "func f() error {\n\tx, err := g()\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn h(x)\n}\n";
+        assert_eq!(body(quiet, Lang::Go)[2], "3~\t\tif err != nil { return err }");
+    }
+
+    // Checks the Java rules: imports, the field-only constructor, modifiers, a region, logging, a rethrowing catch and short locals.
+    #[test]
+    fn test_view_java() {
+        let lines = body(JAVA, Lang::Java);
+        for want in [
+            "3-4\t⋯ 2 import(s)",
+            "6~\tclass Repo {",
+            "8~\t    static final Logger LOG = LoggerFactory.getLogger(Repo.class);",
+            "10-13\t⋯ Repo(Api api, int retries): only assigns fields",
+            "19~\t            String rb = api.get(id);",
+            "22~\t        } catch (IOException e) { ⋯ logs and rethrows }",
+        ] {
+            assert!(lines.contains(&want.to_string()), "{want}: {lines:?}");
+        }
+        assert!(!lines.iter().any(|l| l.starts_with("15\t") || l.starts_with("17\t")));
+    }
+
+    // Checks JavaScript uses the TypeScript rules.
+    #[test]
+    fn test_view_javascript() {
+        let src = "import a from 'a';\nimport b from 'b';\nexport class A {\n  constructor(api) {\n    this.api = api;\n  }\n  load(id) {\n    console.debug(id);\n    const responseBody = this.api.get(id);\n    return responseBody;\n  }\n}\n";
+        assert_eq!(
+            body(src, Lang::JavaScript),
+            [
+                "1-2\t⋯ 2 import(s)",
+                "3\texport class A {",
+                "4-6\t⋯ constructor(api): only assigns fields",
+                "7\t  load(id) {",
+                "9~\t    const rb = this.api.get(id);",
+                "10~\t    return rb;",
+                "11\t  }",
+                "12\t}"
+            ]
+        );
+    }
+
+    // Checks logging that must stay: side effects, program exits, receives, guards with else, and plain prints.
+    #[test]
+    fn test_logging_kept() {
+        let rs = |s: &str| {
+            view("f", &format!("fn f() -> R {{\n    let x = 1;\n    {s}\n}}\n"), Lang::Rust).is_none()
+        };
+        assert!(
+            !rs("debug!(\"{:?} {}\", x, a == b);")
+                && !rs("tracing::info!(\"x\");")
+                && !rs("log::warn!(\"x {x:?}\");")
+        );
+        assert!(
+            rs("info!(\"{}\", g()?);") && rs("info!(\"{}\", g().await);") && rs("info!(user = x, \"m\");")
+        );
+        assert!(rs("println!(\"x\");") && rs("other::info!(\"x\");") && rs("eprintln!(\"x\");"));
+        let go = |s: &str| view("f", &format!("func f() {{\n\t{s}\n}}\n"), Lang::Go).is_none();
+        assert!(
+            !go("log.Printf(\"%d\", x)")
+                && !go("slog.InfoContext(ctx, \"m\")")
+                && !go("r.logger.Debugw(\"m\")")
+        );
+        assert!(
+            go("log.Fatalf(\"x\")") && go("log.Panic(x)") && go("log.Print(<-ch)") && go("fmt.Println(x)")
+        );
+        let java = |s: &str| {
+            view("f", &format!("class A {{\n  void f() {{\n    {s}\n  }}\n}}\n"), Lang::Java).is_none()
+        };
+        assert!(
+            !java("LOGGER.info(\"x\");")
+                && !java("if (log.isDebugEnabled()) {\n      log.debug(\"x\");\n    }")
+        );
+        assert!(java("log.info(i++);") && java("System.out.println(x);"));
+        assert!(java("if (log.isDebugEnabled()) {\n      g();\n    }"));
+        let shown = |s: &str| {
+            view("f", &format!("class A {{\n  void f() {{\n    {s}\n  }}\n}}\n"), Lang::Java).expect("view")
+        };
+        let with_else =
+            "if (log.isDebugEnabled()) {\n      log.debug(\"x\");\n    } else {\n      g();\n    }";
+        assert!(shown(with_else).contains("    if (log.isDebugEnabled())"));
+        assert!(shown("if (ready()) {\n      log.debug(\"x\");\n    }").contains("    if (ready())"));
+        assert!(java("if (log.isDebugEnabled()) {\n    }"));
+    }
+
+    // Checks constructors, catches and error returns that do more are kept.
+    #[test]
+    fn test_kept_new_languages() {
+        let none = |s: &str, l: Lang| view("f", s, l).is_none();
+        assert!(none(
+            "impl A {\n    fn new(a: u8) -> Self {\n        Self { a, ..Default::default() }\n    }\n}\n",
+            Lang::Rust
+        ));
+        assert!(none(
+            "impl A {\n    fn new(a: u8) -> Self {\n        Self { a: a + 1 }\n    }\n}\n",
+            Lang::Rust
+        ));
+        assert!(none(
+            "impl A {\n    fn new(a: u8) -> Self {\n        g();\n        Self { a }\n    }\n}\n",
+            Lang::Rust
+        ));
+        assert!(none("impl A {\n    fn new(a: u8) -> Self {\n        Other::new(a)\n    }\n}\n", Lang::Rust));
+        assert!(none("func NewA(a int) *A {\n\treturn &A{\n\t\ta: f(a),\n\t}\n}\n", Lang::Go));
+        assert!(none("func NewA(a int) A {\n\treturn A{\n\t\ta,\n\t}\n}\n", Lang::Go));
+        assert!(none("func NewA(a int) (*A, error) {\n\treturn &A{\n\t\ta: a,\n\t}, nil\n}\n", Lang::Go));
+        assert!(none("func NewA(a int) *A {\n\tg()\n\treturn nil\n}\n", Lang::Go));
+        assert!(none("func NewA(a int) *A {\n\treturn g(\n\t\ta)\n}\n", Lang::Go));
+        let go_err = |s: &str| {
+            view("f", &format!("func f() error {{\n\terr := g()\n\t{s}\n\treturn nil\n}}\n"), Lang::Go)
+                .is_none_or(|v| !v.contains("error returns"))
+        };
+        assert!(
+            go_err("if err != nil {\n\t\treturn fmt.Errorf(\"x: %w\", err)\n\t}")
+                && go_err("if err != nil {\n\t\treturn err\n\t} else {\n\t\tg()\n\t}")
+        );
+        assert!(
+            go_err("if err == nil {\n\t\treturn err\n\t}")
+                && go_err("if ok {\n\t\treturn err\n\t}")
+                && go_err("if err != nil {\n\t\treturn other\n\t}")
+        );
+        assert!(
+            go_err("if err != nil {\n\t\treturn f(), err\n\t}")
+                && go_err("if err != nil {\n\t\tg()\n\t\treturn err\n\t}")
+                && go_err("if x.y != nil {\n\t\treturn err\n\t}")
+        );
+        assert!(none("class A {\n  A(int a) {\n    this.a = a;\n    init();\n  }\n}\n", Lang::Java));
+        assert!(none("class A {\n  A(int a) {\n    this.a = a * 2;\n  }\n}\n", Lang::Java));
+        let java = |s: &str| {
+            view(
+                "f",
+                &format!("class A {{\n  void f() {{\n    try {{\n      g();\n    }} {s}\n  }}\n}}\n"),
+                Lang::Java,
+            )
+            .is_none()
+        };
+        assert!(
+            java("catch (Exception e) {\n      throw new RuntimeException(e);\n    }")
+                && java("catch (Exception e) {\n      g();\n      throw e;\n    }")
+        );
+        assert!(none("pub use a::b;\n", Lang::Rust));
+    }
+
+    // Checks the remaining edges: shared lines, imports after code, more Go log calls, char literals and other nil checks.
+    #[test]
+    fn test_more_edges() {
+        assert!(view("f", "function f() {\n  g(); console.log(1);\n}\n", Lang::JavaScript).is_none());
+        assert!(view("f", "x = 1; import a\nimport b\n", Lang::Python).is_none());
+        let go = |s: &str| view("f", &format!("func f() {{\n\t{s}\n}}\n"), Lang::Go).is_none();
+        assert!(!go("log.Println(x)") && !go("slog.LogAttrs(ctx, slog.LevelInfo, \"m\")"));
+        assert!(view("f", "fn f() {\n    debug!(\"{}\", 'c');\n}\n", Lang::Rust).is_some());
+        let go_err = |s: &str| {
+            let src = format!("func f() error {{\n\terr := g()\n\t{s}\n\treturn nil\n}}\n");
+            view("f", &src, Lang::Go).is_none_or(|v| !v.contains("error returns"))
+        };
+        assert!(
+            go_err("if err != nil {\n\t\tpanic(err)\n\t}")
+                && go_err("if err != other {\n\t\treturn err\n\t}")
+        );
     }
 }
