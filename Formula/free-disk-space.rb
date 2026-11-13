@@ -2,10 +2,15 @@
 class FreeDiskSpace < Formula
   desc "Reclaim disk space on APFS: compress, dedupe and clean caches safely"
   homepage "https://github.com/david-brandt-the-icelander/software-developers-toolbox/tree/main/macos/rust/free-disk-space"
-  url "https://github.com/david-brandt-the-icelander/software-developers-toolbox/releases/download/v1.1.0/toolbox-macos-universal.tar.gz"
-  version "1.1.0"
-  sha256 "3c05c254ed3371fa3011469447238ec81a58c5da5cbc3a36f4ef7f98607d48d6"
+  url "https://github.com/david-brandt-the-icelander/software-developers-toolbox/releases/download/v1.1.3/toolbox-macos-universal.tar.gz"
+  version "1.1.3"
+  sha256 "bf726e108cb31137a8f045715e57efd497925676d5eceae1d4766e38e366227c"
   license "Unlicense"
+
+  bottle do
+    root_url "https://github.com/david-brandt-the-icelander/software-developers-toolbox/releases/download/v1.1.3"
+    sha256 cellar: :any_skip_relocation, all: "b21c2bcbd8e2d74a68021d31633d6044d0e8f9fa2ed1a4635d317db079c02c34"
+  end
 
   depends_on :macos
 
