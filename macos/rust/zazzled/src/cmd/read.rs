@@ -1,7 +1,7 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
-use crate::meta::{anchor_str, line_bytes, Meta};
+use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::tokens;
 use crate::util::{clip, display, hex8, resolve};
 
@@ -99,7 +99,7 @@ fn format_line(data: &[u8], meta: &Meta, n: usize, anchors: bool) -> String {
     let text = String::from_utf8_lossy(line_bytes(data, &meta.starts, n));
     let text = if meta.minified { clip(&text, 0, MINIFIED_CLIP) } else { text.into_owned() };
     if anchors {
-        format!("{n}#{}\t{text}", anchor_str(meta.anchors[n - 1]))
+        format!("{n}#{}\t{text}", anchor_str(line_anchor(data, &meta.starts, n)))
     } else {
         format!("{n}\t{text}")
     }

@@ -2,10 +2,12 @@
 use super::find::{build_regex, search_all, FileResult, Plan};
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::engine::Engine;
 use crate::outline::{enclosing, Symbol};
+use crate::pool::{cpus, par_map};
 use crate::util::{clip, display, resolve, MAX_LINE};
 use crate::walk::{self, WalkOpts};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u')];
 const USAGE: &str = "usage: refs SYMBOL [PATH..] [-g GLOB] [-m N] [-u]";
@@ -34,19 +36,32 @@ struct FileRefs {
 }
 
 // Splits a file's hits into definitions (declaration lines) and plain uses.
-fn classify(file: &FileResult, data: &[u8], syms: &[Symbol], name: &str) -> (Vec<Symbol>, Vec<Occurrence>) {
-    let starts = crate::meta::line_starts(data);
+fn classify(
+    file: &FileResult,
+    data: &[u8],
+    starts: &[u32],
+    syms: &[Symbol],
+    name: &str,
+) -> (Vec<Symbol>, Vec<Occurrence>) {
     let (mut defs, mut uses) = (Vec::new(), Vec::new());
     for h in &file.hits {
         if let Some(d) = syms.iter().find(|s| s.start == h.line && declares(s, name)) {
             defs.push(d.clone());
             continue;
         }
-        let line = String::from_utf8_lossy(crate::meta::line_bytes(data, &starts, h.line));
+        let line = String::from_utf8_lossy(crate::meta::line_bytes(data, starts, h.line));
         let scope = enclosing(syms, h.line).map(|s| s.name.clone());
         uses.push(Occurrence { line: h.line, text: clip(line.trim_end(), h.col, MAX_LINE), scope });
     }
     (defs, uses)
+}
+
+// Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read.
+fn file_refs(engine: &Engine, path: &Path, hits: &FileResult, name: &str, cwd: &Path) -> Option<FileRefs> {
+    let loaded = engine.load(path).ok()?;
+    let syms = engine.outline(path, &loaded);
+    let (defs, uses) = classify(hits, &loaded.data, &loaded.meta.starts, &syms, name);
+    Some(FileRefs { path: display(path, cwd), rank: crate::util::rank(path), defs, uses })
 }
 
 // Runs the refs command.
@@ -66,20 +81,14 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     };
     let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
     let plan = Plan { engine: ctx.engine, re, max: PER_FILE, context: 0, files_only: false };
-    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let results = search_all(&files, &plan, cpus);
-    let loaded_hits = results
-        .iter()
-        .filter(|r| r.total > 0)
-        .filter_map(|r| ctx.engine.load(&files[r.idx]).ok().map(|l| (r, l)));
-    let mut found: Vec<FileRefs> = loaded_hits
-        .map(|(r, loaded)| {
-            let path = &files[r.idx];
-            let syms = ctx.engine.outline(path, &loaded);
-            let (defs, uses) = classify(r, &loaded.data, &syms, name);
-            FileRefs { path: display(path, &ctx.cwd), rank: crate::util::rank(path), defs, uses }
-        })
-        .collect();
+    let results = search_all(&files, &plan, cpus());
+    let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
+    let (engine, cwd) = (ctx.engine, &ctx.cwd);
+    let mut found: Vec<FileRefs> =
+        par_map(&matched, cpus(), |_, r| file_refs(engine, &files[r.idx], r, name, cwd))
+            .into_iter()
+            .flatten()
+            .collect();
     found.sort_by_key(|f| (f.defs.is_empty(), f.rank));
     let (mut def_lines, mut use_blocks) = (Vec::new(), Vec::new());
     let (mut n_defs, mut n_uses, mut shown) = (0, 0, 0);

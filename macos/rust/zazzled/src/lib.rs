@@ -10,6 +10,7 @@ pub mod launchd;
 pub mod mcp;
 pub mod meta;
 pub mod outline;
+pub mod pool;
 pub mod proto;
 pub mod server;
 pub mod session;

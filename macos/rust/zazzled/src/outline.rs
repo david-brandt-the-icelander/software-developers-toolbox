@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 use tree_sitter::{Language, Node, Parser};
 
 const MAX_LEVEL: usize = 200;
+// Tree-sitter parses at roughly 5 MB/s, so larger files (usually generated) get the line-based outline instead.
+const MAX_PARSE_BYTES: usize = 1 << 20;
 
 // One symbol in a file: what it is, its name, its line range and how deeply it is nested.
 #[derive(Debug, Clone, PartialEq)]
@@ -191,6 +193,9 @@ fn collect(node: Node, kinds: &[KindRow], data: &[u8], depth: usize, level: usiz
 
 // Builds an outline with tree-sitter; None if the language has no grammar or parsing fails.
 fn parse_outline(lang: Lang, data: &[u8]) -> Option<Vec<Symbol>> {
+    if data.len() > MAX_PARSE_BYTES {
+        return None;
+    }
     let (language, kinds) = grammar(lang)?;
     let mut parser = Parser::new();
     parser.set_language(&language).ok()?;
@@ -570,5 +575,16 @@ mod tests {
     fn test_enclosing_before_first_symbol() {
         let syms = out("a.rs", "\n\nfn f() {}\n");
         assert!(enclosing(&syms, 1).is_none());
+    }
+
+    // Checks files over the parse limit get the line-based outline instead of tree-sitter.
+    #[test]
+    fn test_outline_skips_tree_sitter_for_huge_files() {
+        let small = b"int f(void) {\n  return 0;\n}\n";
+        let p = Path::new("gen.c");
+        assert_eq!(outline(p, small, &line_starts(small))[0].kind, "fn");
+        let big = small.repeat(MAX_PARSE_BYTES / small.len() + 1);
+        let starts = line_starts(&big);
+        assert_eq!(outline(p, &big, &starts), generic_outline(&text_lines(&big, &starts)));
     }
 }

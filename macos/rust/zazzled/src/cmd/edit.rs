@@ -1,7 +1,7 @@
 // The edit command: safe text and line edits, confined to the working directory and written atomically.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
-use crate::meta::{anchor_str, Meta};
+use crate::meta::{anchor_str, line_anchor, Meta};
 use crate::util::{display, hex8, resolve};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -213,7 +213,7 @@ fn check_precondition(
         }
     }
     for (n, want) in anchors {
-        let now = anchor_str(t.meta.anchors[n - 1]);
+        let now = anchor_str(line_anchor(&t.data, &t.meta.starts, *n));
         if want.as_deref().is_some_and(|w| w != now) {
             return Err(format!("{}: anchor mismatch at line {n}: now #{now}; read it again", t.shown));
         }
@@ -352,7 +352,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use crate::meta::{anchor_str, Meta};
+    use crate::meta::{anchor_str, line_anchor, Meta};
     use crate::testutil::{run_cmd, run_cmd_with, TempDir};
 
     // Runs edit in a directory and returns the output text.
@@ -427,8 +427,10 @@ mod tests {
     fn test_replace_lines_with_anchors() {
         let t = TempDir::new();
         t.write("a.txt", b"one\ntwo\nthree\n");
-        let m = Meta::compute(b"one\ntwo\nthree\n");
-        let (a2, a3) = (anchor_str(m.anchors[1]), anchor_str(m.anchors[2]));
+        let data = b"one\ntwo\nthree\n";
+        let m = Meta::compute(data);
+        let (a2, a3) =
+            (anchor_str(line_anchor(data, &m.starts, 2)), anchor_str(line_anchor(data, &m.starts, 3)));
         let span = format!("2#{a2}-3#{a3}");
         let bad = format!("2#zzz-3#{a3}");
         let err = edit(&t, &["a.txt", "--at", &bad, "--new", "X"]);
@@ -437,7 +439,7 @@ mod tests {
             .starts_with("ok a.txt: lines 2-3 replaced by 1 (now 2-2)"));
         assert_eq!(cat(&t, "a.txt"), "one\nX\n");
         t.write("b.txt", b"p\nq\n");
-        let one = anchor_str(Meta::compute(b"p\nq\n").anchors[0]);
+        let one = anchor_str(line_anchor(b"p\nq\n", &Meta::compute(b"p\nq\n").starts, 1));
         assert!(edit(&t, &["b.txt", "--at", &format!("1#{one}"), "--new", "P"])
             .starts_with("ok b.txt: lines 1-1 replaced"));
     }
