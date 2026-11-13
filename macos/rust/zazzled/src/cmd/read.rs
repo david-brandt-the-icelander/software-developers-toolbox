@@ -6,6 +6,7 @@ use crate::markup;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::outline;
 use crate::symbols::{self, Miss};
+use crate::terse;
 use crate::tokens;
 use crate::util::{clip, display, hex8, resolve};
 
@@ -148,10 +149,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
             Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
         }
     }
-    if let Some(view) = markup::kind_of(&path)
-        .filter(|_| o.terse)
-        .and_then(|k| markup::view(&shown, &String::from_utf8_lossy(data), k))
-    {
+    if let Some(view) = o.terse.then(|| other_view(&path, &shown, data)).flatten() {
         return Ok(render_terse(&shown, &view, (a, b), nl, o, label));
     }
     let costs: Vec<usize> =
@@ -173,6 +171,16 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     }
     out.pop();
     Ok(out)
+}
+
+// Returns zazzled's own terse view of an HTML, Razor, Python, TypeScript or Dart file, if it has one.
+fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(data);
+    match (markup::kind_of(path), terse::lang_of(path)) {
+        (Some(kind), _) => markup::view(shown, &text, kind),
+        (None, Some(lang)) => terse::view(shown, &text, lang),
+        (None, None) => None,
+    }
 }
 
 // Returns the source lines a terse view line covers, from its key: `N`, `N~` or `A-B`.
@@ -567,6 +575,28 @@ mod tests {
         );
         assert!(run_cmd(t.path(), &["read", "c.htm"]).text.starts_with("c.htm 1 lines, sha "));
         assert!(run_cmd(t.path(), &["read", "a.html", "--source"]).text.contains("3\tnote"));
+    }
+
+    // Checks Python, TypeScript and Dart files read as zazzled's terse view, and --source gives the code.
+    #[test]
+    fn test_code_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.py"), "import os\nimport sys\nx = 1\n").expect("write");
+        std::fs::write(t.path().join("b.ts"), "function f() {\n  console.log('x');\n  return 1;\n}\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.dart"), "int f() => 1;\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.py"]).text,
+            "a.py 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\tx = 1"
+        );
+        let ts = run_cmd(t.path(), &["read", "b.ts", "--symbol", "f"]).text;
+        assert!(
+            ts.starts_with("b.ts 4 lines, terse view: 1 log statements;")
+                && ts.ends_with("\n1\tfunction f() {\n3\t  return 1;\n4\t}"),
+            "{ts}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.dart"]).text.starts_with("c.dart 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.py", "--source"]).text.contains("1\timport os"));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

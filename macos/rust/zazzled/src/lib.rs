@@ -22,6 +22,7 @@ pub mod server;
 pub mod session;
 pub mod store;
 pub mod symbols;
+pub mod terse;
 pub mod tokens;
 pub mod util;
 pub mod walk;

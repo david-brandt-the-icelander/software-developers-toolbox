@@ -137,6 +137,23 @@
           "symbol": "verbatim"
         }
       ]
+    },
+    {
+      "id": "code-view-syntactic",
+      "title": "The Python, TypeScript and Dart view is syntactic",
+      "summary": "terse.rs works from the syntax tree alone: loggers are recognised by name, nothing is resolved across files, local variables keep their names, and only what stands alone on its lines is hidden.",
+      "impact": "Logging through a differently named object, or helper wrappers, stays visible, and these views are less compact than the C# view, which also shortens locals.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "is_logging"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "plan_view"
+        }
+      ]
     }
   ]
 }

@@ -120,6 +120,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "terse",
+      "name": "Code terse view (terse.rs)",
+      "responsibility": "Builds the terse view of Python, TypeScript and Dart files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters and catches that only log and rethrow, and drops TypeScript access modifiers.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "pool",
       "name": "Thread pool (pool.rs)",
       "responsibility": "One pool of threads per process, started on first use; par_map runs borrowed work on the caller and pool helpers and returns results in item order.",
@@ -262,6 +268,12 @@
       "to": "markup",
       "kind": "contains",
       "description": "Terse view of HTML and Razor."
+    },
+    {
+      "from": "src",
+      "to": "terse",
+      "kind": "contains",
+      "description": "Terse view of Python, TypeScript and Dart."
     },
     {
       "from": "src",
@@ -430,6 +442,12 @@
       "to": "markup",
       "kind": "depends-on",
       "description": "read's terse HTML and Razor view."
+    },
+    {
+      "from": "cmd",
+      "to": "terse",
+      "kind": "depends-on",
+      "description": "read's terse Python, TypeScript and Dart view."
     },
     {
       "from": "cmd",

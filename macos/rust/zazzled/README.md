@@ -50,6 +50,14 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
 - Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@code`, `@functions` and `@{ }` blocks (C# in them is not shortened). A comment or element that shares its first or last line with other markup is not hidden.
 
+## Python, TypeScript and Dart terse view
+
+`zazzle read` on `.py`, `.pyi`, `.ts`, `.mts`, `.cts`, `.tsx` and `.dart` files returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.
+
+- Hidden or collapsed: runs of 2+ lines of top-level imports (`1-6 ⋯ 3 import(s)`); logging statements on loggers (`log`, `logger`, `_logger`, `self.logger`, `this.logger?`, ...), TypeScript `console.log/debug/info/warn/error/trace` and Dart `debugPrint`/`log`, when they are alone on their lines and have no assignment, await, yield, increment or decrement in their arguments; region markers (`# region`, `// #region`, `//#endregion`); multi-line constructors that only store parameters (`__init__` with `self.x = name`, docstrings, `pass` and `super().__init__(..)`; TypeScript `this.x = name` and `super(..)`; Dart constructors without a body whose initializers are `field = name` or `super(..)`) as `12-17 ⋯ __init__(self, api, cache): only assigns fields`; and catches that only log and rethrow (bare `raise`, `throw e` of the caught name, `rethrow`), whole when the clause has its own lines, else as `} catch (e) { ⋯ logs and rethrows }`.
+- Shortened: `public`/`private`/`protected` on TypeScript class members; constructor parameter properties keep theirs.
+- Kept: everything else, including `print`, logging that shares a line with other code, and local variable names (no locals are shortened in these languages).
+
 ## Edits need the sha
 
 Every edit except `--create` needs proof that the caller read the current code: `--expect SHA` from `read --source`, or `--at` anchors from `read --source --anchors`. A refusal never reveals the current sha or anchors (`the file is not the version you read; read it again with --source`). A successful edit returns the new sha, since the caller wrote the change.

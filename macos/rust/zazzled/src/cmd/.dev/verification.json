@@ -478,6 +478,93 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "code-terse-view",
+      "title": "Terse Python, TypeScript and Dart view",
+      "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "code-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each language's sample class shows imports, logging, regions, the constructor and the log-and-rethrow catch collapsed with source line numbers.",
+        "Logging with side effects, print, and calls on non-loggers are kept.",
+        "Constructors and catches that do anything else are kept.",
+        "Code that shares a line with what a rule would hide is kept.",
+        "Files with nothing to shorten, or too big to parse, come back as source with a sha."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_python",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_typescript",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_dart",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_logging",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_constructor_kept",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_catch",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_shared_lines",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_is_region",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_render_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_lang_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_code_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "clean",
       "title": "Cleaning piped output",
       "summary": "Each cleaning step has a unit test, and run is tested end to end for grep output with --stats, JSON, --lossless, the budget, the input cap and its errors.",

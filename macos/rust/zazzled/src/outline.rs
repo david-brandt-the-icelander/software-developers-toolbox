@@ -7,7 +7,7 @@ use tree_sitter::{Language, Node, Parser};
 
 const MAX_LEVEL: usize = 200;
 // Tree-sitter parses at roughly 5 MB/s, so larger files (usually generated) get the line-based outline instead.
-const MAX_PARSE_BYTES: usize = 1 << 20;
+pub(crate) const MAX_PARSE_BYTES: usize = 1 << 20;
 
 // One symbol in a file: what it is, its name, its line range and how deeply it is nested.
 #[derive(Debug, Clone, PartialEq)]

@@ -82,6 +82,42 @@
           "symbol": "Build and test"
         }
       ]
+    },
+    {
+      "id": "code-view-short-locals",
+      "title": "Shorten long local names in the Python, TypeScript and Dart terse view",
+      "summary": "The C# view renames locals of 6+ characters to their initials, bound by a compilation of the file; terse.rs keeps local names in Python, TypeScript and Dart because a syntax tree alone does not show their scopes.",
+      "type": "feature",
+      "status": "open",
+      "acceptanceCriteria": [
+        "Locals declared in a function body (Python assignments and for/with targets not declared global or nonlocal, TypeScript const/let/var, Dart local variables) of 6+ characters are shortened as in the C# view, with a clash or keyword getting a number.",
+        "Parameters, members, object shorthand keys, keyword arguments and names used in strings or eval keep their names.",
+        "Lines with a renamed local are marked `N~`."
+      ],
+      "origin": {
+        "kind": "request",
+        "by": "Owner, who said shortening local variables in functions is fair game; left out of the first version of terse.rs",
+        "date": "2026-11-13",
+        "reference": "macos/rust/zazzled/src/terse.rs"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "plan_view"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/View/TerseView.cs",
+          "symbol": "ShortenLocals"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "code-terse-view"
+        }
+      ]
     }
   ]
 }

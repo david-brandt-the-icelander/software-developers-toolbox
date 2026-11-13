@@ -31,7 +31,7 @@ proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD 
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
 status  daemon info
-C#, HTML and Razor files read as a terse view without a sha; --source gives the code and the sha every edit needs.
+C#, Python, TypeScript, Dart, HTML and Razor files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // Where a command runs and who asked.
