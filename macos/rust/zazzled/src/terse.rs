@@ -1,4 +1,4 @@
-// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -23,6 +23,7 @@ const LOG_METHODS: [&str; 19] = [
     "severe",
     "shout",
 ];
+const LONG_HEREDOC: usize = 6;
 const CONSOLE_METHODS: [&str; 6] = ["log", "debug", "info", "warn", "error", "trace"];
 const SIDE_EFFECTS: [&str; 7] =
     ["assignment", "await", "yield", "update_expression", "increment", "decrement", "named_expression"];
@@ -45,6 +46,7 @@ pub enum Lang {
     Ruby,
     Php,
     Scala,
+    Shell,
 }
 
 impl Lang {
@@ -74,6 +76,7 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "rb" | "rake" => Some(Lang::Ruby),
         "php" => Some(Lang::Php),
         "scala" | "sc" => Some(Lang::Scala),
+        "sh" | "bash" | "zsh" | "ksh" => Some(Lang::Shell),
         "swift" => Some(Lang::Swift),
         "c" => Some(Lang::C),
         "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
@@ -99,6 +102,7 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
         Lang::Php => tree_sitter_php::LANGUAGE_PHP.into(),
         Lang::Scala => tree_sitter_scala::LANGUAGE.into(),
+        Lang::Shell => tree_sitter_bash::LANGUAGE.into(),
     }
 }
 
@@ -262,29 +266,40 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
         catch(n, lang, &mut plan);
     }
     for &n in &nodes {
-        let in_block = n.parent().is_some_and(|p| {
-            matches!(
-                p.kind(),
-                "block"
-                    | "statement_block"
-                    | "constructor_body"
-                    | "statements"
-                    | "compound_statement"
-                    | "body_statement"
-                    | "begin"
-                    | "then"
-                    | "else"
-                    | "block_body"
-                    | "do"
-                    | "ensure"
-            )
-        });
+        let shell_block = |p: &str| {
+            lang == Lang::Shell
+                && matches!(
+                    p,
+                    "program" | "do_group" | "if_statement" | "elif_clause" | "else_clause" | "case_item"
+                )
+        };
+        let in_block = n.parent().is_some_and(|p| shell_block(p.kind()))
+            || n.parent().is_some_and(|p| {
+                matches!(
+                    p.kind(),
+                    "block"
+                        | "statement_block"
+                        | "constructor_body"
+                        | "statements"
+                        | "compound_statement"
+                        | "body_statement"
+                        | "begin"
+                        | "then"
+                        | "else"
+                        | "block_body"
+                        | "do"
+                        | "ensure"
+                )
+            });
         if (is_logging(n, lang, src) || is_log_guard(n, lang, src)) && in_block {
             plan.hide_node(n, None, "log statements");
         } else if matches!(n.kind(), "comment" | "line_comment") && is_region(&src[n.byte_range()])
             || n.kind() == "preproc_call" && is_pragma_region(&src[n.byte_range()])
         {
             plan.hide_node(n, None, "regions");
+        } else if n.kind() == "heredoc_body" && end_row(n, src) + 1 - n.start_position().row >= LONG_HEREDOC {
+            let (a, b) = (n.start_position().row, end_row(n, src));
+            plan.hide(a, b, Some(format!("heredoc, {} line(s)", b - a + 1)), "heredoc bodies");
         } else if is_access_modifier(n, lang) {
             let end = src[n.end_byte()..]
                 .find(|c: char| !c.is_whitespace())
@@ -357,6 +372,11 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
         Lang::Kotlin => n.kind() == "import",
         Lang::C | Lang::Cpp => n.kind() == "preproc_include",
         Lang::Php => n.kind() == "namespace_use_declaration",
+        Lang::Shell => {
+            n.kind() == "command"
+                && n.child_by_field_name("name")
+                    .is_some_and(|c| matches!(&src[c.byte_range()], "source" | "."))
+        }
         Lang::Ruby => {
             n.kind() == "call"
                 && n.child_by_field_name("receiver").is_none()
@@ -389,7 +409,9 @@ fn import_count(n: Node) -> usize {
 // Returns a call's callee text, such as `self._log.debug` or `console.error`, for an expression statement that is only a call.
 fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node<'t>, &'s str)> {
     let call = match (lang, stmt.kind()) {
-        (Lang::Kotlin | Lang::Swift | Lang::Scala, "call_expression") | (Lang::Ruby, "call") => stmt,
+        (Lang::Kotlin | Lang::Swift | Lang::Scala, "call_expression")
+        | (Lang::Ruby, "call")
+        | (Lang::Shell, "command") => stmt,
         (_, "expression_statement") => stmt.named_child(0)?,
         _ => return None,
     };
@@ -415,6 +437,7 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         }
         (Lang::C | Lang::Cpp, "binary_expression") => stream_log(call, src)?.byte_range(),
         (Lang::Rust, "macro_invocation") => call.child_by_field_name("macro")?.byte_range(),
+        (Lang::Shell, "command") => call.child_by_field_name("name")?.byte_range(),
         (Lang::Java, "method_invocation") => {
             let name = call.child_by_field_name("name")?;
             call.child_by_field_name("object").map_or(name.start_byte(), |o| o.start_byte())..name.end_byte()
@@ -429,6 +452,13 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     let Some((call, callee)) = call_target(stmt, lang, src) else { return false };
     if lang == Lang::Rust {
         return is_log_macro(callee) && !macro_side_effects(call, src);
+    }
+    if lang == Lang::Shell {
+        let runs = ["command_substitution", "process_substitution", "arithmetic_expansion"];
+        let shell_log = matches!(callee, "log" | "logger" | "debug")
+            || callee.starts_with("log_")
+            || callee.starts_with("debug_");
+        return shell_log && !preorder_kinds(call).iter().any(|k| runs.contains(k));
     }
     if has_side_effects(call) || lang == Lang::Go && src[call.byte_range()].contains("<-") {
         return false;
@@ -463,6 +493,17 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
         return logger && !exits && (LOG_METHODS.contains(&base) || base == "print" || base == "logattrs");
     }
     logger && (LOG_METHODS.contains(&method) || method.starts_with("log"))
+}
+
+// Returns the kinds of a node and all its descendants.
+fn preorder_kinds(n: Node) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    let mut stack = vec![n];
+    while let Some(x) = stack.pop() {
+        out.push(x.kind());
+        stack.extend(kids(x));
+    }
+    out
 }
 
 // True for a C or C++ logging macro by its conventional name: `LOG_INFO`, `DLOG_WARN`, `ALOGD`, `LOGE`, ...
@@ -1250,6 +1291,32 @@ class Repo(private val api: Api) {
   }
 }
 "#;
+    const SHELL: &str = r##"#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/lib.sh"
+. ./env.sh
+
+# region helpers
+log() { echo "[$(date +%T)] $*" >&2; }
+# endregion
+
+main() {
+  local target="${1:-all}"
+  log "building $target"
+  log_info "x" | tee out
+  debug "$(git rev-parse HEAD)"
+  cat <<EOF
+usage: build [target]
+  all      build everything
+  docs     build the docs
+  test     run the tests
+  clean    remove build output
+  help     show this text
+EOF
+  echo "done"
+}
+main "$@"
+"##;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -1318,6 +1385,8 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.rb")), Some(Lang::Ruby));
         assert_eq!(lang_of(Path::new("b.php")), Some(Lang::Php));
         assert_eq!(lang_of(Path::new("b.scala")), Some(Lang::Scala));
+        assert_eq!(lang_of(Path::new("b.sh")), Some(Lang::Shell));
+        assert_eq!(lang_of(Path::new("b.zsh")), Some(Lang::Shell));
         assert_eq!(lang_of(Path::new("b.pl")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
@@ -1974,5 +2043,40 @@ class InvoiceRepository {
         assert!(view("f", "class A\n  def initialize(a)\n    x = a\n  end\nend\n", Lang::Ruby).is_none());
         let untyped = "object A {\n  def f() = {\n    try {\n      g()\n    } catch {\n      case e => throw e\n    }\n  }\n}\n";
         assert!(view("f", untyped, Lang::Scala).is_some_and(|v| v.contains("logs and rethrows")));
+    }
+
+    // Checks the shell rules: source runs, logging helpers without subcommands, regions and long heredocs; output, pipelines and subcommands stay.
+    #[test]
+    fn test_view_shell() {
+        let v = view("a.sh", SHELL, Lang::Shell).expect("view");
+        assert!(
+            v.starts_with("a.sh 25 lines; terse: 1 imports, 2 regions, 1 log statements, 1 heredoc bodies\n"),
+            "{v}"
+        );
+        let lines = body(SHELL, Lang::Shell);
+        has_all(
+            &lines,
+            &[
+                "3-4\t⋯ 2 import(s)",
+                "13\t  log_info \"x\" | tee out",
+                "14\t  debug \"$(git rev-parse HEAD)\"",
+                "15\t  cat <<EOF",
+                "16-21\t⋯ heredoc, 6 line(s)",
+                "22\tEOF",
+                "23\t  echo \"done\"",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("12\t") || l.starts_with("6\t")));
+        let sh = |s: &str| view("f", &format!("f() {{\n  {s}\n}}\n"), Lang::Shell).is_none();
+        assert!(
+            !sh("logger -t app \"x\"")
+                && !sh("debug_trace x")
+                && sh("echo x")
+                && sh("log $((i++))")
+                && sh("info x")
+        );
+        assert!(view("f", "if true; then\n  log \"x\"\nfi\n", Lang::Shell).is_some());
+        assert!(view("f", "cat <<EOF\na\nb\nEOF\n", Lang::Shell).is_none());
+        assert!(view("f", "source a.sh\necho x\n", Lang::Shell).is_none());
     }
 }

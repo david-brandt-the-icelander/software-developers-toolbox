@@ -120,6 +120,7 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
             "function_definition" | "method_declaration" | "anonymous_function" | "arrow_function"
         ),
         Lang::Scala => matches!(kind, "function_definition" | "lambda_expression"),
+        Lang::Shell => false,
     }
 }
 
