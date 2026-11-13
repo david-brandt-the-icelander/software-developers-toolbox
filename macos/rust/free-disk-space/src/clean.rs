@@ -215,7 +215,7 @@ fn rm_tree(path: &Path, res: &mut Removal, tk: &mut util::Ticker, apply: bool) {
 }
 
 // Remove a directory's contents but keep the directory itself.
-fn empty_dir(path: &str, apply: bool, label: &str) -> Removal {
+fn empty_dir(path: &str, apply: bool, label: &str, before: i64) -> Removal {
     let mut res = Removal::default();
     let path = PathBuf::from(util::expand(path));
     let is_real_dir = fs::symlink_metadata(&path).map(|m| m.is_dir()).unwrap_or(false);
@@ -244,7 +244,11 @@ fn empty_dir(path: &str, apply: bool, label: &str) -> Removal {
         format!("   ({} protected, skipped)", res.protected.len())
     };
     let mark = if apply { "-" } else { "~" };
-    println!("  {mark} {label:<45} {:>10}{note}", human_i(res.bytes));
+    println!(
+        "  {mark} {label:<45} {:>10}  total {:>10}{note}",
+        human_i(res.bytes),
+        human_i(before + res.bytes)
+    );
     res
 }
 
@@ -257,7 +261,7 @@ fn clean_dirs(title: &str, dirs: &[&str], apply: bool, ctx: &mut Ctx) {
             println!("  - {d}: done before the interruption");
             continue;
         }
-        let r = empty_dir(d, apply, d);
+        let r = empty_dir(d, apply, d, ctx.bytes);
         ctx.bytes += r.bytes;
         ctx.protected.extend(r.protected);
         ctx.progress.mark(key);
@@ -268,7 +272,7 @@ fn clean_dirs(title: &str, dirs: &[&str], apply: bool, ctx: &mut Ctx) {
 fn clean_trash(apply: bool, ctx: &mut Ctx) {
     println!("{}", c("1", "Trash"));
     if !apply {
-        ctx.bytes += empty_dir("~/.Trash", false, "~/.Trash (via Finder when applied)").bytes;
+        ctx.bytes += empty_dir("~/.Trash", false, "~/.Trash (via Finder when applied)", ctx.bytes).bytes;
         return;
     }
     if !cfg!(target_os = "macos") && std::env::var_os("FDS_FORCE").is_none() {
@@ -884,21 +888,21 @@ mod tests {
     fn test_empty_dir_cases() {
         let sb = Sandbox::new();
         sb.write("file", b"x");
-        assert_eq!(empty_dir("~/nothing", true, "n").bytes, 0);
-        assert_eq!(empty_dir(&sb.path("file").to_string_lossy(), true, "f").bytes, 0);
+        assert_eq!(empty_dir("~/nothing", true, "n", 0).bytes, 0);
+        assert_eq!(empty_dir(&sb.path("file").to_string_lossy(), true, "f", 0).bytes, 0);
         sb.write("home/c/a", &[1u8; 5000]);
         sb.write("home/c/b/x", &[1u8; 5000]);
-        let dry = empty_dir("~/c", false, "c");
+        let dry = empty_dir("~/c", false, "c", 0);
         assert!(dry.bytes >= 10000 && sb.path("home/c/a").exists());
-        let done = empty_dir("~/c", true, "c");
+        let done = empty_dir("~/c", true, "c", 0);
         assert_eq!(done.bytes, dry.bytes);
         assert!(sb.path("home/c").is_dir() && fs::read_dir(sb.path("home/c")).unwrap().count() == 0);
         std::os::unix::fs::symlink(sb.path("home/c"), sb.path("home/link")).unwrap();
-        assert_eq!(empty_dir("~/link", true, "l").bytes, 0);
+        assert_eq!(empty_dir("~/link", true, "l", 0).bytes, 0);
         util::set_stop(true);
         sb.write("home/s/a", b"1");
         sb.write("home/s/b", b"1");
-        empty_dir("~/s", true, "s");
+        empty_dir("~/s", true, "s", 0);
         assert_eq!(fs::read_dir(sb.path("home/s")).unwrap().count(), 1);
     }
 
@@ -911,10 +915,10 @@ mod tests {
         }
         sb.write("home/p/ro/f", b"x");
         chmod(&sb.path("home/p/ro"), 0o555);
-        assert_eq!(empty_dir("~/p", true, "p").protected.len(), 1);
+        assert_eq!(empty_dir("~/p", true, "p", 0).protected.len(), 1);
         chmod(&sb.path("home/p/ro"), 0o755);
         chmod(&sb.path("home/p"), 0o000);
-        assert_eq!(empty_dir("~/p", true, "p").bytes, 0);
+        assert_eq!(empty_dir("~/p", true, "p", 0).bytes, 0);
         chmod(&sb.path("home/p"), 0o755);
     }
 
