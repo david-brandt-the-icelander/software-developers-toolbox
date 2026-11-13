@@ -74,7 +74,7 @@ fn bounds(sel: Select, nl: usize, ctx: usize) -> Result<(usize, usize), String> 
 }
 
 // Chooses which lines to keep within the budget: a head part, a tail part and the elided count between.
-fn fit(costs: &[usize], budget: usize) -> (usize, usize) {
+pub(super) fn fit(costs: &[usize], budget: usize) -> (usize, usize) {
     let total: usize = costs.iter().sum();
     if total <= budget {
         return (costs.len(), costs.len());

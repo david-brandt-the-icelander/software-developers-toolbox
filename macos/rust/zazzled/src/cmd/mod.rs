@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::io::Read;
 use std::path::PathBuf;
 
+pub mod clean;
 pub mod edit;
 pub mod find;
 pub mod ls;
@@ -23,8 +24,9 @@ ls [DIR] [-d N] [-m N] [-u]  tree with line counts
 outline PATH.. [-d N] [-m N]  symbols with line ranges
 refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol
 edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
+CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 status  daemon info
-Any command: --budget T caps output at ~T tokens (default 8000; read has its own); --disable-session-deduping resends output already sent in this session.";
+Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // Where a command runs and who asked.
 pub struct Ctx<'a> {
@@ -37,12 +39,21 @@ pub struct Ctx<'a> {
 impl Ctx<'_> {
     // Reads all of standard input, which can be done once.
     pub fn read_stdin(&self) -> Result<Vec<u8>, String> {
-        let Some(mut r) = self.stdin.borrow_mut().take() else {
+        self.read_stdin_max(usize::MAX).map(|(buf, _)| buf)
+    }
+
+    // Reads standard input up to a byte limit, once; also says whether more was left unread.
+    pub fn read_stdin_max(&self, max: usize) -> Result<(Vec<u8>, bool), String> {
+        let Some(r) = self.stdin.borrow_mut().take() else {
             return Err("no standard input available".into());
         };
         let mut buf = Vec::new();
-        r.read_to_end(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
-        Ok(buf)
+        r.take((max as u64).saturating_add(1))
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("reading stdin: {e}"))?;
+        let cut = buf.len() > max;
+        buf.truncate(max);
+        Ok((buf, cut))
     }
 }
 
@@ -79,7 +90,7 @@ struct Globals {
 
 // Pulls the global options out of a command's arguments; read keeps its own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
-    let takes_budget = !matches!(cmd, "read" | "cat");
+    let takes_budget = !matches!(cmd, "read" | "cat" | "clean");
     let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -140,7 +151,7 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
         Err(msg) => Output::err(&msg),
     };
     if out.idable {
-        if !matches!(cmd.as_str(), "read" | "cat") {
+        if !matches!(cmd.as_str(), "read" | "cat" | "clean") {
             out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
         }
         out.text = ctx.engine.sessions.apply(&ctx.session, &describe(cmd, &rest), out.text, globals.dedupe);
@@ -157,10 +168,13 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
+        "clean" => clean::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
-        other => Err(format!("unknown command '{other}'; try: find read ls outline refs edit status help")),
+        other => {
+            Err(format!("unknown command '{other}'; try: find read ls outline refs edit clean status help"))
+        }
     }
 }
 
@@ -218,7 +232,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read ls outline refs edit status help"
+            "error: unknown command 'frobnicate'; try: find read ls outline refs edit clean status help"
         );
         assert!(!o.idable);
     }

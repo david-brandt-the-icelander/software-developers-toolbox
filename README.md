@@ -4,7 +4,7 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 ## Tools (macOS, Rust)
 - [`fix-network`](macos/rust/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN (also `zazzle fix-network ...`).
 - [`agent-fs`](macos/rust/agent-fs/README.md): JSON read/search/list/outline tool and MCP server for agents, with session caching (`afs`).
-- [`zazzle`/`zazzled`](macos/rust/zazzled/README.md): file tool and MCP server for agents (find, read, outline, refs, safe edit) with a tiny C invoker, per-session dedupe and a persistent cache.
+- [`zazzle`/`zazzled`](macos/rust/zazzled/README.md): file tool and MCP server for agents (find, read, outline, refs, safe edit, and `clean` for piped command output) with a tiny C invoker, per-session dedupe and a persistent cache.
 - [`free-disk-space`](macos/rust/free-disk-space/README.md): scan, compress, dedupe and clean up disk space (also `zazzle free-disk-space ...`; `daemon install` schedules it).
 - [`zazzle-csharp-indexer`](macos/dotnet/zazzle-csharp-indexer/README.md) (C#): MCP server that answers code questions for agents instead of grep and cat.
 

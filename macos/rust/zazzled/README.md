@@ -26,9 +26,28 @@ Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":[
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
 | `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` with `--expect SHA` or `--at` anchors, `--after`, `--create`; atomic, CRLF-preserving, confined to the working directory |
+| `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
 | `status` | daemon, cache and session counters |
 
-Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` has its own) and `--disable-session-deduping`.
+Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
+
+## Clean
+
+`grep -rn foo src | zazzle clean` (or `cargo test 2>&1 | zazzle clean`) reads standard input, up to 64 MiB, and prints what an agent needs from it:
+
+| step | what it does | `--lossless` |
+|---|---|---|
+| ansi | removes colours, cursor moves and window titles | yes |
+| whitespace | keeps the last frame of `\r` redraws, trims line ends, squeezes blank runs | yes |
+| json | a JSON document or JSON Lines loses whitespace outside strings; keys and numbers stay as written | yes |
+| grep | `path:N:text` / `path-N-text` / `path:text` output (grep, git grep, rg) is regrouped by file in `find`'s layout, only if every line parses and it is shorter | yes |
+| repeats | runs of identical lines become one line and `… previous line repeated N more times` | yes |
+| progress | a run of progress-bar lines becomes its last line and `… N progress lines dropped` | no |
+| blobs | base64 or hex runs of 200+ characters become `<blob N chars>` | no |
+| long-lines | lines over 600 bytes keep 300 bytes and `[line was N bytes]` (not for JSON) | no |
+| budget | above `--budget` (default 8000 tokens) the head and tail stay and the middle becomes one line saying how much was cut | always |
+
+Every removal leaves a marker. Input that is not recognised only gets the lossless steps, and if the markers would make the text longer, the input is passed through. `--as` skips detection (`text` turns off the json and grep steps). `--stats` adds `[clean ~A→~B tokens; steps: …]`. Repeating the same cleaned output in a session gets the usual `already sent` notice. `clean` is not an MCP tool: an MCP client already holds the text; cleaning MCP responses belongs in a proxy.
 
 ## Session ids and dedupe
 

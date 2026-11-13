@@ -1,6 +1,6 @@
 ---
 name: zazzle
-description: Read, search, outline and edit files with the `zazzle` tool (or its MCP server `zazzled mcp`) instead of cat, sed, grep -r, find or sed -i. Use for any code search, reading part of a large file, finding where a symbol is defined and used, or making a safe edit; replies are short, capped and deduplicated per session.
+description: Read, search, outline and edit files with the `zazzle` tool (or its MCP server `zazzled mcp`) instead of cat, sed, grep -r, find or sed -i, and shrink noisy command output with `zazzle clean`. Use for any code search, reading part of a large file, finding where a symbol is defined and used, or making a safe edit; replies are short, capped and deduplicated per session.
 ---
 
 # zazzle
@@ -13,6 +13,7 @@ Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`
 - Locate first, read second: `zazzle outline FILE` (ranges per symbol), `zazzle find PATTERN`, `zazzle refs SYMBOL` (definitions first, each use shows its enclosing symbol), then `zazzle read FILE:A-B`.
 - A reply starting `[r:ID]` was sent to you. A later `[r:ID] already sent: ...` means that content is still in your context; do not request it again. Add `--disable-session-deduping` only if you lost it.
 - Output is capped (`find` 50 matches, `read` ~3000 tokens, others ~8000). The footer says how to narrow or continue; follow it instead of raising caps.
+- Pipe noisy command output through `zazzle clean` (`cargo test 2>&1 | zazzle clean`, `grep -rn x . | zazzle clean`): it strips colours and redraws, groups grep output by file, minifies JSON, collapses repeats, progress bars and blobs, and keeps head and tail within `--budget`. Every cut is marked; add `--lossless` to keep progress lines, blobs and long lines. `set -o pipefail` keeps the command's exit status.
 - Regex is Rust syntax (no look-around or backreferences); use `-F` for literal text.
 
 ## Edit
