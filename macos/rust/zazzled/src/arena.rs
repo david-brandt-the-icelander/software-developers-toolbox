@@ -1,6 +1,7 @@
 // Per-thread pooled arenas for tree-sitter: a parse's allocations bump through a reserved range with size-class free lists, and the range resets after the parse.
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::ffi::c_void;
+use std::ptr::null_mut;
 use std::sync::Once;
 
 // Address space reserved per thread; only touched pages use memory, and 1 MiB sources need at most about 100 MB.
@@ -9,16 +10,17 @@ const RESERVE: usize = 256 << 20;
 const KEEP: usize = 5 << 20;
 const HEADER: usize = 16;
 const CLASSES: usize = 7;
-const MAGIC: u32 = 0x7a61_7a7a;
 
 static INSTALL: Once = Once::new();
 
 thread_local! {
-    // This thread's arena, created on its first parse.
-    static ARENA: RefCell<Option<Arena>> = const { RefCell::new(None) };
+    // This thread's arena; a const, drop-free cell, so the allocation hooks read it as a plain thread-local load.
+    static ARENA: Cell<*mut Arena> = const { Cell::new(null_mut()) };
+    // Frees this thread's arena when the thread ends; touched only when the arena is created, never on the hot path.
+    static OWNER: Owner = const { Owner };
 }
 
-// One thread's arena: the reserved range, the bump offset, free lists per size class and the live block count.
+// One thread's arena: the reserved range, the bump offset, free lists per size class, the live block count and whether a parse is running.
 struct Arena {
     base: *mut u8,
     cap: usize,
@@ -27,6 +29,20 @@ struct Arena {
     free: [*mut u8; CLASSES],
     live: usize,
     active: bool,
+}
+
+// Releases the thread's arena at thread exit.
+struct Owner;
+
+impl Drop for Owner {
+    // Unmaps the arena, unless it was abandoned because blocks outlived a parse.
+    fn drop(&mut self) {
+        let a = ARENA.replace(null_mut());
+        if !a.is_null() {
+            // SAFETY: a came from Box::into_raw in create and is no longer reachable through ARENA.
+            drop(unsafe { Box::from_raw(a) });
+        }
+    }
 }
 
 // Returns the size class (payload 16 << class bytes) for a request, or None if it is too big for the arena.
@@ -46,102 +62,9 @@ fn map(addr: *mut u8, len: usize) -> *mut u8 {
     // SAFETY: anonymous mapping; with MAP_FIXED, addr lies inside this arena's own reservation, which nothing else uses.
     let p = unsafe { libc::mmap(addr.cast(), len, libc::PROT_READ | libc::PROT_WRITE, flags, -1, 0) };
     if p == libc::MAP_FAILED {
-        std::ptr::null_mut()
+        null_mut()
     } else {
         p.cast()
-    }
-}
-
-impl Arena {
-    // Reserves cap bytes of address space, or returns None if the system refuses.
-    fn new(cap: usize) -> Option<Arena> {
-        let base = map(std::ptr::null_mut(), cap);
-        (!base.is_null()).then_some(Arena {
-            base,
-            cap,
-            top: 0,
-            high: 0,
-            free: [std::ptr::null_mut(); CLASSES],
-            live: 0,
-            active: false,
-        })
-    }
-
-    // Returns true if p was handed out by this arena.
-    fn contains(&self, p: *const u8) -> bool {
-        let start = self.base as usize;
-        (start..start + self.cap).contains(&(p as usize))
-    }
-
-    // Hands out a block of at least n bytes while a parse is running, or None to fall back to the system allocator.
-    fn alloc(&mut self, n: usize) -> Option<*mut u8> {
-        if !self.active {
-            return None;
-        }
-        let c = class_of(n)?;
-        let p = if self.free[c].is_null() {
-            let size = HEADER + (16 << c);
-            if self.top + size > self.cap {
-                return None;
-            }
-            // SAFETY: top + size is within the reservation, so the header and payload lie inside mapped memory.
-            let p = unsafe {
-                let h = self.base.add(self.top);
-                h.cast::<u32>().write(MAGIC);
-                h.cast::<u32>().add(1).write(c as u32);
-                h.add(HEADER)
-            };
-            self.top += size;
-            self.high = self.high.max(self.top);
-            p
-        } else {
-            let p = self.free[c];
-            // SAFETY: a freed payload holds the next free pointer in its first bytes, written by release.
-            self.free[c] = unsafe { p.cast::<*mut u8>().read() };
-            p
-        };
-        self.live += 1;
-        Some(p)
-    }
-
-    // Returns the payload size of a block this arena handed out.
-    fn payload(&self, p: *const u8) -> usize {
-        // SAFETY: p came from alloc, so a header written by alloc sits HEADER bytes before it.
-        let (magic, class) =
-            unsafe { (p.sub(HEADER).cast::<u32>().read(), p.sub(HEADER).cast::<u32>().add(1).read()) };
-        debug_assert_eq!(magic, MAGIC, "arena block header");
-        16 << class
-    }
-
-    // Puts a block back on its size class's free list.
-    fn release(&mut self, p: *mut u8) {
-        let c = (self.payload(p) / 16).trailing_zeros() as usize;
-        // SAFETY: payloads are at least 16 bytes, so the next pointer fits; the block is no longer in use.
-        unsafe { p.cast::<*mut u8>().write(self.free[c]) };
-        self.free[c] = p;
-        self.live -= 1;
-    }
-
-    // Empties the arena for the next parse and returns touched pages beyond KEEP to the system.
-    fn reset(&mut self) {
-        if self.high > KEEP {
-            let page = page_size();
-            let end = self.high.div_ceil(page) * page;
-            // SAFETY: KEEP..end lies inside the reservation; remapping replaces those pages with fresh untouched ones.
-            map(unsafe { self.base.add(KEEP) }, end.min(self.cap) - KEEP);
-        }
-        self.top = 0;
-        self.high = 0;
-        self.free = [std::ptr::null_mut(); CLASSES];
-        self.live = 0;
-    }
-}
-
-impl Drop for Arena {
-    // Releases the reservation when the thread ends.
-    fn drop(&mut self) {
-        // SAFETY: base and cap describe the mapping created in new, and no block is used after its parse ends.
-        unsafe { libc::munmap(self.base.cast(), self.cap) };
     }
 }
 
@@ -152,32 +75,121 @@ fn page_size() -> usize {
     usize::try_from(n).unwrap_or(4096)
 }
 
-// Runs f on this thread's arena if it exists and is not already borrowed.
-fn with_arena<R>(f: impl FnOnce(&mut Arena) -> R) -> Option<R> {
-    ARENA.try_with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f)).ok().flatten()
+impl Arena {
+    // Reserves cap bytes of address space, or returns None if the system refuses.
+    fn new(cap: usize) -> Option<Arena> {
+        let base = map(null_mut(), cap);
+        (!base.is_null()).then_some(Arena {
+            base,
+            cap,
+            top: 0,
+            high: 0,
+            free: [null_mut(); CLASSES],
+            live: 0,
+            active: false,
+        })
+    }
+
+    // Returns true if p was handed out by this arena.
+    fn contains(&self, p: *const u8) -> bool {
+        (p as usize).wrapping_sub(self.base as usize) < self.cap
+    }
+
+    // Hands out a block of at least n bytes while a parse is running, or null to fall back to the system allocator.
+    fn alloc(&mut self, n: usize) -> *mut u8 {
+        let Some(c) = class_of(n).filter(|_| self.active) else { return null_mut() };
+        let p = self.free[c];
+        if !p.is_null() {
+            // SAFETY: a freed payload holds the next free pointer in its first bytes, written by release.
+            self.free[c] = unsafe { p.cast::<*mut u8>().read() };
+            self.live += 1;
+            return p;
+        }
+        let size = HEADER + (16 << c);
+        if self.top + size > self.cap {
+            return null_mut();
+        }
+        // SAFETY: top + size is within the reservation, so the header and payload lie inside mapped memory.
+        let p = unsafe {
+            let h = self.base.add(self.top);
+            h.cast::<usize>().write(c);
+            h.add(HEADER)
+        };
+        self.top += size;
+        self.high = self.high.max(self.top);
+        self.live += 1;
+        p
+    }
+
+    // Returns the payload size of a block this arena handed out.
+    fn payload(p: *const u8) -> usize {
+        // SAFETY: p came from alloc, so the class written by alloc sits HEADER bytes before it.
+        16 << unsafe { p.sub(HEADER).cast::<usize>().read() }
+    }
+
+    // Puts a block back on its size class's free list.
+    fn release(&mut self, p: *mut u8) {
+        let c = (Arena::payload(p) / 16).trailing_zeros() as usize;
+        // SAFETY: payloads are at least 16 bytes, so the next pointer fits; the block is no longer in use.
+        unsafe { p.cast::<*mut u8>().write(self.free[c]) };
+        self.free[c] = p;
+        self.live -= 1;
+    }
+
+    // Empties the arena for the next parse and returns touched pages beyond KEEP to the system.
+    fn reset(&mut self) {
+        if self.high > KEEP {
+            let page = page_size();
+            let end = (self.high.div_ceil(page) * page).min(self.cap);
+            // SAFETY: KEEP..end lies inside the reservation; remapping replaces those pages with fresh untouched ones.
+            map(unsafe { self.base.add(KEEP) }, end - KEEP);
+        }
+        self.top = 0;
+        self.high = 0;
+        self.free = [null_mut(); CLASSES];
+        self.live = 0;
+    }
+}
+
+impl Drop for Arena {
+    // Releases the reservation.
+    fn drop(&mut self) {
+        // SAFETY: base and cap describe the mapping created in new, and no block is used after its parse ends.
+        unsafe { libc::munmap(self.base.cast(), self.cap) };
+    }
+}
+
+// Returns this thread's arena pointer, null if it has none or the thread is shutting down.
+fn current() -> *mut Arena {
+    ARENA.try_with(Cell::get).unwrap_or(null_mut())
 }
 
 // Tree-sitter's malloc: the arena during a parse, else the system allocator.
 unsafe extern "C" fn ts_malloc(n: usize) -> *mut c_void {
-    match with_arena(|a| a.alloc(n)).flatten() {
-        Some(p) => p.cast(),
+    let a = current();
+    // SAFETY: a is this thread's arena; the hooks never re-enter, so this is the only reference while it runs.
+    let p = if a.is_null() { null_mut() } else { unsafe { (*a).alloc(n) } };
+    if p.is_null() {
         // SAFETY: plain libc allocation.
-        None => unsafe { libc::malloc(n) },
+        unsafe { libc::malloc(n) }
+    } else {
+        p.cast()
     }
 }
 
 // Tree-sitter's calloc: zeroed memory from the arena during a parse, else from the system allocator.
 unsafe extern "C" fn ts_calloc(k: usize, size: usize) -> *mut c_void {
-    let Some(n) = k.checked_mul(size) else { return std::ptr::null_mut() };
-    match with_arena(|a| a.alloc(n)).flatten() {
-        Some(p) => {
-            // SAFETY: the block holds at least n bytes and may be a reused free-list block, so it must be cleared.
-            unsafe { p.write_bytes(0, n) };
-            p.cast()
-        }
+    let Some(n) = k.checked_mul(size) else { return null_mut() };
+    let a = current();
+    // SAFETY: as in ts_malloc.
+    let p = if a.is_null() { null_mut() } else { unsafe { (*a).alloc(n) } };
+    if p.is_null() {
         // SAFETY: plain libc allocation.
-        None => unsafe { libc::calloc(k, size) },
+        return unsafe { libc::calloc(k, size) };
     }
+    // SAFETY: the block holds at least n bytes and may be a reused free-list block, so it must be cleared.
+    unsafe { p.write_bytes(0, n) };
+    p.cast()
 }
 
 // Tree-sitter's free: arena blocks go back on their free list, others to the system allocator.
@@ -185,8 +197,12 @@ unsafe extern "C" fn ts_free(p: *mut c_void) {
     if p.is_null() {
         return;
     }
-    let ours = with_arena(|a| a.contains(p.cast()).then(|| a.release(p.cast()))).flatten().is_some();
-    if !ours {
+    let a = current();
+    // SAFETY: as in ts_malloc; contains only compares addresses.
+    if !a.is_null() && unsafe { (*a).contains(p.cast()) } {
+        // SAFETY: p is a live block of this arena.
+        unsafe { (*a).release(p.cast()) };
+    } else {
         // SAFETY: p is not an arena block, so it came from libc.
         unsafe { libc::free(p) };
     }
@@ -194,14 +210,13 @@ unsafe extern "C" fn ts_free(p: *mut c_void) {
 
 // Tree-sitter's realloc: arena blocks grow by copying into a new block, others use the system allocator.
 unsafe extern "C" fn ts_realloc(p: *mut c_void, n: usize) -> *mut c_void {
-    if p.is_null() {
-        // SAFETY: same contract as malloc.
-        return unsafe { ts_malloc(n) };
+    let a = current();
+    // SAFETY: as in ts_malloc; contains only compares addresses.
+    if p.is_null() || a.is_null() || !unsafe { (*a).contains(p.cast()) } {
+        // SAFETY: p is null or a libc block; realloc(NULL, n) allocates.
+        return if p.is_null() { unsafe { ts_malloc(n) } } else { unsafe { libc::realloc(p, n) } };
     }
-    let Some(old) = with_arena(|a| a.contains(p.cast()).then(|| a.payload(p.cast()))).flatten() else {
-        // SAFETY: p is not an arena block, so it came from libc.
-        return unsafe { libc::realloc(p, n) };
-    };
+    let old = Arena::payload(p.cast());
     if n <= old {
         return p;
     }
@@ -222,46 +237,48 @@ fn install() {
     unsafe { tree_sitter::set_allocator(Some(ts_malloc), Some(ts_calloc), Some(ts_realloc), Some(ts_free)) };
 }
 
+// Returns this thread's arena, creating it and registering its cleanup on first use; null if the reservation fails.
+fn create() -> *mut Arena {
+    let a = current();
+    if !a.is_null() {
+        return a;
+    }
+    let Some(arena) = Arena::new(RESERVE) else { return null_mut() };
+    OWNER.with(|_| ());
+    let a = Box::into_raw(Box::new(arena));
+    ARENA.set(a);
+    a
+}
+
 // Ends a parse scope: deactivates the arena and resets it, or abandons it if a block is still live.
-struct ScopeGuard;
+struct ScopeGuard(*mut Arena);
 
 impl Drop for ScopeGuard {
     // Runs on normal exit and on unwind, so a panicking parse never leaves the arena active.
     fn drop(&mut self) {
-        let _ = ARENA.try_with(|cell| {
-            let mut slot = cell.borrow_mut();
-            let Some(a) = slot.as_mut() else { return };
-            a.active = false;
-            if a.live == 0 {
-                a.reset();
-                return;
-            }
-            eprintln!(
-                "zazzled: {} tree-sitter blocks outlived their parse; abandoning this thread's arena",
-                a.live
-            );
-            std::mem::forget(slot.take());
-        });
+        // SAFETY: self.0 is this thread's arena and tree-sitter is not running, so no hook holds a reference.
+        let a = unsafe { &mut *self.0 };
+        a.active = false;
+        if a.live == 0 {
+            a.reset();
+            return;
+        }
+        eprintln!(
+            "zazzled: {} tree-sitter blocks outlived their parse; abandoning this thread's arena",
+            a.live
+        );
+        ARENA.set(null_mut());
     }
 }
 
 // Runs f with this thread's tree-sitter allocations in its arena; everything tree-sitter allocates in f must be freed in f.
 pub fn scope<R>(f: impl FnOnce() -> R) -> R {
     INSTALL.call_once(install);
-    let entered = ARENA.with_borrow_mut(|slot| {
-        if slot.is_none() {
-            *slot = Arena::new(RESERVE);
-        }
-        match slot.as_mut() {
-            Some(a) if !a.active => {
-                a.active = true;
-                true
-            }
-            _ => false,
-        }
-    });
+    let a = create();
+    // SAFETY: a is null or this thread's arena, and tree-sitter is not running, so no hook holds a reference.
+    let entered = !a.is_null() && unsafe { !std::mem::replace(&mut (*a).active, true) };
     // Built only when this call activated the arena; constructing it otherwise would reset an outer scope on drop.
-    let _guard = if entered { Some(ScopeGuard) } else { None };
+    let _guard = if entered { Some(ScopeGuard(a)) } else { None };
     f()
 }
 
@@ -270,21 +287,28 @@ pub fn scope<R>(f: impl FnOnce() -> R) -> R {
 mod tests {
     use super::*;
 
-    // Allocates through the hooks inside an active test arena of the given size.
+    // Installs a fresh active arena of the given size on this test thread, runs f, then removes it.
     fn with_test_arena<R>(cap: usize, f: impl FnOnce() -> R) -> R {
-        ARENA.with_borrow_mut(|slot| {
-            let mut a = Arena::new(cap).expect("reserve");
-            a.active = true;
-            *slot = Some(a);
-        });
+        let mut a = Arena::new(cap).expect("reserve");
+        a.active = true;
+        let p = Box::into_raw(Box::new(a));
+        let old = ARENA.replace(p);
         let r = f();
-        ARENA.with_borrow_mut(|slot| *slot = None);
+        ARENA.set(old);
+        // SAFETY: p came from Box::into_raw above and is no longer installed.
+        drop(unsafe { Box::from_raw(p) });
         r
+    }
+
+    // Returns this thread's arena, which the test requires to exist.
+    fn arena() -> &'static mut Arena {
+        // SAFETY: tests read the arena only while no tree-sitter call is running on this thread.
+        unsafe { &mut *current() }
     }
 
     // Returns whether p lies in this thread's arena.
     fn in_arena(p: *mut c_void) -> bool {
-        with_arena(|a| a.contains(p.cast())).unwrap_or(false)
+        !current().is_null() && arena().contains(p.cast())
     }
 
     // Checks size classes cover 16 to 1024 bytes and reject larger requests.
@@ -309,7 +333,7 @@ mod tests {
             assert_eq!(a, b);
             assert!((0..100).all(|i| *b.cast::<u8>().add(i) == 0));
             ts_free(b);
-            assert_eq!(with_arena(|x| x.live), Some(0));
+            assert_eq!(arena().live, 0);
             assert!(ts_calloc(usize::MAX, 2).is_null());
         });
     }
@@ -324,11 +348,11 @@ mod tests {
             let blocks: Vec<*mut c_void> = (0..40).map(|_| ts_malloc(100)).collect();
             assert!(blocks.iter().any(|p| !in_arena(*p)));
             blocks.into_iter().for_each(|p| ts_free(p));
-            with_arena(|x| x.active = false);
+            arena().active = false;
             let off = ts_calloc(4, 4);
             assert!(!in_arena(off));
             ts_free(off);
-            ts_free(std::ptr::null_mut());
+            ts_free(null_mut());
         });
     }
 
@@ -336,7 +360,7 @@ mod tests {
     #[test]
     fn test_hooks_realloc() {
         with_test_arena(1 << 20, || unsafe {
-            let p = ts_realloc(std::ptr::null_mut(), 20);
+            let p = ts_realloc(null_mut(), 20);
             assert!(in_arena(p));
             p.cast::<u8>().write_bytes(7, 20);
             assert_eq!(ts_realloc(p, 32), p);
@@ -347,35 +371,45 @@ mod tests {
             let s = ts_realloc(r, 10000);
             assert!(!s.is_null() && *s.cast::<u8>().add(19) == 7);
             ts_free(s);
-            assert_eq!(with_arena(|x| x.live), Some(0));
+            assert_eq!(arena().live, 0);
         });
+    }
+
+    // Checks the hooks use the system allocator on a thread that has no arena.
+    #[test]
+    fn test_hooks_without_arena() {
+        std::thread::spawn(|| unsafe {
+            assert!(current().is_null());
+            let p = ts_realloc(ts_calloc(2, 8), 64);
+            assert!(!p.is_null());
+            ts_free(p);
+        })
+        .join()
+        .expect("thread");
     }
 
     // Checks a scope resets the arena, gives pages beyond KEEP back, and that nested scopes leave the outer one active.
     #[test]
     fn test_scope_resets_and_nests() {
-        let blocks = scope(|| {
-            let inner = scope(|| with_arena(|a| a.active));
-            assert_eq!(inner, Some(true));
+        scope(|| {
+            assert!(scope(|| arena().active));
             let v: Vec<*mut c_void> =
                 (0..((KEEP / 1040) + 100)).map(|_| unsafe { ts_malloc(1024) }).collect();
             assert!(v.iter().all(|p| in_arena(*p)));
-            assert!(with_arena(|a| a.high > KEEP).unwrap_or(false));
+            assert!(arena().high > KEEP);
             v.iter().for_each(|p| unsafe { ts_free(*p) });
-            v.len()
         });
-        assert!(blocks > 0);
-        assert_eq!(with_arena(|a| (a.active, a.top, a.high, a.live)), Some((false, 0, 0, 0)));
+        let a = arena();
+        assert_eq!((a.active, a.top, a.high, a.live), (false, 0, 0, 0));
     }
 
-    // Checks a block that outlives its scope makes the thread abandon that arena instead of reusing it.
+    // Checks a block that outlives its scope makes the thread abandon that arena and start a new one.
     #[test]
     fn test_scope_abandons_arena_with_live_blocks() {
         let leaked = scope(|| unsafe { ts_malloc(64) });
-        assert!(with_arena(|_| ()).is_none());
-        let again = scope(|| unsafe { ts_malloc(64) });
-        assert!(in_arena(again) || with_arena(|_| ()).is_none());
-        assert_ne!(leaked, std::ptr::null_mut());
+        assert!(!leaked.is_null() && current().is_null());
+        scope(|| assert!(arena().active));
+        assert!(!current().is_null());
     }
 
     // Checks a panic inside a scope still deactivates and resets the arena.
@@ -383,6 +417,6 @@ mod tests {
     fn test_scope_survives_panic() {
         let r = std::panic::catch_unwind(|| scope(|| panic!("parse panicked")));
         assert!(r.is_err());
-        assert_eq!(with_arena(|a| a.active), Some(false));
+        assert!(!arena().active);
     }
 }
