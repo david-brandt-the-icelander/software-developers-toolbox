@@ -26,12 +26,19 @@ edit PATH --old T --new T [--all] | --lines A-B --new T (--expect SHA | --at A#x
 status  daemon info
 Any command: --budget T caps output at ~T tokens (default 8000; read has its own); --disable-session-deduping resends output already sent in this session.";
 
+// The invoker's own standard streams and connection, for commands that hand them to a script.
+pub struct Caller {
+    pub stdio: [std::os::fd::OwnedFd; 3],
+    pub conn: Option<std::os::fd::RawFd>,
+}
+
 // Where a command runs and who asked.
 pub struct Ctx<'a> {
     pub engine: &'a Engine,
     pub cwd: PathBuf,
     pub session: String,
     pub stdin: RefCell<Option<Box<dyn Read>>>,
+    pub caller: RefCell<Option<Caller>>,
 }
 
 impl Ctx<'_> {
@@ -243,6 +250,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(&b"abc"[..]))),
+            caller: RefCell::new(None),
         };
         assert_eq!(ctx.read_stdin().expect("stdin"), b"abc");
         assert_eq!(ctx.read_stdin().unwrap_err(), "no standard input available");
@@ -265,6 +273,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(Bad))),
+            caller: RefCell::new(None),
         };
         assert_eq!(ctx.read_stdin().unwrap_err(), "reading stdin: boom");
     }

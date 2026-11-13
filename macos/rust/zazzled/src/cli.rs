@@ -75,6 +75,7 @@ pub fn run_in_process(
         cwd: cwd.to_path_buf(),
         session: session.to_string(),
         stdin: RefCell::new(Some(Box::new(std::io::stdin()))),
+        caller: std::cell::RefCell::new(None),
     };
     let o = cmd::run(&ctx, args);
     if o.status == 0 {

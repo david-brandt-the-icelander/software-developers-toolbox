@@ -6,10 +6,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 pub mod add;
+pub mod call;
 pub mod compile;
 pub mod manage;
 pub mod pack;
 pub mod pipeline;
+pub mod pool;
 pub mod proc;
 pub mod registry;
 pub mod sdk;
@@ -20,10 +22,12 @@ const HELP: &str = "zazz: sandboxed scripts for agents (JSON replies)
 pack DIR [-o FILE]       pack a script directory into a deterministic .zazz (default DIR.zazz beside DIR)
 test DIR|FILE [--update]  build and run the script's tests; nothing is registered (--update rewrites snapshots)
 add FILE.zazz            build, test once and register; replies with the script id (b3:...)
+call ID [JSON|-]         run the script's json-command with JSON input (- reads stdin); replies with its output
+call ID OP [--params JSON] [--body JSON|-]  run one service-call operation
 ls                       registered scripts
 describe ID              what a script is, how it runs and what it may touch
 rm ID                    remove a registered script";
-const COMMANDS: &str = "pack test add ls describe rm help";
+const COMMANDS: &str = "pack test add call ls describe rm help";
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -32,6 +36,7 @@ static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Zazz {
     root: Mutex<Option<PathBuf>>,
     worker: Mutex<Option<PathBuf>>,
+    pub pool: std::sync::Arc<pool::Pool>,
 }
 
 impl Zazz {
@@ -78,6 +83,7 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Result<Output, String> {
     match sub.as_str() {
         "pack" => pack::run(ctx, rest),
         "add" => Ok(reply(add::run(z, &ctx.cwd, rest))),
+        "call" => Ok(reply(call::run(ctx, rest))),
         "test" => Ok(reply(testcmd::run(z, &ctx.cwd, rest))),
         "ls" => Ok(reply(manage::ls(z))),
         "rm" => Ok(reply(manage::rm(z, rest))),
@@ -212,10 +218,46 @@ fn snapshot() {
             (Some("sum"), Some("2 passed, 0 ignored"))
         );
         let id = added["hash"].as_str().expect("hash").to_string();
+        t.write("a.txt", b"5 6");
+        let called = reply_of(&run(&["zazz", "call", &id[..15], r#"{"files":["a.txt"]}"#]));
+        assert_eq!(called, serde_json::json!({"total": 11}));
+        assert_eq!(e.zazz.pool.idle_count(), 1);
+        assert_eq!(reply_of(&run(&["zazz", "call", &id, r#"{"files":["a.txt"]}"#]))["total"], 11);
+        assert_eq!(e.zazz.pool.idle_count(), 1);
+        let escape = reply_of(&run(&["zazz", "call", &id, r#"{"files":["../../../../etc/hosts"]}"#]));
+        assert_eq!(escape["error"]["code"], "sandbox_denied", "{escape}");
+        let fed = crate::testutil::run_cmd_stdin(
+            &e,
+            t.path(),
+            &["zazz", "call", &id, r#"{"files":["-"]}"#],
+            b"1 1",
+        );
+        assert_eq!(reply_of(&fed)["total"], 2);
+        assert!(call_with_pipes(&e, &id, t.path()).contains("\"total\":3"));
+        assert_eq!(reply_of(&run(&["zazz", "call", &id, "nosuchop"]))["error"]["code"], "not_found");
+        assert_eq!(e.zazz.pool.shutdown(), 1);
         let d = reply_of(&run(&["zazz", "describe", &id[..15]]));
         assert_eq!((d["name"].as_str(), d["sandbox"]["read"][0].as_str()), (Some("sum"), Some("$CWD")));
         assert_eq!(reply_of(&run(&["zazz", "rm", &id]))["removed"].as_str(), Some(id.as_str()));
         assert_eq!(reply_of(&run(&["zazz", "describe", &id]))["error"]["code"], "not_found");
+    }
+
+    // Runs a call with real caller streams (pipes) and returns what the script wrote to stdout plus the reply.
+    fn call_with_pipes(e: &crate::engine::Engine, id: &str, cwd: &Path) -> String {
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixStream;
+        let (mut in_w, in_r) = UnixStream::pair().expect("in");
+        let (mut out_r, out_w) = UnixStream::pair().expect("out");
+        in_w.write_all(b"1 2").expect("stdin");
+        drop(in_w);
+        let err_w = out_w.try_clone().expect("err");
+        let streams = call::Streams::Caller { stdio: [in_r.into(), out_w.into(), err_w.into()], conn: None };
+        let msg = serde_json::json!({"t": "json-command", "mode": "agent", "input": {"files": ["-"]}});
+        let hex = &id[3..];
+        let called = call::execute(&e.zazz, hex, cwd, msg, streams).expect("call");
+        let mut printed = String::new();
+        out_r.read_to_string(&mut printed).expect("read");
+        format!("{printed}{}", called.result)
     }
 
     // Checks compile errors come back as short diagnostics and failing tests as a report.

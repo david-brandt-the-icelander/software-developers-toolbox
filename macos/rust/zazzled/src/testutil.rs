@@ -61,6 +61,25 @@ pub fn run_cmd_with(
         cwd: cwd.to_path_buf(),
         session: session.to_string(),
         stdin: std::cell::RefCell::new(None),
+        caller: std::cell::RefCell::new(None),
+    };
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    crate::cmd::run(&ctx, &args)
+}
+
+// Runs a command line with a shared engine and the given standard input.
+pub fn run_cmd_stdin(
+    engine: &crate::engine::Engine,
+    cwd: &Path,
+    args: &[&str],
+    stdin: &'static [u8],
+) -> crate::cmd::Output {
+    let ctx = crate::cmd::Ctx {
+        engine,
+        cwd: cwd.to_path_buf(),
+        session: String::new(),
+        stdin: std::cell::RefCell::new(Some(Box::new(stdin))),
+        caller: std::cell::RefCell::new(None),
     };
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     crate::cmd::run(&ctx, &args)

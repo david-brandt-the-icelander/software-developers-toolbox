@@ -2765,6 +2765,7 @@ dependencies = [
  "tree-sitter-typescript",
  "wat",
  "zazz-format",
+ "zazz-sdk",
 ]
 
 [[package]]
