@@ -93,6 +93,45 @@ pub fn send_with_fds(
     }
 }
 
+static WORKER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+// Builds zazz-worker (release) once per test run and returns its path.
+pub fn worker_bin() -> PathBuf {
+    WORKER
+        .get_or_init(|| {
+            let ws = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("workspace").to_path_buf();
+            let target = ws.join("target");
+            let mut cmd = std::process::Command::new(env!("CARGO"));
+            cmd.current_dir(&ws)
+                .args(["build", "--release", "-p", "zazz-worker", "--target-dir"])
+                .arg(&target);
+            for k in [
+                "RUSTFLAGS",
+                "CARGO_ENCODED_RUSTFLAGS",
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "CARGO_TARGET_DIR",
+                "CARGO_BUILD_TARGET_DIR",
+                "LLVM_PROFILE_FILE",
+                "CARGO_LLVM_COV",
+            ] {
+                cmd.env_remove(k);
+            }
+            let st = cmd.status().expect("run cargo build for zazz-worker");
+            assert!(st.success(), "building zazz-worker failed");
+            target.join("release/zazz-worker")
+        })
+        .clone()
+}
+
+// An engine whose zazz registry is in a temporary directory and whose worker is the freshly built one.
+pub fn zazz_engine(t: &TempDir) -> crate::engine::Engine {
+    let e = crate::engine::Engine::new();
+    e.zazz.set_root(&t.path().join("zazz-store"));
+    e.zazz.set_worker(&worker_bin());
+    e
+}
+
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // Serialises tests that change process environment variables.

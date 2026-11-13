@@ -51,9 +51,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # zazz scripts compile to WASM; the zazz tests build real scripts.
+          targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: macos/rust
+      - run: cargo build --release -p zazz-worker --locked
       - run: cargo test --workspace --locked
       - name: Name the failing zazzled test (single-threaded rerun)
         if: failure()
@@ -97,6 +101,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools-preview
+          targets: wasm32-wasip1
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
         with:
