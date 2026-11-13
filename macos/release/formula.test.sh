@@ -182,7 +182,7 @@ want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-di
 tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/afs$" || fail "binary not 0755 root-owned"
 # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
 mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
-[ "$(ls -A "$tmp/x")" = "zazzle" ] && [ "$(ls -A "$tmp/x/zazzle")" = "2.1.0" ] || fail "not NAME/VERSION only"
+if [ "$(ls -A "$tmp/x")" != "zazzle" ] || [ "$(ls -A "$tmp/x/zazzle")" != "2.1.0" ]; then fail "not NAME/VERSION only"; fi
 [ "$(cat "$tmp/x/zazzle/2.1.0/bin/zazzle-csharp-indexer"; printf X)" = "${placeholder}X" ] || fail "bottle placeholder differs from the formula's"
 tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/zazzle-csharp-indexer$" || fail "placeholder not 0755"
 
