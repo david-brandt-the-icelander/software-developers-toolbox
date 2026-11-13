@@ -1,0 +1,39 @@
+# Run the zazzle phase 0 latency benchmark on macOS and Linux runners, on demand and on changes to the C invoker.
+name: zazzle bench
+
+on:
+  pull_request:
+    paths: ["macos/c/zazzle/**", ".github/workflows/zazzle-bench.yml"]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Spawns per row
+        default: "3000"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build daemon
+        working-directory: macos/rust
+        run: cargo build --release -p zazzled
+      - name: Build invoker
+        working-directory: macos/c/zazzle
+        run: make
+      - name: Smoke test
+        working-directory: macos/c/zazzle
+        run: sh test/smoke.sh
+      - name: Benchmark
+        working-directory: macos/c/zazzle
+        run: sh bench/run.sh ${{ inputs.runs || '3000' }}

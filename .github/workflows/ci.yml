@@ -55,9 +55,9 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo test --workspace --locked
-      - name: Name the failing afod test (single-threaded rerun)
+      - name: Name the failing zazzled test (single-threaded rerun)
         if: failure()
-        run: cargo test -p afod --locked -- --test-threads=1 2>&1 | tail -25
+        run: cargo test -p zazzled --locked -- --test-threads=1 2>&1 | tail -25
       - run: cargo build --workspace --release --locked
       - name: Smoke test CLIs
         run: |
@@ -74,7 +74,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85
       - run: cargo check --workspace --locked
 
-  afo-c:
+  zazzle-c:
     strategy:
       fail-fast: false
       matrix:
@@ -83,9 +83,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p afod --locked
+      - run: cargo build --release -p zazzled --locked
       - name: Build, unit test and smoke test the C invoker
-        working-directory: macos/c/afo
+        working-directory: macos/c/zazzle
         run: make && make unit && sh test/smoke.sh
 
   # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs and fix-network must keep 95% of branches and lines.
@@ -111,9 +111,9 @@ jobs:
           jq -e '.data[0].totals.branches.percent >= 95' cov.json \
             || { echo "::error::fix-network branch coverage is below 95%"; exit 1; }
       - name: Rust branch coverage (at least 95%)
-        run: sh afod/coverage.sh 95
+        run: sh zazzled/coverage.sh 95
       - name: C invoker branch coverage (at least 95%)
-        working-directory: macos/c/afo
+        working-directory: macos/c/zazzle
         run: make coverage
 
   dotnet:
@@ -124,7 +124,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: macos/dotnet/codeindexd
+        working-directory: macos/dotnet/zazzle-csharp-indexer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -134,9 +134,9 @@ jobs:
       - run: dotnet publish src -c Release -o out
       - name: Smoke test server and daemon
         env:
-          CODEINDEXD_STATE_DIR: ${{ runner.temp }}/codeindexd-state
+          ZAZZLE_INDEXER_STATE_DIR: ${{ runner.temp }}/zazzle-csharp-indexer-state
         run: |
-          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/codeindexd serve --root repo=../../.. | tee smoke.txt
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/zazzle-csharp-indexer serve --root repo=../../.. | tee smoke.txt
           grep -q '"isError":false' smoke.txt
-          ./out/codeindexd report
-          pkill -f "codeindexd daemon" || true
+          ./out/zazzle-csharp-indexer report
+          pkill -f "zazzle-csharp-indexer daemon" || true

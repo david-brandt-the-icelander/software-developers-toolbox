@@ -1,39 +1,29 @@
-# Release: Homebrew formulas and optional signing
+# Release: Homebrew formula and optional signing
 
-On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and publishes them to a GitHub release and icelander.net/downloads. Two scripts here take part.
+On every `v*` tag, `.github/workflows/release.yml` builds universal binaries and the C# indexer and publishes them to a GitHub release, icelander.net/downloads and the Homebrew tap. Two scripts here take part.
 
-## Homebrew formulas (`formula.sh`)
+## Homebrew formula (`formula.sh`, `bottle.sh`)
 
-The `homebrew` job runs `formula.sh TAG SHA256 Formula` and commits `Formula/fix-network.rb`, `Formula/free-disk-space.rb` and `Formula/agent-fs.rb` to `main`.
+The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/homebrew-z` and pushes it to that repo's default branch.
 
-- Each formula installs one binary. `bottle.sh` packs each binary as a Homebrew bottle (`<name>-<version>.all.bottle.tar.gz`, one per tool, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
-- Each takes the release tag as its version, so every release is an upgrade for all three.
+- One formula installs `zazzle`, `zazzled`, `afs`, `fix-network` and `free-disk-space` (universal) and `zazzle-csharp-indexer`. The C# indexer is not universal, so the tarball holds it gzipped for both CPU types (`zazzle-csharp-indexer-arm64.gz`, `-x64.gz`) and the formula's `post_install` expands the one matching the Mac into `bin/`.
+- `bottle.sh` packs the bottle (`zazzle-<version>.all.bottle.tar.gz`, one, because the binaries are universal) and the job uploads it to the GitHub release. The formula's `bottle` block points there, so `brew install` pours it without Homebrew's build-from-source checks, which demand up-to-date Command Line Tools. The release tarball stays the formula's source fallback.
+- The formula takes the release tag as its version, so every release is an upgrade.
 - Homebrew doesn't quarantine what a formula installs, so unsigned binaries open without a Gatekeeper prompt.
 - Users install with:
   ```bash
-  brew tap david-brandt-the-icelander/toolbox https://github.com/david-brandt-the-icelander/software-developers-toolbox
+  brew install zazzcat/z/zazzle
   ```
-  ```bash
-  brew install david-brandt-the-icelander/toolbox/fix-network
-  ```
-- `main` only accepts pull requests (a repository rule), so the job publishes the formulas in one of two ways:
-  - **Pull request (the default).** It pushes a `homebrew/<tag>` branch and opens a PR. Merge the PR, and `brew upgrade` sees the release. This needs Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests".
-  - **Direct to `main` (fully automatic).** Create an SSH key pair:
-    ```bash
-    ssh-keygen -t ed25519 -N "" -f homebrew_deploy_key
-    ```
-    Then:
-    - add `homebrew_deploy_key.pub` as a deploy key with write access (Settings → Deploy keys);
-    - add that deploy key to the bypass list of the ruleset on `main` (Settings → Rules);
-    - store the private key as the secret `HOMEBREW_DEPLOY_KEY`.
-- `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class:
-  - every DSL value, the installed binary, and the `--version` name each crate prints;
+  brew taps `https://github.com/zazzcat/homebrew-z` by itself because the repo is named `homebrew-<tap>`.
+- One-time setup: create a fine-grained personal access token on the `zazzcat` account with "Contents: read and write" on `zazzcat/homebrew-z` only, and store it in this repository as the Actions secret `HOMEBREW_TAP_TOKEN`. The tap needs at least one commit on its default branch. `GITHUB_TOKEN` cannot push to another account's repository.
+- `formula.test.sh` checks the generated Ruby against a stand-in Homebrew `Formula` class, for both CPU types:
+  - every DSL value, the installed binaries, the `post_install` command and the `test` block;
   - that `release.yml` builds each binary;
   - the bottle block: `root_url`, the `all` tag, `:any_skip_relocation`, and a checksum matching the bottle;
-  - that each bottle exists under the name Homebrew downloads (`Bottle::Filename#url_encode`);
-  - that each bottle holds exactly `NAME/VERSION/bin/BINARY` (Homebrew's `Bottle#extract_snapshot` check), mode 0755, and is reproducible.
+  - that the bottle exists under the name Homebrew downloads (`Bottle::Filename#url_encode`);
+  - that the bottle holds exactly `zazzle/VERSION/...` (Homebrew's `Bottle#extract_snapshot` check) with the binaries mode 0755, and is reproducible.
 
-  CI runs it.
+  CI runs it. The stand-in is not Homebrew: nothing has pulled a real bottle until a tag runs.
 
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
 
