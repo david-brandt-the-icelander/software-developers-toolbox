@@ -55,6 +55,7 @@ pub(super) enum Skip {
 #[derive(Debug)]
 pub(super) struct FileResult {
     pub(super) idx: usize,
+    pub(super) size: usize,
     pub(super) total: usize,
     pub(super) hits: Vec<Hit>,
     pub(super) skip: Skip,
@@ -189,14 +190,14 @@ fn read_searchable(path: &Path, engine: &Engine, buf: &mut Vec<u8>) -> Result<us
 
 // Reads and searches one file in the thread's buffer, classifying files that cannot be searched.
 fn search_file(idx: usize, path: &Path, plan: &Plan) -> FileResult {
-    let (total, hits, skip) = with_buf(|buf| match read_searchable(path, plan.engine, buf) {
+    let (size, total, hits, skip) = with_buf(|buf| match read_searchable(path, plan.engine, buf) {
         Ok(n) => {
             let (total, hits) = search_bytes(&buf[..n], plan);
-            (total, hits, Skip::No)
+            (n, total, hits, Skip::No)
         }
-        Err(skip) => (0, vec![], skip),
+        Err(skip) => (0, 0, vec![], skip),
     });
-    FileResult { idx, total, hits, skip }
+    FileResult { idx, size, total, hits, skip }
 }
 
 // Searches all files, on the pool when there are enough, and returns the results worth reporting in file order.
@@ -656,8 +657,13 @@ mod tests {
             context: 0,
             files_only: false,
         };
-        let results =
-            vec![FileResult { idx: 0, total: 1, hits: vec![Hit { line: 1, col: 0 }], skip: Skip::No }];
+        let results = vec![FileResult {
+            idx: 0,
+            size: 2,
+            total: 1,
+            hits: vec![Hit { line: 1, col: 0 }],
+            skip: Skip::No,
+        }];
         let out = render_matches(&results, &[t.path().join("gone")], t.path(), &plan);
         assert_eq!(
             out,
