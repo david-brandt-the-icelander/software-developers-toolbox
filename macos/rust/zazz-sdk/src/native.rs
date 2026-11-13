@@ -136,7 +136,7 @@ mod tests {
         })
     }
 
-    // Checks hello, a call with forwarded stdio, progress, errors and shutdown.
+    // Checks hello, a call with forwarded stdio, progress, errors and shutdown; like zazzled, it keeps its copies of the passed sockets open until the result, since macOS can discard unix sockets in flight that nothing else holds.
     #[test]
     fn test_serve_on_calls() {
         let (mut l, t) = start(handlers);
@@ -152,9 +152,9 @@ mod tests {
         let err_w = out_w.try_clone().expect("err");
         let fds = [in_r.as_fd().as_raw_fd(), out_w.as_raw_fd(), err_w.as_raw_fd()];
         send(&l, &crate::json!({"t": "json-command", "id": 1, "input": {"do": "copy"}}), &fds);
-        drop((in_r, out_w, err_w));
         let r = proto::read_frame(&mut l).expect("r").expect("result");
         assert_eq!((r["id"].i64(), r["ok"].bool()), (Some(1), Some(true)));
+        drop((in_r, out_w, err_w));
         let mut s = String::new();
         out_r.read_to_string(&mut s).expect("stdout");
         assert_eq!(s, "piped");
