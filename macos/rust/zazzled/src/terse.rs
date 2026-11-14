@@ -1,4 +1,4 @@
-// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift and Rust access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -42,12 +42,20 @@ pub enum Lang {
     Swift,
     C,
     Cpp,
+    Ruby,
+    Php,
+    Scala,
 }
 
 impl Lang {
     // True for JavaScript and TypeScript, which share their grammar's node kinds.
     pub fn is_script(self) -> bool {
         matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
+    }
+
+    // True for languages whose locals belong to the whole function rather than a block: Python, Ruby and PHP.
+    pub fn function_scoped(self) -> bool {
+        matches!(self, Lang::Python | Lang::Ruby | Lang::Php)
     }
 }
 
@@ -63,6 +71,9 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "go" => Some(Lang::Go),
         "java" => Some(Lang::Java),
         "kt" | "kts" => Some(Lang::Kotlin),
+        "rb" | "rake" => Some(Lang::Ruby),
+        "php" => Some(Lang::Php),
+        "scala" | "sc" => Some(Lang::Scala),
         "swift" => Some(Lang::Swift),
         "c" => Some(Lang::C),
         "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
@@ -85,6 +96,9 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
         Lang::C => tree_sitter_c::LANGUAGE.into(),
         Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+        Lang::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+        Lang::Scala => tree_sitter_scala::LANGUAGE.into(),
     }
 }
 
@@ -251,7 +265,18 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
         let in_block = n.parent().is_some_and(|p| {
             matches!(
                 p.kind(),
-                "block" | "statement_block" | "constructor_body" | "statements" | "compound_statement"
+                "block"
+                    | "statement_block"
+                    | "constructor_body"
+                    | "statements"
+                    | "compound_statement"
+                    | "body_statement"
+                    | "begin"
+                    | "then"
+                    | "else"
+                    | "block_body"
+                    | "do"
+                    | "ensure"
             )
         });
         if (is_logging(n, lang, src) || is_log_guard(n, lang, src)) && in_block {
@@ -297,6 +322,10 @@ fn is_access_modifier(n: Node, lang: Lang) -> bool {
         (Lang::Java, "public" | "private" | "protected") => parent == "modifiers",
         (Lang::Rust, "visibility_modifier") => parent != "use_declaration",
         (Lang::Kotlin | Lang::Swift, "visibility_modifier") => parent == "modifiers",
+        (Lang::Php, "visibility_modifier") => {
+            matches!(parent, "method_declaration" | "property_declaration" | "const_declaration")
+        }
+        (Lang::Scala, "access_modifier") => parent == "modifiers",
         _ => false,
     }
 }
@@ -316,19 +345,29 @@ fn is_pragma_region(line: &str) -> bool {
 
 // Collapses each run of top-level imports into one line.
 fn imports(root: Node, lang: Lang, plan: &mut Plan) {
-    let is_import = |k: &str| match lang {
-        Lang::Python => matches!(k, "import_statement" | "import_from_statement" | "future_import_statement"),
-        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => k == "import_statement",
-        Lang::Dart => matches!(k, "import_or_export" | "part_directive" | "part_of_directive"),
-        Lang::Rust => matches!(k, "use_declaration" | "extern_crate_declaration"),
-        Lang::Go | Lang::Java | Lang::Swift => k == "import_declaration",
-        Lang::Kotlin => k == "import",
-        Lang::C | Lang::Cpp => k == "preproc_include",
+    let src = plan.src;
+    let is_import = |n: &Node| match lang {
+        Lang::Python => {
+            matches!(n.kind(), "import_statement" | "import_from_statement" | "future_import_statement")
+        }
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => n.kind() == "import_statement",
+        Lang::Dart => matches!(n.kind(), "import_or_export" | "part_directive" | "part_of_directive"),
+        Lang::Rust => matches!(n.kind(), "use_declaration" | "extern_crate_declaration"),
+        Lang::Go | Lang::Java | Lang::Swift | Lang::Scala => n.kind() == "import_declaration",
+        Lang::Kotlin => n.kind() == "import",
+        Lang::C | Lang::Cpp => n.kind() == "preproc_include",
+        Lang::Php => n.kind() == "namespace_use_declaration",
+        Lang::Ruby => {
+            n.kind() == "call"
+                && n.child_by_field_name("receiver").is_none()
+                && n.child_by_field_name("method")
+                    .is_some_and(|m| matches!(&src[m.byte_range()], "require" | "require_relative"))
+        }
     };
     let kids: Vec<Node> = (0..root.child_count()).filter_map(|i| root.child(i)).collect();
     let mut i = 0;
     while i < kids.len() {
-        let run = kids[i..].iter().take_while(|k| is_import(k.kind())).count();
+        let run = kids[i..].iter().take_while(|k| is_import(k)).count();
         if run > 0 {
             let (first, last) = (kids[i], kids[i + run - 1]);
             let (a, b) = (first.start_position().row, end_row(last, plan.src));
@@ -350,7 +389,7 @@ fn import_count(n: Node) -> usize {
 // Returns a call's callee text, such as `self._log.debug` or `console.error`, for an expression statement that is only a call.
 fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node<'t>, &'s str)> {
     let call = match (lang, stmt.kind()) {
-        (Lang::Kotlin | Lang::Swift, "call_expression") => stmt,
+        (Lang::Kotlin | Lang::Swift | Lang::Scala, "call_expression") | (Lang::Ruby, "call") => stmt,
         (_, "expression_statement") => stmt.named_child(0)?,
         _ => return None,
     };
@@ -361,6 +400,19 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
             "call_expression",
         ) => call.child_by_field_name("function")?.byte_range(),
         (Lang::Dart | Lang::Kotlin | Lang::Swift, "call_expression") => call.named_child(0)?.byte_range(),
+        (Lang::Scala, "call_expression") | (Lang::Php, "function_call_expression") => {
+            call.child_by_field_name("function")?.byte_range()
+        }
+        (Lang::Ruby, "call") => {
+            let method = call.child_by_field_name("method")?;
+            call.child_by_field_name("receiver").map_or(method.start_byte(), |r| r.start_byte())
+                ..method.end_byte()
+        }
+        (Lang::Php, "member_call_expression" | "scoped_call_expression") => {
+            let name = call.child_by_field_name("name")?;
+            let owner = call.child_by_field_name("object").or_else(|| call.child_by_field_name("scope"))?;
+            owner.start_byte()..name.end_byte()
+        }
         (Lang::C | Lang::Cpp, "binary_expression") => stream_log(call, src)?.byte_range(),
         (Lang::Rust, "macro_invocation") => call.child_by_field_name("macro")?.byte_range(),
         (Lang::Java, "method_invocation") => {
@@ -390,6 +442,7 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
             Lang::Dart => matches!(callee, "debugPrint" | "log"),
             Lang::Swift => matches!(callee, "NSLog" | "os_log" | "debugPrint"),
             Lang::C | Lang::Cpp => is_c_log_macro(callee),
+            Lang::Php => callee == "error_log",
             _ => false,
         };
     };
@@ -542,6 +595,21 @@ fn stores_only<'s>(n: Node, lang: Lang, src: &'s str) -> Option<(String, &'s str
             };
             kids(inits).all(plain).then(|| (text(name).to_string(), text(params)))
         }
+        (Lang::Ruby, "method") => {
+            let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
+            let plain = |s: &Node| {
+                s.kind() == "assignment"
+                    && s.child_by_field_name("left").is_some_and(|l| l.kind() == "instance_variable")
+                    && s.child_by_field_name("right").is_some_and(|r| is_value(r.kind()))
+            };
+            let ok = text(name) == "initialize" && statements(body).iter().all(plain);
+            ok.then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Php, "method_declaration") => {
+            let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
+            let ok = text(name) == "__construct" && statements(body).iter().all(|s| php_store(*s, src));
+            ok.then(|| (text(name).to_string(), text(params)))
+        }
         (Lang::Swift, "init_declaration") => {
             let body = field("body")?;
             let all: Vec<Node> = (0..n.child_count()).filter_map(|i| n.child(i)).collect();
@@ -647,6 +715,17 @@ fn java_store(s: Node, src: &str) -> bool {
     }
 }
 
+// True for a PHP constructor statement that is `$this->x = $name;`.
+fn php_store(s: Node, src: &str) -> bool {
+    let Some(e) = s
+        .named_child(0)
+        .filter(|e| s.kind() == "expression_statement" && e.kind() == "assignment_expression")
+    else {
+        return false;
+    };
+    stores_name(e, "$this->", src).unwrap_or(false)
+}
+
 // True for a Swift initializer statement that is `self.x = name`.
 fn swift_store(s: Node, src: &str) -> bool {
     let (Some(target), Some(value)) = (s.child_by_field_name("target"), s.child_by_field_name("result"))
@@ -688,6 +767,7 @@ fn is_value(kind: &str) -> bool {
             | "simple_identifier"
             | "number_literal"
             | "nullptr"
+            | "variable_name"
     )
 }
 
@@ -714,7 +794,7 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
     let block_ends_line = plan.text(last)[block.end_position().column..].trim().is_empty();
     if starts_line && block_ends_line && lang != Lang::Go {
         plan.hide(first, last, Some(format!("{header}: logs and rethrows")), step);
-    } else if lang != Lang::Python
+    } else if !matches!(lang, Lang::Python | Lang::Ruby)
         && plan.text(open_line)[open - plan.starts[open_line] + 1..].trim().is_empty()
         && plan.text(last).trim() == "}"
         && plan.hide(open_line + 1, last, None, step)
@@ -728,9 +808,12 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
 fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<'t>)> {
     let (start, block) = match (lang, n.kind()) {
         (Lang::Python, "except_clause") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
-        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java | Lang::Cpp, "catch_clause") => {
-            (n.start_byte(), n.child_by_field_name("body")?)
-        }
+        (Lang::Scala, "catch_clause") => return scala_rethrow(n, src),
+        (Lang::Ruby, "rescue") => (n.start_byte(), n.child_by_field_name("body")?),
+        (
+            Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java | Lang::Cpp | Lang::Php,
+            "catch_clause",
+        ) => (n.start_byte(), n.child_by_field_name("body")?),
         (Lang::Kotlin, "catch_block") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
         (Lang::Swift, "catch_block") => (n.start_byte(), n),
         (Lang::Go, "if_statement") if n.child_by_field_name("alternative").is_none() => {
@@ -749,12 +832,18 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
             .and_then(|p| p.child_by_field_name("name"))
             .map(text),
         Lang::Kotlin => kids(n).find(|c| c.kind() == "identifier").map(text),
+        Lang::Php => n.child_by_field_name("name").map(text),
         Lang::Swift => Some(n.child_by_field_name("error").and_then(bound_name).map_or("error", text)),
         Lang::Go => nil_check(n).map(text),
         _ => n.child_by_field_name("parameter").map(text),
     };
     let last_ok = |l: &Node| match lang {
         Lang::Python => l.kind() == "raise_statement" && l.named_child_count() == 0,
+        Lang::Ruby => l.kind() == "identifier" && text(*l) == "raise",
+        Lang::Php => {
+            let thrown = if l.kind() == "expression_statement" { l.named_child(0) } else { Some(*l) };
+            thrown.is_some_and(|t| t.kind() == "throw_expression" && t.named_child(0).map(text) == caught)
+        }
         Lang::Cpp => l.kind() == "throw_statement" && l.named_child_count() == 0,
         Lang::Dart => l.kind() == "rethrow_statement",
         Lang::Go => l.kind() == "return_statement" && returns_error(*l, caught, src),
@@ -770,6 +859,23 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
         return None;
     }
     rethrows(block, &last_ok, lang, src).then_some((start, block))
+}
+
+// Returns where a Scala catch starts and its case block when it has one case, `case e: T =>`, that only logs and rethrows `e`.
+fn scala_rethrow<'t>(n: Node<'t>, src: &str) -> Option<(usize, Node<'t>)> {
+    let cases = kids(n).find(|c| c.kind() == "case_block")?;
+    let [clause] = kids(cases).collect::<Vec<_>>()[..] else { return None };
+    let pattern = clause.child_by_field_name("pattern")?;
+    let bound =
+        if pattern.kind() == "typed_pattern" { pattern.child_by_field_name("pattern")? } else { pattern };
+    let caught = (bound.kind() == "identifier").then(|| &src[bound.byte_range()]);
+    let mut cursor = clause.walk();
+    let body: Vec<Node> = clause.children_by_field_name("body", &mut cursor).collect();
+    let thrown =
+        |l: &Node| l.kind() == "throw_expression" && l.named_child(0).map(|e| &src[e.byte_range()]) == caught;
+    let ok = body.last().is_some_and(thrown)
+        && body[..body.len() - 1].iter().all(|s| is_logging(*s, Lang::Scala, src));
+    ok.then_some((n.start_byte(), cases))
 }
 
 // Returns the name a Swift catch pattern binds, as in `catch let failure as MyError`.
@@ -1061,6 +1167,89 @@ int parse(const char *input, int length) {
     return running_total;
 }
 "#;
+    const RUBY: &str = r##"require 'json'
+require_relative 'api'
+
+class Repo
+  attr_reader :api
+
+  def initialize(api, retries = 3)
+    @api = api
+    @retries = retries
+  end
+
+  # region loading
+  def load(id, verbose: false)
+    logger.debug("loading #{id}")
+    Rails.logger.info "load"
+    begin
+      response_body = @api.get(id, verbose: verbose)
+      response_body.lines.each { |line_item| puts "#{line_item} #{line_item.size}" }
+      total_sum = response_body.size
+      total_sum
+    rescue IOError => e
+      logger.error("failed #{e}")
+      raise
+    end
+  end
+end
+"##;
+    const PHP: &str = r#"<?php
+
+namespace App\Repo;
+
+use Psr\Log\LoggerInterface;
+use App\Api;
+
+class Repo
+{
+    public function __construct(
+        private Api $api,
+        private LoggerInterface $logger,
+    ) {
+    }
+
+    // region loading
+    public function load(string $id): int
+    {
+        $this->logger->debug("loading {$id}");
+        error_log("load");
+        try {
+            $responseBody = $this->api->get($id);
+            foreach ($responseBody as $lineItem) { echo "$lineItem {$lineItem}"; }
+            $totalSum = count($responseBody);
+            return $totalSum;
+        } catch (\RuntimeException $e) {
+            $this->logger->error('failed', ['e' => $e]);
+            throw $e;
+        }
+    }
+}
+"#;
+    const SCALA: &str = r#"package repo
+
+import scala.util.Try
+import org.slf4j.LoggerFactory
+
+class Repo(private val api: Api) {
+  private val log = LoggerFactory.getLogger(getClass)
+
+  // region loading
+  def load(id: String): Int = {
+    log.debug(s"loading $id")
+    try {
+      val responseBody = api.get(id = id)
+      for (lineItem <- responseBody.lines) println(s"$lineItem ${lineItem.length}")
+      val totalSum = responseBody.length
+      totalSum
+    } catch {
+      case e: java.io.IOException =>
+        log.error("failed", e)
+        throw e
+    }
+  }
+}
+"#;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -1126,7 +1315,10 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.c")), Some(Lang::C));
         assert_eq!(lang_of(Path::new("b.hpp")), Some(Lang::Cpp));
         assert_eq!(lang_of(Path::new("b.h")), Some(Lang::Cpp));
-        assert_eq!(lang_of(Path::new("b.rb")), None);
+        assert_eq!(lang_of(Path::new("b.rb")), Some(Lang::Ruby));
+        assert_eq!(lang_of(Path::new("b.php")), Some(Lang::Php));
+        assert_eq!(lang_of(Path::new("b.scala")), Some(Lang::Scala));
+        assert_eq!(lang_of(Path::new("b.pl")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
 
@@ -1704,5 +1896,83 @@ class InvoiceRepository {
         let swift_return = "func f() {\n    do {\n        try g()\n    } catch {\n        return\n    }\n}\n";
         assert!(view("f", swift_return, Lang::Swift).is_none());
         assert!(view("f", "struct A {\n  init(a: Int) {\n    x = a\n  }\n}\n", Lang::Swift).is_none());
+    }
+
+    // Checks the Ruby rules: requires, the field-only initialize, logging, a region, a re-raising rescue and locals.
+    #[test]
+    fn test_view_ruby() {
+        let lines = body(RUBY, Lang::Ruby);
+        has_all(
+            &lines,
+            &[
+                "1-2\t⋯ 2 import(s)",
+                "7-10\t⋯ initialize(api, retries = 3): only assigns fields",
+                "17~\t      rb = @api.get(id, verbose: verbose)",
+                "18~\t      rb.lines.each { |line_item| puts \"#{line_item} #{line_item.size}\" }",
+                "21-23\t⋯ rescue IOError => e: logs and rethrows",
+            ],
+        );
+        assert!(!lines.iter().any(|l| ["12\t", "14\t", "15\t"].iter().any(|k| l.starts_with(k))));
+    }
+
+    // Checks the PHP rules: use runs, the promoted constructor, method visibility, logging, a rethrowing catch and locals in strings.
+    #[test]
+    fn test_view_php() {
+        let lines = body(PHP, Lang::Php);
+        has_all(&lines, &["5-6\t⋯ 2 import(s)", "10-14\t⋯ __construct(private Api $api, private LoggerInterface $logger): only assigns fields", "17~\t    function load(string $id): int", "23~\t            foreach ($rb as $li) { echo \"$li {$li}\"; }", "26~\t        } catch (\\RuntimeException $e) { ⋯ logs and rethrows }"]);
+        assert!(!lines.iter().any(|l| l.starts_with("19\t") || l.starts_with("20\t")));
+    }
+
+    // Checks the Scala rules: imports, access modifiers, logging, a single-case rethrowing catch and locals with a named argument.
+    #[test]
+    fn test_view_scala() {
+        let lines = body(SCALA, Lang::Scala);
+        has_all(
+            &lines,
+            &[
+                "3-4\t⋯ 2 import(s)",
+                "6~\tclass Repo(val api: Api) {",
+                "13~\t      val rb = api.get(id = id)",
+                "14~\t      for (li <- rb.lines) println(s\"$li ${li.length}\")",
+                "17~\t    } catch { ⋯ logs and rethrows }",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("11\t") || l.starts_with("9\t")));
+    }
+
+    // Checks what Ruby, PHP and Scala keep: prints, side effects, other raises, constructors with logic and multi-case catches.
+    #[test]
+    fn test_kept_ruby_php_scala() {
+        let rb = |s: &str| view("f", &format!("def f\n  x = 1\n  {s}\nend\n"), Lang::Ruby).is_none();
+        assert!(!rb("Rails.logger.info \"x\"") && rb("puts x") && rb("logger.info(x += 1)") && rb("info(x)"));
+        assert!(view("f", "class A\n  def initialize(a)\n    @a = a\n    load\n  end\nend\n", Lang::Ruby)
+            .is_none());
+        let rescue = "def f\n  g\nrescue E => e\n  raise Other\nend\n";
+        assert!(view("f", rescue, Lang::Ruby).is_none());
+        let php = |s: &str| view("f", &format!("<?php\nfunction f() {{\n    {s}\n}}\n"), Lang::Php).is_none();
+        assert!(
+            !php("error_log('x');")
+                && !php("Log::info('x');")
+                && php("echo 'x';")
+                && php("$log->info($i++);")
+        );
+        let ctor = "<?php\nclass A {\n    function __construct($a) {\n        $this->a = $a;\n        $this->init();\n    }\n}\n";
+        assert!(view("f", ctor, Lang::Php).is_none_or(|v| !v.contains("only assigns")));
+        let php_catch = "<?php\nfunction f() {\n    try {\n        g();\n    } catch (E $e) {\n        throw new X($e);\n    }\n}\n";
+        assert!(view("f", php_catch, Lang::Php).is_none());
+        let scala_two = "object A {\n  def f() = {\n    try {\n      g()\n    } catch {\n      case e: E => throw e\n      case x: X => throw x\n    }\n  }\n}\n";
+        assert!(view("f", scala_two, Lang::Scala).is_none());
+        let scala_other = "object A {\n  def f() = {\n    try {\n      g()\n    } catch {\n      case e: E => h()\n    }\n  }\n}\n";
+        assert!(view("f", scala_other, Lang::Scala).is_none());
+        assert!(view("f", "object A {\n  def f() = {\n    log.info(s\"x\")\n  }\n}\n", Lang::Scala).is_some());
+    }
+
+    // Checks the remaining Ruby, PHP and Scala edges: requires with a receiver, initialize with a plain local, untyped catch patterns.
+    #[test]
+    fn test_ruby_scala_edges() {
+        assert!(view("f", "Kernel.require 'a'\nKernel.require 'b'\n", Lang::Ruby).is_none());
+        assert!(view("f", "class A\n  def initialize(a)\n    x = a\n  end\nend\n", Lang::Ruby).is_none());
+        let untyped = "object A {\n  def f() = {\n    try {\n      g()\n    } catch {\n      case e => throw e\n    }\n  }\n}\n";
+        assert!(view("f", untyped, Lang::Scala).is_some_and(|v| v.contains("logs and rethrows")));
     }
 }

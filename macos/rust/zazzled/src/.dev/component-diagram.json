@@ -132,13 +132,13 @@
     {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
-      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift and Rust access modifiers.",
+      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
       "folder": "macos/rust/zazzled/src"
     },
     {
       "id": "locals",
       "name": "Short locals (locals.rs)",
-      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C or C++ syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP or Scala syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -315,7 +315,7 @@
       "from": "src",
       "to": "terse",
       "kind": "contains",
-      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++."
+      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala."
     },
     {
       "from": "src",
@@ -513,7 +513,7 @@
       "from": "cmd",
       "to": "terse",
       "kind": "depends-on",
-      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C and C++ view."
+      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala view."
     },
     {
       "from": "cmd",

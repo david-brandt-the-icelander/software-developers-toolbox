@@ -1,4 +1,4 @@
-// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
@@ -11,7 +11,7 @@ const KEYWORDS: &[&str] = &[
     "iter", "len", "list", "map", "max", "min", "next", "num", "oct", "ord", "pow", "str", "sum", "box",
     "dyn", "fn", "impl", "loop", "mod", "move", "mut", "pub", "ref", "self", "use", "cap", "chan", "func",
     "go", "make", "nil", "byte", "char", "it", "fun", "val", "by", "out", "auto", "bool", "long", "goto",
-    "std", "asm", "xor", "some", "Self",
+    "std", "asm", "xor", "some", "Self", "end", "then", "when", "lazy", "match", "yield", "redo", "echo",
 ];
 
 // One local to rename: the byte spans of its declaration and uses, and its new name.
@@ -114,6 +114,12 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
         Lang::Kotlin => matches!(kind, "function_declaration" | "lambda_literal" | "anonymous_function"),
         Lang::Swift => matches!(kind, "function_declaration" | "init_declaration" | "lambda_literal"),
         Lang::C | Lang::Cpp => matches!(kind, "function_definition" | "lambda_expression"),
+        Lang::Ruby => matches!(kind, "method" | "singleton_method"),
+        Lang::Php => matches!(
+            kind,
+            "function_definition" | "method_declaration" | "anonymous_function" | "arrow_function"
+        ),
+        Lang::Scala => matches!(kind, "function_definition" | "lambda_expression"),
     }
 }
 
@@ -132,6 +138,9 @@ fn is_params(kind: &str) -> bool {
             | "lambda_function_type_parameters"
             | "lambda_parameter"
             | "parameter"
+            | "method_parameters"
+            | "block_parameters"
+            | "bindings"
     )
 }
 
@@ -140,14 +149,9 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
     let dynamic: &[&str] = match lang {
         Lang::Python => &["locals", "vars", "eval", "exec"],
         Lang::JavaScript | Lang::TypeScript | Lang::Tsx => &["eval"],
-        Lang::Dart
-        | Lang::Rust
-        | Lang::Go
-        | Lang::Java
-        | Lang::Kotlin
-        | Lang::Swift
-        | Lang::C
-        | Lang::Cpp => &[],
+        Lang::Ruby => &["eval", "binding", "local_variables", "local_variable_get", "local_variable_set"],
+        Lang::Php => &["compact", "extract", "get_defined_vars", "eval"],
+        _ => &[],
     };
     let not_a_function = matches!(lang, Lang::C | Lang::Cpp)
         && nodes.first().is_some_and(|f| {
@@ -159,7 +163,8 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
             n.is_error()
                 || n.is_missing()
                 || n.kind() == "with_statement" && lang != Lang::Python
-                || n.kind() == "identifier" && dynamic.contains(&&src[n.byte_range()])
+                || n.kind() == "dynamic_variable_name"
+                || matches!(n.kind(), "identifier" | "name") && dynamic.contains(&&src[n.byte_range()])
         })
 }
 
@@ -219,6 +224,20 @@ fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
             return n.children_by_field_name("declarator", &mut cursor).flat_map(targets).collect();
         }
         (Lang::Cpp, "for_range_loop") => field("declarator"),
+        (Lang::Ruby, "assignment" | "operator_assignment") => field("left"),
+        (Lang::Ruby, "for") => field("pattern"),
+        (Lang::Php, "assignment_expression") => field("left"),
+        (Lang::Php, "foreach_statement") => {
+            let all: Vec<Node> = (0..n.child_count()).filter_map(|i| n.child(i)).collect();
+            let after = all.iter().position(|c| c.kind() == "as").map_or(all.len(), |i| i + 1);
+            return all[after..]
+                .iter()
+                .filter(|c| c.kind() != "compound_statement")
+                .flat_map(|c| targets(*c))
+                .collect();
+        }
+        (Lang::Scala, "val_definition" | "var_definition") => field("pattern"),
+        (Lang::Scala, "enumerator") => n.named_child(0),
         (Lang::Dart, "initialized_variable_declaration" | "initialized_identifier" | "for_statement") => {
             field("name")
         }
@@ -243,9 +262,14 @@ fn kids<'t>(n: Node<'t>) -> impl Iterator<Item = Node<'t>> {
 fn targets(t: Node) -> Vec<Node> {
     match t.kind() {
         "identifier" | "simple_identifier" => vec![t],
-        "tuple_pattern" | "pattern_list" | "list_pattern" | "expression_list" | "pattern" => {
-            kids(t).flat_map(targets).collect()
-        }
+        "variable_name" => kids(t).filter(|c| c.kind() == "name").collect(),
+        "tuple_pattern"
+        | "pattern_list"
+        | "list_pattern"
+        | "expression_list"
+        | "pattern"
+        | "left_assignment_list"
+        | "pair" => kids(t).flat_map(targets).collect(),
         "init_declarator" | "pointer_declarator" | "reference_declarator" | "array_declarator" => {
             t.child_by_field_name("declarator").or_else(|| t.named_child(0)).map(targets).unwrap_or_default()
         }
@@ -277,6 +301,7 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
     for n in nodes.iter().filter(named) {
         match n.kind() {
             "identifier" | "identifier_dollar_escaped" | "simple_identifier" => {}
+            "name" if lang == Lang::Php && n.parent().is_some_and(|p| p.kind() == "variable_name") => {}
             "shorthand_property_identifier"
             | "shorthand_property_identifier_pattern"
             | "shorthand_field_identifier"
@@ -296,7 +321,10 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
             Role::Unsafe => return None,
         }
     }
-    if lang != Lang::Python {
+    if lang == Lang::Ruby && decls.first().is_some_and(|d| spans.iter().any(|&(a, _)| a < d.start_byte())) {
+        return None;
+    }
+    if !lang.function_scoped() {
         let [decl] = decls[..] else { return None };
         let block = block_of(decl)?;
         if spans.iter().any(|&(a, _)| a < block.start_byte() || a >= block.end_byte()) {
@@ -328,7 +356,9 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         {
             return Role::Unsafe
         }
-        (Lang::Java, "lambda_expression") if is_field(parent, "parameters") => return Role::Unsafe,
+        (Lang::Java | Lang::Scala, "lambda_expression") if is_field(parent, "parameters") => {
+            return Role::Unsafe
+        }
         (Lang::Java, "field_access") if is_field(parent, "field") => return Role::Other,
         (Lang::Java, "method_invocation") if is_field(parent, "name") => return Role::Other,
         (Lang::Java | Lang::Rust, "scoped_identifier") if !in_use(parent) => return Role::Other,
@@ -344,6 +374,24 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         (Lang::Kotlin, "user_type") => return Role::Other,
         (Lang::Swift, "navigation_suffix" | "value_argument_label") => return Role::Other,
         (Lang::C | Lang::Cpp, "qualified_identifier") => return Role::Other,
+        (Lang::Ruby, "call") if is_field(parent, "method") => {
+            return if parent.child_by_field_name("receiver").is_some() { Role::Other } else { Role::Unsafe }
+        }
+        (Lang::Php, "variable_name")
+            if parent.parent().is_some_and(|g| {
+                g.kind() == "scoped_property_access_expression"
+                    && g.child_by_field_name("name").is_some_and(|f| f.id() == parent.id())
+            }) =>
+        {
+            return Role::Other
+        }
+        (Lang::Scala, "field_expression") if is_field(parent, "field") => return Role::Other,
+        (Lang::Scala, "stable_identifier") => return Role::Other,
+        (Lang::Scala, "assignment_expression")
+            if is_field(parent, "left") && parent.parent().is_some_and(|a| a.kind() == "arguments") =>
+        {
+            return Role::Other
+        }
         (Lang::Cpp, "lambda_capture_initializer") if is_field(parent, "left") => return Role::Unsafe,
         (Lang::Rust, "token_tree") if n.prev_sibling().is_some_and(|p| matches!(p.kind(), "::" | ".")) => {
             return Role::Other
@@ -391,6 +439,9 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
                     | "case_clause"
                     | "use_declaration"
                     | "class_body"
+                    | "import_declaration"
+                    | "global_declaration"
+                    | "function_static_declaration"
             );
         let debug_format = x.kind() == "interpolation" && self_documenting(&src[x.byte_range()]);
         if unsafe_kind || debug_format {
@@ -521,6 +572,7 @@ mod tests {
         assert_eq!(split_words("_my__name"), ["my", "name"]);
         assert_eq!(split_words("valueX"), ["value", "X"]);
         assert_eq!(split_words("valueXY"), ["value", "XY"]);
+        assert_eq!(split_words("A_bc"), ["A", "bc"]);
         assert_eq!(abbreviate("invoiceRepository").as_deref(), Some("ir"));
         assert_eq!(abbreviate("invoice_id").as_deref(), Some("ii"));
         assert_eq!(abbreviate("response").as_deref(), Some("res"));
@@ -712,6 +764,8 @@ mod tests {
         assert!(
             renamed("function f() {\n  const counter = 1;\n  eval('x');\n}\n", Lang::JavaScript).is_empty()
         );
+        let loops = "function f(obj) {\n  for (const invoiceKey in obj) { use(invoiceKey); }\n  for (existing in obj) { use(existing); }\n}\n";
+        assert_eq!(renamed(loops, Lang::JavaScript), ["invoiceKey->ik@2"]);
     }
 
     // Checks Kotlin locals and the places that keep a name: `$name` templates, named arguments, members, types, lambda parameters.
@@ -770,5 +824,59 @@ mod tests {
         assert!(none_c("static WSD struct Stat {\n    int now_value[10];\n} stats = {0};\n"));
         assert!(none_c("int f() {\n    int counter = 1;\n    return counter +;\n}\n"));
         assert!(none_c("int f() {\n    int counter = 1;\n    @@ counter $$;\n    return counter;\n}\n"));
+    }
+
+    // Checks Ruby locals and the places that keep a name: block parameters, receiverless calls, uses before the first assignment, binding.
+    #[test]
+    fn test_ruby() {
+        let src = "def f(repo)\n  invoice_rows = repo.rows(invoice_rows: 1)\n  running_total = 0\n  invoice_rows.each { |row| running_total += row.amount }\n  x.running_total = running_total\n  \"#{running_total}\"\nend\n";
+        assert_eq!(renamed(src, Lang::Ruby), ["invoice_rows->ir@2", "running_total->rt@4"]);
+        let none = |src: &str| renamed(src, Lang::Ruby).is_empty();
+        assert!(none("def f\n  counter = 1\n  counter(2)\nend\n"));
+        assert!(none("def f\n  puts counter\n  counter = 1\nend\n"));
+        assert!(none("def f\n  counter = 1\n  binding.local_variable_get(:counter)\nend\n"));
+        assert!(none("def f\n  counter = 1\n  xs.each { |counter| counter }\nend\n"));
+        assert_eq!(
+            renamed("def f\n  for counter in xs\n    p counter\n  end\nend\n", Lang::Ruby),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks PHP locals, foreach, closures and interpolation, and the places that keep a name: properties, static properties, compact, globals.
+    #[test]
+    fn test_php() {
+        let src = "<?php\nfunction f($repo) {\n    $invoiceRows = $repo->invoiceRows;\n    foreach ($invoiceRows as $key => $rowValue) { echo \"$rowValue {$key}\"; }\n    $g = function () use ($invoiceRows) { return $invoiceRows; };\n    return self::$invoiceRows;\n}\n";
+        assert_eq!(renamed(src, Lang::Php), ["invoiceRows->ir@4", "rowValue->rv@2"]);
+        let none = |src: &str| renamed(src, Lang::Php).is_empty();
+        assert!(none("<?php\nfunction f() {\n    $counter = 1;\n    return compact('counter');\n}\n"));
+        assert!(none("<?php\nfunction f() {\n    global $counter;\n    $counter = 1;\n}\n"));
+        assert!(none(
+            "<?php\nfunction f() {\n    $counter = 1;\n    $name = 'counter';\n    return $$name;\n}\n"
+        ));
+        assert!(none("<?php\nfunction f($counter) {\n    $counter = 2;\n}\n"));
+    }
+
+    // Checks Scala locals, for enumerators, named arguments and fields, and that case patterns keep their names.
+    #[test]
+    fn test_scala() {
+        let src = "object A {\n  def f(repo: Repo) = {\n    val invoiceRows = repo.rows(invoiceRows = 1)\n    var runningTotal = 0\n    for (invoiceRow <- invoiceRows) runningTotal += invoiceRow.amount\n    println(s\"$runningTotal ${x.runningTotal}\")\n  }\n}\n";
+        assert_eq!(
+            renamed(src, Lang::Scala),
+            ["invoiceRows->ir@2", "runningTotal->rt@3", "invoiceRow->ir2@2"]
+        );
+        let none = |src: &str| renamed(src, Lang::Scala).is_empty();
+        assert!(none("object A {\n  def f() = {\n    val counter = 1\n    x match { case counter => counter }\n  }\n}\n"));
+        assert!(none(
+            "object A {\n  def f() = {\n    val counter = 1\n    xs.map(counter => counter)\n  }\n}\n"
+        ));
+    }
+
+    // Checks a PHP function named like a variable and a Scala assignment outside an argument list.
+    #[test]
+    fn test_php_scala_edges() {
+        let php = "<?php\nfunction f() {\n    $counter = 1;\n    counter($counter);\n}\n";
+        assert_eq!(renamed(php, Lang::Php), ["counter->cou@2"]);
+        let scala = "object A {\n  def f() = {\n    var counter = 1\n    counter = 2\n  }\n}\n";
+        assert_eq!(renamed(scala, Lang::Scala), ["counter->cou@2"]);
     }
 }
