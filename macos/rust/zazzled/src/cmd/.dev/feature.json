@@ -294,7 +294,7 @@
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
-        "C# inside Razor code blocks is not shortened."
+        "C# in Razor @code and @functions blocks is shortened only when zazzle-csharp-indexer runs and the file is in a git work tree; @{ } blocks stay as they are."
       ],
       "implementation": [
         {
@@ -312,6 +312,14 @@
         {
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "code_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view_text"
         }
       ]
     },
@@ -369,8 +377,8 @@
     },
     {
       "id": "code-terse-view",
-      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell view",
-      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
+      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell view",
+      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/terse.rs",
@@ -382,18 +390,19 @@
         },
         {
           "path": "macos/rust/zazzled/README.md",
-          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell terse view"
+          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell terse view"
         }
       ],
       "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) catch clauses that only log and rethrow the caught exception, Go `if err != nil` blocks that only log and return the error (kept on one line), and `if` blocks that only check a log level and log; it drops public, private and protected from TypeScript class members and Java declarations, and Rust pub except on pub use, and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
-      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell code from fewer tokens, and still has to read the real code before it can edit it.",
+      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell code from fewer tokens, and still has to read the real code before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
         "A local is renamed only where every place its name appears in its function can be renamed safely; otherwise it keeps its name.",
         "Go log.Fatal and log.Panic calls are never hidden, since they stop the program.",
         "A function whose parse has errors, or a C function a macro made the parser misread, keeps all its local names.",
-        "Shell scripts get no short locals: their variables are dynamically scoped and reached by bare name."
+        "Shell scripts get no short locals: their variables are dynamically scoped and reached by bare name.",
+        "In Lua and Perl a name used inside its own declaration (`local x = x + 1`) means the outer variable, so that local keeps its name; Elixir rebinding renames every binding in the function together."
       ],
       "implementation": [
         {
@@ -443,6 +452,14 @@
         {
           "path": "macos/rust/zazzled/src/terse.rs",
           "symbol": "preorder_kinds"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "elixir_modules"
+        },
+        {
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "perl_sigils_match"
         }
       ]
     },

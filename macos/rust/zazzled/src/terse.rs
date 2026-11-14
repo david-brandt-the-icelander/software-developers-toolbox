@@ -1,4 +1,4 @@
-// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -47,6 +47,9 @@ pub enum Lang {
     Php,
     Scala,
     Shell,
+    Perl,
+    Lua,
+    Elixir,
 }
 
 impl Lang {
@@ -55,9 +58,9 @@ impl Lang {
         matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
     }
 
-    // True for languages whose locals belong to the whole function rather than a block: Python, Ruby and PHP.
+    // True for languages whose locals belong to the whole function rather than a block: Python, Ruby, PHP and Elixir.
     pub fn function_scoped(self) -> bool {
-        matches!(self, Lang::Python | Lang::Ruby | Lang::Php)
+        matches!(self, Lang::Python | Lang::Ruby | Lang::Php | Lang::Elixir)
     }
 }
 
@@ -77,6 +80,9 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "php" => Some(Lang::Php),
         "scala" | "sc" => Some(Lang::Scala),
         "sh" | "bash" | "zsh" | "ksh" => Some(Lang::Shell),
+        "pl" | "pm" => Some(Lang::Perl),
+        "lua" => Some(Lang::Lua),
+        "ex" | "exs" => Some(Lang::Elixir),
         "swift" => Some(Lang::Swift),
         "c" => Some(Lang::C),
         "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
@@ -103,6 +109,9 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Php => tree_sitter_php::LANGUAGE_PHP.into(),
         Lang::Scala => tree_sitter_scala::LANGUAGE.into(),
         Lang::Shell => tree_sitter_bash::LANGUAGE.into(),
+        Lang::Perl => ts_parser_perl::LANGUAGE.into(),
+        Lang::Lua => tree_sitter_lua::LANGUAGE.into(),
+        Lang::Elixir => tree_sitter_elixir::LANGUAGE.into(),
     }
 }
 
@@ -267,11 +276,13 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
     }
     for &n in &nodes {
         let shell_block = |p: &str| {
-            lang == Lang::Shell
-                && matches!(
-                    p,
-                    "program" | "do_group" | "if_statement" | "elif_clause" | "else_clause" | "case_item"
-                )
+            lang == Lang::Lua && p == "chunk"
+                || lang == Lang::Elixir && matches!(p, "do_block" | "body")
+                || lang == Lang::Shell
+                    && matches!(
+                        p,
+                        "program" | "do_group" | "if_statement" | "elif_clause" | "else_clause" | "case_item"
+                    )
         };
         let in_block = n.parent().is_some_and(|p| shell_block(p.kind()))
             || n.parent().is_some_and(|p| {
@@ -345,9 +356,9 @@ fn is_access_modifier(n: Node, lang: Lang) -> bool {
     }
 }
 
-// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`.
+// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`, `--#region`.
 fn is_region(comment: &str) -> bool {
-    let c = comment.trim_start_matches(['#', '/']).trim_start().trim_start_matches('#').trim_start();
+    let c = comment.trim_start_matches(['#', '/', '-']).trim_start().trim_start_matches('#').trim_start();
     let word = c.strip_prefix("end").unwrap_or(c);
     word.strip_prefix("region").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace))
 }
@@ -377,6 +388,18 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
                 && n.child_by_field_name("name")
                     .is_some_and(|c| matches!(&src[c.byte_range()], "source" | "."))
         }
+        Lang::Perl => n.kind() == "use_statement",
+        Lang::Lua => {
+            let t = &src[n.byte_range()];
+            n.kind() == "variable_declaration"
+                && t.split_once('=').is_some_and(|(_, v)| v.trim_start().starts_with("require"))
+        }
+        Lang::Elixir => {
+            n.kind() == "call"
+                && kids(*n).all(|c| c.kind() != "do_block")
+                && n.child_by_field_name("target")
+                    .is_some_and(|t| matches!(&src[t.byte_range()], "alias" | "import" | "require" | "use"))
+        }
         Lang::Ruby => {
             n.kind() == "call"
                 && n.child_by_field_name("receiver").is_none()
@@ -384,7 +407,33 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
                     .is_some_and(|m| matches!(&src[m.byte_range()], "require" | "require_relative"))
         }
     };
-    let kids: Vec<Node> = (0..root.child_count()).filter_map(|i| root.child(i)).collect();
+    let mut containers = vec![root];
+    if lang == Lang::Elixir {
+        containers.extend(elixir_modules(root, src));
+    }
+    for container in containers {
+        import_runs(container, &is_import, plan);
+    }
+}
+
+// Returns the do-blocks of Elixir `defmodule` calls, where a module's alias, import, require and use lines sit.
+fn elixir_modules<'t>(root: Node<'t>, src: &str) -> Vec<Node<'t>> {
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(n) = stack.pop() {
+        let module = n.kind() == "call"
+            && n.child_by_field_name("target").is_some_and(|t| &src[t.byte_range()] == "defmodule");
+        if module {
+            out.extend(kids(n).filter(|c| c.kind() == "do_block"));
+        }
+        stack.extend(kids(n));
+    }
+    out
+}
+
+// Collapses each run of import lines among a container's children into one line.
+fn import_runs(container: Node, is_import: &dyn Fn(&Node) -> bool, plan: &mut Plan) {
+    let kids: Vec<Node> = (0..container.child_count()).filter_map(|i| container.child(i)).collect();
     let mut i = 0;
     while i < kids.len() {
         let run = kids[i..].iter().take_while(|k| is_import(k)).count();
@@ -410,8 +459,9 @@ fn import_count(n: Node) -> usize {
 fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node<'t>, &'s str)> {
     let call = match (lang, stmt.kind()) {
         (Lang::Kotlin | Lang::Swift | Lang::Scala, "call_expression")
-        | (Lang::Ruby, "call")
-        | (Lang::Shell, "command") => stmt,
+        | (Lang::Ruby | Lang::Elixir, "call")
+        | (Lang::Shell, "command")
+        | (Lang::Lua, "function_call") => stmt,
         (_, "expression_statement") => stmt.named_child(0)?,
         _ => return None,
     };
@@ -437,7 +487,17 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         }
         (Lang::C | Lang::Cpp, "binary_expression") => stream_log(call, src)?.byte_range(),
         (Lang::Rust, "macro_invocation") => call.child_by_field_name("macro")?.byte_range(),
-        (Lang::Shell, "command") => call.child_by_field_name("name")?.byte_range(),
+        (Lang::Shell | Lang::Lua, "command" | "function_call") => {
+            call.child_by_field_name("name")?.byte_range()
+        }
+        (Lang::Elixir, "call") => call.child_by_field_name("target")?.byte_range(),
+        (Lang::Perl, "method_call_expression") => {
+            let method = call.child_by_field_name("method")?;
+            call.child_by_field_name("invocant")?.start_byte()..method.end_byte()
+        }
+        (Lang::Perl, "ambiguous_function_call_expression" | "function_call_expression") => {
+            call.child_by_field_name("function")?.byte_range()
+        }
         (Lang::Java, "method_invocation") => {
             let name = call.child_by_field_name("name")?;
             call.child_by_field_name("object").map_or(name.start_byte(), |o| o.start_byte())..name.end_byte()
@@ -466,17 +526,25 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     if call.kind() == "binary_expression" {
         return true;
     }
-    let normalized: String = callee.replace("->", ".").replace("::", ".").split_whitespace().collect();
+    let colon = if lang == Lang::Lua { "." } else { ":" };
+    let normalized: String =
+        callee.replace("->", ".").replace("::", ".").replace(':', colon).split_whitespace().collect();
     let Some((receiver, method)) = normalized.rsplit_once('.') else {
         return match lang {
             Lang::Dart => matches!(callee, "debugPrint" | "log"),
             Lang::Swift => matches!(callee, "NSLog" | "os_log" | "debugPrint"),
             Lang::C | Lang::Cpp => is_c_log_macro(callee),
             Lang::Php => callee == "error_log",
+            Lang::Perl => matches!(callee, "DEBUG" | "INFO" | "WARN" | "ERROR" | "TRACE"),
             _ => false,
         };
     };
-    let last = receiver.rsplit('.').next().unwrap_or(receiver).trim_end_matches(['?', '!']);
+    let last = receiver
+        .rsplit('.')
+        .next()
+        .unwrap_or(receiver)
+        .trim_end_matches(['?', '!'])
+        .trim_matches(['{', '}', '$']);
     if last == "console" {
         return lang.is_script() && CONSOLE_METHODS.contains(&method);
     }
@@ -1317,6 +1385,57 @@ EOF
 }
 main "$@"
 "##;
+    const PERL: &str = r##"use strict;
+use warnings;
+use List::Util qw(sum);
+
+# region loading
+sub load {
+    my ($self, $id) = @_;
+    $self->{log}->debug("loading $id");
+    $log->info("x");
+    my $response_body = $self->{api}->get($id);
+    my @line_items = split /\n/, $response_body;
+    for my $line_item (@line_items) { print "$line_item\n"; }
+    my %by_name = map { $_ => 1 } @line_items;
+    my $total_sum = scalar(@line_items) + $by_name{x} + $line_items[0];
+    return $total_sum;
+}
+"##;
+    const LUA: &str = r##"local json = require("json")
+local util = require "util"
+
+--#region loading
+local function load(api, id)
+  log.debug("loading " .. id)
+  logger:info("x")
+  local response_body = api:get(id)
+  local total_sum = 0
+  for index_value, line_item in ipairs(response_body) do
+    total_sum = total_sum + #line_item + index_value
+  end
+  local t = { total_sum = total_sum, n = response_body.n }
+  return t
+end
+--#endregion
+"##;
+    const ELIXIR: &str = r##"defmodule Repo do
+  require Logger
+  alias App.Api
+  import Enum, only: [map: 2]
+
+  def load(api, id) do
+    Logger.debug("loading #{id}")
+    response_body = Api.get(api, id)
+    line_items = String.split(response_body, "\n")
+    total_sum = Enum.count(line_items) + response_body.size
+    case total_sum do
+      0 -> {:error, :empty}
+      count_value -> {:ok, count_value}
+    end
+  end
+end
+"##;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -1387,7 +1506,12 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.scala")), Some(Lang::Scala));
         assert_eq!(lang_of(Path::new("b.sh")), Some(Lang::Shell));
         assert_eq!(lang_of(Path::new("b.zsh")), Some(Lang::Shell));
-        assert_eq!(lang_of(Path::new("b.pl")), None);
+        assert_eq!(lang_of(Path::new("b.pl")), Some(Lang::Perl));
+        assert_eq!(lang_of(Path::new("b.pm")), Some(Lang::Perl));
+        assert_eq!(lang_of(Path::new("b.lua")), Some(Lang::Lua));
+        assert_eq!(lang_of(Path::new("b.ex")), Some(Lang::Elixir));
+        assert_eq!(lang_of(Path::new("b.exs")), Some(Lang::Elixir));
+        assert_eq!(lang_of(Path::new("b.erl")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
 
@@ -2078,5 +2202,78 @@ class InvoiceRepository {
         assert!(view("f", "if true; then\n  log \"x\"\nfi\n", Lang::Shell).is_some());
         assert!(view("f", "cat <<EOF\na\nb\nEOF\n", Lang::Shell).is_none());
         assert!(view("f", "source a.sh\necho x\n", Lang::Shell).is_none());
+    }
+
+    // Checks the Perl, Lua and Elixir views: imports, regions, logging and locals, with parameters kept and interpolated uses renamed.
+    #[test]
+    fn test_view_perl_lua_elixir() {
+        let perl = view("f", PERL, Lang::Perl).expect("view");
+        assert!(
+            perl.starts_with(
+                "f 16 lines; terse: 1 imports, 1 regions, 2 log statements, 5 locals shortened\n"
+            ),
+            "{perl}"
+        );
+        let lines = body(PERL, Lang::Perl);
+        has_all(
+            &lines,
+            &[
+                "1-3\t⋯ 3 import(s)",
+                "7\t    my ($self, $id) = @_;",
+                "12~\t    for my $li2 (@li) { print \"$li2\\n\"; }",
+                "14~\t    my $ts = scalar(@li) + $bn{x} + $li[0];",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("8\t") || l.starts_with("9\t")));
+        let lines = body(LUA, Lang::Lua);
+        has_all(
+            &lines,
+            &[
+                "1-2\t⋯ 2 import(s)",
+                "5\tlocal function load(api, id)",
+                "10~\t  for iv, li in ipairs(rb) do",
+                "13~\t  local t = { total_sum = ts, n = rb.n }",
+            ],
+        );
+        assert!(!lines.iter().any(|l| ["4\t", "6\t", "7\t", "16\t"].iter().any(|k| l.starts_with(k))));
+        let lines = body(ELIXIR, Lang::Elixir);
+        has_all(
+            &lines,
+            &[
+                "1\tdefmodule Repo do",
+                "2-4\t⋯ 3 import(s)",
+                "6\t  def load(api, id) do",
+                "10~\t    ts = Enum.count(li) + rb.size",
+                "13\t      count_value -> {:ok, count_value}",
+            ],
+        );
+        assert!(!lines.iter().any(|l| l.starts_with("7\t")));
+    }
+
+    // Checks what Perl, Lua and Elixir keep: prints, logging with side effects, receivers that are not loggers and aliases inside a function.
+    #[test]
+    fn test_kept_perl_lua_elixir() {
+        let pl = |s: &str| view("f", &format!("sub f {{\n    {s}\n}}\n"), Lang::Perl).is_none();
+        assert!(
+            !pl("$log->info(\"x\");")
+                && !pl("DEBUG \"x\";")
+                && pl("print \"x\";")
+                && pl("$log->info($i++);")
+                && pl("$cart->info(\"x\");")
+        );
+        let lua = |s: &str| view("f", &format!("function f()\n  {s}\nend\n"), Lang::Lua).is_none();
+        assert!(
+            !lua("log.info(\"x\")")
+                && !lua("logger:debug(\"x\")")
+                && lua("print(\"x\")")
+                && lua("cart.info(\"x\")")
+        );
+        let ex = |s: &str| {
+            view("f", &format!("defmodule A do\n  def f do\n    {s}\n  end\nend\n"), Lang::Elixir).is_none()
+        };
+        assert!(!ex("Logger.info(\"x\")") && ex("IO.puts(\"x\")") && ex("Cart.info(\"x\")"));
+        assert!(ex("alias A.B\n    alias A.C"));
+        assert!(view("f", "alias A.B\nalias A.C\n", Lang::Elixir).is_some());
+        assert!(view("f", "local x = 1\nlocal y = 2\n", Lang::Lua).is_none());
     }
 }

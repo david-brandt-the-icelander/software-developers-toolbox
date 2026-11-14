@@ -193,6 +193,19 @@ public class ViewTests
         Assert.Equal("no such file: r:gone.cs", Assert.Throws<ToolException>(() => tool.Run(JsonNode.Parse("""{"path":"r:gone.cs"}"""), new CallInfo())).Message);
     }
 
+    [Fact]
+    // With `text`, the tool views that C# instead of the file, keeping the text's line numbers; the path only names it.
+    public void test_view_tool_text()
+    {
+        using var repo = new TempRepo(new Dictionary<string, string> { ["Pages/Index.razor"] = "<h1>x</h1>\n" });
+        var tool = new ViewTool(new RootSet([repo.Root()]));
+        var args = new JsonObject { ["path"] = "r:Pages/Index.razor", ["text"] = "\n\nclass __RazorCode {\n    private void Load() { _logger.LogInformation(\"x\"); }\n    public int Count;\n}\n" };
+        var text = tool.Run(args, new CallInfo());
+        Assert.StartsWith("r:Pages/Index.razor 6 lines; terse: ", text);
+        Assert.Contains("\n5~\t    int Count;", text);
+        Assert.Equal("path is outside the root: ../x.razor", Assert.Throws<ToolException>(() => tool.Run(new JsonObject { ["path"] = "r:../x.razor", ["text"] = "" }, new CallInfo())).Message);
+    }
+
     [Theory]
     // Long names become the initials of their words, or three letters of one word; short names stay.
     [InlineData("invoiceRepository", "ir")]

@@ -1,4 +1,4 @@
-// Terse view of HTML and Razor files: hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, and shortens long class and style values, keeping source line numbers.
+// Terse view of HTML and Razor files (the C# in Razor @code and @functions blocks through the indexer's C# view): hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, and shortens long class and style values, keeping source line numbers.
 use std::path::Path;
 
 const LONG_CLASS: usize = 4;
@@ -24,22 +24,27 @@ pub fn kind_of(path: &Path) -> Option<Kind> {
 }
 
 // The view being built: its lines and how many places each step changed; styles.rs builds its view with it too.
-pub(crate) struct Plan<'a> {
+pub(crate) struct Plan {
     pub(crate) lines: Vec<String>,
-    pub(crate) steps: Vec<(&'a str, usize)>,
+    pub(crate) steps: Vec<(String, usize)>,
 }
 
-impl<'a> Plan<'a> {
+impl Plan {
     // Counts one change for a step.
-    pub(crate) fn count(&mut self, step: &'a str) {
-        match self.steps.iter_mut().find(|(s, _)| *s == step) {
-            Some((_, n)) => *n += 1,
-            None => self.steps.push((step, 1)),
+    pub(crate) fn count(&mut self, step: &str) {
+        self.add(step, 1);
+    }
+
+    // Counts several changes for a step.
+    pub(crate) fn add(&mut self, step: &str, n: usize) {
+        match self.steps.iter_mut().find(|(s, _)| s == step) {
+            Some((_, m)) => *m += n,
+            None => self.steps.push((step.to_string(), n)),
         }
     }
 
     // Adds a note standing for source lines a to b (0-based).
-    pub(crate) fn hide(&mut self, a: usize, b: usize, note: String, step: &'a str) {
+    pub(crate) fn hide(&mut self, a: usize, b: usize, note: String, step: &str) {
         self.lines.push(format!("{}-{}\t⋯ {note}", a + 1, b + 1));
         self.count(step);
     }
@@ -55,13 +60,21 @@ impl<'a> Plan<'a> {
 }
 
 // Returns the view of a file, or None when nothing would be shortened: a header with the line count and what was shortened, then `N`, `N~` and `A-B` lines.
-pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
+pub fn view(shown: &str, text: &str, kind: Kind, csharp: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let src: Vec<&str> = text.lines().collect();
     let mut plan = Plan { lines: Vec::new(), steps: Vec::new() };
+    let code = if kind == Kind::Razor { code_view(&src, csharp, &mut plan) } else { Vec::new() };
     let mut i = 0;
     while i < src.len() {
         if let Some(end) = verbatim(&src, i, kind) {
-            (i..=end).for_each(|j| plan.keep(j, src[j], false));
+            let lines: Vec<&(usize, usize, String)> = code.iter().filter(|c| c.0 > i && c.1 < end).collect();
+            if code_block(src[i]).is_some() && !code.is_empty() {
+                plan.keep(i, src[i], false);
+                plan.lines.extend(lines.into_iter().map(|c| c.2.clone()));
+                plan.keep(end, src[end], false);
+            } else {
+                (i..=end).for_each(|j| plan.keep(j, src[j], false));
+            }
             i = end + 1;
         } else if let Some(end) = closed_by(&src, i, "<!--", "-->")
             .or_else(|| razor_comment(&src, i, kind))
@@ -114,6 +127,50 @@ fn verbatim(src: &[&str], i: usize, kind: Kind) -> Option<usize> {
     }
     let code = ["@code", "@functions", "@{"].iter().any(|k| t.starts_with(k));
     (kind == Kind::Razor && code).then(|| braces_end(src, i))
+}
+
+// Returns the `@code` or `@functions` keyword a Razor line opens a C# member block with, if it does.
+fn code_block(line: &str) -> Option<&'static str> {
+    let t = line.trim_start();
+    ["@code", "@functions"].into_iter().find(|k| {
+        t.strip_prefix(k).is_some_and(|r| r.trim_start().is_empty() || r.trim_start().starts_with('{'))
+    })
+}
+
+// Returns the C# view's lines for a Razor file's @code and @functions blocks as (first, last, line), 0-based, and counts the view's steps; empty when there are none or no view.
+fn code_view(
+    src: &[&str],
+    csharp: &dyn Fn(&str) -> Option<String>,
+    plan: &mut Plan,
+) -> Vec<(usize, usize, String)> {
+    let mut padded = vec![String::new(); src.len()];
+    let mut i = 0;
+    while i < src.len() {
+        let Some(keyword) = code_block(src[i]) else {
+            i += 1;
+            continue;
+        };
+        let end = braces_end(src, i);
+        padded[i] = src[i].replacen(keyword, "class __RazorCode", 1);
+        (i + 1..=end).for_each(|j| padded[j] = src[j].to_string());
+        i = end + 1;
+    }
+    if padded.iter().all(String::is_empty) {
+        return Vec::new();
+    }
+    let Some(view) = csharp(&padded.join("\n")) else { return Vec::new() };
+    let (head, body) = view.split_once('\n').unwrap_or((&view, ""));
+    for step in head.split_once("terse: ").map_or("", |(_, s)| s).split(", ") {
+        if let Some((n, name)) = step.split_once(' ').and_then(|(n, name)| Some((n.parse().ok()?, name))) {
+            plan.add(name, n);
+        }
+    }
+    let key = |l: &str| -> Option<(usize, usize)> {
+        let k = l.split_once('\t')?.0.trim_end_matches('~');
+        let (a, b) = k.split_once('-').unwrap_or((k, k));
+        Some((a.parse::<usize>().ok()? - 1, b.parse::<usize>().ok()? - 1))
+    };
+    body.lines().filter_map(|l| key(l).map(|(a, b)| (a, b, l.to_string()))).collect()
 }
 
 // Returns the line where the braces opened on line i close, or the last line when they never do.
@@ -225,7 +282,7 @@ mod tests {
 
     // Returns the view's lines after the header.
     fn body(text: &str, kind: Kind) -> Vec<String> {
-        let v = view("f", text, kind).expect("view");
+        let v = view("f", text, kind, &|_| None).expect("view");
         v.lines().skip(1).map(str::to_string).collect()
     }
 
@@ -243,7 +300,7 @@ mod tests {
     #[test]
     fn test_view_html() {
         let html = "<html>\n<head>\n<meta charset=\"utf-8\">\n<link rel=\"icon\" href=\"i.png\">\n<style>\nb { x: 1 }\n</style>\n</head>\n<!-- one -->\n<!--\ntwo\n-->\n<svg viewBox=\"0 0 1 1\">\n<svg><path/></svg>\n</svg>\n\n\n<p>hi</p>";
-        let v = view("f.html", html, Kind::Html).expect("view");
+        let v = view("f.html", html, Kind::Html, &|_| None).expect("view");
         assert!(v.starts_with("f.html 18 lines; terse: 1 head tags, 1 styles, 1 comments, 1 svgs\n"), "{v}");
         assert_eq!(
             body(html, Kind::Html),
@@ -328,17 +385,44 @@ mod tests {
                 "9\t<h1>@Title</h1>"
             ]
         );
-        assert_eq!(view("f", "@using A\n@using B\n@* x *@", Kind::Html), None);
+        assert_eq!(view("f", "@using A\n@using B\n@* x *@", Kind::Html, &|_| None), None);
     }
 
     // Checks blocks that do not close cleanly are left as source.
     #[test]
     fn test_unclosed() {
-        assert_eq!(view("f", "<!-- open\n<p>", Kind::Html), None);
-        assert_eq!(view("f", "<!-- a --> <p>", Kind::Html), None);
-        assert_eq!(view("f", "<style>\nb{}", Kind::Html), None);
-        assert_eq!(view("f", "<svg>\n</svg><p>", Kind::Html), None);
-        assert_eq!(view("f", "<meta a>\n<p>", Kind::Html), None);
+        assert_eq!(view("f", "<!-- open\n<p>", Kind::Html, &|_| None), None);
+        assert_eq!(view("f", "<!-- a --> <p>", Kind::Html, &|_| None), None);
+        assert_eq!(view("f", "<style>\nb{}", Kind::Html, &|_| None), None);
+        assert_eq!(view("f", "<svg>\n</svg><p>", Kind::Html, &|_| None), None);
+        assert_eq!(view("f", "<meta a>\n<p>", Kind::Html, &|_| None), None);
         assert!(opens("<style>", "style") && opens("<svg", "svg") && !opens("<svgx>", "svg"));
+    }
+
+    // Checks Razor @code blocks take the C# view's lines and steps, @{ } blocks and missing views keep the source, and HTML never asks.
+    #[test]
+    fn test_razor_code_view() {
+        let razor = "@page \"/\"\n@code {\n    private int count;\n    void Log() { _log.LogInformation(\"x\"); }\n}\n@{ var x = 1; }\n<p>@count</p>\n";
+        let asked = std::cell::RefCell::new(String::new());
+        let csharp = |code: &str| {
+            asked.replace(code.to_string());
+            Some("f 7 lines; terse: 1 access modifiers, 1 log statements, bad step\n2\tclass __RazorCode {\n3~\t    int count;\n5\t}".to_string())
+        };
+        let v = view("f", razor, Kind::Razor, &csharp).expect("view");
+        assert_eq!(*asked.borrow(), "\nclass __RazorCode {\n    private int count;\n    void Log() { _log.LogInformation(\"x\"); }\n}\n\n");
+        assert_eq!(
+            v,
+            "f 7 lines; terse: 1 access modifiers, 1 log statements\n1\t@page \"/\"\n2\t@code {\n3~\t    int count;\n5\t}\n6\t@{ var x = 1; }\n7\t<p>@count</p>"
+        );
+        assert!(view("f", razor, Kind::Razor, &|_| None).is_none());
+        let html = |_: &str| -> Option<String> { panic!("HTML has no C# blocks") };
+        assert!(view("f", "<p>x</p>\n", Kind::Html, &html).is_none());
+        assert!(view("f", "@functions\n{\n    int x;\n}\n", Kind::Razor, &|c| Some(format!(
+            "f 4 lines; terse: nothing to shorten\n{}",
+            c.lines().count()
+        )))
+        .is_none());
+        assert_eq!(code_block("  @code{"), Some("@code"));
+        assert_eq!(code_block("@codex {"), None);
     }
 }

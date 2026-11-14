@@ -102,13 +102,20 @@
       ],
       "criteria": [
         "The answer starts with root:path, the line count and the changes per step, and holds the collapsed usings as a 1-2 note line",
-        "A file not ending in .cs is refused with not a C# file, and a missing one with no such file"
+        "A file not ending in .cs is refused with not a C# file, and a missing one with no such file",
+        "With `text`, the tool views that C# instead of reading the file and keeps the text's line numbers; a path outside the root is still refused."
       ],
       "checks": [
         {
           "type": "automated",
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
           "symbol": "test_view_tool",
+          "command": "dotnet test tests --filter test_view_tool"
+        },
+        {
+          "type": "automated",
+          "path": "macos/dotnet/zazzle-csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_tool_text",
           "command": "dotnet test tests --filter test_view_tool"
         }
       ],

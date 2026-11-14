@@ -144,7 +144,7 @@
     {
       "id": "view",
       "name": "view",
-      "description": "A terse behavioural view of one C# file, with its source line numbers; zazzle read asks for it through the daemon socket.",
+      "description": "A terse behavioural view of one C# file, with its source line numbers; zazzle read asks for it through the daemon socket, also with `text` for a Razor file's code blocks, which it then views instead of reading the file.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/ViewTool.cs",

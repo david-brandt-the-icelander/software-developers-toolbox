@@ -1,4 +1,4 @@
-// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
@@ -12,6 +12,7 @@ const KEYWORDS: &[&str] = &[
     "dyn", "fn", "impl", "loop", "mod", "move", "mut", "pub", "ref", "self", "use", "cap", "chan", "func",
     "go", "make", "nil", "byte", "char", "it", "fun", "val", "by", "out", "auto", "bool", "long", "goto",
     "std", "asm", "xor", "some", "Self", "end", "then", "when", "lazy", "match", "yield", "redo", "echo",
+    "my", "our", "sub", "say", "die", "eq", "ne", "lt", "gt", "le", "ge", "cmp", "qw", "qq", "local", "cond",
 ];
 
 // One local to rename: the byte spans of its declaration and uses, and its new name.
@@ -33,7 +34,7 @@ pub fn renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
             .collect(),
         _ => HashSet::new(),
     };
-    for scope in preorder(root).into_iter().filter(|n| is_scope(n.kind(), lang)) {
+    for scope in preorder(root).into_iter().filter(|n| scope_of(*n, lang, src)) {
         let nodes = preorder(scope);
         if poisoned(&nodes, lang, src) {
             continue;
@@ -121,7 +122,19 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
         ),
         Lang::Scala => matches!(kind, "function_definition" | "lambda_expression"),
         Lang::Shell => false,
+        Lang::Perl => matches!(kind, "subroutine_declaration_statement" | "anonymous_subroutine_expression"),
+        Lang::Lua => matches!(kind, "function_declaration" | "function_definition"),
+        Lang::Elixir => kind == "anonymous_function",
     }
+}
+
+// True for a node that opens a function scope, including Elixir `def`, `defp`, `defmacro` and `defmacrop` calls.
+fn scope_of(n: Node, lang: Lang, src: &str) -> bool {
+    let target = || n.child_by_field_name("target").map(|t| &src[t.byte_range()]);
+    is_scope(n.kind(), lang)
+        || lang == Lang::Elixir
+            && n.kind() == "call"
+            && matches!(target(), Some("def" | "defp" | "defmacro" | "defmacrop"))
 }
 
 // True for a node kind that is a parameter list.
@@ -142,6 +155,7 @@ fn is_params(kind: &str) -> bool {
             | "method_parameters"
             | "block_parameters"
             | "bindings"
+            | "signature"
     )
 }
 
@@ -152,6 +166,8 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
         Lang::JavaScript | Lang::TypeScript | Lang::Tsx => &["eval"],
         Lang::Ruby => &["eval", "binding", "local_variables", "local_variable_get", "local_variable_set"],
         Lang::Php => &["compact", "extract", "get_defined_vars", "eval"],
+        Lang::Lua => &["load", "loadstring", "setfenv", "getfenv", "getlocal", "setlocal"],
+        Lang::Elixir => &["quote", "binding", "var!"],
         _ => &[],
     };
     let not_a_function = matches!(lang, Lang::C | Lang::Cpp)
@@ -159,14 +175,30 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
             f.kind() == "function_definition"
                 && f.child_by_field_name("declarator").is_none_or(|d| !has_kind(d, "function_declarator"))
         });
+    let perl_dynamic = lang == Lang::Perl && nodes.first().is_some_and(|f| perl_unsafe(&src[f.byte_range()]));
     not_a_function
+        || perl_dynamic
         || nodes.iter().any(|n| {
             n.is_error()
                 || n.is_missing()
                 || n.kind() == "with_statement" && lang != Lang::Python
                 || n.kind() == "dynamic_variable_name"
-                || matches!(n.kind(), "identifier" | "name") && dynamic.contains(&&src[n.byte_range()])
+                || matches!(n.kind(), "identifier" | "name")
+                    && dynamic.contains(&&src[n.byte_range()])
+                    && std::iter::successors(n.parent(), |x| x.parent())
+                        .take(2)
+                        .any(|a| a.kind().contains("call"))
         })
+}
+
+// True for Perl text that reaches variables by name at run time: `no strict` or a string eval.
+fn perl_unsafe(text: &str) -> bool {
+    let string_eval = text.match_indices("eval").any(|(i, _)| {
+        let rest = text[i + 4..].trim_start();
+        let word = i > 0 && text[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_');
+        !word && !rest.starts_with('{') && !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_')
+    });
+    text.contains("no strict") || string_eval
 }
 
 // True when a node or one of its descendants has the given kind.
@@ -175,15 +207,15 @@ fn has_kind(n: Node, kind: &str) -> bool {
 }
 
 // Returns the nearest function scope around a node, not counting the node itself.
-fn owner<'t>(n: Node<'t>, lang: Lang) -> Option<Node<'t>> {
-    std::iter::successors(n.parent(), |x| x.parent()).find(|x| is_scope(x.kind(), lang))
+fn owner<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<Node<'t>> {
+    std::iter::successors(n.parent(), |x| x.parent()).find(|x| scope_of(*x, lang, src))
 }
 
 // Returns the names a function declares as its own locals, in source order without repeats.
 fn declared(scope: Node, nodes: &[Node], lang: Lang, src: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for n in nodes.iter().filter(|n| owner(**n, lang).is_some_and(|o| o.id() == scope.id())) {
-        for t in declared_by(*n, lang) {
+    for n in nodes.iter().filter(|n| owner(**n, lang, src).is_some_and(|o| o.id() == scope.id())) {
+        for t in declared_by(*n, lang, src) {
             let name = src[t.byte_range()].to_string();
             if !out.contains(&name) {
                 out.push(name);
@@ -194,7 +226,7 @@ fn declared(scope: Node, nodes: &[Node], lang: Lang, src: &str) -> Vec<String> {
 }
 
 // Returns the identifiers a node declares as locals: assignment and loop targets, with/except aliases and variable declarators.
-fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
+fn declared_by<'t>(n: Node<'t>, lang: Lang, src: &str) -> Vec<Node<'t>> {
     let field = |f: &str| n.child_by_field_name(f);
     let target = match (lang, n.kind()) {
         (Lang::Python, "assignment" | "for_statement" | "for_in_clause") => field("left"),
@@ -225,6 +257,20 @@ fn declared_by(n: Node, lang: Lang) -> Vec<Node> {
             return n.children_by_field_name("declarator", &mut cursor).flat_map(targets).collect();
         }
         (Lang::Cpp, "for_range_loop") => field("declarator"),
+        (Lang::Perl, "variable_declaration")
+            if has_kind_child(n, &["my", "state"]) && !perl_params(n, src) =>
+        {
+            let mut cursor = n.walk();
+            let vars: Vec<Node> = n.children_by_field_name("variable", &mut cursor).collect();
+            let mut cursor = n.walk();
+            let more = n.children_by_field_name("variables", &mut cursor);
+            return vars.into_iter().chain(more).flat_map(targets).collect();
+        }
+        (Lang::Perl, "for_statement") if has_kind_child(n, &["my", "state"]) => field("variable"),
+        (Lang::Lua, "variable_declaration") => kids(n).next(),
+        (Lang::Lua, "for_generic_clause") => kids(n).find(|c| c.kind() == "variable_list"),
+        (Lang::Lua, "for_numeric_clause") => field("name"),
+        (Lang::Elixir, "binary_operator") if has_kind_child(n, &["="]) => field("left"),
         (Lang::Ruby, "assignment" | "operator_assignment") => field("left"),
         (Lang::Ruby, "for") => field("pattern"),
         (Lang::Php, "assignment_expression") => field("left"),
@@ -254,6 +300,23 @@ fn has_decl_keyword(n: Node) -> bool {
         .any(|c| matches!(c.kind(), "const" | "let" | "var" | ":="))
 }
 
+// True when a node has an unnamed child of one of the kinds, such as the `my` keyword.
+fn has_kind_child(n: Node, kinds: &[&str]) -> bool {
+    (0..n.child_count()).filter_map(|i| n.child(i)).any(|c| kinds.contains(&c.kind()))
+}
+
+// True for a Perl `my (...) = @_` or `my $x = shift`, which stands for a subroutine's parameters.
+fn perl_params(decl: Node, src: &str) -> bool {
+    let right = decl
+        .parent()
+        .filter(|p| p.kind() == "assignment_expression")
+        .and_then(|p| p.child_by_field_name("right"));
+    right.is_some_and(|r| {
+        let t = src[r.byte_range()].trim();
+        t == "@_" || t.starts_with("shift")
+    })
+}
+
 // Returns a node's named children.
 fn kids<'t>(n: Node<'t>) -> impl Iterator<Item = Node<'t>> {
     (0..n.named_child_count()).filter_map(move |i| n.named_child(i))
@@ -262,7 +325,9 @@ fn kids<'t>(n: Node<'t>) -> impl Iterator<Item = Node<'t>> {
 // Returns the plain identifiers of an assignment target, looking inside tuple and list patterns.
 fn targets(t: Node) -> Vec<Node> {
     match t.kind() {
-        "identifier" | "simple_identifier" => vec![t],
+        "identifier" | "simple_identifier" | "varname" => vec![t],
+        "scalar" | "array" | "hash" => kids(t).filter(|c| c.kind() == "varname").collect(),
+        "assignment_statement" | "variable_list" | "tuple" | "list" => kids(t).flat_map(targets).collect(),
         "variable_name" => kids(t).filter(|c| c.kind() == "name").collect(),
         "tuple_pattern"
         | "pattern_list"
@@ -299,9 +364,10 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
     }
     let mut spans = Vec::new();
     let mut decls = Vec::new();
+    let mut own = Vec::new();
     for n in nodes.iter().filter(named) {
         match n.kind() {
-            "identifier" | "identifier_dollar_escaped" | "simple_identifier" => {}
+            "identifier" | "identifier_dollar_escaped" | "simple_identifier" | "varname" => {}
             "name" if lang == Lang::Php && n.parent().is_some_and(|p| p.kind() == "variable_name") => {}
             "shorthand_property_identifier"
             | "shorthand_property_identifier_pattern"
@@ -310,11 +376,14 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
             _ => continue,
         }
         let parent = n.parent()?;
-        if std::iter::successors(Some(parent), |x| x.parent())
+        if let Some(a) = std::iter::successors(Some(parent), |x| x.parent())
             .take(4)
-            .any(|a| declared_by(a, lang).iter().any(|d| d.id() == n.id()))
+            .find(|a| declared_by(*a, lang, src).iter().any(|d| d.id() == n.id()))
         {
             decls.push(*n);
+            let stmt = a.parent().filter(|p| p.kind() == "assignment_expression").unwrap_or(a);
+            let end = a.child_by_field_name("list").map_or(stmt.end_byte(), |l| l.end_byte());
+            own.push((n.start_byte(), end));
         }
         match role(*n, parent, scope, lang, src) {
             Role::Use => spans.push((n.start_byte(), n.end_byte())),
@@ -322,7 +391,15 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
             Role::Unsafe => return None,
         }
     }
-    if lang == Lang::Ruby && decls.first().is_some_and(|d| spans.iter().any(|&(a, _)| a < d.start_byte())) {
+    let late = |d: &Node| spans.iter().any(|&(a, _)| a < d.start_byte());
+    if matches!(lang, Lang::Ruby | Lang::Lua | Lang::Perl | Lang::Elixir) && decls.first().is_some_and(late) {
+        return None;
+    }
+    let in_own = |&(a, _): &(usize, usize)| own.iter().any(|&(s, e)| a > s && a < e);
+    if matches!(lang, Lang::Lua | Lang::Perl) && spans.iter().any(in_own) {
+        return None;
+    }
+    if lang == Lang::Perl && !perl_sigils_match(nodes, name, &decls, src) {
         return None;
     }
     if !lang.function_scoped() {
@@ -331,10 +408,33 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
         if spans.iter().any(|&(a, _)| a < block.start_byte() || a >= block.end_byte()) {
             return None;
         }
-    } else if decls.iter().any(|d| owner(*d, lang).is_some_and(|o| o.id() != scope.id())) {
+    } else if decls.iter().any(|d| owner(*d, lang, src).is_some_and(|o| o.id() != scope.id())) {
         return None;
     }
     Some(spans)
+}
+
+// True when every Perl use of a name has a sigil its `my` declared: `$x` for a scalar, `@x`, `$x[..]` and `$#x` for an array, `%x` and `$x{..}` for a hash.
+fn perl_sigils_match(nodes: &[Node], name: &str, decls: &[Node], src: &str) -> bool {
+    let class = |v: &Node| -> Option<&'static str> {
+        let p = v.parent()?;
+        match p.kind() {
+            "scalar" => Some("$"),
+            "array" | "arraylen" => Some("@"),
+            "hash" => Some("%"),
+            "container_variable" => match p.parent()?.kind() {
+                "array_element_expression" => Some("@"),
+                "hash_element_expression" => Some("%"),
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let declared: Vec<&str> = decls.iter().filter_map(class).collect();
+    nodes
+        .iter()
+        .filter(|n| n.kind() == "varname" && &src[n.byte_range()] == name)
+        .all(|n| class(n).is_some_and(|c| declared.contains(&c)))
 }
 
 // What an identifier with a local's name is at one place: a use of the local, another thing with that name, or a place that cannot be renamed.
@@ -387,6 +487,11 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
             return Role::Other
         }
         (Lang::Scala, "field_expression") if is_field(parent, "field") => return Role::Other,
+        (Lang::Lua, "dot_index_expression") if is_field(parent, "field") => return Role::Other,
+        (Lang::Lua, "method_index_expression") if is_field(parent, "method") => return Role::Other,
+        (Lang::Lua, "field") if is_field(parent, "name") => return Role::Other,
+        (Lang::Elixir, "dot") if is_field(parent, "right") => return Role::Other,
+        (Lang::Elixir, "call") if is_field(parent, "target") => return Role::Other,
         (Lang::Scala, "stable_identifier") => return Role::Other,
         (Lang::Scala, "assignment_expression")
             if is_field(parent, "left") && parent.parent().is_some_and(|a| a.kind() == "arguments") =>
@@ -428,7 +533,11 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
     }
     let mut p = Some(parent);
     while let Some(x) = p.filter(|x| x.id() != scope.id()) {
-        let unsafe_kind = is_params(x.kind())
+        let elixir_head = lang == Lang::Elixir
+            && x.kind() == "arguments"
+            && x.parent().is_some_and(|h| h.id() == scope.id() || h.kind() == "stab_clause");
+        let unsafe_kind = elixir_head
+            || is_params(x.kind())
             || x.kind().starts_with("preproc")
             || matches!(
                 x.kind(),
@@ -879,5 +988,54 @@ mod tests {
         assert_eq!(renamed(php, Lang::Php), ["counter->cou@2"]);
         let scala = "object A {\n  def f() = {\n    var counter = 1\n    counter = 2\n  }\n}\n";
         assert_eq!(renamed(scala, Lang::Scala), ["counter->cou@2"]);
+    }
+
+    // Checks Perl locals by sigil, for loops and hash fields, and the places that keep a name: no strict, string eval, outer names in their own declaration, shift parameters, other sigils.
+    #[test]
+    fn test_perl() {
+        let src = "sub f {\n    my ($self) = @_;\n    my $invoice_rows = $self->rows;\n    my @line_items = @$invoice_rows;\n    for my $line_item (@line_items) { print $line_item; }\n    return $line_items[0] + $self->{invoice_rows};\n}\n";
+        assert_eq!(renamed(src, Lang::Perl), ["invoice_rows->ir@2", "line_items->li@3", "line_item->li2@2"]);
+        let none = |body: &str| {
+            renamed(&format!("sub f {{\n    {body}\n    return $counter;\n}}\n"), Lang::Perl).is_empty()
+        };
+        assert!(none("no strict 'refs';\n    my $counter = 1;"));
+        assert!(none("my $counter = 1;\n    eval \"$counter\";"));
+        assert!(none("my $counter = $counter + 1;"));
+        assert!(none("my $counter = shift;"));
+        assert!(none("my $counter = 1;\n    print $counter[0];"));
+        assert!(none("for my $counter ($counter) { }"));
+    }
+
+    // Checks Lua locals, for clauses, table fields and methods, and the places that keep a name: uses before the local, outer names in its own declaration, load.
+    #[test]
+    fn test_lua() {
+        let src = "local function f(repo)\n  local invoice_rows = repo.invoice_rows\n  for _, invoice_row in ipairs(invoice_rows) do print(invoice_row) end\n  return { invoice_rows = invoice_rows, n = repo:invoice_rows() }\nend\n";
+        assert_eq!(renamed(src, Lang::Lua), ["invoice_rows->ir@3", "invoice_row->ir2@2"]);
+        let none = |src: &str| renamed(src, Lang::Lua).is_empty();
+        assert!(none("function f()\n  print(counter)\n  local counter = 1\nend\n"));
+        assert!(none("function f()\n  local counter = counter + 1\n  return counter\nend\n"));
+        assert!(none("function f()\n  local counter = 1\n  return load(\"return counter\")()\nend\n"));
+        assert_eq!(
+            renamed("function load()\n  local counter = 1\n  return counter\nend\n", Lang::Lua),
+            ["counter->cou@2"]
+        );
+    }
+
+    // Checks Elixir rebinding and anonymous functions, and the places that keep a name: function heads, quote, binding, case patterns.
+    #[test]
+    fn test_elixir() {
+        let src = "defmodule A do\n  def f(repo) do\n    invoice_rows = repo.invoice_rows\n    invoice_rows = Enum.map(invoice_rows, fn row_value -> row_value end)\n    %{invoice_rows: invoice_rows}\n  end\nend\n";
+        assert_eq!(renamed(src, Lang::Elixir), ["invoice_rows->ir@4"]);
+        let none = |head: &str, body: &str| {
+            renamed(
+                &format!("defmodule A do\n  def {head} do\n    counter = 1\n    {body}\n  end\nend\n"),
+                Lang::Elixir,
+            )
+            .is_empty()
+        };
+        assert!(none("f(counter)", "counter"));
+        assert!(none("f", "quote do: counter"));
+        assert!(none("f", "binding()"));
+        assert!(none("f(x)", "case x do\n      counter -> counter\n    end"));
     }
 }

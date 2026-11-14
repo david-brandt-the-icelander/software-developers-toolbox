@@ -51,16 +51,22 @@ tree-sitter-go = "0.23"
 tree-sitter-java = "0.23"
 # C++ grammar for the terse view.
 tree-sitter-cpp = "0.23"
+# Lua grammar for the terse view.
+tree-sitter-lua = "0.5"
 # Kotlin grammar for the terse view.
 tree-sitter-kotlin-ng = "1.1"
 # Swift grammar for the terse view.
 tree-sitter-swift = "0.7"
+# Perl grammar for the terse view (the tree-sitter-perl project's crate).
+ts-parser-perl = "2.0"
 # PHP grammar for the terse view.
 tree-sitter-php = "0.25"
 # Ruby grammar for the terse view.
 tree-sitter-ruby = "0.23"
 # Scala grammar for the terse view.
 tree-sitter-scala = "0.26"
+# Elixir grammar for the terse view.
+tree-sitter-elixir = "0.3"
 # JavaScript grammar for outlines.
 tree-sitter-javascript = "0.23"
 # Python grammar for outlines.
