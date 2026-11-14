@@ -172,6 +172,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "schema",
+      "name": "HCL, Protobuf and GraphQL terse view (schema.rs)",
+      "responsibility": "Builds the terse view of HCL/Terraform, Protobuf and GraphQL files line by line with markup.rs's Plan: collapses comments and GraphQL descriptions of 3+ lines, HCL heredoc bodies, Protobuf import and option runs, and runs of 10+ enum values or HCL list and map items, and cuts long values.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
@@ -664,6 +670,30 @@
       "to": "config",
       "kind": "depends-on",
       "description": "read's terse INI and Dockerfile view."
+    },
+    {
+      "from": "src",
+      "to": "schema",
+      "kind": "contains",
+      "description": "Terse view of HCL, Protobuf and GraphQL."
+    },
+    {
+      "from": "schema",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "schema",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "schema",
+      "kind": "depends-on",
+      "description": "read's terse HCL, Protobuf and GraphQL view."
     },
     {
       "from": "cmd",

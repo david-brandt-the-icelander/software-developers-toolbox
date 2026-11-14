@@ -752,6 +752,60 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "schema-terse-view",
+      "title": "Terse HCL/Terraform, Protobuf and GraphQL view",
+      "summary": "schema.rs is tested on a Terraform file, a Protobuf file and a GraphQL schema covering every rule and what stays; read is tested end to end on each kind; the view was run over about 3,000 real files.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "schema-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments, descriptions and heredoc bodies of 3+ lines, Protobuf import and option runs, and the middle of 10+ item runs become notes with source line numbers.",
+        "Block attributes, message fields, type fields, short comments, one-line descriptions, short heredocs, short enums and unclosed comments or heredocs are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "test_view_hcl",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "test_view_proto",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "test_view_graphql",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "test_schema_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "view",
+          "command": "Ran the view over about 3,000 files on the build machine (Terratest's examples and test fixtures, Terraform's and HCL's test data, Terraform lock files, protobuf's and googleapis' .proto files, grpc-gateway, GitHub's 64,000-line GraphQL schema, gqlgen's schemas) and reviewed samples of every note in context: item runs start and end on items inside their list, map or enum, heredoc notes cover only the body and terminator, comment and description notes only comments and descriptions. GitHub's schema went from 64,309 to 38,138 lines; no file took over 200 ms."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
