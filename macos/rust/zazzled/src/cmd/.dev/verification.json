@@ -572,7 +572,7 @@
     },
     {
       "id": "code-terse-view",
-      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
       "subject": [
         {
@@ -591,7 +591,8 @@
         "Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell sample files show imports, logging, the field-only init or constructor, the rethrowing catch, regions, access modifiers and short locals with source line numbers, and keep prints, side effects and catches that do more.",
         "Ruby, PHP, Scala and shell sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more.",
         "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands.",
-        "Perl, Lua and Elixir sample files show imports, logging, regions and short locals with source line numbers, keep prints and non-logger calls, and keep names used inside their own declaration, before it, through other Perl sigils, in Elixir heads and patterns, or in functions that use string eval, load or quote."
+        "Perl, Lua and Elixir sample files show imports, logging, regions and short locals with source line numbers, keep prints and non-logger calls, and keep names used inside their own declaration, before it, through other Perl sigils, in Elixir heads and patterns, or in functions that use string eval, load or quote.",
+        "Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL and Visual Basic sample files show imports, logging, regions, Groovy and Visual Basic field-only constructors, rethrowing catches, access modifiers, SQL row lists and Zig and Objective-C short locals with source line numbers; a block's last expression, logging inside arguments or pipes, other receivers and catches that do more are kept; a Nim file shows imports, logging and regions line by line, and a SQL file its regions and long INSERT row lists."
       ],
       "checks": [
         {
@@ -911,6 +912,60 @@
           "path": "macos/rust/zazzled/src/locals.rs",
           "symbol": "renames",
           "command": "Renamed only the locals in 9 Perl core modules (Text::Wrap, Text::ParseWords, Text::Balanced, Text::Abbrev, File::Basename, Getopt::Long, JSON::PP, Time::Local, Pod::Usage; 136 locals) and in Penlight (39 files, 193 locals): each passes perl -c or luac -p, and a script exercising the modules prints the same output with the original and renamed copies; an Elixir sample module also runs the same."
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_more_languages",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_kept_more_languages",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_more_language_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_zig",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_objc",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_groovy",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/nim.rs",
+          "symbol": "test_view_nim",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "renames",
+          "command": "Renamed only the locals in GNUstep base 1.29's Tools and Tests (617 locals; the 106 changed files of the 389 that pass gcc -fsyntax-only still pass), in Groovy 2.4.21's main sources (108 locals, reviewed with a scan for leftover old names) and in the Zig 0.17.1 standard library (13,251 locals; a scan finds no renamed field, enum literal or label). Ran every view over Erlang/OTP, OCaml Logs, R logger and futile.logger, mono-basic (VB.NET), Nim 2.2, F# 4.0, PostgreSQL 16's SQL tests, Clojure 1.12 and monad-logger: every hidden line belongs to a logging call or a region marker, and each note covers imports, a constructor, a catch or SQL rows."
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/sql.rs",
+          "symbol": "test_view_sql",
+          "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],
       "evidenceStatus": "source-verified"

@@ -1,4 +1,4 @@
-// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers and shortens long local names (locals.rs), keeping source line numbers.
+// Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic and shell files: hides imports, logging, region markers, constructors that only assign fields and catches that only log and rethrow (and Go's `if err != nil` returns), collapses long shell heredocs, drops TypeScript, Java, Groovy, Kotlin, Swift, Rust, PHP, Scala and Visual Basic access modifiers and shortens long local names (locals.rs), keeping source line numbers.
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -50,12 +50,32 @@ pub enum Lang {
     Perl,
     Lua,
     Elixir,
+    Haskell,
+    OCaml,
+    FSharp,
+    Clojure,
+    Erlang,
+    R,
+    Julia,
+    Zig,
+    ObjC,
+    Groovy,
+    PowerShell,
+    VisualBasic,
 }
 
 impl Lang {
     // True for JavaScript and TypeScript, which share their grammar's node kinds.
     pub fn is_script(self) -> bool {
         matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
+    }
+
+    // True for languages where a block's last expression is its value, so a log call there is never hidden.
+    pub fn last_is_value(self) -> bool {
+        matches!(
+            self,
+            Lang::Haskell | Lang::OCaml | Lang::FSharp | Lang::Clojure | Lang::Erlang | Lang::R | Lang::Julia
+        )
     }
 
     // True for languages whose locals belong to the whole function rather than a block: Python, Ruby, PHP and Elixir.
@@ -83,6 +103,18 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "pl" | "pm" => Some(Lang::Perl),
         "lua" => Some(Lang::Lua),
         "ex" | "exs" => Some(Lang::Elixir),
+        "hs" => Some(Lang::Haskell),
+        "ml" => Some(Lang::OCaml),
+        "fs" | "fsx" => Some(Lang::FSharp),
+        "clj" | "cljs" | "cljc" => Some(Lang::Clojure),
+        "erl" | "hrl" => Some(Lang::Erlang),
+        "r" => Some(Lang::R),
+        "jl" => Some(Lang::Julia),
+        "zig" => Some(Lang::Zig),
+        "m" => Some(Lang::ObjC),
+        "groovy" | "gvy" | "gradle" => Some(Lang::Groovy),
+        "ps1" | "psm1" => Some(Lang::PowerShell),
+        "vb" => Some(Lang::VisualBasic),
         "swift" => Some(Lang::Swift),
         "c" => Some(Lang::C),
         "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
@@ -112,6 +144,18 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Perl => ts_parser_perl::LANGUAGE.into(),
         Lang::Lua => tree_sitter_lua::LANGUAGE.into(),
         Lang::Elixir => tree_sitter_elixir::LANGUAGE.into(),
+        Lang::Haskell => tree_sitter_haskell::LANGUAGE.into(),
+        Lang::OCaml => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        Lang::FSharp => tree_sitter_fsharp::LANGUAGE_FSHARP.into(),
+        Lang::Clojure => tree_sitter_clojure_orchard::LANGUAGE.into(),
+        Lang::Erlang => tree_sitter_erlang::LANGUAGE.into(),
+        Lang::R => tree_sitter_r::LANGUAGE.into(),
+        Lang::Julia => tree_sitter_julia::LANGUAGE.into(),
+        Lang::Zig => tree_sitter_zig::LANGUAGE.into(),
+        Lang::ObjC => tree_sitter_objc::LANGUAGE.into(),
+        Lang::Groovy => tree_sitter_groovy::LANGUAGE.into(),
+        Lang::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
+        Lang::VisualBasic => tree_sitter_vb_dotnet::LANGUAGE.into(),
     }
 }
 
@@ -122,13 +166,14 @@ struct Plan<'a> {
     hidden: Vec<(usize, usize, Option<String>)>,
     changes: Vec<(usize, usize, String)>,
     steps: Vec<(&'static str, usize)>,
+    ends: &'static [char],
 }
 
 impl<'a> Plan<'a> {
     // Starts a plan for a source text.
     fn new(src: &'a str) -> Self {
         let starts = std::iter::once(0).chain(src.match_indices('\n').map(|(i, _)| i + 1)).collect();
-        Plan { src, starts, hidden: Vec::new(), changes: Vec::new(), steps: Vec::new() }
+        Plan { src, starts, hidden: Vec::new(), changes: Vec::new(), steps: Vec::new(), ends: &[';'] }
     }
 
     // Returns the 0-based line holding a byte offset.
@@ -148,7 +193,7 @@ impl<'a> Plan<'a> {
         let before = &self.src[self.starts[self.line(a)]..a];
         let last = self.line(b.saturating_sub(1));
         let after = self.text(last).get(b - self.starts[last]..).unwrap_or("");
-        before.trim().is_empty() && after.trim().trim_start_matches(';').trim().is_empty()
+        before.trim().is_empty() && after.trim().trim_start_matches(self.ends).trim().is_empty()
     }
 
     // True when a line is already inside a hidden range.
@@ -220,24 +265,14 @@ impl<'a> Plan<'a> {
     }
 }
 
-// Returns where a node's text ends, not counting the newline that C preprocessor lines include.
+// Returns where a node's text ends, not counting trailing newlines that C preprocessor lines and some grammars include.
 fn end_byte(n: Node, src: &str) -> usize {
-    let b = n.end_byte();
-    if b > n.start_byte() && src.as_bytes()[b - 1] == b'\n' {
-        b - 1
-    } else {
-        b
-    }
+    n.start_byte() + src[n.byte_range()].trim_end().len()
 }
 
-// Returns the last line a node's text is on, not counting the newline that C preprocessor lines include.
+// Returns the last line a node's text is on, not counting trailing newlines.
 fn end_row(n: Node, src: &str) -> usize {
-    let row = n.end_position().row;
-    if end_byte(n, src) < n.end_byte() && n.end_position().column == 0 {
-        row - 1
-    } else {
-        row
-    }
+    n.start_position().row + src[n.start_byte()..end_byte(n, src)].matches('\n').count()
 }
 
 // Returns the view of a file, or None when nothing would be shortened or it cannot be parsed: a header, then `N`, `N~` and `A-B` lines.
@@ -256,25 +291,16 @@ pub fn view(shown: &str, src: &str, lang: Lang) -> Option<String> {
 // Applies every rule to a parsed file and renders the view, or None when nothing changed.
 fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
     let mut plan = Plan::new(src);
-    imports(root, lang, &mut plan);
-    let mut nodes = Vec::new();
-    let mut cursor = root.walk();
-    'walk: loop {
-        nodes.push(cursor.node());
-        if cursor.goto_first_child() {
-            continue;
-        }
-        while !cursor.goto_next_sibling() {
-            if !cursor.goto_parent() {
-                break 'walk;
-            }
-        }
+    if lang == Lang::Erlang {
+        plan.ends = &[',', '.'];
     }
-    for &n in &nodes {
+    imports(root, lang, &mut plan);
+    let nodes = walk(root);
+    for &(n, _, _) in &nodes {
         constructor(n, lang, &mut plan);
         catch(n, lang, &mut plan);
     }
-    for &n in &nodes {
+    for &(n, parent, next) in &nodes {
         let shell_block = |p: &str| {
             lang == Lang::Lua && p == "chunk"
                 || lang == Lang::Elixir && matches!(p, "do_block" | "body")
@@ -284,8 +310,8 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
                         "program" | "do_group" | "if_statement" | "elif_clause" | "else_clause" | "case_item"
                     )
         };
-        let in_block = n.parent().is_some_and(|p| shell_block(p.kind()))
-            || n.parent().is_some_and(|p| {
+        let in_block = parent.is_some_and(|p| shell_block(p.kind()) || statement_parent(n, p, lang, src))
+            || parent.is_some_and(|p| {
                 matches!(
                     p.kind(),
                     "block"
@@ -302,20 +328,30 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
                         | "ensure"
                 )
             });
-        if (is_logging(n, lang, src) || is_log_guard(n, lang, src)) && in_block {
+        let last = lang.last_is_value() && next.is_none();
+        if in_block && !last && (is_logging(n, lang, src) || is_log_guard(n, lang, src)) {
             plan.hide_node(n, None, "log statements");
-        } else if matches!(n.kind(), "comment" | "line_comment") && is_region(&src[n.byte_range()])
+        } else if matches!(n.kind(), "comment" | "line_comment" | "block_comment")
+            && is_region(&src[n.byte_range()])
             || n.kind() == "preproc_call" && is_pragma_region(&src[n.byte_range()])
         {
             plan.hide_node(n, None, "regions");
         } else if n.kind() == "heredoc_body" && end_row(n, src) + 1 - n.start_position().row >= LONG_HEREDOC {
             let (a, b) = (n.start_position().row, end_row(n, src));
             plan.hide(a, b, Some(format!("heredoc, {} line(s)", b - a + 1)), "heredoc bodies");
-        } else if is_access_modifier(n, lang) {
+        } else if is_access_modifier(n, parent.map(|p| p.kind()).unwrap_or_default(), lang, src) {
             let end = src[n.end_byte()..]
                 .find(|c: char| !c.is_whitespace())
                 .map_or(src.len(), |i| n.end_byte() + i);
             plan.change(n.start_byte(), end, String::new(), "access modifiers");
+        }
+    }
+    if lang == Lang::VisualBasic {
+        for line in 0..plan.starts.len() {
+            let t = plan.text(line).trim().to_ascii_lowercase();
+            if t.starts_with("#region") || t.starts_with("#end region") {
+                plan.hide(line, line, None, "regions");
+            }
         }
     }
     for r in crate::locals::renames(root, lang, src) {
@@ -334,9 +370,84 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
     Some(format!("{shown} {total} lines; terse: {}\n{}", steps.join(", "), plan.render().join("\n")))
 }
 
+// True when a statement sits where the language runs statements in order: a `do` block, a sequence, a body form, a clause body.
+fn statement_parent(n: Node, parent: Node, lang: Lang, src: &str) -> bool {
+    let first = parent.named_child(0).map(|c| c.id()) == Some(n.id());
+    match lang {
+        Lang::Haskell => parent.kind() == "do",
+        Lang::OCaml => parent.kind() == "sequence_expression",
+        Lang::FSharp => parent.kind() == "sequential_expression",
+        Lang::Clojure => {
+            const BODIES: [&str; 18] = [
+                "defn",
+                "defn-",
+                "fn",
+                "let",
+                "do",
+                "when",
+                "when-not",
+                "when-let",
+                "when-some",
+                "loop",
+                "doseq",
+                "dotimes",
+                "binding",
+                "try",
+                "catch",
+                "finally",
+                "with-open",
+                "future",
+            ];
+            parent.kind() == "list_lit"
+                && !first
+                && parent.named_child(0).is_some_and(|h| BODIES.contains(&&src[h.byte_range()]))
+        }
+        Lang::Erlang => parent.kind() == "clause_body",
+        Lang::R => parent.kind() == "braced_expression",
+        Lang::Julia => matches!(
+            parent.kind(),
+            "function_definition"
+                | "if_statement"
+                | "elseif_clause"
+                | "else_clause"
+                | "for_statement"
+                | "while_statement"
+                | "try_statement"
+                | "catch_clause"
+                | "finally_clause"
+                | "let_statement"
+                | "compound_statement"
+                | "do_clause"
+        ),
+        Lang::PowerShell => parent.kind() == "statement_list",
+        Lang::VisualBasic => n.kind() == "statement",
+        _ => false,
+    }
+}
+
+// Returns every node in source order with its parent and its next named sibling that is not a comment, without calling `Node::parent`, which walks down from the root and is slow in deep trees.
+fn walk(root: Node) -> Vec<(Node, Option<Node>, Option<Node>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![(root, None, None)];
+    let mut cursor = root.walk();
+    while let Some(entry) = stack.pop() {
+        let n = entry.0;
+        out.push(entry);
+        let mut after = None;
+        let mut children: Vec<(Node, Option<Node>, Option<Node>)> = Vec::new();
+        for k in n.children(&mut cursor).collect::<Vec<_>>().into_iter().rev() {
+            children.push((k, Some(n), after));
+            if k.is_named() && !k.kind().contains("comment") {
+                after = Some(k);
+            }
+        }
+        stack.extend(children);
+    }
+    out
+}
+
 // True for an access modifier on a declaration: TypeScript class members (not constructor parameters), Java's public, private and protected, and Rust's pub.
-fn is_access_modifier(n: Node, lang: Lang) -> bool {
-    let parent = n.parent().map(|p| p.kind()).unwrap_or_default();
+fn is_access_modifier(n: Node, parent: &str, lang: Lang, src: &str) -> bool {
     match (lang, n.kind()) {
         (Lang::TypeScript | Lang::Tsx, "accessibility_modifier") => matches!(
             parent,
@@ -345,20 +456,25 @@ fn is_access_modifier(n: Node, lang: Lang) -> bool {
                 | "method_signature"
                 | "abstract_method_signature"
         ),
-        (Lang::Java, "public" | "private" | "protected") => parent == "modifiers",
+        (Lang::Java | Lang::Groovy, "public" | "private" | "protected") => parent == "modifiers",
         (Lang::Rust, "visibility_modifier") => parent != "use_declaration",
         (Lang::Kotlin | Lang::Swift, "visibility_modifier") => parent == "modifiers",
         (Lang::Php, "visibility_modifier") => {
             matches!(parent, "method_declaration" | "property_declaration" | "const_declaration")
         }
         (Lang::Scala, "access_modifier") => parent == "modifiers",
+        (Lang::VisualBasic, "modifier") => {
+            let t = src[n.byte_range()].to_ascii_lowercase();
+            parent == "modifiers" && matches!(t.as_str(), "public" | "private" | "protected" | "friend")
+        }
         _ => false,
     }
 }
 
-// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`, `--#region`.
+// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`, `--#region`, `;; region`, `%% region`, `(* region *)`.
 fn is_region(comment: &str) -> bool {
-    let c = comment.trim_start_matches(['#', '/', '-']).trim_start().trim_start_matches('#').trim_start();
+    let c = comment.trim_start_matches("(*").trim_end().trim_end_matches("*)");
+    let c = c.trim_start_matches(['#', '/', '-', ';', '%']).trim_start().trim_start_matches('#').trim_start();
     let word = c.strip_prefix("end").unwrap_or(c);
     word.strip_prefix("region").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace))
 }
@@ -406,13 +522,68 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
                 && n.child_by_field_name("method")
                     .is_some_and(|m| matches!(&src[m.byte_range()], "require" | "require_relative"))
         }
+        Lang::Haskell => n.kind() == "import",
+        Lang::OCaml => n.kind() == "open_module",
+        Lang::FSharp => n.kind() == "import_decl",
+        Lang::Clojure => {
+            n.kind() == "list_lit"
+                && n.named_child(0)
+                    .is_some_and(|h| matches!(&src[h.byte_range()], "require" | "import" | "use"))
+        }
+        Lang::Erlang => matches!(n.kind(), "pp_include" | "pp_include_lib" | "import_attribute"),
+        Lang::R => {
+            n.kind() == "call"
+                && n.child_by_field_name("function")
+                    .is_some_and(|f| matches!(&src[f.byte_range()], "library" | "require" | "source"))
+        }
+        Lang::Julia => matches!(n.kind(), "using_statement" | "import_statement"),
+        Lang::Zig => {
+            n.kind() == "variable_declaration"
+                && kids(*n).any(|c| {
+                    c.kind() == "builtin_function"
+                        && c.named_child(0).is_some_and(|b| &src[b.byte_range()] == "@import")
+                })
+        }
+        Lang::ObjC => matches!(n.kind(), "preproc_include" | "module_import"),
+        Lang::Groovy => n.kind() == "import_declaration",
+        Lang::PowerShell => {
+            let t = src[n.byte_range()].to_ascii_lowercase();
+            n.kind() == "pipeline"
+                && !t.contains('\n')
+                && (t.starts_with("import-module ") || t.starts_with("using ") || t.starts_with(". "))
+        }
+        Lang::VisualBasic => n.kind() == "imports_statement",
     };
     let mut containers = vec![root];
     if lang == Lang::Elixir {
         containers.extend(elixir_modules(root, src));
     }
+    let wrappers = ["imports", "named_module", "statement_list"];
+    containers.extend(kids(root).filter(|c| wrappers.contains(&c.kind())));
+    if lang == Lang::Clojure {
+        clojure_ns_requires(root, plan);
+    }
     for container in containers {
         import_runs(container, &is_import, plan);
+    }
+}
+
+// Collapses the `(:require ..)`, `(:import ..)` and `(:use ..)` clauses of a Clojure `ns` form that span two or more lines.
+fn clojure_ns_requires(root: Node, plan: &mut Plan) {
+    let src = plan.src;
+    let head = |n: Node| n.named_child(0).map(|h| &src[h.byte_range()]);
+    for ns in kids(root).filter(|n| n.kind() == "list_lit" && head(*n) == Some("ns")) {
+        for clause in kids(ns).filter(|c| c.kind() == "list_lit") {
+            let (a, b) = (clause.start_position().row, clause.end_position().row);
+            let before = &src[plan.starts[a]..clause.start_byte()];
+            if matches!(head(clause), Some(":require" | ":import" | ":use"))
+                && b > a
+                && before.trim().is_empty()
+            {
+                let count = kids(clause).skip(1).filter(|c| !c.kind().contains("comment")).count();
+                plan.hide(a, b, Some(format!("{count} import(s)")), "imports");
+            }
+        }
     }
 }
 
@@ -461,7 +632,22 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         (Lang::Kotlin | Lang::Swift | Lang::Scala, "call_expression")
         | (Lang::Ruby | Lang::Elixir, "call")
         | (Lang::Shell, "command")
-        | (Lang::Lua, "function_call") => stmt,
+        | (Lang::Lua, "function_call")
+        | (Lang::OCaml | Lang::FSharp, "application_expression")
+        | (Lang::Clojure, "list_lit")
+        | (Lang::Erlang, "remote" | "macro_call_expr")
+        | (Lang::R, "call")
+        | (Lang::Julia, "macrocall_expression") => stmt,
+        (Lang::Haskell, "exp") => stmt.named_child(0).filter(|c| c.kind() == "apply")?,
+        (Lang::PowerShell, "pipeline") => {
+            let [chain] = kids(stmt).collect::<Vec<_>>()[..] else { return None };
+            let [command] = kids(chain).collect::<Vec<_>>()[..] else { return None };
+            (command.kind() == "command").then_some(command)?
+        }
+        (Lang::VisualBasic, "statement") => {
+            let call = stmt.named_child(0).filter(|c| c.kind() == "call_statement")?;
+            call.named_child(0)?.named_child(0).filter(|c| c.kind() == "invocation")?
+        }
         (_, "expression_statement") => stmt.named_child(0)?,
         _ => return None,
     };
@@ -491,6 +677,25 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
             call.child_by_field_name("name")?.byte_range()
         }
         (Lang::Elixir, "call") => call.child_by_field_name("target")?.byte_range(),
+        (Lang::Haskell, "apply") => {
+            let mut f = call;
+            while f.kind() == "apply" {
+                f = f.child_by_field_name("function")?;
+            }
+            f.byte_range()
+        }
+        (Lang::OCaml, "application_expression") | (Lang::R, "call") => {
+            call.child_by_field_name("function")?.byte_range()
+        }
+        (Lang::FSharp | Lang::Clojure | Lang::Julia, _) => call.named_child(0)?.byte_range(),
+        (Lang::Erlang, "macro_call_expr") => call.child_by_field_name("name")?.byte_range(),
+        (Lang::Erlang, "remote") => {
+            let fun = call.child_by_field_name("fun")?;
+            call.start_byte()..fun.named_child(0)?.end_byte()
+        }
+        (Lang::Zig | Lang::ObjC, "call_expression") => call.child_by_field_name("function")?.byte_range(),
+        (Lang::PowerShell, "command") => call.child_by_field_name("command_name")?.byte_range(),
+        (Lang::VisualBasic, "invocation") => call.child_by_field_name("target")?.byte_range(),
         (Lang::Perl, "method_call_expression") => {
             let method = call.child_by_field_name("method")?;
             call.child_by_field_name("invocant")?.start_byte()..method.end_byte()
@@ -498,7 +703,7 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         (Lang::Perl, "ambiguous_function_call_expression" | "function_call_expression") => {
             call.child_by_field_name("function")?.byte_range()
         }
-        (Lang::Java, "method_invocation") => {
+        (Lang::Java | Lang::Groovy, "method_invocation") => {
             let name = call.child_by_field_name("name")?;
             call.child_by_field_name("object").map_or(name.start_byte(), |o| o.start_byte())..name.end_byte()
         }
@@ -520,15 +725,53 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
             || callee.starts_with("debug_");
         return shell_log && !preorder_kinds(call).iter().any(|k| runs.contains(k));
     }
+    if lang == Lang::PowerShell {
+        let name = callee.to_ascii_lowercase();
+        let runs = ["sub_expression", "pipeline_chain", "script_block"];
+        return matches!(
+            name.as_str(),
+            "write-verbose" | "write-debug" | "write-information" | "write-log" | "write-psfmessage"
+        ) && !preorder_kinds(call)
+            .iter()
+            .skip(1)
+            .any(|k| runs.contains(k) || k.contains("assignment"));
+    }
+    if lang == Lang::Julia {
+        let args = kids(call).find(|c| c.kind() == "macro_argument_list");
+        let effects = args.is_some_and(|a| kids(a).any(|c| c.kind() != "assignment" && has_side_effects(c)));
+        return matches!(callee, "@debug" | "@info" | "@warn" | "@error" | "@logmsg") && !effects;
+    }
     if has_side_effects(call) || lang == Lang::Go && src[call.byte_range()].contains("<-") {
         return false;
+    }
+    match lang {
+        Lang::Haskell => {
+            let name = callee.trim_start_matches("$(").trim_end_matches(')');
+            let base = name.trim_end_matches(['N', 'S']);
+            return matches!(base, "logDebug" | "logInfo" | "logWarn" | "logError" | "logOther")
+                || matches!(name, "debugM" | "infoM" | "noticeM" | "warningM" | "errorM");
+        }
+        Lang::Erlang if call.kind() == "macro_call_expr" => return callee.starts_with("LOG_"),
+        Lang::R if !callee.contains("::") => {
+            let level =
+                |l: &str| matches!(l, "trace" | "debug" | "info" | "success" | "warn" | "error" | "fatal");
+            return callee.strip_prefix("log_").is_some_and(level)
+                || callee.strip_prefix("flog.").is_some_and(level);
+        }
+        _ => {}
     }
     if call.kind() == "binary_expression" {
         return true;
     }
-    let colon = if lang == Lang::Lua { "." } else { ":" };
-    let normalized: String =
-        callee.replace("->", ".").replace("::", ".").replace(':', colon).split_whitespace().collect();
+    let colon = if matches!(lang, Lang::Lua | Lang::Erlang) { "." } else { ":" };
+    let slash = if lang == Lang::Clojure { "." } else { "/" };
+    let normalized: String = callee
+        .replace("->", ".")
+        .replace("::", ".")
+        .replace(':', colon)
+        .replace('/', slash)
+        .split_whitespace()
+        .collect();
     let Some((receiver, method)) = normalized.rsplit_once('.') else {
         return match lang {
             Lang::Dart => matches!(callee, "debugPrint" | "log"),
@@ -536,6 +779,12 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
             Lang::C | Lang::Cpp => is_c_log_macro(callee),
             Lang::Php => callee == "error_log",
             Lang::Perl => matches!(callee, "DEBUG" | "INFO" | "WARN" | "ERROR" | "TRACE"),
+            Lang::ObjC => {
+                is_c_log_macro(callee)
+                    || callee == "NSLog"
+                    || callee.starts_with("os_log")
+                    || callee.starts_with("DDLog")
+            }
             _ => false,
         };
     };
@@ -551,9 +800,20 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     if matches!(last, "Log" | "Timber") && matches!(method, "d" | "i" | "w" | "e" | "v" | "wtf") {
         return true;
     }
+    if lang == Lang::VisualBasic && matches!(last, "Debug" | "Trace") {
+        return method.starts_with("Write") || method.starts_with("Trace") || method == "Print";
+    }
+    let lower = method.to_ascii_lowercase();
+    let method = match lang {
+        Lang::FSharp | Lang::VisualBasic => lower.as_str(),
+        Lang::Clojure => method.strip_suffix('f').unwrap_or(method),
+        Lang::OCaml | Lang::Zig if method == "err" => "error",
+        Lang::OCaml if method == "app" => "info",
+        _ => method,
+    };
     let r = last.trim_matches('_').to_ascii_lowercase();
-    let logger =
-        matches!(r.as_str(), "log" | "logs" | "logging" | "slog" | "spdlog") || r.ends_with("logger");
+    let logger = matches!(r.as_str(), "log" | "logs" | "logging" | "slog" | "spdlog" | "timbre" | "lager")
+        || r.ends_with("logger");
     if lang == Lang::Go {
         let m = method.to_ascii_lowercase();
         let base = m.trim_end_matches("context").trim_end_matches("ln").trim_end_matches(['f', 'w']);
@@ -688,7 +948,12 @@ fn stores_only<'s>(n: Node, lang: Lang, src: &'s str) -> Option<(String, &'s str
             let ok = text(name) == "constructor" && statements(body).iter().all(|s| ts_store(*s, src));
             ok.then(|| (text(name).to_string(), text(params)))
         }
-        (Lang::Java, "constructor_declaration") => {
+        (Lang::VisualBasic, "constructor_declaration") => {
+            let params = field("parameters")?;
+            let body: Vec<Node> = kids(n).filter(|c| c.kind() == "statement").collect();
+            body.iter().all(|s| vb_store(*s, src)).then(|| ("New".to_string(), text(params)))
+        }
+        (Lang::Java | Lang::Groovy, "constructor_declaration") => {
             let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
             let ok = statements(body).iter().all(|s| java_store(*s, src));
             ok.then(|| (text(name).to_string(), text(params)))
@@ -782,9 +1047,9 @@ fn is_plain_init(e: &str) -> bool {
         || e.split_once('=').is_some_and(|(l, r)| simple(l.trim()) && simple(r.trim()))
 }
 
-// Returns the named statements of a block, skipping comments and looking inside a Swift `statements` child.
+// Returns the named statements of a block, skipping comments and looking inside a Swift `statements` or PowerShell `statement_list` child.
 fn statements(block: Node) -> Vec<Node> {
-    let inner = kids(block).find(|c| c.kind() == "statements").unwrap_or(block);
+    let inner = kids(block).find(|c| matches!(c.kind(), "statements" | "statement_list")).unwrap_or(block);
     kids(inner).filter(|s| !s.kind().contains("comment")).collect()
 }
 
@@ -822,6 +1087,29 @@ fn java_store(s: Node, src: &str) -> bool {
         }
         _ => false,
     }
+}
+
+// True for a Visual Basic constructor statement that assigns a parameter or literal to a field: `_x = x`, `Me.x = x`.
+fn vb_store(s: Node, src: &str) -> bool {
+    let assign = s
+        .named_child(0)
+        .filter(|c| c.kind() == "call_statement")
+        .and_then(|c| c.named_child(0))
+        .and_then(|e| e.named_child(0))
+        .filter(|b| b.kind() == "binary_expression");
+    let Some(b) = assign else { return false };
+    let (Some(l), Some(r), Some(op)) =
+        (b.child_by_field_name("left"), b.child_by_field_name("right"), b.child_by_field_name("operator"))
+    else {
+        return false;
+    };
+    let target = l.named_child(0).is_some_and(|t| {
+        t.kind() == "identifier"
+            || t.kind() == "member_access" && src[t.byte_range()].to_ascii_lowercase().starts_with("me.")
+    });
+    let value =
+        r.named_child(0).map(|v| if v.kind() == "literal" { v.named_child(0).unwrap_or(v) } else { v });
+    &src[op.byte_range()] == "=" && target && value.is_some_and(|v| is_value(v.kind()))
 }
 
 // True for a PHP constructor statement that is `$this->x = $name;`.
@@ -883,6 +1171,10 @@ fn is_value(kind: &str) -> bool {
 // Collapses a catch clause whose body only logs and then rethrows what it caught.
 fn catch(n: Node, lang: Lang, plan: &mut Plan) {
     let src = plan.src;
+    if lang == Lang::VisualBasic {
+        vb_catch(n, plan);
+        return;
+    }
     let Some((start, block)) = rethrow_catch(n, lang, src) else { return };
     let (inline, step) = if lang == Lang::Go {
         let body = statements(block);
@@ -920,9 +1212,19 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
         (Lang::Scala, "catch_clause") => return scala_rethrow(n, src),
         (Lang::Ruby, "rescue") => (n.start_byte(), n.child_by_field_name("body")?),
         (
-            Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java | Lang::Cpp | Lang::Php,
+            Lang::JavaScript
+            | Lang::TypeScript
+            | Lang::Tsx
+            | Lang::Java
+            | Lang::Groovy
+            | Lang::Cpp
+            | Lang::Php,
             "catch_clause",
         ) => (n.start_byte(), n.child_by_field_name("body")?),
+        (Lang::ObjC, "catch_clause") => (n.start_byte(), kids(n).find(|c| c.kind() == "compound_statement")?),
+        (Lang::PowerShell, "catch_clause") => {
+            (n.start_byte(), kids(n).find(|c| c.kind() == "statement_block")?)
+        }
         (Lang::Kotlin, "catch_block") => (n.start_byte(), kids(n).find(|c| c.kind() == "block")?),
         (Lang::Swift, "catch_block") => (n.start_byte(), n),
         (Lang::Go, "if_statement") if n.child_by_field_name("alternative").is_none() => {
@@ -936,7 +1238,7 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
     };
     let text = |x: Node| &src[x.byte_range()];
     let caught: Option<&str> = match lang {
-        Lang::Java => kids(n)
+        Lang::Java | Lang::Groovy => kids(n)
             .find(|c| c.kind() == "catch_formal_parameter")
             .and_then(|p| p.child_by_field_name("name"))
             .map(text),
@@ -953,7 +1255,8 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
             let thrown = if l.kind() == "expression_statement" { l.named_child(0) } else { Some(*l) };
             thrown.is_some_and(|t| t.kind() == "throw_expression" && t.named_child(0).map(text) == caught)
         }
-        Lang::Cpp => l.kind() == "throw_statement" && l.named_child_count() == 0,
+        Lang::Cpp | Lang::ObjC => l.kind() == "throw_statement" && l.named_child_count() == 0,
+        Lang::PowerShell => l.kind() == "flow_control_statement" && text(*l).eq_ignore_ascii_case("throw"),
         Lang::Dart => l.kind() == "rethrow_statement",
         Lang::Go => l.kind() == "return_statement" && returns_error(*l, caught, src),
         Lang::Swift => {
@@ -968,6 +1271,25 @@ fn rethrow_catch<'t>(n: Node<'t>, lang: Lang, src: &str) -> Option<(usize, Node<
         return None;
     }
     rethrows(block, &last_ok, lang, src).then_some((start, block))
+}
+
+// Collapses a Visual Basic `Catch` block whose statements only log and then `Throw` what was caught.
+fn vb_catch(n: Node, plan: &mut Plan) {
+    let src = plan.src;
+    if n.kind() != "catch_block" {
+        return;
+    }
+    let body: Vec<Node> = kids(n).filter(|c| c.kind() == "statement").collect();
+    let rethrow = |s: &Node| {
+        s.named_child(0).is_some_and(|t| t.kind() == "throw_statement" && t.named_child_count() == 0)
+    };
+    let Some((last, rest)) = body.split_last() else { return };
+    if rethrow(last) && rest.iter().all(|s| is_logging(*s, Lang::VisualBasic, src)) {
+        let (a, b) = (n.start_position().row, end_row(*last, src).max(last.start_position().row));
+        let b = if src[last.byte_range()].ends_with('\n') { last.end_position().row - 1 } else { b };
+        let header = plan.text(a).trim().to_string();
+        plan.hide(a, b, Some(format!("{header}: logs and rethrows")), "log-and-rethrow catches");
+    }
 }
 
 // Returns where a Scala catch starts and its case block when it has one case, `case e: T =>`, that only logs and rethrows `e`.
@@ -1436,6 +1758,266 @@ end
   end
 end
 "##;
+    const HASKELL: &str = r##"module Repo where
+
+import Data.List (sortOn)
+import qualified Data.Map as M
+
+-- region loading
+load :: Api -> Int -> IO Int
+load api ident = do
+  logDebug "loading"
+  $(logInfo) "x"
+  putStrLn "hi"
+  responseBody <- get api ident
+  let totalSum = length responseBody
+  return totalSum
+-- endregion
+"##;
+    const OCAML: &str = r##"open Printf
+open Lwt.Infix
+
+(* region loading *)
+let load api id =
+  Logs.debug (fun m -> m "loading %d" id);
+  Log.info (fun m -> m "x");
+  print_endline "hi";
+  let response_body = Api.get api id in
+  let total_sum = List.length response_body in
+  try total_sum with
+  | Not_found as e -> Logs.err (fun m -> m "failed"); raise e
+(* endregion *)
+"##;
+    const FSHARP: &str = r##"module Repo
+
+open System
+open Microsoft.Extensions.Logging
+
+// #region loading
+type Service(logger: ILogger<Service>, api: Api) =
+    member this.Load(id: int) =
+        logger.LogInformation("loading {Id}", id)
+        printfn "hi"
+        let responseBody = api.Get(id)
+        let totalSum = responseBody.Length
+        try
+            totalSum
+        with
+        | :? InvalidOperationException as e ->
+            logger.LogError(e, "failed")
+            reraise ()
+// #endregion
+"##;
+    const CLOJURE: &str = r##"(ns app.repo
+  (:require [clojure.string :as str]
+            [clojure.tools.logging :as log]))
+
+(require '[clojure.set :as set])
+(import '(java.util Date))
+
+;; region loading
+(defn load [api id]
+  (log/debug "loading" id)
+  (log/infof "x %s" id)
+  (println "hi")
+  (let [response-body (get-it api id)
+        total-sum (count response-body)]
+    total-sum))
+;; endregion
+"##;
+    const ERLANG: &str = r##"-module(repo).
+-include_lib("kernel/include/logger.hrl").
+-include("repo.hrl").
+-import(lists, [map/2]).
+-export([load/2]).
+
+%% region loading
+load(Api, Id) ->
+    ?LOG_DEBUG("loading ~p", [Id]),
+    logger:info("x"),
+    io:format("hi~n"),
+    ResponseBody = api:get(Api, Id),
+    TotalSum = length(ResponseBody),
+    try TotalSum
+    catch
+        error:Reason:Stack ->
+            logger:error("failed ~p", [Reason]),
+            erlang:raise(error, Reason, Stack)
+    end.
+%% endregion
+"##;
+    const R_SRC: &str = r##"library(dplyr)
+library(logger)
+source("helpers.R")
+
+# region loading
+load <- function(api, id) {
+  log_debug("loading {id}")
+  flog.info("x")
+  message("hi")
+  response_body <- api_get(api, id)
+  total_sum <- length(response_body)
+  tryCatch(total_sum, error = function(e) { log_error("failed"); stop(e) })
+}
+# endregion
+"##;
+    const JULIA: &str = r##"using LinearAlgebra
+using Logging
+import Base: show
+
+#region loading
+function load(api, id)
+    @debug "loading" id
+    @info "x"
+    println("hi")
+    response_body = get_it(api, id)
+    total_sum = length(response_body)
+    try
+        total_sum
+    catch e
+        @error "failed" exception=e
+        rethrow()
+    end
+end
+#endregion
+"##;
+    const ZIG: &str = r##"const std = @import("std");
+const api = @import("api.zig");
+const log = std.log.scoped(.repo);
+
+// region loading
+pub fn load(client: *api.Client, id: u32) !usize {
+    log.debug("loading {d}", .{id});
+    std.log.info("x", .{});
+    std.debug.print("hi\n", .{});
+    const response_body = try client.get(id);
+    var total_sum: usize = 0;
+    for (response_body) |line_item| {
+        total_sum += line_item.len;
+    }
+    const result = client.check() catch |err| {
+        log.err("failed {}", .{err});
+        return err;
+    };
+    _ = result;
+    return total_sum;
+}
+// endregion
+"##;
+    const OBJC: &str = r##"#import <Foundation/Foundation.h>
+#import "Api.h"
+@import UIKit;
+
+#pragma mark - Loading
+// region loading
+@implementation Repo
+- (NSInteger)load:(NSInteger)ident {
+    NSLog(@"loading %ld", (long)ident);
+    DDLogDebug(@"x");
+    printf("hi\n");
+    NSArray *responseBody = [self.api get:ident];
+    NSInteger totalSum = 0;
+    for (NSString *lineItem in responseBody) {
+        totalSum += lineItem.length;
+    }
+    @try {
+        [self check];
+    } @catch (NSException *exception) {
+        NSLog(@"failed");
+        @throw;
+    }
+    return totalSum;
+}
+@end
+// endregion
+"##;
+    const GROOVY: &str = r##"package app
+
+import groovy.json.JsonSlurper
+import org.slf4j.LoggerFactory
+
+// region loading
+class Repo {
+    private final Api api
+    public static final int RETRIES = 3
+
+    Repo(Api api) {
+        this.api = api
+    }
+
+    public int load(int id) {
+        log.debug("loading $id")
+        println "hi"
+        def responseBody = api.get(id)
+        def totalSum = 0
+        for (lineItem in responseBody) { totalSum += lineItem.size() }
+        try {
+            check()
+        } catch (IOException e) {
+            log.error("failed", e)
+            throw e
+        }
+        return totalSum
+    }
+}
+// endregion
+"##;
+    const POWERSHELL: &str = r##"Import-Module Az.Accounts
+using module ./Helpers.psm1
+. ./common.ps1
+
+#region loading
+function Get-Invoice {
+    param([string]$Id)
+    Write-Verbose "loading $Id"
+    Write-Debug "x"
+    Write-Host "hi"
+    $responseBody = Invoke-RestMethod -Uri "https://x/$Id"
+    $totalSum = 0
+    foreach ($lineItem in $responseBody) { $totalSum += $lineItem.Amount }
+    try {
+        Test-It
+    } catch {
+        Write-Verbose "failed"
+        throw
+    }
+    return $totalSum
+}
+#endregion
+"##;
+    const VB: &str = r##"Imports System
+Imports Microsoft.Extensions.Logging
+
+#Region "Service"
+Public Class InvoiceService
+    Private ReadOnly _logger As ILogger
+    Private ReadOnly _repo As IRepo
+
+    Public Sub New(logger As ILogger, repo As IRepo)
+        _logger = logger
+        _repo = repo
+    End Sub
+
+    Public Function Total(id As Integer) As Decimal
+        _logger.LogInformation("Totalling {Id}", id)
+        Debug.WriteLine("x")
+        Console.WriteLine("hi")
+        Dim responseBody = _repo.Get(id)
+        Dim totalSum As Decimal = 0
+        For Each lineItem In responseBody
+            totalSum += lineItem.Amount
+        Next
+        Try
+            Check()
+        Catch ex As InvalidOperationException
+            _logger.LogError(ex, "Failed")
+            Throw
+        End Try
+        Return totalSum
+    End Function
+End Class
+#End Region
+"##;
     const DART: &str = r#"import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -1511,7 +2093,21 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.lua")), Some(Lang::Lua));
         assert_eq!(lang_of(Path::new("b.ex")), Some(Lang::Elixir));
         assert_eq!(lang_of(Path::new("b.exs")), Some(Lang::Elixir));
-        assert_eq!(lang_of(Path::new("b.erl")), None);
+        assert_eq!(lang_of(Path::new("b.erl")), Some(Lang::Erlang));
+        assert_eq!(lang_of(Path::new("b.hs")), Some(Lang::Haskell));
+        assert_eq!(lang_of(Path::new("b.ml")), Some(Lang::OCaml));
+        assert_eq!(lang_of(Path::new("b.fsx")), Some(Lang::FSharp));
+        assert_eq!(lang_of(Path::new("b.cljs")), Some(Lang::Clojure));
+        assert_eq!(lang_of(Path::new("b.R")), Some(Lang::R));
+        assert_eq!(lang_of(Path::new("b.jl")), Some(Lang::Julia));
+        assert_eq!(lang_of(Path::new("b.zig")), Some(Lang::Zig));
+        assert_eq!(lang_of(Path::new("b.m")), Some(Lang::ObjC));
+        assert_eq!(lang_of(Path::new("build.gradle")), Some(Lang::Groovy));
+        assert_eq!(lang_of(Path::new("b.psm1")), Some(Lang::PowerShell));
+        assert_eq!(lang_of(Path::new("b.sql")), None);
+        assert_eq!(lang_of(Path::new("b.vb")), Some(Lang::VisualBasic));
+        assert_eq!(lang_of(Path::new("b.nim")), None);
+        assert_eq!(lang_of(Path::new("b.mli")), None);
         assert_eq!(lang_of(Path::new("Makefile")), None);
     }
 
@@ -2275,5 +2871,115 @@ class InvoiceRepository {
         assert!(ex("alias A.B\n    alias A.C"));
         assert!(view("f", "alias A.B\nalias A.C\n", Lang::Elixir).is_some());
         assert!(view("f", "local x = 1\nlocal y = 2\n", Lang::Lua).is_none());
+    }
+
+    // One view check: source, language, header after the name, lines that must be shown, lines that must be hidden.
+    type Case<'a> = (&'a str, Lang, &'a str, &'a [&'a str], &'a [usize]);
+
+    // Checks the view of each language added with Haskell: its header, every note and changed line, and that hidden lines are gone.
+    #[test]
+    fn test_view_more_languages() {
+        let cases: [Case; 12] = [
+            (HASKELL, Lang::Haskell, "15 lines; terse: 1 imports, 2 regions, 2 log statements", &["3-4\t⋯ 2 import(s)"], &[6, 9, 10, 15]),
+            (OCAML, Lang::OCaml, "13 lines; terse: 1 imports, 2 regions, 2 log statements", &["1-2\t⋯ 2 import(s)"], &[4, 6, 7, 13]),
+            (FSHARP, Lang::FSharp, "19 lines; terse: 1 imports, 2 regions, 2 log statements", &["3-4\t⋯ 2 import(s)"], &[6, 9, 17, 19]),
+            (CLOJURE, Lang::Clojure, "16 lines; terse: 2 imports, 2 regions, 2 log statements", &["2-3\t⋯ 2 import(s)", "5-6\t⋯ 2 import(s)"], &[8, 10, 11, 16]),
+            (ERLANG, Lang::Erlang, "20 lines; terse: 1 imports, 2 regions, 3 log statements", &["2-4\t⋯ 3 import(s)"], &[7, 9, 10, 17, 20]),
+            (R_SRC, Lang::R, "14 lines; terse: 1 imports, 2 regions, 2 log statements", &["1-3\t⋯ 3 import(s)"], &[5, 7, 8, 14]),
+            (JULIA, Lang::Julia, "19 lines; terse: 1 imports, 2 regions, 3 log statements", &["1-3\t⋯ 3 import(s)"], &[5, 7, 8, 15, 19]),
+            (ZIG, Lang::Zig, "22 lines; terse: 1 imports, 2 regions, 3 log statements, 4 locals shortened", &["1-2\t⋯ 2 import(s)", "10~\t    const rb = try client.get(id);", "11~\t    var ts: usize = 0;", "12~\t    for (rb) |li| {", "13~\t        ts += li.len;", "15~\t    const res = client.check() catch |err| {", "19~\t    _ = res;", "20~\t    return ts;"], &[5, 7, 8, 16, 22]),
+            (OBJC, Lang::ObjC, "26 lines; terse: 1 imports, 1 log-and-rethrow catches, 2 regions, 2 log statements, 3 locals shortened", &["1-3\t⋯ 3 import(s)", "12~\t    NSArray *rb = [self.api get:ident];", "13~\t    NSInteger ts = 0;", "14~\t    for (NSString *li in rb) {", "15~\t        ts += li.length;", "19~\t    } @catch (NSException *exception) { ⋯ logs and rethrows }", "23~\t    return ts;"], &[6, 9, 10, 20, 21, 22, 26]),
+            (GROOVY, Lang::Groovy, "30 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 2 regions, 3 access modifiers, 1 log statements", &["3-4\t⋯ 2 import(s)", "8~\t    final Api api", "9~\t    static final int RETRIES = 3", "11-13\t⋯ Repo(Api api): only assigns fields", "15~\t    int load(int id) {", "23~\t        } catch (IOException e) { ⋯ logs and rethrows }"], &[6, 16, 24, 25, 26, 30]),
+            (POWERSHELL, Lang::PowerShell, "22 lines; terse: 1 imports, 1 log-and-rethrow catches, 2 regions, 2 log statements", &["1-3\t⋯ 3 import(s)", "16~\t    } catch { ⋯ logs and rethrows }"], &[5, 8, 9, 17, 18, 19, 22]),
+            (VB, Lang::VisualBasic, "32 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 4 access modifiers, 2 log statements, 2 regions", &["1-2\t⋯ 2 import(s)", "5~\tClass InvoiceService", "6~\t    ReadOnly _logger As ILogger", "7~\t    ReadOnly _repo As IRepo", "9-12\t⋯ New(logger As ILogger, repo As IRepo): only assigns fields", "14~\t    Function Total(id As Integer) As Decimal", "25-27\t⋯ Catch ex As InvalidOperationException: logs and rethrows"], &[4, 15, 16, 32]),
+        ];
+        for (src, lang, head, present, hidden) in cases {
+            let v = view("f", src, lang).expect("view");
+            assert_eq!(v.lines().next(), Some(format!("f {head}").as_str()), "{lang:?}");
+            let lines = body(src, lang);
+            has_all(&lines, present);
+            for n in hidden {
+                assert!(
+                    !lines
+                        .iter()
+                        .any(|l| l.starts_with(&format!("{n}\t")) || l.starts_with(&format!("{n}~\t"))),
+                    "{lang:?} line {n}"
+                );
+            }
+        }
+    }
+
+    // Checks what the languages added with Haskell keep: a log call that is a block's value, logging inside arguments or with side effects, other receivers, and catches or rows that do more.
+    #[test]
+    fn test_kept_more_languages() {
+        let kept = |src: &str, lang: Lang| view("f", src, lang).is_none();
+        assert!(kept("f = do\n  x <- g\n  logInfo \"x\"\n", Lang::Haskell));
+        assert!(kept("let f () =\n  g ();\n  Logs.info (fun m -> m \"x\")\n", Lang::OCaml));
+        assert!(kept("let f () =\n    g ()\n    logger.LogInformation(\"x\")\n", Lang::FSharp));
+        assert!(kept("(defn f []\n  (g (log/info \"x\") 1)\n  (h))\n", Lang::Clojure));
+        assert!(kept("(defn f []\n  (log/info \"x\"))\n", Lang::Clojure));
+        assert!(kept("f() ->\n    g(),\n    logger:info(\"x\").\n", Lang::Erlang));
+        assert!(kept("f() ->\n    io:format(\"x\"),\n    g().\n", Lang::Erlang));
+        assert!(kept("f <- function() {\n  message(\"x\")\n  g()\n}\n", Lang::R));
+        assert!(kept("f <- function() {\n  g()\n  log_info(\"x\")\n}\n", Lang::R));
+        assert!(kept("function f()\n    @info \"x\" n += 1\n    g()\nend\n", Lang::Julia));
+        assert!(kept("fn f() void {\n    std.debug.print(\"x\", .{});\n}\n", Lang::Zig));
+        assert!(kept("void f() {\n    printf(\"x\");\n}\n", Lang::ObjC));
+        assert!(kept("void f() {\n    @try {\n        g();\n    } @catch (NSException *e) {\n        h();\n        @throw;\n    }\n}\n", Lang::ObjC));
+        assert!(kept("class A {\n    void f() {\n        cart.info(\"x\")\n    }\n}\n", Lang::Groovy));
+        assert!(kept("function f {\n    Write-Host \"x\"\n    Write-Verbose \"$(Get-Date)\"\n    Write-Verbose \"a\" | Out-Null\n}\n", Lang::PowerShell));
+        let vb =
+            "Class A\n    Sub New(a As Integer)\n        _a = a\n        Load()\n    End Sub\nEnd Class\n";
+        assert!(view("f", vb, Lang::VisualBasic).is_none_or(|v| !v.contains("only assigns")));
+        let vb_catch = "Module M\n    Sub F()\n        Try\n            G()\n        Catch ex As Exception\n            Console.WriteLine(ex)\n            Throw\n        End Try\n    End Sub\nEnd Module\n";
+        assert!(kept(vb_catch, Lang::VisualBasic));
+        let vb_log = "Module M\n    Sub F()\n        Trace.TraceInformation(\"x\")\n        Debug.Assert(x)\n    End Sub\nEnd Module\n";
+        assert!(view("f", vb_log, Lang::VisualBasic)
+            .is_some_and(|v| v.contains("Debug.Assert") && !v.contains("TraceInformation")));
+    }
+
+    // Checks the remaining edges of the languages added with Haskell: package-qualified R loggers, OCaml `Logs.app`, Objective-C log macros, single-line Clojure `ns` clauses, catches on their own lines, Visual Basic stores and rethrows.
+    #[test]
+    fn test_more_language_edges() {
+        let hidden =
+            |src: &str, lang: Lang, gone: &str| view("f", src, lang).is_some_and(|v| !v.contains(gone));
+        assert!(hidden("f <- function() {\n  logger::log_info(\"x\")\n  g()\n}\n", Lang::R, "log_info"));
+        assert!(hidden("let f () =\n  Logs.app (fun m -> m \"x\");\n  g ()\n", Lang::OCaml, "Logs.app"));
+        assert!(hidden(
+            "void f() {\n    LOG_INFO(@\"x\");\n    os_log(log, \"y\");\n    g();\n}\n",
+            Lang::ObjC,
+            "LOG_INFO"
+        ));
+        assert!(view("f", "(ns a (:require [b]))\n(defn f [] 1)\n", Lang::Clojure).is_none());
+        let objc = "void f() {\n    @try {\n        g();\n    }\n    @catch (NSException *e) {\n        NSLog(@\"x\");\n        @throw;\n    }\n}\n";
+        assert!(view("f", objc, Lang::ObjC)
+            .is_some_and(|v| v.contains("⋯ @catch (NSException *e): logs and rethrows")));
+        let objc_return = "void f() {\n    @try {\n        g();\n    } @catch (NSException *e) {\n        NSLog(@\"x\");\n        return;\n    }\n}\n";
+        assert!(view("f", objc_return, Lang::ObjC).is_some_and(|v| v.contains("return;")));
+        let ps = "function f {\n    try { g }\n    catch {\n        Write-Verbose \"x\"\n        Write-Host \"y\"\n    }\n}\n";
+        assert!(view("f", ps, Lang::PowerShell).is_some_and(|v| v.contains("Write-Host")));
+        let vb = |body: &str| format!("Class A\n    Sub New(a As Integer)\n{body}\n    End Sub\nEnd Class\n");
+        assert!(view("f", &vb("        Me.a = a\n        _b = 1"), Lang::VisualBasic)
+            .is_some_and(|v| v.contains("only assigns")));
+        for kept in ["        _a = Compute(a)", "        _a += a", "        Console.WriteLine(a)"] {
+            assert!(view("f", &vb(kept), Lang::VisualBasic).is_none(), "{kept}");
+        }
+        let ps_imports = "Import-Module A\nImport-Module B `\n  -Force\nusing namespace System\n";
+        assert!(view("f", ps_imports, Lang::PowerShell).is_none());
+        let ps_chain = "function f {\n    Write-Verbose \"a\" | Out-Null\n    g && Write-Verbose \"b\"\n}\n";
+        assert!(view("f", ps_chain, Lang::PowerShell).is_none());
+        assert!(view("f", &vb("        x.a = a"), Lang::VisualBasic).is_none());
+        let shared = "Class A\n    Shared ReadOnly X As Integer = 1\nEnd Class\n";
+        assert!(view("f", shared, Lang::VisualBasic).is_none());
+        let objc_inline =
+            "void f() {\n    @try { g(); } @catch (NSException *e) { NSLog(@\"x\"); @throw; } h();\n}\n";
+        assert!(view("f", objc_inline, Lang::ObjC).is_none());
+        assert!(view("f", "(ns a (:require [b]\n  [c]))\n", Lang::Clojure).is_none());
+        let vb_try = |catch: &str| {
+            format!("Module M\n    Sub F()\n        Try\n            G()\n{catch}\n        End Try\n    End Sub\nEnd Module\n")
+        };
+        for kept in ["        Catch ex As Exception\n            Throw ex", "        Catch ex As Exception"] {
+            assert!(view("f", &vb_try(kept), Lang::VisualBasic).is_none(), "{kept}");
+        }
     }
 }

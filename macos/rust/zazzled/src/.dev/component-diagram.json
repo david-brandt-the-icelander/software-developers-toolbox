@@ -130,15 +130,27 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "nim",
+      "name": "Nim terse view (nim.rs)",
+      "responsibility": "Builds the terse view of Nim files line by line, since no tree-sitter grammar for Nim parses enough of it: hides runs of top-level imports, indented one-line logging calls without side effects and region comments, leaving lines in triple-quoted strings alone.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "sql",
+      "name": "SQL terse view (sql.rs)",
+      "responsibility": "Builds the terse view of SQL files line by line: hides region comments and collapses the middle rows of an INSERT .. VALUES list of 6+ rows that each sit alone on their lines.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
-      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
+      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
       "folder": "macos/rust/zazzled/src"
     },
     {
       "id": "locals",
       "name": "Short locals (locals.rs)",
-      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -315,7 +327,7 @@
       "from": "src",
       "to": "terse",
       "kind": "contains",
-      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell."
+      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic and shell."
     },
     {
       "from": "src",
@@ -510,10 +522,34 @@
       "description": "read's terse CSS, SCSS, Sass and Less view."
     },
     {
+      "from": "src",
+      "to": "nim",
+      "kind": "contains",
+      "description": "Terse view of Nim."
+    },
+    {
+      "from": "cmd",
+      "to": "nim",
+      "kind": "depends-on",
+      "description": "read's terse Nim view."
+    },
+    {
+      "from": "src",
+      "to": "sql",
+      "kind": "contains",
+      "description": "Terse view of SQL."
+    },
+    {
+      "from": "cmd",
+      "to": "sql",
+      "kind": "depends-on",
+      "description": "read's terse SQL view."
+    },
+    {
       "from": "cmd",
       "to": "terse",
       "kind": "depends-on",
-      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell view."
+      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic and shell view."
     },
     {
       "from": "cmd",
