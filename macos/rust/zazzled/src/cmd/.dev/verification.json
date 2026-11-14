@@ -520,6 +520,7 @@
         "Sass blocks, comments and prefix duplicates are found by indentation, Less follows the SCSS rules, and blank lines inside Sass blocks keep them together."
       ],
       "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/styles.rs", "symbol": "test_rule_runs", "command": "cargo test -p zazzled (in macos/rust)"},
         {
           "type": "automated",
           "path": "macos/rust/zazzled/src/styles.rs",
@@ -683,6 +684,7 @@
         "Short comments, mixed tags, short runs, unclosed elements and unclosed comments are kept."
       ],
       "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/xml.rs", "symbol": "test_view_svg", "command": "cargo test -p zazzled (in macos/rust)"},
         {
           "type": "automated",
           "path": "macos/rust/zazzled/src/xml.rs",
@@ -829,15 +831,18 @@
     {
       "id": "minified-terse-view",
       "title": "Terse view of minified JSON and XML",
-      "summary": "minified.rs is tested on one-line JSON records, objects with many members and a one-line XML document with every token kind; read is tested end to end on both and on the budget footer; the view was run over 1,488 real minified files.",
+      "summary": "minified.rs is tested on one-line JSON records, objects with many members, a one-line XML document with every token kind, a one-line HTML page and one-line CSS; read is tested end to end on each and on the budget footer; the view was run over 1,488 real minified JSON and XML files and over 3,000 SVG, 517 HTML and 317 CSS files.",
       "subject": [
         {"path": "macos/rust/zazzled/src/cmd/.dev/feature.json", "entityId": "minified-terse-view"}
       ],
       "criteria": [
         "Reformatted lines keep the source text of strings, numbers and tags, and every view line is keyed to the source line its first token is on.",
-        "Malformed text, and views not shorter than the file, fall back to the line-based view."
+        "Malformed text, and text with nothing to shorten, falls back to the line-based view; a hand-written file with long lines (an SVG's path data) is not taken for minified."
       ],
       "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_html_view", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_css_view", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "manual", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "html_view", "command": "Ran the views over 3,000 SVG files from Inkscape 1.2's share folder, bootstrap-icons, flag-icons and @mdi/svg (2,746 got a view, 6.3 MB becoming 2.6 MB; 329 had editor metadata hidden), over 517 Python 3.12 documentation pages minified by stripping indentation and newlines between tags (all got a view, 44 MB becoming 34 MB: head tags, inline styles and SVGs hidden), and over 317 minified CSS files from Bootstrap, Bulma, Font Awesome, animate.css, highlight.js, Primer and swagger-ui (71 got a view: icon fonts shrink to 1-14% of their size, utility CSS grows up to 1.5 times with reformatting; the rest had nothing to shorten). No file took over 55 ms. Reviewed samples in context: element and rule notes cover only siblings of one kind, script text is cut at 80 characters, and Inkscape SVGs with long path data stay on their own lines."},
         {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_json_view", "command": "cargo test -p zazzled (in macos/rust)"},
         {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_pretty_json", "command": "cargo test -p zazzled (in macos/rust)"},
         {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_xml_view", "command": "cargo test -p zazzled (in macos/rust)"},
