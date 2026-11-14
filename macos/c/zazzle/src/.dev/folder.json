@@ -8,7 +8,7 @@
       "id": "folder",
       "title": "zazzle invoker source",
       "summary": "The C source of the zazzle invoker: its logic, its entry point and a raw-syscall layer per platform.",
-      "purpose": "zazzle_core.h is the logic (exec a standalone tool, `zazzled wrap` or `zazzled proxy` for the commands that run as their own process; otherwise build the request, find or start the daemon, send the request with the standard streams and working directory, and return the daemon's status after a short spin); zazzle.c is the program around it; entry.h is the raw `_start` on Linux or `main` on macOS; sys.h picks the syscall backend for the platform, or the test mock, and adds thin wrappers including a non-blocking receive; sys_linux.h holds the Linux structure layouts and helpers shared by sys_linux_x86_64.h and sys_linux_aarch64.h; sys_darwin_arm64.h is the macOS arm64 backend; sys_arm64_clock.h is the arm64 timer and yield hint the spin uses on both arm64 platforms.",
+      "purpose": "zazzle_core.h is the logic (exec a standalone tool, `zazzled wrap` or `zazzled proxy` for the commands that run as their own process; otherwise build the request, prefixed by the name it was started under (`zazz` for zazz, `zazz exec-name NAME` for an installed script's shim, nothing for zazzle), find or start the daemon, send the request with the standard streams and working directory, and return the daemon's status after a short spin); zazzle.c is the program around it; entry.h is the raw `_start` on Linux or `main` on macOS; sys.h picks the syscall backend for the platform, or the test mock, and adds thin wrappers including a non-blocking receive; sys_linux.h holds the Linux structure layouts and helpers shared by sys_linux_x86_64.h and sys_linux_aarch64.h; sys_darwin_arm64.h is the macOS arm64 backend; sys_arm64_clock.h is the arm64 timer and yield hint the spin uses on both arm64 platforms.",
       "boundaries": [
         "Everything is header-only and compiled as one translation unit per program; bench/exit0.c reuses entry.h.",
         "The wire protocol is the daemon's (macos/rust/zazzled/src/.dev/contracts.json, wire-protocol); this folder only speaks it.",
@@ -35,6 +35,10 @@
         {
           "path": "macos/c/zazzle/src/sys_arm64_clock.h",
           "symbol": "sys_clock_now"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "own_name"
         }
       ],
       "relationships": [

@@ -1,0 +1,90 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazz SDK source types",
+  "folder": "macos/rust/zazz-sdk/src",
+  "description": "The public structs, enums, traits and type aliases the SDK's modules declare, plus wasm.rs's private HostHttp. Left out: fdpass.rs's C-layout structs (IoVec, MsgHdr per platform, CmsgHdr, CmsgLen), json.rs's Parser and cliargs.rs's parse State, which carry no part of the API. The types in test/ are in that folder's diagram.",
+  "sources": [
+    { "path": "macos/rust/zazz-sdk/src/call.rs", "symbol": "Call" },
+    { "path": "macos/rust/zazz-sdk/src/handlers.rs", "symbol": "Handlers" },
+    { "path": "macos/rust/zazz-sdk/src/json.rs", "symbol": "Json" },
+    { "path": "macos/rust/zazz-sdk/src/error.rs", "symbol": "Error" },
+    { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "Request" },
+    { "path": "macos/rust/zazz-sdk/src/cliargs.rs", "symbol": "Spec" },
+    { "path": "macos/rust/zazz-sdk/src/wasm.rs", "symbol": "HostHttp" }
+  ],
+  "types": [
+    { "id": "call.Mode", "name": "Mode", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["Agent", "Human"] },
+    { "id": "call.DirEntry", "name": "DirEntry", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["name: String", "is_dir: bool"] },
+    { "id": "call.Fs", "name": "Fs", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["fn read(&self, path: &str) -> Result<Vec<u8>>", "fn write(&self, path: &str, data: &[u8]) -> Result<()>", "fn list(&self, path: &str) -> Result<Vec<DirEntry>>", "fn exists(&self, path: &str) -> bool"] },
+    { "id": "call.Http", "name": "Http", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["fn send(&self, req: &Request) -> Result<Response>"] },
+    { "id": "call.Clock", "name": "Clock", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["fn now_ms(&self) -> u64"] },
+    { "id": "call.Env", "name": "Env", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["fn var(&self, key: &str) -> Option<String>"] },
+    { "id": "call.StdFs", "name": "StdFs", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": ["root: PathBuf"] },
+    { "id": "call.NoHttp", "name": "NoHttp", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [] },
+    { "id": "call.SystemClock", "name": "SystemClock", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [] },
+    { "id": "call.StdEnv", "name": "StdEnv", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [] },
+    {
+      "id": "call.Call", "name": "Call", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/call.rs"],
+      "members": [
+        "id: i64", "mode: Mode", "exit: i64", "stdin: Box<dyn Read>", "stdout: Box<dyn Write>", "stderr: Box<dyn Write>",
+        "fs: Box<dyn Fs>", "http: Box<dyn Http>", "clock: Box<dyn Clock>", "env: Box<dyn Env>",
+        "progress_sink: Box<dyn FnMut(&str)>", "cancel_probe: Box<dyn Fn() -> bool>",
+        "fn is_human(&self) -> bool", "fn set_exit(&mut self, code: i64)", "fn println(&mut self, line: &str) -> Result<()>",
+        "fn read_input(&mut self, path: &str) -> Result<Vec<u8>>", "fn progress(&mut self, msg: &str)",
+        "fn cancelled(&self) -> bool", "fn check_cancelled(&self) -> Result<()>",
+        "fn real(id: i64, mode: Mode, root: PathBuf, stdio: (Box<dyn Read>, Box<dyn Write>, Box<dyn Write>), http: Box<dyn Http>) -> Call"
+      ]
+    },
+    { "id": "error.Error", "name": "Error", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/error.rs"], "members": ["code: String", "message: String", "fn new(code: &str, message: &str) -> Error", "fn bad_input / not_found / failed / unsupported / sandbox_denied / network_denied(message: &str) -> Error", "fn cancelled() -> Error", "fn to_json(&self) -> Json", "fn from_json(v: &Json) -> Error"] },
+    { "id": "error.Result", "name": "Result<T>", "kind": "type", "sources": ["macos/rust/zazz-sdk/src/error.rs"], "members": ["= std::result::Result<T, Error>"] },
+    { "id": "json.Json", "name": "Json", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/json.rs"], "members": ["Null", "Bool(bool)", "Int(i64)", "Float(f64)", "Str(String)", "Arr(Vec<Json>)", "Obj(Vec<(String, Json)>)", "fn parse(text: &str) -> Result<Json>", "fn parse_bytes(bytes: &[u8]) -> Result<Json>", "fn pretty(&self) -> String", "fn str_or(&self, key: &str, default: &str) -> &str", "fn need_str(&self, key: &str) -> Result<&str>", "fn need_i64(&self, key: &str) -> Result<i64>"] },
+    { "id": "handlers.CommandFn", "name": "CommandFn", "kind": "type", "sources": ["macos/rust/zazz-sdk/src/handlers.rs"], "members": ["= Box<dyn Fn(&mut Call, Json) -> Result<Json>>"] },
+    { "id": "handlers.ServiceFn", "name": "ServiceFn", "kind": "type", "sources": ["macos/rust/zazz-sdk/src/handlers.rs"], "members": ["= Box<dyn Fn(&mut Call, &Json, Json) -> Result<Json>>"] },
+    {
+      "id": "handlers.Handlers", "name": "Handlers", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/handlers.rs"],
+      "members": [
+        "command: Option<CommandFn>", "openapi: Option<Box<dyn Fn() -> Json>>", "services: Vec<(String, ServiceFn)>",
+        "fn new() -> Handlers", "fn json_command(self, f) -> Handlers", "fn openapi(self, f) -> Handlers", "fn service(self, op: &str, f) -> Handlers",
+        "fn messages(&self) -> Vec<&'static str>", "fn command(&self, call: &mut Call, input: Json) -> Result<Json>", "fn openapi_doc(&self) -> Result<Json>",
+        "fn service_call(&self, call: &mut Call, op: &str, params: &Json, body: Json) -> Result<Json>", "fn dispatch(&self, call: &mut Call, msg: &Json) -> Result<Json>"
+      ]
+    },
+    { "id": "http.NetPolicy", "name": "NetPolicy", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/http.rs"], "members": ["None", "Hosts(Vec<String>)", "All"] },
+    { "id": "http.Request", "name": "Request", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/http.rs"], "members": ["method: String", "url: String", "headers: Vec<(String, String)>", "body: Vec<u8>", "fn get(url: &str) -> Request", "fn post_json(url: &str, body: &Json) -> Request", "fn header(self, k: &str, v: &str) -> Request", "fn encode(&self) -> Vec<u8>", "fn decode(buf: &[u8]) -> Result<Request>"] },
+    { "id": "http.Response", "name": "Response", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/http.rs"], "members": ["status: u16", "headers: Vec<(String, String)>", "body: Vec<u8>", "fn json(status: u16, body: &Json) -> Response", "fn text(status: u16, body: &str) -> Response", "fn body_json(&self) -> Result<Json>", "fn header(&self, name: &str) -> Option<&str>", "fn encode(&self) -> Vec<u8>", "fn decode(buf: &[u8]) -> Result<Response>"] },
+    { "id": "http.Url", "name": "Url", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/http.rs"], "members": ["host: String", "port: u16", "path: String"] },
+    { "id": "cliargs.Type", "name": "Type", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/cliargs.rs"], "members": ["Bool", "Count", "Str", "Int", "Float", "Enum", "Path"] },
+    { "id": "cliargs.Stdin", "name": "Stdin", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/cliargs.rs"], "members": ["None", "Optional", "Required"] },
+    { "id": "cliargs.Arg", "name": "Arg", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/cliargs.rs"], "members": ["name: String", "short: Option<char>", "long: Option<String>", "ty: Type", "values: Vec<String>", "default: Option<Json>", "required: bool", "multiple: bool", "positional: bool", "help: String"] },
+    { "id": "cliargs.Spec", "name": "Spec", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/cliargs.rs"], "members": ["prog: String", "usage: String", "description: String", "stdin: Stdin", "args: Vec<Arg>", "fn from_json(prog: &str, v: &Json) -> Result<Spec, String>", "fn has_long(&self, long: &str) -> bool", "fn usage_line(&self) -> String", "fn help(&self) -> String", "fn parse(&self, argv: &[String], cwd: &str) -> Result<Parsed, String>"] },
+    { "id": "cliargs.Parsed", "name": "Parsed", "kind": "enum", "sources": ["macos/rust/zazz-sdk/src/cliargs.rs"], "members": ["Input(Json)", "Help(String)"] },
+    { "id": "wasm.HostHttp", "name": "HostHttp", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/wasm.rs"], "members": [] }
+  ],
+  "relationships": [
+    { "from": "call.StdFs", "to": "call.Fs", "kind": "implements", "description": "Paths resolved against root unless absolute." },
+    { "from": "call.NoHttp", "to": "call.Http", "kind": "implements", "description": "Refuses every request with network_denied." },
+    { "from": "wasm.HostHttp", "to": "call.Http", "kind": "implements", "description": "Sends through zazz_host.http." },
+    { "from": "call.SystemClock", "to": "call.Clock", "kind": "implements", "description": "The system clock." },
+    { "from": "call.StdEnv", "to": "call.Env", "kind": "implements", "description": "The process environment." },
+    { "from": "call.Fs", "to": "call.DirEntry", "kind": "depends-on", "description": "list returns entries." },
+    { "from": "call.Http", "to": "http.Request", "kind": "depends-on", "description": "send takes a Request." },
+    { "from": "call.Http", "to": "http.Response", "kind": "depends-on", "description": "send returns a Response." },
+    { "from": "call.Call", "to": "call.Mode", "kind": "depends-on", "description": "mode field." },
+    { "from": "call.Call", "to": "call.Fs", "kind": "depends-on", "description": "fs edge." },
+    { "from": "call.Call", "to": "call.Http", "kind": "depends-on", "description": "http edge." },
+    { "from": "call.Call", "to": "call.Clock", "kind": "depends-on", "description": "clock edge." },
+    { "from": "call.Call", "to": "call.Env", "kind": "depends-on", "description": "env edge." },
+    { "from": "handlers.Handlers", "to": "handlers.CommandFn", "kind": "depends-on", "description": "The json-command handler." },
+    { "from": "handlers.Handlers", "to": "handlers.ServiceFn", "kind": "depends-on", "description": "service-call operations by operationId." },
+    { "from": "handlers.CommandFn", "to": "call.Call", "kind": "depends-on", "description": "Handlers receive &mut Call." },
+    { "from": "handlers.CommandFn", "to": "json.Json", "kind": "depends-on", "description": "JSON in, JSON out." },
+    { "from": "error.Result", "to": "error.Error", "kind": "depends-on", "description": "The error side." },
+    { "from": "error.Error", "to": "json.Json", "kind": "depends-on", "description": "to_json and from_json as {code, message}." },
+    { "from": "cliargs.Spec", "to": "cliargs.Arg", "kind": "depends-on", "description": "args field." },
+    { "from": "cliargs.Spec", "to": "cliargs.Stdin", "kind": "depends-on", "description": "stdin field." },
+    { "from": "cliargs.Spec", "to": "cliargs.Parsed", "kind": "depends-on", "description": "parse returns the input or help text." },
+    { "from": "cliargs.Arg", "to": "cliargs.Type", "kind": "depends-on", "description": "ty field." },
+    { "from": "http.Url", "to": "http.NetPolicy", "kind": "depends-on", "description": "http::check parses a URL into a Url and checks its host against the policy." }
+  ]
+}

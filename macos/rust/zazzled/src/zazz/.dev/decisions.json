@@ -1,0 +1,188 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazz decisions",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "The settled decisions D1 to D12 of the zazz plan (ZAZZ-PLAN.md §2, revision 3), recorded as the plan states them. Where the code departs from one, implementationNote says how (from the plan's Implementation status and the code).",
+  "entities": [
+    {
+      "id": "d1-wasm-in-place-of-source",
+      "title": "D1 WASM in place of Rust source",
+      "summary": "A .zazz may carry a prebuilt .wasm built from any language and crates, or Rust source that zazz compiles itself with std and the SDK only.",
+      "status": "accepted",
+      "context": "Scripts need crates and languages beyond what zazzled can safely build: no build.rs, Cargo dependencies or proc-macros run in the compile sandbox.",
+      "decision": "Accept kind \"wasm\" (a module and an optional test module) alongside kind \"rust\" (sources compiled against std and the zazz SDK).",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D1; §8 Building" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "to_wasm" }
+      ]
+    },
+    {
+      "id": "d2-read-once",
+      "title": "D2 What we read is what we build",
+      "summary": "The file is read once into memory; the hash, signature check, extraction, build and tests all use those bytes, and the path is never opened again.",
+      "status": "accepted",
+      "context": "The id, the signature check and the tests must all describe the same bytes that run; §7 opens the file once and works from memory.",
+      "decision": "One read of the .zazz (O_NOFOLLOW, regular file, size-limited); everything after works from memory or a fresh scratch copy.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D2; §7" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "read_once" }
+      ]
+    },
+    {
+      "id": "d3-linux-sandbox",
+      "title": "D3 Linux needs Landlock and seccomp for unsigned scripts",
+      "summary": "On Linux unsigned scripts need Landlock and seccomp and are refused without them; signed native scripts run with whatever sandboxing the OS offers.",
+      "status": "accepted",
+      "context": "The OS sandbox is the second layer under WASI; without it an unsigned script would rely on the WASM layer alone.",
+      "decision": "Refuse unsigned scripts where Landlock is unavailable.",
+      "implementationNote": "sandbox.rs available() requires Landlock ABI 1 or later on Linux before any WASM worker or build; pool.rs spawn applies each worker's policy.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D3; §3" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/sandbox.rs", "symbol": "available" }
+      ]
+    },
+    {
+      "id": "d4-network",
+      "title": "D4 Network only for signed scripts that ask",
+      "summary": "A script gets network only when its manifest asks for it and it is signed by an accepted authority; an authority's host and filesystem limits are enforced by the WASM layer and do not apply to native Rust.",
+      "status": "accepted",
+      "context": "The execution tiers (§3) give access by who vouches for a script: an unsigned script has no authority, and a native one is outside the WASM layer that checks hosts.",
+      "decision": "Network = manifest hosts intersected with the authority's grant, checked per request by zazz-worker; none for unsigned scripts; on or off at the OS level for native scripts.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D4; §3; §11" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "granted" }
+      ]
+    },
+    {
+      "id": "d5-script-id",
+      "title": "D5 Script id is the BLAKE3 of the bytes",
+      "summary": "A script's id is the BLAKE3 hash of the exact .zazz bytes.",
+      "status": "accepted",
+      "context": "Agents call scripts by id, and tests run once per id per machine, so the id must change whenever anything in the file does.",
+      "decision": "b3: and the hex BLAKE3 of the file; commands accept unique prefixes of at least 12 hex digits.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D5; §7" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazz-format/src/lib.rs", "symbol": "script_id" }
+      ]
+    },
+    {
+      "id": "d6-trust-store",
+      "title": "D6 Trust lives where the OS keeps it",
+      "summary": "On macOS the Keychain (covering MDM- and AD-managed certificates and user trust settings); on Linux root-owned /etc/zazzle/trust.d/.",
+      "status": "accepted",
+      "context": "Organisations already manage and revoke certificates through the OS store; zazz should not keep a trust list of its own that an agent running as the user could edit.",
+      "decision": "Use the OS store; on Linux, PEM anchors in a root-owned directory.",
+      "implementationNote": "macOS also reads root-owned /etc/zazzle/trust.d; the Keychain path compiles but is not exercised by CI (backlog keychain-trust-in-ci).",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D6; §5; Implementation status" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "anchors" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "keychain_trusts" }
+      ]
+    },
+    {
+      "id": "d7-signature-format",
+      "title": "D7 Our own signature envelope",
+      "summary": "Signatures use zazz's own envelope (zazz.sig); keygen and sign run through zazzled as zazz scripts.",
+      "status": "accepted",
+      "context": "The signature must cover a canonical digest of the archive's other entries and carry the chain, so trust can be evaluated without a network lookup on the hot path.",
+      "decision": "zazz.sig: {v, alg, digest, sig, chain}, the signature over `zazz-sig-v1\\0` and the digest.",
+      "implementationNote": "The envelope is implemented (zazz-format sig.rs); keygen and sign are built-in zazzled commands, not scripts (backlog builtins-as-signed-scripts).",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D7; §5; §6" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "Envelope" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "sign" }
+      ]
+    },
+    {
+      "id": "d8-wasm-runtime",
+      "title": "D8 wasmtime in a separate zazz-worker binary",
+      "summary": "The WebAssembly runtime is wasmtime, in its own zazz-worker binary rather than in zazzled.",
+      "status": "accepted",
+      "context": "wasmtime forces a higher rust-version (§15 MSRV), and only the WASM host should need dynamic code generation and the hardened-runtime entitlement (§11, §15).",
+      "decision": "zazz-worker compiles, tests and serves; zazzled starts it.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D8; §15 Risks" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "wasmtime" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/zazz-worker/.dev/folder.json", "entityId": "folder" }
+      ]
+    },
+    {
+      "id": "d9-signature-algorithm",
+      "title": "D9 ECDSA P-256",
+      "summary": "Signatures are ECDSA P-256.",
+      "status": "accepted",
+      "context": "It is the only curve the Secure Enclave supports, and the one AD Certificate Services, MDM profiles and SecTrust handle everywhere.",
+      "decision": "ECDSA P-256 with SHA-256, verified with the p256 crate on both operating systems.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D9; §5" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/crypto.rs", "symbol": "verify" }
+      ]
+    },
+    {
+      "id": "d10-revoked-fallback",
+      "title": "D10 After a revocation, fall back without blocking",
+      "summary": "When a refresh says a signer is revoked, native scripts fall back to their WASM build and WASM scripts drop to the unsigned tier (no network); a launch is never blocked; the default trust_ttl is 600 s.",
+      "status": "accepted",
+      "context": "Trust evaluation may do OCSP or CRL network I/O, so it must stay off the launch path, and nothing runnable should become unrunnable because of a trust lookup.",
+      "decision": "Launches use the last verdict; expired verdicts are refreshed in the background; a lost grant narrows the tier instead of refusing.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D10; §3 Trust verdicts" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "refresh_if_stale" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "effective" }
+      ]
+    },
+    {
+      "id": "d11-tests-optional",
+      "title": "D11 Tests are optional unless policy requires them",
+      "summary": "add warns when a script has no tests; an administrator can require tests with the global policy switch require_tests (off by default), for native scripts too.",
+      "status": "accepted",
+      "context": "The plan wants every .zazz to carry unit tests and never runs a script whose tests fail; D11 settles what happens when a script has none.",
+      "decision": "Warn by default; refuse with tests_missing when the root-owned policy sets require_tests.",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D11; §7 step 8" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "policy" }
+      ]
+    },
+    {
+      "id": "d12-builtins-prebuilt",
+      "title": "D12 Built-ins are prebuilt",
+      "summary": "keygen, sign and trust ship as prebuilt universal native binaries signed by the pinned release authority; native-bin is accepted only from that authority, so the built-ins work without a Rust toolchain.",
+      "status": "accepted",
+      "context": "A machine may have no Rust toolchain, yet must be able to make keys, sign and trust; an exception to building from source has to be narrow.",
+      "decision": "Only the pinned release authority may ship kind native-bin; its signature covers the binary.",
+      "implementationNote": "Not yet: the three are built-in zazzled commands with software keys, and native-bin is refused for everyone (backlog builtins-as-signed-scripts).",
+      "origin": { "kind": "document", "reference": "macos/rust/zazzled/ZAZZ-PLAN.md §2 D12; §6; Implementation status" },
+      "evidenceStatus": "documented",
+      "sources": [
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Settled decisions" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "to_wasm" }
+      ]
+    }
+  ]
+}

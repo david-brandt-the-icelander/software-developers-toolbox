@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["zazzled", "agent-fs", "fix-network", "free-disk-space"]
+members = ["zazzled", "zazz-format", "zazz-sdk", "zazz-worker", "agent-fs", "fix-network", "free-disk-space"]
 
 [workspace.package]
 edition = "2021"

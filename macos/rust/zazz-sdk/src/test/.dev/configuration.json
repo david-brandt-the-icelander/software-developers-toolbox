@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazz::test configuration",
+  "folder": "macos/rust/zazz-sdk/src/test",
+  "description": "Environment variables assert_snapshot reads. zazzled and zazz-worker set them when they run a script's tests; script code never reads them.",
+  "entities": [
+    {
+      "id": "snapshot-dir",
+      "title": "Snapshot directory",
+      "summary": "Where assert_snapshot looks for NAME.json.",
+      "key": "ZAZZ_SNAPSHOTS",
+      "type": "path",
+      "default": "tests/snapshots, relative to the test's working directory",
+      "sensitive": false,
+      "scope": "per test process",
+      "takesEffect": "per-use",
+      "details": "zazzled points it at the script's tests/snapshots for native test runs (macos/rust/zazzled/src/zazz/native.rs); zazz-worker sets it for WASM test runs (macos/rust/zazz-worker/src/testrun.rs).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/test/check.rs", "symbol": "snapshot_dir" },
+        { "path": "macos/rust/zazzled/src/zazz/native.rs", "symbol": "ZAZZ_SNAPSHOTS" },
+        { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "ZAZZ_SNAPSHOTS" }
+      ]
+    },
+    {
+      "id": "update-snapshots",
+      "title": "Update snapshots",
+      "summary": "When \"1\", assert_snapshot writes a snapshot that is missing or different instead of failing.",
+      "key": "ZAZZ_UPDATE_SNAPSHOTS",
+      "type": "flag",
+      "default": "unset (compare and fail)",
+      "sensitive": false,
+      "scope": "per test process",
+      "takesEffect": "per-use",
+      "details": "Only the exact value 1 turns it on. zazz-worker sets it for a WASM test run when updating is asked for; the snapshot-missing message points at `zazz test DIR --update`.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/test/check.rs", "symbol": "assert_snapshot" },
+        { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "ZAZZ_UPDATE_SNAPSHOTS" }
+      ]
+    }
+  ]
+}

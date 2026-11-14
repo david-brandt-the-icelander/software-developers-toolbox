@@ -1,0 +1,45 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz scripts in zazzled",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz scripts in zazzled",
+      "summary": "zazzled's zazz module: the `zazz` subcommands that let agents and people write, test, pack, register, sign, trust, install and call small sandboxed scripts, and the registry, build pipeline, trust, OS sandbox and warm worker pool behind them.",
+      "purpose": "Runs one `zazz SUB ...` command line. cmd/mod.rs's dispatch hands every `zazz` command here; mod.rs routes the subcommand to its file and turns a JSON result into the reply (an `{\"error\": ...}` with status 2 on failure). add.rs reads a .zazz once, ids it by the BLAKE3 of its bytes, and has pipeline.rs and compile.rs build it to WASM (rustc with the embedded SDK from sdk.rs, or a prebuilt module), AOT-compile it and run its tests through zazz-worker, then publishes it in registry.rs's store; signing.rs and crypto.rs check zazz.sig and trust.rs turns the signer's chain into a cached verdict whose grants narrow network, paths and native code (native.rs builds and tests a host binary for natively trusted scripts). call.rs runs a registered script in a worker taken from pool.rs, handing it the caller's streams or pipes; human.rs and install.rs make scripts commands for people; mcptools.rs lists the MCP tools; sandbox.rs, tools.rs and proc.rs wrap builds and tests in sandbox-exec or Landlock and seccomp, find rustc (PATH last, since launchd leaves it nearly empty) and zazz-worker, and run subprocesses with timeouts. The design and its decisions are in macos/rust/zazzled/ZAZZ-PLAN.md.",
+      "boundaries": [
+        "The .zazz format (archive limits, manifest, packing, the zazz.sig envelope and script ids) is zazz-format's (macos/rust/zazz-format); the frames, descriptor passing, CLI parsing and rendering are zazz-sdk's (macos/rust/zazz-sdk), whose sources sdk.rs also embeds to build scripts against.",
+        "WebAssembly is compiled, tested and run by the separate zazz-worker binary (macos/rust/zazz-worker); this module never links a WebAssembly runtime.",
+        "Requests arrive through the daemon's socket server (src/server.rs, which gives `zazz call`, `zazz run` and shim runs a thread of their own) or `zazzled mcp` (src/mcp.rs, which lists mcptools.rs's tools); the invoker sends `zazz` when run as zazz and `zazz exec-name NAME` when run through a shim (macos/c/zazzle/src/zazzle_core.h).",
+        "Its replies are plain outputs: no session ids, dedupe or token budget from the command layer.",
+        "Itself writes only its registry, the keys directory, the shim directory and the trust directory (root only); `zazz new` creates NAME/ in the working directory, pack and sign write only under the working directory or a temp directory (mod.rs output_path), and `zazz test --update` rewrites the script directory's tests/snapshots. What a script writes is decided by its preopens, in the worker."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "Zazz" },
+        { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "output_path" },
+        { "path": "macos/rust/zazzled/src/cmd/mod.rs", "symbol": "dispatch" },
+        { "path": "macos/rust/zazzled/src/server.rs", "symbol": "long_running" },
+        { "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "all_tools" },
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "build_request" },
+        { "path": "macos/rust/zazzled/ZAZZ-PLAN.md", "symbol": "Implementation status" }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazzled/src/.dev/folder.json",
+          "entityId": "folder"
+        },
+        {
+          "relation": "depends-on",
+          "path": "macos/rust/zazz-worker/src/.dev/contracts.json",
+          "entityId": "serve-channel",
+          "description": "pool.rs and call.rs speak zazz-worker's serve channel."
+        }
+      ]
+    }
+  ]
+}

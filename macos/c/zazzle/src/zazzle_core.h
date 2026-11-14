@@ -116,13 +116,39 @@ static size_t put_field(size_t at, const char *s)
 	return at + n;
 }
 
-/* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..]. */
+/* Returns the part of a path after its last slash. */
+static const char *base_name(const char *p)
+{
+	const char *b = p;
+	for (; *p; p++)
+		if (*p == '/')
+			b = p + 1;
+	return b;
+}
+
+/* The name the invoker was started under, without its directory ("zazzle" when there is none). */
+static const char *own_name(int argc, char **argv)
+{
+	return argc > 0 ? base_name(argv[0]) : "zazzle";
+}
+
+/* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
+   Run as "zazz" the arguments go to the zazz command; run under any other name (an installed script's
+   shim) they go to that script. */
 static size_t build_request(int argc, char **argv, char **envp)
 {
 	size_t at = 4;
 	const char *session = env_get(envp, "ZAZZLE_SESSION");
+	const char *me = own_name(argc, argv);
 	at = put_field(at, "");
 	at = put_field(at, session ? session : "");
+	if (!str_eq(me, "zazzle")) {
+		at = put_field(at, "zazz");
+		if (!str_eq(me, "zazz")) {
+			at = put_field(at, "exec-name");
+			at = put_field(at, me);
+		}
+	}
 	for (int i = 1; i < argc; i++)
 		at = put_field(at, argv[i]);
 	*(uint32_t *)req = (uint32_t)(at - 4);
@@ -285,15 +311,17 @@ static int read_status(int fd)
 	return b;
 }
 
-/* Runs a tool, the MCP proxy or run as its own process (exec), or one request/answer round trip, and returns the daemon's exit status. */
+/* Runs a tool, the MCP proxy or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
-	if (argc > 1 && is_tool(argv[1]))
-		exec_tool(argv, envp);
-	if (argc > 1 && str_eq(argv[1], "proxy"))
-		exec_daemon(argv, envp, "proxy");
-	if (argc > 1 && str_eq(argv[1], "run"))
-		exec_daemon(argv, envp, "wrap");
+	if (argc > 1 && str_eq(own_name(argc, argv), "zazzle")) {
+		if (is_tool(argv[1]))
+			exec_tool(argv, envp);
+		if (str_eq(argv[1], "proxy"))
+			exec_daemon(argv, envp, "proxy");
+		if (str_eq(argv[1], "run"))
+			exec_daemon(argv, envp, "wrap");
+	}
 	size_t total = build_request(argc, argv, envp);
 	size_t pathlen = build_path(envp);
 	int fd = connect_daemon(pathlen, envp);

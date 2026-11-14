@@ -1,0 +1,87 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazz script limitations",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "entities": [
+    {
+      "id": "unsigned-no-network",
+      "title": "Unsigned scripts have no network",
+      "summary": "A script gets network access only when its manifest asks for it and its signer is an authority this machine trusts with network (D4).",
+      "impact": "An unsigned or untrusted script's HTTP requests fail with network_denied, in tests (except the replay file) and in use.",
+      "workaround": "Sign it with `zazz sign` using an authority whose grants include the hosts, and trust that authority on the machine (`zazz trust add`, as root).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "effective" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "granted" },
+        { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "check" }
+      ]
+    },
+    {
+      "id": "sandbox-required",
+      "title": "No WASM worker without an OS sandbox",
+      "summary": "On Linux without Landlock, or on macOS without /usr/bin/sandbox-exec, builds, tests and WASM calls are refused.",
+      "impact": "`zazz test`, `zazz add` and `zazz call` fail with sandbox_unavailable; `zazz doctor` reports it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/sandbox.rs", "symbol": "available" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "run_tests" }
+      ]
+    },
+    {
+      "id": "native-host-list",
+      "title": "Native scripts' network is all or nothing",
+      "summary": "A script running natively gets network on or off; its manifest's and authority's host lists are checked only by zazz-worker for WASM, and the macOS profile allows any outbound connection when network is on.",
+      "impact": "A natively trusted script with any network grant can reach any host the OS lets it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" },
+        { "path": "macos/rust/zazzled/src/zazz/native.rs", "symbol": "worker" },
+        { "path": "macos/rust/zazzled/src/zazz/sandbox.rs", "symbol": "sbpl" }
+      ]
+    },
+    {
+      "id": "rust-std-and-sdk-only",
+      "title": "Rust scripts build with std and the SDK only",
+      "summary": "zazz compiles a Rust script with rustc directly against the embedded zazz SDK: no Cargo dependencies, build scripts or proc-macros.",
+      "impact": "A script that needs other crates cannot be shipped as Rust source.",
+      "workaround": "Build it to wasm32-wasip1 elsewhere and ship the module with kind \"wasm\" (D1).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "rust_build" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "FILES" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "to_wasm" }
+      ]
+    },
+    {
+      "id": "capture-limit",
+      "title": "Captured output is cut at 1 MiB",
+      "summary": "Without the invoker's streams (over MCP, or when add asks for an OpenAPI document) each of stdout and stderr is captured up to 1 MiB.",
+      "impact": "Anything a script writes beyond that is dropped from the reply.",
+      "workaround": "Return results as the script's JSON output, or run it through the invoker, where it writes to the caller's own streams.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "CAPTURE_LIMIT" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "collect" }
+      ]
+    },
+    {
+      "id": "native-bin-refused",
+      "title": "Prebuilt native binaries are refused",
+      "summary": "A manifest of kind native-bin is refused for every signer: only the release authority was to ship them (D12), and there is none yet.",
+      "impact": "`zazz add` and `zazz test` fail with unsupported.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "to_wasm" }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/zazz/.dev/backlog.json",
+          "entityId": "builtins-as-signed-scripts"
+        }
+      ]
+    }
+  ]
+}

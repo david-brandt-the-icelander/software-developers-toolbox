@@ -1,0 +1,98 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazz-format source types",
+  "folder": "macos/rust/zazz-format/src",
+  "description": "The structs and enums zazz_format declares: the archive and its limits, the parsed manifest and its parts, and the signature envelope. Central is private to zip.rs and shown because it carries what validation reads from each central directory record. Test-only helpers are left out.",
+  "sources": [
+    { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "Archive" },
+    { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "Manifest" },
+    { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "Envelope" }
+  ],
+  "types": [
+    {
+      "id": "zip.Limits",
+      "name": "Limits",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/zip.rs"],
+      "members": ["compressed: u64", "uncompressed: u64", "entries: usize", "entry: u64", "ratio: u64", "const DEFAULT: Limits"]
+    },
+    {
+      "id": "zip.Entry",
+      "name": "Entry",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/zip.rs"],
+      "members": ["name: String", "data: Vec<u8>"]
+    },
+    {
+      "id": "zip.Archive",
+      "name": "Archive",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/zip.rs"],
+      "members": ["entries: Vec<Entry>", "fn new(entries: Vec<Entry>) -> Archive", "fn get(&self, name: &str) -> Option<&[u8]>", "fn under(&self, dir: &str) -> impl Iterator<Item = &Entry>"]
+    },
+    {
+      "id": "zip.Central",
+      "name": "Central",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/zip.rs"],
+      "members": ["name: String", "flags: u16", "method: u16", "crc: u32", "csize: u64", "usize: u64", "local: u64", "dir: bool"]
+    },
+    {
+      "id": "manifest.Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": ["macos/rust/zazz-format/src/manifest.rs"],
+      "members": ["Rust", "Wasm", "NativeBin"]
+    },
+    {
+      "id": "manifest.Network",
+      "name": "Network",
+      "kind": "enum",
+      "sources": ["macos/rust/zazz-format/src/manifest.rs"],
+      "members": ["None", "Hosts(Vec<String>)", "All"]
+    },
+    {
+      "id": "manifest.Sandbox",
+      "name": "Sandbox",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/manifest.rs"],
+      "members": ["read: Vec<String>", "write: Vec<String>", "network: Network", "exec: bool"]
+    },
+    {
+      "id": "manifest.Tests",
+      "name": "Tests",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/manifest.rs"],
+      "members": ["paths: Vec<String>", "module: Option<String>", "timeout_ms: u64"]
+    },
+    {
+      "id": "manifest.Manifest",
+      "name": "Manifest",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/manifest.rs"],
+      "members": [
+        "name: String", "version: String", "description: String", "kind: Kind", "entry: String", "edition: String", "native: bool",
+        "tests: Option<Tests>", "messages: Vec<String>", "sandbox: Sandbox", "call_ms: u64", "memory_mb: u64", "cli: Option<Value>",
+        "fn parse(text: &[u8]) -> Result<Manifest, String>", "fn check_against(&self, a: &Archive) -> Result<(), String>", "fn of(a: &Archive) -> Result<Manifest, String>"
+      ]
+    },
+    {
+      "id": "sig.Envelope",
+      "name": "Envelope",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-format/src/sig.rs"],
+      "members": ["digest: String", "sig: Vec<u8>", "chain: Vec<Vec<u8>>", "fn to_json(&self) -> Value", "fn parse(text: &[u8]) -> Result<Envelope, String>", "fn of(a: &Archive) -> Result<Option<Envelope>, String>"]
+    }
+  ],
+  "relationships": [
+    { "from": "zip.Archive", "to": "zip.Entry", "kind": "depends-on", "description": "Holds its entries sorted by name." },
+    { "from": "zip.Central", "to": "zip.Limits", "kind": "depends-on", "description": "check_sizes compares each record's sizes with the Limits before anything is inflated." },
+    { "from": "manifest.Manifest", "to": "manifest.Kind", "kind": "depends-on", "description": "kind field; decides the entry suffix and which tests fields are required." },
+    { "from": "manifest.Manifest", "to": "manifest.Tests", "kind": "depends-on", "description": "Optional tests field." },
+    { "from": "manifest.Manifest", "to": "manifest.Sandbox", "kind": "depends-on", "description": "sandbox field, defaulting to read $CWD only." },
+    { "from": "manifest.Sandbox", "to": "manifest.Network", "kind": "depends-on", "description": "network field, defaulting to None." },
+    { "from": "manifest.Manifest", "to": "zip.Archive", "kind": "depends-on", "description": "of and check_against read zazz.json and the named files from an Archive." },
+    { "from": "sig.Envelope", "to": "zip.Archive", "kind": "depends-on", "description": "of reads zazz.sig from an Archive and compares its digest with digest(archive)." }
+  ]
+}

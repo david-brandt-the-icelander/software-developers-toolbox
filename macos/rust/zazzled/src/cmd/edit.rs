@@ -576,6 +576,7 @@ mod tests {
             cwd: t.path().to_path_buf(),
             session: String::new(),
             stdin: std::cell::RefCell::new(Some(Box::new(&b"from stdin"[..]))),
+            caller: std::cell::RefCell::new(None),
         };
         let args = signed(t.path(), &["edit", "a.txt", "--old", "old", "--new", "-"]);
         assert!(crate::cmd::run(&ctx, &args).text.starts_with("ok a.txt"));
@@ -714,6 +715,7 @@ mod tests {
             cwd: t.path().to_path_buf(),
             session: String::new(),
             stdin: std::cell::RefCell::new(None),
+            caller: std::cell::RefCell::new(None),
         };
         let target = open_target(&ctx, "a.txt").expect("open");
         std::fs::write(&p, b"changed\n").expect("concurrent write");

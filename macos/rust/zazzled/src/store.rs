@@ -244,11 +244,8 @@ fn rewrite(path: &Path, map: &HashMap<PathBuf, Rec>) -> io::Result<()> {
 
 // Returns the default cache directory: ZAZZLE_CACHE_DIR or ~/.zazzle/v1.
 pub fn default_dir() -> io::Result<PathBuf> {
-    if let Some(p) = std::env::var_os("ZAZZLE_CACHE_DIR") {
-        return Ok(PathBuf::from(p));
-    }
-    let home = std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".zazzle").join("v1"))
+    crate::util::home_path(std::env::var_os("ZAZZLE_CACHE_DIR"), std::env::var_os("HOME"), ".zazzle/v1")
+        .map_err(io::Error::other)
 }
 
 #[cfg(test)]
@@ -442,11 +439,8 @@ mod tests {
         std::env::set_var("ZAZZLE_CACHE_DIR", "/x/cache");
         assert_eq!(default_dir().expect("dir"), PathBuf::from("/x/cache"));
         std::env::remove_var("ZAZZLE_CACHE_DIR");
-        std::env::set_var("HOME", "/home/q");
-        assert_eq!(default_dir().expect("dir"), PathBuf::from("/home/q/.zazzle/v1"));
-        std::env::remove_var("HOME");
-        assert_eq!(default_dir().unwrap_err().to_string(), "HOME is not set");
-        std::env::set_var("HOME", "/root");
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME is set for tests"));
+        assert_eq!(default_dir().expect("dir"), home.join(".zazzle/v1"));
     }
 
     // Checks concurrent puts and gets do not lose records.

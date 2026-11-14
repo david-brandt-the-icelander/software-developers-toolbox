@@ -7,7 +7,7 @@
     {
       "id": "tests-and-coverage",
       "title": "Unit tests and the branch-coverage gate",
-      "summary": "All zazzled tests run with `cargo test -p zazzled`; coverage.sh fails unless branch coverage of non-test code reaches a threshold, 95 in CI.",
+      "summary": "All zazzled tests run with `cargo test -p zazzled`, the zazz tests against a release zazz-worker; coverage.sh fails unless branch coverage of non-test code reaches a threshold, 95 in CI, for zazzled and for each zazz crate.",
       "subject": [
         {
           "path": "macos/rust/zazzled/src/.dev/verification.json"
@@ -20,29 +20,44 @@
         },
         {
           "path": "macos/rust/zazzled/src/wrap/.dev/verification.json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/.dev/verification.json"
         }
       ],
       "criteria": [
         "Every unit test in the crate passes.",
-        "Branch coverage of the crate, test code excluded, is at least the given percentage (95 by default)."
+        "Branch coverage of the crate, test code excluded, is at least the given percentage (95 by default); CI holds zazz-format, zazz-sdk and zazz-worker to the same 95 with the same script."
       ],
       "checks": [
         {
           "type": "automated",
           "command": "cargo test -p zazzled (in macos/rust)",
-          "description": "Runs every unit test; CI runs it on macOS and Linux, and the release runs it again on Linux."
+          "description": "Runs every unit test; CI runs it on macOS and Linux, and the release runs it again on Linux. The zazz tests build real scripts, so they need the wasm32-wasip1 target, and use the release zazz-worker, which testutil::worker_bin builds with cargo on first use."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "zazz tests one at a time (macOS, 15 minute limit)",
+          "description": "On macOS CI first runs the zazz:: tests on one thread under a hard time limit, so a test that hangs under the macOS sandbox shows up by name."
         },
         {
           "type": "automated",
           "path": "macos/rust/zazzled/coverage.sh",
-          "command": "sh zazzled/coverage.sh 95 (in macos/rust; nightly toolchain with cargo-llvm-cov)",
-          "description": "Reads the branch percentage from cargo llvm-cov's JSON summary and fails below the threshold. Test modules are marked coverage(off)."
+          "command": "sh zazzled/coverage.sh 95 [CRATE] (in macos/rust; nightly toolchain with cargo-llvm-cov)",
+          "description": "Reads the branch percentage of CRATE (zazzled by default) from cargo llvm-cov's JSON summary and fails below the threshold. Test modules are marked coverage(off)."
         },
         {
           "type": "automated",
           "path": ".github/workflows/ci.yml",
           "symbol": "Rust branch coverage (at least 95%)",
           "description": "CI's coverage job runs coverage.sh with 95."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "zazz crates branch coverage (at least 95%)",
+          "description": "The same job runs coverage.sh 95 for zazz-format, zazz-sdk and zazz-worker."
         }
       ],
       "evidenceStatus": "source-verified",
@@ -54,6 +69,10 @@
         {
           "path": "macos/rust/zazzled/src/lib.rs",
           "symbol": "coverage_nightly"
+        },
+        {
+          "path": "macos/rust/zazzled/src/testutil.rs",
+          "symbol": "worker_bin"
         },
         {
           "path": ".github/workflows/ci.yml",

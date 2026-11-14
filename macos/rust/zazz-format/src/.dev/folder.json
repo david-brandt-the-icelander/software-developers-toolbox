@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-format source",
+  "folder": "macos/rust/zazz-format/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-format source",
+      "summary": "The five modules of zazz_format, flat in one folder: lib.rs (script ids), zip.rs, manifest.rs, pack.rs and sig.rs.",
+      "purpose": "Holds every rule a .zazz file must follow, so one reader decides what zazzled accepts and one writer makes the bytes `zazz pack` and `zazz sign` produce. zip.rs reads and writes the archive, manifest.rs parses zazz.json, pack.rs packs a directory, sig.rs handles the zazz.sig envelope and lib.rs computes script ids.",
+      "boundaries": [
+        "Archives are read whole from memory and fully validated before any entry is returned; nothing is extracted to disk.",
+        "No cryptographic verification: sig.rs computes the digest and the signed message and carries the signature and certificates as bytes; zazzled checks them.",
+        "Every function reports failure as a String message; there are no error types."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/src/lib.rs", "symbol": "script_id" },
+        { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "read" },
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "message" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "zazz_format::sig" }
+      ]
+    }
+  ]
+}

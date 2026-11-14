@@ -1,0 +1,172 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazz-worker source class diagram",
+  "folder": "macos/rust/zazz-worker/src",
+  "description": "The types the worker declares: what an instance is given (Setup, Preopen, Io, Hooks), what it holds (Host) and how it ended (Ending, Outcome); the Backend trait with its two implementations; and test mode's Opts and Run. NetPolicy, Request and Response come from zazz-sdk and are shown as lightweight nodes.",
+  "sources": [
+    { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "Setup" },
+    { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "Host" },
+    { "path": "macos/rust/zazz-worker/src/net.rs", "symbol": "Backend" },
+    { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "Opts" }
+  ],
+  "types": [
+    {
+      "id": "Preopen",
+      "name": "Preopen",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": ["host: PathBuf", "guest: String", "write: bool"]
+    },
+    {
+      "id": "Setup",
+      "name": "Setup",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": [
+        "args: Vec<String>",
+        "env: Vec<(String, String)>",
+        "preopens: Vec<Preopen>",
+        "net: NetPolicy",
+        "memory_mb: u64",
+        "call_ms: u64"
+      ]
+    },
+    {
+      "id": "Io",
+      "name": "Io",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": [
+        "stdin: Box<dyn StdinStream + Send + Sync>",
+        "stdout: Box<dyn StdoutStream + Send + Sync>",
+        "stderr: Box<dyn StdoutStream + Send + Sync>"
+      ]
+    },
+    {
+      "id": "Hooks",
+      "name": "Hooks",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": [
+        "cancelled: Box<dyn Fn() -> bool + Send>",
+        "progress: Box<dyn FnMut(&Json) + Send>",
+        "backend: Arc<dyn Backend + Send + Sync>"
+      ]
+    },
+    {
+      "id": "Ending",
+      "name": "Ending",
+      "kind": "enum",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": ["Exit(i32)", "Timeout", "OutOfMemory", "Crash(String)"]
+    },
+    {
+      "id": "Outcome",
+      "name": "Outcome",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": ["sent: Vec<Json>", "ending: Ending"]
+    },
+    {
+      "id": "Host",
+      "name": "Host",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/run.rs"],
+      "members": [
+        "wasi: WasiP1Ctx",
+        "limits: StoreLimits",
+        "inbox: Vec<u8>",
+        "sent: Vec<Json>",
+        "net: NetPolicy",
+        "deadline: Instant",
+        "hooks: Hooks"
+      ]
+    },
+    {
+      "id": "Backend",
+      "name": "Backend",
+      "kind": "interface",
+      "sources": ["macos/rust/zazz-worker/src/net.rs"],
+      "members": ["send(req, timeout) -> Result<Response, Error>"]
+    },
+    {
+      "id": "Https",
+      "name": "Https",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/net.rs"],
+      "members": ["send(req, timeout) -> Result<Response, Error>"]
+    },
+    {
+      "id": "Replay",
+      "name": "Replay",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/net.rs"],
+      "members": [
+        "0: Vec<(String, String, Response)>",
+        "parse(doc) -> Result<Replay, String>",
+        "send(req, timeout) -> Result<Response, Error>"
+      ]
+    },
+    {
+      "id": "testrun.Opts",
+      "name": "Opts",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/testrun.rs"],
+      "members": [
+        "libtest: bool",
+        "cwd: PathBuf",
+        "snapshots: Option<PathBuf>",
+        "update: bool",
+        "replay: Replay",
+        "timeout_ms: u64",
+        "memory_mb: u64"
+      ]
+    },
+    {
+      "id": "testrun.Run",
+      "name": "Run",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-worker/src/testrun.rs"],
+      "members": ["stdout: String", "stderr: String", "sent: Vec<Json>", "ending: Ending"]
+    },
+    {
+      "id": "NetPolicy",
+      "name": "zazz::http::NetPolicy",
+      "kind": "enum",
+      "sources": ["macos/rust/zazz-sdk/src/http.rs"],
+      "members": ["None", "Hosts(Vec<String>)", "All"],
+      "external": true
+    },
+    {
+      "id": "Request",
+      "name": "zazz::http::Request",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-sdk/src/http.rs"],
+      "members": ["method: String", "url: String", "headers: Vec<(String, String)>", "body: Vec<u8>"],
+      "external": true
+    },
+    {
+      "id": "Response",
+      "name": "zazz::http::Response",
+      "kind": "struct",
+      "sources": ["macos/rust/zazz-sdk/src/http.rs"],
+      "members": ["status: u16", "headers: Vec<(String, String)>", "body: Vec<u8>"],
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "Setup", "to": "Preopen", "kind": "depends-on", "description": "The directories the guest sees." },
+    { "from": "Setup", "to": "NetPolicy", "kind": "depends-on", "description": "Which hosts the guest may reach." },
+    { "from": "Host", "to": "Hooks", "kind": "depends-on", "description": "Cancellation, progress and the network backend while the instance runs." },
+    { "from": "Host", "to": "NetPolicy", "kind": "depends-on", "description": "Checked on every zazz_host.http call." },
+    { "from": "Hooks", "to": "Backend", "kind": "depends-on", "description": "Sends the guest's allowed requests." },
+    { "from": "Outcome", "to": "Ending", "kind": "depends-on", "description": "How _start ended." },
+    { "from": "Https", "to": "Backend", "kind": "implements", "description": "Real HTTPS through ureq." },
+    { "from": "Replay", "to": "Backend", "kind": "implements", "description": "Recorded answers for tests." },
+    { "from": "Backend", "to": "Request", "kind": "depends-on", "description": "What is sent." },
+    { "from": "Backend", "to": "Response", "kind": "depends-on", "description": "What comes back." },
+    { "from": "testrun.Opts", "to": "Replay", "kind": "depends-on", "description": "The test network." },
+    { "from": "testrun.Run", "to": "Ending", "kind": "depends-on", "description": "Decides pass or fail with the output." }
+  ]
+}

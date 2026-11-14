@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-sdk",
+  "folder": "macos/rust/zazz-sdk",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-sdk",
+      "summary": "The zazz-sdk crate, library name zazz: the SDK zazz scripts are written and tested with, and the protocol code zazzled and zazz-worker share with them.",
+      "purpose": "Holds the one copy of the script-side API (handlers, the call context, JSON, errors, HTTP), the launcher protocol both sides speak and the zazz::test harness, so a script, its tests, zazzled and zazz-worker agree by construction. Contains the crate manifest (Cargo.toml, a member of the macos/rust workspace) and the source in src/.",
+      "boundaries": [
+        "No dependencies, only std: zazzled compiles the source files itself with rustc for each script build (Cargo.toml comment; macos/rust/zazzled/src/zazz/sdk.rs).",
+        "A library only: nothing is installed or released from this folder.",
+        "Building, sandboxing and calling scripts belong to zazzled and zazz-worker; the .zazz file and zazz.json belong to zazz-format (macos/rust/zazz-format)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/Cargo.toml", "symbol": "[lib]" },
+        { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "serve" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "FILES" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/zazz-format/.dev/folder.json", "entityId": "folder", "description": "The archive format the scripts built with this SDK are shipped in." }
+      ]
+    }
+  ]
+}

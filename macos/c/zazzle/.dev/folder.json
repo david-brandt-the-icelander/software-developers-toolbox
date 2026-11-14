@@ -7,11 +7,12 @@
     {
       "id": "folder",
       "title": "zazzle invoker",
-      "summary": "The client half of zazzle/zazzled: a tiny C program that hands its command line, standard streams and working directory to the zazzled daemon and exits with the daemon's status, or replaces itself with zazzled or a standalone tool for the commands that run as their own process.",
+      "summary": "The client half of zazzle/zazzled: a tiny C program that hands its command line, standard streams and working directory to the zazzled daemon and exits with the daemon's status, or replaces itself with zazzled or a standalone tool for the commands that run as their own process. Run as `zazz`, or under an installed zazz script's name, it sends zazz requests instead.",
       "purpose": "Builds `zazzle` with make, without libc on Linux and with only what libSystem must provide on macOS, so that each zazzle command costs little more than starting a process. Holds the Makefile, the README (what it does, build and test), the source in src/, the tests in test/ and the latency benchmarks in bench/.",
       "boundaries": [
         "The daemon, its commands and the wire protocol live in macos/rust/zazzled; zazzled must be built before the smoke test or the benchmarks can run.",
         "`zazzle free-disk-space` and `zazzle fix-network` run the binaries of macos/rust/free-disk-space and macos/rust/fix-network, found beside the invoker; this folder only execs them.",
+        "The release ships the same build twice, as zazzle and as zazz, and `zazz install` links script commands to it; what zazz requests do is zazzled's (macos/rust/zazzled/src/zazz).",
         "build/ is build output and is ignored by git."
       ],
       "evidenceStatus": "source-verified",
@@ -27,6 +28,10 @@
         {
           "path": "macos/c/zazzle/.gitignore",
           "symbol": "build/"
+        },
+        {
+          "path": "macos/c/zazzle/README.md",
+          "symbol": "Looks at its own name"
         }
       ],
       "relationships": [

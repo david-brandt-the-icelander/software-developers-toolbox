@@ -10,7 +10,7 @@
       "summary": "zazzled depends on a short list of crates, each for one stated reason; std covers everything else.",
       "status": "accepted",
       "context": "zazzled is a long-lived daemon that agents call constantly; every dependency is code to build, audit and keep current.",
-      "decision": "Dependencies, each for one reason: blake3 (content hashing), ignore (gitignore-aware walking), libc (sockets, passing descriptors, getpeereid, launchd activation), memchr (newline and substring scans), regex (search; std has none), serde_json (MCP messages), tree-sitter and its C, C#, JavaScript, Python, Rust and TypeScript grammars (outlines and read --symbol) and Dart, Go, Java, Kotlin (tree-sitter-kotlin-ng), Swift, C++, Ruby, PHP, Scala and Bash grammars (the terse view; the Python, JavaScript, TypeScript, Rust and C grammars serve it too), and ureq with rustls and the platform verifier, without default features (the HTTP side of the MCP proxy, blocking like the rest of the daemon, with the operating system's trust store). Cargo.toml states the reason beside each.",
+      "decision": "Dependencies, each for one reason: blake3 (content hashing), ignore (gitignore-aware walking), libc (sockets, passing descriptors, getpeereid, launchd activation), memchr (newline and substring scans), regex (search; std has none), serde_json (MCP messages), tree-sitter and its C, C#, JavaScript, Python, Rust and TypeScript grammars (outlines and read --symbol) and Dart, Go, Java, Kotlin (tree-sitter-kotlin-ng), Swift, C++, Ruby, PHP, Scala and Bash grammars (the terse view; the Python, JavaScript, TypeScript, Rust and C grammars serve it too), ureq with rustls and the platform verifier, without default features (the HTTP side of the MCP proxy, blocking like the rest of the daemon, with the operating system's trust store); for zazz scripts p256 (keys and ECDSA signatures), rand_core (generating keys), sha2 (only its OID, for the algorithm ECDSA certificates name), x509-cert (building, parsing and checking authority certificates), security-framework on macOS only (Keychain trust), and the workspace's own zazz-format (archives, manifests and script ids) and zazz-sdk (the script protocol, the human CLI parser and rendering); wat for tests only (hand-written WebAssembly). Cargo.toml states the reason beside each.",
       "rationale": "Cargo.toml: \"Each dependency has one reason; std covers everything else.\" blake3 is fast enough to hash every file lazily; memchr and blake3 use NEON on Apple Silicon; ureq keeps the proxy synchronous, so no async runtime is pulled in.",
       "origin": {
         "kind": "document",
@@ -21,6 +21,14 @@
         {
           "path": "macos/rust/zazzled/Cargo.toml",
           "symbol": "[dependencies]"
+        },
+        {
+          "path": "macos/rust/zazzled/Cargo.toml",
+          "symbol": "[target.'cfg(target_os = \"macos\")'.dependencies]"
+        },
+        {
+          "path": "macos/rust/zazzled/Cargo.toml",
+          "symbol": "[dev-dependencies]"
         }
       ]
     }

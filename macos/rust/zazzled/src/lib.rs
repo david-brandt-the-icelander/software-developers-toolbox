@@ -30,6 +30,7 @@ pub mod tokens;
 pub mod util;
 pub mod walk;
 pub mod wrap;
+pub mod zazz;
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

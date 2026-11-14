@@ -1,0 +1,526 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazz module class diagram",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "The types the zazz module declares. Most commands are functions over Zazz (the daemon's zazz state) that return JSON; the types are the registry, the build pipeline's products, the worker pool, a call's streams and result, the sandbox policy (with Linux's Landlock and seccomp structures in sandbox.rs's linux module) and the grants extension of authority certificates. Manifest, Archive and Envelope come from zazz-format, Ctx from the command layer; they are lightweight nodes.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/zazz/mod.rs",
+      "symbol": "Zazz"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/pool.rs",
+      "symbol": "Pool"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/registry.rs",
+      "symbol": "Registry"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/sandbox.rs",
+      "symbol": "Policy"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/call.rs",
+      "symbol": "Streams"
+    }
+  ],
+  "types": [
+    {
+      "id": "Zazz",
+      "name": "Zazz",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/mod.rs"
+      ],
+      "members": [
+        "root: Mutex<Option<PathBuf>>",
+        "worker: Mutex<Option<PathBuf>>",
+        "bin: Mutex<Option<PathBuf>>",
+        "invoker: Mutex<Option<PathBuf>>",
+        "trust: Mutex<Option<(PathBuf, PathBuf, bool)>>",
+        "keys: Mutex<Option<PathBuf>>",
+        "pool: Arc<Pool>",
+        "registry() -> Result<Registry, String>",
+        "worker() -> Result<PathBuf, Value>",
+        "bin_dir() -> PathBuf",
+        "invoker() -> Option<PathBuf>",
+        "trust_dir() -> (PathBuf, bool)",
+        "policy_path() -> (PathBuf, bool)",
+        "keys_dir() -> PathBuf"
+      ]
+    },
+    {
+      "id": "Registry",
+      "name": "Registry",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/registry.rs"
+      ],
+      "members": [
+        "root: PathBuf",
+        "open(root) -> Result<Registry, String>",
+        "read_meta(hex) -> Option<Value>",
+        "write_meta(hex, meta) -> Result<(), String>",
+        "write_atomic(path, data) -> Result<(), String>",
+        "wasm_path(hex, ext) -> PathBuf",
+        "bin_path(hex) -> PathBuf",
+        "resolve(what) -> Result<String, String>",
+        "lock(hex) -> Result<Lock, String>",
+        "scratch(tag) -> Result<PathBuf, String>",
+        "purge_tmp() -> usize",
+        "remove(hex) -> bool"
+      ]
+    },
+    {
+      "id": "Lock",
+      "name": "Lock",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/registry.rs"
+      ],
+      "members": [
+        "0: File (an exclusive lock, released on drop)"
+      ]
+    },
+    {
+      "id": "Snapshots",
+      "name": "Snapshots",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/pipeline.rs"
+      ],
+      "members": [
+        "dir: PathBuf",
+        "update: bool"
+      ]
+    },
+    {
+      "id": "Built",
+      "name": "Built",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/pipeline.rs"
+      ],
+      "members": [
+        "wasm: Vec<u8>",
+        "cwasm: Vec<u8>",
+        "tests: Option<Value>",
+        "warnings: Vec<String>"
+      ]
+    },
+    {
+      "id": "Failure",
+      "name": "Failure",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/compile.rs"
+      ],
+      "members": [
+        "Diagnostics(Vec<Value>)",
+        "Message(String)"
+      ]
+    },
+    {
+      "id": "Products",
+      "name": "Products",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/compile.rs"
+      ],
+      "members": [
+        "wasm: Vec<u8>",
+        "tests: Option<Vec<u8>>"
+      ]
+    },
+    {
+      "id": "Ran",
+      "name": "Ran",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/proc.rs"
+      ],
+      "members": [
+        "code: Option<i32>",
+        "stdout: Vec<u8>",
+        "stderr: Vec<u8>",
+        "timed_out: bool",
+        "ok() -> bool",
+        "err_text() -> String"
+      ]
+    },
+    {
+      "id": "Spec",
+      "name": "Spec",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/pool.rs"
+      ],
+      "members": [
+        "key: String",
+        "program: Vec<String>",
+        "module: Option<PathBuf>",
+        "cwd: PathBuf",
+        "hello: Value",
+        "sandbox: Option<Policy>"
+      ]
+    },
+    {
+      "id": "Worker",
+      "name": "Worker",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/pool.rs"
+      ],
+      "members": [
+        "child: Child",
+        "sock: UnixStream",
+        "calls: u32",
+        "idle_since: Instant",
+        "kill()"
+      ]
+    },
+    {
+      "id": "Pool",
+      "name": "Pool",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/pool.rs"
+      ],
+      "members": [
+        "idle: Mutex<HashMap<String, Vec<Worker>>>",
+        "reaper: Mutex<bool>",
+        "acquire(spec) -> Result<Worker, String>",
+        "release(key, worker, healthy)",
+        "reap(idle_for) -> usize",
+        "shutdown() -> usize",
+        "idle_count() -> usize"
+      ]
+    },
+    {
+      "id": "Streams",
+      "name": "Streams",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/call.rs"
+      ],
+      "members": [
+        "Caller { stdio: [OwnedFd; 3], conn: Option<RawFd> }",
+        "Capture { stdin: Vec<u8> }"
+      ]
+    },
+    {
+      "id": "Called",
+      "name": "Called",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/call.rs"
+      ],
+      "members": [
+        "result: Value",
+        "stdout: String",
+        "stderr: String",
+        "progress: Vec<String>"
+      ]
+    },
+    {
+      "id": "Pipes",
+      "name": "Pipes",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/call.rs"
+      ],
+      "members": [
+        "child: [OwnedFd; 3]",
+        "out: JoinHandle<Vec<u8>>",
+        "err: JoinHandle<Vec<u8>>"
+      ]
+    },
+    {
+      "id": "Policy",
+      "name": "Policy",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "read: Vec<PathBuf>",
+        "write: Vec<PathBuf>",
+        "exec: Vec<PathBuf>",
+        "network: bool",
+        "for_program(program) -> Policy",
+        "reading(paths) -> Policy",
+        "writing(paths) -> Policy",
+        "networked(on) -> Policy",
+        "executing(paths) -> Policy"
+      ]
+    },
+    {
+      "id": "linux.Prepared",
+      "name": "Prepared (linux)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "ruleset: OwnedFd",
+        "filter: Option<Vec<SockFilter>>"
+      ]
+    },
+    {
+      "id": "linux.RulesetAttr",
+      "name": "RulesetAttr (linux)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "fs: u64",
+        "net: u64"
+      ]
+    },
+    {
+      "id": "linux.PathBeneath",
+      "name": "PathBeneath (linux)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "allowed: u64",
+        "parent_fd: i32"
+      ]
+    },
+    {
+      "id": "linux.SockFilter",
+      "name": "SockFilter (linux)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "code: u16",
+        "jt: u8",
+        "jf: u8",
+        "k: u32"
+      ]
+    },
+    {
+      "id": "linux.SockFprog",
+      "name": "SockFprog (linux)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/sandbox.rs"
+      ],
+      "members": [
+        "len: u16",
+        "filter: *const SockFilter"
+      ]
+    },
+    {
+      "id": "GrantsExt",
+      "name": "GrantsExt",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/zazz/crypto.rs"
+      ],
+      "members": [
+        "0: String (the grants as JSON)",
+        "OID: GRANTS_OID",
+        "critical() -> false"
+      ]
+    },
+    {
+      "id": "Ctx",
+      "name": "cmd::Ctx",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/mod.rs"
+      ],
+      "members": [
+        "engine: &Engine (engine.zazz: Zazz)",
+        "cwd: PathBuf",
+        "caller: RefCell<Option<Caller>>",
+        "read_stdin()"
+      ],
+      "external": true
+    },
+    {
+      "id": "Manifest",
+      "name": "zazz_format::manifest::Manifest",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazz-format/src/manifest.rs"
+      ],
+      "members": [
+        "name",
+        "kind",
+        "entry",
+        "native",
+        "tests",
+        "messages",
+        "sandbox",
+        "call_ms",
+        "memory_mb"
+      ],
+      "external": true
+    },
+    {
+      "id": "Archive",
+      "name": "zazz_format::zip::Archive",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazz-format/src/zip.rs"
+      ],
+      "members": [
+        "entries",
+        "get(name)",
+        "under(prefix)"
+      ],
+      "external": true
+    },
+    {
+      "id": "Envelope",
+      "name": "zazz_format::sig::Envelope",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazz-format/src/sig.rs"
+      ],
+      "members": [
+        "digest",
+        "sig",
+        "chain"
+      ],
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Zazz",
+      "to": "Pool",
+      "kind": "depends-on",
+      "description": "Holds the daemon's one worker pool."
+    },
+    {
+      "from": "Zazz",
+      "to": "Registry",
+      "kind": "depends-on",
+      "description": "Opens the registry at its root."
+    },
+    {
+      "from": "Ctx",
+      "to": "Zazz",
+      "kind": "depends-on",
+      "description": "Commands reach the zazz state through ctx.engine.zazz."
+    },
+    {
+      "from": "Registry",
+      "to": "Lock",
+      "kind": "depends-on",
+      "description": "lock returns the id's exclusive lock."
+    },
+    {
+      "from": "Built",
+      "to": "Products",
+      "kind": "depends-on",
+      "description": "The pipeline takes the WASM modules from a Rust build's products."
+    },
+    {
+      "from": "Products",
+      "to": "Failure",
+      "kind": "depends-on",
+      "description": "A build returns its products or a failure."
+    },
+    {
+      "from": "Built",
+      "to": "Snapshots",
+      "kind": "depends-on",
+      "description": "The test run reads or rewrites snapshots."
+    },
+    {
+      "from": "Pool",
+      "to": "Worker",
+      "kind": "depends-on",
+      "description": "Idle workers by key."
+    },
+    {
+      "from": "Pool",
+      "to": "Spec",
+      "kind": "depends-on",
+      "description": "acquire starts a worker from a spec when none is idle."
+    },
+    {
+      "from": "Spec",
+      "to": "Policy",
+      "kind": "depends-on",
+      "description": "The sandbox spawn starts the worker in."
+    },
+    {
+      "from": "Called",
+      "to": "Streams",
+      "kind": "depends-on",
+      "description": "Captured output is filled only for Capture streams."
+    },
+    {
+      "from": "Pipes",
+      "to": "Streams",
+      "kind": "depends-on",
+      "description": "Capture streams are carried by pipes."
+    },
+    {
+      "from": "linux.Prepared",
+      "to": "Policy",
+      "kind": "depends-on",
+      "description": "Prepared from a policy before fork."
+    },
+    {
+      "from": "linux.Prepared",
+      "to": "linux.SockFilter",
+      "kind": "depends-on",
+      "description": "The seccomp program when the network is denied."
+    },
+    {
+      "from": "linux.SockFprog",
+      "to": "linux.SockFilter",
+      "kind": "depends-on",
+      "description": "Points at the filter for prctl."
+    },
+    {
+      "from": "linux.Prepared",
+      "to": "linux.RulesetAttr",
+      "kind": "depends-on",
+      "description": "The ruleset is created from the attribute."
+    },
+    {
+      "from": "linux.Prepared",
+      "to": "linux.PathBeneath",
+      "kind": "depends-on",
+      "description": "One rule per allowed path."
+    },
+    {
+      "from": "Built",
+      "to": "Manifest",
+      "kind": "depends-on",
+      "description": "Built according to the manifest's kind and tests."
+    },
+    {
+      "from": "Built",
+      "to": "Archive",
+      "kind": "depends-on",
+      "description": "Built from the archive's entries."
+    },
+    {
+      "from": "GrantsExt",
+      "to": "Envelope",
+      "kind": "depends-on",
+      "description": "The grants travel in the signer's certificates, carried in the envelope's chain."
+    },
+    {
+      "from": "Ran",
+      "to": "Failure",
+      "kind": "depends-on",
+      "description": "A failed rustc run becomes diagnostics or a message."
+    }
+  ]
+}

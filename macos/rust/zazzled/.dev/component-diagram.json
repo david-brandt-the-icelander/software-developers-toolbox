@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzled component diagram",
   "folder": "macos/rust/zazzled",
-  "description": "The zazzled crate and what crosses its boundary: the C invoker and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. The crate's parts are in the src/ diagram.",
+  "description": "The zazzled crate and what crosses its boundary: the C invoker (as zazzle, zazz or an installed script's shim) and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. For zazz scripts it reads archives with zazz-format, speaks the script protocol from zazz-sdk (whose sources it also compiles for scripts with the user's rustc), and starts zazz-worker to compile, test and run them; on macOS the Keychain takes part in trusting a script's signer. The crate's parts are in the src/ diagram.",
   "sources": [
     {
       "path": "macos/rust/zazzled/Cargo.toml",
@@ -24,26 +24,50 @@
     {
       "path": "macos/c/zazzle/src/zazzle_core.h",
       "symbol": "zazzle_run"
+    },
+    {
+      "path": "macos/rust/zazzled/Cargo.toml",
+      "symbol": "zazz-format"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/mod.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/pool.rs",
+      "symbol": "spawn"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/sdk.rs",
+      "symbol": "FILES"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/tools.rs",
+      "symbol": "rustc"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/trust.rs",
+      "symbol": "evaluate"
     }
   ],
   "components": [
     {
       "id": "zazzled",
       "name": "zazzled",
-      "responsibility": "The daemon, its MCP front end, the MCP proxy, the command runner, its installer and the zazzle commands, in one binary.",
+      "responsibility": "The daemon, its MCP front end, the MCP proxy, the command runner, its installer, the zazzle commands and the zazz script commands, in one binary.",
       "folder": "macos/rust/zazzled"
     },
     {
       "id": "src",
       "name": "zazzled source",
-      "responsibility": "Library and binary entry: front ends, wire protocol, engine, caches, commands, proxy and runner.",
+      "responsibility": "Library and binary entry: front ends, wire protocol, engine, caches, commands, proxy, runner and zazz scripts.",
       "folder": "macos/rust/zazzled/src",
       "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
     },
     {
       "id": "zazzle",
       "name": "zazzle invoker",
-      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzled proxy` and `zazzled wrap`.",
+      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzled proxy` and `zazzled wrap`; run as `zazz` it sends zazz commands, and under any other name (an installed script's shim) it runs that script.",
       "folder": "macos/c/zazzle",
       "diagram": "macos/c/zazzle/.dev/component-diagram.json"
     },
@@ -53,6 +77,39 @@
       "responsibility": "The C# tool whose daemon renders the terse view of a C# file and answers the structure tools; it lists no tools of its own.",
       "folder": "macos/dotnet/zazzle-csharp-indexer",
       "diagram": "macos/dotnet/zazzle-csharp-indexer/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-format",
+      "name": "zazz-format",
+      "responsibility": "The .zazz file: ZIP reading and deterministic packing, the manifest, the signature envelope and the script id.",
+      "folder": "macos/rust/zazz-format",
+      "diagram": "macos/rust/zazz-format/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-sdk",
+      "name": "zazz SDK",
+      "responsibility": "The script protocol (frames, messages, descriptor passing), the human CLI parser and output rendering, and the library every Rust script is compiled against, with its zazz::test fakes.",
+      "folder": "macos/rust/zazz-sdk",
+      "diagram": "macos/rust/zazz-sdk/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker",
+      "responsibility": "The WebAssembly host: AOT-compiles a module, runs a script's tests, and serves calls to a script in a fresh instance each.",
+      "folder": "macos/rust/zazz-worker",
+      "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
+    },
+    {
+      "id": "rustc",
+      "name": "Rust toolchain",
+      "responsibility": "The user's rustc (with the wasm32-wasip1 target): compiles the SDK, scripts and their tests, to WebAssembly or, for natively trusted scripts, to the host.",
+      "external": true
+    },
+    {
+      "id": "keychain",
+      "name": "macOS Keychain",
+      "responsibility": "The operating system's certificate trust on macOS: evaluates a signer's chain, and holds the trust settings `zazz trust add` sets for an authority.",
+      "external": true
     },
     {
       "id": "mcp-client",
@@ -85,7 +142,7 @@
       "from": "zazzle",
       "to": "src",
       "kind": "depends-on",
-      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzled serve` when nothing listens, and execs `zazzled proxy` and `zazzled wrap`."
+      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzled serve` when nothing listens, and execs `zazzled proxy` and `zazzled wrap`; as `zazz` or a shim the request is a zazz command."
     },
     {
       "from": "mcp-client",
@@ -110,6 +167,42 @@
       "to": "upstream-mcp",
       "kind": "depends-on",
       "description": "The proxy relays the client's messages to it and cleans its answers."
+    },
+    {
+      "from": "src",
+      "to": "zazz-format",
+      "kind": "depends-on",
+      "description": "Reads, validates and packs .zazz archives, parses manifests and signature envelopes, and ids scripts by the BLAKE3 of their bytes."
+    },
+    {
+      "from": "src",
+      "to": "zazz-sdk",
+      "kind": "depends-on",
+      "description": "Frames and descriptor passing to workers, the human CLI parser and rendering; embeds the SDK's sources and compiles them into an rlib per toolchain and target."
+    },
+    {
+      "from": "src",
+      "to": "zazz-worker",
+      "kind": "depends-on",
+      "description": "Runs `zazz-worker compile` and `zazz-worker test` under the OS sandbox, and keeps warm `zazz-worker serve` processes per script, directory and policy."
+    },
+    {
+      "from": "src",
+      "to": "rustc",
+      "kind": "depends-on",
+      "description": "Runs rustc with an argument list, a cleared environment and a timeout, under the OS sandbox, to build the SDK, scripts and tests."
+    },
+    {
+      "from": "src",
+      "to": "keychain",
+      "kind": "depends-on",
+      "description": "On macOS, evaluates a signer's chain with SecTrust and sets an authority's trust settings for `zazz trust add`."
+    },
+    {
+      "from": "zazz-worker",
+      "to": "zazz-sdk",
+      "kind": "depends-on",
+      "description": "Frames, messages, the HTTP wire layout and the host allowlist."
     }
   ]
 }

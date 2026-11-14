@@ -3,7 +3,7 @@
   "kind": "deployment",
   "title": "zazzle / zazzled deployment diagram",
   "folder": "macos/rust/zazzled",
-  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the zazzle-csharp-indexer daemon. The release tarballs ship zazzle and zazzled side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
+  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the zazzle-csharp-indexer daemon. For zazz scripts the daemon runs the user's rustc and `zazz-worker compile` and `zazz-worker test` to build and test a script once, keeps the results in the script store, and runs calls in warm `zazz-worker serve` processes (or a natively trusted script's own binary), each under the OS sandbox (sandbox-exec on macOS, Landlock and seccomp on Linux); the invoker run as `zazz`, or under an installed script's name, sends those requests. The release tarballs ship zazzle, zazz (the same invoker), zazzled and zazz-worker side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cli.rs",
@@ -52,6 +52,42 @@
     {
       "path": ".github/workflows/release.yml",
       "symbol": "Package"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/pool.rs",
+      "symbol": "spawn"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/call.rs",
+      "symbol": "execute"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/compile.rs",
+      "symbol": "aot"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/pipeline.rs",
+      "symbol": "run_tests"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/tools.rs",
+      "symbol": "worker"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/sandbox.rs",
+      "symbol": "command"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/registry.rs",
+      "symbol": "default_root"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/trust.rs",
+      "symbol": "SYSTEM_TRUST_DIR"
+    },
+    {
+      "path": "macos/rust/zazzled/src/zazz/install.rs",
+      "symbol": "install"
     }
   ],
   "nodes": [
@@ -65,21 +101,21 @@
       "id": "terminal",
       "name": "Developer's terminal",
       "kind": "client",
-      "description": "A shell where the developer runs `zazzled install`, `zazzled run` or zazzle itself.",
+      "description": "A shell where the developer runs `zazzled install`, `zazzled run`, zazzle itself, or a zazz script installed as a command.",
       "actor": "Actors/developer.md"
     },
     {
       "id": "agent",
       "name": "Coding agent",
       "kind": "client",
-      "description": "An agent that runs `zazzle ...` in a shell (setting ZAZZLE_SESSION), or whose MCP client starts `zazzled mcp`, or `zazzle proxy` in front of another server, in the project directory.",
+      "description": "An agent that runs `zazzle ...` or `zazz ...` in a shell (setting ZAZZLE_SESSION), or whose MCP client starts `zazzled mcp`, or `zazzle proxy` in front of another server, in the project directory.",
       "actor": "Actors/coding-agent.md"
     },
     {
       "id": "zazzle",
       "name": "zazzle process",
       "kind": "process",
-      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with zazzled instead."
+      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with zazzled instead. Run as `zazz` it sends `zazz ARGS`, and under an installed script's name `zazz exec-name NAME ARGS`."
     },
     {
       "id": "mcp",
@@ -137,6 +173,54 @@
       "kind": "external-service",
       "description": "The user's gui launchd domain, with ~/Library/LaunchAgents/com.zazzle.zazzled.plist loaded: holds the socket and starts `zazzled serve` on a connection.",
       "condition": "macOS, after `zazzled install`"
+    },
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker processes",
+      "kind": "process",
+      "description": "Started by the daemon under the OS sandbox with a cleared environment: short-lived `zazz-worker compile` (AOT) and `zazz-worker test` runs while a script is added or tested, and warm `zazz-worker serve` workers, one pool per script, working directory and policy, each with its control socket on descriptor 3, its compiled module on descriptor 4, standard streams on /dev/null and a new session; the caller's streams come with each call. Idle workers are retired after 60 s or 1000 calls, at most 2 per key and 32 in all.",
+      "condition": "zazz scripts"
+    },
+    {
+      "id": "native-script",
+      "name": "Native script process",
+      "kind": "process",
+      "description": "A script's own host binary from the script store, serving calls over the same control socket under the OS sandbox only.",
+      "condition": "A script signed by an authority this machine trusts for native code, while the policy allows native code"
+    },
+    {
+      "id": "rustc",
+      "name": "rustc processes",
+      "kind": "process",
+      "description": "The user's toolchain (ZAZZ_RUSTC, then fixed locations such as ~/.cargo/bin, then PATH), run with an argument list, a cleared environment and a timeout under the OS sandbox, to build the zazz SDK once per toolchain and target, then each script and its tests.",
+      "condition": "Adding or testing a Rust script"
+    },
+    {
+      "id": "zazz-store",
+      "name": "zazz script store",
+      "kind": "database",
+      "description": "$ZAZZ_STORE, by default ~/.zazzle/v1/zazz (mode 0700): compiled modules, native binaries, metadata with the test record and trust verdict, installed names, locks, scratch space and the built SDK; never the .zazz itself."
+    },
+    {
+      "id": "trust",
+      "name": "Trust directory and policy",
+      "kind": "database",
+      "description": "Root-owned /etc/zazzle/trust.d (authority certificates) and /etc/zazzle/policy.json (global ceiling and trust_ttl); ignored unless owned by root and not writable by others.",
+      "condition": "Signed scripts"
+    },
+    {
+      "id": "keychain",
+      "name": "macOS Keychain",
+      "kind": "external-service",
+      "description": "Evaluates a signer's chain (SecTrust) and holds the trust settings `zazz trust add` sets.",
+      "condition": "macOS, signed scripts"
+    },
+    {
+      "id": "https-hosts",
+      "name": "Allowlisted HTTPS hosts",
+      "kind": "external-service",
+      "description": "The hosts a script's manifest names and its signer's authority grants, reached by zazz-worker over HTTPS.",
+      "condition": "A signed script granted network"
     }
   ],
   "artifacts": [
@@ -160,6 +244,27 @@
       "source": "macos/rust/zazzled/src/launchd.rs",
       "deployedTo": "launchd",
       "description": "Written by `zazzled install`: the zazzled path with `serve`, the socket path with mode 0600, process type Interactive."
+    },
+    {
+      "id": "zazz-worker-bin",
+      "name": "zazz-worker",
+      "source": "macos/rust/zazz-worker/Cargo.toml",
+      "deployedTo": "zazz-worker",
+      "description": "The WebAssembly host binary, found through ZAZZ_WORKER or beside zazzled; shipped in the release tarballs, and signed on macOS with entitlements for executable memory."
+    },
+    {
+      "id": "zazz-bin",
+      "name": "zazz",
+      "source": "macos/c/zazzle/Makefile",
+      "deployedTo": "zazzle",
+      "description": "The invoker under the name `zazz` (a copy in the release tarballs); it sends its arguments as a zazz command."
+    },
+    {
+      "id": "shims",
+      "name": "Installed script commands",
+      "source": "macos/rust/zazzled/src/zazz/install.rs",
+      "deployedTo": "zazzle",
+      "description": "Written by `zazz install`: ~/.zazzle/bin/NAME ($ZAZZ_BIN), a symlink to the invoker beside zazzled (zazz, else zazzle), which runs that script."
     }
   ],
   "relationships": [
@@ -184,6 +289,18 @@
     { "from": "wrap", "to": "outputs", "kind": "connects-to", "description": "Saves each run's result and raw output, reaping old entries." },
     { "from": "proxy", "to": "outputs", "kind": "connects-to", "description": "Saves each shortened text with its original, reaping old entries." },
     { "from": "daemon", "to": "cache", "kind": "connects-to", "description": "Loads the log at start; appends pending records every 100 ms and on exit." },
-    { "from": "terminal", "to": "launchd", "kind": "connects-to", "description": "`zazzled install` and `zazzled uninstall` run launchctl bootstrap and bootout." }
+    { "from": "terminal", "to": "launchd", "kind": "connects-to", "description": "`zazzled install` and `zazzled uninstall` run launchctl bootstrap and bootout." },
+    { "from": "machine", "to": "zazz-worker", "kind": "hosts", "description": "Warm workers until recycled; compile and test runs while they last." },
+    { "from": "machine", "to": "native-script", "kind": "hosts", "description": "Warm like the workers." },
+    { "from": "machine", "to": "rustc", "kind": "hosts", "description": "One per build, while a script is added or tested." },
+    { "from": "daemon", "to": "rustc", "kind": "connects-to", "description": "Spawns it under the OS sandbox, reads its JSON diagnostics and condenses them." },
+    { "from": "daemon", "to": "zazz-worker", "kind": "connects-to", "description": "`compile` with the module on standard input; `test` with the test module and a scratch directory; `serve` over a unix socketpair: length-prefixed JSON frames (hello, json-command, service-call, openapi, progress, cancel, result), with the caller's descriptors 0, 1 and 2 (or capture pipes, over MCP) attached to each call with SCM_RIGHTS, and cancel when the caller hangs up." },
+    { "from": "daemon", "to": "native-script", "kind": "connects-to", "description": "The same socketpair protocol as `zazz-worker serve`." },
+    { "from": "daemon", "to": "zazz-store", "kind": "connects-to", "description": "Publishes a built and tested script atomically under a per-script lock; reads metadata and modules for each call; refreshes expired trust verdicts in the background." },
+    { "from": "daemon", "to": "trust", "kind": "connects-to", "description": "Reads the authorities and policy when a signed script is added and when its verdict is refreshed; `zazz trust add` and `rm` write the directory, which needs root." },
+    { "from": "daemon", "to": "keychain", "kind": "connects-to", "description": "Trust evaluation off the call path; trust settings for `zazz trust add`." },
+    { "from": "zazz-worker", "to": "https-hosts", "kind": "connects-to", "description": "HTTPS for the script's zazz_host.http requests, each checked against the allowlist, no redirects." },
+    { "from": "agent", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazz CMD ...` (new, test, pack, add, call) in its shell." },
+    { "from": "terminal", "to": "zazzle", "kind": "connects-to", "description": "Runs an installed script by its name, or `zazz run NAME ARGS`." }
   ]
 }

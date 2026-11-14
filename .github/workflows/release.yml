@@ -48,10 +48,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, wasm32-wasip1
       - name: Stamp the version
         working-directory: .
         run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
+      - run: cargo build --release -p zazz-worker --locked
       - run: cargo test --workspace --locked
       # Profile-guided optimization of the C code (tree-sitter): train on arm64, use the profile for both slices.
       - name: Train the PGO profile for zazzled's C code
@@ -74,11 +75,12 @@ jobs:
       - name: Make universal binaries
         run: |
           mkdir -p dist
-          for bin in zazzled afs fix-network free-disk-space; do
+          for bin in zazzled zazz-worker afs fix-network free-disk-space; do
             lipo -create -output "dist/$bin" \
               "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
           done
           cp ../c/zazzle/build/zazzle dist/zazzle
+          cp ../c/zazzle/build/zazzle dist/zazz
       # cyberspace-generator is built in cyberspace-explorer; ship the release pinned in macos/release/cyberspace-generator.version.
       - name: Add cyberspace-generator
         run: |
@@ -107,10 +109,10 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist zazzle zazzled afs fix-network free-disk-space cyberspace-generator
+        run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator
       - name: Package
         run: |
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazzled afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
@@ -151,11 +153,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
       - name: Stamp the version
         run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
       - name: Test zazzled
         working-directory: macos/rust
-        run: cargo test -p zazzled --locked
+        run: |
+          cargo build --release -p zazz-worker --locked
+          cargo test -p zazzled --locked
       - name: Install clang, LLVM and clang's profile runtime for PGO
         run: |
           sudo apt-get update -qq
@@ -187,10 +193,11 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp macos/rust/target/release/zazzled macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
+          cp macos/rust/target/release/zazzled macos/rust/target/release/zazz-worker macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
+          cp macos/c/zazzle/build/zazzle dist/zazz
           bash macos/release/fetch-cyberspace-generator.sh cg ${{ matrix.arch }}-unknown-linux-musl
           cp cg/cyberspace-generator-${{ matrix.arch }}-unknown-linux-musl dist/cyberspace-generator
-          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazzled zazzle-csharp-indexer cyberspace-generator
+          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazz zazzled zazz-worker zazzle-csharp-indexer cyberspace-generator
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:

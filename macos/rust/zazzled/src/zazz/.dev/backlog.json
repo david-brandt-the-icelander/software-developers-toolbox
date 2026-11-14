@@ -1,0 +1,179 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazz backlog",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "entities": [
+    {
+      "id": "builtins-as-signed-scripts",
+      "title": "keygen, sign and trust as prebuilt signed scripts in the Keychain",
+      "summary": "keygen, sign and trust are built-in zazzled commands with software P-256 keys in ~/.zazzle/keys (0600), not the prebuilt universal native binaries signed by a pinned release authority, using the Keychain or Secure Enclave, that D7 and D12 settled.",
+      "type": "feature",
+      "status": "open",
+      "details": "The plan's §6 and phase 7: a zazz-builtins crate whose keygen makes a non-exportable key in the Secure Enclave (or a Keychain software key) and can emit a CSR, whose sign uses the Keychain key, shipped as signed .zazz files embedded in zazzled with kind native-bin, accepted only from the release authority whose key is pinned in zazzled. Today pipeline.rs refuses native-bin outright and the keys are files.",
+      "compromise": "Software keys in files instead of non-exportable Keychain or Secure Enclave keys; the commands are compiled into zazzled rather than run as scripts.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/ZAZZ-PLAN.md, Implementation status (first item); §2 D7 and D12; §6; §14 phase 7"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/signing.rs",
+          "symbol": "keygen"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/mod.rs",
+          "symbol": "keys_dir"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/pipeline.rs",
+          "symbol": "to_wasm"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "implements",
+          "path": "macos/rust/zazzled/src/zazz/.dev/decisions.json",
+          "entityId": "d12-builtins-prebuilt"
+        },
+        {
+          "relation": "implements",
+          "path": "macos/rust/zazzled/src/zazz/.dev/decisions.json",
+          "entityId": "d7-signature-format"
+        }
+      ]
+    },
+    {
+      "id": "keychain-trust-in-ci",
+      "title": "Exercise the macOS Keychain trust path in CI",
+      "summary": "On macOS trust also reads the root-owned /etc/zazzle/trust.d; the Keychain path (SecTrust evaluation, and trust settings on `trust add`) compiles but is not exercised by CI.",
+      "type": "chore",
+      "status": "open",
+      "details": "trust.rs keychain_trusts runs only when Zazz uses the system trust locations, which tests replace with their own, so CI never reaches SecTrust; signing.rs add_to_os likewise.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/ZAZZ-PLAN.md, Implementation status (second item)"
+      },
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/trust.rs",
+          "symbol": "keychain_trusts"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/signing.rs",
+          "symbol": "add_to_os"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/mod.rs",
+          "symbol": "uses_os_store"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/zazz/.dev/decisions.json",
+          "entityId": "d6-trust-store"
+        }
+      ]
+    },
+    {
+      "id": "registered-oids",
+      "title": "Move the zazz OIDs to a registered enterprise number",
+      "summary": "The zazz code-signing EKU and the grants extension OIDs sit under IANA's example enterprise number 32473 until a registered Private Enterprise Number replaces them.",
+      "type": "chore",
+      "status": "open",
+      "details": "Changing them invalidates every authority certificate made with the current OIDs; zazz-format owns the constants.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/ZAZZ-PLAN.md, Implementation status (third item)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "macos/rust/zazz-format/src/sig.rs",
+          "symbol": "EKU_OID"
+        },
+        {
+          "path": "macos/rust/zazz-format/src/sig.rs",
+          "symbol": "GRANTS_OID"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/crypto.rs",
+          "symbol": "has_zazz_eku"
+        }
+      ]
+    },
+    {
+      "id": "components-and-wasi-http",
+      "title": "WebAssembly components and wasi:http",
+      "summary": "Network for signed WASM scripts goes through zazz_host.http; wasi:http and components are not linked, and there is no component transport: only core WASI preview 1 commands run.",
+      "type": "feature",
+      "status": "open",
+      "details": "The plan's transport 3: the WIT world zazz:script@1 mirroring the zazz_host functions, with wasi:http linked only for signed scripts behind the same host check (and zazz-worker's dependency on wasmtime-wasi-http). Today engine.rs allows only wasi_snapshot_preview1 and the five zazz_host imports.",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/ZAZZ-PLAN.md, Implementation status (fourth and fifth items); §10 Transports 3; §14 phase 12"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "macos/rust/zazz-worker/src/engine.rs",
+          "symbol": "bad_imports"
+        },
+        {
+          "path": "macos/rust/zazz-worker/Cargo.toml",
+          "symbol": "[dependencies]"
+        }
+      ]
+    },
+    {
+      "id": "native-http-client",
+      "title": "An SDK HTTP client for native scripts",
+      "summary": "Native scripts get no SDK HTTP client: call.http() works only in the WASM backend, through zazz_host.http.",
+      "type": "feature",
+      "status": "open",
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/zazzled/ZAZZ-PLAN.md, Implementation status (fourth item)"
+      },
+      "details": "The native backend builds every call with NoHttp (zazz-sdk native.rs run_call), so a natively trusted script granted network still has no SDK client; only the WASM backend's HostHttp reaches zazz_host.http.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "macos/rust/zazz-sdk/src/native.rs",
+          "symbol": "run_call"
+        },
+        {
+          "path": "macos/rust/zazz-sdk/src/call.rs",
+          "symbol": "NoHttp"
+        },
+        {
+          "path": "macos/rust/zazz-sdk/src/wasm.rs",
+          "symbol": "HostHttp"
+        }
+      ]
+    }
+  ]
+}

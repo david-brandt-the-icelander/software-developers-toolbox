@@ -63,7 +63,7 @@
       "criteria": [
         "Bad arguments are refused and write nothing",
         "One formula, valid Ruby, with the release's url, version, sha256, license, depends_on :macos and a description",
-        "It installs the five binaries, both gzipped indexers and the placeholder; the one post_install step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 and leaves no temporary file",
+        "It installs the eight binaries (zazz and zazz-worker among them), both gzipped indexers and the placeholder; the one post_install step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 and leaves no temporary file",
         "Its test block runs one command per binary, and release.yml builds every binary",
         "One reproducible bottle with exactly the expected files, the binaries and the placeholder mode 0755 and root-owned, the placeholder identical to the formula's",
         "With the bottle, the formula's bottle block matches its name and checksum; a missing bottle or bottle folder is refused"
@@ -120,7 +120,8 @@
         }
       ],
       "notChecked": [
-        "Signing with a real certificate and notarizing with Apple: nothing has signed a real binary until a tag runs with the secrets in place."
+        "Signing with a real certificate and notarizing with Apple: nothing has signed a real binary until a tag runs with the secrets in place.",
+        "That zazz-worker gets entitlements/zazz-worker.plist: the test signs two stand-in binaries, neither with an entitlements file."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

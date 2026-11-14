@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-worker component diagram",
+  "folder": "macos/rust/zazz-worker",
+  "description": "The zazz-worker crate and what crosses its boundary: zazzled's zazz module starts it and talks to it; it runs scripts on wasmtime with WASI preview 1, shares frames, messages and the HTTP layout with zazz-sdk, and sends allowed HTTPS requests for scripts. Its modules are in the src/ diagram.",
+  "sources": [
+    { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "[dependencies]" },
+    { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "spawn" },
+    { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "aot" },
+    { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "run_tests" }
+  ],
+  "components": [
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker crate",
+      "responsibility": "Builds the zazz-worker binary: a workspace member with its own rust-version, because wasmtime follows recent Rust releases.",
+      "folder": "macos/rust/zazz-worker"
+    },
+    {
+      "id": "src",
+      "name": "zazz-worker source",
+      "responsibility": "The subcommands, the engine, per-call instances with the zazz_host imports, serve mode, test mode and the network backends.",
+      "folder": "macos/rust/zazz-worker/src",
+      "diagram": "macos/rust/zazz-worker/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-sdk",
+      "name": "zazz-sdk (lib zazz)",
+      "responsibility": "Frames and messages (proto), descriptor passing (fdpass), JSON, errors and the HTTP request, response and host allowlist (http), shared with the scripts.",
+      "folder": "macos/rust/zazz-sdk",
+      "diagram": "macos/rust/zazz-sdk/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzled-zazz",
+      "name": "zazzled zazz module",
+      "responsibility": "Finds zazz-worker beside zazzled (or $ZAZZ_WORKER), runs compile and test for builds, and keeps serve workers warm for calls.",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "diagram": "macos/rust/zazzled/src/zazz/.dev/component-diagram.json"
+    },
+    {
+      "id": "wasmtime",
+      "name": "wasmtime and wasmtime-wasi",
+      "responsibility": "The WebAssembly runtime (Cranelift AOT compilation, epoch interruption, store limits) and WASI preview 1 (stdio, preopened directories, clocks, random).",
+      "external": true
+    },
+    {
+      "id": "https",
+      "name": "HTTPS servers",
+      "responsibility": "Hosts a script is allowed to reach, through ureq with bundled roots and no redirects.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-worker", "to": "src", "kind": "contains", "description": "src/main.rs is the [[bin]] target." },
+    { "from": "zazzled-zazz", "to": "src", "kind": "depends-on", "description": "Runs `zazz-worker compile` (WASM on stdin, module on stdout) and `zazz-worker test`, and spawns `zazz-worker serve` with the control socket on fd 3 and the module on fd 4." },
+    { "from": "src", "to": "zazz-sdk", "kind": "depends-on", "description": "Path dependency: proto, fdpass, Json, Error and http (NetPolicy, Request, Response, check)." },
+    { "from": "src", "to": "wasmtime", "kind": "depends-on", "description": "Compiles, loads and instantiates modules; links WASI preview 1." },
+    { "from": "src", "to": "https", "kind": "depends-on", "description": "Sends a script's allowed requests in serve mode; test mode answers from a replay file instead." }
+  ]
+}

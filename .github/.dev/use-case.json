@@ -27,7 +27,7 @@
       ],
       "actor": "Owner",
       "actorDocument": "Actors/owner.md",
-      "goal": "Make a new version of zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
+      "goal": "Make a new version of zazzle (and zazz), zazzled with zazz-worker, zazzle-csharp-indexer, afs, fix-network, free-disk-space and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
       "preconditions": [
         "The change is on main: main takes only pull requests.",
         "The repository holds the secrets CLOUDFLARE_R2_TOKEN and HOMEBREW_TAP_TOKEN; the Apple signing secrets are optional.",
@@ -73,7 +73,7 @@
           "id": "macos",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On macOS: stamps the version into every crate, tests the workspace, trains the PGO profile, builds both architectures, builds and smoke tests the zazzle invoker, makes universal binaries, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set, packs the tarball, creates the GitHub release and copies the tarball to the download bucket.",
+          "action": "On macOS: stamps the version into every crate, builds zazz-worker and tests the workspace, trains the PGO profile, builds both architectures, builds and smoke tests the zazzle invoker, makes universal binaries and copies the invoker as zazz, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set (zazz-worker with its entitlements), packs the tarball, creates the GitHub release and copies the tarball to the download bucket.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",
@@ -93,7 +93,7 @@
           "id": "linux",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On Linux x86_64 and aarch64: tests zazzled, builds it with a PGO profile, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz to the release and copies it to the download bucket.",
+          "action": "On Linux x86_64 and aarch64: builds zazz-worker and tests zazzled, builds zazzled with a PGO profile, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz (with zazz and zazz-worker) to the release and copies it to the download bucket.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",

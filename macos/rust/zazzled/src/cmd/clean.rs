@@ -489,6 +489,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(std::io::Cursor::new(input.as_bytes().to_vec())))),
+            caller: RefCell::new(None),
         };
         let mut all = vec!["clean".to_string()];
         all.extend(args.iter().map(|s| s.to_string()));
@@ -791,6 +792,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(std::io::Cursor::new(big)))),
+            caller: RefCell::new(None),
         };
         let o = run(&ctx, &[]).expect("clean");
         assert!(o.text.ends_with("… input cut at 64 MiB"));

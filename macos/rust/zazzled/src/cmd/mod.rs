@@ -42,12 +42,19 @@ status  daemon info
 C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, shell, HTML, Razor, CSS, SCSS, Sass and Less files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
+// The invoker's own standard streams and connection, for commands that hand them to a script.
+pub struct Caller {
+    pub stdio: [std::os::fd::OwnedFd; 3],
+    pub conn: Option<std::os::fd::RawFd>,
+}
+
 // Where a command runs and who asked.
 pub struct Ctx<'a> {
     pub engine: &'a Engine,
     pub cwd: PathBuf,
     pub session: String,
     pub stdin: RefCell<Option<Box<dyn Read>>>,
+    pub caller: RefCell<Option<Caller>>,
 }
 
 impl Ctx<'_> {
@@ -77,22 +84,28 @@ pub struct Output {
     pub text: String,
     pub status: u8,
     pub idable: bool,
+    pub raw: bool,
 }
 
 impl Output {
     // A successful result whose text may be deduplicated within a session.
     pub fn ok(text: String) -> Output {
-        Output { text, status: 0, idable: true }
+        Output { text, status: 0, idable: true, raw: false }
     }
 
     // A successful result that must always be sent in full.
     pub fn plain(text: String) -> Output {
-        Output { text, status: 0, idable: false }
+        Output { text, status: 0, idable: false, raw: false }
     }
 
     // A failure with a one-line message.
     pub fn err(msg: &str) -> Output {
-        Output { text: format!("error: {msg}"), status: 2, idable: false }
+        Output { text: format!("error: {msg}"), status: 2, idable: false, raw: false }
+    }
+
+    // Text written to standard output exactly as it is (no newline added), with any exit status.
+    pub fn raw(text: String, status: u8) -> Output {
+        Output { text, status, idable: false, raw: true }
     }
 }
 
@@ -208,6 +221,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
             "run executes in the caller's environment: use `zazzle run -- CMD ..` (or `zazzled wrap CMD ..`)"
                 .into(),
         ),
+        "zazz" => crate::zazz::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
@@ -313,6 +327,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(&b"abc"[..]))),
+            caller: RefCell::new(None),
         };
         assert_eq!(ctx.read_stdin().expect("stdin"), b"abc");
         assert_eq!(ctx.read_stdin().unwrap_err(), "no standard input available");
@@ -335,6 +350,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(Bad))),
+            caller: RefCell::new(None),
         };
         assert_eq!(ctx.read_stdin().unwrap_err(), "reading stdin: boom");
     }

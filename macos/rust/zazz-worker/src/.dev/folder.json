@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-worker source",
+  "folder": "macos/rust/zazz-worker/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-worker source",
+      "summary": "The source of zazz-worker: four subcommands (compile, serve, test, version) over one wasmtime engine that runs each call in a fresh instance with WASI preview 1 and the zazz_host imports.",
+      "purpose": "main.rs parses the subcommand; engine.rs holds the one engine configuration used both to precompile and to load modules, the import allowlist and the epoch ticker; run.rs builds a store with memory and time limits, links WASI preview 1 and the five zazz_host functions (request_len, take, send, http, cancelled) and runs _start once; serve.rs reads the control socket on fd 3 and the module on fd 4 and answers each call frame from a fresh instance; testrun.rs runs a script's test module, one instance per libtest test, and reports as JSON; net.rs checks each request against the network policy and sends it through ureq, or answers it from a replay file in tests.",
+      "boundaries": [
+        "Everything a run may touch arrives from zazzled: preopened directories, network policy, arguments, environment and limits in the hello frame, and the caller's three descriptors with each call.",
+        "Filesystem access is only what WASI preopens give; network access only through zazz_host.http after the policy check; nothing can start a process.",
+        "Frames, messages, descriptor passing and the HTTP wire layout are zazz-sdk's (lib zazz); this folder only uses them."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "dispatch" },
+        { "path": "macos/rust/zazz-worker/src/engine.rs", "symbol": "engine" },
+        { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "linker" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "serve_on" },
+        { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "run_tests" },
+        { "path": "macos/rust/zazz-worker/src/net.rs", "symbol": "send" }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/rust/zazz-worker/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazz script use cases",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "What agents and people do with zazz, step by step: an agent writes, tests, registers and calls a script; a developer installs a script and runs it as a command.",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" },
+    { "path": "agents/skills/zazz/SKILL.md", "symbol": "Ship and run" }
+  ],
+  "entities": [
+    {
+      "id": "add-and-call-a-script",
+      "name": "Add a script and call it",
+      "description": "A coding agent writes a small program, tests it, registers it and calls it with JSON input.",
+      "sources": [
+        { "path": "agents/skills/zazz/SKILL.md", "symbol": "Write" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "run" }
+      ],
+      "actor": "Coding agent",
+      "goal": "Run a program it wrote, with a sandbox, from any directory, by an id that always means the same tested code.",
+      "preconditions": [
+        "zazzled and zazz-worker are installed side by side; the agent runs `zazz` in a shell or uses `zazzled mcp`'s zazz tools.",
+        "For a Rust script, rustc with the wasm32-wasip1 target is installed.",
+        "The OS can sandbox processes: sandbox-exec on macOS, Landlock on Linux."
+      ],
+      "postconditions": [
+        "The script's .wasm, precompiled .cwasm and metadata are in the registry under b3: and the BLAKE3 of the .zazz bytes; the .zazz itself is not kept.",
+        "The agent has the script's JSON output, and a warm worker is kept for the next call."
+      ],
+      "flow": [
+        {
+          "id": "write",
+          "actor": "Coding agent",
+          "action": "Runs `zazz new NAME` (or zazz_new) and edits NAME/src/main.rs and NAME/tests/basic.rs.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "new" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "test",
+          "actor": "Coding agent",
+          "action": "Runs `zazz test NAME`; zazz packs the directory, builds it to WASM, AOT-compiles it and runs its tests in the sandbox, and replies with diagnostics or a test report, registering nothing.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/testcmd.rs", "symbol": "run" },
+            { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "build_and_test" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "pack",
+          "actor": "Coding agent",
+          "action": "Runs `zazz pack NAME` and gets the .zazz path and its id.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/pack.rs", "symbol": "run" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "add",
+          "actor": "Coding agent",
+          "action": "Runs `zazz add NAME.zazz`.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "read-once",
+          "actor": "add",
+          "action": "Reads the file once without following symlinks, ids it by BLAKE3 and, unless it is registered, takes the id's lock.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "read_once" },
+            { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::lock" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "build",
+          "actor": "add",
+          "action": "Checks any signature and takes a trust verdict, builds and tests in scratch space, then publishes the modules and metadata atomically and replies {hash, status: compiled, runtime, tests, warnings, signer, trusted}.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+            { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "check_signature" },
+            { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "evaluate" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Runs `zazz call ID '{...}'` (or zazz_call with input, or an operation with params and body).",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "parse" },
+            { "path": "macos/rust/zazzled/src/zazz/mcptools.rs", "symbol": "call_args" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "run",
+          "actor": "call",
+          "action": "Resolves the id, builds the worker spec from the manifest and the verdict's grants, takes a warm worker or spawns one, and sends the call with the caller's streams (or capture pipes over MCP).",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" },
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" },
+            { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "Pool::acquire" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "reply",
+          "actor": "call",
+          "action": "Relays progress until the result, returns the worker to the pool, and replies with the script's output (with captured stdout and stderr when there were any).",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "exchange" },
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "agent_reply" }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "test",
+          "condition": "The script does not compile, or a test fails.",
+          "outcome": "build_failed with up to 20 condensed diagnostics, or tests_failed with the report; the agent fixes the code and tests again.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "diagnostics" },
+            { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "build_and_test" }
+          ]
+        },
+        {
+          "atStep": "read-once",
+          "condition": "The same bytes are registered already.",
+          "outcome": "The reply has status cached and nothing is built.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "registered" }]
+        },
+        {
+          "atStep": "build",
+          "condition": "A build or test fails, the signature does not verify, or the policy requires tests and there are none.",
+          "outcome": "An error reply (build_failed, tests_failed, invalid_signature, tests_missing); nothing is published.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+            { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "check_signature" }
+          ]
+        },
+        {
+          "atStep": "build",
+          "condition": "The signer is not trusted here, or not for native code.",
+          "outcome": "The script is registered as an unsigned WASM script, with a warning saying so.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" }]
+        },
+        {
+          "atStep": "run",
+          "condition": "The id is unknown or ambiguous, or the OS cannot sandbox a WASM worker.",
+          "outcome": "not_found, or sandbox_unavailable.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::resolve" },
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" }
+          ]
+        },
+        {
+          "atStep": "reply",
+          "condition": "The call runs past its limit, the worker stops, or the caller hangs up.",
+          "outcome": "timeout, script_crashed or cancelled; the worker is killed rather than returned.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "exchange" },
+            { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "install-and-run-a-script",
+      "name": "Install a script and run it as a command",
+      "description": "A developer installs a .zazz under a name and runs it from a shell like any other command.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" }
+      ],
+      "actor": "Developer",
+      "goal": "Use a script with flags, piped input and plain output, without knowing its id.",
+      "preconditions": [
+        "zazzled, zazz-worker and the zazz invoker are installed side by side.",
+        "The developer has a .zazz file, or the id of a registered script."
+      ],
+      "postconditions": [
+        "$ZAZZ_BIN (default ~/.zazzle/bin)/NAME links to the invoker and the registry maps NAME to the script.",
+        "Running NAME prints the script's output and exits with its code."
+      ],
+      "flow": [
+        {
+          "id": "install",
+          "actor": "Developer",
+          "action": "Runs `zazz install FILE.zazz [--as NAME]`.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "register",
+          "actor": "install",
+          "action": "Adds the file as zazz add does (or resolves an id), checks the name, records it and links the shim to the invoker; says to put the shim directory on PATH when it is not.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "make_shim" },
+            { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "path_hint" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `NAME ARGS...` in a shell, possibly with piped input.",
+          "sources": [{ "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "build_request" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "parse",
+          "actor": "human run",
+          "action": "Resolves NAME, parses the arguments with the manifest's cli spec (or passes {argv}), takes out --json.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "input_for" },
+            { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "split_json" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "execute",
+          "actor": "human run",
+          "action": "Calls the script with mode human and the developer's own streams, showing progress on stderr.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" }],
+          "participantKind": "system"
+        },
+        {
+          "id": "render",
+          "actor": "human run",
+          "action": "Prints what the script returned as text, a table on a terminal or JSON, and exits with the script's code.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "render" }],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "register",
+          "condition": "The name is invalid or reserved, the add fails, or a non-symlink file holds the shim's place.",
+          "outcome": "`zazz install: ...` with exit 1 or 2; no shim is made.",
+          "sources": [
+            { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "check_name" },
+            { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "make_shim" }
+          ]
+        },
+        {
+          "atStep": "parse",
+          "condition": "--help, or arguments the cli spec rejects.",
+          "outcome": "The generated usage with exit 0, or the parser's message with exit 2.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" }]
+        },
+        {
+          "atStep": "parse",
+          "condition": "NAME is no longer installed or its script was removed.",
+          "outcome": "`NAME: not_found: ...` with exit 127.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" }]
+        },
+        {
+          "atStep": "execute",
+          "condition": "The call fails or the script returns an error.",
+          "outcome": "`NAME: CODE: message`, exit 1 or the script's own code.",
+          "sources": [{ "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "fail" }]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/operation.json",
+      "relationship": "The operations the steps call."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/feature.json",
+      "relationship": "The features these use cases exercise."
+    },
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/capability.json",
+      "relationship": "The capability they serve."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazz-worker/src",
+      "path": "macos/rust/zazz-worker/src/.dev/operation.json",
+      "relationship": "The worker subcommands the build and call steps run."
+    }
+  ]
+}

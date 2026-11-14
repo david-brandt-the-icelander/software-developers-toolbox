@@ -180,24 +180,68 @@ fn respond(stream: &mut UnixStream, out: &Output, fds: Fds) -> io::Result<()> {
         stream.write_all(&[out.status])?;
         return stream.write_all(out.text.as_bytes());
     };
-    let target = if out.status != 0 { fds.stderr.unwrap_or(stdout) } else { stdout };
+    let target = if out.status != 0 && !out.raw { fds.stderr.unwrap_or(stdout) } else { stdout };
     let mut f = File::from(target);
     let _ = f.write_all(out.text.as_bytes());
-    let _ = f.write_all(b"\n");
+    if !out.raw {
+        let _ = f.write_all(b"\n");
+    }
     drop(f);
     stream.write_all(&[out.status])
 }
 
 // Serves one connection after checking the peer runs as the same user.
-fn handle(mut stream: UnixStream, uid: u32, engine: &Engine) -> io::Result<()> {
-    if peer_uid(&stream)? != uid {
+fn handle(stream: UnixStream, sh: &Shared) -> io::Result<()> {
+    check_peer(&stream, sh.uid)?;
+    let (req, fds) = read_request(&stream)?;
+    if !long_running(&req.args) {
+        return run_request(stream, &sh.engine, req, fds);
+    }
+    let (engine, active, last_ms, origin) =
+        (sh.engine.clone(), sh.active.clone(), sh.last_ms.clone(), sh.origin);
+    active.fetch_add(1, Ordering::SeqCst);
+    std::thread::spawn(move || {
+        if let Err(e) = run_request(stream, &engine, req, fds) {
+            eprintln!("zazzled: {e}");
+        }
+        last_ms.store(now_ms(&origin), Ordering::SeqCst);
+        active.fetch_sub(1, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
+// Refuses peers running as another user.
+fn check_peer(stream: &UnixStream, uid: u32) -> io::Result<()> {
+    if peer_uid(stream)? != uid {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, "peer uid mismatch"));
     }
-    let (req, mut fds) = read_request(&stream)?;
+    Ok(())
+}
+
+// True for requests that may run for a long time (script calls), which get their own thread.
+fn long_running(args: &[String]) -> bool {
+    args.first().is_some_and(|a| a == "zazz")
+        && args.get(1).is_some_and(|a| matches!(a.as_str(), "call" | "run" | "exec-name"))
+}
+
+// Duplicates the invoker's three standard streams for a command that hands them to a script.
+fn caller_of(stream: &UnixStream, fds: &Fds) -> Option<cmd::Caller> {
+    let dup = |f: &Option<OwnedFd>| f.as_ref().and_then(|f| f.try_clone().ok());
+    Some(cmd::Caller {
+        stdio: [dup(&fds.stdin)?, dup(&fds.stdout)?, dup(&fds.stderr)?],
+        conn: Some(stream.as_raw_fd()),
+    })
+}
+
+// Runs a decoded request and answers it.
+fn run_request(mut stream: UnixStream, engine: &Engine, req: Request, mut fds: Fds) -> io::Result<()> {
     let cwd = working_dir(&req, &fds)?;
+    let caller = caller_of(&stream, &fds);
     let stdin: Option<Box<dyn Read>> = fds.stdin.take().map(|fd| Box::new(File::from(fd)) as Box<dyn Read>);
-    let ctx = Ctx { engine, cwd, session: req.session, stdin: RefCell::new(stdin) };
+    let ctx =
+        Ctx { engine, cwd, session: req.session, stdin: RefCell::new(stdin), caller: RefCell::new(caller) };
     let out = cmd::run(&ctx, &req.args);
+    drop(ctx);
     respond(&mut stream, &out, fds)
 }
 
@@ -219,8 +263,8 @@ struct Shared {
     listener: UnixListener,
     engine: Arc<Engine>,
     stop: AtomicBool,
-    active: AtomicUsize,
-    last_ms: AtomicU64,
+    active: Arc<AtomicUsize>,
+    last_ms: Arc<AtomicU64>,
     origin: Instant,
     uid: u32,
 }
@@ -247,7 +291,7 @@ fn worker(sh: &Shared, external_stop: &AtomicBool) {
             }
         };
         sh.active.fetch_add(1, Ordering::SeqCst);
-        if let Err(e) = stream.set_nonblocking(false).and_then(|()| handle(stream, sh.uid, &sh.engine)) {
+        if let Err(e) = stream.set_nonblocking(false).and_then(|()| handle(stream, sh)) {
             eprintln!("zazzled: {e}");
         }
         sh.last_ms.store(now_ms(&sh.origin), Ordering::SeqCst);
@@ -272,8 +316,8 @@ pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &A
         listener,
         engine,
         stop: AtomicBool::new(false),
-        active: AtomicUsize::new(0),
-        last_ms: AtomicU64::new(0),
+        active: Arc::new(AtomicUsize::new(0)),
+        last_ms: Arc::new(AtomicU64::new(0)),
         origin: Instant::now(),
         uid,
     };
@@ -625,8 +669,46 @@ pub mod tests {
         let (a, _b) = UnixStream::pair().expect("pair");
         // SAFETY: getuid has no preconditions.
         let me = unsafe { libc::getuid() };
-        let err = handle(a, me + 1, &Engine::new()).unwrap_err();
+        let err = check_peer(&a, me + 1).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    // Checks raw outputs go to stdout as they are, whatever the status.
+    #[test]
+    fn test_respond_raw() {
+        let (mut a, mut b) = UnixStream::pair().expect("pair");
+        let (out_w, mut out_r) = UnixStream::pair().expect("out");
+        let fds = Fds { stdout: Some(OwnedFd::from(out_w)), ..Fds::default() };
+        respond(&mut a, &Output::raw("plain".into(), 3), fds).expect("respond");
+        drop(a);
+        let mut status = Vec::new();
+        b.read_to_end(&mut status).expect("status");
+        let mut text = String::new();
+        out_r.read_to_string(&mut text).expect("text");
+        assert_eq!((status, text.as_str()), (vec![3], "plain"));
+    }
+
+    // Checks a script call whose working directory cannot be found fails on its own thread without an answer.
+    #[test]
+    fn test_long_running_request_error() {
+        let srv = Running::start(Duration::from_secs(30));
+        let req =
+            Request { cwd: String::new(), session: String::new(), args: vec!["zazz".into(), "call".into()] };
+        assert!(crate::client::call(&srv.sock, &req).is_err());
+        srv.finish().expect("stop");
+    }
+
+    // Checks script calls run on their own thread with the caller's streams and still answer.
+    #[test]
+    fn test_long_running_requests_get_a_thread() {
+        let srv = Running::start(Duration::from_secs(30));
+        let t = TempDir::new();
+        let (out, err, status) = fd_call(&srv.sock, t.path(), &["zazz", "call"], b"");
+        assert_eq!((out.as_str(), status), ("", 2));
+        assert!(err.contains("\"code\":\"usage\""), "{err}");
+        assert!(long_running(&["zazz".into(), "run".into()]) && !long_running(&["zazz".into(), "ls".into()]));
+        assert!(!long_running(&["read".into()]));
+        srv.finish().expect("stop");
     }
 
     // Checks an open connection keeps an otherwise idle server alive until it finishes.

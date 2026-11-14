@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-format",
+  "folder": "macos/rust/zazz-format",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-format",
+      "summary": "The zazz-format crate, the library that defines the .zazz file: a strict ZIP subset, the zazz.json manifest, deterministic packing, the zazz.sig signature envelope and BLAKE3 script ids.",
+      "purpose": "Holds the format half of zazz scripts apart from the daemon that runs them, so the rules for what a .zazz may contain live in one small crate with three dependencies. The crate manifest (Cargo.toml, a member of the macos/rust workspace, each dependency commented with its reason) and the source in src/.",
+      "boundaries": [
+        "A library only: no binary, nothing installed on its own; zazzled is its one dependent in the workspace.",
+        "Says what an archive, manifest and envelope are, not what is trusted or allowed: signature verification, certificate chains, grants and the sandbox are zazzled's (macos/rust/zazzled/src/zazz).",
+        "Does no I/O beyond reading a directory to pack; archives are read and written in memory."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/Cargo.toml", "symbol": "[dependencies]" },
+        { "path": "macos/rust/zazz-format/src/lib.rs", "symbol": "script_id" },
+        { "path": "macos/rust/Cargo.toml", "symbol": "workspace.members" },
+        { "path": "macos/rust/zazzled/Cargo.toml", "symbol": "zazz-format" }
+      ]
+    }
+  ]
+}

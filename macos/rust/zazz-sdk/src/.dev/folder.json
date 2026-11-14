@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz SDK source",
+  "folder": "macos/rust/zazz-sdk/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz SDK source",
+      "summary": "Every module of the zazz SDK, flat in one folder apart from the test library in test/: the script API, the launcher protocol with its native and WASM backends, HTTP, JSON, errors and the human command line.",
+      "purpose": "Holds the code a script links and the protocol code its launchers share. lib.rs declares the modules and serve; handlers.rs and call.rs are what a script's code touches; proto.rs, native.rs, fdpass.rs and wasm.rs carry calls in and results out; http.rs, json.rs and error.rs are the values passed; cliargs.rs and render.rs serve human callers.",
+      "boundaries": [
+        "std only, and every file must compile with plain rustc: zazzled embeds this folder's files by name (macos/rust/zazzled/src/zazz/sdk.rs FILES), so adding, renaming or removing a file means changing that list.",
+        "native.rs and fdpass.rs compile only on Unix and wasm.rs only on WASM targets.",
+        "Native scripts get no network client (call.rs NoHttp); only the WASM backend reaches the network, through the host."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "serve" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "FILES" },
+        { "path": "macos/rust/zazz-sdk/src/native.rs", "symbol": "run_call" }
+      ]
+    }
+  ]
+}

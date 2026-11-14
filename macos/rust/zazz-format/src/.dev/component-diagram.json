@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-format source component diagram",
+  "folder": "macos/rust/zazz-format/src",
+  "description": "The modules of zazz_format. zip.rs is the base: it reads untrusted archive bytes into a sorted, fully checked Archive and writes an Archive back deterministically. manifest.rs reads zazz.json out of an Archive, sig.rs reads and writes zazz.sig, pack.rs turns a script directory into archive bytes, and lib.rs names a .zazz by the BLAKE3 hash of its bytes. Everything works in memory and is compiled into the one library.",
+  "sources": [
+    { "path": "macos/rust/zazz-format/src/lib.rs", "symbol": "script_id" },
+    { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "read" },
+    { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "write" },
+    { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "Manifest::of" },
+    { "path": "macos/rust/zazz-format/src/pack.rs", "symbol": "pack_dir" },
+    { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "Envelope::of" }
+  ],
+  "components": [
+    {
+      "id": "format-src",
+      "name": "zazz-format source",
+      "responsibility": "The zazz_format library's modules; lib.rs declares them and defines script_id, \"b3:\" and the BLAKE3 hex of a .zazz file's exact bytes.",
+      "folder": "macos/rust/zazz-format/src"
+    },
+    {
+      "id": "zip",
+      "name": "Archive reader and writer (zip.rs)",
+      "folder": "macos/rust/zazz-format/src",
+      "responsibility": "read: checks size Limits before inflating anything (32 MiB packed, 128 MiB unpacked, 1024 entries, 64 MiB per entry, 100:1 ratio by default), requires the end record at the very end and the central directory to fill the space before it, refuses zip64, multi-disk, encryption, methods other than stored and deflate, symlinks and special files, unsafe or case-colliding names, overlapping entries and CRC or size mismatches. write: sorted names, fixed 1980 date, Unix mode 0644, deflate level 9 only when smaller. Also check_name and crc32."
+    },
+    {
+      "id": "manifest",
+      "name": "Manifest (manifest.rs)",
+      "folder": "macos/rust/zazz-format/src",
+      "responsibility": "Parses zazz.json strictly (unknown keys rejected at every level), fills in defaults, validates names, sandbox paths, host patterns, messages, tests and limits, and checks that the entry and test files it names are in the archive. Exposes the MANIFEST and SIGNATURE entry names, check_sandbox_path and check_host."
+    },
+    {
+      "id": "pack",
+      "name": "Packer (pack.rs)",
+      "folder": "macos/rust/zazz-format/src",
+      "responsibility": "pack_dir: collects a directory's regular files in name order, skipping dot-files and the top-level target/, refuses symlinks, special files and a zazz.sig, enforces the Limits, validates the manifest against the files and returns the written bytes with the Manifest."
+    },
+    {
+      "id": "sig",
+      "name": "Signature envelope (sig.rs)",
+      "folder": "macos/rust/zazz-format/src",
+      "responsibility": "The zazz.sig Envelope: the canonical BLAKE3 digest of every other entry, the signed message (domain string plus digest), base64, JSON rendering and strict parsing, the check that an archive's envelope digest matches its entries, and with_envelope to add one. Declares the algorithm name and the two certificate OIDs; it does not verify signatures or certificates."
+    }
+  ],
+  "relationships": [
+    { "from": "format-src", "to": "zip", "kind": "contains", "description": "pub mod zip." },
+    { "from": "format-src", "to": "manifest", "kind": "contains", "description": "pub mod manifest." },
+    { "from": "format-src", "to": "pack", "kind": "contains", "description": "pub mod pack." },
+    { "from": "format-src", "to": "sig", "kind": "contains", "description": "pub mod sig." },
+    { "from": "manifest", "to": "zip", "kind": "depends-on", "description": "Validates entry and test paths with check_name and looks them up in the Archive." },
+    { "from": "pack", "to": "zip", "kind": "depends-on", "description": "Builds an Archive from Entry values, checks names and Limits, and serialises it with zip::write." },
+    { "from": "pack", "to": "manifest", "kind": "depends-on", "description": "Manifest::of validates the packed files; refuses a directory holding SIGNATURE." },
+    { "from": "sig", "to": "zip", "kind": "depends-on", "description": "Digests an Archive's entries and builds a new Archive with the envelope entry." },
+    { "from": "sig", "to": "manifest", "kind": "depends-on", "description": "The SIGNATURE entry name, zazz.sig." }
+  ]
+}

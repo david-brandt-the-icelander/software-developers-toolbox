@@ -34,7 +34,7 @@
     {
       "id": "core",
       "name": "Invoker logic (zazzle_core.h)",
-      "responsibility": "Execs a standalone tool, `zazzled wrap` or `zazzled proxy` when argv[1] names one; otherwise builds the request and socket path from argv and the environment, connects to the daemon or starts it, checks its uid, sends the request with descriptors and returns its status byte, spinning briefly before blocking; one-line errors with fixed exit codes.",
+      "responsibility": "Execs a standalone tool (only when run as zazzle), `zazzled wrap` or `zazzled proxy` when argv[1] names one; otherwise builds the request and socket path from argv and the environment, prefixing the arguments with `zazz` when run as zazz and with `zazz exec-name NAME` under any other name, connects to the daemon or starts it, checks its uid, sends the request with descriptors and returns its status byte, spinning briefly before blocking; one-line errors with fixed exit codes.",
       "folder": "macos/c/zazzle/src"
     },
     {
@@ -70,7 +70,7 @@
     {
       "id": "zazzled",
       "name": "zazzled daemon",
-      "responsibility": "Runs the command and writes its output to the passed streams.",
+      "responsibility": "Runs the command (a zazzle command, or a zazz command or script) and writes its output to the passed streams.",
       "folder": "macos/rust/zazzled/src",
       "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
     },

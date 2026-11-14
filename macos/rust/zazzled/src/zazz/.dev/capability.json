@@ -1,0 +1,69 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "zazz script capabilities",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "What the zazz commands do for agents and people, and who may ask.",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" }
+  ],
+  "entities": [
+    {
+      "id": "sandboxed-scripts",
+      "name": "Sandboxed scripts for agents and people",
+      "description": "Writing, testing, registering, signing and running small programs as WebAssembly (or, when trusted, native code) with the access their manifest asks for and their signer is granted.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/server.rs", "symbol": "check_peer" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "granted" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "effective" }
+      ],
+      "responsibility": "Turns a script directory or .zazz file into a registered, tested script known by the hash of its bytes, runs it with JSON in and out for agents or as a command with flags for people, and decides what it may touch from its manifest, its signer's grants and the machine's policy.",
+      "operations": [
+        { "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "new" },
+        { "path": "macos/rust/zazzled/src/zazz/pack.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/testcmd.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "ls" },
+        { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "describe" },
+        { "path": "macos/rust/zazzled/src/zazz/manage.rs", "symbol": "rm" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "keygen" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "sign" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "trust_cmd" },
+        { "path": "macos/rust/zazzled/src/zazz/setup.rs", "symbol": "doctor" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "uninstall" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "list" }
+      ],
+      "access": [
+        "Over the socket only a peer running as the daemon's own uid is served (server.rs check_peer); over MCP whoever started `zazzled mcp`.",
+        "MCP clients get new, test, pack, add, call, describe and ls only; signing, trust, install, run and rm are not offered there (mcptools.rs TOOLS).",
+        "Unsigned or untrusted scripts get no network and only their manifest's paths; a trusted signer's grants can add network hosts and native code and narrow paths, and the root-owned policy can switch network and native off or require tests (trust.rs policy, effective).",
+        "Trusting an authority writes root-owned /etc/zazzle/trust.d, which needs root, and on macOS asks the person to authenticate; files not owned by root there or in the policy are ignored (trust.rs root_owned).",
+        "Signing keys are the user's own 0600 files in ~/.zazzle/keys."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/operation.json",
+      "relationship": "The operations through which the capability is reached."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/feature.json",
+      "relationship": "The behavior this capability offers."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/use-case.json",
+      "relationship": "Use cases built on it."
+    }
+  ]
+}

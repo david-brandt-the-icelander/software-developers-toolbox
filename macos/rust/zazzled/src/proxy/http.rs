@@ -441,6 +441,10 @@ mod tests {
         assert!(origin_ok(&h("http://[::1]:8080/x")));
         assert!(!origin_ok(&h("https://evil.example")) && !origin_ok(&h("null")));
         assert_eq!(origin_host("localhost"), "localhost");
+        assert_eq!(origin_host("http://a]b:1"), "a]b");
+        let mut out = Vec::new();
+        assert_eq!(Chunked(&mut out).write(b"").expect("empty write"), 0);
+        assert!(out.is_empty());
     }
 
     // Checks events are cleaned when they answer a recorded call and copied otherwise, including a final unterminated one.
@@ -682,6 +686,7 @@ mod tests {
             run("ftp://x", "127.0.0.1:0", &filter()).unwrap_err(),
             "--upstream must be an http:// or https:// URL, not 'ftp://x'"
         );
+        assert!(run("https://x", "not an address", &filter()).is_err());
         assert!(run("http://x", "not an address", &filter())
             .unwrap_err()
             .starts_with("cannot listen on not an address: "));
