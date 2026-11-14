@@ -3,7 +3,7 @@ name: zazzle bench
 
 on:
   pull_request:
-    paths: ["macos/c/zazzle/**", "macos/rust/zazzled/**", "macos/release/pgo.sh", ".github/workflows/zazzle-bench.yml"]
+    paths: ["macos/c/zazzle/**", "macos/rust/zazzled/**", "macos/rust/zazzle-lang/**", "macos/release/pgo.sh", "macos/release/language-modules.sh", ".github/workflows/zazzle-bench.yml"]
   workflow_dispatch:
     inputs:
       runs:
@@ -22,9 +22,20 @@ jobs:
           - macos-latest
           - ubuntu-24.04
     runs-on: ${{ matrix.os }}
+    # zazzled links no grammar: every build here embeds the manifest of the outline modules built below and loads them from there.
+    env:
+      ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
+      ZAZZLE_LANGUAGES_DIR: ${{ github.workspace }}/macos/rust/dist/languages
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build the language modules outlines use
+        working-directory: macos/rust
+        env:
+          LANGUAGES: rust python c javascript typescript tsx csharp
+        run: |
+          bash ../release/language-modules.sh dist/languages
+          bash ../release/language-modules.sh --manifest dist/languages
       - name: Build daemon
         working-directory: macos/rust
         run: cargo build --release -p zazzled
@@ -48,6 +59,8 @@ jobs:
           v=$(clang --version | sed -n 's/.*clang version \([0-9][0-9]*\).*/\1/p' | head -1)
           sudo apt-get install -y -qq "libclang-rt-$v-dev"
       - name: Train the PGO profile (same script as the release)
+        env:
+          PGO_LANGUAGES: macos/rust/dist/languages
         run: sh macos/release/pgo.sh >> "$GITHUB_ENV"
       - name: Build zazzled with the profile
         working-directory: macos/rust

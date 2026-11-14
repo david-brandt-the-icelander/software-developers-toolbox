@@ -120,7 +120,7 @@
     {
       "id": "zazzle-bench",
       "title": "zazzle benchmarks",
-      "summary": "Builds zazzled and the zazzle invoker, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, on macOS and Linux runners.",
+      "summary": "Builds zazzled and the zazzle invoker, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, on macOS and Linux runners. zazzled links no grammar, so the job first builds the seven language modules outlines use (Rust, Python, C, C#, JavaScript, TypeScript, TSX), embeds their manifest in every zazzled it builds and loads them from that directory, PGO training included.",
       "trigger": "A pull request that changes macos/c/zazzle/, macos/rust/zazzled/, macos/release/pgo.sh or this workflow, or a manual run with a number of spawns per row.",
       "checks": [
         "cargo build --release -p zazzled; make; test/smoke.sh; bench/run.sh; bench/refs.sh",
