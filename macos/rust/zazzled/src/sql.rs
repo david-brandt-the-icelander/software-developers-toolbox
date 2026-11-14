@@ -122,6 +122,8 @@ mod tests {
         );
         assert!(kept("  (1), /* x */\n  (2),\n  (3),\n  (4),\n  (5),\n  (6);"));
         assert!(kept("  (1) x,\n  (2),\n  (3),\n  (4),\n  (5),\n  (6);"));
+        assert!(kept("  ('a--b'),\n  (2),\n  (3),\n  (4),\n  (5),\n  (6);"));
+        assert!(kept("  ('a/*b'),\n  (2),\n  (3),\n  (4),\n  (5),\n  (6);"));
         assert!(view("a.sql", "INSERT INTO t SELECT * FROM u;\n").is_none());
         let quoted =
             "insert into t values\n  ('a(', 1),\n  ('b)', 2),\n  (3, 3),\n  (4, 4),\n  (5, 5),\n  (6, 6);\n";

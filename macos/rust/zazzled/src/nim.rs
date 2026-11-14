@@ -169,6 +169,7 @@ proc load(api: Api, id: int): int =
             .any(|l| ["6\t", "8\t", "9\t", "12\t", "13\t", "21\t"].iter().any(|k| l.starts_with(k))));
         assert!(view("a.nim", "proc f() =\n  echo 1\n").is_none());
         assert!(view("a.nim", "proc f() =\n  debug \"x\",\n    y\n").is_none());
+        assert!(view("a.nim", "info \"top\"\nproc f() =\n  debug \"x\",\n  y\n").is_none());
         assert!(view("a.nim", "let s = \"\"\"\nimport a\nimport b\n\"\"\"\n").is_none());
         let edges = "include a\nimport b,\n  c\n\n\nproc f() =\n  debug \"x\" &\n    \"y\"\n  info \"z\"\n";
         let v = view("a.nim", edges).expect("view");

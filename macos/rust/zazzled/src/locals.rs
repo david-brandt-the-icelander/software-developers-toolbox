@@ -1102,6 +1102,8 @@ mod tests {
         assert_eq!(renamed(c_for, Lang::ObjC), ["counter->cou@4"]);
         let member = "@implementation A\n- (void)load {\n    id lineItems = [self lineItems];\n    [self show:lineItems];\n}\n@end\n";
         assert_eq!(renamed(member, Lang::ObjC), ["lineItems->li@2"]);
+        let untyped = "void f(NSArray *items) {\n    id lineItem = nil;\n    for (lineItem in items) { g(lineItem); }\n}\n";
+        assert_eq!(renamed(untyped, Lang::ObjC), ["lineItem->li@3"]);
         let kvc = "@implementation A\n- (id)load {\n    id counter = @1;\n    return [self valueForKey:@\"counter\"];\n}\n@end\n";
         assert!(renamed(kvc, Lang::ObjC).is_empty());
     }
@@ -1113,6 +1115,8 @@ mod tests {
         assert_eq!(renamed(src, Lang::Groovy), ["responseBody->rb@2", "totalSum->ts@2"]);
         let members = "class A {\n    def f() {\n        def totalSum = this.totalSum + totalSum()\n        println \"totalSum\"\n        return totalSum\n    }\n}\n";
         assert_eq!(renamed(members, Lang::Groovy), ["totalSum->ts@2"]);
+        let object = "class A {\n    def f() {\n        def lineItems = load()\n        return lineItems.size\n    }\n}\n";
+        assert_eq!(renamed(object, Lang::Groovy), ["lineItems->li@2"]);
         let none = |body: &str| {
             renamed(&format!("class A {{\n    def f() {{\n{body}\n    }}\n}}\n"), Lang::Groovy).is_empty()
         };

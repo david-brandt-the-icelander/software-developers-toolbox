@@ -2968,6 +2968,13 @@ class InvoiceRepository {
         assert!(view("f", ps_imports, Lang::PowerShell).is_none());
         let ps_chain = "function f {\n    Write-Verbose \"a\" | Out-Null\n    g && Write-Verbose \"b\"\n}\n";
         assert!(view("f", ps_chain, Lang::PowerShell).is_none());
+        assert!(view("f", &vb("        x.a = a"), Lang::VisualBasic).is_none());
+        let shared = "Class A\n    Shared ReadOnly X As Integer = 1\nEnd Class\n";
+        assert!(view("f", shared, Lang::VisualBasic).is_none());
+        let objc_inline =
+            "void f() {\n    @try { g(); } @catch (NSException *e) { NSLog(@\"x\"); @throw; } h();\n}\n";
+        assert!(view("f", objc_inline, Lang::ObjC).is_none());
+        assert!(view("f", "(ns a (:require [b]\n  [c]))\n", Lang::Clojure).is_none());
         let vb_try = |catch: &str| {
             format!("Module M\n    Sub F()\n        Try\n            G()\n{catch}\n        End Try\n    End Sub\nEnd Module\n")
         };
