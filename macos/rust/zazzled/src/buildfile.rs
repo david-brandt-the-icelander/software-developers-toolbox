@@ -252,5 +252,10 @@ mod tests {
             is_word("a.c \\") && !is_word("PRIVATE") && !is_word("a b") && !is_word("#x") && is_word("X")
         );
         assert!(!is_include("include(a", Kind::CMake) && !is_include("  include a", Kind::Make));
+        assert_eq!(depth("f(\"#)\" ) x"), 0);
+        assert!(!is_word("") && !is_word("  \\") && !is_word("a(") && !is_word("a)"));
+        assert_eq!(list(&["X = \\", "a \\"], 0, Kind::Make), Some(vec![1]));
+        let src = ["set(S", "  a", "", "  # note", "  b", "#[[ x ]]", "    c"];
+        assert_eq!(list(&src, 0, Kind::CMake), Some(vec![1, 4]));
     }
 }
