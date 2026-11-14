@@ -572,7 +572,7 @@
     },
     {
       "id": "code-terse-view",
-      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
       "subject": [
         {
@@ -590,7 +590,8 @@
         "Rust, Go and Java sample files show imports, logging, the field-only constructor, Go error returns, the rethrowing Java catch, access modifiers and short locals with source line numbers, and JavaScript follows the TypeScript rules.",
         "Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell sample files show imports, logging, the field-only init or constructor, the rethrowing catch, regions, access modifiers and short locals with source line numbers, and keep prints, side effects and catches that do more.",
         "Ruby, PHP, Scala and shell sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more.",
-        "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands."
+        "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands.",
+        "Perl, Lua and Elixir sample files show imports, logging, regions and short locals with source line numbers, keep prints and non-logger calls, and keep names used inside their own declaration, before it, through other Perl sigils, in Elixir heads and patterns, or in functions that use string eval, load or quote."
       ],
       "checks": [
         {
@@ -874,6 +875,42 @@
           "path": "macos/rust/zazzled/src/terse.rs",
           "symbol": "test_view_shell",
           "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_perl_lua_elixir",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_kept_perl_lua_elixir",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_perl",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_lua",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "test_elixir",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/locals.rs",
+          "symbol": "renames",
+          "command": "Renamed only the locals in 9 Perl core modules (Text::Wrap, Text::ParseWords, Text::Balanced, Text::Abbrev, File::Basename, Getopt::Long, JSON::PP, Time::Local, Pod::Usage; 136 locals) and in Penlight (39 files, 193 locals): each passes perl -c or luac -p, and a script exercising the modules prints the same output with the original and renamed copies; an Elixir sample module also runs the same."
         }
       ],
       "evidenceStatus": "source-verified"

@@ -148,8 +148,8 @@
     },
     {
       "id": "code-view-syntactic",
-      "title": "The Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell view is syntactic",
-      "summary": "terse.rs works from the syntax tree alone: loggers are recognised by name, nothing is resolved across files, and only what stands alone on its lines is hidden. locals.rs renames a local only when every place its name appears in the function can be renamed, so names that also appear as parameters, shorthand keys, nested declarations or in global, nonlocal or eval keep theirs. In C and C++ an unknown macro can make the parser misread a declaration; functions it misreads, or that parse with errors, keep their names, and macros defined in headers cannot be seen. Shell scripts get no short locals at all.",
+      "title": "The Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell view is syntactic",
+      "summary": "terse.rs works from the syntax tree alone: loggers are recognised by name, nothing is resolved across files, and only what stands alone on its lines is hidden. locals.rs renames a local only when every place its name appears in the function can be renamed, so names that also appear as parameters, shorthand keys, nested declarations or in global, nonlocal or eval keep theirs. In C and C++ an unknown macro can make the parser misread a declaration; functions it misreads, or that parse with errors, keep their names, and macros defined in headers cannot be seen. Perl locals keep their names under `no strict` or a string eval, Lua locals in functions that call load, and Elixir locals in functions that use quote, binding or var!. Shell scripts get no short locals at all.",
       "impact": "Logging through a differently named object, or helper wrappers, stays visible, and some locals the C# view would shorten keep their long names.",
       "evidenceStatus": "source-verified",
       "sources": [

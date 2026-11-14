@@ -48,7 +48,7 @@
     {
       "id": "read",
       "name": "read (read.rs)",
-      "responsibility": "Numbered lines of files, ranges or one named symbol with a header (line count, sha), the middle elided beyond the token budget; optional line anchors; C# files as the indexer's terse view HTML and Razor files as markup.rs's terse view, CSS, SCSS, Sass and Less files as styles.rs's terse view, and Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell files as terse.rs's terse view unless --source.",
+      "responsibility": "Numbered lines of files, ranges or one named symbol with a header (line count, sha), the middle elided beyond the token budget; optional line anchors; C# files as the indexer's terse view HTML and Razor files as markup.rs's terse view, CSS, SCSS, Sass and Less files as styles.rs's terse view, and Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir and shell files as terse.rs's terse view unless --source.",
       "folder": "macos/rust/zazzled/src/cmd"
     },
     {
