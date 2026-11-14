@@ -129,7 +129,7 @@
     {
       "id": "terse-view",
       "title": "terse view",
-      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic or shell file (terse.rs), a Nim or SQL file (nim.rs, sql.rs), a JSON, YAML, TOML or Markdown file (data.rs, md.rs), or an XML file, INI file or Dockerfile (xml.rs, config.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
+      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal or shell file (terse.rs), a Nim, SQL or COBOL file (nim.rs, sql.rs, cobol.rs), a JSON, YAML, TOML or Markdown file (data.rs, md.rs), or an XML file, INI file or Dockerfile (xml.rs, config.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
       "notToBeConfusedWith": [
         "An outline, which lists symbols and their ranges, not code."
       ],
@@ -275,7 +275,7 @@
     {
       "id": "language-module",
       "title": "language module",
-      "summary": "A tree-sitter grammar built as a shared library (macos/rust/zazzle-lang) and published beside the zazzle download; zazzled downloads it on demand, accepts it only with the SHA-256 in its compiled-in manifest, and loads it with dlopen.",
+      "summary": "A tree-sitter grammar built as a shared library (macos/rust/zazzle-lang) and published beside the zazzle download; zazzled links no grammar, downloads modules on demand, accepts one only with the SHA-256 in its compiled-in manifest, and loads it with dlopen.",
       "notToBeConfusedWith": [
         "zazz scripts, which are WebAssembly programs a user adds, not grammars"
       ],

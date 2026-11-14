@@ -6,6 +6,7 @@ pub mod args;
 pub mod cli;
 pub mod client;
 pub mod cmd;
+pub mod cobol;
 pub mod config;
 pub mod data;
 pub mod engine;

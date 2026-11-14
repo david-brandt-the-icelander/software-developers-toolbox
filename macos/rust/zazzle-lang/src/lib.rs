@@ -1,6 +1,10 @@
 // A tree-sitter grammar packaged as a zazzled language module: built once per language feature, it exports the grammar and the module format version for zazzled to load with dlopen.
 #[cfg(feature = "bash")]
 use tree_sitter_bash::LANGUAGE as GRAMMAR;
+#[cfg(feature = "c")]
+use tree_sitter_c::LANGUAGE as GRAMMAR;
+#[cfg(feature = "csharp")]
+use tree_sitter_c_sharp::LANGUAGE as GRAMMAR;
 #[cfg(feature = "clojure")]
 use tree_sitter_clojure_orchard::LANGUAGE as GRAMMAR;
 #[cfg(feature = "cpp")]
@@ -11,6 +15,8 @@ use tree_sitter_dart::LANGUAGE as GRAMMAR;
 use tree_sitter_elixir::LANGUAGE as GRAMMAR;
 #[cfg(feature = "erlang")]
 use tree_sitter_erlang::LANGUAGE as GRAMMAR;
+#[cfg(feature = "fortran")]
+use tree_sitter_fortran::LANGUAGE as GRAMMAR;
 #[cfg(feature = "fsharp")]
 use tree_sitter_fsharp::LANGUAGE_FSHARP as GRAMMAR;
 #[cfg(feature = "go")]
@@ -21,6 +27,8 @@ use tree_sitter_groovy::LANGUAGE as GRAMMAR;
 use tree_sitter_haskell::LANGUAGE as GRAMMAR;
 #[cfg(feature = "java")]
 use tree_sitter_java::LANGUAGE as GRAMMAR;
+#[cfg(feature = "javascript")]
+use tree_sitter_javascript::LANGUAGE as GRAMMAR;
 #[cfg(feature = "julia")]
 use tree_sitter_julia::LANGUAGE as GRAMMAR;
 #[cfg(feature = "kotlin")]
@@ -31,18 +39,28 @@ use tree_sitter_lua::LANGUAGE as GRAMMAR;
 use tree_sitter_objc::LANGUAGE as GRAMMAR;
 #[cfg(feature = "ocaml")]
 use tree_sitter_ocaml::LANGUAGE_OCAML as GRAMMAR;
+#[cfg(feature = "pascal")]
+use tree_sitter_pascal::LANGUAGE as GRAMMAR;
 #[cfg(feature = "php")]
 use tree_sitter_php::LANGUAGE_PHP as GRAMMAR;
 #[cfg(feature = "powershell")]
 use tree_sitter_powershell::LANGUAGE as GRAMMAR;
+#[cfg(feature = "python")]
+use tree_sitter_python::LANGUAGE as GRAMMAR;
 #[cfg(feature = "r")]
 use tree_sitter_r::LANGUAGE as GRAMMAR;
 #[cfg(feature = "ruby")]
 use tree_sitter_ruby::LANGUAGE as GRAMMAR;
+#[cfg(feature = "rust")]
+use tree_sitter_rust::LANGUAGE as GRAMMAR;
 #[cfg(feature = "scala")]
 use tree_sitter_scala::LANGUAGE as GRAMMAR;
 #[cfg(feature = "swift")]
 use tree_sitter_swift::LANGUAGE as GRAMMAR;
+#[cfg(feature = "tsx")]
+use tree_sitter_typescript::LANGUAGE_TSX as GRAMMAR;
+#[cfg(feature = "typescript")]
+use tree_sitter_typescript::LANGUAGE_TYPESCRIPT as GRAMMAR;
 #[cfg(feature = "vb")]
 use tree_sitter_vb_dotnet::LANGUAGE as GRAMMAR;
 #[cfg(feature = "zig")]
@@ -62,6 +80,15 @@ pub extern "C" fn zazzle_language() -> *const () {
 
 // Calls the grammar crate's language function.
 #[cfg(any(
+    feature = "rust",
+    feature = "python",
+    feature = "c",
+    feature = "javascript",
+    feature = "typescript",
+    feature = "csharp",
+    feature = "fortran",
+    feature = "pascal",
+    feature = "tsx",
     feature = "bash",
     feature = "dart",
     feature = "go",
@@ -96,6 +123,15 @@ fn grammar() -> *const () {
 
 // Returns null: this build carries no grammar.
 #[cfg(not(any(
+    feature = "rust",
+    feature = "python",
+    feature = "c",
+    feature = "javascript",
+    feature = "typescript",
+    feature = "csharp",
+    feature = "fortran",
+    feature = "pascal",
+    feature = "tsx",
     feature = "bash",
     feature = "dart",
     feature = "go",

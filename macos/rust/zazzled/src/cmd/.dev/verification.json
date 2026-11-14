@@ -753,7 +753,7 @@
     },
     {
       "id": "code-terse-view",
-      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
       "subject": [
         {
@@ -773,7 +773,8 @@
         "Ruby, PHP, Scala and shell sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more.",
         "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands.",
         "Perl, Lua and Elixir sample files show imports, logging, regions and short locals with source line numbers, keep prints and non-logger calls, and keep names used inside their own declaration, before it, through other Perl sigils, in Elixir heads and patterns, or in functions that use string eval, load or quote.",
-        "Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL and Visual Basic sample files show imports, logging, regions, Groovy and Visual Basic field-only constructors, rethrowing catches, access modifiers, SQL row lists and Zig and Objective-C short locals with source line numbers; a block's last expression, logging inside arguments or pipes, other receivers and catches that do more are kept; a Nim file shows imports, logging and regions line by line, and a SQL file its regions and long INSERT row lists."
+        "Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL and Visual Basic sample files show imports, logging, regions, Groovy and Visual Basic field-only constructors, rethrowing catches, access modifiers, SQL row lists and Zig and Objective-C short locals with source line numbers; a block's last expression, logging inside arguments or pipes, other receivers and catches that do more are kept; a Nim file shows imports, logging and regions line by line, and a SQL file its regions and long INSERT row lists.",
+        "A Fortran file shows use runs, `call log_*` statements and `! region` comments collapsed; a Pascal file its uses clause, a field-only constructor, logging, a re-raising handler and {$REGION} lines; a fixed-format COBOL file drops its sequence areas and collapses comment banners, COPY runs and debugging lines."
       ],
       "checks": [
         {
@@ -1147,6 +1148,24 @@
           "path": "macos/rust/zazzled/src/sql.rs",
           "symbol": "test_view_sql",
           "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_fortran_pascal",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cobol.rs",
+          "symbol": "test_view_fixed",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cobol.rs",
+          "symbol": "test_view_free",
+          "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],
       "evidenceStatus": "source-verified"
@@ -1409,6 +1428,12 @@
           "path": "macos/rust/zazzled/src/modules.rs",
           "symbol": "language",
           "command": "Built all 25 modules and a release zazzled with their manifest on Linux, served them over local HTTP and ran `zazzled run languages`, `languages jit off`, `read a.kt` (source), `languages jit on`, `read a.kt` (downloaded kotlin, terse view) and `languages fetch` (the other 24); a byte appended to a served module was refused with both hashes, and a corrupted local copy was replaced before loading."
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "grammar",
+          "command": "Built all 34 modules, trained pgo.sh with PGO_LANGUAGES pointing at them (the profile counts 193 ts_parser_parse calls), built the profiled zazzled (6.8 MB) with their manifest, and on fresh state ran `outline a.rs` (downloaded rust, tree-sitter outline), `read a.rs` and `read b.f90` (downloaded fortran, terse views) through a local HTTP server."
         }
       ],
       "evidenceStatus": "source-verified"

@@ -38,8 +38,8 @@ fn jit_note(on: bool) -> &'static str {
 // Lists the modules with their state, the JIT setting, the directory and the download source.
 fn list(store: &Store) -> String {
     if store.entries.is_empty() {
-        return "this zazzled carries no language module manifest (a development build): only the built-in grammars \
-                (C, C#, JavaScript, Python, Rust, TypeScript) are available"
+        return "this zazzled carries no language module manifest (a development build): it has no grammars, so \
+                outlines are line-based and tree-sitter terse views are off"
             .into();
     }
     let installed: Vec<&str> =
@@ -111,6 +111,7 @@ mod tests {
         assert_eq!(go(&store, &["jit"]).expect("jit"), "jit on");
         assert!(go(&store, &["jit", "off"]).expect("off").starts_with("jit off: nothing downloads"));
         assert!(go(&store, &[]).expect("list").starts_with("jit off ("));
+        assert_eq!(go(&store, &["jit"]).expect("jit"), "jit off");
         assert!(go(&store, &["jit", "on"]).expect("on").starts_with("jit on: a missing module"));
         let failed = go(&store, &["fetch", "lua", "cobol"]).expect_err("fetch");
         assert!(

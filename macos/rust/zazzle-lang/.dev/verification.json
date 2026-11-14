@@ -17,7 +17,7 @@
       "criteria": [
         "A module built with one feature exports ZAZZLE_LANGUAGE_ABI and a working zazzle_language.",
         "language-modules.sh writes one `NAME SHA256 FILE` line per module, matching the file.",
-        "A rehearsal on Linux built all 25 modules (69 MB) in about two minutes, built zazzled with their manifest (17.6 MB, from 82.4 MB with the grammars linked in) and downloaded, verified and used them through a local HTTP server; a tampered download and a corrupted local copy were refused and replaced."
+        "A rehearsal on Linux built all 34 modules (89 MB) in a few minutes, built zazzled with their manifest (6.8 MB, from 82.4 MB with the grammars linked in) and downloaded, verified and used them through a local HTTP server; a tampered download and a corrupted local copy were refused and replaced."
       ],
       "checks": [
         {

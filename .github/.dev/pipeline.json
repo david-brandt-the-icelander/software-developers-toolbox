@@ -61,7 +61,7 @@
       "checks": [
         "version: version.sh prints the tag, the version (0.0.0-dev for a build-only run) and whether to publish; a manual release run tags the commit and pushes the tag",
         "macos and linux: set-version.sh writes the version into every crate's manifest and Cargo.lock entry; the indexer is published with -p:Version",
-        "macos (stable Rust with the arm64, x86_64 and wasm32-wasip1 targets): a release build of zazz-worker, then cargo test --workspace; pgo.sh trains a clang profile for zazzled's C code; language-modules.sh builds the 25 language modules for both architectures and lipo joins them, sign-and-notarize.sh signs them when configured, and their manifest is written; release builds for arm64 and x86_64 with that profile and the manifest embedded; make, make unit and test/smoke.sh for the zazzle invoker (arm64 only); lipo into universal binaries (zazzled, zazz-worker, afs, fix-network, free-disk-space); the invoker copied as zazzle and as zazz",
+        "macos (stable Rust with the arm64, x86_64 and wasm32-wasip1 targets): a release build of zazz-worker, then cargo test --workspace; language-modules.sh builds the 34 language modules for both architectures and lipo joins them, sign-and-notarize.sh signs them when configured, and their manifest is written; pgo.sh trains a clang profile for zazzled's C code, loading those modules; release builds for arm64 and x86_64 with that profile and the manifest embedded; make, make unit and test/smoke.sh for the zazzle invoker (arm64 only); lipo into universal binaries (zazzled, zazz-worker, afs, fix-network, free-disk-space); the invoker copied as zazzle and as zazz",
         "macos: dotnet test, then zazzle-csharp-indexer published for osx-arm64 and osx-x64 and gzipped, one file per CPU type",
         "macos: sign-and-notarize.sh on zazzle, zazz, zazzled, zazz-worker (with entitlements/zazz-worker.plist), afs, fix-network, free-disk-space and cyberspace-generator (fetched by fetch-cyberspace-generator.sh and merged with lipo); it skips with a warning when the Apple secrets are missing, and fails when the variable REQUIRE_SIGNING is true",
         "macos: pack zazzle-macos-universal.tar.gz (zazzle, zazz, zazzled, zazz-worker, afs, fix-network, free-disk-space, cyberspace-generator and the two gzipped indexers) with its .sha256; create the GitHub release, with no release notes; copy both to the download bucket under zazzle/<tag>/ and zazzle/latest/",
@@ -120,7 +120,7 @@
     {
       "id": "zazzle-bench",
       "title": "zazzle benchmarks",
-      "summary": "Builds zazzled and the zazzle invoker, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, on macOS and Linux runners.",
+      "summary": "Builds zazzled and the zazzle invoker, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, on macOS and Linux runners. zazzled links no grammar, so the job first builds the seven language modules outlines use (Rust, Python, C, C#, JavaScript, TypeScript, TSX), embeds their manifest in every zazzled it builds and loads them from that directory, PGO training included.",
       "trigger": "A pull request that changes macos/c/zazzle/, macos/rust/zazzled/, macos/release/pgo.sh or this workflow, or a manual run with a number of spawns per row.",
       "checks": [
         "cargo build --release -p zazzled; make; test/smoke.sh; bench/run.sh; bench/refs.sh",

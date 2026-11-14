@@ -2359,6 +2359,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-fortran"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea5fea41363a9b59666001dc26c4b356d4e164da27c6ce31145e00aba6bf9b16"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-fsharp"
 version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2469,6 +2479,16 @@ name = "tree-sitter-ocaml"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43adb10fcccbcbbce0f4adc9dab7cd55f0a5eafc2d71bd4c03fcc5d6767066e0"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-pascal"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb51e9a57493fd237e4517566749f7f7453349261a72a427e5f11d3b34b72a8"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -3423,28 +3443,36 @@ name = "zazzle-lang"
 version = "0.0.0-dev"
 dependencies = [
  "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-c-sharp",
  "tree-sitter-clojure-orchard",
  "tree-sitter-cpp",
  "tree-sitter-dart",
  "tree-sitter-elixir",
  "tree-sitter-erlang",
+ "tree-sitter-fortran",
  "tree-sitter-fsharp",
  "tree-sitter-go",
  "tree-sitter-groovy",
  "tree-sitter-haskell",
  "tree-sitter-java",
+ "tree-sitter-javascript",
  "tree-sitter-julia",
  "tree-sitter-kotlin-ng",
  "tree-sitter-language",
  "tree-sitter-lua",
  "tree-sitter-objc",
  "tree-sitter-ocaml",
+ "tree-sitter-pascal",
  "tree-sitter-php",
  "tree-sitter-powershell",
+ "tree-sitter-python",
  "tree-sitter-r",
  "tree-sitter-ruby",
+ "tree-sitter-rust",
  "tree-sitter-scala",
  "tree-sitter-swift",
+ "tree-sitter-typescript",
  "tree-sitter-vb-dotnet",
  "tree-sitter-zig",
  "ts-parser-perl",
@@ -3473,6 +3501,7 @@ dependencies = [
  "tree-sitter-dart",
  "tree-sitter-elixir",
  "tree-sitter-erlang",
+ "tree-sitter-fortran",
  "tree-sitter-fsharp",
  "tree-sitter-go",
  "tree-sitter-groovy",
@@ -3485,6 +3514,7 @@ dependencies = [
  "tree-sitter-lua",
  "tree-sitter-objc",
  "tree-sitter-ocaml",
+ "tree-sitter-pascal",
  "tree-sitter-php",
  "tree-sitter-powershell",
  "tree-sitter-python",

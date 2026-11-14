@@ -1,6 +1,7 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::cobol;
 use crate::config;
 use crate::data;
 use crate::indexer::Indexer;
@@ -195,6 +196,9 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
     }
     if sql::is_sql(path) {
         return sql::view(shown, &text);
+    }
+    if cobol::is_cobol(path) {
+        return cobol::view(shown, &text);
     }
     if let Some((kind, lock)) = data::kind_of(path) {
         return data::view(shown, &text, kind, lock);

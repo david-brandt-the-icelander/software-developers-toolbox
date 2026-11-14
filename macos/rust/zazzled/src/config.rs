@@ -144,5 +144,8 @@ mod tests {
             "Dockerfile 21 lines; terse: 1 comments, 1 labels, 1 package lists\n1\t# syntax=docker/dockerfile:1\n2-5\t⋯ comment, 4 line(s)\n6\tFROM debian\n7-9\t⋯ 3 label line(s)\n10\tRUN apt-get update && apt-get install -y \\\n11-16\t⋯ 6 package(s)\n17\t    && rm -rf /var/lib/apt/lists/*\n18\tRUN pip install \\\n19\t    a \\\n20\t    b\n21\tCMD [\"x\"]"
         );
         assert!(view("Dockerfile", "FROM a\nLABEL a=1\nRUN x\n", Kind::Dockerfile).is_none());
+        let opts = "RUN apt-get install \\\n    --no-install-recommends \\\n    a \\\n    b \\\n    c \\\n    d \\\n    e \\\n    f\n";
+        assert!(view("Dockerfile", opts, Kind::Dockerfile).is_none());
+        assert!(view("Dockerfile", "FROM a\nLABEL a=1 \\\n  b=2 \\", Kind::Dockerfile).is_none());
     }
 }

@@ -39,18 +39,6 @@ serde_json = "1"
 tree-sitter = "0.25"
 # The function type a language module returns its grammar as.
 tree-sitter-language = "0.1"
-# C grammar for outlines.
-tree-sitter-c = "0.24"
-# C# grammar for outlines and read --symbol.
-tree-sitter-c-sharp = "0.23"
-# JavaScript grammar for outlines.
-tree-sitter-javascript = "0.23"
-# Python grammar for outlines.
-tree-sitter-python = "0.23"
-# Rust grammar for outlines.
-tree-sitter-rust = "0.23"
-# TypeScript and TSX grammars for outlines.
-tree-sitter-typescript = "0.23"
 # HTTPS client for the MCP proxy: blocking like the rest of the daemon, rustls with the OS trust store.
 ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
 
@@ -64,6 +52,22 @@ zazz-sdk = { path = "../zazz-sdk" }
 security-framework = "3"
 
 [dev-dependencies]
+# tree-sitter-c grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-c = "0.24"
+# tree-sitter-c-sharp grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-c-sharp = "0.23"
+# tree-sitter-javascript grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-javascript = "0.23"
+# tree-sitter-python grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-python = "0.23"
+# tree-sitter-rust grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-rust = "0.23"
+# tree-sitter-typescript grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-typescript = "0.23"
+# Fortran grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-fortran = "0.6"
+# Pascal grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-pascal = "0.10"
 # Bash grammar for the shell terse view.
 tree-sitter-bash = "0.25"
 # Dart grammar for the terse view in tests (release builds load it as a language module).
