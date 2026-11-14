@@ -121,21 +121,42 @@ pub fn worth_outlining(path: &Path) -> bool {
     lang_of(path) != Lang::Generic || CODE.contains(&ext.as_str())
 }
 
-// Returns the tree-sitter grammar for a language and its kind-id table, which is built once per process.
+// Returns the tree-sitter grammar for a language and its kind-id table, which is built once per process; None when the language has no grammar or its module is unavailable.
 fn grammar(lang: Lang) -> Option<(Language, &'static [Class])> {
     static TABLES: [OnceLock<Vec<Class>>; 7] = [const { OnceLock::new() }; 7];
-    let (slot, language, kinds): (usize, Language, &[KindRow]) = match lang {
-        Lang::Rust => (0, tree_sitter_rust::LANGUAGE.into(), RUST),
-        Lang::Python => (1, tree_sitter_python::LANGUAGE.into(), PYTHON),
-        Lang::C => (2, tree_sitter_c::LANGUAGE.into(), C),
-        Lang::JavaScript => (3, tree_sitter_javascript::LANGUAGE.into(), JS),
-        Lang::TypeScript => (4, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), TS),
-        Lang::Tsx => (5, tree_sitter_typescript::LANGUAGE_TSX.into(), TS),
-        Lang::CSharp => (6, tree_sitter_c_sharp::LANGUAGE.into(), CSHARP),
+    let (slot, name, kinds): (usize, &str, &[KindRow]) = match lang {
+        Lang::Rust => (0, "rust", RUST),
+        Lang::Python => (1, "python", PYTHON),
+        Lang::C => (2, "c", C),
+        Lang::JavaScript => (3, "javascript", JS),
+        Lang::TypeScript => (4, "typescript", TS),
+        Lang::Tsx => (5, "tsx", TS),
+        Lang::CSharp => (6, "csharp", CSHARP),
         _ => return None,
     };
+    let language = load_grammar(name)?;
     let table = TABLES[slot].get_or_init(|| class_table(&language, kinds));
     Some((language, table))
+}
+
+// Returns a grammar from its language module.
+#[cfg(not(test))]
+fn load_grammar(name: &str) -> Option<Language> {
+    crate::modules::language(name)
+}
+
+// Returns a grammar from its crate, linked into tests only.
+#[cfg(test)]
+fn load_grammar(name: &str) -> Option<Language> {
+    Some(match name {
+        "rust" => tree_sitter_rust::LANGUAGE.into(),
+        "python" => tree_sitter_python::LANGUAGE.into(),
+        "c" => tree_sitter_c::LANGUAGE.into(),
+        "javascript" => tree_sitter_javascript::LANGUAGE.into(),
+        "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        _ => tree_sitter_c_sharp::LANGUAGE.into(),
+    })
 }
 
 // Returns a node's source text.

@@ -336,7 +336,7 @@
       "summary": "The language module manifest compiled into zazzled.",
       "key": "ZAZZLED_LANGUAGES_MANIFEST",
       "type": "path",
-      "default": "unset: an empty manifest (development builds have only the built-in grammars)",
+      "default": "unset: an empty manifest (development builds have no grammars)",
       "sensitive": false,
       "scope": "Read by zazzled's build script.",
       "takesEffect": "at-build",

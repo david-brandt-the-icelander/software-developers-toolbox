@@ -17,5 +17,5 @@ if command -v sha256sum >/dev/null; then want=$(sha256sum "$out/$file" | cut -d'
 if LANGUAGES=go "$here/language-modules.sh" --manifest "$out" 2>/dev/null; then echo "FAIL: missing module accepted"; exit 1; fi
 if "$here/language-modules.sh" 2>/dev/null; then echo "FAIL: no arguments accepted"; exit 1; fi
 names=$(sed -n '/^\[features\]/,/^\[/p' zazzle-lang/Cargo.toml | sed -n 's/^\([a-z0-9_]*\) = .*/\1/p' | wc -l)
-[ "$names" -eq 25 ] || { echo "FAIL: expected 25 module features, found $names"; exit 1; }
+[ "$names" -eq 34 ] || { echo "FAIL: expected 34 module features, found $names"; exit 1; }
 echo "language-modules.sh: ok"

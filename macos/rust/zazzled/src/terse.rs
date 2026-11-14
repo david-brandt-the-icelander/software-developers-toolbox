@@ -62,6 +62,8 @@ pub enum Lang {
     Groovy,
     PowerShell,
     VisualBasic,
+    Fortran,
+    Pascal,
 }
 
 impl Lang {
@@ -70,12 +72,15 @@ impl Lang {
         matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
     }
 
-    // Returns the name of the language module that carries this language's grammar, or None when the grammar is built in.
-    pub fn module(self) -> Option<&'static str> {
-        Some(match self {
-            Lang::Python | Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Rust | Lang::C => {
-                return None
-            }
+    // Returns the name of the language module that carries this language's grammar.
+    pub fn module(self) -> &'static str {
+        match self {
+            Lang::Python => "python",
+            Lang::JavaScript => "javascript",
+            Lang::TypeScript => "typescript",
+            Lang::Tsx => "tsx",
+            Lang::Rust => "rust",
+            Lang::C => "c",
             Lang::Dart => "dart",
             Lang::Go => "go",
             Lang::Java => "java",
@@ -101,7 +106,9 @@ impl Lang {
             Lang::Groovy => "groovy",
             Lang::PowerShell => "powershell",
             Lang::VisualBasic => "vb",
-        })
+            Lang::Fortran => "fortran",
+            Lang::Pascal => "pascal",
+        }
     }
 
     // True for languages where a block's last expression is its value, so a log call there is never hidden.
@@ -149,6 +156,8 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
         "groovy" | "gvy" | "gradle" => Some(Lang::Groovy),
         "ps1" | "psm1" => Some(Lang::PowerShell),
         "vb" => Some(Lang::VisualBasic),
+        "f" | "for" | "ftn" | "f90" | "f95" | "f03" | "f08" | "fpp" => Some(Lang::Fortran),
+        "pas" | "dpr" | "lpr" | "dpk" => Some(Lang::Pascal),
         "swift" => Some(Lang::Swift),
         "c" => Some(Lang::C),
         "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hh" | "hxx" | "h++" | "ipp" => Some(Lang::Cpp),
@@ -156,8 +165,20 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
     }
 }
 
-// Returns the tree-sitter grammar for a language: built in for the languages outlines use, else from its language module; None when the module is unavailable.
+// Returns the tree-sitter grammar for a language from its language module; None when the module is unavailable.
 pub(crate) fn grammar(lang: Lang) -> Option<Language> {
+    module_grammar(lang)
+}
+
+// Returns a module language's grammar from its downloaded module.
+#[cfg(not(test))]
+fn module_grammar(lang: Lang) -> Option<Language> {
+    crate::modules::language(lang.module())
+}
+
+// Returns a module language's grammar from its crate, linked into tests only.
+#[cfg(test)]
+fn module_grammar(lang: Lang) -> Option<Language> {
     Some(match lang {
         Lang::Python => tree_sitter_python::LANGUAGE.into(),
         Lang::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
@@ -165,20 +186,6 @@ pub(crate) fn grammar(lang: Lang) -> Option<Language> {
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
         Lang::C => tree_sitter_c::LANGUAGE.into(),
-        _ => return module_grammar(lang),
-    })
-}
-
-// Returns a module language's grammar from its downloaded module.
-#[cfg(not(test))]
-fn module_grammar(lang: Lang) -> Option<Language> {
-    crate::modules::language(lang.module()?)
-}
-
-// Returns a module language's grammar from its crate, linked into tests only.
-#[cfg(test)]
-fn module_grammar(lang: Lang) -> Option<Language> {
-    Some(match lang {
         Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
         Lang::Go => tree_sitter_go::LANGUAGE.into(),
         Lang::Java => tree_sitter_java::LANGUAGE.into(),
@@ -204,7 +211,8 @@ fn module_grammar(lang: Lang) -> Option<Language> {
         Lang::Groovy => tree_sitter_groovy::LANGUAGE.into(),
         Lang::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
         Lang::VisualBasic => tree_sitter_vb_dotnet::LANGUAGE.into(),
-        _ => return None,
+        Lang::Fortran => tree_sitter_fortran::LANGUAGE.into(),
+        Lang::Pascal => tree_sitter_pascal::LANGUAGE.into(),
     })
 }
 
@@ -383,6 +391,8 @@ fn plan_view(shown: &str, src: &str, lang: Lang, root: Node) -> Option<String> {
         } else if matches!(n.kind(), "comment" | "line_comment" | "block_comment")
             && is_region(&src[n.byte_range()])
             || n.kind() == "preproc_call" && is_pragma_region(&src[n.byte_range()])
+            || n.kind() == "pp"
+                && is_region(&src[n.byte_range()].to_ascii_lowercase().replace(['{', '$', '}', '%'], ""))
         {
             plan.hide_node(n, None, "regions");
         } else if n.kind() == "heredoc_body" && end_row(n, src) + 1 - n.start_position().row >= LONG_HEREDOC {
@@ -469,7 +479,8 @@ fn statement_parent(n: Node, parent: Node, lang: Lang, src: &str) -> bool {
                 | "do_clause"
         ),
         Lang::PowerShell => parent.kind() == "statement_list",
-        Lang::VisualBasic => n.kind() == "statement",
+        Lang::VisualBasic | Lang::Pascal => n.kind() == "statement",
+        Lang::Fortran => n.kind() == "subroutine_call",
         _ => false,
     }
 }
@@ -520,10 +531,19 @@ fn is_access_modifier(n: Node, parent: &str, lang: Lang, src: &str) -> bool {
     }
 }
 
-// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`, `--#region`, `;; region`, `%% region`, `(* region *)`.
+// True for a comment that only marks a region: `# region`, `//#region`, `// #endregion`, `--#region`, `;; region`, `%% region`, `(* region *)`, `{%region}`.
 fn is_region(comment: &str) -> bool {
-    let c = comment.trim_start_matches("(*").trim_end().trim_end_matches("*)");
-    let c = c.trim_start_matches(['#', '/', '-', ';', '%']).trim_start().trim_start_matches('#').trim_start();
+    let c = comment
+        .trim_start_matches("(*")
+        .trim_start_matches('{')
+        .trim_end()
+        .trim_end_matches("*)")
+        .trim_end_matches('}');
+    let c = c
+        .trim_start_matches(['#', '/', '-', ';', '%', '!'])
+        .trim_start()
+        .trim_start_matches('#')
+        .trim_start();
     let word = c.strip_prefix("end").unwrap_or(c);
     word.strip_prefix("region").is_some_and(|r| r.is_empty() || r.starts_with(char::is_whitespace))
 }
@@ -602,6 +622,8 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
                 && (t.starts_with("import-module ") || t.starts_with("using ") || t.starts_with(". "))
         }
         Lang::VisualBasic => n.kind() == "imports_statement",
+        Lang::Fortran => matches!(n.kind(), "use_statement" | "include_statement"),
+        Lang::Pascal => n.kind() == "declUses",
     };
     let mut containers = vec![root];
     if lang == Lang::Elixir {
@@ -611,6 +633,20 @@ fn imports(root: Node, lang: Lang, plan: &mut Plan) {
     containers.extend(kids(root).filter(|c| wrappers.contains(&c.kind())));
     if lang == Lang::Clojure {
         clojure_ns_requires(root, plan);
+    }
+    let units: &[&str] = match lang {
+        Lang::Fortran => &["program", "module", "submodule", "function", "subroutine"],
+        Lang::Pascal => &["unit", "program", "library", "interface", "implementation"],
+        _ => &[],
+    };
+    if !units.is_empty() {
+        let mut stack = vec![root];
+        while let Some(n) = stack.pop() {
+            if units.contains(&n.kind()) {
+                import_runs(n, &is_import, plan);
+            }
+            stack.extend(kids(n));
+        }
     }
     for container in containers {
         import_runs(container, &is_import, plan);
@@ -669,8 +705,11 @@ fn import_runs(container: Node, is_import: &dyn Fn(&Node) -> bool, plan: &mut Pl
     }
 }
 
-// Returns how many imports a declaration makes: one, or each spec of a Go `import (..)` block.
+// Returns how many imports a declaration makes: one, each spec of a Go `import (..)` block, or each unit of a Pascal `uses` clause.
 fn import_count(n: Node) -> usize {
+    if n.kind() == "declUses" {
+        return kids(n).filter(|c| c.kind() == "moduleName").count().max(1);
+    }
     let specs = kids(n).find(|c| c.kind() == "import_spec_list").map_or(0, |l| kids(l).count());
     specs.max(1)
 }
@@ -686,7 +725,9 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         | (Lang::Clojure, "list_lit")
         | (Lang::Erlang, "remote" | "macro_call_expr")
         | (Lang::R, "call")
-        | (Lang::Julia, "macrocall_expression") => stmt,
+        | (Lang::Julia, "macrocall_expression")
+        | (Lang::Fortran, "subroutine_call") => stmt,
+        (Lang::Pascal, "statement") => stmt.named_child(0).filter(|c| c.kind() == "exprCall")?,
         (Lang::Haskell, "exp") => stmt.named_child(0).filter(|c| c.kind() == "apply")?,
         (Lang::PowerShell, "pipeline") => {
             let [chain] = kids(stmt).collect::<Vec<_>>()[..] else { return None };
@@ -744,6 +785,8 @@ fn call_target<'t, 's>(stmt: Node<'t>, lang: Lang, src: &'s str) -> Option<(Node
         }
         (Lang::Zig | Lang::ObjC, "call_expression") => call.child_by_field_name("function")?.byte_range(),
         (Lang::PowerShell, "command") => call.child_by_field_name("command_name")?.byte_range(),
+        (Lang::Fortran, "subroutine_call") => call.child_by_field_name("subroutine")?.byte_range(),
+        (Lang::Pascal, "exprCall") => call.child_by_field_name("entity")?.byte_range(),
         (Lang::VisualBasic, "invocation") => call.child_by_field_name("target")?.byte_range(),
         (Lang::Perl, "method_call_expression") => {
             let method = call.child_by_field_name("method")?;
@@ -819,6 +862,7 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
         .replace("::", ".")
         .replace(':', colon)
         .replace('/', slash)
+        .replace('%', ".")
         .split_whitespace()
         .collect();
     let Some((receiver, method)) = normalized.rsplit_once('.') else {
@@ -828,6 +872,8 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
             Lang::C | Lang::Cpp => is_c_log_macro(callee),
             Lang::Php => callee == "error_log",
             Lang::Perl => matches!(callee, "DEBUG" | "INFO" | "WARN" | "ERROR" | "TRACE"),
+            Lang::Fortran => callee.to_ascii_lowercase().starts_with("log_"),
+            Lang::Pascal => matches!(callee, "OutputDebugString" | "SendDebug"),
             Lang::ObjC => {
                 is_c_log_macro(callee)
                     || callee == "NSLog"
@@ -854,15 +900,17 @@ fn is_logging(stmt: Node, lang: Lang, src: &str) -> bool {
     }
     let lower = method.to_ascii_lowercase();
     let method = match lang {
-        Lang::FSharp | Lang::VisualBasic => lower.as_str(),
+        Lang::FSharp | Lang::VisualBasic | Lang::Pascal | Lang::Fortran => lower.as_str(),
         Lang::Clojure => method.strip_suffix('f').unwrap_or(method),
         Lang::OCaml | Lang::Zig if method == "err" => "error",
         Lang::OCaml if method == "app" => "info",
         _ => method,
     };
     let r = last.trim_matches('_').to_ascii_lowercase();
-    let logger = matches!(r.as_str(), "log" | "logs" | "logging" | "slog" | "spdlog" | "timbre" | "lager")
-        || r.ends_with("logger");
+    let logger = matches!(
+        r.as_str(),
+        "log" | "logs" | "logging" | "slog" | "spdlog" | "timbre" | "lager" | "codesite"
+    ) || r.ends_with("logger");
     if lang == Lang::Go {
         let m = method.to_ascii_lowercase();
         let base = m.trim_end_matches("context").trim_end_matches("ln").trim_end_matches(['f', 'w']);
@@ -996,6 +1044,24 @@ fn stores_only<'s>(n: Node, lang: Lang, src: &'s str) -> Option<(String, &'s str
             let (name, params, body) = (field("name")?, field("parameters")?, field("body")?);
             let ok = text(name) == "constructor" && statements(body).iter().all(|s| ts_store(*s, src));
             ok.then(|| (text(name).to_string(), text(params)))
+        }
+        (Lang::Pascal, "defProc") => {
+            let header = field("header")?;
+            kids(header).find(|c| c.kind() == "kConstructor")?;
+            let (name, args, body) =
+                (header.child_by_field_name("name")?, header.child_by_field_name("args")?, field("body")?);
+            let stores = |s: &Node| match s.kind() {
+                "assignment" => {
+                    let (l, r) = (s.child_by_field_name("lhs"), s.child_by_field_name("rhs"));
+                    l.is_some_and(|l| l.kind() == "identifier")
+                        && r.is_some_and(|r| r.kind() == "identifier" || r.kind().starts_with("literal"))
+                }
+                "statement" => {
+                    s.named_child(0).is_some_and(|c| c.kind() == "inherited") && s.named_child_count() == 1
+                }
+                k => k.starts_with('k'),
+            };
+            kids(body).all(|s| stores(&s)).then(|| (text(name).to_string(), text(args)))
         }
         (Lang::VisualBasic, "constructor_declaration") => {
             let params = field("parameters")?;
@@ -1224,6 +1290,10 @@ fn catch(n: Node, lang: Lang, plan: &mut Plan) {
         vb_catch(n, plan);
         return;
     }
+    if lang == Lang::Pascal {
+        pascal_catch(n, plan);
+        return;
+    }
     let Some((start, block)) = rethrow_catch(n, lang, src) else { return };
     let (inline, step) = if lang == Lang::Go {
         let body = statements(block);
@@ -1338,6 +1408,22 @@ fn vb_catch(n: Node, plan: &mut Plan) {
         let b = if src[last.byte_range()].ends_with('\n') { last.end_position().row - 1 } else { b };
         let header = plan.text(a).trim().to_string();
         plan.hide(a, b, Some(format!("{header}: logs and rethrows")), "log-and-rethrow catches");
+    }
+}
+
+// Collapses a Pascal `on E: X do begin .. end` handler whose block only logs and then re-raises with a bare `raise`.
+fn pascal_catch(n: Node, plan: &mut Plan) {
+    let src = plan.src;
+    let Some(body) = n.child_by_field_name("body").filter(|_| n.kind() == "exceptionHandler") else { return };
+    let body: Vec<Node> =
+        kids(body).filter(|c| !c.kind().starts_with('k') && !c.kind().contains("comment")).collect();
+    let reraise =
+        |s: &Node| src[s.byte_range()].trim().trim_end_matches(';').trim().eq_ignore_ascii_case("raise");
+    let Some((last, rest)) = body.split_last() else { return };
+    if reraise(last) && rest.iter().all(|s| is_logging(*s, Lang::Pascal, src)) && plan.alone(n) {
+        let header = src[n.start_byte()..].split(" do").next().unwrap_or("").trim();
+        let note = format!("{header}: logs and rethrows");
+        plan.hide(n.start_position().row, end_row(n, src), Some(note), "log-and-rethrow catches");
     }
 }
 
@@ -2143,6 +2229,9 @@ class InvoiceRepository {
         assert_eq!(lang_of(Path::new("b.ex")), Some(Lang::Elixir));
         assert_eq!(lang_of(Path::new("b.exs")), Some(Lang::Elixir));
         assert_eq!(lang_of(Path::new("b.erl")), Some(Lang::Erlang));
+        assert_eq!(lang_of(Path::new("b.F90")), Some(Lang::Fortran));
+        assert_eq!(lang_of(Path::new("b.dpr")), Some(Lang::Pascal));
+        assert_eq!(lang_of(Path::new("b.pp")), None);
         assert_eq!(lang_of(Path::new("b.hs")), Some(Lang::Haskell));
         assert_eq!(lang_of(Path::new("b.ml")), Some(Lang::OCaml));
         assert_eq!(lang_of(Path::new("b.fsx")), Some(Lang::FSharp));
@@ -3030,5 +3119,120 @@ class InvoiceRepository {
         for kept in ["        Catch ex As Exception\n            Throw ex", "        Catch ex As Exception"] {
             assert!(view("f", &vb_try(kept), Lang::VisualBasic).is_none(), "{kept}");
         }
+    }
+
+    const FORTRAN: &str = r##"module repo
+  use iso_fortran_env, only: real64
+  use logging_mod
+  implicit none
+  private
+  public :: load
+contains
+  ! region loading
+  function load(n) result(total)
+    integer, intent(in) :: n
+    integer :: total, line_count
+    call log_debug("loading")
+    print *, "hi"
+    line_count = n * 2
+    total = line_count + 1
+  end function load
+  ! endregion
+end module repo
+"##;
+    const PASCAL: &str = r##"unit Repo;
+
+interface
+
+uses
+  SysUtils,
+  Classes,
+  Generics.Collections;
+
+type
+  TRepo = class
+  private
+    FName: string;
+    FCount: Integer;
+  public
+    constructor Create(const AName: string; ACount: Integer);
+    function Load(Id: Integer): Integer;
+  end;
+
+implementation
+
+{$REGION 'Loading'}
+constructor TRepo.Create(const AName: string; ACount: Integer);
+begin
+  inherited Create;
+  FName := AName;
+  FCount := ACount;
+end;
+
+function TRepo.Load(Id: Integer): Integer;
+var
+  ResponseBody: string;
+begin
+  Log.d('loading');
+  OutputDebugString('x');
+  WriteLn('hi');
+  try
+    ResponseBody := Fetch(Id);
+  except
+    on E: Exception do
+    begin
+      Log.e('failed');
+      raise;
+    end;
+  end;
+  Result := Length(ResponseBody);
+end;
+{$ENDREGION}
+
+end.
+"##;
+
+    // Checks Fortran use runs, `call log_*` statements and `! region` comments, and Pascal uses clauses, a field-only constructor, logging, a re-raising handler and {$REGION} directives.
+    #[test]
+    fn test_view_fortran_pascal() {
+        let f = view("f", FORTRAN, Lang::Fortran).expect("view");
+        assert!(f.starts_with("f 18 lines; terse: 1 imports, 2 regions, 1 log statements\n"), "{f}");
+        let lines = body(FORTRAN, Lang::Fortran);
+        has_all(&lines, &["2-3\t⋯ 2 import(s)", "13\t    print *, \"hi\""]);
+        assert!(!lines.iter().any(|l| ["8\t", "12\t", "17\t"].iter().any(|k| l.starts_with(k))));
+        let p = view("f", PASCAL, Lang::Pascal).expect("view");
+        assert!(p.starts_with("f 50 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 2 regions, 2 log statements\n"), "{p}");
+        let lines = body(PASCAL, Lang::Pascal);
+        has_all(
+            &lines,
+            &[
+                "5-8\t⋯ 3 import(s)",
+                "23-28\t⋯ TRepo.Create(const AName: string; ACount: Integer): only assigns fields",
+                "36\t  WriteLn('hi');",
+                "40-44\t⋯ on E: Exception: logs and rethrows",
+            ],
+        );
+        assert!(!lines.iter().any(|l| ["22\t", "34\t", "35\t", "48\t"].iter().any(|k| l.starts_with(k))));
+        let kept = "procedure P;\nbegin\n  try\n    X;\n  except\n    on E: Exception do\n    begin\n      Log.e('x');\n      Y;\n    end;\n  end;\nend;\n";
+        assert!(view("f", kept, Lang::Pascal).is_some_and(|v| v.contains("Y;") && !v.contains("rethrows")));
+        let handler =
+            |body: &str| format!("procedure P;\nbegin\n  try\n    X;\n  except\n{body}\n  end;\nend;\n");
+        let mixed = handler("    on E: Exception do\n    begin\n      Y;\n      raise;\n    end;");
+        assert!(view("f", &mixed, Lang::Pascal).is_none());
+        let inline = handler("    on E: Exception do begin Log.e('x'); raise; end; Z;");
+        assert!(view("f", &inline, Lang::Pascal).is_none_or(|v| !v.contains("rethrows")));
+        assert!(view("f", &handler("    on E: Exception do\n    begin\n    end;"), Lang::Pascal).is_none());
+        let lazarus = "unit U;\ninterface\nimplementation\n{%region 'x'}\nprocedure P;\nbegin\nend;\n{%endregion}\nend.\n";
+        assert!(view("f", lazarus, Lang::Pascal).is_some_and(|v| v.contains("2 regions")));
+        assert!(view("f", "program p\n  include 'a.inc'\n  include 'b.inc'\nend program p\n", Lang::Fortran)
+            .is_some_and(|v| v.contains("2 import(s)")));
+        let ctor = "implementation\nconstructor T.Create(A: Integer);\nbegin\n  FA := A;\n  Load;\nend;\n";
+        assert!(view("f", ctor, Lang::Pascal).is_none());
+        assert!(view(
+            "f",
+            "program p\n  call logger%info(\"x\")\n  call work()\nend program p\n",
+            Lang::Fortran
+        )
+        .is_some());
     }
 }

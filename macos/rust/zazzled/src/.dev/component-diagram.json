@@ -142,6 +142,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "cobol",
+      "name": "COBOL terse view (cobol.rs)",
+      "responsibility": "Builds the terse view of COBOL files line by line with markup.rs's Plan: drops fixed-format sequence and identification areas, collapses comment blocks and COPY runs, and hides debugging lines.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "data",
       "name": "Data terse view (data.rs)",
       "responsibility": "Builds the terse view of JSON, YAML and TOML files line by line with markup.rs's Plan: collapses runs of 10+ list items (multi-line ones only when they name the same keys), lock file entries and 6+ TOML [[tables]] to their first and last, long comment blocks, YAML block scalars and TOML multi-line strings, and shortens quoted strings over 120 characters.",
@@ -168,13 +174,13 @@
     {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
-      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
+      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
       "folder": "macos/rust/zazzled/src"
     },
     {
       "id": "modules",
       "name": "Language modules (modules.rs)",
-      "responsibility": "Loads the grammars not built into zazzled from language modules: parses the manifest compiled into the binary, downloads a missing module from icelander.net when JIT is on, checks its SHA-256, stores it in ~/.zazzle/v1/languages and opens it with dlopen, checking the module format and tree-sitter ABI; caches loaded grammars for the process and failures for a minute.",
+      "responsibility": "Loads every tree-sitter grammar from language modules: parses the manifest compiled into the binary, downloads a missing module from icelander.net when JIT is on, checks its SHA-256, stores it in ~/.zazzle/v1/languages and opens it with dlopen, checking the module format and tree-sitter ABI; caches loaded grammars for the process and failures for a minute.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -820,6 +826,24 @@
       "to": "modules",
       "kind": "depends-on",
       "description": "The languages command lists, configures and fetches modules."
+    },
+    {
+      "from": "src",
+      "to": "cobol",
+      "kind": "contains",
+      "description": "Terse view of COBOL."
+    },
+    {
+      "from": "cmd",
+      "to": "cobol",
+      "kind": "depends-on",
+      "description": "read's terse COBOL view."
+    },
+    {
+      "from": "outline",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "Gets the Rust, Python, C, C#, JavaScript, TypeScript and TSX grammars."
     }
   ]
 }

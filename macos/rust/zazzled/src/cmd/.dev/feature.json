@@ -538,8 +538,8 @@
     },
     {
       "id": "code-terse-view",
-      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
-      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .hs, .ml, .fs, .fsx, .clj, .cljs, .cljc, .erl, .hrl, .r, .jl, .zig, .m, .groovy, .gvy, .gradle, .ps1, .psm1, .sql, .vb, .nim, .nims, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha. Nim and SQL files get line-based views from nim.rs and sql.rs.",
+      "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
+      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .hs, .ml, .fs, .fsx, .clj, .cljs, .cljc, .erl, .hrl, .r, .jl, .zig, .m, .groovy, .gvy, .gradle, .ps1, .psm1, .sql, .vb, .f, .f90 (and other Fortran extensions), .pas, .dpr, .lpr, .dpk, .cbl, .cob, .cpy, .nim, .nims, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha. Nim, SQL and COBOL files get line-based views from nim.rs, sql.rs and cobol.rs.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/terse.rs",
@@ -551,11 +551,11 @@
         },
         {
           "path": "macos/rust/zazzled/README.md",
-          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell terse view"
+          "symbol": "Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell terse view"
         }
       ],
       "behavior": "Without --source or --anchors, terse.rs parses the file and hides runs of top-level imports spanning two or more lines, logging statements alone on their lines with no assignment, await, yield, increment or decrement in their arguments, region marker comments, multi-line constructors that only store parameters (shown as one note with the parameter list) catch clauses that only log and rethrow the caught exception, Go `if err != nil` blocks that only log and return the error (kept on one line), and `if` blocks that only check a log level and log; it drops public, private and protected from TypeScript class members and Java declarations, and Rust pub except on pub use, and gives locals of 6+ characters the C# view's short names at their declaration and every use (locals.rs). read renders the result like the C# view. A file with nothing to shorten, or over 1 MiB, is returned as source with its sha.",
-      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell code from fewer tokens, and still has to read the real code before it can edit it.",
+      "outcome": "An agent understands Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell code from fewer tokens, and still has to read the real code before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "Rules are syntactic: a logger is recognised by its name, and `print` is never hidden.",
@@ -643,6 +643,14 @@
         },
         {
           "path": "macos/rust/zazzled/src/nim.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "pascal_catch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cobol.rs",
           "symbol": "view"
         }
       ]
@@ -763,7 +771,7 @@
     {
       "id": "language-modules",
       "name": "Language modules downloaded on demand",
-      "description": "The grammars of the 25 languages outlines do not use ship as shared libraries beside the zazzle download instead of inside zazzled; zazzled downloads one the first time a file needs it (or on `zazzle languages fetch`), accepts it only if its SHA-256 matches the manifest compiled into zazzled, and loads it.",
+      "description": "Every tree-sitter grammar zazzled uses (34) ships as a shared library beside the zazzle download instead of inside zazzled; zazzled downloads one the first time a file needs it (or on `zazzle languages fetch`), accepts it only if its SHA-256 matches the manifest compiled into zazzled, and loads it.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/modules.rs",
@@ -780,13 +788,17 @@
         {
           "path": "macos/rust/zazzled/README.md",
           "symbol": "Language modules"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "grammar"
         }
       ],
-      "behavior": "terse.rs asks modules.rs for a module language's grammar. With JIT on (the default) a missing module downloads from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/, its SHA-256 is checked against the embedded manifest, it is stored in ~/.zazzle/v1/languages and opened with dlopen after checking its module format and tree-sitter ABI; with JIT off, or when the download fails, the file reads as source. `zazzle languages jit on|off` sets JIT, `zazzle languages fetch [NAME..]` downloads the missing modules, `zazzle languages` lists them.",
-      "outcome": "zazzled stays small (17.6 MB instead of 82.4 MB) and a machine only holds the grammars of the languages it reads, while every module it runs is exactly one the release built.",
+      "behavior": "terse.rs and outline.rs ask modules.rs for every grammar. With JIT on (the default) a missing module downloads from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/, its SHA-256 is checked against the embedded manifest, it is stored in ~/.zazzle/v1/languages and opened with dlopen after checking its module format and tree-sitter ABI; with JIT off, or when the download fails, the file reads as source. `zazzle languages jit on|off` sets JIT, `zazzle languages fetch [NAME..]` downloads the missing modules, `zazzle languages` lists them. Outlines fall back to the line-based outline while a module is missing.",
+      "outcome": "zazzled stays small (6.8 MB instead of 82.4 MB) and a machine only holds the grammars of the languages it reads, while every module it runs is exactly one the release built.",
       "constraints": [
         "A module is accepted only with the SHA-256 compiled into this zazzled, so modules belong to one release.",
-        "A development build without a manifest has only the built-in grammars.",
+        "A development build without a manifest has no grammars: outlines are line-based and tree-sitter terse views are off.",
         "A failed load is retried after a minute, or at once after `languages fetch` or `languages jit`."
       ],
       "implementation": [

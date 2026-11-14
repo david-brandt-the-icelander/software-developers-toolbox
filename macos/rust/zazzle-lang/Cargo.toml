@@ -12,6 +12,15 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [features]
+rust = ["dep:tree-sitter-rust"]
+python = ["dep:tree-sitter-python"]
+c = ["dep:tree-sitter-c"]
+javascript = ["dep:tree-sitter-javascript"]
+typescript = ["dep:tree-sitter-typescript"]
+csharp = ["dep:tree-sitter-c-sharp"]
+fortran = ["dep:tree-sitter-fortran"]
+pascal = ["dep:tree-sitter-pascal"]
+tsx = ["dep:tree-sitter-typescript"]
 bash = ["dep:tree-sitter-bash"]
 dart = ["dep:tree-sitter-dart"]
 go = ["dep:tree-sitter-go"]
@@ -91,3 +100,19 @@ tree-sitter-groovy = { version = "0.1", optional = true }
 tree-sitter-powershell = { version = "0.26", optional = true }
 # The vb grammar, for the vb module.
 tree-sitter-vb-dotnet = { version = "0.1", optional = true }
+# The rust grammar, for the rust module.
+tree-sitter-rust = { version = "0.23", optional = true }
+# The python grammar, for the python module.
+tree-sitter-python = { version = "0.23", optional = true }
+# The c grammar, for the c module.
+tree-sitter-c = { version = "0.24", optional = true }
+# The javascript grammar, for the javascript module.
+tree-sitter-javascript = { version = "0.23", optional = true }
+# The typescript grammar, for the typescript module (and the tsx module).
+tree-sitter-typescript = { version = "0.23", optional = true }
+# The csharp grammar, for the csharp module.
+tree-sitter-c-sharp = { version = "0.23", optional = true }
+# The fortran grammar, for the fortran module.
+tree-sitter-fortran = { version = "0.6", optional = true }
+# The pascal grammar, for the pascal module.
+tree-sitter-pascal = { version = "0.10", optional = true }

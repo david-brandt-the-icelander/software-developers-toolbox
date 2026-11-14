@@ -1,6 +1,7 @@
 #!/bin/sh
 # Trains a clang profile for zazzled's C code (tree-sitter) on crate sources and prints PGO_CFLAGS=... for the optimized build.
-# Usage: sh macos/release/pgo.sh [CORPUS_DIR] >> "$GITHUB_ENV"; then build with CC=clang and CFLAGS="$PGO_CFLAGS".
+# Usage: PGO_LANGUAGES=DIR sh macos/release/pgo.sh [CORPUS_DIR] >> "$GITHUB_ENV"; then build with CC=clang and CFLAGS="$PGO_CFLAGS".
+# PGO_LANGUAGES is a directory of built language modules with their manifest (language-modules.sh): zazzled has no grammars of its own, so training loads them from there.
 # Progress goes to stderr. The default corpus is the cargo registry sources that building zazzled downloads.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -50,12 +51,18 @@ rm -rf "$out"
 mkdir -p "$out/raw" "$out/home"
 echo "pgo.sh: building instrumented zazzled for $host" >&2
 rtflags=$(runtime_flags)
-(cd "$rust" && CC=clang CFLAGS="-fprofile-instr-generate" RUSTFLAGS="$rtflags" \
+languages=${PGO_LANGUAGES:-}
+if [ -z "$languages" ] || [ ! -f "$languages/manifest" ]; then
+	echo "pgo.sh: set PGO_LANGUAGES to a directory of language modules with their manifest" >&2
+	exit 1
+fi
+languages=$(cd "$languages" && pwd)
+(cd "$rust" && CC=clang CFLAGS="-fprofile-instr-generate" RUSTFLAGS="$rtflags" ZAZZLED_LANGUAGES_MANIFEST="$languages/manifest" \
 	cargo build --release --locked -p zazzled --target "$host" --target-dir "$out/build" >&2)
 bin=$out/build/$host/release/zazzled
 
 echo "pgo.sh: training on $corpus" >&2
-export LLVM_PROFILE_FILE="$out/raw/zazzled-%p-%m.profraw" HOME="$out/home"
+export LLVM_PROFILE_FILE="$out/raw/zazzled-%p-%m.profraw" HOME="$out/home" ZAZZLE_LANGUAGES_DIR="$languages"
 cd "$corpus"
 find . -type f \( -name '*.rs' -o -name '*.c' -o -name '*.h' -o -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.tsx' \) \
 	-size -1024k -print0 | xargs -0 -n 200 "$bin" run outline >/dev/null 2>&1 || true

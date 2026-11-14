@@ -330,6 +330,8 @@ mod tests {
         let unreachable = store(&TempDir::new(), &sha, "http://127.0.0.1:9");
         assert!(unreachable.fetch(&unreachable.entries[0]).is_err());
         assert!(open(Path::new("/nonexistent/x.so")).is_err());
+        let libc = if cfg!(target_os = "macos") { "/usr/lib/libSystem.B.dylib" } else { "libc.so.6" };
+        assert!(open(Path::new(libc)).expect_err("not a module").contains("is not a zazzle language module"));
     }
 
     // Checks the process-wide loader returns nothing for a language this build has no manifest entry for, and caches the failure.

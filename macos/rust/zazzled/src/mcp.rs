@@ -104,7 +104,7 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
-            "source": {"type": "boolean", "description": "C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files come as a terse view without a sha; true gives the code and its sha, which edits need"},
+            "source": {"type": "boolean", "description": "C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files come as a terse view without a sha; true gives the code and its sha, which edits need"},
             "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
