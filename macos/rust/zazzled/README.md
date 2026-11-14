@@ -61,6 +61,17 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Shortened: `url(data:…)` values longer than 60 characters.
 - Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden, and minified files gain little.
 
+## JSON, YAML, TOML and Markdown terse view
+
+`zazzle read` on `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`, `.md`, `.markdown` and `.mdx` files, and on `Cargo.lock`, `poetry.lock`, `uv.lock`, `pdm.lock`, `composer.lock` and `Pipfile.lock`, returns a terse view built line by line (`src/data.rs`, `src/md.rs`), in the same line format and with no sha; `--source` returns the file. A file with nothing to shorten comes back as source with its sha.
+
+- Lists: a run of 10+ sibling items in a JSON array, a YAML sequence or a TOML array keeps its first and last items and collapses the rest (`5-60 ⋯ 18 item(s)`). Items that span lines collapse only when they all name the same keys, so CI steps and other lists of different things stay. Runs nested in a hidden item go with it.
+- Lock files (`*.lock`, `*-lock.json`, `*-lock.yaml`, `*.lock.json`): any 10+ sibling entries collapse the same way (`⋯ 365 entries`), so a `package-lock.json` reads as its first and last packages.
+- TOML: a run of 6+ `[[name]]` tables with the same name keeps its first and last (`⋯ 310 [[package]] table(s)` in `Cargo.lock`).
+- Hidden: `#` comment blocks (`//` in JSON with comments) of 4+ lines; YAML block scalars (`key: |`, `- >`) and TOML multi-line strings of 6+ lines keep their opening line (`⋯ text, 12 line(s)`). Quoted strings longer than 120 characters keep their first 40 (`N~`).
+- Markdown: HTML comments (multi-line ones as `⋯ comment, N line(s)`), lines made only of badge images (shields.io, badgen, codecov, coveralls, `badge` or `.svg` sources), runs of 2+ link reference definitions (`[x]: url`) and lists of 3+ entries that only link to anchors (tables of contents). Fenced code and front matter are left alone.
+- Kept: everything else; minified JSON (one long line) comes back as source.
+
 ## Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell terse view
 
 `zazzle read` on `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.dart`, `.rs`, `.go`, `.java`, `.kt`, `.kts`, `.swift`, `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.rb`, `.rake`, `.php`, `.scala`, `.sc`, `.pl`, `.pm`, `.lua`, `.ex`, `.exs`, `.hs`, `.ml`, `.fs`, `.fsx`, `.clj`, `.cljs`, `.cljc`, `.erl`, `.hrl`, `.r`, `.jl`, `.zig`, `.m`, `.groovy`, `.gvy`, `.gradle`, `.ps1`, `.psm1`, `.sql`, `.vb`, `.sh`, `.bash`, `.zsh` and `.ksh` files (`.h` is read as C++) returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.

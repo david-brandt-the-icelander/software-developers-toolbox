@@ -166,6 +166,23 @@
           "symbol": "uses"
         }
       ]
+    },
+    {
+      "id": "data-view-line-based",
+      "title": "The JSON, YAML, TOML and Markdown views are line-based",
+      "summary": "data.rs and md.rs work line by line without parsing: items are found by indentation and brackets, so minified JSON comes back as source, flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor.",
+      "impact": "Some long lists and decorations stay visible; nothing that is not a list item, comment, long text or long string is hidden.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "items"
+        },
+        {
+          "path": "macos/rust/zazzled/src/md.rs",
+          "symbol": "is_badges"
+        }
+      ]
     }
   ]
 }
