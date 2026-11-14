@@ -341,7 +341,7 @@
           "symbol": "CSS, SCSS, Sass and Less terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it collapses runs of 10+ sibling rules setting the same properties (icon fonts, utility classes; not in Sass) to their first and last, naming the properties; it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it collapses runs of 10+ sibling rules setting the same properties (icon fonts), or of 10+ small rules of one or two declarations setting any properties (utility classes; the note names the properties up to about 80 characters; not in Sass) to their first and last, naming the properties; it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads stylesheets without paying for licence banners, font and animation boilerplate, duplicate prefixes and inline images, and still has to read the real stylesheet before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
@@ -554,12 +554,12 @@
           "symbol": "HCL/Terraform, Protobuf and GraphQL terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, schema.rs collapses runs of three or more comment lines (`#` and `//` in HCL, `//` in Protobuf, `#` in GraphQL) and `/* */` blocks of three or more lines, GraphQL `\"\"\"` descriptions of three or more lines, HCL heredoc bodies of three or more lines (the opening line stays), and runs of three or more Protobuf `import` lines or top-level one-line `option` lines; runs of ten or more one-line items (the values of a Protobuf or GraphQL enum, the items of an HCL list or map such as tags, CIDR blocks and lock-file hashes) keep their first and last; quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, schema.rs collapses runs of three or more comment lines (`#` and `//` in HCL, `//` in Protobuf, `#` in GraphQL) and `/* */` blocks of three or more lines, multi-line GraphQL `\"\"\"` descriptions (as one note quoting their first line of text, cut to 100 characters), HCL heredoc bodies of three or more lines (the opening line stays), and runs of three or more Protobuf `import` lines or top-level one-line `option` lines; runs of ten or more one-line items (the values of a Protobuf or GraphQL enum, with GraphQL descriptions between values, the items of an HCL list or map such as tags, CIDR blocks and lock-file hashes) keep their first and last; quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads Terraform modules, lock files, Protobuf definitions and GraphQL schemas without paying for license banners, documentation, heredoc scripts and policies, and long enums and lists, and still has to read the real file before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "The rules are line-based, without a grammar: items sharing a line, or an item spread over lines, end a run.",
-        "GraphQL descriptions and comments of three or more lines are hidden like banners, so a schema loses its documentation in the view."
+        "A multi-line GraphQL description keeps only its first line of text in the view; comments of three or more lines are hidden like banners."
       ],
       "implementation": [
         {

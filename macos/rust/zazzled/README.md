@@ -61,7 +61,7 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 `zazzle read` on `.css`, `.scss`, `.sass` and `.less` files returns a terse view built inside `zazzled` (`src/styles.rs`), line by line, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
 
 - Hidden: `/* */` comments of 4+ lines and SCSS `//` runs of 4+ lines (shorter ones are usually section titles), `/*# sourceMappingURL */` comments, runs of 2+ `@import`/`@use`/`@forward` lines, `@font-face` blocks (`7-10 ⋯ @font-face "Inter", 4 line(s)`) and `@keyframes` blocks, vendor-prefixed declarations (`-webkit-`, `-moz-`, `-ms-`, `-o-`) when the same block also sets the plain property, and SCSS and Sass `@debug` lines. Less is read like SCSS; indented Sass finds its blocks (comments, `@font-face`, `@keyframes`, the block a prefixed declaration belongs to) by indentation and needs no `;`.
-- Runs of 10+ sibling rules that set the same properties, each on one line or over several (icon fonts, utility classes), keep their first and last (`⋯ 1418 rule(s) setting --fa`). Sass is not checked for them.
+- Runs of 10+ sibling rules that set the same properties, each on one line or over several (icon fonts), keep their first and last (`⋯ 1418 rule(s) setting --fa`); so do runs of 10+ small rules of one or two declarations each that set different properties (utility classes), whose note names the properties up to about 80 characters (`⋯ 40 rule(s) setting margin-top, margin-bottom, …`). Sass is not checked for them.
 - Shortened: `url(data:…)` values longer than 60 characters.
 - Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden. Minified CSS is reformatted first; see below.
 
@@ -104,10 +104,10 @@ A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when m
 `zazzle read` on HCL files (`.tf`, `.tfvars`, `.hcl`, including `.terraform.lock.hcl`), Protobuf files (`.proto`) and GraphQL files (`.graphql`, `.graphqls`, `.gql`) returns a terse view built line by line (`src/schema.rs`), with no sha; `--source` returns the file. These are declarations, so the view needs no grammar module.
 
 - Comments: runs of 3+ comment lines (`#` and `//` in HCL, `//` in Protobuf, `#` in GraphQL) and `/* */` blocks of 3+ lines (`⋯ comment, N line(s)`).
-- GraphQL `"""` descriptions of 3+ lines (`⋯ description, N line(s)`); one-line descriptions stay.
+- GraphQL `"""` descriptions over several lines become one note quoting their first line of text, cut to 100 characters (`5-7 ⋯ """The ID of the migration."""`, or `… """ (4 lines of text)` when there is more); one-line descriptions stay.
 - HCL heredoc bodies of 3+ lines (`<<EOT`, `<<-EOT`): the opening line stays, the body and terminator become `⋯ heredoc, N line(s)`.
 - Protobuf runs of 3+ `import` lines and of 3+ top-level one-line `option` lines (`⋯ 6 option(s)`).
-- Runs of 10+ one-line items keep their first and last: the values of a Protobuf or GraphQL `enum` (`⋯ 10 value(s)`), and the items of an HCL list (`= [`) or map (`= {`), such as tags, CIDR blocks and lock-file `hashes` (`⋯ 11 item(s)`). Comments and blank lines may sit between items; a multi-line item ends the run.
+- Runs of 10+ one-line items keep their first and last: the values of a Protobuf or GraphQL `enum` (`⋯ 10 value(s)`; GraphQL descriptions between values belong to the run), and the items of an HCL list (`= [`) or map (`= {`), such as tags, CIDR blocks and lock-file `hashes` (`⋯ 11 item(s)`). Comments and blank lines may sit between items; a multi-line item ends the run.
 - Quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
 - Kept: everything else, including resource and block attributes, message fields, types and their fields, short comments and services.
 

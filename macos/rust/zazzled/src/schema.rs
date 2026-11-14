@@ -1,4 +1,4 @@
-// Terse view of HCL/Terraform, Protobuf and GraphQL files, line by line: collapses comments and GraphQL descriptions of 3+ lines, HCL heredoc bodies, runs of 3+ Protobuf imports and file options, and runs of 10+ enum values or HCL list and map items to their first and last, and cuts long strings, keeping source line numbers.
+// Terse view of HCL/Terraform, Protobuf and GraphQL files, line by line: collapses comments of 3+ lines and multi-line GraphQL descriptions to a note quoting their first line, HCL heredoc bodies, runs of 3+ Protobuf imports and file options, and runs of 10+ enum values or HCL list and map items to their first and last, and cuts long strings, keeping source line numbers.
 use crate::data::{shorten_strings, shorten_words};
 use crate::markup::Plan;
 use std::path::Path;
@@ -7,6 +7,7 @@ const LONG_COMMENT: usize = 3;
 const LONG_HEREDOC: usize = 3;
 const LONG_STATEMENTS: usize = 3;
 const LONG_RUN: usize = 10;
+const DESCRIPTION_CUT: usize = 100;
 
 // The file kinds the view handles.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -32,12 +33,14 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
     let mut plan = Plan { lines: Vec::new(), steps: Vec::new() };
     let mut i = 0;
     while i < src.len() {
-        let block = comment_end(&src, i, kind)
-            .map(|e| (e, "comment", "comments"))
-            .or_else(|| description_end(&src, i, kind).map(|e| (e, "description", "descriptions")));
-        if let Some((end, what, step)) = block {
+        if let Some(end) = description_end(&src, i, kind) {
+            plan.hide(i, end, description_note(&src[i..=end]), "descriptions");
+            i = end + 1;
+            continue;
+        }
+        if let Some(end) = comment_end(&src, i, kind) {
             if end + 1 - i >= LONG_COMMENT {
-                plan.hide(i, end, format!("{what}, {} line(s)", end - i + 1), step);
+                plan.hide(i, end, format!("comment, {} line(s)", end - i + 1), "comments");
             } else {
                 (i..=end).for_each(|l| keep(&mut plan, src[l], l));
             }
@@ -61,7 +64,19 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
         }
         if let Some((items, what, step)) = run(&src, i, kind) {
             let (first, last) = (items[0], items[items.len() - 1]);
-            (i + 1..=first).for_each(|l| keep(&mut plan, src[l], l));
+            let mut l = i + 1;
+            while l <= first {
+                match description_end(&src, l, kind) {
+                    Some(end) => {
+                        plan.hide(l, end, description_note(&src[l..=end]), "descriptions");
+                        l = end + 1;
+                    }
+                    None => {
+                        keep(&mut plan, src[l], l);
+                        l += 1;
+                    }
+                }
+            }
             plan.hide(first + 1, last - 1, format!("{} {what}", items.len() - 2), step);
             keep(&mut plan, src[last], last);
             i = last + 1;
@@ -112,6 +127,19 @@ fn description_end(src: &[&str], i: usize, kind: Kind) -> Option<usize> {
     (i + 1..src.len()).find(|&j| src[j].contains("\"\"\""))
 }
 
+// Returns the note for a multi-line GraphQL description: its first line of text in `"""`, cut to 100 characters, and how many more lines of text it has.
+fn description_note(lines: &[&str]) -> String {
+    let text: Vec<&str> =
+        lines.iter().map(|l| l.trim().trim_matches('"').trim()).filter(|l| !l.is_empty()).collect();
+    let first = text.first().copied().unwrap_or("");
+    let cut: String = first.chars().take(DESCRIPTION_CUT).collect();
+    let more = if cut.len() < first.len() { "…" } else { "" };
+    match text.len() {
+        0 | 1 => format!("\"\"\"{cut}{more}\"\"\""),
+        n => format!("\"\"\"{cut}{more} …\"\"\" ({n} lines of text)"),
+    }
+}
+
 // Returns the last line of a run of 3+ Protobuf `import` lines or top-level `option` lines starting at line i, with the note's noun and the step.
 fn statements(src: &[&str], i: usize, kind: Kind) -> Option<(usize, &'static str, &'static str)> {
     if kind != Kind::Proto {
@@ -158,8 +186,15 @@ fn run(src: &[&str], i: usize, kind: Kind) -> Option<(Vec<usize>, &'static str, 
     let k = indent(src[i]);
     let child = src[i + 1..].iter().find(|l| !l.trim().is_empty()).map(|l| indent(l)).filter(|&c| c > k)?;
     let mut items = Vec::new();
-    for (j, line) in src.iter().enumerate().skip(i + 1) {
-        if line.trim().is_empty() {
+    let mut j = i + 1;
+    while j < src.len() {
+        let line = src[j];
+        if let Some(end) = description_end(src, j, kind).filter(|_| indent(line) == child) {
+            j = end + 1;
+            continue;
+        }
+        if line.trim().is_empty() || kind == Kind::GraphQl && indent(line) == child && is_string(line) {
+            j += 1;
             continue;
         }
         if indent(line) != child || !is_item(line) {
@@ -168,8 +203,15 @@ fn run(src: &[&str], i: usize, kind: Kind) -> Option<(Vec<usize>, &'static str, 
         if !is_line_comment(line, kind) {
             items.push(j);
         }
+        j += 1;
     }
     (items.len() >= LONG_RUN).then_some((items, what, step))
+}
+
+// True for a line that is only a string: a GraphQL one-line description, `"..."` or `"""..."""`.
+fn is_string(line: &str) -> bool {
+    let t = line.trim();
+    t.len() >= 2 && t.starts_with('"') && t.ends_with('"')
 }
 
 // True for a line that is one whole item: its brackets balance outside strings, and it opens no heredoc or GraphQL description.
@@ -241,8 +283,16 @@ mod tests {
             (0..10).map(|n| format!("  V{n} @deprecated(reason: \"no (really)\")\n  # note\n")).collect();
         let src = format!("\"\"\"\nA user.\nWith details.\n\"\"\"\ntype User {{\n  \"\"\"Id.\"\"\"\n  id: ID!\n}}\n# a\n# b\n# c\nenum Big {{\n{values}}}\nenum Small {{\n  A\n  B\n}}\n\"\"\"\nShort.\n\"\"\"\n");
         let v = view("s.graphql", &src, Kind::GraphQl).expect("view");
-        assert_eq!(v, "s.graphql 40 lines; terse: 2 descriptions, 1 comments, 1 enum values\n1-4\t⋯ description, 4 line(s)\n5\ttype User {\n6\t  \"\"\"Id.\"\"\"\n7\t  id: ID!\n8\t}\n9-11\t⋯ comment, 3 line(s)\n12\tenum Big {\n13\t  V0 @deprecated(reason: \"no (really)\")\n14-30\t⋯ 8 value(s)\n31\t  V9 @deprecated(reason: \"no (really)\")\n32\t  # note\n33\t}\n34\tenum Small {\n35\t  A\n36\t  B\n37\t}\n38-40\t⋯ description, 3 line(s)");
+        assert_eq!(v, "s.graphql 40 lines; terse: 2 descriptions, 1 comments, 1 enum values\n1-4\t⋯ \"\"\"A user. …\"\"\" (2 lines of text)\n5\ttype User {\n6\t  \"\"\"Id.\"\"\"\n7\t  id: ID!\n8\t}\n9-11\t⋯ comment, 3 line(s)\n12\tenum Big {\n13\t  V0 @deprecated(reason: \"no (really)\")\n14-30\t⋯ 8 value(s)\n31\t  V9 @deprecated(reason: \"no (really)\")\n32\t  # note\n33\t}\n34\tenum Small {\n35\t  A\n36\t  B\n37\t}\n38-40\t⋯ \"\"\"Short.\"\"\"");
         assert!(view("s.gql", "\"\"\"\nopen\n", Kind::GraphQl).is_none());
+        let documented: String =
+            (0..12).map(|n| format!("  \"\"\"\n  Value {n}.\n  \"\"\"\n  V{n}\n  \"one line\"\n")).collect();
+        let v = view("e.graphql", &format!("enum E {{\n{documented}}}\n"), Kind::GraphQl).expect("view");
+        assert!(v.starts_with("e.graphql 62 lines; terse: 1 descriptions, 1 enum values\n1\tenum E {\n2-4\t⋯ \"\"\"Value 0.\"\"\"\n5\t  V0\n6-59\t⋯ 10 value(s)\n"), "{v}");
+        let long = "word ".repeat(30);
+        assert_eq!(description_note(&["\"\"\"", &long, "\"\"\""]), format!("\"\"\"{}…\"\"\"", &long[..100]));
+        assert_eq!(description_note(&["\"\"\"", "\"\"\""]), "\"\"\"\"\"\"");
+        assert!(is_string("  \"x\"") && !is_string("  \"") && !is_string("  V1"));
         assert!(!is_item("  a)") && is_item("  \"a\\\"(\""));
     }
 
