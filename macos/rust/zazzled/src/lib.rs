@@ -6,6 +6,7 @@ pub mod args;
 pub mod cli;
 pub mod client;
 pub mod cmd;
+pub mod config;
 pub mod data;
 pub mod engine;
 pub mod indexer;
@@ -34,6 +35,7 @@ pub mod tokens;
 pub mod util;
 pub mod walk;
 pub mod wrap;
+pub mod xml;
 pub mod zazz;
 
 #[cfg(test)]

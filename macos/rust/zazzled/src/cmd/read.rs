@@ -1,6 +1,7 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::config;
 use crate::data;
 use crate::indexer::Indexer;
 use crate::markup;
@@ -14,6 +15,7 @@ use crate::symbols::{self, Miss};
 use crate::terse;
 use crate::tokens;
 use crate::util::{clip, display, hex8, resolve};
+use crate::xml;
 
 const SPEC: &[Flag] = &[
     opt("around", 'a'),
@@ -178,7 +180,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
@@ -199,6 +201,12 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
     }
     if md::is_markdown(path) {
         return md::view(shown, &text);
+    }
+    if xml::is_xml(path) {
+        return xml::view(shown, &text);
+    }
+    if let Some(kind) = config::kind_of(path) {
+        return config::view(shown, &text, kind);
     }
     terse::lang_of(path).and_then(|lang| terse::view(shown, &text, lang))
 }
@@ -633,7 +641,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
 
-    // Checks JSON, Markdown, Nim and SQL files read as their line-based terse views, and a plain one as source.
+    // Checks JSON, Markdown, Nim, SQL, XML, INI and Dockerfile files read as their line-based terse views, and a plain one as source.
     #[test]
     fn test_line_terse_views() {
         let t = TempDir::new();
@@ -655,6 +663,16 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
         assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
         assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
+        std::fs::write(t.path().join("f.xml"), "<!--\na\n-->\n<x/>\n").expect("write");
+        std::fs::write(t.path().join("g.ini"), "; a\n; b\n; c\n; d\nk = v\n").expect("write");
+        std::fs::write(t.path().join("Dockerfile"), "# a\n# b\n# c\n# d\nFROM x\n").expect("write");
+        assert!(run_cmd(t.path(), &["read", "f.xml"]).text.ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\t<x/>"));
+        assert!(run_cmd(t.path(), &["read", "g.ini"])
+            .text
+            .ends_with("\n1-4\t⋯ comment, 4 line(s)\n5\tk = v"));
+        assert!(run_cmd(t.path(), &["read", "Dockerfile"])
+            .text
+            .ends_with("\n1-4\t⋯ comment, 4 line(s)\n5\tFROM x"));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

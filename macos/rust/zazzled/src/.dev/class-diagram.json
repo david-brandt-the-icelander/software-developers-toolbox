@@ -66,6 +66,7 @@
     { "id": "locals.Rename", "name": "Rename (locals)", "kind": "struct", "sources": ["macos/rust/zazzled/src/locals.rs"], "members": ["spans: Vec<(usize, usize)>", "name: String"] },
     { "id": "locals.Role", "name": "Role (locals)", "kind": "enum", "sources": ["macos/rust/zazzled/src/locals.rs"], "members": ["Use", "Other", "Unsafe"] },
     { "id": "styles.Kind", "name": "Kind (styles)", "kind": "enum", "sources": ["macos/rust/zazzled/src/styles.rs"], "members": ["Css", "Scss", "Sass", "Less"] },
+    { "id": "config.Kind", "name": "Kind (config)", "kind": "enum", "sources": ["macos/rust/zazzled/src/config.rs"], "members": ["Ini", "Dockerfile"] },
     { "id": "data.Kind", "name": "Kind (data)", "kind": "enum", "sources": ["macos/rust/zazzled/src/data.rs"], "members": ["Json", "Yaml", "Toml"] },
     { "id": "markup.Plan", "name": "Plan (markup)", "kind": "struct", "sources": ["macos/rust/zazzled/src/markup.rs"], "members": ["lines: Vec<String>", "steps: Vec<(&str, usize)>", "count(step)", "hide(a, b, note, step)", "keep(i, text, changed)"] },
     { "id": "Pool", "name": "Pool", "kind": "struct", "sources": ["macos/rust/zazzled/src/pool.rs"], "members": ["tx: Mutex<Sender<Job>>"] },

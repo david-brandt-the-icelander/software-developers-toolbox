@@ -668,6 +668,90 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "xml-terse-view",
+      "title": "Terse XML view",
+      "summary": "xml.rs is tested on a project file with comments, a run of one-line elements, a run of multi-line elements separated by blank lines and a base64 value, and on what must be kept; read is tested end to end on an XML file.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "xml-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments of 3+ lines and runs of 10+ same-tag siblings become notes, keeping the first and last element and the lines between items, with source line numbers.",
+        "Short comments, mixed tags, short runs, unclosed elements and unclosed comments are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/xml.rs",
+          "symbol": "test_view_xml",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/xml.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "config-terse-view",
+      "title": "Terse INI and Dockerfile view",
+      "summary": "config.rs is tested on INI comment blocks and long values and on a Dockerfile with a directive, comments, labels and package lists; read is tested end to end on both.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "config-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comment blocks of 4+ lines, LABEL runs and package lists become notes with source line numbers.",
+        "Directives, short comments, short package lists and the commands after a package list are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_view_ini",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_view_dockerfile",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",

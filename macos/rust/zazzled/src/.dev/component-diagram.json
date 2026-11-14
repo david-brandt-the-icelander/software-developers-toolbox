@@ -154,6 +154,18 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "xml",
+      "name": "XML terse view (xml.rs)",
+      "responsibility": "Builds the terse view of XML files line by line with markup.rs's Plan: collapses comments of 3+ lines and runs of 10+ sibling elements with the same tag to their first and last, and cuts long values and blobs.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "config",
+      "name": "INI and Dockerfile terse view (config.rs)",
+      "responsibility": "Builds the terse view of INI-style files and Dockerfiles line by line with markup.rs's Plan: collapses comment blocks of 4+ lines, Dockerfile LABEL runs and package lists in continued RUN instructions, and cuts long values.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
@@ -592,6 +604,54 @@
       "to": "md",
       "kind": "depends-on",
       "description": "read's terse Markdown view."
+    },
+    {
+      "from": "src",
+      "to": "xml",
+      "kind": "contains",
+      "description": "Terse view of XML."
+    },
+    {
+      "from": "src",
+      "to": "config",
+      "kind": "contains",
+      "description": "Terse view of INI files and Dockerfiles."
+    },
+    {
+      "from": "xml",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "config",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "xml",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "config",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "read's terse XML view."
+    },
+    {
+      "from": "cmd",
+      "to": "config",
+      "kind": "depends-on",
+      "description": "read's terse INI and Dockerfile view."
     },
     {
       "from": "cmd",

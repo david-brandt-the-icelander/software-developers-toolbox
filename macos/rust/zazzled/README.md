@@ -72,6 +72,15 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Markdown: HTML comments (multi-line ones as `⋯ comment, N line(s)`), lines made only of badge images (shields.io, badgen, codecov, coveralls, `badge` or `.svg` sources), runs of 2+ link reference definitions (`[x]: url`) and lists of 3+ entries that only link to anchors (tables of contents). Fenced code and front matter are left alone.
 - Kept: everything else; minified JSON (one long line) comes back as source.
 
+## XML, INI and Dockerfile terse view
+
+`zazzle read` on XML files (`.xml`, `.csproj`, `.fsproj`, `.vbproj`, `.vcxproj`, `.props`, `.targets`, `.xaml`, `.axaml`, `.plist`, `.resx`, `.xsd`, `.xsl`, `.xslt`, `.wsdl`, `.nuspec`, `.manifest`), INI-style files (`.ini`, `.cfg`, `.properties`, `.editorconfig`) and Dockerfiles (`Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `Containerfile`) returns a terse view built line by line (`src/xml.rs`, `src/config.rs`), with no sha; `--source` returns the file.
+
+- XML: comments of 3+ lines (`⋯ comment, N line(s)`); runs of 10+ sibling elements with the same tag, one per line or each closing at the same indentation, keep their first and last (`⋯ 40 <PackageReference> element(s)`); quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
+- INI: `;` and `#` comment blocks of 4+ lines, and long values as in XML.
+- Dockerfile: `#` comment blocks of 4+ lines (`# syntax=` and `# escape=` directives stay), runs of 3+ `LABEL` lines (or one `LABEL` continued over 3+ lines), and 6+ package names one per continued line after a `RUN … \` line (`⋯ 25 package(s)`).
+- Kept: everything else, including short comments, mixed tags and commands between packages.
+
 ## Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell terse view
 
 `zazzle read` on `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.dart`, `.rs`, `.go`, `.java`, `.kt`, `.kts`, `.swift`, `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.rb`, `.rake`, `.php`, `.scala`, `.sc`, `.pl`, `.pm`, `.lua`, `.ex`, `.exs`, `.hs`, `.ml`, `.fs`, `.fsx`, `.clj`, `.cljs`, `.cljc`, `.erl`, `.hrl`, `.r`, `.jl`, `.zig`, `.m`, `.groovy`, `.gvy`, `.gradle`, `.ps1`, `.psm1`, `.sql`, `.vb`, `.sh`, `.bash`, `.zsh` and `.ksh` files (`.h` is read as C++) returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.

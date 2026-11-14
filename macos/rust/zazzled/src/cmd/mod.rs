@@ -39,7 +39,7 @@ git-log [PATH] [-n N] [--grep TEXT]  recent commits
 git-blame PATH [--start N] [--end N]  who last changed each line
 report-gap TEXT  tell the maintainers what you needed and could not get
 status  daemon info
-C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML and Markdown files read as a terse view without a sha; --source gives the code and the sha every edit needs.
+C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
