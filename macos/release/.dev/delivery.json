@@ -135,6 +135,38 @@
           "entityId": "external-tap"
         }
       ]
+    },
+    {
+      "id": "language-modules",
+      "title": "Language modules on icelander.net",
+      "summary": "Each release's language modules (one .dylib per language, universal, on macOS; one .so per language and Linux architecture) and their manifest, under icelander.net/downloads/zazzle/vX.Y.Z/languages/{macos-universal,linux-x86_64,linux-aarch64}/. Only the tag's directory gets them, not latest, because a zazzled accepts only its own release's modules.",
+      "environment": "Cloudflare R2 bucket icelander-downloads, served as icelander.net/downloads",
+      "purpose": "zazzled downloads a module from here the first time a file needs it, or on `zazzle languages fetch`.",
+      "deployedBy": "The release workflow (macos and linux jobs, Publish to icelander.net)",
+      "rollback": "No rollback; each tag keeps its own directory, which its zazzled keeps using.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Publish to icelander.net"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux: Publish to icelander.net"
+        },
+        {
+          "path": "macos/release/language-modules.sh",
+          "symbol": "--manifest"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzle-lang/.dev/folder.json",
+          "entityId": "folder",
+          "description": "The modules this delivers."
+        }
+      ]
     }
   ]
 }

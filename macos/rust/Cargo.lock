@@ -3419,6 +3419,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "zazzle-lang"
+version = "0.0.0-dev"
+dependencies = [
+ "tree-sitter-bash",
+ "tree-sitter-clojure-orchard",
+ "tree-sitter-cpp",
+ "tree-sitter-dart",
+ "tree-sitter-elixir",
+ "tree-sitter-erlang",
+ "tree-sitter-fsharp",
+ "tree-sitter-go",
+ "tree-sitter-groovy",
+ "tree-sitter-haskell",
+ "tree-sitter-java",
+ "tree-sitter-julia",
+ "tree-sitter-kotlin-ng",
+ "tree-sitter-language",
+ "tree-sitter-lua",
+ "tree-sitter-objc",
+ "tree-sitter-ocaml",
+ "tree-sitter-php",
+ "tree-sitter-powershell",
+ "tree-sitter-r",
+ "tree-sitter-ruby",
+ "tree-sitter-scala",
+ "tree-sitter-swift",
+ "tree-sitter-vb-dotnet",
+ "tree-sitter-zig",
+ "ts-parser-perl",
+]
+
+[[package]]
 name = "zazzled"
 version = "0.0.0-dev"
 dependencies = [
@@ -3449,6 +3481,7 @@ dependencies = [
  "tree-sitter-javascript",
  "tree-sitter-julia",
  "tree-sitter-kotlin-ng",
+ "tree-sitter-language",
  "tree-sitter-lua",
  "tree-sitter-objc",
  "tree-sitter-ocaml",

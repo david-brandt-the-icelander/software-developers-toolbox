@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle-lang verification",
+  "folder": "macos/rust/zazzle-lang",
+  "entities": [
+    {
+      "id": "modules-load",
+      "title": "Modules build, hash and load",
+      "summary": "zazzled's tests build the Lua module, serve it over local HTTP, download it, check its hash, load it with dlopen and parse Lua with it; the release script test builds one module and checks its manifest line.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzle-lang/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ],
+      "criteria": [
+        "A module built with one feature exports ZAZZLE_LANGUAGE_ABI and a working zazzle_language.",
+        "language-modules.sh writes one `NAME SHA256 FILE` line per module, matching the file.",
+        "A rehearsal on Linux built all 25 modules (69 MB) in about two minutes, built zazzled with their manifest (17.6 MB, from 82.4 MB with the grammars linked in) and downloaded, verified and used them through a local HTTP server; a tampered download and a corrupted local copy were refused and replaced."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_fetch_and_load",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/release/language-modules.test.sh",
+          "symbol": "language-modules.test.sh",
+          "command": "bash macos/release/language-modules.test.sh"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

@@ -94,6 +94,12 @@
       "folder": "macos/rust/zazzled/src/cmd"
     },
     {
+      "id": "languages",
+      "name": "languages (languages.rs)",
+      "responsibility": "Lists the language modules this zazzled trusts and which are installed, turns downloading on first use (JIT) on or off, and downloads the modules not yet installed.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
       "id": "src",
       "name": "zazzled library",
       "responsibility": "The engine, walker, outliner, symbol finder, pool, indexer bridge, session table and helpers the commands run on.",
@@ -102,38 +108,209 @@
     }
   ],
   "relationships": [
-    { "from": "cmd", "to": "dispatch", "kind": "contains", "description": "The entry point, run." },
-    { "from": "cmd", "to": "find", "kind": "contains", "description": "Search." },
-    { "from": "cmd", "to": "read", "kind": "contains", "description": "Reading." },
-    { "from": "cmd", "to": "ls", "kind": "contains", "description": "Listing." },
-    { "from": "cmd", "to": "outline", "kind": "contains", "description": "Outlines." },
-    { "from": "cmd", "to": "refs", "kind": "contains", "description": "References." },
-    { "from": "cmd", "to": "structure", "kind": "contains", "description": "C# structure from the indexer." },
-    { "from": "cmd", "to": "edit", "kind": "contains", "description": "Editing." },
-    { "from": "cmd", "to": "clean", "kind": "contains", "description": "Cleaning piped output." },
-    { "from": "cmd", "to": "again", "kind": "contains", "description": "Answers again by id." },
-    { "from": "dispatch", "to": "find", "kind": "depends-on", "description": "find and grep." },
-    { "from": "dispatch", "to": "read", "kind": "depends-on", "description": "read and cat; read keeps its own --budget." },
-    { "from": "dispatch", "to": "ls", "kind": "depends-on", "description": "ls." },
-    { "from": "dispatch", "to": "outline", "kind": "depends-on", "description": "outline." },
-    { "from": "dispatch", "to": "refs", "kind": "depends-on", "description": "refs." },
-    { "from": "dispatch", "to": "structure", "kind": "depends-on", "description": "overview, find-symbol, changed-since, git-log, git-blame and report-gap." },
-    { "from": "dispatch", "to": "edit", "kind": "depends-on", "description": "edit." },
-    { "from": "dispatch", "to": "clean", "kind": "depends-on", "description": "clean, which keeps its own --budget." },
-    { "from": "dispatch", "to": "again", "kind": "depends-on", "description": "read-again, before any global option is taken out." },
-    { "from": "again", "to": "dispatch", "kind": "depends-on", "description": "produce, to run a session response's request again." },
-    { "from": "again", "to": "read", "kind": "depends-on", "description": "parse_range for --lines and fit for the head and tail within the budget." },
-    { "from": "again", "to": "clean", "kind": "depends-on", "description": "plain_lines: the stored input without terminal escapes and redraws, one row per original line." },
-    { "from": "again", "to": "src", "kind": "depends-on", "description": "Sessions.replay and resend for session responses; outputs::load from the engine's output store." },
-    { "from": "refs", "to": "find", "kind": "depends-on", "description": "build_regex and search_all, with a literal whole-word pattern." },
-    { "from": "dispatch", "to": "src", "kind": "depends-on", "description": "Sessions.apply_with for ids, dedupe and replay records; token estimates for the budget cut; engine counters for status." },
-    { "from": "find", "to": "src", "kind": "depends-on", "description": "walk::collect for the file list; pool::par_map; the engine's stored info to skip known binary files, and remember to record new ones." },
-    { "from": "read", "to": "src", "kind": "depends-on", "description": "Engine.load for content, line starts and the sha; Engine.outline and symbols::find for --symbol; Indexer.view for the C# terse view." },
-    { "from": "ls", "to": "src", "kind": "depends-on", "description": "walk::collect, and Engine.info for line counts on the pool." },
-    { "from": "outline", "to": "src", "kind": "depends-on", "description": "Engine.outline, cached by content hash." },
-    { "from": "refs", "to": "src", "kind": "depends-on", "description": "Engine.outline on the pool to tell definitions from uses and find the enclosing symbol; outline::csharp_identifier_lines to drop C# mentions in comments and strings." },
-    { "from": "structure", "to": "src", "kind": "depends-on", "description": "Indexer.ask and localize, and the work tree lookup." },
-    { "from": "edit", "to": "src", "kind": "depends-on", "description": "Engine.load, the edit lock and Engine.forget after a write." },
-    { "from": "clean", "to": "src", "kind": "depends-on", "description": "Token estimates and flag parsing; outputs::id_of, save and limit to store an answer in the engine's output store." }
+    {
+      "from": "cmd",
+      "to": "dispatch",
+      "kind": "contains",
+      "description": "The entry point, run."
+    },
+    {
+      "from": "cmd",
+      "to": "find",
+      "kind": "contains",
+      "description": "Search."
+    },
+    {
+      "from": "cmd",
+      "to": "read",
+      "kind": "contains",
+      "description": "Reading."
+    },
+    {
+      "from": "cmd",
+      "to": "ls",
+      "kind": "contains",
+      "description": "Listing."
+    },
+    {
+      "from": "cmd",
+      "to": "outline",
+      "kind": "contains",
+      "description": "Outlines."
+    },
+    {
+      "from": "cmd",
+      "to": "refs",
+      "kind": "contains",
+      "description": "References."
+    },
+    {
+      "from": "cmd",
+      "to": "structure",
+      "kind": "contains",
+      "description": "C# structure from the indexer."
+    },
+    {
+      "from": "cmd",
+      "to": "edit",
+      "kind": "contains",
+      "description": "Editing."
+    },
+    {
+      "from": "cmd",
+      "to": "clean",
+      "kind": "contains",
+      "description": "Cleaning piped output."
+    },
+    {
+      "from": "cmd",
+      "to": "again",
+      "kind": "contains",
+      "description": "Answers again by id."
+    },
+    {
+      "from": "dispatch",
+      "to": "find",
+      "kind": "depends-on",
+      "description": "find and grep."
+    },
+    {
+      "from": "dispatch",
+      "to": "read",
+      "kind": "depends-on",
+      "description": "read and cat; read keeps its own --budget."
+    },
+    {
+      "from": "dispatch",
+      "to": "ls",
+      "kind": "depends-on",
+      "description": "ls."
+    },
+    {
+      "from": "dispatch",
+      "to": "outline",
+      "kind": "depends-on",
+      "description": "outline."
+    },
+    {
+      "from": "dispatch",
+      "to": "refs",
+      "kind": "depends-on",
+      "description": "refs."
+    },
+    {
+      "from": "dispatch",
+      "to": "structure",
+      "kind": "depends-on",
+      "description": "overview, find-symbol, changed-since, git-log, git-blame and report-gap."
+    },
+    {
+      "from": "dispatch",
+      "to": "edit",
+      "kind": "depends-on",
+      "description": "edit."
+    },
+    {
+      "from": "dispatch",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "clean, which keeps its own --budget."
+    },
+    {
+      "from": "dispatch",
+      "to": "again",
+      "kind": "depends-on",
+      "description": "read-again, before any global option is taken out."
+    },
+    {
+      "from": "again",
+      "to": "dispatch",
+      "kind": "depends-on",
+      "description": "produce, to run a session response's request again."
+    },
+    {
+      "from": "again",
+      "to": "read",
+      "kind": "depends-on",
+      "description": "parse_range for --lines and fit for the head and tail within the budget."
+    },
+    {
+      "from": "again",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "plain_lines: the stored input without terminal escapes and redraws, one row per original line."
+    },
+    {
+      "from": "again",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Sessions.replay and resend for session responses; outputs::load from the engine's output store."
+    },
+    {
+      "from": "refs",
+      "to": "find",
+      "kind": "depends-on",
+      "description": "build_regex and search_all, with a literal whole-word pattern."
+    },
+    {
+      "from": "dispatch",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Sessions.apply_with for ids, dedupe and replay records; token estimates for the budget cut; engine counters for status."
+    },
+    {
+      "from": "find",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "walk::collect for the file list; pool::par_map; the engine's stored info to skip known binary files, and remember to record new ones."
+    },
+    {
+      "from": "read",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Engine.load for content, line starts and the sha; Engine.outline and symbols::find for --symbol; Indexer.view for the C# terse view."
+    },
+    {
+      "from": "ls",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "walk::collect, and Engine.info for line counts on the pool."
+    },
+    {
+      "from": "outline",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Engine.outline, cached by content hash."
+    },
+    {
+      "from": "refs",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Engine.outline on the pool to tell definitions from uses and find the enclosing symbol; outline::csharp_identifier_lines to drop C# mentions in comments and strings."
+    },
+    {
+      "from": "structure",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Indexer.ask and localize, and the work tree lookup."
+    },
+    {
+      "from": "edit",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Engine.load, the edit lock and Engine.forget after a write."
+    },
+    {
+      "from": "clean",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Token estimates and flag parsing; outputs::id_of, save and limit to store an answer in the engine's output store."
+    },
+    {
+      "from": "dispatch",
+      "to": "languages",
+      "kind": "depends-on",
+      "description": "Runs `languages`."
+    }
   ]
 }

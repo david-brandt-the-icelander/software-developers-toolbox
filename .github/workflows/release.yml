@@ -1,4 +1,4 @@
-# Build universal macOS binaries (signed when configured) and Linux tarballs; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or the next one after the latest tag when run by hand with a bump (macos/release/version.sh); every binary is built with it.
+# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or the next one after the latest tag when run by hand with a bump (macos/release/version.sh); every binary is built with it.
 name: Release
 
 on:
@@ -57,10 +57,28 @@ jobs:
       # Profile-guided optimization of the C code (tree-sitter): train on arm64, use the profile for both slices.
       - name: Train the PGO profile for zazzled's C code
         run: sh ../release/pgo.sh >> "$GITHUB_ENV"
+      # Language modules (macos/release/README.md): one universal dylib per grammar not built into zazzled. They are signed
+      # before their hashes go into the manifest that zazzled embeds, so a signed zazzled loads them under library validation.
+      - name: Build the language modules
+        run: bash ../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
+      - name: Sign the language modules
+        env:
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          cd dist/languages
+          ../../../release/sign-and-notarize.sh . *.dylib
+      - name: Write the language module manifest
+        run: bash ../release/language-modules.sh --manifest dist/languages
       - name: Build both architectures
         env:
           CC: clang
           CFLAGS: ${{ env.PGO_CFLAGS }}
+          ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
         run: |
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --workspace --release --locked --target "$t"
@@ -141,6 +159,11 @@ jobs:
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" \
               --file zazzle-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
           done
+          # The modules belong to this release's zazzled only, so they go under the tag, not latest.
+          for f in dist/languages/*; do
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$TAG/languages/macos-universal/${f##*/}" \
+              --file "$f" --content-type application/octet-stream --remote
+          done
 
   linux:
     needs: [version, macos]
@@ -170,11 +193,17 @@ jobs:
           sudo apt-get install -y -qq "libclang-rt-$v-dev"
       - name: Train the PGO profile for zazzled's C code
         run: sh macos/release/pgo.sh >> "$GITHUB_ENV"
+      - name: Build the language modules and their manifest
+        working-directory: macos/rust
+        run: |
+          bash ../release/language-modules.sh dist/languages
+          bash ../release/language-modules.sh --manifest dist/languages
       - name: Build zazzled with the profile
         working-directory: macos/rust
         env:
           CC: clang
           CFLAGS: ${{ env.PGO_CFLAGS }}
+          ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
         run: cargo build --release -p zazzled --locked
       - name: Build and smoke test the zazzle invoker
         working-directory: macos/c/zazzle
@@ -225,6 +254,10 @@ jobs:
               --file zazzle-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" \
               --file zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+          done
+          for f in macos/rust/dist/languages/*; do
+            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" \
+              --file "$f" --content-type application/octet-stream --remote
           done
 
   # Write the zazzle formula for this release into the zazzcat/homebrew-z tap. HOMEBREW_TAP_TOKEN is a fine-grained

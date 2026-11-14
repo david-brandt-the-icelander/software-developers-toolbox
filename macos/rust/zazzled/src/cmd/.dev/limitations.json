@@ -187,6 +187,27 @@
           "symbol": "run"
         }
       ]
+    },
+    {
+      "id": "language-modules-limits",
+      "title": "Language modules need the release they were built with",
+      "summary": "A module is accepted only with the SHA-256 compiled into zazzled, so modules are fetched from that release's directory and an older or newer module never loads. Development builds carry no manifest and so only the built-in grammars. The first read of a file in a missing language waits for the download; offline, it reads as source and the load is retried after a minute. On macOS a signed zazzled loads only modules signed by the same team, which the release does when signing is configured.",
+      "impact": "Upgrading zazzled downloads the modules again; offline machines need `zazzle languages fetch` while online.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::from_env"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "language"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Sign the language modules"
+        }
+      ]
     }
   ]
 }

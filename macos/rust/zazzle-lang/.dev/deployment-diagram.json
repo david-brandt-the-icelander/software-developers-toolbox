@@ -1,0 +1,87 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle-lang deployment diagram",
+  "folder": "macos/rust/zazzle-lang",
+  "description": "Each release builds one module per language (a universal .dylib on macOS, signed when signing is configured; a .so per Linux architecture), writes their SHA-256s into a manifest that zazzled embeds, and uploads them to icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/. On a developer's machine zazzled downloads a module the first time a file needs it (JIT, on unless `zazzle languages jit off`) or on `zazzle languages fetch`, checks its hash, stores it in ~/.zazzle/v1/languages and loads it with dlopen.",
+  "sources": [
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Build the language modules"
+    },
+    {
+      "path": "macos/release/language-modules.sh",
+      "symbol": "--manifest"
+    },
+    {
+      "path": "macos/rust/zazzled/src/modules.rs",
+      "symbol": "Store::fetch"
+    },
+    {
+      "path": "macos/rust/zazzled/src/modules.rs",
+      "symbol": "open"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "server",
+      "name": "icelander.net downloads",
+      "kind": "external-service",
+      "description": "The Cloudflare R2 bucket behind icelander.net/downloads/zazzle, holding each release's modules under vX.Y.Z/languages/PLATFORM/ with the manifest."
+    },
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac or Linux machine running zazzled."
+    },
+    {
+      "id": "daemon",
+      "name": "zazzled",
+      "kind": "process",
+      "description": "The daemon, which downloads, verifies and loads modules."
+    },
+    {
+      "id": "store",
+      "name": "~/.zazzle/v1/languages",
+      "kind": "database",
+      "description": "Downloaded modules (0700 directory) and the `jit` setting; ZAZZLE_LANGUAGES_DIR overrides it."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "module",
+      "name": "Language module (NAME.dylib / NAME.so)",
+      "source": "macos/rust/zazzle-lang/Cargo.toml",
+      "deployedTo": "server",
+      "description": "One grammar per file, built by macos/release/language-modules.sh."
+    },
+    {
+      "id": "manifest",
+      "name": "manifest",
+      "source": "macos/release/language-modules.sh",
+      "deployedTo": "server",
+      "description": "`NAME SHA256 FILE` lines; the same text is compiled into zazzled, which trusts only its own copy."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Long-lived until idle."
+    },
+    {
+      "from": "daemon",
+      "to": "server",
+      "kind": "connects-to",
+      "description": "HTTPS GET of a module, on first use or `zazzle languages fetch`."
+    },
+    {
+      "from": "daemon",
+      "to": "store",
+      "kind": "connects-to",
+      "description": "Stores verified modules atomically and reads them back before dlopen."
+    }
+  ]
+}

@@ -1351,6 +1351,67 @@
         }
       ],
       "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "language-modules",
+      "title": "Language modules downloaded on demand",
+      "summary": "modules.rs is tested on manifest parsing, the JIT setting, a real Lua module downloaded from a local HTTP server, hash mismatches, JIT off and non-modules; the languages command is tested on listing, the JIT setting, failed and successful fetches and a development build.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "language-modules"
+        }
+      ],
+      "criteria": [
+        "A module with the manifest's SHA-256 downloads, loads and parses; one with another SHA-256 is refused and not stored.",
+        "With JIT off a missing module is not downloaded.",
+        "Files that are not modules, and unreachable servers, fail with a message."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_parse_and_platform",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_jit_setting",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_fetch_and_load",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_language_without_manifest",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "test_languages_command",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "test_languages_fetch",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "language",
+          "command": "Built all 25 modules and a release zazzled with their manifest on Linux, served them over local HTTP and ran `zazzled run languages`, `languages jit off`, `read a.kt` (source), `languages jit on`, `read a.kt` (downloaded kotlin, terse view) and `languages fetch` (the other 24); a byte appended to a served module was refused with both hashes, and a corrupted local copy was replaced before loading."
+        }
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

@@ -70,6 +70,40 @@ impl Lang {
         matches!(self, Lang::JavaScript | Lang::TypeScript | Lang::Tsx)
     }
 
+    // Returns the name of the language module that carries this language's grammar, or None when the grammar is built in.
+    pub fn module(self) -> Option<&'static str> {
+        Some(match self {
+            Lang::Python | Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Rust | Lang::C => {
+                return None
+            }
+            Lang::Dart => "dart",
+            Lang::Go => "go",
+            Lang::Java => "java",
+            Lang::Kotlin => "kotlin",
+            Lang::Swift => "swift",
+            Lang::Cpp => "cpp",
+            Lang::Ruby => "ruby",
+            Lang::Php => "php",
+            Lang::Scala => "scala",
+            Lang::Shell => "bash",
+            Lang::Perl => "perl",
+            Lang::Lua => "lua",
+            Lang::Elixir => "elixir",
+            Lang::Haskell => "haskell",
+            Lang::OCaml => "ocaml",
+            Lang::FSharp => "fsharp",
+            Lang::Clojure => "clojure",
+            Lang::Erlang => "erlang",
+            Lang::R => "r",
+            Lang::Julia => "julia",
+            Lang::Zig => "zig",
+            Lang::ObjC => "objc",
+            Lang::Groovy => "groovy",
+            Lang::PowerShell => "powershell",
+            Lang::VisualBasic => "vb",
+        })
+    }
+
     // True for languages where a block's last expression is its value, so a log call there is never hidden.
     pub fn last_is_value(self) -> bool {
         matches!(
@@ -122,20 +156,34 @@ pub fn lang_of(path: &Path) -> Option<Lang> {
     }
 }
 
-// Returns the tree-sitter grammar for a language.
-pub(crate) fn grammar(lang: Lang) -> Language {
-    match lang {
+// Returns the tree-sitter grammar for a language: built in for the languages outlines use, else from its language module; None when the module is unavailable.
+pub(crate) fn grammar(lang: Lang) -> Option<Language> {
+    Some(match lang {
         Lang::Python => tree_sitter_python::LANGUAGE.into(),
         Lang::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
         Lang::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
         Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Lang::C => tree_sitter_c::LANGUAGE.into(),
+        _ => return module_grammar(lang),
+    })
+}
+
+// Returns a module language's grammar from its downloaded module.
+#[cfg(not(test))]
+fn module_grammar(lang: Lang) -> Option<Language> {
+    crate::modules::language(lang.module()?)
+}
+
+// Returns a module language's grammar from its crate, linked into tests only.
+#[cfg(test)]
+fn module_grammar(lang: Lang) -> Option<Language> {
+    Some(match lang {
+        Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
         Lang::Go => tree_sitter_go::LANGUAGE.into(),
         Lang::Java => tree_sitter_java::LANGUAGE.into(),
         Lang::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
         Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
-        Lang::C => tree_sitter_c::LANGUAGE.into(),
         Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
         Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
         Lang::Php => tree_sitter_php::LANGUAGE_PHP.into(),
@@ -156,7 +204,8 @@ pub(crate) fn grammar(lang: Lang) -> Language {
         Lang::Groovy => tree_sitter_groovy::LANGUAGE.into(),
         Lang::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
         Lang::VisualBasic => tree_sitter_vb_dotnet::LANGUAGE.into(),
-    }
+        _ => return None,
+    })
 }
 
 // The view being built: hidden line ranges with optional notes, text changes, and how many places each step changed.
@@ -282,7 +331,7 @@ pub fn view(shown: &str, src: &str, lang: Lang) -> Option<String> {
     }
     crate::arena::scope(|| {
         let mut parser = Parser::new();
-        parser.set_language(&grammar(lang)).ok()?;
+        parser.set_language(&grammar(lang)?).ok()?;
         let tree = parser.parse(src, None)?;
         plan_view(shown, src, lang, tree.root_node())
     })

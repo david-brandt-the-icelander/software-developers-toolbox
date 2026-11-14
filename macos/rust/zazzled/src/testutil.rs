@@ -143,6 +143,38 @@ pub fn worker_bin() -> PathBuf {
         .clone()
 }
 
+static LUA_MODULE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+// Builds the Lua language module (release) once per test run, in its own target directory, and returns its path.
+pub fn lua_module() -> PathBuf {
+    LUA_MODULE
+        .get_or_init(|| {
+            let ws = Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("workspace").to_path_buf();
+            let target = ws.join("target/zazzle-lang");
+            let mut cmd = std::process::Command::new(env!("CARGO"));
+            cmd.current_dir(&ws)
+                .args(["build", "--release", "-p", "zazzle-lang", "--features", "lua", "--target-dir"])
+                .arg(&target);
+            for k in [
+                "RUSTFLAGS",
+                "CARGO_ENCODED_RUSTFLAGS",
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "CARGO_TARGET_DIR",
+                "CARGO_BUILD_TARGET_DIR",
+                "LLVM_PROFILE_FILE",
+                "CARGO_LLVM_COV",
+            ] {
+                cmd.env_remove(k);
+            }
+            let st = cmd.status().expect("run cargo build for zazzle-lang");
+            assert!(st.success(), "building the Lua module failed");
+            let ext = if cfg!(target_os = "macos") { "dylib" } else { "so" };
+            target.join(format!("release/libzazzle_lang.{ext}"))
+        })
+        .clone()
+}
+
 // An engine whose zazz registry is in a temporary directory and whose worker is the freshly built one.
 pub fn zazz_engine(t: &TempDir) -> crate::engine::Engine {
     let e = crate::engine::Engine::new();

@@ -705,7 +705,7 @@ mod tests {
 
     // Returns each rename as `old->new@count` for a snippet, in order.
     fn renamed(src: &str, lang: Lang) -> Vec<String> {
-        let language = crate::terse::grammar(lang);
+        let language = crate::terse::grammar(lang).expect("grammar");
         crate::arena::scope(|| {
             let mut parser = Parser::new();
             parser.set_language(&language).expect("grammar");

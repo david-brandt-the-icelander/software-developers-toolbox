@@ -476,6 +476,35 @@
       "authorization": "Callers of the daemon's own uid.",
       "result": "One line: version, pid, uptime, hot and stored cache records with hits and misses, walks scanned and reused, and the number of sessions.",
       "failures": []
+    },
+    {
+      "id": "languages",
+      "name": "languages",
+      "description": "Lists the language modules, sets whether a missing one downloads on first use (JIT), or downloads the missing ones.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/languages.rs",
+        "symbol": "run"
+      },
+      "action": "command",
+      "transport": "zazzle languages | zazzle languages jit [on|off] | zazzle languages fetch [NAME..] (CLI only)",
+      "authorization": "Callers of the daemon's own uid; downloads go to the user's ~/.zazzle/v1/languages.",
+      "result": "`languages`: the JIT setting, the installed and missing modules, the directory and the download URL. `languages jit on|off`: the new setting. `languages fetch`: how many modules downloaded and how many were already installed.",
+      "failures": [
+        "A development build without a manifest: says so, and fetch has nothing to fetch.",
+        "A download that fails or whose SHA-256 does not match the manifest: listed per module, and the command fails.",
+        "A name the manifest does not have: `no such language module in this build's manifest`.",
+        "Bad words: the usage line."
+      ]
     }
   ],
   "relatedViews": [

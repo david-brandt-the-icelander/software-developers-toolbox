@@ -172,6 +172,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "modules",
+      "name": "Language modules (modules.rs)",
+      "responsibility": "Loads the grammars not built into zazzled from language modules: parses the manifest compiled into the binary, downloads a missing module from icelander.net when JIT is on, checks its SHA-256, stores it in ~/.zazzle/v1/languages and opens it with dlopen, checking the module format and tree-sitter ABI; caches loaded grammars for the process and failures for a minute.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "locals",
       "name": "Short locals (locals.rs)",
       "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
@@ -796,6 +802,24 @@
       "to": "mcp",
       "kind": "depends-on",
       "description": "Defines its tools with mcp's Tool and argument helpers."
+    },
+    {
+      "from": "src",
+      "to": "modules",
+      "kind": "contains",
+      "description": "Language module loading."
+    },
+    {
+      "from": "terse",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "Gets the grammars of languages outlines do not use."
+    },
+    {
+      "from": "cmd",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "The languages command lists, configures and fetches modules."
     }
   ]
 }

@@ -759,6 +759,58 @@
           "symbol": "store"
         }
       ]
+    },
+    {
+      "id": "language-modules",
+      "name": "Language modules downloaded on demand",
+      "description": "The grammars of the 25 languages outlines do not use ship as shared libraries beside the zazzle download instead of inside zazzled; zazzled downloads one the first time a file needs it (or on `zazzle languages fetch`), accepts it only if its SHA-256 matches the manifest compiled into zazzled, and loads it.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "language"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "grammar"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Language modules"
+        }
+      ],
+      "behavior": "terse.rs asks modules.rs for a module language's grammar. With JIT on (the default) a missing module downloads from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/, its SHA-256 is checked against the embedded manifest, it is stored in ~/.zazzle/v1/languages and opened with dlopen after checking its module format and tree-sitter ABI; with JIT off, or when the download fails, the file reads as source. `zazzle languages jit on|off` sets JIT, `zazzle languages fetch [NAME..]` downloads the missing modules, `zazzle languages` lists them.",
+      "outcome": "zazzled stays small (17.6 MB instead of 82.4 MB) and a machine only holds the grammars of the languages it reads, while every module it runs is exactly one the release built.",
+      "constraints": [
+        "A module is accepted only with the SHA-256 compiled into this zazzled, so modules belong to one release.",
+        "A development build without a manifest has only the built-in grammars.",
+        "A failed load is retried after a minute, or at once after `languages fetch` or `languages jit`."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::load"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::fetch"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "open"
+        },
+        {
+          "path": "macos/rust/zazzled/build.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzle-lang/src/lib.rs",
+          "symbol": "zazzle_language"
+        }
+      ]
     }
   ],
   "relatedViews": [

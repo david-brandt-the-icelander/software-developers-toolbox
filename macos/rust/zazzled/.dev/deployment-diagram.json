@@ -221,6 +221,12 @@
       "kind": "external-service",
       "description": "The hosts a script's manifest names and its signer's authority grants, reached by zazz-worker over HTTPS.",
       "condition": "A signed script granted network"
+    },
+    {
+      "id": "languages",
+      "name": "Language modules (~/.zazzle/v1/languages)",
+      "kind": "database",
+      "description": "Grammar shared libraries downloaded from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/ and checked against the SHA-256s compiled into zazzled; zazzled loads them with dlopen (macos/rust/zazzle-lang/.dev)."
     }
   ],
   "artifacts": [
@@ -268,39 +274,215 @@
     }
   ],
   "relationships": [
-    { "from": "machine", "to": "zazzle", "kind": "hosts", "description": "Short-lived, one per command." },
-    { "from": "machine", "to": "mcp", "kind": "hosts", "description": "One per MCP connection." },
-    { "from": "machine", "to": "daemon", "kind": "hosts", "description": "Long-lived until idle." },
-    { "from": "machine", "to": "wrap", "kind": "hosts", "description": "One per `zazzle run`." },
-    { "from": "machine", "to": "proxy", "kind": "hosts", "description": "As long as its MCP client keeps it." },
-    { "from": "machine", "to": "indexer", "kind": "hosts", "description": "Long-lived, managed by the indexer itself." },
-    { "from": "terminal", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazzle CMD ...`." },
-    { "from": "agent", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazzle CMD ...` in its shell." },
-    { "from": "agent", "to": "mcp", "kind": "connects-to", "description": "Its MCP client starts `zazzled mcp` and speaks JSON-RPC on its standard input and output." },
-    { "from": "agent", "to": "proxy", "kind": "connects-to", "description": "Its MCP client starts `zazzle proxy -- CMD` on stdio, or sends HTTP requests to the proxy's listen address." },
-    { "from": "zazzle", "to": "daemon", "kind": "connects-to", "description": "Unix socket, descriptor mode: the request with SCM_RIGHTS descriptors; the daemon writes to zazzle's own stdout or stderr and answers with a status byte. When nothing listens, zazzle first starts `zazzled serve` detached with its streams on /dev/null and retries for up to 3 s." },
-    { "from": "zazzle", "to": "wrap", "kind": "connects-to", "description": "`zazzle run` replaces itself (exec) with `zazzled wrap`." },
-    { "from": "zazzle", "to": "proxy", "kind": "connects-to", "description": "`zazzle proxy` replaces itself (exec) with `zazzled proxy`." },
-    { "from": "mcp", "to": "daemon", "kind": "connects-to", "description": "Unix socket, relay mode: the request with its working directory; the status byte and text come back on the socket. When nothing listens, starts `zazzled serve` from its own executable and retries for up to 3 s." },
-    { "from": "proxy", "to": "upstream-http", "kind": "connects-to", "description": "HTTP or HTTPS, one upstream request per client request, through one client shared by every connection." },
-    { "from": "daemon", "to": "indexer", "kind": "connects-to", "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call of view or a structure tool (overview, find_symbol, changed_since, git_log, git_blame, report_gap). When nothing listens, starts `zazzle-csharp-indexer daemon` detached and waits up to 5 s." },
-    { "from": "launchd", "to": "daemon", "kind": "hosts", "description": "Starts `zazzled serve` on a connection and passes it the listening socket." },
-    { "from": "daemon", "to": "outputs", "kind": "connects-to", "description": "clean saves its answer and input; read-again loads stored outputs, including those wrap and proxy saved." },
-    { "from": "wrap", "to": "outputs", "kind": "connects-to", "description": "Saves each run's result and raw output, reaping old entries." },
-    { "from": "proxy", "to": "outputs", "kind": "connects-to", "description": "Saves each shortened text with its original, reaping old entries." },
-    { "from": "daemon", "to": "cache", "kind": "connects-to", "description": "Loads the log at start; appends pending records every 100 ms and on exit." },
-    { "from": "terminal", "to": "launchd", "kind": "connects-to", "description": "`zazzled install` and `zazzled uninstall` run launchctl bootstrap and bootout." },
-    { "from": "machine", "to": "zazz-worker", "kind": "hosts", "description": "Warm workers until recycled; compile and test runs while they last." },
-    { "from": "machine", "to": "native-script", "kind": "hosts", "description": "Warm like the workers." },
-    { "from": "machine", "to": "rustc", "kind": "hosts", "description": "One per build, while a script is added or tested." },
-    { "from": "daemon", "to": "rustc", "kind": "connects-to", "description": "Spawns it under the OS sandbox, reads its JSON diagnostics and condenses them." },
-    { "from": "daemon", "to": "zazz-worker", "kind": "connects-to", "description": "`compile` with the module on standard input; `test` with the test module and a scratch directory; `serve` over a unix socketpair: length-prefixed JSON frames (hello, json-command, service-call, openapi, progress, cancel, result), with the caller's descriptors 0, 1 and 2 (or capture pipes, over MCP) attached to each call with SCM_RIGHTS, and cancel when the caller hangs up." },
-    { "from": "daemon", "to": "native-script", "kind": "connects-to", "description": "The same socketpair protocol as `zazz-worker serve`." },
-    { "from": "daemon", "to": "zazz-store", "kind": "connects-to", "description": "Publishes a built and tested script atomically under a per-script lock; reads metadata and modules for each call; refreshes expired trust verdicts in the background." },
-    { "from": "daemon", "to": "trust", "kind": "connects-to", "description": "Reads the authorities and policy when a signed script is added and when its verdict is refreshed; `zazz trust add` and `rm` write the directory, which needs root." },
-    { "from": "daemon", "to": "keychain", "kind": "connects-to", "description": "Trust evaluation off the call path; trust settings for `zazz trust add`." },
-    { "from": "zazz-worker", "to": "https-hosts", "kind": "connects-to", "description": "HTTPS for the script's zazz_host.http requests, each checked against the allowlist, no redirects." },
-    { "from": "agent", "to": "zazzle", "kind": "connects-to", "description": "Runs `zazz CMD ...` (new, test, pack, add, call) in its shell." },
-    { "from": "terminal", "to": "zazzle", "kind": "connects-to", "description": "Runs an installed script by its name, or `zazz run NAME ARGS`." }
+    {
+      "from": "machine",
+      "to": "zazzle",
+      "kind": "hosts",
+      "description": "Short-lived, one per command."
+    },
+    {
+      "from": "machine",
+      "to": "mcp",
+      "kind": "hosts",
+      "description": "One per MCP connection."
+    },
+    {
+      "from": "machine",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Long-lived until idle."
+    },
+    {
+      "from": "machine",
+      "to": "wrap",
+      "kind": "hosts",
+      "description": "One per `zazzle run`."
+    },
+    {
+      "from": "machine",
+      "to": "proxy",
+      "kind": "hosts",
+      "description": "As long as its MCP client keeps it."
+    },
+    {
+      "from": "machine",
+      "to": "indexer",
+      "kind": "hosts",
+      "description": "Long-lived, managed by the indexer itself."
+    },
+    {
+      "from": "terminal",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazzle CMD ...`."
+    },
+    {
+      "from": "agent",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazzle CMD ...` in its shell."
+    },
+    {
+      "from": "agent",
+      "to": "mcp",
+      "kind": "connects-to",
+      "description": "Its MCP client starts `zazzled mcp` and speaks JSON-RPC on its standard input and output."
+    },
+    {
+      "from": "agent",
+      "to": "proxy",
+      "kind": "connects-to",
+      "description": "Its MCP client starts `zazzle proxy -- CMD` on stdio, or sends HTTP requests to the proxy's listen address."
+    },
+    {
+      "from": "zazzle",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket, descriptor mode: the request with SCM_RIGHTS descriptors; the daemon writes to zazzle's own stdout or stderr and answers with a status byte. When nothing listens, zazzle first starts `zazzled serve` detached with its streams on /dev/null and retries for up to 3 s."
+    },
+    {
+      "from": "zazzle",
+      "to": "wrap",
+      "kind": "connects-to",
+      "description": "`zazzle run` replaces itself (exec) with `zazzled wrap`."
+    },
+    {
+      "from": "zazzle",
+      "to": "proxy",
+      "kind": "connects-to",
+      "description": "`zazzle proxy` replaces itself (exec) with `zazzled proxy`."
+    },
+    {
+      "from": "mcp",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket, relay mode: the request with its working directory; the status byte and text come back on the socket. When nothing listens, starts `zazzled serve` from its own executable and retries for up to 3 s."
+    },
+    {
+      "from": "proxy",
+      "to": "upstream-http",
+      "kind": "connects-to",
+      "description": "HTTP or HTTPS, one upstream request per client request, through one client shared by every connection."
+    },
+    {
+      "from": "daemon",
+      "to": "indexer",
+      "kind": "connects-to",
+      "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call of view or a structure tool (overview, find_symbol, changed_since, git_log, git_blame, report_gap). When nothing listens, starts `zazzle-csharp-indexer daemon` detached and waits up to 5 s."
+    },
+    {
+      "from": "launchd",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Starts `zazzled serve` on a connection and passes it the listening socket."
+    },
+    {
+      "from": "daemon",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "clean saves its answer and input; read-again loads stored outputs, including those wrap and proxy saved."
+    },
+    {
+      "from": "wrap",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "Saves each run's result and raw output, reaping old entries."
+    },
+    {
+      "from": "proxy",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "Saves each shortened text with its original, reaping old entries."
+    },
+    {
+      "from": "daemon",
+      "to": "cache",
+      "kind": "connects-to",
+      "description": "Loads the log at start; appends pending records every 100 ms and on exit."
+    },
+    {
+      "from": "terminal",
+      "to": "launchd",
+      "kind": "connects-to",
+      "description": "`zazzled install` and `zazzled uninstall` run launchctl bootstrap and bootout."
+    },
+    {
+      "from": "machine",
+      "to": "zazz-worker",
+      "kind": "hosts",
+      "description": "Warm workers until recycled; compile and test runs while they last."
+    },
+    {
+      "from": "machine",
+      "to": "native-script",
+      "kind": "hosts",
+      "description": "Warm like the workers."
+    },
+    {
+      "from": "machine",
+      "to": "rustc",
+      "kind": "hosts",
+      "description": "One per build, while a script is added or tested."
+    },
+    {
+      "from": "daemon",
+      "to": "rustc",
+      "kind": "connects-to",
+      "description": "Spawns it under the OS sandbox, reads its JSON diagnostics and condenses them."
+    },
+    {
+      "from": "daemon",
+      "to": "zazz-worker",
+      "kind": "connects-to",
+      "description": "`compile` with the module on standard input; `test` with the test module and a scratch directory; `serve` over a unix socketpair: length-prefixed JSON frames (hello, json-command, service-call, openapi, progress, cancel, result), with the caller's descriptors 0, 1 and 2 (or capture pipes, over MCP) attached to each call with SCM_RIGHTS, and cancel when the caller hangs up."
+    },
+    {
+      "from": "daemon",
+      "to": "native-script",
+      "kind": "connects-to",
+      "description": "The same socketpair protocol as `zazz-worker serve`."
+    },
+    {
+      "from": "daemon",
+      "to": "zazz-store",
+      "kind": "connects-to",
+      "description": "Publishes a built and tested script atomically under a per-script lock; reads metadata and modules for each call; refreshes expired trust verdicts in the background."
+    },
+    {
+      "from": "daemon",
+      "to": "trust",
+      "kind": "connects-to",
+      "description": "Reads the authorities and policy when a signed script is added and when its verdict is refreshed; `zazz trust add` and `rm` write the directory, which needs root."
+    },
+    {
+      "from": "daemon",
+      "to": "keychain",
+      "kind": "connects-to",
+      "description": "Trust evaluation off the call path; trust settings for `zazz trust add`."
+    },
+    {
+      "from": "zazz-worker",
+      "to": "https-hosts",
+      "kind": "connects-to",
+      "description": "HTTPS for the script's zazz_host.http requests, each checked against the allowlist, no redirects."
+    },
+    {
+      "from": "agent",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazz CMD ...` (new, test, pack, add, call) in its shell."
+    },
+    {
+      "from": "terminal",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs an installed script by its name, or `zazz run NAME ARGS`."
+    },
+    {
+      "from": "daemon",
+      "to": "languages",
+      "kind": "connects-to",
+      "description": "Downloads a module on first use (JIT) or `zazzle languages fetch`, verifies it and loads it."
+    }
   ]
 }
