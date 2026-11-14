@@ -50,7 +50,8 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 
 - Hidden: comments of 3+ lines (`<!-- -->`, Razor `@* *@`), `<style>` and `<svg>` elements that start and end their own lines, runs of 2+ `<meta>`/`<link>`/`<base>` lines, and in Razor runs of 2+ `@using`/`@addTagHelper`/`@removeTagHelper` lines.
 - Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
-- Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@code`, `@functions` and `@{ }` blocks (C# in them is not shortened). A comment or element that shares its first or last line with other markup is not hidden.
+- Razor `@code` and `@functions` blocks: the C# inside gets the C# terse view from `zazzle-csharp-indexer`, as a `.cs` file would (zazzled sends the blocks as text padded to the file's line numbers, so the view keeps them); without the indexer or a git work tree they are shown as they are.
+- Shown as they are: `<script>`, `<pre>` and `<textarea>` blocks, and Razor `@{ }` blocks (they mix C# statements with markup). A comment or element that shares its first or last line with other markup is not hidden.
 
 ## CSS, SCSS, Sass and Less terse view
 

@@ -294,7 +294,7 @@
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
-        "C# inside Razor code blocks is not shortened."
+        "C# in Razor @code and @functions blocks is shortened only when zazzle-csharp-indexer runs and the file is in a git work tree; @{ } blocks stay as they are."
       ],
       "implementation": [
         {
@@ -312,6 +312,14 @@
         {
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "code_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "Indexer::view_text"
         }
       ]
     },

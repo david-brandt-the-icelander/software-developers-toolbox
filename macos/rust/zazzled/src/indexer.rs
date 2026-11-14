@@ -220,6 +220,13 @@ impl Indexer {
         self.call(root, "view", json!({"path": rel.to_string_lossy()}), IO_TIMEOUT)
     }
 
+    // Returns the indexer's terse view of C# text that stands for a file, such as a Razor file's code blocks padded to its line numbers.
+    pub fn view_text(&self, path: &Path, text: &str) -> Result<String, String> {
+        let root = work_tree(path).ok_or("not inside a git work tree")?;
+        let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
+        self.call(root, "view", json!({"path": rel.to_string_lossy(), "text": text}), IO_TIMEOUT)
+    }
+
     // Runs one of the indexer's structure tools on a git work tree; a `path` argument is relative to that tree.
     pub fn ask(&self, root: &Path, tool: &str, args: Value) -> Result<String, String> {
         self.call(root, tool, args, INDEX_TIMEOUT)
@@ -317,6 +324,29 @@ pub mod tests {
         let name = t.path().file_name().expect("name").to_string_lossy().into_owned();
         assert!(text.starts_with(&format!("{name}:src/C.cs 6 lines; terse: ")), "{text}");
         assert!(text.ends_with("4~\tclass C\n5\t{\n6\t}"));
+    }
+
+    // Checks view_text sends the text with the file's path, and refuses a file outside any work tree.
+    #[test]
+    fn test_view_text() {
+        let fake = FakeIndexer::start(|_, req| {
+            let args = req.pointer("/params/arguments").cloned().unwrap_or_default();
+            let text =
+                format!("{} {}", args["path"].as_str().unwrap_or(""), args["text"].as_str().unwrap_or(""));
+            (
+                json!({"ok": true}),
+                Some(
+                    json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}),
+                ),
+            )
+        });
+        let (t, _) = repo();
+        let page = t.write("Pages/A.razor", b"<h1>x</h1>\n");
+        let text = fake.indexer().view_text(&page, "class C {}").expect("view");
+        assert!(text.ends_with(":Pages/A.razor class C {}"), "{text}");
+        let outside = TempDir::new();
+        let loose = outside.write("A.razor", b"x");
+        assert_eq!(fake.indexer().view_text(&loose, "x").unwrap_err(), "not inside a git work tree");
     }
 
     // Checks refusals, tool errors, JSON-RPC errors and a file outside any work tree.

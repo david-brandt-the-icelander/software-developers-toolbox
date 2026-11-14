@@ -178,7 +178,8 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
-        return markup::view(shown, &text, kind);
+        let csharp = |code: &str| Indexer::locate().and_then(|ix| ix.view_text(path, code)).ok();
+        return markup::view(shown, &text, kind, &csharp);
     }
     if let Some(kind) = styles::kind_of(path) {
         return styles::view(shown, &text, kind);

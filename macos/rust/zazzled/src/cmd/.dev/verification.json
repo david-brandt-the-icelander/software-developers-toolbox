@@ -441,7 +441,7 @@
       "criteria": [
         "Each hiding rule turns its lines into one `A-B ⋯ note` line with the source numbers.",
         "Long class and style values are shortened and marked `N~`; dynamic values are not.",
-        "Script, pre and Razor code blocks are unchanged.",
+        "Script, pre and Razor @{ } blocks are unchanged; Razor @code and @functions blocks take the C# view's lines and steps, or stay unchanged without a view.",
         "Blocks that do not close cleanly, and files with nothing to shorten, come back as source with a sha."
       ],
       "checks": [
@@ -485,6 +485,18 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "test_markup_terse_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/markup.rs",
+          "symbol": "test_razor_code_view",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "test_view_text",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],
