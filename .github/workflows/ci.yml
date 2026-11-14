@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1.120
       # zazz-worker embeds wasmtime, which needs a recent Rust; it has its own rust-version.
       - run: cargo check --workspace --exclude zazz-worker --locked
 
