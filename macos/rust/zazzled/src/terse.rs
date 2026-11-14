@@ -3022,14 +3022,14 @@ class InvoiceRepository {
             (OCAML, Lang::OCaml, "13 lines; terse: 1 imports, 2 regions, 2 log statements", &["1-2\t⋯ 2 import(s)"], &[4, 6, 7, 13]),
             (FSHARP, Lang::FSharp, "19 lines; terse: 1 imports, 2 regions, 2 log statements", &["3-4\t⋯ 2 import(s)"], &[6, 9, 17, 19]),
             (CLOJURE, Lang::Clojure, "16 lines; terse: 2 imports, 2 regions, 2 log statements", &["2-3\t⋯ 2 import(s)", "5-6\t⋯ 2 import(s)"], &[8, 10, 11, 16]),
-            (ERLANG, Lang::Erlang, "20 lines; terse: 1 imports, 2 regions, 3 log statements", &["2-4\t⋯ 3 import(s)"], &[7, 9, 10, 17, 20]),
+            (ERLANG, Lang::Erlang, "20 lines; terse: 1 imports, 2 regions, 3 log statements, 3 locals shortened", &["2-4\t⋯ 3 import(s)"], &[7, 9, 10, 17, 20]),
             (R_SRC, Lang::R, "14 lines; terse: 1 imports, 2 regions, 2 log statements", &["1-3\t⋯ 3 import(s)"], &[5, 7, 8, 14]),
             (JULIA, Lang::Julia, "19 lines; terse: 1 imports, 2 regions, 3 log statements", &["1-3\t⋯ 3 import(s)"], &[5, 7, 8, 15, 19]),
             (ZIG, Lang::Zig, "22 lines; terse: 1 imports, 2 regions, 3 log statements, 4 locals shortened", &["1-2\t⋯ 2 import(s)", "10~\t    const rb = try client.get(id);", "11~\t    var ts: usize = 0;", "12~\t    for (rb) |li| {", "13~\t        ts += li.len;", "15~\t    const res = client.check() catch |err| {", "19~\t    _ = res;", "20~\t    return ts;"], &[5, 7, 8, 16, 22]),
             (OBJC, Lang::ObjC, "26 lines; terse: 1 imports, 1 log-and-rethrow catches, 2 regions, 2 log statements, 3 locals shortened", &["1-3\t⋯ 3 import(s)", "12~\t    NSArray *rb = [self.api get:ident];", "13~\t    NSInteger ts = 0;", "14~\t    for (NSString *li in rb) {", "15~\t        ts += li.length;", "19~\t    } @catch (NSException *exception) { ⋯ logs and rethrows }", "23~\t    return ts;"], &[6, 9, 10, 20, 21, 22, 26]),
             (GROOVY, Lang::Groovy, "30 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 2 regions, 3 access modifiers, 1 log statements", &["3-4\t⋯ 2 import(s)", "8~\t    final Api api", "9~\t    static final int RETRIES = 3", "11-13\t⋯ Repo(Api api): only assigns fields", "15~\t    int load(int id) {", "23~\t        } catch (IOException e) { ⋯ logs and rethrows }"], &[6, 16, 24, 25, 26, 30]),
             (POWERSHELL, Lang::PowerShell, "22 lines; terse: 1 imports, 1 log-and-rethrow catches, 2 regions, 2 log statements", &["1-3\t⋯ 3 import(s)", "16~\t    } catch { ⋯ logs and rethrows }"], &[5, 8, 9, 17, 18, 19, 22]),
-            (VB, Lang::VisualBasic, "32 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 4 access modifiers, 2 log statements, 2 regions", &["1-2\t⋯ 2 import(s)", "5~\tClass InvoiceService", "6~\t    ReadOnly _logger As ILogger", "7~\t    ReadOnly _repo As IRepo", "9-12\t⋯ New(logger As ILogger, repo As IRepo): only assigns fields", "14~\t    Function Total(id As Integer) As Decimal", "25-27\t⋯ Catch ex As InvalidOperationException: logs and rethrows"], &[4, 15, 16, 32]),
+            (VB, Lang::VisualBasic, "32 lines; terse: 1 imports, 1 constructors, 1 log-and-rethrow catches, 4 access modifiers, 2 log statements, 2 regions, 2 locals shortened", &["1-2\t⋯ 2 import(s)", "5~\tClass InvoiceService", "6~\t    ReadOnly _logger As ILogger", "7~\t    ReadOnly _repo As IRepo", "9-12\t⋯ New(logger As ILogger, repo As IRepo): only assigns fields", "14~\t    Function Total(id As Integer) As Decimal", "25-27\t⋯ Catch ex As InvalidOperationException: logs and rethrows"], &[4, 15, 16, 32]),
         ];
         for (src, lang, head, present, hidden) in cases {
             let v = view("f", src, lang).expect("view");
@@ -3196,7 +3196,10 @@ end.
     #[test]
     fn test_view_fortran_pascal() {
         let f = view("f", FORTRAN, Lang::Fortran).expect("view");
-        assert!(f.starts_with("f 18 lines; terse: 1 imports, 2 regions, 1 log statements\n"), "{f}");
+        assert!(
+            f.starts_with("f 18 lines; terse: 1 imports, 2 regions, 1 log statements, 1 locals shortened\n"),
+            "{f}"
+        );
         let lines = body(FORTRAN, Lang::Fortran);
         has_all(&lines, &["2-3\t⋯ 2 import(s)", "13\t    print *, \"hi\""]);
         assert!(!lines.iter().any(|l| ["8\t", "12\t", "17\t"].iter().any(|k| l.starts_with(k))));

@@ -1332,6 +1332,10 @@ mod tests {
         assert_eq!(renamed(f90, Lang::Fortran), ["running_total->rt@4"]);
         let misread = "Module M\n    Sub S()\n        Dim NewDate As DateTime = Now\n        Dim elapsed = NewDate.Ticks ' NewDate in a comment\n        Dim message = \"elapsed\" & elapsed\n    End Sub\nEnd Module\n";
         assert_eq!(renamed(misread, Lang::VisualBasic), ["elapsed->ela@2", "message->mes@1"]);
+        let inc = "procedure P;\nvar Counter: Integer;\nbegin\n  {$I body.inc}\n  Counter := 1;\nend;\nprocedure Q;\nvar Elapsed: Integer;\nbegin\n  {$INCLUDE more.inc}\n  Elapsed := 1;\nend;\nprocedure R;\nvar Started: Integer;\nbegin\n  {$R+}\n  Started := TList<Integer>.Started;\nend;\nprocedure S;\nvar Settled: Integer;\nbegin\n  {$R+}\n  Settled := 1;\nend;\n";
+        assert_eq!(renamed(inc, Lang::Pascal), ["Settled->set2@2"]);
+        let twice = "Module M\n    Sub S()\n        Dim counter As Integer = 1\n        If True Then\n            Dim counter As Integer = 2\n        End If\n        For index = 0 To 3\n        Next\n        elapsed = 1\n        Dim elapsed As Integer = 0\n    End Sub\nEnd Module\n";
+        assert!(renamed(twice, Lang::VisualBasic).is_empty());
         assert_eq!(capitalize("rt"), "Rt");
         assert_eq!(capitalize(""), "");
     }
