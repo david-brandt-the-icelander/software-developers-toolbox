@@ -492,7 +492,7 @@
     },
     {
       "id": "style-terse-view",
-      "title": "Terse CSS and SCSS view",
+      "title": "Terse CSS, SCSS, Sass and Less view",
       "summary": "styles.rs is tested on a stylesheet that exercises every rule, on SCSS, and on what must be kept; read is tested end to end on a CSS file and on a SCSS file with nothing to shorten.",
       "subject": [
         {
@@ -503,7 +503,8 @@
       "criteria": [
         "Each rule turns its lines into one `A-B ⋯ note` line, hides prefixed duplicates or marks shortened data URIs `N~`, with source line numbers.",
         "Short comments, single imports, blocks that share lines, prefixes without a plain property in the same block and short data URIs are kept.",
-        "A file with nothing to shorten comes back as source with a sha."
+        "A file with nothing to shorten comes back as source with a sha.",
+        "Sass blocks, comments and prefix duplicates are found by indentation, Less follows the SCSS rules, and blank lines inside Sass blocks keep them together."
       ],
       "checks": [
         {
@@ -535,13 +536,31 @@
           "path": "macos/rust/zazzled/src/cmd/read.rs",
           "symbol": "test_style_terse_view",
           "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_view_sass",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_view_less",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/styles.rs",
+          "symbol": "test_sass_blank_lines",
+          "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],
       "evidenceStatus": "source-verified"
     },
     {
       "id": "code-terse-view",
-      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
       "subject": [
         {
@@ -557,8 +576,9 @@
         "Files with nothing to shorten, or too big to parse, come back as source with a sha.",
         "Long locals are renamed at every use, and names that cannot be renamed everywhere safely keep theirs.",
         "Rust, Go and Java sample files show imports, logging, the field-only constructor, Go error returns, the rethrowing Java catch, access modifiers and short locals with source line numbers, and JavaScript follows the TypeScript rules.",
-        "Kotlin, Swift, C, C++, Ruby, PHP and Scala sample files show imports, logging, the field-only init or constructor, the rethrowing catch, regions, access modifiers and short locals with source line numbers, and keep prints, side effects and catches that do more.",
-        "Ruby, PHP and Scala sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more."
+        "Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell sample files show imports, logging, the field-only init or constructor, the rethrowing catch, regions, access modifiers and short locals with source line numbers, and keep prints, side effects and catches that do more.",
+        "Ruby, PHP, Scala and shell sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more.",
+        "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands."
       ],
       "checks": [
         {
@@ -835,6 +855,12 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/locals.rs",
           "symbol": "test_php_scala_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/terse.rs",
+          "symbol": "test_view_shell",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ],

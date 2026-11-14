@@ -126,19 +126,19 @@
     {
       "id": "styles",
       "name": "Stylesheet terse view (styles.rs)",
-      "responsibility": "Builds the terse view of CSS and SCSS files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, and shortens inline data URIs.",
+      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, and shortens inline data URIs.",
       "folder": "macos/rust/zazzled/src"
     },
     {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
-      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
+      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
       "folder": "macos/rust/zazzled/src"
     },
     {
       "id": "locals",
       "name": "Short locals (locals.rs)",
-      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP or Scala syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -303,7 +303,7 @@
       "from": "src",
       "to": "styles",
       "kind": "contains",
-      "description": "Terse view of CSS and SCSS."
+      "description": "Terse view of CSS, SCSS, Sass and Less."
     },
     {
       "from": "styles",
@@ -315,7 +315,7 @@
       "from": "src",
       "to": "terse",
       "kind": "contains",
-      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala."
+      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell."
     },
     {
       "from": "src",
@@ -507,13 +507,13 @@
       "from": "cmd",
       "to": "styles",
       "kind": "depends-on",
-      "description": "read's terse CSS and SCSS view."
+      "description": "read's terse CSS, SCSS, Sass and Less view."
     },
     {
       "from": "cmd",
       "to": "terse",
       "kind": "depends-on",
-      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP and Scala view."
+      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell view."
     },
     {
       "from": "cmd",

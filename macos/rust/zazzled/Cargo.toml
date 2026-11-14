@@ -37,6 +37,8 @@ regex = "1"
 serde_json = "1"
 # Exact syntax trees for symbol outlines.
 tree-sitter = "0.25"
+# Bash grammar for the shell terse view.
+tree-sitter-bash = "0.25"
 # C grammar for outlines.
 tree-sitter-c = "0.24"
 # C# grammar for outlines and read --symbol.

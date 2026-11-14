@@ -174,7 +174,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP or Scala file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala or shell file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
@@ -602,7 +602,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "a.py", "--source"]).text.contains("1\timport os"));
     }
 
-    // Checks CSS and SCSS files read as the stylesheet terse view.
+    // Checks CSS, SCSS, Sass and Less files read as the stylesheet terse view.
     #[test]
     fn test_style_terse_view() {
         let t = TempDir::new();
