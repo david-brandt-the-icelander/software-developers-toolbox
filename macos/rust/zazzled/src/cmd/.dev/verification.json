@@ -441,10 +441,11 @@
       "criteria": [
         "Each hiding rule turns its lines into one `A-B ⋯ note` line with the source numbers.",
         "Long class and style values are shortened and marked `N~`; dynamic values are not.",
-        "Script, pre and Razor @{ } blocks are unchanged; Razor @code and @functions blocks take the C# view's lines and steps, or stay unchanged without a view.",
+        "Script, pre and Razor @{ } blocks with markup are unchanged; Razor @code, @functions and multi-line @{ } blocks take the C# view's lines and steps, @{ } locals the page names keep their names, or the blocks stay unchanged without a view.",
         "Blocks that do not close cleanly, and files with nothing to shorten, come back as source with a sha."
       ],
       "checks": [
+        {"type": "manual", "path": "macos/rust/zazzled/src/markup.rs", "symbol": "keep_names", "command": "Ran the Razor view over the 137 .cshtml and .razor files with multi-line @{ } blocks in the ASP.NET Core 8 project and item templates and Identity UI, with zazzle-csharp-indexer's real view behind it: blocks with markup stay as they are, no C# view line changed what it should not, and on a page whose block declares locals the markup reads (`@displayName`, `@totalAmount`) those keep their names while the others get short names and a debug log line goes."},
         {
           "type": "automated",
           "path": "macos/rust/zazzled/src/markup.rs",
@@ -1231,6 +1232,8 @@
           "symbol": "test_view_nim",
           "command": "cargo test -p zazzled (in macos/rust)"
         },
+        {"type": "automated", "path": "macos/rust/zazzled/src/locals.rs", "symbol": "test_plain_renames", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "manual", "path": "macos/rust/zazzled/src/locals.rs", "symbol": "plain_renames", "command": "Renamed only the locals in Erlang/OTP 25's sources (1,247 files, 106,015 locals), mono-basic 4.0.1's VB.NET (2,880 files, 1,660 locals), Free Pascal 3.2.2's .pas sources (2,284 files, 12,349 locals) and LAPACK 3.9's Fortran: every renamed file parses to the same tree shape. Each of the 593 renamed Erlang modules that compiles here compiles with erlc +deterministic too: 585 to identical BEAM files, 8 differing only in register order and in the generated names of named funs. LAPACK's fixed-form .f files parse with errors and keep their names. A scan of the Visual Basic renames found `NewDate` misread as `New Date`, which led to the text-count check."},
         {
           "type": "manual",
           "path": "macos/rust/zazzled/src/locals.rs",

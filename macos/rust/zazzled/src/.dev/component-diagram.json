@@ -204,7 +204,7 @@
     {
       "id": "locals",
       "name": "Short locals (locals.rs)",
-      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use.",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy, Erlang, Visual Basic, Pascal, Fortran or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use; Erlang, Visual Basic, Pascal and Fortran by plainer rules over each outermost routine.",
       "folder": "macos/rust/zazzled/src"
     },
     {

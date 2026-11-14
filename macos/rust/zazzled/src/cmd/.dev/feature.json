@@ -289,12 +289,12 @@
           "symbol": "HTML and Razor terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre>, <textarea> and Razor @code, @functions and @{ } blocks are shown as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre> and <textarea> blocks are shown as they are; C# in Razor @code and @functions blocks, and in multi-line @{ } blocks wrapped as a method body with a nameof(..) of every word the block shares with the rest of the page so locals the markup names keep them, gets zazzle-csharp-indexer's view; @{ } blocks with markup in them stay as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads pages and Razor views without paying for styles, drawings, boilerplate and utility-class lists, and still has to read the real markup before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
         "The rules are line-based: a comment or element sharing its first or last line with other markup is not hidden.",
-        "C# in Razor @code and @functions blocks is shortened only when zazzle-csharp-indexer runs and the file is in a git work tree; @{ } blocks stay as they are."
+        "C# in Razor @code, @functions and multi-line @{ } blocks is shortened only when zazzle-csharp-indexer runs and the file is in a git work tree; @{ } blocks with markup lines stay as they are."
       ],
       "implementation": [
         {
@@ -651,7 +651,7 @@
         "Shell scripts get no short locals: their variables are dynamically scoped and reached by bare name.",
         "In Lua and Perl a name used inside its own declaration (`local x = x + 1`) means the outer variable, so that local keeps its name; Elixir rebinding renames every binding in the function together.",
         "In Haskell, OCaml, F#, Clojure, Erlang, R and Julia a log call that is its block's last expression is the block's value and stays; Clojure log calls are hidden only in body forms.",
-        "Short locals apply to Zig, Objective-C and Groovy among the languages added with Haskell; Groovy only in methods without closures, lambdas or command calls, which its grammar misreads. The other added languages keep their names.",
+        "Short locals apply to Zig, Objective-C and Groovy among the languages added with Haskell, and by plainer rules (every occurrence of a declared local's name in the routine, refused where the name could mean something else or where its text count differs from its identifiers) to Erlang, Visual Basic, Pascal and free-form Fortran; Groovy only in methods without closures, lambdas or command calls, which its grammar misreads. The other added languages keep their names.",
         "A SQL INSERT keeps its first and last rows; only 6+ rows each on its own line collapse."
       ],
       "implementation": [
