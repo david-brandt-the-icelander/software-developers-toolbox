@@ -1,8 +1,10 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::data;
 use crate::indexer::Indexer;
 use crate::markup;
+use crate::md;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
 use crate::nim;
 use crate::outline;
@@ -176,7 +178,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
@@ -191,6 +193,12 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
     }
     if sql::is_sql(path) {
         return sql::view(shown, &text);
+    }
+    if let Some((kind, lock)) = data::kind_of(path) {
+        return data::view(shown, &text, kind, lock);
+    }
+    if md::is_markdown(path) {
+        return md::view(shown, &text);
     }
     terse::lang_of(path).and_then(|lang| terse::view(shown, &text, lang))
 }
@@ -623,6 +631,30 @@ mod tests {
             "a.css 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
         );
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
+    }
+
+    // Checks JSON, Markdown, Nim and SQL files read as their line-based terse views, and a plain one as source.
+    #[test]
+    fn test_line_terse_views() {
+        let t = TempDir::new();
+        let items: String = (1..=12).map(|n| format!("  {n},\n")).collect();
+        std::fs::write(t.path().join("a.json"), format!("[\n{items}  13\n]\n")).expect("write");
+        std::fs::write(t.path().join("b.md"), "<!-- x -->\n# B\n").expect("write");
+        std::fs::write(t.path().join("c.nim"), "# region x\necho 1\n").expect("write");
+        std::fs::write(t.path().join("d.sql"), "-- region x\nSELECT 1;\n").expect("write");
+        std::fs::write(t.path().join("e.toml"), "a = 1\n").expect("write");
+        let json = run_cmd(t.path(), &["read", "a.json"]).text;
+        assert!(
+            json.starts_with("a.json 15 lines, terse view: 1 list items; ")
+                && json.contains("\n3-13\t⋯ 11 item(s)\n"),
+            "{json}"
+        );
+        assert!(run_cmd(t.path(), &["read", "b.md"])
+            .text
+            .ends_with("terse view: 1 comments; read --source for the code and its sha\n2\t# B"));
+        assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
+        assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
+        assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

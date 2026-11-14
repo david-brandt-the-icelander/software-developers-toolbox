@@ -571,6 +571,103 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "data-terse-view",
+      "title": "Terse JSON, YAML and TOML view",
+      "summary": "data.rs is tested on JSON arrays of scalars and objects, lock files, YAML sequences and block scalars, TOML tables, arrays and strings, and on what must be kept; read is tested end to end on a JSON file and a TOML file with nothing to shorten.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "data-terse-view"
+        }
+      ],
+      "criteria": [
+        "Runs of 10+ list items, lock entries and 6+ TOML tables keep their first and last and collapse the rest with source line numbers.",
+        "Lists of multi-line items naming different keys, short lists, short texts and short strings are kept.",
+        "Runs nested in a hidden item go with it, and brackets and escapes inside strings do not end items."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "test_json_lists",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "test_lock_yaml_toml",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "test_shorten_strings",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "test_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "view",
+          "command": "Ran the view over 1,067 JSON, YAML, TOML, lock and Markdown files on the build machine (Cargo registry manifests, READMEs and changelogs, package-lock.json, Cargo.lock, rustup manifests, tree-sitter grammars, CI configs) and reviewed samples of every note in context: each collapse starts and ends on item boundaries; this found and fixed CI step lists collapsing and a short TOML string's closing line read as an opener. A 1.4 MB package-lock.json reads as 47 lines in 0.7 s (debug build)."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "markdown-terse-view",
+      "title": "Terse Markdown view",
+      "summary": "md.rs is tested on a README with front matter, comments, badges, a table of contents, fenced code and link definitions, on fence edge cases and on each line kind; read is tested end to end on a Markdown file.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "markdown-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments, badge lines, link definitions and tables of contents become notes or disappear with source line numbers.",
+        "Front matter, fenced code, prose links, short lists of anchors and non-badge images are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/md.rs",
+          "symbol": "test_view_markdown",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/md.rs",
+          "symbol": "test_line_kinds",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",

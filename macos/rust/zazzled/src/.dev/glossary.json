@@ -75,7 +75,7 @@
     {
       "id": "terse-view",
       "title": "terse view",
-      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic or shell file (terse.rs), or a Nim or SQL file (nim.rs, sql.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
+      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic or shell file (terse.rs), a Nim or SQL file (nim.rs, sql.rs), or a JSON, YAML, TOML or Markdown file (data.rs, md.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
       "notToBeConfusedWith": ["An outline, which lists symbols and their ranges, not code."],
       "evidenceStatus": "source-verified",
       "sources": [
@@ -85,7 +85,9 @@
         { "path": "macos/rust/zazzled/src/terse.rs", "symbol": "view" },
         { "path": "macos/rust/zazzled/src/styles.rs", "symbol": "view" },
         { "path": "macos/rust/zazzled/src/nim.rs", "symbol": "view" },
-        { "path": "macos/rust/zazzled/src/sql.rs", "symbol": "view" }
+        { "path": "macos/rust/zazzled/src/sql.rs", "symbol": "view" },
+        { "path": "macos/rust/zazzled/src/data.rs", "symbol": "view" },
+        { "path": "macos/rust/zazzled/src/md.rs", "symbol": "view" }
       ]
     },
     {

@@ -142,6 +142,18 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "data",
+      "name": "Data terse view (data.rs)",
+      "responsibility": "Builds the terse view of JSON, YAML and TOML files line by line with markup.rs's Plan: collapses runs of 10+ list items (multi-line ones only when they name the same keys), lock file entries and 6+ TOML [[tables]] to their first and last, long comment blocks, YAML block scalars and TOML multi-line strings, and shortens quoted strings over 120 characters.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "md",
+      "name": "Markdown terse view (md.rs)",
+      "responsibility": "Builds the terse view of Markdown files line by line with markup.rs's Plan: hides HTML comments, badge lines, link reference definitions and tables of contents, leaving fenced code and front matter alone.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
@@ -544,6 +556,42 @@
       "to": "sql",
       "kind": "depends-on",
       "description": "read's terse SQL view."
+    },
+    {
+      "from": "src",
+      "to": "data",
+      "kind": "contains",
+      "description": "Terse view of JSON, YAML and TOML."
+    },
+    {
+      "from": "src",
+      "to": "md",
+      "kind": "contains",
+      "description": "Terse view of Markdown."
+    },
+    {
+      "from": "data",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "md",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "cmd",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "read's terse JSON, YAML and TOML view."
+    },
+    {
+      "from": "cmd",
+      "to": "md",
+      "kind": "depends-on",
+      "description": "read's terse Markdown view."
     },
     {
       "from": "cmd",
