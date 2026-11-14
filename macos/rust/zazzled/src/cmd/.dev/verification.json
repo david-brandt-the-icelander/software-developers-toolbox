@@ -826,6 +826,26 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "minified-terse-view",
+      "title": "Terse view of minified JSON and XML",
+      "summary": "minified.rs is tested on one-line JSON records, objects with many members and a one-line XML document with every token kind; read is tested end to end on both and on the budget footer; the view was run over 1,488 real minified files.",
+      "subject": [
+        {"path": "macos/rust/zazzled/src/cmd/.dev/feature.json", "entityId": "minified-terse-view"}
+      ],
+      "criteria": [
+        "Reformatted lines keep the source text of strings, numbers and tags, and every view line is keyed to the source line its first token is on.",
+        "Malformed text, and views not shorter than the file, fall back to the line-based view."
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_json_view", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_pretty_json", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "test_xml_view", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "test_line_terse_views", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "manual", "path": "macos/rust/zazzled/src/minified.rs", "symbol": "json_view", "command": "Ran the view over 1,488 minified files on the build machine: emojibase data, MDN browser-compat-data, caniuse-lite, CLDR, flag-icons and timezone JSON, and the XML parts of the .docx, .xlsx and .pptx files in python-docx, python-pptx, openpyxl and XlsxWriter. All of them parsed. All 153 JSON files got a view, 72 MB in all becoming 125 KB (MDN's 20 MB data.json became 38 KB in 1.5 s in a release build). 150 XML files got a view, 1.9 MB becoming 371 KB; the rest were small parts with nothing to collapse, or views no shorter than the file. Reviewed samples in context: notes cover only the siblings they name, and member notes list the hidden keys."}
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",

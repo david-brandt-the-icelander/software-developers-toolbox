@@ -397,7 +397,7 @@
       "outcome": "An agent reads configuration, data and lock files without paying for long arrays, repeated tables and embedded blobs, and still has to read the real file before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
-        "The rules are line-based: minified JSON on one line comes back as source.",
+        "The rules are line-based; minified JSON is reformatted first by the minified terse view.",
         "Multi-line list items collapse only when they name the same keys, so lists of different things, such as CI steps, stay."
       ],
       "implementation": [
@@ -480,7 +480,7 @@
       "outcome": "An agent reads project files, resource files and XML data without paying for long reference lists, repeated records and embedded blobs, and still has to read the real file before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
-        "The rules are line-based: elements sharing lines, or minified XML, are not collapsed."
+        "The rules are line-based: elements sharing lines are not collapsed unless the file is minified and reformatted first."
       ],
       "implementation": [
         {
@@ -596,6 +596,30 @@
         {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "list"},
         {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "log_end"},
         {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "comment_end"}
+      ]
+    },
+    {
+      "id": "minified-terse-view",
+      "name": "Terse view of minified JSON and XML",
+      "description": "`read` on a JSON or XML file whose text sits mostly on lines of 500+ characters returns the JSON or XML terse view of the file reformatted one value or element per line, with every line keyed to its source line, instead of a few huge lines.",
+      "sources": [
+        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "json_view"},
+        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "xml_view"},
+        {"path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "other_view"},
+        {"path": "macos/rust/zazzled/README.md", "symbol": "Minified JSON and XML terse view"}
+      ],
+      "behavior": "Without --source or --anchors, minified.rs reformats JSON with two spaces and one value per line (strings and numbers as written) and XML with one element per line (text-only elements on one line), runs data.rs's view as generated data (any 10+ sibling items or members collapse, and a note on hidden members lists their keys up to about 80 characters) or xml.rs's view over it, and rewrites each view line's key to its source line (`N~` for a kept line, `A-B` for a note) and the header to the source's line count plus `N minified lines reformatted`. Text that does not parse, or a view not shorter than the file, falls back to the line-based view. When the view of one source line is over the budget, read's footer counts the elided view lines and points to --full.",
+      "outcome": "An agent can read the shape and a sample of a minified API response, data bundle or Office XML part, which as source is one line it cannot page through.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "Every view line of a one-line file has the same key, so a line range cannot select part of it; --full returns the whole view.",
+        "Generated data loses the same-keys check, so lists of different things collapse too."
+      ],
+      "implementation": [
+        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "pretty_json"},
+        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "pretty_xml"},
+        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "remap"},
+        {"path": "macos/rust/zazzled/src/data.rs", "symbol": "view_generated"}
       ]
     },
     {
