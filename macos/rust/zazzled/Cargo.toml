@@ -37,60 +37,12 @@ regex = "1"
 serde_json = "1"
 # Exact syntax trees for symbol outlines.
 tree-sitter = "0.25"
-# Bash grammar for the shell terse view.
-tree-sitter-bash = "0.25"
+# The function type a language module returns its grammar as.
+tree-sitter-language = "0.1"
 # C grammar for outlines.
 tree-sitter-c = "0.24"
 # C# grammar for outlines and read --symbol.
 tree-sitter-c-sharp = "0.23"
-# Dart grammar for the terse view.
-tree-sitter-dart = "0.3"
-# Go grammar for the terse view.
-tree-sitter-go = "0.23"
-# Java grammar for the terse view.
-tree-sitter-java = "0.23"
-# C++ grammar for the terse view.
-tree-sitter-cpp = "0.23"
-# Lua grammar for the terse view.
-tree-sitter-lua = "0.5"
-# Kotlin grammar for the terse view.
-tree-sitter-kotlin-ng = "1.1"
-# Swift grammar for the terse view.
-tree-sitter-swift = "0.7"
-# Perl grammar for the terse view (the tree-sitter-perl project's crate).
-ts-parser-perl = "2.0"
-# PHP grammar for the terse view.
-tree-sitter-php = "0.25"
-# Ruby grammar for the terse view.
-tree-sitter-ruby = "0.23"
-# Scala grammar for the terse view.
-tree-sitter-scala = "0.26"
-# Elixir grammar for the terse view.
-tree-sitter-elixir = "0.3"
-# Haskell grammar for the terse view.
-tree-sitter-haskell = "0.24"
-# OCaml grammar for the terse view.
-tree-sitter-ocaml = "0.26"
-# F# grammar for the terse view.
-tree-sitter-fsharp = "0.3"
-# Clojure grammar for the terse view (the maintained fork; tree-sitter-clojure is unmaintained).
-tree-sitter-clojure-orchard = "0.2"
-# Erlang grammar for the terse view.
-tree-sitter-erlang = "0.21"
-# R grammar for the terse view.
-tree-sitter-r = "1.3"
-# Julia grammar for the terse view.
-tree-sitter-julia = "0.23"
-# Zig grammar for the terse view.
-tree-sitter-zig = "1.1"
-# Objective-C grammar for the terse view.
-tree-sitter-objc = "3.0"
-# Groovy grammar for the terse view.
-tree-sitter-groovy = "0.1"
-# PowerShell grammar for the terse view.
-tree-sitter-powershell = "0.26"
-# Visual Basic .NET grammar for the terse view.
-tree-sitter-vb-dotnet = "0.1"
 # JavaScript grammar for outlines.
 tree-sitter-javascript = "0.23"
 # Python grammar for outlines.
@@ -112,6 +64,56 @@ zazz-sdk = { path = "../zazz-sdk" }
 security-framework = "3"
 
 [dev-dependencies]
+# Bash grammar for the shell terse view.
+tree-sitter-bash = "0.25"
+# Dart grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-dart = "0.3"
+# Go grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-go = "0.23"
+# Java grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-java = "0.23"
+# C++ grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-cpp = "0.23"
+# Lua grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-lua = "0.5"
+# Kotlin grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-kotlin-ng = "1.1"
+# Swift grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-swift = "0.7"
+# Perl grammar for the terse view in tests (release builds load it as a language module) (the tree-sitter-perl project's crate).
+ts-parser-perl = "2.0"
+# PHP grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-php = "0.25"
+# Ruby grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-ruby = "0.23"
+# Scala grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-scala = "0.26"
+# Elixir grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-elixir = "0.3"
+# Haskell grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-haskell = "0.24"
+# OCaml grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-ocaml = "0.26"
+# F# grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-fsharp = "0.3"
+# Clojure grammar for the terse view in tests (release builds load it as a language module) (the maintained fork; tree-sitter-clojure is unmaintained).
+tree-sitter-clojure-orchard = "0.2"
+# Erlang grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-erlang = "0.21"
+# R grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-r = "1.3"
+# Julia grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-julia = "0.23"
+# Zig grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-zig = "1.1"
+# Objective-C grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-objc = "3.0"
+# Groovy grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-groovy = "0.1"
+# PowerShell grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-powershell = "0.26"
+# Visual Basic .NET grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-vb-dotnet = "0.1"
 # Hand-written WebAssembly text for zazz tests.
 wat = "1"
 

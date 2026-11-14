@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-lang",
+  "folder": "macos/rust/zazzle-lang",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-lang",
+      "summary": "The zazzle-lang crate: one tree-sitter grammar packaged as a shared library (a language module) that zazzled downloads and loads.",
+      "purpose": "Keeps the 25 grammars zazzled needs only for terse views out of the zazzled binary. Built once per Cargo feature (one feature per language: bash, dart, go, java, cpp, lua, kotlin, swift, perl, php, ruby, scala, elixir, haskell, ocaml, fsharp, clojure, erlang, r, julia, zig, objc, groovy, powershell, vb), it exports ZAZZLE_LANGUAGE_ABI (the module format, 1) and zazzle_language(), which returns the grammar's TSLanguage. With no feature it builds an empty stub, so workspace builds stay quick. The crate manifest (Cargo.toml, each dependency commented with its one reason) and src/lib.rs.",
+      "boundaries": [
+        "Never loaded by anything but zazzled's modules.rs, which checks the file's SHA-256 against the manifest compiled into zazzled before dlopen.",
+        "Holds no logic: the grammar crates' own build scripts compile their C code.",
+        "macos/release/language-modules.sh builds every module and writes the manifest; the release workflow signs (macOS), hashes and uploads them."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzle-lang/Cargo.toml",
+          "symbol": "[features]"
+        },
+        {
+          "path": "macos/rust/zazzle-lang/src/lib.rs",
+          "symbol": "zazzle_language"
+        },
+        {
+          "path": "macos/release/language-modules.sh",
+          "symbol": "names"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "open"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/.dev/folder.json",
+          "entityId": "folder",
+          "description": "The daemon that downloads and loads these modules."
+        }
+      ]
+    }
+  ]
+}

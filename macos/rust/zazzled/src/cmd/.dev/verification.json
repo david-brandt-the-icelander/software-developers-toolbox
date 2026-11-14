@@ -668,6 +668,90 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "xml-terse-view",
+      "title": "Terse XML view",
+      "summary": "xml.rs is tested on a project file with comments, a run of one-line elements, a run of multi-line elements separated by blank lines and a base64 value, and on what must be kept; read is tested end to end on an XML file.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "xml-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments of 3+ lines and runs of 10+ same-tag siblings become notes, keeping the first and last element and the lines between items, with source line numbers.",
+        "Short comments, mixed tags, short runs, unclosed elements and unclosed comments are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/xml.rs",
+          "symbol": "test_view_xml",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/xml.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "config-terse-view",
+      "title": "Terse INI and Dockerfile view",
+      "summary": "config.rs is tested on INI comment blocks and long values and on a Dockerfile with a directive, comments, labels and package lists; read is tested end to end on both.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "config-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comment blocks of 4+ lines, LABEL runs and package lists become notes with source line numbers.",
+        "Directives, short comments, short package lists and the commands after a package list are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_view_ini",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "test_view_dockerfile",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/config.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
@@ -1264,6 +1348,67 @@
           "path": "macos/c/zazzle/test/smoke.sh",
           "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)",
           "description": "`zazzle read-again r:ID` after a read in one ZAZZLE_SESSION returns the first answer exactly."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "language-modules",
+      "title": "Language modules downloaded on demand",
+      "summary": "modules.rs is tested on manifest parsing, the JIT setting, a real Lua module downloaded from a local HTTP server, hash mismatches, JIT off and non-modules; the languages command is tested on listing, the JIT setting, failed and successful fetches and a development build.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "language-modules"
+        }
+      ],
+      "criteria": [
+        "A module with the manifest's SHA-256 downloads, loads and parses; one with another SHA-256 is refused and not stored.",
+        "With JIT off a missing module is not downloaded.",
+        "Files that are not modules, and unreachable servers, fail with a message."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_parse_and_platform",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_jit_setting",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_fetch_and_load",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "test_language_without_manifest",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "test_languages_command",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "test_languages_fetch",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "language",
+          "command": "Built all 25 modules and a release zazzled with their manifest on Linux, served them over local HTTP and ran `zazzled run languages`, `languages jit off`, `read a.kt` (source), `languages jit on`, `read a.kt` (downloaded kotlin, terse view) and `languages fetch` (the other 24); a byte appended to a served module was refused with both hashes, and a corrupted local copy was replaced before loading."
         }
       ],
       "evidenceStatus": "source-verified"

@@ -10,6 +10,7 @@ pub mod again;
 pub mod clean;
 pub mod edit;
 pub mod find;
+pub mod languages;
 pub mod ls;
 pub mod outline;
 pub mod read;
@@ -39,7 +40,8 @@ git-log [PATH] [-n N] [--grep TEXT]  recent commits
 git-blame PATH [--start N] [--end N]  who last changed each line
 report-gap TEXT  tell the maintainers what you needed and could not get
 status  daemon info
-C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML and Markdown files read as a terse view without a sha; --source gives the code and the sha every edit needs.
+languages [jit [on|off] | fetch [NAME..]]  language modules: list them, download on first use or not, download the missing ones
+C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.
 Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
@@ -223,10 +225,11 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         ),
         "zazz" => crate::zazz::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
+        "languages" => languages::run(ctx, rest),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
         other => Err(format!(
-            "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status help"
+            "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
         )),
     }
 }
@@ -285,7 +288,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status help"
+            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
         );
         assert!(!o.idable);
     }

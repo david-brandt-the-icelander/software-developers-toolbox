@@ -286,8 +286,31 @@ fn brackets(line: &str) -> i32 {
     depth
 }
 
+// Shortens runs of 120+ letters, digits and `+/=_-.`, such as base64 blobs, to their first 40 and `…`; returns the line and how many it changed.
+pub(crate) fn shorten_words(line: &str) -> (String, usize) {
+    let blob = |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-' | '.');
+    let (mut out, mut run, mut n) = (String::new(), String::new(), 0);
+    for c in line.chars().chain(std::iter::once('\n')) {
+        if blob(c) {
+            run.push(c);
+            continue;
+        }
+        if run.len() > LONG_STRING {
+            out.extend(run.chars().take(KEEP_STRING));
+            out.push('…');
+            n += 1;
+        } else {
+            out.push_str(&run);
+        }
+        run.clear();
+        out.push(c);
+    }
+    out.pop();
+    (out, n)
+}
+
 // Shortens double-quoted strings longer than 120 characters to their first 40 and `…`; returns the line and how many it changed.
-fn shorten_strings(line: &str) -> (String, usize) {
+pub(crate) fn shorten_strings(line: &str) -> (String, usize) {
     let (mut out, mut n, mut rest) = (String::new(), 0, line);
     while let Some(q) = rest.find('"') {
         let Some(len) = string_end(&rest[q..]) else { break };

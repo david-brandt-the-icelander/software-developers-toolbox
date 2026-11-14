@@ -69,7 +69,7 @@
       "action": "query",
       "transport": "zazzle read PATH[:A-B].. [--source --symbol NAME[(T1, T2)][#N] --around N --ctx N --head N --tail N --budget T --anchors --full] (alias cat); MCP tool zazzle_read (symbol, source and the rest as arguments)",
       "authorization": "Callers of the daemon's own uid; reads any file the user can read.",
-      "result": "Per file a header (path, line count, the first 8 hex digits of its BLAKE3 hash, the range and any symbol) and `N<TAB>text` lines, or `N#xyz<TAB>text` with anchors; beyond the budget (default ~3000 tokens per file) the middle is replaced by the exact range to read next. A C# file without --source or --anchors comes as the indexer's terse view, and an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file with something to shorten as zazzled's own terse view, both with no sha. Binary and empty files get a one-line summary.",
+      "result": "Per file a header (path, line count, the first 8 hex digits of its BLAKE3 hash, the range and any symbol) and `N<TAB>text` lines, or `N#xyz<TAB>text` with anchors; beyond the budget (default ~3000 tokens per file) the middle is replaced by the exact range to read next. A C# file without --source or --anchors comes as the indexer's terse view, and an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file with something to shorten as zazzled's own terse view, both with no sha. Binary and empty files get a one-line summary.",
       "failures": [
         "No path: the usage line.",
         "A start line past the end, or a backwards range.",
@@ -476,6 +476,35 @@
       "authorization": "Callers of the daemon's own uid.",
       "result": "One line: version, pid, uptime, hot and stored cache records with hits and misses, walks scanned and reused, and the number of sessions.",
       "failures": []
+    },
+    {
+      "id": "languages",
+      "name": "languages",
+      "description": "Lists the language modules, sets whether a missing one downloads on first use (JIT), or downloads the missing ones.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/languages.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/languages.rs",
+        "symbol": "run"
+      },
+      "action": "command",
+      "transport": "zazzle languages | zazzle languages jit [on|off] | zazzle languages fetch [NAME..] (CLI only)",
+      "authorization": "Callers of the daemon's own uid; downloads go to the user's ~/.zazzle/v1/languages.",
+      "result": "`languages`: the JIT setting, the installed and missing modules, the directory and the download URL. `languages jit on|off`: the new setting. `languages fetch`: how many modules downloaded and how many were already installed.",
+      "failures": [
+        "A development build without a manifest: says so, and fetch has nothing to fetch.",
+        "A download that fails or whose SHA-256 does not match the manifest: listed per module, and the command fails.",
+        "A name the manifest does not have: `no such language module in this build's manifest`.",
+        "Bad words: the usage line."
+      ]
     }
   ],
   "relatedViews": [

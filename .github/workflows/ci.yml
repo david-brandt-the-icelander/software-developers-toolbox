@@ -34,14 +34,15 @@ jobs:
         with:
           workspaces: macos/rust
       - run: cargo fmt --all --check
-      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles; version numbers)
+      - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles; version numbers; language modules)
         working-directory: macos/release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh version.sh version.test.sh set-version.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh version.sh version.test.sh set-version.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh language-modules.sh language-modules.test.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
           bash version.test.sh
           bash fetch-cyberspace-generator.test.sh
+          bash language-modules.test.sh
       - run: cargo clippy --workspace --all-targets --locked
 
   test:

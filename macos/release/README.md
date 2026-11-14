@@ -92,6 +92,15 @@ Then download the tarball in a browser, unpack it, and run `./fix-network --help
 
 Notarization can't be stapled to a bare executable. The first launch on each Mac checks the notarization with Apple online.
 
+## Language modules (`language-modules.sh`)
+
+The 25 terse-view grammars not built into zazzled ship as language modules (`macos/rust/zazzle-lang`, one cdylib per Cargo feature), which zazzled downloads on demand and checks against a manifest compiled into it.
+
+- `language-modules.sh OUT [TARGET...]` builds every module into `OUT/NAME.dylib` (macOS, universal with `lipo` when given both Apple targets) or `OUT/NAME.so` (Linux, the host). `LANGUAGES="lua go"` limits it.
+- `language-modules.sh --manifest OUT` writes `OUT/manifest`, one `NAME SHA256 FILE` line per module.
+- The release builds the modules, signs them on macOS with `sign-and-notarize.sh` (a signed, hardened zazzled only loads libraries signed by the same team), writes the manifest, then builds zazzled with `ZAZZLED_LANGUAGES_MANIFEST` pointing at it, so the hashes are those of the signed files. It uploads the modules and the manifest to `icelander-downloads/zazzle/vX.Y.Z/languages/{macos-universal,linux-x86_64,linux-aarch64}/`, under the tag only: a zazzled accepts only its own release's modules.
+- `language-modules.test.sh` builds the Lua module and checks its manifest line; CI runs it with shellcheck.
+
 ## cyberspace-generator (`fetch-cyberspace-generator.sh`)
 
 `cyberspace-generator` is built and released in [cyberspace-explorer](https://github.com/david-brandt-the-icelander/cyberspace-explorer) (tags `generator-v*`). `cyberspace-generator.version` pins the release zazzle ships. The release job runs `fetch-cyberspace-generator.sh`, which downloads that release's binaries and checks them against its `SHA256SUMS`; the macOS job merges the two CPU types with `lipo` and signs the result with the other binaries, and each Linux tarball gets the static musl build.

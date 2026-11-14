@@ -169,8 +169,8 @@
     },
     {
       "id": "data-view-line-based",
-      "title": "The JSON, YAML, TOML and Markdown views are line-based",
-      "summary": "data.rs and md.rs work line by line without parsing: items are found by indentation and brackets, so minified JSON comes back as source, flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor.",
+      "title": "The JSON, YAML, TOML, Markdown, XML, INI and Dockerfile views are line-based",
+      "summary": "data.rs, md.rs, xml.rs and config.rs work line by line without parsing: items are found by indentation and brackets, so minified JSON comes back as source, flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor. XML elements are collapsed only when each starts its own line and closes on it or at its own indentation, so minified XML comes back as source.",
       "impact": "Some long lists and decorations stay visible; nothing that is not a list item, comment, long text or long string is hidden.",
       "evidenceStatus": "source-verified",
       "sources": [
@@ -181,6 +181,31 @@
         {
           "path": "macos/rust/zazzled/src/md.rs",
           "symbol": "is_badges"
+        },
+        {
+          "path": "macos/rust/zazzled/src/xml.rs",
+          "symbol": "run"
+        }
+      ]
+    },
+    {
+      "id": "language-modules-limits",
+      "title": "Language modules need the release they were built with",
+      "summary": "A module is accepted only with the SHA-256 compiled into zazzled, so modules are fetched from that release's directory and an older or newer module never loads. Development builds carry no manifest and so only the built-in grammars. The first read of a file in a missing language waits for the download; offline, it reads as source and the load is retried after a minute. On macOS a signed zazzled loads only modules signed by the same team, which the release does when signing is configured.",
+      "impact": "Upgrading zazzled downloads the modules again; offline machines need `zazzle languages fetch` while online.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::from_env"
+        },
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "language"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "Sign the language modules"
         }
       ]
     }

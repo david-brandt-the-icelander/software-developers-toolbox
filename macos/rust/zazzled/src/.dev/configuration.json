@@ -291,6 +291,63 @@
           "symbol": "reap"
         }
       ]
+    },
+    {
+      "id": "ZAZZLE_LANGUAGES_DIR",
+      "title": "ZAZZLE_LANGUAGES_DIR",
+      "summary": "Where language modules and the JIT setting are kept.",
+      "key": "ZAZZLE_LANGUAGES_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/v1/languages (under ZAZZLE_CACHE_DIR when set)",
+      "sensitive": false,
+      "scope": "Read by zazzled when it loads, lists or fetches language modules.",
+      "takesEffect": "immediately",
+      "details": "The `jit` file in it holds `on` or `off` (`zazzle languages jit`).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::from_env"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_LANGUAGES_URL",
+      "title": "ZAZZLE_LANGUAGES_URL",
+      "summary": "Where language modules download from.",
+      "key": "ZAZZLE_LANGUAGES_URL",
+      "type": "url",
+      "default": "https://icelander.net/downloads/zazzle/vVERSION/languages/PLATFORM",
+      "sensitive": false,
+      "scope": "Read by zazzled when it downloads a module.",
+      "takesEffect": "immediately",
+      "details": "Downloads are still checked against the manifest compiled into zazzled, so another source can only serve the same files.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/modules.rs",
+          "symbol": "Store::from_env"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLED_LANGUAGES_MANIFEST",
+      "title": "ZAZZLED_LANGUAGES_MANIFEST (build time)",
+      "summary": "The language module manifest compiled into zazzled.",
+      "key": "ZAZZLED_LANGUAGES_MANIFEST",
+      "type": "path",
+      "default": "unset: an empty manifest (development builds have only the built-in grammars)",
+      "sensitive": false,
+      "scope": "Read by zazzled's build script.",
+      "takesEffect": "at-build",
+      "details": "The release sets it to the manifest language-modules.sh --manifest wrote after building and signing the modules.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/build.rs",
+          "symbol": "main"
+        }
+      ]
     }
   ]
 }
