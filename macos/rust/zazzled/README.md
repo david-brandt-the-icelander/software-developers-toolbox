@@ -82,6 +82,18 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Dockerfile: `#` comment blocks of 4+ lines (`# syntax=` and `# escape=` directives stay), runs of 3+ `LABEL` lines (or one `LABEL` continued over 3+ lines), and 6+ package names one per continued line after a `RUN … \` line (`⋯ 25 package(s)`).
 - Kept: everything else, including short comments, mixed tags and commands between packages.
 
+## HCL/Terraform, Protobuf and GraphQL terse view
+
+`zazzle read` on HCL files (`.tf`, `.tfvars`, `.hcl`, including `.terraform.lock.hcl`), Protobuf files (`.proto`) and GraphQL files (`.graphql`, `.graphqls`, `.gql`) returns a terse view built line by line (`src/schema.rs`), with no sha; `--source` returns the file. These are declarations, so the view needs no grammar module.
+
+- Comments: runs of 3+ comment lines (`#` and `//` in HCL, `//` in Protobuf, `#` in GraphQL) and `/* */` blocks of 3+ lines (`⋯ comment, N line(s)`).
+- GraphQL `"""` descriptions of 3+ lines (`⋯ description, N line(s)`); one-line descriptions stay.
+- HCL heredoc bodies of 3+ lines (`<<EOT`, `<<-EOT`): the opening line stays, the body and terminator become `⋯ heredoc, N line(s)`.
+- Protobuf runs of 3+ `import` lines and of 3+ top-level one-line `option` lines (`⋯ 6 option(s)`).
+- Runs of 10+ one-line items keep their first and last: the values of a Protobuf or GraphQL `enum` (`⋯ 10 value(s)`), and the items of an HCL list (`= [`) or map (`= {`), such as tags, CIDR blocks and lock-file `hashes` (`⋯ 11 item(s)`). Comments and blank lines may sit between items; a multi-line item ends the run.
+- Quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
+- Kept: everything else, including resource and block attributes, message fields, types and their fields, short comments and services.
+
 ## Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell terse view
 
 `zazzle read` on `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.dart`, `.rs`, `.go`, `.java`, `.kt`, `.kts`, `.swift`, `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.rb`, `.rake`, `.php`, `.scala`, `.sc`, `.pl`, `.pm`, `.lua`, `.ex`, `.exs`, `.hs`, `.ml`, `.fs`, `.fsx`, `.clj`, `.cljs`, `.cljc`, `.erl`, `.hrl`, `.r`, `.jl`, `.zig`, `.m`, `.groovy`, `.gvy`, `.gradle`, `.ps1`, `.psm1`, `.vb`, `.f`, `.for`, `.ftn`, `.f90`, `.f95`, `.f03`, `.f08`, `.fpp`, `.pas`, `.dpr`, `.lpr`, `.dpk`, `.sh`, `.bash`, `.zsh` and `.ksh` files (`.h` is read as C++) returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.

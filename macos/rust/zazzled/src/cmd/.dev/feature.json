@@ -537,6 +537,46 @@
       ]
     },
     {
+      "id": "schema-terse-view",
+      "name": "Terse HCL/Terraform, Protobuf and GraphQL view",
+      "description": "`read` on an HCL file (.tf, .tfvars, .hcl, including .terraform.lock.hcl), a Protobuf file (.proto) or a GraphQL file (.graphql, .graphqls, .gql) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "HCL/Terraform, Protobuf and GraphQL terse view"
+        }
+      ],
+      "behavior": "Without --source or --anchors, schema.rs collapses runs of three or more comment lines (`#` and `//` in HCL, `//` in Protobuf, `#` in GraphQL) and `/* */` blocks of three or more lines, GraphQL `\"\"\"` descriptions of three or more lines, HCL heredoc bodies of three or more lines (the opening line stays), and runs of three or more Protobuf `import` lines or top-level one-line `option` lines; runs of ten or more one-line items (the values of a Protobuf or GraphQL enum, the items of an HCL list or map such as tags, CIDR blocks and lock-file hashes) keep their first and last; quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "outcome": "An agent reads Terraform modules, lock files, Protobuf definitions and GraphQL schemas without paying for license banners, documentation, heredoc scripts and policies, and long enums and lists, and still has to read the real file before it can edit it.",
+      "constraints": [
+        "The view carries no sha, so it cannot be used for --expect.",
+        "The rules are line-based, without a grammar: items sharing a line, or an item spread over lines, end a run.",
+        "GraphQL descriptions and comments of three or more lines are hidden like banners, so a schema loses its documentation in the view."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "heredoc_end"
+        },
+        {
+          "path": "macos/rust/zazzled/src/schema.rs",
+          "symbol": "statements"
+        }
+      ]
+    },
+    {
       "id": "code-terse-view",
       "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
       "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .hs, .ml, .fs, .fsx, .clj, .cljs, .cljc, .erl, .hrl, .r, .jl, .zig, .m, .groovy, .gvy, .gradle, .ps1, .psm1, .sql, .vb, .f, .f90 (and other Fortran extensions), .pas, .dpr, .lpr, .dpk, .cbl, .cob, .cpy, .nim, .nims, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha. Nim, SQL and COBOL files get line-based views from nim.rs, sql.rs and cobol.rs.",
