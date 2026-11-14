@@ -1,4 +1,4 @@
-// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy, and by plainer rules Erlang, Visual Basic, Pascal and Fortran): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
@@ -25,6 +25,9 @@ pub struct Rename {
 
 // Returns the renames for every function in a file, outer functions first.
 pub fn renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
+    if plain(lang) {
+        return plain_renames(root, lang, src);
+    }
     let mut out = Vec::new();
     let mut done: Vec<(Node, String, String)> = Vec::new();
     let macro_kinds = ["preproc_def", "preproc_function_def"];
@@ -697,6 +700,192 @@ fn split_words(name: &str) -> Vec<String> {
     out
 }
 
+// Lower-case words a Visual Basic, Pascal or Fortran short name must not be, since those languages ignore case: keywords and common built-ins.
+const NO_CASE_KEYWORDS: &[&str] = &[
+    "and", "array", "as", "asm", "begin", "case", "class", "const", "div", "do", "downto", "else", "end",
+    "except", "file", "for", "goto", "if", "in", "is", "label", "mod", "nil", "not", "of", "on", "or", "out",
+    "raise", "record", "repeat", "set", "shl", "shr", "then", "to", "try", "type", "unit", "until", "uses",
+    "var", "while", "with", "xor", "self", "exit", "dim", "each", "elseif", "erase", "error", "get", "let",
+    "lib", "like", "long", "loop", "me", "new", "next", "on", "rem", "step", "stop", "sub", "when", "char",
+    "date", "call", "real", "data", "cycle", "use", "only", "kind", "len", "int", "abs", "min", "max", "sum",
+    "size", "sin", "cos", "tan", "exp", "log", "sqrt", "eq", "ne", "lt", "le", "gt", "ge", "go",
+];
+
+// True for a language renamed by the plain rules: every occurrence of a declared local's name in the outermost routine, refused where the name could mean something else.
+fn plain(lang: Lang) -> bool {
+    matches!(lang, Lang::Erlang | Lang::VisualBasic | Lang::Pascal | Lang::Fortran)
+}
+
+// True for a node kind that is a routine whose locals the plain rules rename: an Erlang function clause, a Visual Basic procedure or accessor, a Pascal routine, a Fortran program unit.
+fn plain_scope(kind: &str, lang: Lang) -> bool {
+    match lang {
+        Lang::Erlang => kind == "function_clause",
+        Lang::VisualBasic => {
+            matches!(kind, "method_declaration" | "constructor_declaration" | "get_accessor" | "set_accessor")
+        }
+        Lang::Pascal => kind == "defProc",
+        _ => matches!(kind, "subroutine" | "function" | "program"),
+    }
+}
+
+// True for a node that stops all renames in its routine: a Pascal `with` or include directive, a Fortran namelist, interface, include or preprocessor line.
+fn plain_poison(n: Node, lang: Lang, src: &str) -> bool {
+    let t = || src[n.byte_range()].to_ascii_lowercase();
+    match lang {
+        Lang::Pascal => {
+            n.kind() == "with"
+                || n.kind() == "pp" && (t().starts_with("{$i ") || t().starts_with("{$include"))
+        }
+        Lang::Fortran => {
+            matches!(n.kind(), "namelist_statement" | "interface" | "include_statement")
+                || n.kind().starts_with("preproc")
+        }
+        _ => false,
+    }
+}
+
+// True when a node is one of a parent's children under a field.
+fn in_field(parent: Node, n: Node, field: &str) -> bool {
+    let mut cursor = parent.walk();
+    let found = parent.children_by_field_name(field, &mut cursor).any(|c| c.id() == n.id());
+    found
+}
+
+// Returns the identifiers a node declares as plain locals: Erlang variables (not `_X` or macro names), Visual Basic `Dim` names and typed `For` variables, Pascal `var` names, Fortran declared names.
+fn plain_declared<'t>(n: Node<'t>, lang: Lang, src: &str) -> Vec<Node<'t>> {
+    let field = |f: &str| {
+        let mut cursor = n.walk();
+        n.children_by_field_name(f, &mut cursor).collect::<Vec<_>>()
+    };
+    match (lang, n.kind()) {
+        (Lang::Erlang, "var") if !src[n.byte_range()].starts_with('_') => vec![n],
+        (Lang::VisualBasic, "dim_statement") => field("name"),
+        (Lang::VisualBasic, "for_statement" | "for_each_statement") if has_kind_child(n, &["as_clause"]) => {
+            field("variable")
+        }
+        (Lang::Pascal, "declVar") => field("name"),
+        (Lang::Fortran, "variable_declaration") => field("declarator")
+            .into_iter()
+            .filter_map(|d| match d.kind() {
+                "identifier" => Some(d),
+                "init_declarator" => d.child_by_field_name("left"),
+                _ => kids(d).find(|c| c.kind() == "identifier"),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// True when an occurrence of a local's name can be renamed: not a member, field, named argument, parameter, routine name or Erlang macro name.
+fn plain_use(n: Node, lang: Lang) -> bool {
+    let Some(p) = n.parent() else { return false };
+    match lang {
+        Lang::Erlang => !matches!(p.kind(), "macro_call_expr" | "macro_lhs"),
+        Lang::VisualBasic => {
+            !in_field(p, n, "member") && !(in_field(p, n, "name") && p.kind() != "dim_statement")
+        }
+        Lang::Pascal => {
+            !(matches!(p.kind(), "exprDot" | "genericDot") && in_field(p, n, "rhs"))
+                && !(in_field(p, n, "name") && p.kind() != "declVar")
+        }
+        _ => {
+            !(p.kind() == "keyword_argument" && in_field(p, n, "name"))
+                && !matches!(p.kind(), "parameters" | "function_result")
+        }
+    }
+}
+
+// Returns the renames for Erlang, Visual Basic, Pascal and Fortran: in each outermost routine without parse errors or poison, every occurrence of a declared local's name (any case where the language ignores case) gets the short name, unless one occurrence is not a plain use; a Visual Basic name needs one declaration whose block holds every occurrence.
+fn plain_renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
+    let no_case = lang != Lang::Erlang;
+    let key = |s: &str| if no_case { s.to_ascii_lowercase() } else { s.to_string() };
+    let ident = if lang == Lang::Erlang { "var" } else { "identifier" };
+    let all = preorder(root);
+    let macro_vars: HashSet<String> = all
+        .iter()
+        .filter(|n| n.kind() == "pp_define")
+        .flat_map(|d| preorder(*d))
+        .filter(|v| v.kind() == "var")
+        .map(|v| src[v.byte_range()].to_string())
+        .collect();
+    let (mut out, mut done) = (Vec::new(), 0);
+    for scope in all.into_iter().filter(|n| plain_scope(n.kind(), lang)) {
+        if scope.start_byte() < done {
+            continue;
+        }
+        done = scope.end_byte();
+        let nodes = preorder(scope);
+        if nodes.iter().any(|n| n.is_error() || n.is_missing() || plain_poison(*n, lang, src)) {
+            continue;
+        }
+        let mut taken: HashSet<String> = words(&src[scope.byte_range()]).map(key).collect();
+        let mut seen: Vec<String> = Vec::new();
+        for decl in nodes.iter().flat_map(|n| plain_declared(*n, lang, src)) {
+            let name = key(&src[decl.byte_range()]);
+            if seen.contains(&name) || macro_vars.contains(&name) {
+                continue;
+            }
+            seen.push(name.clone());
+            let Some(want) = abbreviate(&src[decl.byte_range()]) else { continue };
+            let found: Vec<&Node> =
+                nodes.iter().filter(|n| n.kind() == ident && key(&src[n.byte_range()]) == name).collect();
+            if !found.iter().all(|n| plain_use(**n, lang))
+                || written(scope, &nodes, &name, no_case, src) != found.len()
+            {
+                continue;
+            }
+            if lang == Lang::VisualBasic {
+                let decls: Vec<Node> = nodes.iter().flat_map(|n| plain_declared(*n, lang, src)).collect();
+                let mine: Vec<&Node> = decls.iter().filter(|d| key(&src[d.byte_range()]) == name).collect();
+                let owner = decl.parent().filter(|d| d.kind() == "dim_statement");
+                let block = owner.map_or(decl.parent(), |d| d.parent().and_then(|s| s.parent()));
+                let inside = |n: &&&Node| {
+                    block.is_some_and(|b| n.start_byte() >= decl.start_byte() && n.end_byte() <= b.end_byte())
+                };
+                if mine.len() != 1 || !found.iter().all(|n| inside(&n)) {
+                    continue;
+                }
+            }
+            let want = if lang == Lang::Erlang { capitalize(&want) } else { want };
+            let mut short = want.clone();
+            for n in 2.. {
+                let reserved = no_case && NO_CASE_KEYWORDS.contains(&short.as_str());
+                if !taken.contains(&key(&short)) && !reserved {
+                    break;
+                }
+                short = format!("{want}{n}");
+            }
+            taken.insert(key(&short));
+            out.push(Rename {
+                spans: found.iter().map(|n| (n.start_byte(), n.end_byte())).collect(),
+                name: short,
+            });
+        }
+    }
+    out
+}
+
+// Counts a name as a whole word in a routine's text outside comments and strings, so a name the grammar misread somewhere (Visual Basic's `NewDate` as `New Date`) is seen to have more occurrences than identifiers.
+fn written(scope: Node, nodes: &[Node], name: &str, no_case: bool, src: &str) -> usize {
+    let quiet = |k: &str| k.contains("comment") || k.contains("string");
+    let count = |t: &str| {
+        let t = if no_case { t.to_ascii_lowercase() } else { t.to_string() };
+        words(&t).filter(|w| *w == name).count()
+    };
+    let hidden: usize = nodes
+        .iter()
+        .filter(|n| quiet(n.kind()) && !n.parent().is_some_and(|p| quiet(p.kind())))
+        .map(|n| count(&src[n.byte_range()]))
+        .sum();
+    count(&src[scope.byte_range()]) - hidden
+}
+
+// Returns a word with its first letter upper-case, as an Erlang variable needs.
+fn capitalize(word: &str) -> String {
+    let mut cs = word.chars();
+    cs.next().map(|c| c.to_uppercase().chain(cs).collect()).unwrap_or_default()
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -1125,5 +1314,29 @@ mod tests {
         assert!(none("        def counter = 1\n        xs.each { counter += it }"));
         assert!(none("        def counter = 1\n        evaluate(\"counter\")"));
         assert!(none("        def counter = f(1\n        return counter"));
+    }
+
+    // Checks the plain rules: Erlang clause variables (not `_X`, macro-captured names or macro names), Visual Basic `Dim` names in any case but not members or named arguments, Pascal `var` names but not fields or routines with `with`, Fortran declared names but not parameters, keyword arguments or units with a namelist.
+    #[test]
+    fn test_plain_renames() {
+        let erl = "-define(LOG(X), io:format(\"~p\", [X, LoggedState])).\nf(InputList, LoggedState) ->\n    RunningTotal = lists:sum(InputList),\n    F = fun(ItemValue) -> ItemValue + RunningTotal end,\n    _Ignored = ?LOG(RunningTotal),\n    {F(RunningTotal), [X || X <- InputList]}.\ng(RunningTotal) -> Rt = 1, RunningTotal + Rt.\n";
+        assert_eq!(
+            renamed(erl, Lang::Erlang),
+            ["InputList->Il@3", "RunningTotal->Rt@4", "ItemValue->Iv@2", "RunningTotal->Rt2@2"]
+        );
+        let vb = "Module M\n    Function Total(items As List) As Integer\n        Dim runningTotal As Integer = 0\n        Dim counter As Integer = 0\n        For Each itemValue In items\n            RUNNINGTOTAL += itemValue\n        Next\n        For position As Integer = 0 To 3\n            runningTotal += position\n        Next\n        Me.counter = counter\n        Return Foo(runningTotal) + Bar(counter:=1)\n    End Function\n    Sub S()\n        If True Then\n            Dim insideOnly As Integer = 1\n        End If\n        Dim later = insideOnly\n    End Sub\nEnd Module\n";
+        assert_eq!(renamed(vb, Lang::VisualBasic), ["runningTotal->rt@4", "position->pos@2"]);
+        let pas = "function Total(const Items: array of Integer): Integer;\nvar\n  RunningTotal, Index, Result2: Integer;\n  procedure Inner;\n  var Counter: Integer;\n  begin\n    Counter := RunningTotal;\n  end;\nbegin\n  runningtotal := Rec.RunningTotal;\n  Result := RunningTotal;\nend;\nprocedure P;\nvar Elapsed: Integer;\nbegin\n  with Rec do Elapsed := 1;\nend;\nprocedure Q;\nvar Counter: Integer;\nbegin\n  Counter := 1;\nend;\n";
+        assert_eq!(renamed(pas, Lang::Pascal), ["Result2->res@1", "Counter->cou@2", "Counter->cou@2"]);
+        let f90 = "subroutine total(items, n, res)\n  implicit none\n  integer, intent(in) :: n\n  integer :: items(n), res\n  integer :: running_total = 0, idx, counter(3)\n  do idx = 1, n\n    RUNNING_TOTAL = running_total + items(idx)\n  end do\n  res = running_total\n  call s(counter=1)\n  counter(1) = 0\nend subroutine\nprogram p\n  real :: elapsed\n  namelist /cfg/ elapsed\nend program\n";
+        assert_eq!(renamed(f90, Lang::Fortran), ["running_total->rt@4"]);
+        let misread = "Module M\n    Sub S()\n        Dim NewDate As DateTime = Now\n        Dim elapsed = NewDate.Ticks ' NewDate in a comment\n        Dim message = \"elapsed\" & elapsed\n    End Sub\nEnd Module\n";
+        assert_eq!(renamed(misread, Lang::VisualBasic), ["elapsed->ela@2", "message->mes@1"]);
+        let inc = "procedure P;\nvar Counter: Integer;\nbegin\n  {$I body.inc}\n  Counter := 1;\nend;\nprocedure Q;\nvar Elapsed: Integer;\nbegin\n  {$INCLUDE more.inc}\n  Elapsed := 1;\nend;\nprocedure R;\nvar Started: Integer;\nbegin\n  {$R+}\n  Started := TList<Integer>.Started;\nend;\nprocedure S;\nvar Settled: Integer;\nbegin\n  {$R+}\n  Settled := 1;\nend;\n";
+        assert_eq!(renamed(inc, Lang::Pascal), ["Settled->set2@2"]);
+        let twice = "Module M\n    Sub S()\n        Dim counter As Integer = 1\n        If True Then\n            Dim counter As Integer = 2\n        End If\n        For index = 0 To 3\n        Next\n        elapsed = 1\n        Dim elapsed As Integer = 0\n    End Sub\nEnd Module\n";
+        assert!(renamed(twice, Lang::VisualBasic).is_empty());
+        assert_eq!(capitalize("rt"), "Rt");
+        assert_eq!(capitalize(""), "");
     }
 }

@@ -1,4 +1,4 @@
-// Terse view of HTML and Razor files (the C# in Razor @code and @functions blocks through the indexer's C# view): hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, and shortens long class and style values, keeping source line numbers.
+// Terse view of HTML and Razor files (the C# in Razor @code, @functions and multi-line @{ } blocks through the indexer's C# view): hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, and shortens long class and style values, keeping source line numbers.
 use std::path::Path;
 
 const LONG_CLASS: usize = 4;
@@ -68,7 +68,7 @@ pub fn view(shown: &str, text: &str, kind: Kind, csharp: &dyn Fn(&str) -> Option
     while i < src.len() {
         if let Some(end) = verbatim(&src, i, kind) {
             let lines: Vec<&(usize, usize, String)> = code.iter().filter(|c| c.0 > i && c.1 < end).collect();
-            if code_block(src[i]).is_some() && !code.is_empty() {
+            if (code_block(src[i]).is_some() || statement_block(&src, i).is_some()) && !code.is_empty() {
                 plan.keep(i, src[i], false);
                 plan.lines.extend(lines.into_iter().map(|c| c.2.clone()));
                 plan.keep(end, src[end], false);
@@ -137,7 +137,7 @@ fn code_block(line: &str) -> Option<&'static str> {
     })
 }
 
-// Returns the C# view's lines for a Razor file's @code and @functions blocks as (first, last, line), 0-based, and counts the view's steps; empty when there are none or no view.
+// Returns the C# view's lines for a Razor file's @code and @functions blocks, and its multi-line @{ } statement blocks wrapped as a method, as (first, last, line), 0-based, and counts the view's steps; empty when there are none or no view.
 fn code_view(
     src: &[&str],
     csharp: &dyn Fn(&str) -> Option<String>,
@@ -146,6 +146,13 @@ fn code_view(
     let mut padded = vec![String::new(); src.len()];
     let mut i = 0;
     while i < src.len() {
+        if let Some(end) = statement_block(src, i) {
+            padded[i] = src[i].replacen("@{", &format!("class __RazorBlock{i} {{ void __Render() {{"), 1);
+            (i + 1..end).for_each(|j| padded[j] = src[j].to_string());
+            padded[end] = keep_names(src, i, end);
+            i = end + 1;
+            continue;
+        }
         let Some(keyword) = code_block(src[i]) else {
             i += 1;
             continue;
@@ -171,6 +178,39 @@ fn code_view(
         Some((a.parse::<usize>().ok()? - 1, b.parse::<usize>().ok()? - 1))
     };
     body.lines().filter_map(|l| key(l).map(|(a, b)| (a, b, l.to_string()))).collect()
+}
+
+// Returns the last line of a multi-line Razor `@{ }` statement block opened on line i, unless a line in it is markup (`<tag`, `@:`), which C# cannot parse.
+fn statement_block(src: &[&str], i: usize) -> Option<usize> {
+    if !src[i].trim_start().starts_with("@{") {
+        return None;
+    }
+    let end = braces_end(src, i);
+    let markup = |l: &&str| {
+        let t = l.trim_start();
+        t.starts_with('<') || t.starts_with("@:")
+    };
+    (end > i && !src[i + 1..end].iter().any(markup)).then_some(end)
+}
+
+// Returns a statement block's last line for the C# view: before its closing brace, `nameof(..)` uses of every word the block shares with the rest of the page, so the view keeps the names of locals the markup reads, then the brace that closes the wrapping class.
+fn keep_names(src: &[&str], i: usize, end: usize) -> String {
+    let words = |l: &&str| -> Vec<String> {
+        l.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .filter(|w| !w.is_empty())
+            .map(String::from)
+            .collect()
+    };
+    let outside: std::collections::HashSet<String> =
+        src[..i].iter().chain(&src[end + 1..]).flat_map(words).collect();
+    let mut shared: Vec<String> =
+        src[i..=end].iter().flat_map(words).filter(|w| outside.contains(w)).collect();
+    shared.sort();
+    shared.dedup();
+    let uses: String = shared.iter().map(|w| format!("_ = nameof({w}); ")).collect();
+    let line = src[end];
+    let at = line.rfind('}').unwrap_or(line.len());
+    format!("{}{uses}{} }}", &line[..at], &line[at..])
 }
 
 // Returns the line where the braces opened on line i close, or the last line when they never do.
@@ -422,6 +462,16 @@ mod tests {
             c.lines().count()
         )))
         .is_none());
+        let page = "@{\n    var pageTitle = \"Home\";\n    var counterValue = 2;\n    _log.LogDebug(\"x\");\n}\n<h1>@pageTitle</h1>\n@{\n    <p>markup</p>\n}\n";
+        let csharp = |code: &str| {
+            asked.replace(code.to_string());
+            Some("f 9 lines; terse: 1 locals shortened, 1 log statements\n1\tclass __RazorBlock0 { void __Render() {\n2\t    var pageTitle = \"Home\";\n3~\t    var cv = 2;\n5\tx".to_string())
+        };
+        let v = view("f", page, Kind::Razor, &csharp).expect("view");
+        assert_eq!(*asked.borrow(), "class __RazorBlock0 { void __Render() {\n    var pageTitle = \"Home\";\n    var counterValue = 2;\n    _log.LogDebug(\"x\");\n_ = nameof(pageTitle); } }\n\n\n\n");
+        assert_eq!(v, "f 9 lines; terse: 1 locals shortened, 1 log statements\n1\t@{\n2\t    var pageTitle = \"Home\";\n3~\t    var cv = 2;\n5\t}\n6\t<h1>@pageTitle</h1>\n7\t@{\n8\t    <p>markup</p>\n9\t}");
+        assert_eq!(statement_block(&["@{ var a = 1; }"], 0), None);
+        assert_eq!(keep_names(&["@{", "x", "  y(); }", "x"], 0, 2), "  y(); _ = nameof(x); } }");
         assert_eq!(code_block("  @code{"), Some("@code"));
         assert_eq!(code_block("@codex {"), None);
     }
