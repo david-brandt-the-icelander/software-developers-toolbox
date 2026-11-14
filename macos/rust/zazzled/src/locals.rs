@@ -572,6 +572,7 @@ mod tests {
         assert_eq!(split_words("_my__name"), ["my", "name"]);
         assert_eq!(split_words("valueX"), ["value", "X"]);
         assert_eq!(split_words("valueXY"), ["value", "XY"]);
+        assert_eq!(split_words("A_bc"), ["A", "bc"]);
         assert_eq!(abbreviate("invoiceRepository").as_deref(), Some("ir"));
         assert_eq!(abbreviate("invoice_id").as_deref(), Some("ii"));
         assert_eq!(abbreviate("response").as_deref(), Some("res"));
@@ -763,6 +764,8 @@ mod tests {
         assert!(
             renamed("function f() {\n  const counter = 1;\n  eval('x');\n}\n", Lang::JavaScript).is_empty()
         );
+        let loops = "function f(obj) {\n  for (const invoiceKey in obj) { use(invoiceKey); }\n  for (existing in obj) { use(existing); }\n}\n";
+        assert_eq!(renamed(loops, Lang::JavaScript), ["invoiceKey->ik@2"]);
     }
 
     // Checks Kotlin locals and the places that keep a name: `$name` templates, named arguments, members, types, lambda parameters.

@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazz::test types",
+  "folder": "macos/rust/zazz-sdk/src/test",
+  "description": "The structs zazz::test declares in mod.rs and fakes.rs: the harness and its outcome, the private fake clock, environment and output capture, and the fake filesystem and network with their shared state. check.rs declares functions and a macro only. The SDK traits they implement are lightweight external nodes.",
+  "sources": [
+    { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness" },
+    { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "FakeFs" },
+    { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "FakeHttp" }
+  ],
+  "types": [
+    { "id": "mod.Capture", "name": "Capture", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/mod.rs"], "members": ["0: Rc<RefCell<Vec<u8>>>"] },
+    { "id": "mod.FakeClock", "name": "FakeClock", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/mod.rs"], "members": ["0: Rc<Cell<u64>>"] },
+    { "id": "mod.FakeEnv", "name": "FakeEnv", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/mod.rs"], "members": ["0: Rc<RefCell<BTreeMap<String, String>>>"] },
+    { "id": "mod.Outcome", "name": "Outcome", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/mod.rs"], "members": ["stdout: String", "stderr: String", "exit: i64", "progress: Vec<String>"] },
+    {
+      "id": "mod.Harness", "name": "Harness", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/mod.rs"],
+      "members": [
+        "handlers: Handlers", "fs: FakeFs", "http: FakeHttp", "clock: Rc<Cell<u64>>", "env: Rc<RefCell<BTreeMap<String, String>>>",
+        "stdin: Vec<u8>", "cwd: String", "cancel_after: Option<usize>", "cli: Option<Spec>", "last: Outcome",
+        "fn new(handlers: Handlers) -> Harness", "fn from_manifest(handlers: Handlers, manifest: &str) -> Harness",
+        "fn fs(&self) -> &FakeFs", "fn http(&self) -> &FakeHttp", "fn stdin(&mut self, data) -> &mut Harness", "fn clock_ms(&mut self, ms: u64) -> &mut Harness",
+        "fn advance_ms(&mut self, ms: u64) -> &mut Harness", "fn env(&mut self, key: &str, value: &str) -> &mut Harness",
+        "fn cancel_after(&mut self, n: usize) -> &mut Harness", "fn cwd(&mut self, dir: &str) -> &mut Harness", "fn last(&self) -> &Outcome",
+        "fn json_command(&mut self, input: Json) -> Result<Json>", "fn service_call(&mut self, op: &str, params: Json, body: Json) -> Result<Json>",
+        "fn openapi(&self) -> Result<Json>", "fn human(&mut self, argv: &[&str]) -> Outcome", "fn assert_schema(&self, output: &Json, operation: &str)"
+      ]
+    },
+    { "id": "fakes.FsPolicy", "name": "FsPolicy", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["read: Vec<String>", "write: Vec<String>", "fn open() -> FsPolicy"] },
+    { "id": "fakes.FsState", "name": "FsState", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["cwd: String", "files: BTreeMap<String, Vec<u8>>", "written: BTreeMap<String, Vec<u8>>", "denied: Vec<String>", "write_failures: BTreeMap<String, Error>", "policy: Option<FsPolicy>"] },
+    { "id": "fakes.FakeFs", "name": "FakeFs", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["0: Rc<RefCell<FsState>>", "fn set_cwd(&self, dir: &str)", "fn set_policy(&self, p: FsPolicy)", "fn add(&self, path: &str, data) -> &FakeFs", "fn load_dir(&self, real: &Path, at: &str) -> std::io::Result<&FakeFs>", "fn deny(&self, path: &str) -> &FakeFs", "fn fail_write(&self, path: &str, err: Error) -> &FakeFs", "fn written(&self, path: &str) -> Option<Vec<u8>>", "fn written_text(&self, path: &str) -> Option<String>", "fn written_paths(&self) -> Vec<String>"] },
+    { "id": "fakes.Expectation", "name": "Expectation", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["method: String", "url: String", "reply: Result<Response>", "used: usize"] },
+    { "id": "fakes.HttpState", "name": "HttpState", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["expected: Vec<Expectation>", "requests: Vec<Request>", "policy: Option<NetPolicy>"] },
+    { "id": "fakes.FakeHttp", "name": "FakeHttp", "kind": "struct", "sources": ["macos/rust/zazz-sdk/src/test/fakes.rs"], "members": ["0: Rc<RefCell<HttpState>>", "fn set_policy(&self, p: NetPolicy)", "fn expect(&self, method: &str, url: &str, reply: Response) -> &FakeHttp", "fn expect_json(&self, method: &str, url: &str, status: u16, body: Json) -> &FakeHttp", "fn expect_error(&self, method: &str, url: &str, err: Error) -> &FakeHttp", "fn replay(&self, doc: &Json) -> Result<&FakeHttp>", "fn requests(&self) -> Vec<Request>", "fn assert_all_used(&self)"] },
+    { "id": "sdk.Fs", "name": "Fs", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [], "external": true },
+    { "id": "sdk.Http", "name": "Http", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [], "external": true },
+    { "id": "sdk.Clock", "name": "Clock", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [], "external": true },
+    { "id": "sdk.Env", "name": "Env", "kind": "interface", "sources": ["macos/rust/zazz-sdk/src/call.rs"], "members": [], "external": true }
+  ],
+  "relationships": [
+    { "from": "fakes.FakeFs", "to": "sdk.Fs", "kind": "implements", "description": "In-memory reads, writes and listings under the policy." },
+    { "from": "fakes.FakeHttp", "to": "sdk.Http", "kind": "implements", "description": "Policy check, then the matching expectation." },
+    { "from": "mod.FakeClock", "to": "sdk.Clock", "kind": "implements", "description": "The time the test set." },
+    { "from": "mod.FakeEnv", "to": "sdk.Env", "kind": "implements", "description": "Variables the test set." },
+    { "from": "fakes.FakeFs", "to": "fakes.FsState", "kind": "depends-on", "description": "Shared state; clones see the same files." },
+    { "from": "fakes.FsState", "to": "fakes.FsPolicy", "kind": "depends-on", "description": "Optional sandbox rules." },
+    { "from": "fakes.FakeHttp", "to": "fakes.HttpState", "kind": "depends-on", "description": "Shared state; clones see the same expectations and requests." },
+    { "from": "fakes.HttpState", "to": "fakes.Expectation", "kind": "depends-on", "description": "Expected requests and their replies." },
+    { "from": "mod.Harness", "to": "fakes.FakeFs", "kind": "depends-on", "description": "fs field." },
+    { "from": "mod.Harness", "to": "fakes.FakeHttp", "kind": "depends-on", "description": "http field." },
+    { "from": "mod.Harness", "to": "mod.Outcome", "kind": "depends-on", "description": "What the last call printed, its exit status and progress." },
+    { "from": "mod.Harness", "to": "mod.Capture", "kind": "depends-on", "description": "Captures stdout and stderr for each call." },
+    { "from": "mod.Harness", "to": "mod.FakeClock", "kind": "depends-on", "description": "Each Call's clock shares the harness's time." },
+    { "from": "mod.Harness", "to": "mod.FakeEnv", "kind": "depends-on", "description": "Each Call's environment shares the harness's variables." }
+  ]
+}

@@ -3,6 +3,19 @@ use std::path::{Path, PathBuf};
 
 pub const MAX_LINE: usize = 240;
 
+// Resolves a path from an override variable's value, else from HOME joined with a relative path.
+pub fn home_path(
+    over: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+    rel: &str,
+) -> Result<PathBuf, String> {
+    match (over, home) {
+        (Some(p), _) => Ok(PathBuf::from(p)),
+        (None, Some(h)) => Ok(PathBuf::from(h).join(rel)),
+        (None, None) => Err("HOME is not set".into()),
+    }
+}
+
 // Shows a path relative to the working directory when it lies under it.
 pub fn display(path: &Path, cwd: &Path) -> String {
     match path.strip_prefix(cwd) {
@@ -70,6 +83,14 @@ pub fn clip(line: &str, m_start: usize, max: usize) -> String {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+
+    // Checks the override wins, then HOME, and a missing HOME is an error.
+    #[test]
+    fn test_home_path() {
+        assert_eq!(home_path(Some("/o".into()), Some("/h".into()), "x").expect("over"), PathBuf::from("/o"));
+        assert_eq!(home_path(None, Some("/h".into()), ".z/s").expect("home"), PathBuf::from("/h/.z/s"));
+        assert_eq!(home_path(None, None, "x").unwrap_err(), "HOME is not set");
+    }
 
     // Checks relative, root and outside paths.
     #[test]

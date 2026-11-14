@@ -7,7 +7,7 @@
     {
       "id": "invoker-logic",
       "title": "Invoker logic against a mock syscall layer",
-      "summary": "test/unit.c compiles zazzle_core.h against test/sys_mock.h and drives every path: request layout, socket path, autostart, waiting, the spin, sending, the execs and every failure with its exit code.",
+      "summary": "test/unit.c compiles zazzle_core.h against test/sys_mock.h and drives every path: request layout, the name it runs under, socket path, autostart, waiting, the spin, sending, the execs and every failure with its exit code.",
       "subject": [
         {
           "path": "macos/c/zazzle/src/.dev/use-case.json",
@@ -24,6 +24,7 @@
       ],
       "criteria": [
         "The request carries an empty cwd field, the session and the arguments, and the four descriptors.",
+        "Run as zazz the arguments follow a `zazz` field, under any other name `zazz exec-name NAME`; as zazzle (or with no argv[0]) they go as they are, and only zazzle execs the standalone tools, `zazzled wrap` and `zazzled proxy` (`zazz run NAME` and a script given `proxy` are zazz requests).",
         "ZAZZLE_SOCK overrides HOME, and lookalike variables are ignored.",
         "Autostart picks ZAZZLE_DAEMON or zazzled beside the executable, for both not-running errors, and gives up after the wait.",
         "A fast reply is read during the spin; a slow one falls back to the blocking read; an error ends the spin.",
@@ -33,6 +34,7 @@
       "checks": [
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_happy_path", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_no_session_no_args", "command": "make unit (in macos/c/zazzle)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_argv0_dispatch", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_zazzle_sock_override", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_path_errors", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_arguments_too_long", "command": "make unit (in macos/c/zazzle)" },
@@ -73,7 +75,7 @@
     {
       "id": "end-to-end",
       "title": "The real invoker against the real daemon",
-      "summary": "test/smoke.sh runs build/zazzle against a freshly built zazzled: output, exit status, errors, session dedupe and read-again, standard input, the sha requirement, write confinement, autostart, and the execs of the standalone tools, run and proxy.",
+      "summary": "test/smoke.sh runs build/zazzle against a freshly built zazzled: output, exit status, errors, session dedupe and read-again, standard input, the sha requirement, write confinement, autostart, the execs of the standalone tools, run and proxy, and the invoker run as zazz and as a script's shim.",
       "subject": [
         {
           "path": "macos/c/zazzle/src/.dev/use-case.json",
@@ -89,6 +91,7 @@
         "`zazzle version` prints `zazzle` and the version `zazzled version` reports (the release tag's, `0.0.0-dev` in the repository), not a fixed number.",
         "find and read print the expected text; an unknown command exits 2 with its error on standard error.",
         "A daemon zazzle autostarts does not keep zazzle's standard output open.",
+        "Linked as `zazz` the invoker reaches the zazz command (`zazz help`); linked under an unknown script's name it fails with `NAME: not_found` on standard error.",
         "A stand-in tool beside the invoker, and a stand-in zazzled named by ZAZZLE_DAEMON, get the arguments and pass their exit status back; a missing tool fails.",
         "The platform backends work on the machine running the test (the unit tests replace them with the mock)."
       ],

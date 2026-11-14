@@ -1,0 +1,102 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazz-worker deployment diagram",
+  "folder": "macos/rust/zazz-worker",
+  "description": "zazz-worker is installed beside zazzled and only ever started by it, as child processes of the daemon on the same machine. For `zazz add` and `zazz test`, zazzled runs short-lived `zazz-worker compile` and `zazz-worker test` processes inside the OS sandbox; for `zazz call` and human runs it keeps `zazz-worker serve` processes warm, one per pool key (script, caller directory, effective policy), each talking to the daemon over a socketpair on fd 3 and reading its precompiled module from fd 4. A script's guest reads and writes the caller's own streams, passed with each call. Only scripts whose signer is trusted with network reach HTTPS hosts. The macOS release ships it as a universal binary signed with entitlements for executable memory; the Linux tarballs and the Homebrew formula carry it too; delivery is recorded in macos/release/.dev.",
+  "sources": [
+    { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "main" },
+    { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "spawn" },
+    { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" },
+    { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "aot" },
+    { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "run_tests" },
+    { "path": "macos/rust/zazzled/src/zazz/tools.rs", "symbol": "worker_from" },
+    { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "default_root" },
+    { "path": ".github/workflows/release.yml", "symbol": "Make universal binaries" },
+    { "path": "macos/release/entitlements/zazz-worker.plist", "symbol": "com.apple.security.cs.allow-jit" },
+    { "path": "macos/release/sign-and-notarize.sh", "symbol": "entitlements" },
+    { "path": "macos/release/formula.sh", "symbol": "bin.install" }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac or a Linux machine with zazzled and zazz-worker installed side by side."
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled serve process",
+      "kind": "process",
+      "description": "The daemon: its zazz module starts every zazz-worker process and owns the script registry."
+    },
+    {
+      "id": "caller",
+      "name": "Caller's zazz or zazzle process",
+      "kind": "process",
+      "description": "The invoker that asked for the call and passed its standard streams to the daemon; over MCP there is none and zazzled passes pipes it reads instead."
+    },
+    {
+      "id": "serve",
+      "name": "zazz-worker serve process",
+      "kind": "process",
+      "description": "One per warm pool entry: started in the caller's directory with an empty environment, standard streams on /dev/null, a new session and no core dumps; one fresh instance per call; kept idle for up to 60 s or 1000 calls, then killed."
+    },
+    {
+      "id": "compile",
+      "name": "zazz-worker compile process",
+      "kind": "process",
+      "description": "Short-lived, inside the OS sandbox with an empty environment: reads a WASM module on stdin and writes the precompiled module on stdout.",
+      "condition": "`zazz add` and `zazz test`"
+    },
+    {
+      "id": "test",
+      "name": "zazz-worker test process",
+      "kind": "process",
+      "description": "Short-lived, inside the OS sandbox with an empty environment: runs a script's test module against a scratch directory, snapshots and a replay file, and prints a JSON report.",
+      "condition": "`zazz add` and `zazz test`, for scripts with tests"
+    },
+    {
+      "id": "registry",
+      "name": "Script registry",
+      "kind": "database",
+      "description": "$ZAZZ_STORE, by default ~/.zazzle/v1/zazz (mode 0700): the .wasm and precompiled .cwasm of every registered script, metadata, names, locks and scratch directories."
+    },
+    {
+      "id": "https",
+      "name": "HTTPS hosts",
+      "kind": "external-service",
+      "description": "Hosts on the effective allowlist, reached over HTTPS only, without redirects.",
+      "condition": "A script signed by an authority trusted here with network, and asking for it in its manifest"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "zazz-worker-bin",
+      "name": "zazz-worker",
+      "source": "macos/rust/zazz-worker/Cargo.toml",
+      "deployedTo": "machine",
+      "description": "The release build, found by zazzled beside its own executable (or at $ZAZZ_WORKER); universal on macOS (lipo of arm64 and x86_64), per architecture in the Linux tarballs, installed into the Homebrew formula's bin."
+    },
+    {
+      "id": "entitlements",
+      "name": "zazz-worker.plist",
+      "source": "macos/release/entitlements/zazz-worker.plist",
+      "deployedTo": "machine",
+      "description": "Hardened-runtime entitlements (JIT and unsigned executable memory) applied when the macOS binary is signed, because wasmtime maps compiled code executable."
+    }
+  ],
+  "relationships": [
+    { "from": "machine", "to": "zazzled", "kind": "hosts", "description": "Long-lived until idle." },
+    { "from": "machine", "to": "serve", "kind": "hosts", "description": "As long as the pool keeps it." },
+    { "from": "machine", "to": "compile", "kind": "hosts", "description": "One per build." },
+    { "from": "machine", "to": "test", "kind": "hosts", "description": "One per test run." },
+    { "from": "zazzled", "to": "compile", "kind": "connects-to", "description": "Starts it through the sandbox command with an argument list; WASM in on stdin, precompiled module back on stdout, with a time limit." },
+    { "from": "zazzled", "to": "test", "kind": "connects-to", "description": "Starts it through the sandbox command with the test module, --cwd, limits and optional --snapshots, --update and --http-replay; reads the JSON report from stdout." },
+    { "from": "zazzled", "to": "serve", "kind": "connects-to", "description": "Unix socketpair on fd 3: u32 little-endian length plus JSON frames; a hello with the preopens, network policy and limits first (answered by ready), then one message per call with the three stdio descriptors attached (SCM_RIGHTS); progress and the result come back; cancel and shutdown end work." },
+    { "from": "zazzled", "to": "registry", "kind": "connects-to", "description": "Writes modules and metadata at add; opens the script's .cwasm and passes it to a serve worker as fd 4." },
+    { "from": "serve", "to": "caller", "kind": "connects-to", "description": "The guest's stdin, stdout and stderr are the caller's descriptors (or zazzled's pipes), received with each call." },
+    { "from": "serve", "to": "https", "kind": "connects-to", "description": "HTTPS through ureq, checked against the allowlist per request, bounded by the call's remaining time and a 16 MiB body." }
+  ]
+}

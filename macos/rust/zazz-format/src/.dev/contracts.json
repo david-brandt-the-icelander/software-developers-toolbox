@@ -1,0 +1,120 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazz-format contracts",
+  "folder": "macos/rust/zazz-format/src",
+  "description": "The .zazz file as script authors, `zazz pack`, `zazz sign` and zazzled rely on it. What zazzled does with a valid file (trust, grants, the sandbox, building and calling) is zazzled's.",
+  "entities": [
+    {
+      "id": "zazz-archive",
+      "title": ".zazz archive",
+      "summary": "A .zazz file is a strict subset of ZIP that zip::read validates completely before returning any entry, and that zip::write produces byte for byte the same from the same entries.",
+      "contractType": "file-format",
+      "consumers": [
+        "zazzled's zazz commands (add, call, pack, sign, test), through zip::read, zip::write and pack::pack_dir",
+        "Script authors and other tools that build a .zazz by hand, guided by agents/skills/zazz/SKILL.md"
+      ],
+      "guarantees": [
+        "Entries are stored or deflate only; zip64, multi-disk archives, encrypted entries, symlinks and special files are refused.",
+        "The end-of-central-directory record ends exactly at the end of the file, and the central directory fills the space before it exactly; local headers must agree with the central directory, entries must not overlap, and every entry's size and CRC-32 are checked.",
+        "Entry names are relative UTF-8 paths with '/' as the only separator: no leading '/', backslash, ':', control character, or empty, '.' or '..' component; at most 1024 bytes, each component at most 255. No two names are equal ignoring case, and no file name is also another entry's directory. Directory entries carry no data and are dropped.",
+        "Limits.DEFAULT, checked before anything is inflated: 32 MiB packed, 128 MiB unpacked in all, 1024 entries, 64 MiB per entry, and an unpacked size at most 100 times the packed size for entries over 64 KiB.",
+        "The writer is deterministic: entries sorted by name, UTF-8 flag, a fixed 1980-01-01 date, made-by Unix with mode 0644, no extra fields or comment, and deflate at level 9 only when it is smaller than storing.",
+        "pack::pack_dir takes every regular file under the directory in name order, skipping names that start with '.' and the top-level target/, and refuses symlinks, special files and a zazz.sig; the same files give the same bytes.",
+        "zazz.json at the root is required (manifest contract); zazz.sig at the root is optional (signature-envelope contract)."
+      ],
+      "compatibility": "No version field of its own; the reader refuses everything outside the subset above, so widening the subset needs a new reader before any writer uses it. No further policy is stated.",
+      "definition": "macos/rust/zazz-format/src/zip.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "read" },
+        { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "write" },
+        { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "check_name" },
+        { "path": "macos/rust/zazz-format/src/zip.rs", "symbol": "Limits::DEFAULT" },
+        { "path": "macos/rust/zazz-format/src/pack.rs", "symbol": "pack_dir" }
+      ]
+    },
+    {
+      "id": "manifest",
+      "title": "zazz.json manifest",
+      "summary": "The keys a script's zazz.json may have, their defaults and their checks; Manifest::of parses it and checks it against the archive.",
+      "contractType": "file-format",
+      "consumers": [
+        "Script authors, who write zazz.json (agents/skills/zazz/SKILL.md; `zazz new` creates one)",
+        "zazzled, which builds, sandboxes and limits a script from its Manifest",
+        "zazz::test::Harness::from_manifest in zazz-sdk, which reads the sandbox and cli sections itself (macos/rust/zazz-sdk/src/.dev/contracts.json)"
+      ],
+      "guarantees": [
+        "A JSON object whose only keys are zazz, name, version, description, kind, entry, edition, native, tests, messages, sandbox, limits and cli; an unknown key at any level is an error.",
+        "zazz must be 1. name is required: lowercase letters, digits and '-', starting with a letter, at most 64 characters. kind is required: \"rust\", \"wasm\" or \"native-bin\".",
+        "entry is required, a valid entry name present in the archive, ending in .rs for rust and .wasm for wasm.",
+        "Defaults: version \"0.0.0\", description \"\", edition \"2021\" (2018, 2021 or 2024 allowed), native false (true only for kind rust).",
+        "tests (optional) has paths, module and timeout_ms (default 120000, 1 to 600000); kind wasm needs module, rust and native-bin need paths, and each named file or directory must be in the archive.",
+        "messages defaults to [\"json-command\"]; only json-command, openapi and service-call are known, json-command is required, and service-call needs openapi.",
+        "sandbox has read (default [\"$CWD\"]), write (default []), network and exec (default false). Paths start with $CWD, $TMP, $HOME (followed by '/' or nothing) or '/', with no '.' or '..' components. network is \"none\" (default), \"all\" or {\"hosts\": [...]}, a non-empty list of lowercase DNS names, each optionally starting with \"*.\", never an IP address.",
+        "limits has call_ms (default 30000, 1 to 3600000) and memory_mb (default 256, 1 to 4096).",
+        "cli, when present, must be an object; its contents are read by the SDK's cliargs::Spec, not checked here."
+      ],
+      "compatibility": "Versioned by the zazz key, which must be 1; unknown keys are rejected, so a new key needs a reader that knows it. No further policy is stated.",
+      "definition": "macos/rust/zazz-format/src/manifest.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "TOP_KEYS" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "Manifest::parse" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "Manifest::check_against" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "check_sandbox_path" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "check_host" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "parse_messages" }
+      ]
+    },
+    {
+      "id": "signature-envelope",
+      "title": "zazz.sig signature envelope",
+      "summary": "The optional zazz.sig entry: a digest of every other entry, a signature over a domain-separated message, and the signer's certificate chain.",
+      "contractType": "file-format",
+      "consumers": [
+        "zazzled's `zazz sign`, which writes it, and its signature check on add and call, which verifies the signature and chain (macos/rust/zazzled/src/zazz/signing.rs)",
+        "Certificate authorities that issue zazz signing certificates, through the EKU and grants extension OIDs"
+      ],
+      "guarantees": [
+        "JSON {\"v\": 1, \"alg\": \"ecdsa-p256-sha256\", \"digest\": \"b3:<hex>\", \"sig\": <base64>, \"chain\": [<base64 certificate>, ...]}; base64 is standard with padding; any other v or alg is refused, and the chain must hold at least the signer's certificate, first.",
+        "digest is BLAKE3 over every entry except zazz.sig, in name order, each as its name, a 0 byte, its length as a little-endian u64 and its bytes; written \"b3:\" and lowercase hex.",
+        "The signature covers the bytes \"zazz-sig-v1\\0\" followed by the digest text (sig::message).",
+        "Envelope::of refuses an archive whose envelope digest does not match its other entries; an archive without zazz.sig is unsigned, not invalid.",
+        "with_envelope replaces any existing zazz.sig, so re-signing does not change the digest.",
+        "Code-signing certificates carry the extended key usage OID 1.3.6.1.4.1.32473.7979.1; an authority's grants are a JSON certificate extension under 1.3.6.1.4.1.32473.7979.2."
+      ],
+      "compatibility": "Versioned by v and alg, and the message by its zazz-sig-v1 domain string; a reader refuses any other version. The OIDs are provisional (backlog.json, registered-pen).",
+      "definition": "macos/rust/zazz-format/src/sig.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "Envelope::parse" },
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "digest" },
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "message" },
+        { "path": "macos/rust/zazz-format/src/sig.rs", "symbol": "EKU_OID" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "check_signature" }
+      ]
+    },
+    {
+      "id": "script-id",
+      "title": "Script id",
+      "summary": "A script is named by \"b3:\" and the 64 lowercase hex digits of the BLAKE3 hash of its .zazz file's exact bytes.",
+      "contractType": "identifier",
+      "consumers": [
+        "zazzled's `zazz pack`, `zazz add` and `zazz sign` replies, and `zazz call ID`",
+        "Script authors and agents, who call scripts by this id (agents/skills/zazz/SKILL.md)"
+      ],
+      "guarantees": [
+        "Equal ids mean byte-identical files; since packing is deterministic, the same sources pack to the same id.",
+        "zazz.sig is inside the file, so signing a script gives it a new id."
+      ],
+      "definition": "macos/rust/zazz-format/src/lib.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-format/src/lib.rs", "symbol": "script_id" },
+        { "path": "macos/rust/zazzled/src/zazz/pack.rs", "symbol": "zazz_format::script_id" },
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "zazz_format::script_id" }
+      ]
+    }
+  ]
+}

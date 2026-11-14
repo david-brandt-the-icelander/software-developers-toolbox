@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-sdk component diagram",
+  "folder": "macos/rust/zazz-sdk",
+  "description": "The zazz-sdk crate (lib zazz), the std-only SDK every zazz script is written against, and what crosses its boundary. It is used three ways: zazzled embeds its source files with include_str! and compiles them into an rlib for each script build; zazzled and zazz-worker also link it as an ordinary path dependency for the frame protocol, descriptor passing, JSON and the human command line; and scripts call zazz::serve and test with zazz::test. Not deployed on its own. Its modules are drawn in the source folder's diagram.",
+  "sources": [
+    { "path": "macos/rust/zazz-sdk/Cargo.toml", "symbol": "[lib]" },
+    { "path": "macos/rust/zazzled/Cargo.toml", "symbol": "zazz-sdk" },
+    { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "zazz-sdk" },
+    { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "FILES" },
+    { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "zazz::{fdpass, proto}" },
+    { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "zazz::{fdpass, proto, Error, Json}" }
+  ],
+  "components": [
+    {
+      "id": "zazz-sdk",
+      "name": "zazz-sdk crate",
+      "responsibility": "Builds the zazz library with no dependencies, on purpose, so zazzled can compile it with plain rustc for every script.",
+      "folder": "macos/rust/zazz-sdk"
+    },
+    {
+      "id": "src",
+      "name": "zazz SDK source",
+      "responsibility": "Handlers and serve, the per-call context, the launcher protocol and its native and WASM backends, HTTP, JSON, errors, the human command line, output rendering and the zazz::test library.",
+      "folder": "macos/rust/zazz-sdk/src",
+      "diagram": "macos/rust/zazz-sdk/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "The daemon that builds, tests and calls zazz scripts.",
+      "folder": "macos/rust/zazzled",
+      "diagram": "macos/rust/zazzled/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker",
+      "responsibility": "The WASM host that runs a script's module, one fresh instance per call.",
+      "folder": "macos/rust/zazz-worker",
+      "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
+    },
+    {
+      "id": "scripts",
+      "name": "zazz scripts",
+      "responsibility": "Script authors' Rust sources, written with std and the zazz SDK and shipped inside a .zazz; not part of this repository.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-sdk", "to": "src", "kind": "contains", "description": "src/lib.rs is the [lib] target zazz." },
+    { "from": "zazzled", "to": "src", "kind": "depends-on", "description": "Embeds every source file (src/zazz/sdk.rs FILES, include_str!) and compiles them per toolchain and target, the SDK's hash being part of each build key; links the crate for proto, fdpass, cliargs, render, http::host_matches and Json." },
+    { "from": "zazz-worker", "to": "src", "kind": "depends-on", "description": "Path dependency: proto and fdpass for the control socket, http for the guest's requests and the allowlist, Json and Error." },
+    { "from": "scripts", "to": "src", "kind": "depends-on", "description": "Register Handlers and call zazz::serve; tests use zazz::test." }
+  ]
+}

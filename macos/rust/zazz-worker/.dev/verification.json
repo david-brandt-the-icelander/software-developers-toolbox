@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazz-worker verification",
+  "folder": "macos/rust/zazz-worker",
+  "entities": [
+    {
+      "id": "tests-and-coverage",
+      "title": "Unit tests and the branch-coverage gate",
+      "summary": "zazz-worker's unit tests run with the workspace's; CI fails unless its branch coverage, test code excluded, reaches 95%. zazzled's zazz tests also use the release build of zazz-worker.",
+      "subject": [
+        { "path": "macos/rust/zazz-worker/.dev/folder.json", "entityId": "folder" }
+      ],
+      "criteria": [
+        "Every unit test in the crate passes; the tests build their WebAssembly from hand-written text (the wat dev-dependency).",
+        "Branch coverage of the crate, test code excluded, is at least 95%.",
+        "The crate builds with its own rust-version; the rest of the workspace is checked on Rust 1.85 without it."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "command": "cargo test -p zazz-worker (in macos/rust)",
+          "description": "CI runs it within `cargo test --workspace` on macOS and Linux, after `cargo build --release -p zazz-worker`, which zazzled's zazz tests need."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "zazz crates branch coverage (at least 95%)",
+          "command": "sh zazzled/coverage.sh 95 zazz-worker (in macos/rust; nightly with cargo-llvm-cov and the wasm32-wasip1 target)",
+          "description": "Reads the branch percentage from cargo llvm-cov's summary and fails below 95. Test modules are marked coverage(off)."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "msrv",
+          "description": "Checks the workspace on Rust 1.85 with zazz-worker excluded, since wasmtime needs a newer Rust."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": ".github/workflows/ci.yml", "symbol": "test" },
+        { "path": ".github/workflows/ci.yml", "symbol": "coverage" },
+        { "path": "macos/rust/zazzled/coverage.sh", "symbol": "crate" },
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "tests" },
+        { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "[dev-dependencies]" }
+      ]
+    }
+  ]
+}

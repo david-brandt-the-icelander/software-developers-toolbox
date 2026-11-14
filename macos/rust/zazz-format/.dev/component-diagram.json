@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-format component diagram",
+  "folder": "macos/rust/zazz-format",
+  "description": "The zazz-format library crate (lib zazz_format): the .zazz archive, its manifest, packing, the signature envelope and script ids. It builds no binary and is not deployed on its own; zazzled is the only crate of the workspace that depends on it. Its modules are drawn in the source folder's diagram.",
+  "sources": [
+    { "path": "macos/rust/zazz-format/Cargo.toml", "symbol": "[lib]" },
+    { "path": "macos/rust/zazzled/Cargo.toml", "symbol": "zazz-format" },
+    { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "zazz_format::script_id" },
+    { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "zazz_format::sig" }
+  ],
+  "components": [
+    {
+      "id": "zazz-format",
+      "name": "zazz-format crate",
+      "responsibility": "Builds the zazz_format library: a member of the macos/rust workspace whose dependencies are blake3 (ids and digests), miniz_oxide (deflate) and serde_json (manifests and envelopes).",
+      "folder": "macos/rust/zazz-format"
+    },
+    {
+      "id": "src",
+      "name": "zazz-format source",
+      "responsibility": "The strict ZIP reader and deterministic writer, manifest parsing, directory packing, the zazz.sig envelope and script ids.",
+      "folder": "macos/rust/zazz-format/src",
+      "diagram": "macos/rust/zazz-format/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled",
+      "responsibility": "The daemon whose zazz commands pack, test, add, sign and call scripts.",
+      "folder": "macos/rust/zazzled",
+      "diagram": "macos/rust/zazzled/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-format", "to": "src", "kind": "contains", "description": "src/lib.rs is the [lib] target zazz_format." },
+    { "from": "zazzled", "to": "src", "kind": "depends-on", "description": "Path dependency: its zazz module reads archives (zip::read with Limits), parses manifests (Manifest::of, Manifest::parse), packs directories (pack::pack_dir), reads and writes zazz.sig (sig::Envelope, sig::digest) and names scripts (script_id)." }
+  ]
+}

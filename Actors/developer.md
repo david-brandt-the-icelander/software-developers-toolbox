@@ -1,7 +1,7 @@
 # Developer
 
 **Kind:** person in a role
-**Evidence:** `README.md` (`Tools (macOS, Rust)`: install with `brew install zazzcat/z/zazzle`, the release tarball or `cargo build`), `macos/rust/fix-network/src/main.rs`, `macos/rust/free-disk-space/src/main.rs`, `macos/rust/agent-fs/src/main.rs` (the command lines a person runs in a terminal), `macos/c/zazzle/src/zazzle_core.h` (`is_tool`: `zazzle free-disk-space` and `zazzle fix-network` start those tools), `macos/rust/zazzled/src/launchd.rs` (`zazzled install` for the user's LaunchAgent), `macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs` and `Report.cs` (`zazzle-csharp-indexer init` and `report`, run in a project), `agents/skills/fix-network/SKILL.md` and `agents/skills/free-disk-space/SKILL.md` (`Rules`: privileged steps use the user's own terminal `sudo`; apply only what the user authorized)
+**Evidence:** `README.md` (`Tools (macOS, Rust)`: install with `brew install zazzcat/z/zazzle`, the release tarball or `cargo build`), `macos/rust/fix-network/src/main.rs`, `macos/rust/free-disk-space/src/main.rs`, `macos/rust/agent-fs/src/main.rs` (the command lines a person runs in a terminal), `macos/c/zazzle/src/zazzle_core.h` (`is_tool`: `zazzle free-disk-space` and `zazzle fix-network` start those tools), `macos/rust/zazzled/src/launchd.rs` (`zazzled install` for the user's LaunchAgent), `macos/rust/zazzled/src/zazz/install.rs` (`zazz install` and the shims it makes), `macos/dotnet/zazzle-csharp-indexer/src/Cli/Init.cs` and `Report.cs` (`zazzle-csharp-indexer init` and `report`, run in a project), `agents/skills/fix-network/SKILL.md` and `agents/skills/free-disk-space/SKILL.md` (`Rules`: privileged steps use the user's own terminal `sudo`; apply only what the user authorized)
 
 ## What they want from the system
 
@@ -12,6 +12,7 @@
 - To read, search, list or outline files as JSON from a shell or a script: [agent-fs use cases](../macos/rust/agent-fs/src/.dev/use-case.json), `one-shot-request`.
 - To have the zazzled daemon there whenever something connects, without starting it themselves: [zazzled use cases](../macos/rust/zazzled/src/.dev/use-case.json), `install-launch-agent`.
 - To have their coding agent use zazzle for files and for C# structure, which zazzle gets from zazzle-csharp-indexer, in a project, and see from real use what to improve: [indexer CLI use cases](../macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json), `wire-into-project`, `review-usage`.
+- To install a zazz script as an ordinary command, with flags and plain output instead of JSON: [zazz use cases](../macos/rust/zazzled/src/zazz/.dev/use-case.json), `install-and-run-a-script`.
 
 ## How they reach it
 

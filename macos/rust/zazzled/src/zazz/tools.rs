@@ -1,0 +1,213 @@
+// Finds the tools zazz needs at fixed places (never PATH, which launchd leaves empty): rustc and zazz-worker.
+use super::proc;
+use super::sandbox::{self, Policy};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
+
+pub const WASM_TARGET: &str = "wasm32-wasip1";
+const PROBE: Duration = Duration::from_secs(30);
+
+// Returns the first existing file among candidates.
+fn first_file(candidates: Vec<Option<PathBuf>>) -> Option<PathBuf> {
+    candidates.into_iter().flatten().find(|p| p.is_file())
+}
+
+// Finds rustc: $ZAZZ_RUSTC, $CARGO_HOME/bin/rustc, ~/.cargo/bin/rustc, the Homebrew and /usr/local locations, then PATH.
+pub fn rustc() -> Option<PathBuf> {
+    rustc_from(
+        std::env::var_os("ZAZZ_RUSTC"),
+        std::env::var_os("CARGO_HOME"),
+        std::env::var_os("HOME"),
+        std::env::var_os("PATH"),
+    )
+}
+
+// Finds rustc from explicit environment values; PATH comes last because launchd leaves it nearly empty.
+pub fn rustc_from(
+    over: Option<OsString>,
+    cargo_home: Option<OsString>,
+    home: Option<OsString>,
+    path: Option<OsString>,
+) -> Option<PathBuf> {
+    let mut candidates = vec![
+        over.map(PathBuf::from),
+        cargo_home.map(|c| PathBuf::from(c).join("bin/rustc")),
+        home.map(|h| PathBuf::from(h).join(".cargo/bin/rustc")),
+        Some("/opt/homebrew/bin/rustc".into()),
+        Some("/usr/local/bin/rustc".into()),
+    ];
+    candidates.extend(path.iter().flat_map(std::env::split_paths).map(|d| Some(d.join("rustc"))));
+    first_file(candidates)
+}
+
+// Finds zazz-worker: $ZAZZ_WORKER, else beside the running zazzled.
+pub fn worker() -> Option<PathBuf> {
+    worker_from(std::env::var_os("ZAZZ_WORKER"))
+}
+
+// Finds zazz-worker from an explicit override.
+pub fn worker_from(over: Option<OsString>) -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("zazz-worker")));
+    first_file(vec![over.map(PathBuf::from), beside])
+}
+
+// The environment rustc runs with: only what rustup needs to find its toolchains.
+pub fn rustc_env(cmd: &mut Command) -> &mut Command {
+    cmd.env_clear();
+    for k in ["HOME", "RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN", "PATH"] {
+        if let Some(v) = std::env::var_os(k) {
+            cmd.env(k, v);
+        }
+    }
+    cmd
+}
+
+// Returns `rustc -vV`, which identifies the toolchain in build keys.
+pub fn rustc_version(rustc: &Path) -> Result<String, String> {
+    let r = proc::run(rustc_env(Command::new(rustc).arg("-vV")), None, PROBE)?;
+    if !r.ok() {
+        return Err(format!("{} -vV failed: {}", rustc.display(), r.err_text()));
+    }
+    Ok(String::from_utf8_lossy(&r.stdout).trim().to_string())
+}
+
+// Returns the toolchain's sysroot.
+pub fn sysroot(rustc: &Path) -> Option<PathBuf> {
+    let r = proc::run(rustc_env(Command::new(rustc).args(["--print", "sysroot"])), None, PROBE).ok()?;
+    r.ok().then(|| PathBuf::from(String::from_utf8_lossy(&r.stdout).trim()))
+}
+
+// True when the toolchain has the standard library for a target.
+pub fn has_target(rustc: &Path, target: &str) -> bool {
+    sysroot(rustc).is_some_and(|s| s.join("lib/rustlib").join(target).join("lib").is_dir())
+}
+
+// A home-relative directory from an environment variable, else under HOME.
+fn home_dir(var: &str, rel: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rel)))
+}
+
+// Native builds link with the system C toolchain: let rustc run it and read its files, including the active Xcode (xcode-select's link, resolved by the sandbox profile, or $DEVELOPER_DIR).
+fn with_linker(p: Policy) -> Policy {
+    let toolchain = [
+        "/usr/bin",
+        "/bin",
+        "/usr/libexec",
+        "/usr/lib",
+        "/usr/local/bin",
+        "/Library/Developer/CommandLineTools",
+        "/Applications/Xcode.app",
+        "/private/var/db/xcode_select_link",
+    ];
+    let developer = std::env::var_os("DEVELOPER_DIR").map(PathBuf::from);
+    let reads = [
+        "/usr/include",
+        "/usr/local/lib",
+        "/etc",
+        "/private/var/db/xcode_select_link",
+        "/private/var/select",
+    ];
+    p.executing(toolchain.iter().map(PathBuf::from).chain(developer.clone()))
+        .reading(reads.iter().chain(toolchain.iter()).map(PathBuf::from).chain(developer))
+}
+
+// The host target triple from `rustc -vV`.
+pub fn host_triple(version: &str) -> Option<String> {
+    version.lines().find_map(|l| l.strip_prefix("host: ")).map(str::to_string)
+}
+
+// The toolchain's own rustc (never a rustup proxy) inside the sandbox: it reads the toolchain, rustup's files and `reads`, executes the toolchain (and the linker for native builds), writes only `build`.
+pub fn rustc_command(
+    rustc: &Path,
+    build: &Path,
+    reads: &[PathBuf],
+    args: &[OsString],
+    native: bool,
+) -> Result<Command, String> {
+    let sysroot = sysroot(rustc).ok_or_else(|| format!("{} --print sysroot failed", rustc.display()))?;
+    let (rustup, cargo) = (home_dir("RUSTUP_HOME", ".rustup"), home_dir("CARGO_HOME", ".cargo"));
+    let program = first_file(vec![Some(sysroot.join("bin/rustc"))]).unwrap_or(rustc.to_path_buf());
+    let policy = Policy::for_program(&program)
+        .reading(
+            rustup.iter().chain(cargo.iter()).cloned().chain(reads.iter().cloned()).chain([sysroot.clone()]),
+        )
+        .executing([sysroot].into_iter().chain(cargo.map(|c| c.join("bin"))))
+        .writing([build.to_path_buf()]);
+    let (policy, args, sdk) =
+        if native { apple_link(with_linker(policy), args) } else { (policy, args.to_vec(), None) };
+    let mut cmd = sandbox::command(&program, &args, &policy)?;
+    rustc_env(&mut cmd).current_dir(build).env("TMPDIR", build);
+    cmd.envs(sdk.map(|s| ("SDKROOT", s)));
+    Ok(cmd)
+}
+
+// On macOS, finds clang and the SDK with xcrun outside the sandbox and hands them to rustc, so nothing runs xcrun inside it.
+#[cfg(target_os = "macos")]
+fn apple_link(p: Policy, args: &[OsString]) -> (Policy, Vec<OsString>, Option<PathBuf>) {
+    let find = |what: &[&str]| -> Option<PathBuf> {
+        let r = proc::run(Command::new("/usr/bin/xcrun").args(what), None, PROBE).ok()?;
+        let s = String::from_utf8_lossy(&r.stdout).trim().to_string();
+        (r.ok() && !s.is_empty()).then(|| PathBuf::from(s))
+    };
+    let (Some(clang), Some(sdk)) = (find(&["--find", "clang"]), find(&["--show-sdk-path"])) else {
+        return (p, args.to_vec(), None);
+    };
+    let toolchain = clang.ancestors().nth(3).unwrap_or(clang.as_path()).to_path_buf();
+    let mut args = args.to_vec();
+    args.push(format!("-Clinker={}", clang.display()).into());
+    let p = p.executing([toolchain.clone()]).reading([toolchain, sdk.clone()]);
+    (p, args, Some(sdk))
+}
+
+// Elsewhere the linker is the system cc, already allowed by with_linker.
+#[cfg(not(target_os = "macos"))]
+fn apple_link(p: Policy, args: &[OsString]) -> (Policy, Vec<OsString>, Option<PathBuf>) {
+    (p, args.to_vec(), None)
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    // Checks the overrides win and missing files are skipped.
+    #[test]
+    fn test_overrides() {
+        let t = TempDir::new();
+        let fake = t.write("rustc", b"");
+        assert_eq!(rustc_from(Some(fake.clone().into()), None, None, None), Some(fake.clone()));
+        let cargo = t.write("cargo/bin/rustc", b"");
+        assert_eq!(rustc_from(None, Some(t.path().join("cargo").into()), None, None), Some(cargo));
+        assert_eq!(worker_from(Some(fake.clone().into())), Some(fake));
+        assert_eq!(worker_from(Some(t.path().join("missing").into())), None);
+        assert_eq!(first_file(vec![None, Some(t.path().join("nope"))]), None);
+        let on_path = t.write("p/rustc", b"");
+        let path = std::env::join_paths([t.path().join("none"), t.path().join("p")]).expect("join");
+        let system =
+            ["/opt/homebrew/bin/rustc", "/usr/local/bin/rustc"].iter().any(|p| Path::new(p).is_file());
+        assert!(system || rustc_from(None, None, None, Some(path)) == Some(on_path));
+        let env = ["CARGO_HOME", "HOME", "PATH"].map(|k| (k, std::env::var_os(k)));
+        assert!(rustc().is_some(), "tests need a rustc; environment: {env:?}");
+    }
+
+    // Checks version and target probes against the real toolchain, and failures on a fake one.
+    #[test]
+    fn test_probes() {
+        let rc = rustc().expect("a rustc for tests");
+        assert!(rustc_version(&rc).expect("version").contains("host: "));
+        assert!(has_target(&rc, WASM_TARGET), "install it: rustup target add {WASM_TARGET}");
+        assert!(!has_target(&rc, "no-such-target"));
+        let t = TempDir::new();
+        let bad = t.write("rustc", b"#!/bin/sh\necho broken >&2\nexit 1\n");
+        std::fs::set_permissions(&bad, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        assert!(rustc_version(&bad).unwrap_err().contains("broken"));
+        assert!(!has_target(&bad, WASM_TARGET));
+        assert!(rustc_version(&t.path().join("missing")).is_err());
+        assert!(!has_target(&t.path().join("missing"), WASM_TARGET));
+    }
+}

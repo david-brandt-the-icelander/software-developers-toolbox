@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazz-worker operations",
+  "folder": "macos/rust/zazz-worker/src",
+  "description": "The subcommands zazzled runs. `zazz-worker version` only prints the version and is left out. Every failure is one line on stderr, `zazz-worker: ...`, with exit status 1; inside serve mode a failed call is a result frame with an error instead.",
+  "sources": [
+    { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "dispatch" },
+    { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "USAGE" },
+    { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "main" }
+  ],
+  "entities": [
+    {
+      "id": "compile",
+      "name": "compile",
+      "description": "Checks and precompiles a WebAssembly module for this engine.",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "compile_cmd" },
+        { "path": "macos/rust/zazz-worker/src/engine.rs", "symbol": "compile" },
+        { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "aot" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "compile_cmd" },
+      "action": "query",
+      "transport": "zazz-worker compile < module.wasm > module.cwasm; run by zazzled's compile::aot inside the OS sandbox with an empty environment",
+      "authorization": "None checked: whoever can run the binary; zazzled runs it under a sandbox that only lets it execute itself and read system libraries.",
+      "result": "The serialised precompiled module on stdout, loadable only by an engine with the same configuration (serve and test in the same binary).",
+      "failures": [
+        "Bytes that are not valid WebAssembly: `invalid WebAssembly: ...`.",
+        "Imports outside wasi_snapshot_preview1 and zazz_host's request_len, take, send, http and cancelled: `the module imports functions zazz does not provide: ...`.",
+        "No _start export: `the module is not a WASI command (no _start export)`."
+      ]
+    },
+    {
+      "id": "serve",
+      "name": "serve",
+      "description": "Runs calls of one script, each in a fresh instance, over a control socket.",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "main" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "serve_on" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "result_of" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "spawn" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "main" },
+      "action": "command",
+      "transport": "zazz-worker serve, with the control socket on fd 3 and the precompiled module on fd 4; frames are a u32 little-endian length and JSON",
+      "authorization": "None checked: it trusts its parent and the descriptors it was given. What a guest may touch is what the hello frame grants (preopens, network policy), enforced by WASI and the host's policy check.",
+      "result": "For hello, the guest's ready frame; for each call, the last result frame the guest sent (progress frames are relayed as they come), or an error result: failed (exit without a result), timeout, out_of_memory or script_crashed. shutdown or end of stream ends the process.",
+      "failures": [
+        "A call before hello: an error result with code protocol, `send hello first`.",
+        "fd 4 unreadable or not a module from compile: `reading the module from fd 4: ...` or `loading the compiled module: ...`, exit 1.",
+        "A broken control channel: `control channel: ...`, exit 1."
+      ]
+    },
+    {
+      "id": "test",
+      "name": "test",
+      "description": "Runs a script's test module and reports passes and failures as JSON.",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "test_cmd" },
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "test_opts" },
+        { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "run_tests" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "run_tests" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "test_cmd" },
+      "action": "command",
+      "transport": "zazz-worker test MODULE.wasm --cwd DIR [--libtest] [--snapshots DIR] [--update] [--http-replay FILE] [--timeout-ms N] [--memory-mb N]; run by zazzled's pipeline inside the OS sandbox",
+      "authorization": "None checked; the test instance sees only DIR (as `.`, writable) and the snapshot directory (as /snapshots, writable only with --update), and its network is the replay file.",
+      "result": "One JSON line {passed, ignored, failed: [{name, message, file, line}], duration_ms}, at most 20 failures, each message capped at 1500 characters. With --libtest every listed test runs in its own instance within the overall time limit; otherwise a test-report message from the module wins, else exit status 0 is one pass.",
+      "failures": [
+        "Missing --cwd, the module path, an option's value, or an unknown option: the usage line or `--cwd is required`, `... needs a value`, `unknown option ...`.",
+        "A replay file that is unreadable or not a list of {request, response}.",
+        "A module that does not compile (as for compile).",
+        "With --libtest, listing the tests failing: `listing tests failed: ...`."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/operation.json",
+      "relationship": "The zazz commands that run these: add and test run compile and test; call and run use serve workers."
+    },
+    {
+      "kind": "deployment",
+      "folder": "macos/rust/zazz-worker",
+      "path": "macos/rust/zazz-worker/.dev/deployment-diagram.json",
+      "relationship": "The processes each operation runs as."
+    }
+  ]
+}

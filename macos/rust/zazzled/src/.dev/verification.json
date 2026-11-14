@@ -18,6 +18,7 @@
         "Requests round-trip through encode and decode, and oversize frames are refused.",
         "In descriptor mode output goes to the passed stdout, errors to the passed stderr, and the working directory comes from the descriptor.",
         "In relay mode the status and text come back on the socket.",
+        "A raw output goes to the passed stdout exactly as it is, with its status; script calls get a thread of their own and still answer.",
         "Bad, truncated, split and over-described requests do not stop the server.",
         "A peer of another uid is refused, and the socket is owner-only."
       ],
@@ -32,7 +33,10 @@
         { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_partial_request_is_reassembled", "command": "cargo test -p zazzled (in macos/rust)" },
         { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_handle_rejects_other_uid", "command": "cargo test -p zazzled (in macos/rust)" },
         { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_socket_permissions", "command": "cargo test -p zazzled (in macos/rust)" },
-        { "type": "automated", "path": "macos/c/zazzle/test/smoke.sh", "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)", "description": "The real invoker against a real daemon." }
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_respond_raw", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_long_running_requests_get_a_thread", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/server.rs", "symbol": "test_long_running_request_error", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/smoke.sh", "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)", "description": "The real invoker against a real daemon, also run as `zazz` and as an unknown script's shim." }
       ]
     },
     {
@@ -103,7 +107,8 @@
       "criteria": [
         "initialize agrees a known protocol version or the newest.",
         "Each tool's arguments map to the right command line, including read's symbol and source and read-again's id, full, lines and budget, and wrong types are tool errors.",
-        "Every tool has a schema object with its required arguments.",
+        "Each zazz tool's arguments map to the right zazz command line.",
+        "Every tool, the twenty with the zazz tools, has a schema object with its required arguments.",
         "A nonzero status or an unreachable daemon is a tool result with isError.",
         "Notifications get no answer and a line that is not JSON gets a parse error."
       ],
@@ -118,7 +123,8 @@
         { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_all_tool_schemas", "command": "cargo test -p zazzled (in macos/rust)" },
         { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_call_status_and_backend_errors", "command": "cargo test -p zazzled (in macos/rust)" },
         { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_notifications_and_parse_errors", "command": "cargo test -p zazzled (in macos/rust)" },
-        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_daemon_backend_live", "command": "cargo test -p zazzled (in macos/rust)" }
+        { "type": "automated", "path": "macos/rust/zazzled/src/mcp.rs", "symbol": "test_daemon_backend_live", "command": "cargo test -p zazzled (in macos/rust)" },
+        { "type": "automated", "path": "macos/rust/zazzled/src/zazz/mcptools.rs", "symbol": "test_mappings", "command": "cargo test -p zazzled (in macos/rust)" }
       ]
     },
     {

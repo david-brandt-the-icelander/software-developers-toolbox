@@ -1,0 +1,94 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-worker source component diagram",
+  "folder": "macos/rust/zazz-worker/src",
+  "description": "One module per job behind main.rs's dispatch. serve.rs and testrun.rs both run instances through run.rs, which uses engine.rs's shared engine and net.rs's policy check; serve uses real HTTPS, test mode a replay file.",
+  "sources": [
+    { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "dispatch" },
+    { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "call" },
+    { "path": "macos/rust/zazz-worker/src/testrun.rs", "symbol": "run_once" },
+    { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "run" }
+  ],
+  "components": [
+    {
+      "id": "src",
+      "name": "zazz-worker source",
+      "responsibility": "Compiles, tests and runs zazz WebAssembly scripts for zazzled.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "main",
+      "name": "Entry (main.rs)",
+      "responsibility": "Dispatches compile, serve, test and version; parses the test options and the replay file; prints errors as `zazz-worker: ...` with exit status 1.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine (engine.rs)",
+      "responsibility": "One wasmtime engine (epoch interruption, Cranelift optimised for speed) for compiling and loading, so precompiled modules load; refuses imports outside wasi_snapshot_preview1 and the five zazz_host functions and modules without _start; advances the epoch every 10 ms.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "run",
+      "name": "Instances (run.rs)",
+      "responsibility": "Runs one fresh instance: WASI preview 1 with the preopens, arguments, environment and streams, the zazz_host imports, a memory limit and an epoch deadline; classifies the ending as exit, timeout, out of memory or crash.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "serve",
+      "name": "Serve mode (serve.rs)",
+      "responsibility": "Loads the module from fd 4, reads frames and descriptors from fd 3, turns the hello into the per-worker setup, runs each call in a fresh instance and writes its result (or a structured error) back; relays progress at once; reports cancellation when another frame is waiting.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "testrun",
+      "name": "Test mode (testrun.rs)",
+      "responsibility": "Runs a test module with the scratch directory as `.`, optional snapshots, the replay file as the network and captured output: each libtest test in its own instance, or a test command whose test-report message (else exit status) decides; at most 20 failures with capped messages.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "net",
+      "name": "Network (net.rs)",
+      "responsibility": "The Backend trait: Https (ureq, no redirects, a time limit, 16 MiB bodies) and Replay (recorded method and URL pairs, anything else refused); send checks the policy first.",
+      "folder": "macos/rust/zazz-worker/src"
+    },
+    {
+      "id": "zazz-sdk",
+      "name": "zazz-sdk (lib zazz)",
+      "responsibility": "proto, fdpass, Json, Error and http, shared with zazzled and the scripts.",
+      "folder": "macos/rust/zazz-sdk",
+      "diagram": "macos/rust/zazz-sdk/.dev/component-diagram.json"
+    },
+    {
+      "id": "wasmtime",
+      "name": "wasmtime and wasmtime-wasi",
+      "responsibility": "The WebAssembly runtime and WASI preview 1.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "src", "to": "main", "kind": "contains", "description": "The binary's entry." },
+    { "from": "src", "to": "engine", "kind": "contains", "description": "The engine." },
+    { "from": "src", "to": "run", "kind": "contains", "description": "Running an instance." },
+    { "from": "src", "to": "serve", "kind": "contains", "description": "Serve mode." },
+    { "from": "src", "to": "testrun", "kind": "contains", "description": "Test mode." },
+    { "from": "src", "to": "net", "kind": "contains", "description": "Network backends." },
+    { "from": "main", "to": "engine", "kind": "depends-on", "description": "compile for `compile` and `test`; load for `test`." },
+    { "from": "main", "to": "serve", "kind": "depends-on", "description": "serve::main for `serve`." },
+    { "from": "main", "to": "testrun", "kind": "depends-on", "description": "run_tests with the parsed Opts." },
+    { "from": "main", "to": "net", "kind": "depends-on", "description": "Replay::parse for --http-replay." },
+    { "from": "serve", "to": "run", "kind": "depends-on", "description": "linker, run and the Setup, Io and Hooks it builds per call." },
+    { "from": "serve", "to": "engine", "kind": "depends-on", "description": "load for the module read from fd 4." },
+    { "from": "serve", "to": "net", "kind": "depends-on", "description": "Https as the backend." },
+    { "from": "testrun", "to": "run", "kind": "depends-on", "description": "run for each test instance." },
+    { "from": "testrun", "to": "net", "kind": "depends-on", "description": "Replay as the backend." },
+    { "from": "run", "to": "engine", "kind": "depends-on", "description": "The engine, HOST_MODULE, the ticker and ticks for the deadline." },
+    { "from": "run", "to": "net", "kind": "depends-on", "description": "send for zazz_host.http." },
+    { "from": "serve", "to": "zazz-sdk", "kind": "depends-on", "description": "fdpass::recv_with_fds and pending, proto frames and result_err, Error." },
+    { "from": "net", "to": "zazz-sdk", "kind": "depends-on", "description": "http::check, Request and Response." },
+    { "from": "run", "to": "zazz-sdk", "kind": "depends-on", "description": "Request::decode, proto::kind and Json for messages the guest sends." },
+    { "from": "engine", "to": "wasmtime", "kind": "depends-on", "description": "Config, Engine, Module::new, serialize and deserialize." },
+    { "from": "run", "to": "wasmtime", "kind": "depends-on", "description": "Linker, Store, StoreLimits and WASI preview 1 contexts." }
+  ]
+}

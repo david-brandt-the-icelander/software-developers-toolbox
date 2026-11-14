@@ -1,0 +1,231 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz module component diagram",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "The zazz subcommands behind one router. add and test share the build-and-test pipeline (compile.rs, sdk.rs) and zazz-worker; add publishes into the registry after checking the signature and taking a trust verdict. call, run and installed shims run a registered script in a warm worker from the pool, with the network and paths the verdict grants. Builds and test runs go through the OS sandbox; rustc and zazz-worker are found at fixed places.",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/zazz/mod.rs", "symbol": "run" },
+    { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+    { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "build_and_test" },
+    { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" },
+    { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "Pool::acquire" }
+  ],
+  "components": [
+    {
+      "id": "zazz",
+      "name": "zazz module",
+      "responsibility": "Runs one `zazz` command line for an agent or a person.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "router",
+      "name": "Router and state (mod.rs)",
+      "responsibility": "Routes the subcommand (with `exec-name` for shims), answers help, turns JSON results into replies; Zazz holds the registry root, worker, shim, invoker, trust and keys locations and the pool; output_path and write_new confine and write output files.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "authoring",
+      "name": "new, doctor and pack (setup.rs, pack.rs)",
+      "responsibility": "A script template with a manifest, src/main.rs and tests/basic.rs; a check of rustc, the wasm32-wasip1 target, zazz-worker, the sandbox, the registry and the shim directory; a deterministic .zazz from a directory with its id.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "add",
+      "name": "add (add.rs)",
+      "responsibility": "Reads the file once (no symlinks, regular, within the size limit), ids it by BLAKE3, answers `cached` when registered, else under the id's lock checks the signature, takes a verdict, builds and tests, builds natively when trusted for it, publishes the modules and metadata, and fetches the OpenAPI document when declared.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "testcmd",
+      "name": "test (testcmd.rs)",
+      "responsibility": "Packs a directory (or reads a .zazz) and runs the build-and-test pipeline without registering anything; --update rewrites a directory's snapshots.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "pipeline",
+      "name": "Build pipeline (pipeline.rs, compile.rs, sdk.rs)",
+      "responsibility": "Extracts the archive into scratch space, compiles Rust scripts and their tests to wasm32-wasip1 against the embedded SDK (built once per toolchain into an rlib) or takes a prebuilt module, condenses rustc's diagnostics, AOT-compiles with `zazz-worker compile` and runs the tests with `zazz-worker test` in the sandbox; refuses native-bin.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "native",
+      "name": "Native builds (native.rs)",
+      "responsibility": "For scripts whose signer is trusted for native code: a host build and its tests (libtest output parsed) in the sandbox, and the program and sandbox policy a native worker runs with.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "registry",
+      "name": "Registry (registry.rs)",
+      "responsibility": "The store under $ZAZZ_STORE or ~/.zazzle/v1/zazz (0700): wasm, bin, meta, names, locks, tmp and sdk; atomic writes, per-id locks, id, prefix and name resolution, scratch directories and removal.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "call",
+      "name": "call (call.rs)",
+      "responsibility": "Parses `ID [JSON|-]` or `ID OP [--params] [--body]`, refreshes a stale verdict in the background, builds the worker spec (preopens from the manifest narrowed by the grants, network, limits; native or WASM), sends the call with the caller's streams or capture pipes, relays progress, cancels when the caller hangs up and enforces a watchdog.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "pool",
+      "name": "Worker pool (pool.rs)",
+      "responsibility": "Spawns a worker with the control socket on fd 3 and the module on fd 4 and waits for ready; keeps at most 2 idle per key and 32 in all, retires workers after 1000 calls, an unhealthy call or 60 s idle (a reaper every 5 s).",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "humans",
+      "name": "Human commands (human.rs, install.rs)",
+      "responsibility": "`zazz run` and shims: argv parsed with the manifest's cli spec (or passed as argv), output rendered as text or a table on a terminal, `--json` for raw JSON, exit statuses; install (adding a file first if needed), uninstall and list of names and ~/.zazzle/bin shims linked to the invoker.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "manage",
+      "name": "ls, describe and rm (manage.rs)",
+      "responsibility": "Lists registered scripts newest first, describes one (runtime, messages, sandbox, operations, tests, signer) and removes one with its installed names.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "signing",
+      "name": "Signing (signing.rs, crypto.rs)",
+      "responsibility": "keygen (a P-256 key, 0600, and a self-signed authority certificate with the zazz signing EKU and grants), sign (a copy of the archive with zazz.sig), trust ls|add|rm, and signature and certificate-chain checks.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "trust",
+      "name": "Trust (trust.rs)",
+      "responsibility": "The root-owned global policy, the root-owned anchors in /etc/zazzle/trust.d, the Keychain on macOS, verdicts with grants valid for trust_ttl, grant intersection and what a verdict allows after the policy.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "sandbox",
+      "name": "OS sandbox (sandbox.rs)",
+      "responsibility": "Policy (read, write, exec, network) turned into a sandbox-exec profile with -D parameters on macOS, or Landlock rules and a seccomp socket filter applied in the child on Linux; available() says whether scripts may run.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "tools",
+      "name": "Tools and subprocesses (tools.rs, proc.rs)",
+      "responsibility": "Finds rustc at fixed places before PATH (which launchd leaves nearly empty) and zazz-worker beside zazzled or at $ZAZZ_WORKER; builds the sandboxed rustc command with a minimal environment and, on macOS, the linker found by xcrun; runs a subprocess with an argument list, input, captured output and a hard timeout.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "mcptools",
+      "name": "MCP tools (mcptools.rs)",
+      "responsibility": "zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, each mapped to a zazz command line.",
+      "folder": "macos/rust/zazzled/src/zazz"
+    },
+    {
+      "id": "zazzled-src",
+      "name": "zazzled library",
+      "responsibility": "The command layer (Ctx, Output, Caller), the socket server and the MCP front end that route `zazz` commands here.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-worker",
+      "name": "zazz-worker",
+      "responsibility": "The wasmtime host: compile, test and serve.",
+      "folder": "macos/rust/zazz-worker",
+      "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-format",
+      "name": "zazz-format",
+      "responsibility": "The .zazz archive, manifest, packing, signature envelope and script ids.",
+      "folder": "macos/rust/zazz-format",
+      "diagram": "macos/rust/zazz-format/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-sdk",
+      "name": "zazz-sdk (lib zazz)",
+      "responsibility": "Frames, descriptor passing, JSON, the human CLI parser and rendering; its sources are also embedded and compiled into scripts.",
+      "folder": "macos/rust/zazz-sdk",
+      "diagram": "macos/rust/zazz-sdk/.dev/component-diagram.json"
+    },
+    {
+      "id": "rustc",
+      "name": "Rust toolchain",
+      "responsibility": "rustc with the wasm32-wasip1 target (and the host target and system linker for native builds), installed by the user.",
+      "external": true
+    },
+    {
+      "id": "os-sandbox",
+      "name": "OS sandbox",
+      "responsibility": "/usr/bin/sandbox-exec on macOS; the kernel's Landlock and seccomp on Linux.",
+      "external": true
+    },
+    {
+      "id": "keychain",
+      "name": "macOS Keychain",
+      "responsibility": "Certificate trust evaluation and trust settings for authorities (security-framework), on macOS only.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "zazz", "to": "router", "kind": "contains", "description": "The entry point, run." },
+    { "from": "zazz", "to": "authoring", "kind": "contains", "description": "Starting and packing scripts." },
+    { "from": "zazz", "to": "add", "kind": "contains", "description": "Registering." },
+    { "from": "zazz", "to": "testcmd", "kind": "contains", "description": "Testing without registering." },
+    { "from": "zazz", "to": "pipeline", "kind": "contains", "description": "Building and testing." },
+    { "from": "zazz", "to": "native", "kind": "contains", "description": "Native builds." },
+    { "from": "zazz", "to": "registry", "kind": "contains", "description": "The store." },
+    { "from": "zazz", "to": "call", "kind": "contains", "description": "Calling." },
+    { "from": "zazz", "to": "pool", "kind": "contains", "description": "Warm workers." },
+    { "from": "zazz", "to": "humans", "kind": "contains", "description": "Commands for people." },
+    { "from": "zazz", "to": "manage", "kind": "contains", "description": "Listing and removing." },
+    { "from": "zazz", "to": "signing", "kind": "contains", "description": "Keys, signatures and certificates." },
+    { "from": "zazz", "to": "trust", "kind": "contains", "description": "Verdicts and policy." },
+    { "from": "zazz", "to": "sandbox", "kind": "contains", "description": "The OS sandbox." },
+    { "from": "zazz", "to": "tools", "kind": "contains", "description": "Tool lookup and subprocesses." },
+    { "from": "zazz", "to": "mcptools", "kind": "contains", "description": "MCP tool definitions." },
+    { "from": "zazzled-src", "to": "router", "kind": "depends-on", "description": "cmd::dispatch sends `zazz ...` here; server.rs runs call, run and exec-name on their own thread with the invoker's streams in Ctx.caller." },
+    { "from": "zazzled-src", "to": "mcptools", "kind": "depends-on", "description": "mcp.rs lists these tools after its own." },
+    { "from": "router", "to": "zazzled-src", "kind": "depends-on", "description": "Ctx and Output from the command layer; util::home_path for default directories." },
+    { "from": "router", "to": "authoring", "kind": "depends-on", "description": "new, doctor and pack." },
+    { "from": "router", "to": "add", "kind": "depends-on", "description": "add." },
+    { "from": "router", "to": "testcmd", "kind": "depends-on", "description": "test." },
+    { "from": "router", "to": "call", "kind": "depends-on", "description": "call." },
+    { "from": "router", "to": "humans", "kind": "depends-on", "description": "run, exec-name, install, uninstall and list." },
+    { "from": "router", "to": "manage", "kind": "depends-on", "description": "ls, describe and rm." },
+    { "from": "router", "to": "signing", "kind": "depends-on", "description": "keygen, sign and trust." },
+    { "from": "add", "to": "pipeline", "kind": "depends-on", "description": "build_and_test." },
+    { "from": "add", "to": "signing", "kind": "depends-on", "description": "check_signature on the archive in memory." },
+    { "from": "add", "to": "trust", "kind": "depends-on", "description": "evaluate the chain; policy for require_tests; effective for native." },
+    { "from": "add", "to": "native", "kind": "depends-on", "description": "build_and_test and write_exe when native is requested and trusted." },
+    { "from": "add", "to": "registry", "kind": "depends-on", "description": "Lock, scratch, purge_tmp and atomic publishing." },
+    { "from": "add", "to": "call", "kind": "depends-on", "description": "execute an openapi message to fetch the document." },
+    { "from": "add", "to": "zazz-format", "kind": "depends-on", "description": "zip::read with the default limits, Manifest::of and script_id." },
+    { "from": "testcmd", "to": "pipeline", "kind": "depends-on", "description": "build_and_test with snapshots." },
+    { "from": "testcmd", "to": "zazz-format", "kind": "depends-on", "description": "pack::pack_dir for a directory." },
+    { "from": "pipeline", "to": "zazz-worker", "kind": "depends-on", "description": "`zazz-worker compile` for AOT and `zazz-worker test` for the tests." },
+    { "from": "pipeline", "to": "rustc", "kind": "depends-on", "description": "Compiles the SDK rlib, the script and its test crate." },
+    { "from": "pipeline", "to": "sandbox", "kind": "depends-on", "description": "Every rustc, compile and test process runs under a Policy." },
+    { "from": "pipeline", "to": "tools", "kind": "depends-on", "description": "rustc lookup, version, target check, sandboxed rustc command and proc::run." },
+    { "from": "pipeline", "to": "registry", "kind": "depends-on", "description": "The SDK build directory under the registry root." },
+    { "from": "pipeline", "to": "zazz-sdk", "kind": "depends-on", "description": "sdk.rs embeds the SDK's source files." },
+    { "from": "native", "to": "pipeline", "kind": "depends-on", "description": "compile::rust_build for the host target and sdk::ensure_rlib." },
+    { "from": "native", "to": "sandbox", "kind": "depends-on", "description": "Runs the native tests under a Policy; builds the native worker's Policy." },
+    { "from": "call", "to": "registry", "kind": "depends-on", "description": "Metadata, module and native binary paths, and a per-script tmp directory." },
+    { "from": "call", "to": "trust", "kind": "depends-on", "description": "effective, intersect and paths_within for the grants; evaluate in the background refresh." },
+    { "from": "call", "to": "native", "kind": "depends-on", "description": "worker, when the script has a native binary and native is allowed." },
+    { "from": "call", "to": "sandbox", "kind": "depends-on", "description": "available() before a WASM worker; a Policy in the spec." },
+    { "from": "call", "to": "pool", "kind": "depends-on", "description": "acquire, release and kill." },
+    { "from": "call", "to": "zazz-sdk", "kind": "depends-on", "description": "fdpass::send_with_fds and proto frames." },
+    { "from": "pool", "to": "zazz-worker", "kind": "depends-on", "description": "Spawns `zazz-worker serve` (or a native binary) and says hello." },
+    { "from": "pool", "to": "zazz-sdk", "kind": "depends-on", "description": "proto frames." },
+    { "from": "humans", "to": "call", "kind": "depends-on", "description": "execute with mode human." },
+    { "from": "humans", "to": "add", "kind": "depends-on", "description": "install adds a file before naming it." },
+    { "from": "humans", "to": "zazz-sdk", "kind": "depends-on", "description": "cliargs::Spec and render::render." },
+    { "from": "manage", "to": "humans", "kind": "depends-on", "description": "rm forgets installed names." },
+    { "from": "signing", "to": "trust", "kind": "depends-on", "description": "anchors for trust ls." },
+    { "from": "signing", "to": "zazz-format", "kind": "depends-on", "description": "sig::Envelope, digest and message; zip write." },
+    { "from": "signing", "to": "keychain", "kind": "depends-on", "description": "trust add also sets Keychain trust (macOS asks the person to authenticate)." },
+    { "from": "trust", "to": "signing", "kind": "depends-on", "description": "crypto::verify_chain, grants_of and subject." },
+    { "from": "trust", "to": "keychain", "kind": "depends-on", "description": "Evaluates the chain against the Keychain when no anchor in the trust directory vouches for it." },
+    { "from": "authoring", "to": "zazz-format", "kind": "depends-on", "description": "pack::pack_dir and script_id." },
+    { "from": "authoring", "to": "tools", "kind": "depends-on", "description": "doctor checks rustc, the target and zazz-worker." },
+    { "from": "authoring", "to": "sandbox", "kind": "depends-on", "description": "doctor checks available()." },
+    { "from": "tools", "to": "sandbox", "kind": "depends-on", "description": "rustc_command wraps rustc in a Policy." },
+    { "from": "sandbox", "to": "os-sandbox", "kind": "depends-on", "description": "sandbox-exec with a generated profile, or landlock_* and seccomp syscalls in the child." }
+  ]
+}

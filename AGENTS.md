@@ -15,7 +15,8 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Single test: `cargo test -p free-disk-space test_parse_size_suffixes`
 - C invoker (`macos/c/zazzle/`): build the daemon first, then in that folder `make && make unit && sh test/smoke.sh`; `make coverage` gates C branch coverage; `sh bench/run.sh` measures latency.
-- zazzled branch coverage: `sh zazzled/coverage.sh 95` in `macos/rust`.
+- zazzled branch coverage: `sh zazzled/coverage.sh 95` in `macos/rust` (also `95 zazz-format`, `95 zazz-sdk`, `95 zazz-worker`).
+- zazz tests need `rustup target add wasm32-wasip1` (stable and nightly) and build `zazz-worker` (release) on first use; `zazz-worker` needs Rust 1.97, the rest of the workspace 1.85.
 - Branch coverage (nightly `llvm-tools-preview` + `cargo-llvm-cov`; target 95% of non-test branches and lines, enforced in CI for agent-fs and fix-network): `cargo +nightly llvm-cov --branch -p <crate> --summary-only`; run free-disk-space as non-root so its permission tests execute.
 - CI (`.github/workflows/ci.yml`) runs the same on macOS and Linux; running the Release workflow (bump patch, minor or major from the latest `v*` tag) or pushing a `vX.Y.Z` tag publishes universal macOS binaries to a GitHub release without notes, icelander.net/downloads and the `zazzcat/homebrew-z` tap; the tag is the only version source, the repository says `0.0.0-dev` (`release.yml`; secrets `CLOUDFLARE_R2_TOKEN`, `HOMEBREW_TAP_TOKEN`, optional signing in `macos/release/README.md`).
 - Release scripts: `bash macos/release/sign-and-notarize.test.sh && bash macos/release/formula.test.sh && bash macos/release/version.test.sh && bash macos/release/fetch-cyberspace-generator.test.sh` (also `shellcheck` them).
@@ -26,6 +27,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Diagnose/repair macOS Wi-Fi, DNS, VPN: `agents/skills/fix-network/SKILL.md`
 - Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed: `agents/skills/zazzle/SKILL.md`
+- Write, test and run sandboxed zazz scripts (`zazz new|test|pack|add|call`): `agents/skills/zazz/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Architecture diagrams and knowledge files
@@ -44,4 +46,4 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Before finishing, with `jsonschema` installed, from the repository root: `python3 Meta/Agents/Skills/validate_diagrams.py` and `python3 Meta/Agents/Knowledge/validate_knowledge.py`.
 
 ## Layout
-- `macos/rust/<tool>/` one crate per tool; `macos/c/zazzle/` is the freestanding C invoker for `zazzled`; `macos/dotnet/<tool>/` one .NET project per C# tool; `agents/` agent docs and skills; `Actors/` the actors the `.dev` views name; `Meta/Agents/` the HASD copy.
+- `macos/rust/<tool>/` one crate per tool; `macos/rust/zazz-{format,sdk,worker}/` are the zazz script format, SDK and WASM host used by zazzled; `macos/c/zazzle/` is the freestanding C invoker for `zazzled` (and `zazz`); `macos/dotnet/<tool>/` one .NET project per C# tool; `agents/` agent docs and skills; `Actors/` the actors the `.dev` views name; `Meta/Agents/` the HASD copy.

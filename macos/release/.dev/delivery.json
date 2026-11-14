@@ -3,12 +3,12 @@
   "kind": "delivery",
   "title": "Where a release goes",
   "folder": "macos/release",
-  "description": "Every tool (zazzle, zazzled, zazzle-csharp-indexer, afs, fix-network, free-disk-space) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in macos/release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
+  "description": "Every tool (zazzle, also shipped as zazz, zazzled with zazz-worker, zazzle-csharp-indexer, afs, fix-network, free-disk-space) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in macos/release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
   "entities": [
     {
       "id": "github-release",
       "title": "GitHub release",
-      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (five universal binaries and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, zazzled, zazzle-csharp-indexer), their checksums and the Homebrew bottle.",
+      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (zazzle and the same invoker as zazz, six universal binaries, among them zazz-worker, and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, zazz, zazzled, zazz-worker, zazzle-csharp-indexer, cyberspace-generator), their checksums and the Homebrew bottle.",
       "environment": "GitHub releases of this repository",
       "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
       "deployedBy": "The release workflow (macos, linux and homebrew jobs)",
@@ -26,6 +26,10 @@
         {
           "path": ".github/workflows/release.yml",
           "symbol": "homebrew: Build the bottle and add it to the release"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux: Package"
         }
       ],
       "relationships": [

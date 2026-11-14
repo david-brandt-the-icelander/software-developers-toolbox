@@ -7,15 +7,15 @@
     {
       "id": "exit-status",
       "title": "zazzle exit status",
-      "summary": "zazzle exits with the daemon's status byte (0, or 2 for a command error), with the exit status of the program it execs for run, proxy and the standalone tools, or with a fixed code of its own when it cannot get either.",
+      "summary": "zazzle exits with the daemon's status byte (0, or 2 for a command error; for a zazz script run as a command, the script's own status), with the exit status of the program it execs for run, proxy and the standalone tools, or with a fixed code of its own when it cannot get either.",
       "contractType": "cli-exit-status",
       "consumers": [
         "Shells and scripts that run zazzle, and coding agents reading its status"
       ],
-      "details": "| Code | Message on standard error | When |\n| --- | --- | --- |\n| 0, 2 | (the daemon's own output) | The daemon's status byte |\n| any | (the program's own output) | `zazzle run`, `zazzle proxy`, `zazzle free-disk-space`, `zazzle fix-network`: the process has become that program |\n| 64 | `arguments too long` | The request does not fit 256 KiB |\n| 66 | `cannot open cwd` | The working directory cannot be opened |\n| 69 | `socket failed`, `cannot connect to daemon`, `cannot start daemon (error N)`, `daemon did not start`, `daemon not running`, `cannot find the tool`, `cannot run the tool (error N)`, `cannot run zazzled (error N)` | No daemon could be reached or started, or the program to exec could not be run |\n| 70 | `daemon closed without answering` | No status byte came back |\n| 74 | `send failed` | The request could not be sent |\n| 77 | `daemon runs as another user` | The peer's uid differs |\n| 78 | `HOME is not set`, `socket path too long`, `ZAZZLE_DAEMON too long`, `daemon path too long`, `tool path too long` | The environment cannot be used |\n\nThe numbers are those of sysexits.h (EX_USAGE, EX_NOINPUT, EX_UNAVAILABLE, EX_SOFTWARE, EX_IOERR, EX_NOPERM, EX_CONFIG). Each message follows the prefix `zazzle: `, for example `zazzle: daemon did not start`.",
+      "details": "| Code | Message on standard error | When |\n| --- | --- | --- |\n| 0, 2 | (the daemon's own output) | The daemon's status byte |\n| any | (the script's own output) | A zazz script run under its installed name (or `zazz run`): the script's exit status, 1 if the call failed, 127 if no such script is installed |\n| any | (the program's own output) | `zazzle run`, `zazzle proxy`, `zazzle free-disk-space`, `zazzle fix-network`: the process has become that program |\n| 64 | `arguments too long` | The request does not fit 256 KiB |\n| 66 | `cannot open cwd` | The working directory cannot be opened |\n| 69 | `socket failed`, `cannot connect to daemon`, `cannot start daemon (error N)`, `daemon did not start`, `daemon not running`, `cannot find the tool`, `cannot run the tool (error N)`, `cannot run zazzled (error N)` | No daemon could be reached or started, or the program to exec could not be run |\n| 70 | `daemon closed without answering` | No status byte came back |\n| 74 | `send failed` | The request could not be sent |\n| 77 | `daemon runs as another user` | The peer's uid differs |\n| 78 | `HOME is not set`, `socket path too long`, `ZAZZLE_DAEMON too long`, `daemon path too long`, `tool path too long` | The environment cannot be used |\n\nThe numbers are those of sysexits.h (EX_USAGE, EX_NOINPUT, EX_UNAVAILABLE, EX_SOFTWARE, EX_IOERR, EX_NOPERM, EX_CONFIG). Each message follows the prefix `zazzle: `, for example `zazzle: daemon did not start`.",
       "guarantees": [
         "Every failure of zazzle's own is one line on standard error: `zazzle: `, the message, and for some ` (error N)`.",
-        "zazzle's own codes never collide with the daemon's 0 and 2."
+        "zazzle's own codes never collide with the daemon's 0 and 2; a zazz script run as a command may exit with any code, including these."
       ],
       "definition": "macos/c/zazzle/src/zazzle_core.h (die, die_errno and their callers)",
       "evidenceStatus": "source-verified",
@@ -43,6 +43,10 @@
         {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
           "symbol": "Output::err"
+        },
+        {
+          "path": "macos/rust/zazzled/src/zazz/human.rs",
+          "symbol": "fail"
         }
       ],
       "relationships": [

@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-worker",
+  "folder": "macos/rust/zazz-worker",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-worker",
+      "summary": "The zazz-worker crate: the wasmtime host that zazzled starts to AOT-compile, test and run zazz scripts as WebAssembly.",
+      "purpose": "Holds the one binary of the workspace that embeds wasmtime, kept apart from zazzled so the daemon carries no WebAssembly runtime and so the runtime's newer Rust requirement (rust-version 1.97, against 1.85 for the rest of the workspace) stays in one crate. The crate manifest (Cargo.toml, each dependency commented with its one reason: ureq, wasmtime, wasmtime-wasi, zazz-sdk) and the source in src/.",
+      "boundaries": [
+        "Never started by a person in normal use: zazzled runs `zazz-worker compile` and `zazz-worker test` for `zazz add` and `zazz test`, and keeps `zazz-worker serve` processes warm for `zazz call` (macos/rust/zazzled/src/zazz).",
+        "Knows nothing of the registry, signatures, trust or manifests: zazzled hands it a precompiled module on fd 4 and the effective preopens, network policy and limits in a hello frame.",
+        "The frame format, descriptor passing, the HTTP wire layout and the host allowlist check come from zazz-sdk (macos/rust/zazz-sdk), shared with the scripts themselves.",
+        "Does not apply the OS sandbox itself; zazzled starts it inside one (pool.rs spawn runs it through sandbox::command with the policy call.rs builds)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "[dependencies]" },
+        { "path": "macos/rust/zazz-worker/Cargo.toml", "symbol": "rust-version" },
+        { "path": "macos/rust/zazz-worker/src/main.rs", "symbol": "dispatch" },
+        { "path": "macos/rust/zazzled/src/zazz/tools.rs", "symbol": "worker_from" },
+        { "path": ".github/workflows/ci.yml", "symbol": "msrv" }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/zazz/.dev/folder.json",
+          "entityId": "folder",
+          "description": "The zazz module of zazzled, which starts this binary."
+        }
+      ]
+    }
+  ]
+}

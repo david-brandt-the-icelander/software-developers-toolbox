@@ -52,6 +52,7 @@ pub struct Engine {
     edit_lock: Mutex<()>,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
+    pub zazz: crate::zazz::Zazz,
     pub outputs: Option<PathBuf>,
 }
 
@@ -80,6 +81,7 @@ impl Engine {
             edit_lock: Mutex::new(()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
+            zazz: crate::zazz::Zazz::default(),
             outputs: None,
         }
     }

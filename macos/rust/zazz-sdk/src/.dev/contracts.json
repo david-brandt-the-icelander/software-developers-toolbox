@@ -1,0 +1,126 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazz SDK contracts",
+  "folder": "macos/rust/zazz-sdk/src",
+  "description": "What scripts, zazzled and zazz-worker rely on from the SDK: the protocol a script speaks with its launcher, the zazz_host imports a WASM script uses, the script-facing API, and the manifest's cli section. The test library's contract is in test/.dev/contracts.json.",
+  "entities": [
+    {
+      "id": "launcher-protocol",
+      "title": "Launcher protocol",
+      "summary": "Length-prefixed JSON frames between a launcher and a script: hello and ready, then call messages answered by progress notes and one result each. Natively they travel on the control socket, fd 3, with the caller's stdio passed as descriptors.",
+      "contractType": "message",
+      "consumers": [
+        "zazzled, which launches native scripts and talks to zazz-worker over these frames (macos/rust/zazzled/src/zazz/call.rs, pool.rs)",
+        "zazz-worker, which reads the same frames from zazzled and runs WASM scripts (macos/rust/zazz-worker/src/serve.rs)",
+        "Every script, through zazz::serve"
+      ],
+      "guarantees": [
+        "A frame is a u32 little-endian length followed by that many bytes of compact JSON; frames over 16 MiB are refused on both write and read, and an end of stream before a frame starts is a clean end.",
+        "Every message carries its type in \"t\". The launcher starts with {\"t\": \"hello\", \"proto\": 1}; the script answers {\"t\": \"ready\", \"messages\": [...], \"sdk\": \"0.1.0\"}, listing json-command, openapi and service-call for the handlers it registered.",
+        "Calls are {\"t\": \"json-command\", \"id\", \"mode\", \"input\"}, {\"t\": \"openapi\", \"id\"} and {\"t\": \"service-call\", \"id\", \"operation\", \"params\", \"body\"}; mode is \"human\" or anything else for an agent (the default).",
+        "Each call is answered by {\"t\": \"result\", \"id\", \"ok\": true, \"output\", \"exit\"} or {\"t\": \"result\", \"id\", \"ok\": false, \"error\": {\"code\", \"message\"}, \"exit\": 1}, optionally preceded by {\"t\": \"progress\", \"id\", \"msg\"} notes.",
+        "Error codes are bad_input, not_found, failed, unsupported, sandbox_denied, network_denied and cancelled; an unknown message type is unsupported, an unknown service operation not_found, and I/O errors map NotFound to not_found, PermissionDenied to sandbox_denied and the rest to failed.",
+        "Native: the control socket is fd 3; a call frame's first bytes carry the caller's stdin, stdout and stderr as SCM_RIGHTS descriptors (with fewer than three the call gets empty input and discarded output); paths resolve against the script's current directory.",
+        "The launcher keeps its own copies of the passed stdio descriptors open until the call's result arrives: on macOS a unix socket in flight that nothing else holds can be discarded before the script receives it (zazzled's call.rs drops them only after exchange; native.rs test_serve_on_calls does the same).",
+        "Native: cancel frames get no answer, and a call's cancellation probe is true while any frame is waiting on the socket; shutdown or end of stream ends serve; a handler panic is answered as a failed result \"panic: ...\" and the script then stops serving; a broken control channel exits with status 70."
+      ],
+      "compatibility": "Versioned by proto, 1, in hello; the SDK does not check the value it receives. Scripts are compiled against the SDK sources embedded in the zazzled that builds them, and the SDK's hash is part of every build key (macos/rust/zazzled/src/zazz/sdk.rs), so a changed SDK rebuilds every script; no further policy is stated.",
+      "definition": "macos/rust/zazz-sdk/src/proto.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/proto.rs", "symbol": "write_frame" },
+        { "path": "macos/rust/zazz-sdk/src/proto.rs", "symbol": "ready" },
+        { "path": "macos/rust/zazz-sdk/src/native.rs", "symbol": "serve_on" },
+        { "path": "macos/rust/zazz-sdk/src/native.rs", "symbol": "CONTROL_FD" },
+        { "path": "macos/rust/zazz-sdk/src/handlers.rs", "symbol": "Handlers::dispatch" },
+        { "path": "macos/rust/zazz-sdk/src/error.rs", "symbol": "Error" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "hash" }
+      ]
+    },
+    {
+      "id": "wasm-host-abi",
+      "title": "zazz_host imports",
+      "summary": "The core-WASM import module zazz_host through which a WASM script gets its one call, reports progress and results, makes HTTPS requests and asks whether it was cancelled.",
+      "contractType": "wasm-abi",
+      "consumers": [
+        "zazz-worker, which provides the imports (macos/rust/zazz-worker/src/run.rs, engine.rs)",
+        "Authors of kind \"wasm\" modules built without the SDK (agents/skills/zazz/SKILL.md)"
+      ],
+      "guarantees": [
+        "Imports: request_len() -> i64, the length of the inbox; take(ptr, cap: i32) -> i64, copies the inbox into guest memory and returns the bytes copied; send(ptr, len: i32), one JSON message to the host; http(ptr, len: i32) -> i64, sends an encoded request and returns the length of the reply now in the inbox, negative when the reply is an error {code, message}; cancelled() -> i32, non-zero once the caller has cancelled.",
+        "One call per instance: the inbox first holds one message without a length prefix; hello is answered with ready, anything else is dispatched and answered with one result through send, after any progress messages, with the same shapes as the launcher protocol.",
+        "Standard input, output and error are the caller's, wired by the host.",
+        "An HTTP request or response is a u32 little-endian head length, a JSON head ({\"method\", \"url\", \"headers\": [[name, value], ...]} or {\"status\", \"headers\"}) and then the body bytes.",
+        "Only https:// URLs with a host name are allowed: no credentials and no IP literals, port 443 unless given. A host pattern is exact or \"*.domain\", which matches subdomains but not the domain itself; http::check applies a NetPolicy of none, hosts or all, and the host enforces it."
+      ],
+      "compatibility": "Not versioned; the import names and signatures are fixed in wasm.rs and checked against the worker's allowed set. No policy is stated.",
+      "definition": "macos/rust/zazz-sdk/src/wasm.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/wasm.rs", "symbol": "zazz_host" },
+        { "path": "macos/rust/zazz-sdk/src/wasm.rs", "symbol": "serve" },
+        { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "Request::encode" },
+        { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "check" },
+        { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "host_matches" },
+        { "path": "macos/rust/zazz-worker/src/engine.rs", "symbol": "HOST_MODULE" },
+        { "path": "macos/rust/zazz-worker/src/net.rs", "symbol": "http::check" }
+      ]
+    },
+    {
+      "id": "script-api",
+      "title": "Script API",
+      "summary": "The Rust API a script is written against: register Handlers, call zazz::serve, and reach stdio, files, the network, the clock and the environment only through the Call.",
+      "contractType": "library-api",
+      "consumers": [
+        "Script authors (agents/skills/zazz/SKILL.md)",
+        "zazzled's `zazz new` template (macos/rust/zazzled/src/zazz/setup.rs, MAIN) and the scripts its tests build (macos/rust/zazzled/src/zazz/mod.rs)"
+      ],
+      "guarantees": [
+        "zazz::serve(Handlers) serves calls with the native backend on Unix and the WASM backend on WASM targets.",
+        "Handlers::new().json_command(f), .openapi(f) and .service(operationId, f); a handler gets &mut Call and returns zazz::Result<Json>.",
+        "Call gives is_human, stdin, stdout, stderr, println, read_input (\"-\" is standard input), set_exit (the status a human sees, 0 by default), fs, http, clock, env, progress, cancelled and check_cancelled; going through these, not std, is what lets zazz::test fake them.",
+        "Json keeps object keys in insertion order, so output is deterministic; the parser refuses nesting deeper than 128.",
+        "For a human caller, output is rendered: a string as it is (a newline added), a non-empty list of objects with only scalar fields as a table (aligned on a terminal, tab-separated otherwise), null as nothing, anything else as pretty JSON."
+      ],
+      "compatibility": "zazz::VERSION is 0.1.0 and is reported in ready; the crate's own version is 0.0.0-dev. No source-compatibility policy is stated.",
+      "definition": "macos/rust/zazz-sdk/src/lib.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "serve" },
+        { "path": "macos/rust/zazz-sdk/src/lib.rs", "symbol": "VERSION" },
+        { "path": "macos/rust/zazz-sdk/src/handlers.rs", "symbol": "Handlers" },
+        { "path": "macos/rust/zazz-sdk/src/call.rs", "symbol": "Call" },
+        { "path": "macos/rust/zazz-sdk/src/json.rs", "symbol": "Json" },
+        { "path": "macos/rust/zazz-sdk/src/render.rs", "symbol": "render" }
+      ]
+    },
+    {
+      "id": "cli-spec",
+      "title": "Manifest cli section",
+      "summary": "How the cli object of zazz.json turns a human's argv into the script's JSON input; zazz-format only checks that it is an object.",
+      "contractType": "file-format",
+      "consumers": [
+        "Script authors who give their script a command line for humans (`zazz install`, then NAME ARGS)",
+        "zazzled's human front end (macos/rust/zazzled/src/zazz/human.rs) and zazz::test::Harness::human"
+      ],
+      "guarantees": [
+        "Keys read: usage, description, stdin (\"none\", \"optional\" by default, or \"required\") and args.",
+        "Each arg has a name of lowercase letters, digits and '_' starting with a letter, and optionally short (one character), long (default: the name with '_' as '-'), type (bool, count, string by default, int, float, enum with values, path), default, required, multiple, positional and help.",
+        "A positional cannot be bool or count, only the last positional may be multiple, and no two args share a name, short or long flag.",
+        "Parsing gives either the input object, keyed by arg name, or help text; path values are made absolute against the caller's directory, and \"-\" (standard input) is kept as it is."
+      ],
+      "definition": "macos/rust/zazz-sdk/src/cliargs.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/cliargs.rs", "symbol": "Spec::from_json" },
+        { "path": "macos/rust/zazz-sdk/src/cliargs.rs", "symbol": "parse_arg" },
+        { "path": "macos/rust/zazz-sdk/src/cliargs.rs", "symbol": "Spec::parse" },
+        { "path": "macos/rust/zazz-format/src/manifest.rs", "symbol": "Manifest::parse" }
+      ],
+      "relationships": [
+        { "relation": "part-of", "path": "macos/rust/zazz-format/src/.dev/contracts.json", "entityId": "manifest" }
+      ]
+    }
+  ]
+}

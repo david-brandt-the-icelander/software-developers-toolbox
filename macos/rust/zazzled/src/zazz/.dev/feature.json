@@ -1,0 +1,150 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazz script features",
+  "folder": "macos/rust/zazzled/src/zazz",
+  "description": "The behavior zazz offers beyond its commands: scripts registered once by content and tested before use, calls in warm workers with fresh instances and limits, signer trust that grants access without blocking calls, and scripts installed as commands for people.",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+    { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" },
+    { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "evaluate" },
+    { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" }
+  ],
+  "entities": [
+    {
+      "id": "register-once",
+      "name": "Registered once by content, tested before first use",
+      "description": "A script is known by the hash of the exact bytes that were built and tested, and only a script whose tests passed is ever called.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "read_once" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "build_and_test" }
+      ],
+      "behavior": "add opens the file without following symlinks and reads it once into memory; the id is b3: and the BLAKE3 of those bytes, and the signature check, extraction, build and tests all use them. A registered id answers `cached` at once; otherwise the id's lock is taken and the check repeated, so concurrent adds build once. The build runs in a scratch directory; tests run through `zazz-worker test` in the sandbox with a scratch copy of tests/fixtures as the working directory and tests/http.json as the only network; any failure publishes nothing. On success the .wasm, the precompiled .cwasm and the metadata (manifest, test report, warnings, signer, verdict) are written atomically, the scratch directory is removed and the .zazz itself is not kept. Commands accept the full id, a unique prefix of at least 12 hex digits, or an installed name.",
+      "outcome": "An agent hands zazzled one file and gets back an id that always means the same tested code; a later add of the same bytes costs nothing.",
+      "constraints": [
+        "Rust scripts need rustc with the wasm32-wasip1 target; prebuilt modules (kind wasm) do not.",
+        "A script without tests is registered with a warning, unless the root-owned policy sets require_tests.",
+        "Archive limits are zazz-format's defaults; the file is refused before reading when it is larger than the compressed limit.",
+        "Scratch directories older than an hour, left by crashed builds, are purged on the next add."
+      ],
+      "implementation": [
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "registered" },
+        { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::lock" },
+        { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::write_atomic" },
+        { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::resolve" },
+        { "path": "macos/rust/zazzled/src/zazz/registry.rs", "symbol": "Registry::purge_tmp" },
+        { "path": "macos/rust/zazzled/src/zazz/pipeline.rs", "symbol": "run_tests" },
+        { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "rust_to_wasm" },
+        { "path": "macos/rust/zazzled/src/zazz/compile.rs", "symbol": "aot" },
+        { "path": "macos/rust/zazzled/src/zazz/sdk.rs", "symbol": "ensure_rlib" }
+      ]
+    },
+    {
+      "id": "warm-calls",
+      "name": "Calls in warm workers with fresh instances",
+      "description": "Each call runs in a fresh WebAssembly instance inside a worker process kept warm for the script, the caller's directory and the effective policy.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "spec" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "exchange" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "Pool::release" }
+      ],
+      "behavior": "The pool key is the script id, the caller's directory and the hello (preopens, network, limits), so a change of verdict or directory gets a different worker. A worker is spawned with the module on fd 4, the control socket on fd 3, an empty environment, a new session and no core dumps, and must answer ready within 20 s. The call carries the caller's stdin, stdout and stderr (through the invoker) or pipes whose output is captured up to 1 MiB (over MCP); progress messages are collected and, for human runs, shown on stderr. Past the manifest's call_ms plus 5 s the call fails with timeout; if the caller hangs up a cancel is sent and the worker killed after 200 ms. Healthy workers return to the pool: at most 2 idle per key and 32 in all, retired after 1000 calls or 60 s idle; a failed call's worker is killed. Workers for scripts trusted for native code run the script's own binary instead of zazz-worker.",
+      "outcome": "Repeated calls skip process start and module loading, while no state survives from one call to the next inside the guest.",
+      "constraints": [
+        "A WASM worker is refused (sandbox_unavailable) when the OS has no sandbox (no sandbox-exec, or no Landlock).",
+        "Each worker starts inside its OS sandbox policy (pool.rs spawn through sandbox::command); a networked policy also reads the resolver's files (Policy::networked).",
+        "Memory and time limits come from the manifest's memory_mb and call_ms."
+      ],
+      "implementation": [
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "execute" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "preopens" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "capture" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "spawn" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "Pool::acquire" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "Pool::reap" },
+        { "path": "macos/rust/zazzled/src/zazz/native.rs", "symbol": "worker" },
+        { "path": "macos/rust/zazzled/src/server.rs", "symbol": "long_running" }
+      ]
+    },
+    {
+      "id": "signed-grants",
+      "name": "Signed scripts and trust off the hot path",
+      "description": "A signature from an authority this machine trusts grants a script network hosts, paths or native code; the verdict is cached so a call never waits on trust.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/signing.rs", "symbol": "check_signature" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "evaluate" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "refresh_if_stale" }
+      ],
+      "behavior": "add verifies zazz.sig (ECDSA P-256 over the canonical digest) against the leaf certificate in memory, then evaluates the chain against root-owned anchors in /etc/zazzle/trust.d, or on macOS the Keychain. A verdict records trusted, signer, authority, grants, checked_at and valid_until (now plus trust_ttl, default 600 s from the root-owned policy). When the anchor is not the signing certificate itself, the anchor's grants are intersected with the leaf's; a missing grant extension grants nothing. At call time the manifest's network and paths are intersected with the grants after the policy; a signer that is not trusted leaves the script in the unsigned tier: no network, its WASM build. A stale verdict is used for the call and re-evaluated on a background thread, which rewrites the metadata; the next call gets the new worker key. A signer trusted for native code also gets a host build (its tests run too) and a native worker, falling back to WASM once trust is withdrawn.",
+      "outcome": "An administrator or a person who trusts an authority decides what its scripts may reach, and revocation by the OS store takes effect within trust_ttl without blocking any launch.",
+      "constraints": [
+        "Unsigned scripts never get network (D4).",
+        "Host lists are enforced only by zazz-worker's per-request check; a native script's network is on or off.",
+        "Trust files and the policy count only when owned by root and not writable by group or others."
+      ],
+      "implementation": [
+        { "path": "macos/rust/zazzled/src/zazz/crypto.rs", "symbol": "verify_chain" },
+        { "path": "macos/rust/zazzled/src/zazz/crypto.rs", "symbol": "grants_of" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "policy" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "intersect" },
+        { "path": "macos/rust/zazzled/src/zazz/trust.rs", "symbol": "effective" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "granted" },
+        { "path": "macos/rust/zazzled/src/zazz/native.rs", "symbol": "build_and_test" },
+        { "path": "macos/rust/zazzled/src/zazz/add.rs", "symbol": "register" }
+      ]
+    },
+    {
+      "id": "scripts-as-commands",
+      "name": "Scripts as commands for people",
+      "description": "A registered script can be installed under a name and run from a shell with flags, plain output and an exit code.",
+      "sources": [
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "install" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "run" },
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "build_request" }
+      ],
+      "behavior": "install records the name in the registry and links $ZAZZ_BIN (default ~/.zazzle/bin)/NAME to the zazz invoker beside zazzled; run through that link, the invoker sends `zazz exec-name NAME` with the arguments. The manifest's cli spec parses them (zazz-sdk cliargs, the same parser the test harness uses) and generates --help; without a spec the script gets {argv}. The script runs with mode human and the caller's streams; its returned output is rendered as text, a table on a terminal or JSON, or raw JSON with --json, and the process exits with the script's code.",
+      "outcome": "A person runs a script like any other command, with the same sandbox and grants an agent's call has.",
+      "constraints": [
+        "Names are lowercase letters, digits and '-', at most 64, not one of zazz's own words.",
+        "An existing file that is not a symlink is never replaced by a shim.",
+        "uninstall keeps the script registered; rm removes its names too."
+      ],
+      "implementation": [
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "check_name" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "make_shim" },
+        { "path": "macos/rust/zazzled/src/zazz/install.rs", "symbol": "forget" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "input_for" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "render" },
+        { "path": "macos/rust/zazzled/src/zazz/human.rs", "symbol": "split_json" }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/capability.json",
+      "relationship": "The capability these features belong to."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/operation.json",
+      "relationship": "The operations that carry them."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzled/src/zazz",
+      "path": "macos/rust/zazzled/src/zazz/.dev/use-case.json",
+      "relationship": "The use cases that exercise them."
+    },
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazz-worker/src",
+      "path": "macos/rust/zazz-worker/src/.dev/operation.json",
+      "relationship": "serve, compile and test, which run the instances and tests."
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazz-worker contracts",
+  "folder": "macos/rust/zazz-worker/src",
+  "entities": [
+    {
+      "id": "zazz-host-imports",
+      "title": "The zazz_host import module",
+      "summary": "The five host functions a script's WebAssembly may import besides WASI preview 1: request_len, take, send, http and cancelled.",
+      "contractType": "library-api",
+      "consumers": [
+        "zazz-sdk's WebAssembly backend (macos/rust/zazz-sdk/src/wasm.rs), compiled into every Rust script",
+        "Prebuilt modules of kind \"wasm\" from any language, which import the functions directly"
+      ],
+      "guarantees": [
+        "request_len() -> i64: the length of the inbox, which holds the call message when the instance starts and the last HTTP reply after http.",
+        "take(ptr, cap) -> i64: copies up to cap bytes of the inbox into guest memory and returns how many.",
+        "send(ptr, len): a JSON message from the guest; progress goes to zazzled at once, anything else is kept, and the last result or ready message is the call's answer.",
+        "http(ptr, len) -> i64: a request in zazz-sdk's HTTP wire layout; the policy is checked first (https only, no IP literals or credentials, exact or `*.` host match), then the reply is placed in the inbox and its length returned, or minus the length of an error JSON.",
+        "cancelled() -> i32: 1 once zazzled has sent another frame (a cancel) while the call runs.",
+        "The guest must export memory and _start; any other import is refused at compile."
+      ],
+      "compatibility": "The import names are checked at compile time (engine.rs HOST_FUNCS), so adding a function is compatible and renaming or removing one breaks every registered script; the plan's `recv` name was not used.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/engine.rs", "symbol": "HOST_FUNCS" },
+        { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "linker" },
+        { "path": "macos/rust/zazz-worker/src/run.rs", "symbol": "http" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "result_of" },
+        { "path": "macos/rust/zazz-sdk/src/wasm.rs", "symbol": "zazz_host" },
+        { "path": "macos/rust/zazz-sdk/src/http.rs", "symbol": "check" }
+      ]
+    },
+    {
+      "id": "serve-channel",
+      "title": "Serve mode's descriptors and control channel",
+      "summary": "zazz-worker serve expects its control socket on fd 3 and a module from `zazz-worker compile` on fd 4, a hello frame first, then call frames each carrying the caller's three standard streams.",
+      "contractType": "message",
+      "consumers": [
+        "zazzled's worker pool and calls (macos/rust/zazzled/src/zazz/pool.rs spawn, call.rs exchange)"
+      ],
+      "guarantees": [
+        "Frames are a u32 little-endian length followed by JSON (zazz-sdk proto), at most 16 MiB.",
+        "hello carries args, env, preopens [{host, guest, write}], network (\"none\", \"all\" or {hosts}), memory_mb and call_ms; it is answered by the guest's ready frame.",
+        "Every other frame is passed to a fresh instance as its message; three descriptors sent with it (SCM_RIGHTS) become the guest's stdin, stdout and stderr, otherwise the guest gets closed streams.",
+        "Each call is answered by exactly one frame: the guest's result, or an error result with code failed, timeout, out_of_memory, script_crashed or protocol, carrying the call's id.",
+        "shutdown, or the end of the stream, ends the process."
+      ],
+      "compatibility": "zazzled and zazz-worker ship together in every release and are found side by side, so the two sides change in the same commit; a precompiled module only loads in the zazz-worker build whose engine compiled it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "main" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "serve_on" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "setup_from" },
+        { "path": "macos/rust/zazz-worker/src/serve.rs", "symbol": "stdio" },
+        { "path": "macos/rust/zazz-sdk/src/proto.rs", "symbol": "MAX_FRAME" },
+        { "path": "macos/rust/zazzled/src/zazz/pool.rs", "symbol": "spawn" },
+        { "path": "macos/rust/zazzled/src/zazz/call.rs", "symbol": "exchange" }
+      ]
+    }
+  ]
+}

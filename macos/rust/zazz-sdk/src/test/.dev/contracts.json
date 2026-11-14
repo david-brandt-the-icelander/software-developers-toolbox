@@ -1,0 +1,42 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazz::test contracts",
+  "folder": "macos/rust/zazz-sdk/src/test",
+  "entities": [
+    {
+      "id": "test-library",
+      "title": "zazz::test library",
+      "summary": "What a script's tests can rely on from the harness, the fakes and the checks.",
+      "contractType": "library-api",
+      "consumers": [
+        "Script authors' tests, typically Harness::from_manifest(handlers(), include_str!(\"../zazz.json\")) (agents/skills/zazz/SKILL.md; the tests `zazz new` writes)",
+        "The test file of zazzled's `zazz new` template (macos/rust/zazzled/src/zazz/setup.rs) and the scripts zazzled's tests build (macos/rust/zazzled/src/zazz/mod.rs)"
+      ],
+      "guarantees": [
+        "Harness::new allows everything: no filesystem or network policy, working directory /work, clock at 1704067200000 ms (2024-01-01), empty stdin and environment.",
+        "Harness::from_manifest applies sandbox.read (default [\"$CWD\"]), sandbox.write (default []) and sandbox.network (\"all\", {\"hosts\": [...]}, otherwise none) as production would, and the cli spec for human runs; a manifest that is not JSON, or a bad cli spec, panics.",
+        "json_command and service_call run as an agent; human(argv) parses argv with the cli spec (or passes {\"argv\": [...]} without one), renders the output as for a non-terminal, and returns the Outcome: exit 2 on a parse error, at least 1 when the handler fails, help text with exit 0.",
+        "FakeFs paths are normalised to $CWD, $TMP, $HOME or absolute paths; a '..' that leaves its root is sandbox_denied; reading is allowed under the read or the write rules, writing under the write rules; deny and fail_write inject failures; written, written_text and written_paths show what the call wrote.",
+        "FakeHttp applies the network policy before anything else, records every request, answers a request from the matching expectation by method and URL (the least-used first, so repeated expectations are consumed in turn), and panics on an unexpected request; replay loads [{\"request\": {\"method\", \"url\"}, \"response\": {\"status\", \"headers\", \"json\" | \"text\"}}]; assert_all_used panics if an expectation was never used.",
+        "assert_snapshot(name, value) compares with NAME.json in the snapshot directory and panics on a difference or a missing file; with updating on it writes the file instead (configuration.json).",
+        "check_schema checks the subset type, enum, required, properties, additionalProperties false, items and local $ref; response_schema finds an operation's application/json schema for 200, 201 or default."
+      ],
+      "compatibility": "Ships with the SDK and has the same policy (macos/rust/zazz-sdk/src/.dev/contracts.json, script-api).",
+      "definition": "macos/rust/zazz-sdk/src/test/mod.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness::new" },
+        { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness::from_manifest" },
+        { "path": "macos/rust/zazz-sdk/src/test/mod.rs", "symbol": "Harness::human" },
+        { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "normalize" },
+        { "path": "macos/rust/zazz-sdk/src/test/fakes.rs", "symbol": "FakeHttp::replay" },
+        { "path": "macos/rust/zazz-sdk/src/test/check.rs", "symbol": "assert_snapshot" },
+        { "path": "macos/rust/zazz-sdk/src/test/check.rs", "symbol": "check_schema" }
+      ],
+      "relationships": [
+        { "relation": "part-of", "path": "macos/rust/zazz-sdk/src/.dev/contracts.json", "entityId": "script-api" }
+      ]
+    }
+  ]
+}

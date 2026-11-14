@@ -22,6 +22,7 @@ fn rerun(ctx: &Ctx, id: &str) -> Option<Output> {
         cwd: replay.cwd.clone(),
         session: ctx.session.clone(),
         stdin: RefCell::new(None),
+        caller: RefCell::new(None),
     };
     let (mut out, _, _) = produce(&again, cmd, args);
     if out.idable {
@@ -143,6 +144,7 @@ mod tests {
             cwd: cwd.to_path_buf(),
             session: String::new(),
             stdin: RefCell::new(Some(Box::new(input))),
+            caller: RefCell::new(None),
         };
         let mut all = vec!["clean".to_string()];
         all.extend(args.iter().map(|a| a.to_string()));

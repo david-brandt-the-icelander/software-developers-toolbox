@@ -383,9 +383,9 @@ fn initialize(params: &Value) -> Value {
     })
 }
 
-// Every exposed tool: the file tools here, then the structure tools answered by zazzle-csharp-indexer.
+// Every exposed tool: the file tools here, the structure tools answered by zazzle-csharp-indexer, then the zazz script tools.
 fn all_tools() -> impl Iterator<Item = &'static Tool> {
-    TOOLS.iter().chain(crate::mcp_structure::TOOLS)
+    TOOLS.iter().chain(crate::mcp_structure::TOOLS).chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
 // Lists the tools with their schemas.
@@ -822,6 +822,6 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 13);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
     }
 }
