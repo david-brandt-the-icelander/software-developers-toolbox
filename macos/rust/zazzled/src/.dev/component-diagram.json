@@ -184,6 +184,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "minified",
+      "name": "Minified JSON and XML terse view (minified.rs)",
+      "responsibility": "Detects JSON and XML written mostly on 500+ character lines, reformats it one value or element per line, runs data.rs's view (as generated data) or xml.rs's view over the result, and maps the view's line numbers back to the source.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
@@ -724,6 +730,30 @@
       "to": "buildfile",
       "kind": "depends-on",
       "description": "read's terse CMake and Makefile view."
+    },
+    {
+      "from": "src",
+      "to": "minified",
+      "kind": "contains",
+      "description": "Terse view of minified JSON and XML."
+    },
+    {
+      "from": "minified",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Views reformatted JSON as generated data."
+    },
+    {
+      "from": "minified",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "Views reformatted XML."
+    },
+    {
+      "from": "cmd",
+      "to": "minified",
+      "kind": "depends-on",
+      "description": "read's terse view of minified JSON and XML."
     },
     {
       "from": "cmd",

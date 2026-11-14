@@ -71,7 +71,18 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - TOML: a run of 6+ `[[name]]` tables with the same name keeps its first and last (`⋯ 310 [[package]] table(s)` in `Cargo.lock`).
 - Hidden: `#` comment blocks (`//` in JSON with comments) of 4+ lines; YAML block scalars (`key: |`, `- >`) and TOML multi-line strings of 6+ lines keep their opening line (`⋯ text, 12 line(s)`). Quoted strings longer than 120 characters keep their first 40 (`N~`).
 - Markdown: HTML comments (multi-line ones as `⋯ comment, N line(s)`), lines made only of badge images (shields.io, badgen, codecov, coveralls, `badge` or `.svg` sources), runs of 2+ link reference definitions (`[x]: url`) and lists of 3+ entries that only link to anchors (tables of contents). Fenced code and front matter are left alone.
-- Kept: everything else; minified JSON (one long line) comes back as source.
+- Kept: everything else. Minified JSON is reformatted first; see below.
+
+## Minified JSON and XML terse view
+
+A `.json` file or an XML file (any extension above) whose text sits mostly on lines of 500+ characters is minified. `src/minified.rs` reformats it in memory and runs the JSON or XML view below over the result:
+
+- JSON is reformatted with two spaces and one value per line; strings and numbers stay as written. XML gets one element per line, with an element holding only text kept on one line.
+- Every view line maps back to its source line: a kept line reads `1~`, and a note reads `1-1 ⋯ 38 item(s)`. The header counts the source's lines and adds `N minified lines reformatted`.
+- Minified JSON is treated as generated data. Like a lock file, any 10+ sibling items or object members collapse, even when the items name different keys. A note on hidden members lists their keys up to about 80 characters (`⋯ 12 member(s): "api", "browsers", "css", …`).
+- XML follows the usual rules: runs of 10+ same-tag elements keep their first and last, and long values are cut.
+- If the text does not parse, or the view would not be shorter than the file, the file reads as it would have before.
+- When the view of a one-line file is over the token budget, the footer says how many view lines were elided and to read with `--full`. A line range cannot narrow a one-line file.
 
 ## XML, INI and Dockerfile terse view
 

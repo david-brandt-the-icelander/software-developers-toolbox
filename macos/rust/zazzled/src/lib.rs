@@ -19,6 +19,7 @@ pub mod mcp;
 pub mod mcp_structure;
 pub mod md;
 pub mod meta;
+pub mod minified;
 pub mod modules;
 pub mod nim;
 pub mod outline;

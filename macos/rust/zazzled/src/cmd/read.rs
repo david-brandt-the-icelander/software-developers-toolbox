@@ -9,6 +9,7 @@ use crate::indexer::Indexer;
 use crate::markup;
 use crate::md;
 use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
+use crate::minified;
 use crate::nim;
 use crate::outline;
 use crate::schema;
@@ -203,13 +204,17 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
         return cobol::view(shown, &text);
     }
     if let Some((kind, lock)) = data::kind_of(path) {
-        return data::view(shown, &text, kind, lock);
+        let minified = (kind == data::Kind::Json && minified::is_minified(&text))
+            .then(|| minified::json_view(shown, &text, lock))
+            .flatten();
+        return minified.or_else(|| data::view(shown, &text, kind, lock));
     }
     if md::is_markdown(path) {
         return md::view(shown, &text);
     }
     if xml::is_xml(path) {
-        return xml::view(shown, &text);
+        let minified = minified::is_minified(&text).then(|| minified::xml_view(shown, &text)).flatten();
+        return minified.or_else(|| xml::view(shown, &text));
     }
     if let Some(kind) = config::kind_of(path) {
         return config::view(shown, &text, kind);
@@ -252,7 +257,14 @@ fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &
     }
     if tail_start > keep {
         let (x, y) = (lines[keep].0, lines[tail_start - 1].1);
-        out.push_str(&format!("… lines {x}-{y} elided; read {shown}:{x}-{y} or --full\n"));
+        if x == y {
+            out.push_str(&format!(
+                "… {} view lines of line {x} elided; read {shown} --full\n",
+                tail_start - keep
+            ));
+        } else {
+            out.push_str(&format!("… lines {x}-{y} elided; read {shown}:{x}-{y} or --full\n"));
+        }
     }
     for (_, _, l) in &lines[tail_start.max(keep)..] {
         out.push_str(l);
@@ -653,7 +665,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
 
-    // Checks JSON, Markdown, Nim, SQL, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files read as their line-based terse views, and a plain one as source.
+    // Checks JSON, Markdown, Nim, SQL, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files, and minified JSON and XML, read as their line-based terse views, and a plain one as source.
     #[test]
     fn test_line_terse_views() {
         let t = TempDir::new();
@@ -694,6 +706,23 @@ mod tests {
         std::fs::write(t.path().join("CMakeLists.txt"), "message(STATUS x)\nproject(p)\n").expect("write");
         std::fs::write(t.path().join("Makefile"), "# a\n# b\n# c\nall:\n").expect("write");
         assert!(run_cmd(t.path(), &["read", "CMakeLists.txt"]).text.ends_with("\n2\tproject(p)"));
+        let rows: String = (1..=30).map(|n| format!("{{\"id\":{n},\"name\":\"row number {n}\"}},")).collect();
+        std::fs::write(t.path().join("k.json"), format!("[{rows}0]\n")).expect("write");
+        let mini = run_cmd(t.path(), &["read", "k.json"]).text;
+        assert!(
+            mini.starts_with("k.json 1 lines, terse view: 1 minified lines reformatted, ")
+                && mini.contains("\n1-1\t⋯ "),
+            "{mini}"
+        );
+        let elems: String = (1..=30).map(|n| format!("<e n=\"{n}\">value {n}</e>")).collect();
+        std::fs::write(t.path().join("l.xml"), format!("<r>{elems}</r>")).expect("write");
+        assert!(run_cmd(t.path(), &["read", "l.xml"]).text.contains("\n1-1\t⋯ 28 <e> element(s)\n"));
+        let nine: Vec<String> =
+            (1..=9).map(|n| format!("\"key{n}\":[{}]", vec!["\"a long value\""; 30].join(","))).collect();
+        let row = format!("{{{}}}", nine.join(","));
+        std::fs::write(t.path().join("m.json"), format!("[{}]", vec![row; 9].join(","))).expect("write");
+        let cut = run_cmd(t.path(), &["read", "m.json", "--budget", "200"]).text;
+        assert!(cut.contains(" view lines of line 1 elided; read m.json --full\n"), "{cut}");
         assert!(run_cmd(t.path(), &["read", "Makefile"])
             .text
             .ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\tall:"));

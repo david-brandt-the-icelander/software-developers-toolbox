@@ -129,7 +129,7 @@
     {
       "id": "terse-view",
       "title": "terse view",
-      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal or shell file (terse.rs), a Nim, SQL or COBOL file (nim.rs, sql.rs, cobol.rs), a JSON, YAML, TOML or Markdown file (data.rs, md.rs), an XML file, INI file or Dockerfile (xml.rs, config.rs), an HCL/Terraform, Protobuf or GraphQL file (schema.rs), or a CMake file or Makefile (buildfile.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
+      "summary": "A shortened rendering of a file that read shows instead of the code: zazzle-csharp-indexer's behaviour-preserving view of a C# file, or zazzled's own view of an HTML or Razor file (markup.rs), a CSS, SCSS, Sass or Less file (styles.rs), a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal or shell file (terse.rs), a Nim, SQL or COBOL file (nim.rs, sql.rs, cobol.rs), a JSON, YAML, TOML or Markdown file (data.rs, md.rs), an XML file, INI file or Dockerfile (xml.rs, config.rs), an HCL/Terraform, Protobuf or GraphQL file (schema.rs), a CMake file or Makefile (buildfile.rs), or minified JSON or XML reformatted first (minified.rs). `N` unchanged lines, `N~` changed lines and `A-B ⋯ note` hidden ranges, with source line numbers and no sha.",
       "notToBeConfusedWith": [
         "An outline, which lists symbols and their ranges, not code."
       ],
@@ -186,6 +186,10 @@
         {
           "path": "macos/rust/zazzled/src/buildfile.rs",
           "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "json_view"
         }
       ]
     },

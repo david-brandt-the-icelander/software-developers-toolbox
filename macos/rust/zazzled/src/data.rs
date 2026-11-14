@@ -20,6 +20,14 @@ pub enum Kind {
     Toml,
 }
 
+// Which sibling runs collapse: hand-written files only list items with the same keys, lock files and generated data (reformatted minified JSON) any 10+ siblings.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Rule {
+    Hand,
+    Lock,
+    Generated,
+}
+
 // Returns the format of a path from its extension or a known lock file name, and whether it is a lock file.
 pub fn kind_of(path: &Path) -> Option<(Kind, bool)> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
@@ -39,6 +47,16 @@ pub fn kind_of(path: &Path) -> Option<(Kind, bool)> {
 
 // Returns the view of a file, or None when nothing would be shortened: a header, then `N`, `N~` and `A-B` lines.
 pub fn view(shown: &str, text: &str, kind: Kind, lock: bool) -> Option<String> {
+    view_as(shown, text, kind, if lock { Rule::Lock } else { Rule::Hand })
+}
+
+// Returns the view of generated JSON (reformatted minified JSON), where any 10+ sibling items or members collapse to their first and last.
+pub fn view_generated(shown: &str, text: &str) -> Option<String> {
+    view_as(shown, text, Kind::Json, Rule::Generated)
+}
+
+// Returns the view of a file under a collapsing rule.
+fn view_as(shown: &str, text: &str, kind: Kind, rule: Rule) -> Option<String> {
     let src: Vec<&str> = text.lines().collect();
     let mut ranges: Vec<(usize, usize, String, &str)> = Vec::new();
     let mut taken = vec![false; src.len()];
@@ -60,7 +78,7 @@ pub fn view(shown: &str, text: &str, kind: Kind, lock: bool) -> Option<String> {
             let found = if kind == Kind::Toml && is_table_header(src[i]) {
                 tables(&src, i)
             } else {
-                items(&src, i, kind, lock)
+                items(&src, i, kind, rule)
             };
             if let Some((blocks, collapse)) = found {
                 blocks.iter().for_each(|&(a, _)| taken[a] = true);
@@ -161,10 +179,10 @@ fn tables(src: &[&str], i: usize) -> Option<Run> {
     Some((blocks, collapse))
 }
 
-// Returns the blocks of a run of sibling list items starting at line i (any sibling entries in a lock file), and the note and step when 10+ of them collapse; multi-line items must name the same keys.
-fn items(src: &[&str], i: usize, kind: Kind, lock: bool) -> Option<Run> {
+// Returns the blocks of a run of sibling list items starting at line i (any sibling entries in a lock file or generated data), and the note and step when 10+ of them collapse; multi-line items must name the same keys.
+fn items(src: &[&str], i: usize, kind: Kind, rule: Rule) -> Option<Run> {
     let k = indent(src[i]);
-    let child = |l: &str| indent(l) == k && is_item(l.trim(), kind, lock);
+    let child = |l: &str| indent(l) == k && is_item(l.trim(), kind, rule != Rule::Hand);
     if !child(src[i]) {
         return None;
     }
@@ -182,11 +200,20 @@ fn items(src: &[&str], i: usize, kind: Kind, lock: bool) -> Option<Run> {
     let n = blocks.len();
     let shape = |&(a, b): &(usize, usize)| keys(src, a, b, kind);
     let multi: Vec<Vec<String>> = blocks.iter().filter(|b| b.1 > b.0).map(shape).collect();
-    let uniform = lock || multi.iter().all(|m| *m == multi[0]);
-    let word = if lock { "entries" } else { "item(s)" };
-    let step = if lock { "lock entries" } else { "list items" };
-    let collapse = (n >= LONG_RUN && uniform).then(|| (format!("{} {word}", n - 2), step));
-    Some((blocks, collapse))
+    let uniform = rule != Rule::Hand || multi.iter().all(|m| *m == multi[0]);
+    let (word, step) =
+        if rule == Rule::Lock { ("entries", "lock entries") } else { ("item(s)", "list items") };
+    if n < LONG_RUN || !uniform {
+        return Some((blocks, None));
+    }
+    let hidden = &blocks[1..n - 1];
+    let names: Vec<&str> = hidden.iter().filter_map(|&(a, _)| member_key(src[a].trim())).collect();
+    let note = if rule == Rule::Generated && names.len() == hidden.len() {
+        format!("{} member(s): {}", n - 2, key_list(&names))
+    } else {
+        format!("{} {word}", n - 2)
+    };
+    Some((blocks, Some((note, step))))
 }
 
 // Returns the keys an item's lines name directly under it, in order: `"key":` in JSON, `key:` in YAML (the first one after `- ` too).
@@ -216,18 +243,37 @@ fn keys(src: &[&str], a: usize, b: usize, kind: Kind) -> Vec<String> {
     out
 }
 
-// True for a line that starts a list item: a JSON array value, a YAML `- ` item, a TOML array value; in a lock file also an object member or mapping key.
-fn is_item(t: &str, kind: Kind, lock: bool) -> bool {
+// Returns the quoted key of a JSON object member line, `"key":`.
+fn member_key(t: &str) -> Option<&str> {
+    let e = string_end(t).filter(|_| t.starts_with('"'))?;
+    t[e..].trim_start().starts_with(':').then(|| &t[..e])
+}
+
+// Joins keys with commas until about 80 characters, then `…`.
+fn key_list(keys: &[&str]) -> String {
+    let mut out = String::new();
+    for (i, k) in keys.iter().enumerate() {
+        if out.len() + k.len() > 80 {
+            return format!("{out}, …");
+        }
+        out.push_str(if i == 0 { "" } else { ", " });
+        out.push_str(k);
+    }
+    out
+}
+
+// True for a line that starts a list item: a JSON array value, a YAML `- ` item, a TOML array value; in a lock file or generated data also an object member or mapping key.
+fn is_item(t: &str, kind: Kind, any: bool) -> bool {
     match kind {
         Kind::Json => {
             let member =
                 t.starts_with('"') && string_end(t).is_some_and(|e| t[e..].trim_start().starts_with(':'));
-            (lock || !member)
+            (any || !member)
                 && t.starts_with([
                     '{', '[', '"', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 't', 'f', 'n',
                 ])
         }
-        Kind::Yaml => t == "-" || t.starts_with("- ") || lock && t.ends_with(':') && !t.starts_with('#'),
+        Kind::Yaml => t == "-" || t.starts_with("- ") || any && t.ends_with(':') && !t.starts_with('#'),
         Kind::Toml => {
             !t.contains(" = ")
                 && t.starts_with([
