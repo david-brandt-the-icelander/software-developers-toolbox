@@ -94,6 +94,20 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
 - Kept: everything else, including resource and block attributes, message fields, types and their fields, short comments and services.
 
+## CMake and Makefile terse view
+
+`zazzle read` on CMake files (`CMakeLists.txt`, `.cmake`) and Makefiles (`Makefile`, `makefile`, `GNUmakefile`, `Makefile.*`, `.mk`, `.mak`) returns a terse view built line by line (`src/buildfile.rs`), with no sha; `--source` returns the file.
+
+- Comments: runs of 3+ `#` lines and CMake bracket comments (`#[[ ]]`, `#[==[ ]==]`) of 3+ lines (`⋯ comment, N line(s)`).
+- Runs of 3+ includes (CMake `include(..)`, Make `include`, `-include`, `sinclude`) become `⋯ 3 include(s)`.
+- Lists of 6+ one-word items keep their first and last item (`⋯ 49 item(s)`):
+  - in CMake, the arguments of a command left open on its line (`set(SOURCES`, `add_library(core`, `target_link_libraries(..`), stopping at a keyword such as `PRIVATE` or `PUBLIC`;
+  - in Make, the continued lines after a line ending in `\` (`SRCS := \`, kernel `obj-y += \`).
+- Arguments of `function`, `macro`, `add_custom_command`, `add_custom_target`, `execute_process` and `add_test` stay whole, because they are signatures and command lines.
+- Logging is hidden: CMake `message(STATUS|VERBOSE|DEBUG|TRACE|CHECK_START|CHECK_PASS|CHECK_FAIL ..)`, even over several lines, and a Make `$(info ..)` alone on its line. `message(WARNING ..)`, `FATAL_ERROR`, `SEND_ERROR`, `AUTHOR_WARNING`, plain `message(..)` and `$(warning ..)` stay.
+- Quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
+- Kept: everything else, including targets, recipes, conditions and short comments.
+
 ## Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell terse view
 
 `zazzle read` on `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.tsx`, `.dart`, `.rs`, `.go`, `.java`, `.kt`, `.kts`, `.swift`, `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx`, `.rb`, `.rake`, `.php`, `.scala`, `.sc`, `.pl`, `.pm`, `.lua`, `.ex`, `.exs`, `.hs`, `.ml`, `.fs`, `.fsx`, `.clj`, `.cljs`, `.cljc`, `.erl`, `.hrl`, `.r`, `.jl`, `.zig`, `.m`, `.groovy`, `.gvy`, `.gradle`, `.ps1`, `.psm1`, `.vb`, `.f`, `.for`, `.ftn`, `.f90`, `.f95`, `.f03`, `.f08`, `.fpp`, `.pas`, `.dpr`, `.lpr`, `.dpk`, `.sh`, `.bash`, `.zsh` and `.ksh` files (`.h` is read as C++) returns a terse view built inside `zazzled` with tree-sitter (`src/terse.rs`), in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten, or over 1 MiB, comes back as source with its sha.

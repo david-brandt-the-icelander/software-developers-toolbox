@@ -806,6 +806,26 @@
       "evidenceStatus": "source-verified"
     },
     {
+      "id": "buildfile-terse-view",
+      "title": "Terse CMake and Makefile view",
+      "summary": "buildfile.rs is tested on a CMakeLists.txt and a Makefile covering every rule and what stays, and on its edges; read is tested end to end on both; the view was run over about 4,000 real build files.",
+      "subject": [
+        {"path": "macos/rust/zazzled/src/cmd/.dev/feature.json", "entityId": "buildfile-terse-view"}
+      ],
+      "criteria": [
+        "Comments of 3+ lines, include runs, the middle of 6+ item lists and status logging become notes or disappear, with source line numbers.",
+        "Signatures, command lines, keywords, warnings and errors, short lists and recipes are kept."
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "test_view_cmake", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "test_view_make", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "test_buildfile_edges", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "automated", "path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "test_line_terse_views", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "manual", "path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "view", "command": "Ran the view over 4,130 build files on the build machine (the Linux 6.8 kernel's Makefiles and .mk files, CMake 3.28's modules, pybind11, xgboost with dmlc-core, and LightGBM) and reviewed samples of every note in context: lists start and end on items and stop at keywords and multi-word lines, function signatures and custom command lines stay whole, hidden messages are only STATUS-style ones, and comment notes cover only comments. 1,970 files had something to shorten, and 178,147 lines became 137,669; no file took over 200 ms."}
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "code-terse-view",
       "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
       "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",

@@ -1,6 +1,7 @@
 // The read command: numbered lines of files or ranges, bounded by a token budget.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
+use crate::buildfile;
 use crate::cobol;
 use crate::config;
 use crate::data;
@@ -182,7 +183,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     Ok(out)
 }
 
-// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
+// Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake, Makefile, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
 fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
@@ -215,6 +216,9 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
     }
     if let Some(kind) = schema::kind_of(path) {
         return schema::view(shown, &text, kind);
+    }
+    if let Some(kind) = buildfile::kind_of(path) {
+        return buildfile::view(shown, &text, kind);
     }
     terse::lang_of(path).and_then(|lang| terse::view(shown, &text, lang))
 }
@@ -649,7 +653,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
 
-    // Checks JSON, Markdown, Nim, SQL, XML, INI, Dockerfile, HCL, Protobuf and GraphQL files read as their line-based terse views, and a plain one as source.
+    // Checks JSON, Markdown, Nim, SQL, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files read as their line-based terse views, and a plain one as source.
     #[test]
     fn test_line_terse_views() {
         let t = TempDir::new();
@@ -687,6 +691,12 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "h.tf"]).text.ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\tx = 1"));
         assert!(run_cmd(t.path(), &["read", "i.proto"]).text.ends_with("\n4\tsyntax = \"proto3\";"));
         assert!(run_cmd(t.path(), &["read", "j.graphql"]).text.ends_with("\n4\ttype T { a: Int }"));
+        std::fs::write(t.path().join("CMakeLists.txt"), "message(STATUS x)\nproject(p)\n").expect("write");
+        std::fs::write(t.path().join("Makefile"), "# a\n# b\n# c\nall:\n").expect("write");
+        assert!(run_cmd(t.path(), &["read", "CMakeLists.txt"]).text.ends_with("\n2\tproject(p)"));
+        assert!(run_cmd(t.path(), &["read", "Makefile"])
+            .text
+            .ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\tall:"));
     }
 
     // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.

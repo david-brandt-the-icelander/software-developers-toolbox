@@ -178,6 +178,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "buildfile",
+      "name": "CMake and Makefile terse view (buildfile.rs)",
+      "responsibility": "Builds the terse view of CMake files and Makefiles line by line with markup.rs's Plan: collapses comments of 3+ lines, include runs and lists of 6+ one-word items, hides CMake message(STATUS ..)-style and Make $(info ..) logging, and cuts long values.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "terse",
       "name": "Code terse view (terse.rs)",
       "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
@@ -694,6 +700,30 @@
       "to": "schema",
       "kind": "depends-on",
       "description": "read's terse HCL, Protobuf and GraphQL view."
+    },
+    {
+      "from": "src",
+      "to": "buildfile",
+      "kind": "contains",
+      "description": "Terse view of CMake files and Makefiles."
+    },
+    {
+      "from": "buildfile",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "buildfile",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "buildfile",
+      "kind": "depends-on",
+      "description": "read's terse CMake and Makefile view."
     },
     {
       "from": "cmd",
