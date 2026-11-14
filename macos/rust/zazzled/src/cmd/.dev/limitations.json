@@ -169,8 +169,8 @@
     },
     {
       "id": "data-view-line-based",
-      "title": "The JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf and GraphQL views are line-based",
-      "summary": "data.rs, md.rs, xml.rs, config.rs and schema.rs work line by line without parsing: items are found by indentation and brackets, so minified JSON comes back as source, flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor. XML elements are collapsed only when each starts its own line and closes on it or at its own indentation, so minified XML comes back as source. HCL list and map items and enum values are collapsed only when each sits on its own line, and an item spread over lines ends the run.",
+      "title": "The JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Makefile views are line-based",
+      "summary": "data.rs, md.rs, xml.rs, config.rs, schema.rs and buildfile.rs work line by line without parsing: items are found by indentation and brackets, so minified JSON comes back as source, flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor. XML elements are collapsed only when each starts its own line and closes on it or at its own indentation, so minified XML comes back as source. HCL list and map items and enum values are collapsed only when each sits on its own line, and an item spread over lines ends the run; CMake and Make lists collapse only with one word per line.",
       "impact": "Some long lists and decorations stay visible; nothing that is not a list item, comment, long text or long string is hidden.",
       "evidenceStatus": "source-verified",
       "sources": [
@@ -189,6 +189,10 @@
         {
           "path": "macos/rust/zazzled/src/schema.rs",
           "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/buildfile.rs",
+          "symbol": "list"
         }
       ]
     },

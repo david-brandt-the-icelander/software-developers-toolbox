@@ -3,6 +3,7 @@
 
 pub mod arena;
 pub mod args;
+pub mod buildfile;
 pub mod cli;
 pub mod client;
 pub mod cmd;
