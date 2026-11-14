@@ -1,4 +1,4 @@
-// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
+// Short names for long locals in the code terse view (Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy): a local of 6+ characters is renamed at every use, only where the syntax tree shows all of them.
 use crate::terse::Lang;
 use std::collections::HashSet;
 use tree_sitter::Node;
@@ -13,6 +13,8 @@ const KEYWORDS: &[&str] = &[
     "go", "make", "nil", "byte", "char", "it", "fun", "val", "by", "out", "auto", "bool", "long", "goto",
     "std", "asm", "xor", "some", "Self", "end", "then", "when", "lazy", "match", "yield", "redo", "echo",
     "my", "our", "sub", "say", "die", "eq", "ne", "lt", "gt", "le", "ge", "cmp", "qw", "qq", "local", "cond",
+    "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f16", "f32", "f64", "isize", "usize", "comptime",
+    "defer", "orelse", "catch", "error", "test", "inline", "BOOL", "SEL", "IMP", "YES", "NO",
 ];
 
 // One local to rename: the byte spans of its declaration and uses, and its new name.
@@ -27,7 +29,7 @@ pub fn renames(root: Node, lang: Lang, src: &str) -> Vec<Rename> {
     let mut done: Vec<(Node, String, String)> = Vec::new();
     let macro_kinds = ["preproc_def", "preproc_function_def"];
     let macros: HashSet<&str> = match lang {
-        Lang::C | Lang::Cpp => preorder(root)
+        Lang::C | Lang::Cpp | Lang::ObjC => preorder(root)
             .into_iter()
             .filter(|n| macro_kinds.contains(&n.kind()))
             .flat_map(|n| words(&src[n.byte_range()]))
@@ -125,6 +127,10 @@ fn is_scope(kind: &str, lang: Lang) -> bool {
         Lang::Perl => matches!(kind, "subroutine_declaration_statement" | "anonymous_subroutine_expression"),
         Lang::Lua => matches!(kind, "function_declaration" | "function_definition"),
         Lang::Elixir => kind == "anonymous_function",
+        Lang::Zig => kind == "function_declaration",
+        Lang::ObjC => matches!(kind, "function_definition" | "method_definition" | "block_literal"),
+        Lang::Groovy => matches!(kind, "method_declaration" | "constructor_declaration"),
+        _ => false,
     }
 }
 
@@ -168,9 +174,11 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
         Lang::Php => &["compact", "extract", "get_defined_vars", "eval"],
         Lang::Lua => &["load", "loadstring", "setfenv", "getfenv", "getlocal", "setlocal"],
         Lang::Elixir => &["quote", "binding", "var!"],
+        Lang::Groovy => &["evaluate", "binding", "getVariable", "setVariable", "Eval", "GroovyShell"],
+        Lang::ObjC => &["valueForKey", "setValue", "valueForKeyPath", "NSSelectorFromString"],
         _ => &[],
     };
-    let not_a_function = matches!(lang, Lang::C | Lang::Cpp)
+    let not_a_function = matches!(lang, Lang::C | Lang::Cpp | Lang::ObjC)
         && nodes.first().is_some_and(|f| {
             f.kind() == "function_definition"
                 && f.child_by_field_name("declarator").is_none_or(|d| !has_kind(d, "function_declarator"))
@@ -180,14 +188,18 @@ fn poisoned(nodes: &[Node], lang: Lang, src: &str) -> bool {
         || perl_dynamic
         || nodes.iter().any(|n| {
             n.is_error()
-                || n.is_missing()
+                || n.is_missing() && !(lang == Lang::Groovy && n.kind() == ";")
                 || n.kind() == "with_statement" && lang != Lang::Python
+                || lang == Lang::Groovy
+                    && matches!(n.kind(), "closure" | "juxt_function_call" | "lambda_expression")
                 || n.kind() == "dynamic_variable_name"
                 || matches!(n.kind(), "identifier" | "name")
                     && dynamic.contains(&&src[n.byte_range()])
-                    && std::iter::successors(n.parent(), |x| x.parent())
-                        .take(2)
-                        .any(|a| a.kind().contains("call"))
+                    && std::iter::successors(n.parent(), |x| x.parent()).take(2).any(|a| {
+                        a.kind().contains("call")
+                            || a.kind().contains("invocation")
+                            || a.kind() == "message_expression"
+                    })
         })
 }
 
@@ -232,13 +244,23 @@ fn declared_by<'t>(n: Node<'t>, lang: Lang, src: &str) -> Vec<Node<'t>> {
         (Lang::Python, "assignment" | "for_statement" | "for_in_clause") => field("left"),
         (Lang::Python, "as_pattern_target") => n.named_child(0),
         (Lang::Python, "named_expression") => field("name"),
-        (Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java, "variable_declarator") => {
-            field("name")
-        }
+        (Lang::Groovy, "variable_declarator") if !groovy_declares(n) => None,
+        (
+            Lang::JavaScript | Lang::TypeScript | Lang::Tsx | Lang::Java | Lang::Groovy,
+            "variable_declarator",
+        ) => field("name"),
         (Lang::JavaScript | Lang::TypeScript | Lang::Tsx, "for_in_statement") if has_decl_keyword(n) => {
             field("left")
         }
-        (Lang::Java, "enhanced_for_statement") => field("name"),
+        (Lang::Java | Lang::Groovy, "enhanced_for_statement") => field("name"),
+        (Lang::Zig, "variable_declaration") if has_kind_child(n, &["const", "var"]) => n.named_child(0),
+        (Lang::Zig, "payload") => return kids(n).filter(|c| c.kind() == "identifier").collect(),
+        (Lang::ObjC, "for_statement") => {
+            let all: Vec<Node> = (0..n.child_count()).filter_map(|i| n.child(i)).collect();
+            let Some(at) = all.iter().position(|c| c.kind() == "in") else { return Vec::new() };
+            let typed = at >= 2 && all[at - 2].kind().contains("type");
+            return if typed { targets(all[at - 1]) } else { Vec::new() };
+        }
         (Lang::Rust, "let_declaration" | "for_expression") => field("pattern"),
         (Lang::Go, "short_var_declaration") => field("left"),
         (Lang::Go, "range_clause") if has_decl_keyword(n) => field("left"),
@@ -252,7 +274,7 @@ fn declared_by<'t>(n: Node<'t>, lang: Lang, src: &str) -> Vec<Node<'t>> {
         }
         (Lang::Swift, "property_declaration") => field("name"),
         (Lang::Swift, "for_statement") => field("item"),
-        (Lang::C | Lang::Cpp, "declaration") => {
+        (Lang::C | Lang::Cpp | Lang::ObjC, "declaration") => {
             let mut cursor = n.walk();
             return n.children_by_field_name("declarator", &mut cursor).flat_map(targets).collect();
         }
@@ -359,6 +381,7 @@ fn uses(scope: Node, nodes: &[Node], name: &str, lang: Lang, src: &str) -> Optio
     };
     if lang == Lang::Rust && nodes.iter().any(in_format)
         || lang == Lang::Kotlin && nodes.iter().any(in_template)
+        || lang == Lang::Groovy && nodes.iter().any(|n| in_gstring(n, name, src))
     {
         return None;
     }
@@ -460,8 +483,15 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         (Lang::Java | Lang::Scala, "lambda_expression") if is_field(parent, "parameters") => {
             return Role::Unsafe
         }
-        (Lang::Java, "field_access") if is_field(parent, "field") => return Role::Other,
-        (Lang::Java, "method_invocation") if is_field(parent, "name") => return Role::Other,
+        (Lang::Java | Lang::Groovy, "field_access") if is_field(parent, "field") => return Role::Other,
+        (Lang::Java | Lang::Groovy, "method_invocation") if is_field(parent, "name") => return Role::Other,
+        (Lang::ObjC, "message_expression")
+            if is_field(parent, "method") || n.next_sibling().is_some_and(|s| s.kind() == ":") =>
+        {
+            return Role::Other
+        }
+        (Lang::Zig, "field_expression") if is_field(parent, "member") => return Role::Other,
+        (Lang::Zig, "block_label" | "break_label") => return Role::Other,
         (Lang::Java | Lang::Rust, "scoped_identifier") if !in_use(parent) => return Role::Other,
         (Lang::Rust, "macro_invocation") if is_field(parent, "macro") => return Role::Unsafe,
         (Lang::Kotlin, "navigation_expression")
@@ -474,7 +504,7 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         }
         (Lang::Kotlin, "user_type") => return Role::Other,
         (Lang::Swift, "navigation_suffix" | "value_argument_label") => return Role::Other,
-        (Lang::C | Lang::Cpp, "qualified_identifier") => return Role::Other,
+        (Lang::C | Lang::Cpp | Lang::ObjC, "qualified_identifier") => return Role::Other,
         (Lang::Ruby, "call") if is_field(parent, "method") => {
             return if parent.child_by_field_name("receiver").is_some() { Role::Other } else { Role::Unsafe }
         }
@@ -560,6 +590,21 @@ fn role(n: Node, parent: Node, scope: Node, lang: Lang, src: &str) -> Role {
         p = x.parent();
     }
     Role::Use
+}
+
+// True when a Groovy declarator's declaration has a type, `def`, `var` or modifiers; a bare name on its own line parses as a declarator too.
+fn groovy_declares(declarator: Node) -> bool {
+    declarator.parent().is_some_and(|d| {
+        d.child_by_field_name("type").is_some()
+            || has_kind_child(d, &["def", "var", "modifiers"])
+            || d.kind() == "field_declaration"
+    })
+}
+
+// True for a Groovy string with `$` interpolation that mentions the name anywhere, since its `${..}` parts are not parsed.
+fn in_gstring(n: &Node, name: &str, src: &str) -> bool {
+    let t = &src[n.byte_range()];
+    n.kind() == "string_literal" && t.contains('$') && words(t).any(|w| w == name)
 }
 
 // True when a node is part of a Rust `use` declaration.
@@ -1037,5 +1082,44 @@ mod tests {
         assert!(none("f", "quote do: counter"));
         assert!(none("f", "binding()"));
         assert!(none("f(x)", "case x do\n      counter -> counter\n    end"));
+    }
+
+    // Checks Zig locals, captures and compound assignment, and the places that keep a name: labels, fields, a name declared twice.
+    #[test]
+    fn test_zig() {
+        let src = "fn f(items: []Item) usize {\n    var total_sum: usize = 0;\n    for (items) |line_item| {\n        total_sum += line_item.total_sum;\n    }\n    const result = total_sum: {\n        break :total_sum total_sum;\n    };\n    return result;\n}\n";
+        assert_eq!(renamed(src, Lang::Zig), ["total_sum->ts@3", "line_item->li@2", "result->res@2"]);
+        let two = "fn f() void {\n    if (a) {\n        const counter = 1;\n        _ = counter;\n    } else {\n        const counter = 2;\n        _ = counter;\n    }\n}\n";
+        assert!(renamed(two, Lang::Zig).is_empty());
+    }
+
+    // Checks Objective-C locals, fast enumeration and blocks, and the places that keep a name: selector keywords, KVC calls.
+    #[test]
+    fn test_objc() {
+        let src = "@implementation A\n- (void)load {\n    NSArray *lineItems = [self.api itemsWithCount:2 lineItems:nil];\n    for (NSString *lineItem in lineItems) {\n        [self show:lineItem];\n    }\n}\n@end\n";
+        assert_eq!(renamed(src, Lang::ObjC), ["lineItems->li@2", "lineItem->li2@2"]);
+        let c_for = "void f(int n) {\n    for (int counter = 0; counter < n; counter++) { g(counter); }\n}\n";
+        assert_eq!(renamed(c_for, Lang::ObjC), ["counter->cou@4"]);
+        let member = "@implementation A\n- (void)load {\n    id lineItems = [self lineItems];\n    [self show:lineItems];\n}\n@end\n";
+        assert_eq!(renamed(member, Lang::ObjC), ["lineItems->li@2"]);
+        let kvc = "@implementation A\n- (id)load {\n    id counter = @1;\n    return [self valueForKey:@\"counter\"];\n}\n@end\n";
+        assert!(renamed(kvc, Lang::ObjC).is_empty());
+    }
+
+    // Checks Groovy locals and the places that keep a name: a bare name statement, GString interpolation, methods with closures.
+    #[test]
+    fn test_groovy() {
+        let src = "class A {\n    int f(int id) {\n        def responseBody = api.get(id)\n        final int totalSum = responseBody.size()\n        return totalSum\n    }\n}\n";
+        assert_eq!(renamed(src, Lang::Groovy), ["responseBody->rb@2", "totalSum->ts@2"]);
+        let members = "class A {\n    def f() {\n        def totalSum = this.totalSum + totalSum()\n        println \"totalSum\"\n        return totalSum\n    }\n}\n";
+        assert_eq!(renamed(members, Lang::Groovy), ["totalSum->ts@2"]);
+        let none = |body: &str| {
+            renamed(&format!("class A {{\n    def f() {{\n{body}\n    }}\n}}\n"), Lang::Groovy).is_empty()
+        };
+        assert!(none("        counter"));
+        assert!(none("        def counter = 1\n        println \"${counter + 1}\""));
+        assert!(none("        def counter = 1\n        xs.each { counter += it }"));
+        assert!(none("        def counter = 1\n        evaluate(\"counter\")"));
+        assert!(none("        def counter = f(1\n        return counter"));
     }
 }
