@@ -189,10 +189,16 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
         let csharp = |code: &str| Indexer::locate().and_then(|ix| ix.view_text(path, code)).ok();
-        return markup::view(shown, &text, kind, &csharp);
+        let minified = (kind == markup::Kind::Html && minified::is_minified(&text))
+            .then(|| minified::html_view(shown, &text))
+            .flatten();
+        return minified.or_else(|| markup::view(shown, &text, kind, &csharp));
     }
     if let Some(kind) = styles::kind_of(path) {
-        return styles::view(shown, &text, kind);
+        let minified = (kind == styles::Kind::Css && minified::is_minified(&text))
+            .then(|| minified::css_view(shown, &text))
+            .flatten();
+        return minified.or_else(|| styles::view(shown, &text, kind));
     }
     if nim::is_nim(path) {
         return nim::view(shown, &text);
@@ -213,8 +219,9 @@ fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String
         return md::view(shown, &text);
     }
     if xml::is_xml(path) {
-        let minified = minified::is_minified(&text).then(|| minified::xml_view(shown, &text)).flatten();
-        return minified.or_else(|| xml::view(shown, &text));
+        let svg = xml::is_svg(path);
+        let minified = minified::is_minified(&text).then(|| minified::xml_view(shown, &text, svg)).flatten();
+        return minified.or_else(|| xml::view(shown, &text, svg));
     }
     if let Some(kind) = config::kind_of(path) {
         return config::view(shown, &text, kind);
@@ -665,7 +672,7 @@ mod tests {
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
 
-    // Checks JSON, Markdown, Nim, SQL, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files, and minified JSON and XML, read as their line-based terse views, and a plain one as source.
+    // Checks JSON, Markdown, Nim, SQL, XML, SVG, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files, and minified JSON, XML, CSS and HTML, read as their line-based terse views, and a plain one as source.
     #[test]
     fn test_line_terse_views() {
         let t = TempDir::new();
@@ -721,6 +728,21 @@ mod tests {
             (1..=9).map(|n| format!("\"key{n}\":[{}]", vec!["\"a long value\""; 30].join(","))).collect();
         let row = format!("{{{}}}", nine.join(","));
         std::fs::write(t.path().join("m.json"), format!("[{}]", vec![row; 9].join(","))).expect("write");
+        std::fs::write(
+            t.path().join("n.svg"),
+            "<svg>\n  <metadata>\n  </metadata>\n  <path d=\"M0 0\"/>\n</svg>\n",
+        )
+        .expect("write");
+        assert!(run_cmd(t.path(), &["read", "n.svg"]).text.contains("\n2-3\t⋯ <metadata>, 2 line(s)\n"));
+        let icons: String = (1..=40).map(|n| format!(".icon-{n}:before{{content:\"\\f{n:03}\"}}")).collect();
+        std::fs::write(t.path().join("o.min.css"), format!("{icons}\n")).expect("write");
+        assert!(run_cmd(t.path(), &["read", "o.min.css"])
+            .text
+            .contains("\n1-1\t⋯ 38 rule(s) setting content\n"));
+        let rows: String = (1..=40).map(|n| format!("<tr><td>row {n}</td></tr>")).collect();
+        std::fs::write(t.path().join("p.html"), format!("<html><body><table>{rows}</table></body></html>\n"))
+            .expect("write");
+        assert!(run_cmd(t.path(), &["read", "p.html"]).text.contains("\n1-1\t⋯ 38 <tr> element(s)\n"));
         let cut = run_cmd(t.path(), &["read", "m.json", "--budget", "200"]).text;
         assert!(cut.contains(" view lines of line 1 elided; read m.json --full\n"), "{cut}");
         assert!(run_cmd(t.path(), &["read", "Makefile"])

@@ -1,4 +1,4 @@
-// Terse view of HTML and Razor files (the C# in Razor @code, @functions and multi-line @{ } blocks through the indexer's C# view): hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, and shortens long class and style values, keeping source line numbers.
+// Terse view of HTML and Razor files (the C# in Razor @code, @functions and multi-line @{ } blocks through the indexer's C# view): hides comments of three or more lines, inline styles, SVG drawings, head boilerplate and Razor directives, collapses runs of 10+ same-tag sibling elements to their first and last, and shortens long class and style values, keeping source line numbers.
 use std::path::Path;
 
 const LONG_CLASS: usize = 4;
@@ -102,10 +102,15 @@ pub fn view(shown: &str, text: &str, kind: Kind, csharp: &dyn Fn(&str) -> Option
         {
             plan.hide(i, end, format!("{} meta/link tag(s)", end - i + 1), "head tags");
             i = end + 1;
+        } else if let Some((blocks, tag)) = crate::xml::run(&src, i) {
+            let (first, last) = (blocks[0], blocks[blocks.len() - 1]);
+            let (second, before_last) = (blocks[1].0, blocks[blocks.len() - 2].1);
+            (first.0..second).for_each(|l| keep_short(&mut plan, src[l], l));
+            plan.hide(second, before_last, format!("{} <{tag}> element(s)", blocks.len() - 2), "elements");
+            (before_last + 1..=last.1).for_each(|l| keep_short(&mut plan, src[l], l));
+            i = last.1 + 1;
         } else {
-            let (short, n) = shorten(src[i]);
-            (0..n).for_each(|_| plan.count("long attributes"));
-            plan.keep(i, &short, n > 0);
+            keep_short(&mut plan, src[i], i);
             i += 1;
         }
     }
@@ -114,6 +119,13 @@ pub fn view(shown: &str, text: &str, kind: Kind, csharp: &dyn Fn(&str) -> Option
     }
     let steps: Vec<String> = plan.steps.iter().map(|(s, n)| format!("{n} {s}")).collect();
     Some(format!("{shown} {} lines; terse: {}\n{}", src.len(), steps.join(", "), plan.lines.join("\n")))
+}
+
+// Keeps a line with long class and style values shortened.
+fn keep_short(plan: &mut Plan, line: &str, i: usize) {
+    let (short, n) = shorten(line);
+    (0..n).for_each(|_| plan.count("long attributes"));
+    plan.keep(i, &short, n > 0);
 }
 
 // Returns the last line of a block shown as it is: <script>, <pre>, <textarea> and Razor code blocks.

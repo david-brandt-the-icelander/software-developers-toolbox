@@ -129,7 +129,7 @@
       "id": "markup-view-line-based",
       "title": "The HTML, Razor, CSS, SCSS, Sass and Less views work on whole lines",
       "summary": "markup.rs does not parse markup: it hides comments and <style>/<svg> elements only when they start and end their own lines, keeps <script>, <pre>, <textarea> and Razor @{ } blocks with markup unchanged, and shortens C# in Razor @code, @functions and multi-line @{ } blocks only through zazzle-csharp-indexer; a local of an @{ } block keeps its name when any word of the page outside the block matches it, even in text. styles.rs is line-based the same way: it hides comments and @font-face or @keyframes blocks only when they start and end their own lines.",
-      "impact": "Minified or single-line HTML, and Razor views that are mostly C#, gain little from the view.",
+      "impact": "Razor views that are mostly C# gain little from the view; minified HTML is reformatted first.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -170,7 +170,7 @@
     {
       "id": "data-view-line-based",
       "title": "The JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Makefile views are line-based",
-      "summary": "data.rs, md.rs, xml.rs, config.rs, schema.rs and buildfile.rs work line by line without parsing: items are found by indentation and brackets, so flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Minified JSON and XML are reformatted first (minified.rs), and a view that would not be shorter than the file is dropped. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor. XML elements are collapsed only when each starts its own line and closes on it or at its own indentation, so XML on few lines collapses only when minified.rs reformats it (most of its text on 500+ character lines). HCL list and map items and enum values are collapsed only when each sits on its own line, and an item spread over lines ends the run; CMake and Make lists collapse only with one word per line.",
+      "summary": "data.rs, md.rs, xml.rs, config.rs, schema.rs and buildfile.rs work line by line without parsing: items are found by indentation and brackets, so flow-style YAML lists are not collapsed, and multi-line list items collapse only when they name the same keys. Minified JSON, XML, SVG, HTML and CSS are reformatted first (minified.rs); reformatted CSS without long rule runs can be longer than the minified file, and HTML is reformatted by tags alone, without a full HTML parser's rules for implied elements. Markdown badges are recognised by their image source, and a table of contents only when every entry links to an anchor. XML elements are collapsed only when each starts its own line and closes on it or at its own indentation, so XML on few lines collapses only when minified.rs reformats it (most of its text on 500+ character lines). HCL list and map items and enum values are collapsed only when each sits on its own line, and an item spread over lines ends the run; CMake and Make lists collapse only with one word per line.",
       "impact": "Some long lists and decorations stay visible; nothing that is not a list item, comment, long text or long string is hidden.",
       "evidenceStatus": "source-verified",
       "sources": [

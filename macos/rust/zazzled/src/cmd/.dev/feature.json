@@ -289,7 +289,7 @@
           "symbol": "HTML and Razor terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre> and <textarea> blocks are shown as they are; C# in Razor @code and @functions blocks, and in multi-line @{ } blocks wrapped as a method body with a nameof(..) of every word the block shares with the rest of the page so locals the markup names keep them, gets zazzle-csharp-indexer's view; @{ } blocks with markup in them stay as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, markup.rs hides comments of three or more lines, <style> and <svg> elements alone on their lines, runs of two or more <meta>/<link>/<base> lines and, in Razor, runs of @using/@addTagHelper/@removeTagHelper lines; it collapses runs of 10+ sibling elements with the same tag to their first and last; it shortens class values with more than 4 classes to the first 3 and style values over 40 characters. <script>, <pre> and <textarea> blocks are shown as they are; C# in Razor @code and @functions blocks, and in multi-line @{ } blocks wrapped as a method body with a nameof(..) of every word the block shares with the rest of the page so locals the markup names keep them, gets zazzle-csharp-indexer's view; @{ } blocks with markup in them stay as they are. read renders the result like the C# view: `N`, `N~`, `A-B ⋯ note` under a header naming the steps and --source. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads pages and Razor views without paying for styles, drawings, boilerplate and utility-class lists, and still has to read the real markup before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
@@ -341,11 +341,11 @@
           "symbol": "CSS, SCSS, Sass and Less terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it collapses runs of 10+ sibling rules setting the same properties (icon fonts, utility classes; not in Sass) to their first and last, naming the properties; it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads stylesheets without paying for licence banners, font and animation boilerplate, duplicate prefixes and inline images, and still has to read the real stylesheet before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
-        "The rules are line-based: a comment or block sharing its first or last line with other rules is not hidden, and minified files gain little.",
+        "The rules are line-based: a comment or block sharing its first or last line with other rules is not hidden; minified CSS is reformatted first by the minified terse view.",
         "Comments of three lines or fewer stay, since they are usually section titles."
       ],
       "implementation": [
@@ -461,7 +461,7 @@
     {
       "id": "xml-terse-view",
       "name": "Terse XML view",
-      "description": "`read` on an XML file (.xml, project and MSBuild files, XAML, plists, resources, schemas, .nuspec, .manifest) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read` on an XML file (.xml, project and MSBuild files, XAML, plists, resources, schemas, .nuspec, .manifest, .svg) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/xml.rs",
@@ -476,7 +476,7 @@
           "symbol": "XML, INI and Dockerfile terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, xml.rs collapses comments of three or more lines and runs of ten or more sibling elements with the same tag (each on one line or closing at its own indentation) to their first and last, and cuts quoted values over 120 characters and runs of 120+ base64-style characters to their first 40. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, xml.rs collapses comments of three or more lines and runs of ten or more sibling elements with the same tag (each on one line or closing at its own indentation) to their first and last, and cuts quoted values over 120 characters and runs of 120+ base64-style characters to their first 40; in an SVG it also hides editor metadata (<metadata> and any sodipodi: or inkscape: element, whose start tag may span lines). read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads project files, resource files and XML data without paying for long reference lists, repeated records and embedded blobs, and still has to read the real file before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
@@ -601,14 +601,14 @@
     {
       "id": "minified-terse-view",
       "name": "Terse view of minified JSON and XML",
-      "description": "`read` on a JSON or XML file whose text sits mostly on lines of 500+ characters returns the JSON or XML terse view of the file reformatted one value or element per line, with every line keyed to its source line, instead of a few huge lines.",
+      "description": "`read` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, which are most of its lines (or it has at most 5), returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
       "sources": [
         {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "json_view"},
         {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "xml_view"},
         {"path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "other_view"},
         {"path": "macos/rust/zazzled/README.md", "symbol": "Minified JSON and XML terse view"}
       ],
-      "behavior": "Without --source or --anchors, minified.rs reformats JSON with two spaces and one value per line (strings and numbers as written) and XML with one element per line (text-only elements on one line), runs data.rs's view as generated data (any 10+ sibling items or members collapse, and a note on hidden members lists their keys up to about 80 characters) or xml.rs's view over it, and rewrites each view line's key to its source line (`N~` for a kept line, `A-B` for a note) and the header to the source's line count plus `N minified lines reformatted`. Text that does not parse, or a view not shorter than the file, falls back to the line-based view. When the view of one source line is over the budget, read's footer counts the elided view lines and points to --full.",
+      "behavior": "Without --source or --anchors, minified.rs reformats JSON with two spaces and one value per line (strings and numbers as written), XML and SVG with one element per line (text-only elements on one line), HTML the same way tolerating void elements and stray or implied closing tags and cutting script, style and textarea text over 200 characters to its first 80, and CSS with one selector, declaration, brace or comment per line (strings and parentheses whole); it runs data.rs's view as generated data (any 10+ sibling items or members collapse, and a note on hidden members lists their keys up to about 80 characters), xml.rs's, markup.rs's or styles.rs's view over it, and rewrites each view line's key to its source line (`N~` for a kept line, `A-B` for a note) and the header to the source's line count plus `N minified lines reformatted`. Text that does not parse, or with nothing to shorten, falls back to the line-based view; a view longer than the minified file is kept, since the budget can cut it at line boundaries. When the view of one source line is over the budget, read's footer counts the elided view lines and points to --full.",
       "outcome": "An agent can read the shape and a sample of a minified API response, data bundle or Office XML part, which as source is one line it cannot page through.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",

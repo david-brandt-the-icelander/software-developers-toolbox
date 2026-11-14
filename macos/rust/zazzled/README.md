@@ -50,6 +50,7 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 `zazzle read` on `.html`, `.htm`, `.xhtml`, `.cshtml` and `.razor` files returns a terse view built inside `zazzled`, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
 
 - Hidden: comments of 3+ lines (`<!-- -->`, Razor `@* *@`), `<style>` and `<svg>` elements that start and end their own lines, runs of 2+ `<meta>`/`<link>`/`<base>` lines, and in Razor runs of 2+ `@using`/`@addTagHelper`/`@removeTagHelper` lines.
+- Runs of 10+ sibling elements with the same tag (`<li>`, `<tr>`, `<option>`), each closing on its line or at its own indentation, keep their first and last (`⋯ 38 <tr> element(s)`).
 - Shortened: `class` values with more than 4 classes to their first 3 and `…`, `style` values over 40 characters to `…`; values containing `@`, `{{` or `${` are left alone.
 - Razor `@code` and `@functions` blocks: the C# inside gets the C# terse view from `zazzle-csharp-indexer`, as a `.cs` file would (zazzled sends the blocks as text padded to the file's line numbers, so the view keeps them); without the indexer or a git work tree they are shown as they are.
 - Razor `@{ }` blocks over several lines get the same C# view, wrapped as a method body: logging goes and long locals get short names. A local that the rest of the page also names (`@pageTitle` in the markup) keeps its name, because zazzled adds a `nameof(..)` of every word the block shares with the page, which the C# view never renames. A block with markup in it (`<p>`, `@:`) and a one-line `@{ .. }` stay as they are.
@@ -60,8 +61,9 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 `zazzle read` on `.css`, `.scss`, `.sass` and `.less` files returns a terse view built inside `zazzled` (`src/styles.rs`), line by line, in the same line format and with no sha; `--source` returns the code. A file with nothing to shorten comes back as source with its sha.
 
 - Hidden: `/* */` comments of 4+ lines and SCSS `//` runs of 4+ lines (shorter ones are usually section titles), `/*# sourceMappingURL */` comments, runs of 2+ `@import`/`@use`/`@forward` lines, `@font-face` blocks (`7-10 ⋯ @font-face "Inter", 4 line(s)`) and `@keyframes` blocks, vendor-prefixed declarations (`-webkit-`, `-moz-`, `-ms-`, `-o-`) when the same block also sets the plain property, and SCSS and Sass `@debug` lines. Less is read like SCSS; indented Sass finds its blocks (comments, `@font-face`, `@keyframes`, the block a prefixed declaration belongs to) by indentation and needs no `;`.
+- Runs of 10+ sibling rules that set the same properties, each on one line or over several (icon fonts, utility classes), keep their first and last (`⋯ 1418 rule(s) setting --fa`). Sass is not checked for them.
 - Shortened: `url(data:…)` values longer than 60 characters.
-- Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden, and minified files gain little.
+- Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden. Minified CSS is reformatted first; see below.
 
 ## JSON, YAML, TOML and Markdown terse view
 
@@ -74,22 +76,25 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 - Markdown: HTML comments (multi-line ones as `⋯ comment, N line(s)`), lines made only of badge images (shields.io, badgen, codecov, coveralls, `badge` or `.svg` sources), runs of 2+ link reference definitions (`[x]: url`) and lists of 3+ entries that only link to anchors (tables of contents). Fenced code and front matter are left alone.
 - Kept: everything else. Minified JSON is reformatted first; see below.
 
-## Minified JSON and XML terse view
+## Minified JSON, XML, SVG, HTML and CSS terse view
 
-A `.json` file or an XML file (any extension above) whose text sits mostly on lines of 500+ characters is minified. `src/minified.rs` reformats it in memory and runs the JSON or XML view below over the result:
+A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when most of its text sits on lines of 500+ characters and those lines are most of its lines (or it has at most 5 lines), so a hand-written SVG with long path data is not. `src/minified.rs` reformats it in memory and runs the JSON, XML, HTML or CSS view over the result:
 
-- JSON is reformatted with two spaces and one value per line; strings and numbers stay as written. XML gets one element per line, with an element holding only text kept on one line.
+- JSON is reformatted with two spaces and one value per line; strings and numbers stay as written. XML and SVG get one element per line, with an element holding only text kept on one line.
+- HTML gets the same, tolerating what browsers do: void elements (`<br>`, `<img>`, `<meta>`) stand alone, a stray or implied closing tag is not an error, and the text of `<script>`, `<style>` and `<textarea>` stays one line, cut to its first 80 characters when over 200 (`… (5120 characters)`).
+- CSS gets one selector, declaration, closing brace or comment per line, indented a level per block; strings and parentheses (`url(..)`, `:not(..)`) stay whole.
 - Every view line maps back to its source line: a kept line reads `1~`, and a note reads `1-1 ⋯ 38 item(s)`. The header counts the source's lines and adds `N minified lines reformatted`.
 - Minified JSON is treated as generated data. Like a lock file, any 10+ sibling items or object members collapse, even when the items name different keys. A note on hidden members lists their keys up to about 80 characters (`⋯ 12 member(s): "api", "browsers", "css", …`).
 - XML follows the usual rules: runs of 10+ same-tag elements keep their first and last, and long values are cut.
-- If the text does not parse, or the view would not be shorter than the file, the file reads as it would have before.
+- If the text does not parse, or nothing was shortened, the file reads as it would have before. A view is kept even when it is longer than the minified file, since the token budget can cut a view at line boundaries but not inside one huge line.
 - When the view of a one-line file is over the token budget, the footer says how many view lines were elided and to read with `--full`. A line range cannot narrow a one-line file.
 
 ## XML, INI and Dockerfile terse view
 
-`zazzle read` on XML files (`.xml`, `.csproj`, `.fsproj`, `.vbproj`, `.vcxproj`, `.props`, `.targets`, `.xaml`, `.axaml`, `.plist`, `.resx`, `.xsd`, `.xsl`, `.xslt`, `.wsdl`, `.nuspec`, `.manifest`), INI-style files (`.ini`, `.cfg`, `.properties`, `.editorconfig`) and Dockerfiles (`Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `Containerfile`) returns a terse view built line by line (`src/xml.rs`, `src/config.rs`), with no sha; `--source` returns the file.
+`zazzle read` on XML files (`.xml`, `.csproj`, `.fsproj`, `.vbproj`, `.vcxproj`, `.props`, `.targets`, `.xaml`, `.axaml`, `.plist`, `.resx`, `.xsd`, `.xsl`, `.xslt`, `.wsdl`, `.nuspec`, `.manifest`, `.svg`), INI-style files (`.ini`, `.cfg`, `.properties`, `.editorconfig`) and Dockerfiles (`Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `Containerfile`) returns a terse view built line by line (`src/xml.rs`, `src/config.rs`), with no sha; `--source` returns the file.
 
 - XML: comments of 3+ lines (`⋯ comment, N line(s)`); runs of 10+ sibling elements with the same tag, one per line or each closing at the same indentation, keep their first and last (`⋯ 40 <PackageReference> element(s)`); quoted values over 120 characters and runs of 120+ base64-style characters keep their first 40 (`N~`).
+- SVG: as XML, with long path data cut the same way, and editor metadata hidden whatever its shape: `<metadata>` and any `sodipodi:` or `inkscape:` element (`⋯ <sodipodi:namedview>, 12 line(s)`).
 - INI: `;` and `#` comment blocks of 4+ lines, and long values as in XML.
 - Dockerfile: `#` comment blocks of 4+ lines (`# syntax=` and `# escape=` directives stay), runs of 3+ `LABEL` lines (or one `LABEL` continued over 3+ lines), and 6+ package names one per continued line after a `RUN … \` line (`⋯ 25 package(s)`).
 - Kept: everything else, including short comments, mixed tags and commands between packages.

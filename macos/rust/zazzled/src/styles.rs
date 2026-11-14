@@ -3,6 +3,7 @@ use crate::markup::Plan;
 use std::collections::HashSet;
 use std::path::Path;
 
+const LONG_RULES: usize = 10;
 const LONG_COMMENT: usize = 4;
 const LONG_DATA_URI: usize = 60;
 const PREFIXES: [&str; 4] = ["-webkit-", "-moz-", "-ms-", "-o-"];
@@ -61,10 +62,15 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
         } else if prefixed(t, kind).is_some_and(|p| plain.contains(&(blocks[i], p.to_string()))) {
             plan.count("vendor prefixes");
             i += 1;
+        } else if let Some((rules, props)) = rule_run(&src, i).filter(|_| kind != Kind::Sass) {
+            let (first, last) = (rules[0], rules[rules.len() - 1]);
+            (first.0..=first.1).for_each(|l| keep_line(&mut plan, src[l], l));
+            let note = format!("{} rule(s) setting {}", rules.len() - 2, props.join(", "));
+            plan.hide(rules[1].0, rules[rules.len() - 2].1, note, "rule runs");
+            (last.0..=last.1).for_each(|l| keep_line(&mut plan, src[l], l));
+            i = last.1 + 1;
         } else {
-            let (short, n) = shorten_data_uris(src[i]);
-            (0..n).for_each(|_| plan.count("data URIs"));
-            plan.keep(i, &short, n > 0);
+            keep_line(&mut plan, src[i], i);
             i += 1;
         }
     }
@@ -73,6 +79,66 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
     }
     let steps: Vec<String> = plan.steps.iter().map(|(s, n)| format!("{n} {s}")).collect();
     Some(format!("{shown} {} lines; terse: {}\n{}", src.len(), steps.join(", "), plan.lines.join("\n")))
+}
+
+// Keeps a line with long data URIs cut.
+fn keep_line(plan: &mut Plan, line: &str, i: usize) {
+    let (short, n) = shorten_data_uris(line);
+    (0..n).for_each(|_| plan.count("data URIs"));
+    plan.keep(i, &short, n > 0);
+}
+
+// Returns the first and last lines and sorted property names of a plain rule starting at line i: `sel { a: 1; b: 2; }` on one line, or a selector line ending in `{`, declaration lines and a `}` at its indentation; None for at-rules and nested blocks.
+fn rule_block(src: &[&str], i: usize) -> Option<((usize, usize), Vec<String>)> {
+    let t = src[i].trim();
+    if t.starts_with('@') || !t.contains('{') {
+        return None;
+    }
+    let prop =
+        |d: &str| d.split_once(':').map(|(p, _)| p.trim().to_ascii_lowercase()).filter(|p| !p.is_empty());
+    let mut props: Vec<String>;
+    let end;
+    if t.ends_with('}') {
+        let body = &t[t.find('{')? + 1..t.len() - 1];
+        if body.contains('{') {
+            return None;
+        }
+        props = body.split(';').filter(|d| !d.trim().is_empty()).map(prop).collect::<Option<_>>()?;
+        end = i;
+    } else if t.ends_with('{') && t.matches('{').count() == 1 {
+        let k = src[i].len() - src[i].trim_start().len();
+        end = (i + 1..src.len())
+            .find(|&j| src[j].trim() == "}" && src[j].len() - src[j].trim_start().len() == k)?;
+        let body = &src[i + 1..end];
+        if body.iter().any(|l| l.contains('{') || l.contains('}')) {
+            return None;
+        }
+        props = body.iter().filter(|l| !l.trim().is_empty()).map(|l| prop(l)).collect::<Option<_>>()?;
+    } else {
+        return None;
+    }
+    props.sort();
+    props.dedup();
+    (!props.is_empty()).then_some(((i, end), props))
+}
+
+// The first and last lines of each rule in a run, and the properties they all set.
+type RuleRun = (Vec<(usize, usize)>, Vec<String>);
+
+// Returns the rules of a run of 10+ sibling plain rules starting at line i that set the same properties (icon classes, utility classes), and those properties; blank lines may separate them.
+fn rule_run(src: &[&str], i: usize) -> Option<RuleRun> {
+    let ((a, b), props) = rule_block(src, i)?;
+    let k = src[i].len() - src[i].trim_start().len();
+    let mut rules = vec![(a, b)];
+    loop {
+        let next = (rules[rules.len() - 1].1 + 1..src.len()).find(|&l| !src[l].trim().is_empty());
+        let Some(n) = next.filter(|&n| src[n].len() - src[n].trim_start().len() == k) else { break };
+        match rule_block(src, n) {
+            Some((span, p)) if p == props => rules.push(span),
+            _ => break,
+        }
+    }
+    (rules.len() >= LONG_RULES).then_some((rules, props))
 }
 
 // Returns, for each line, the id of the innermost block open at its start; braces in comments and strings are counted too, which only makes the view keep more.
@@ -375,6 +441,40 @@ mod tests {
         assert_eq!(
             body(sass, Kind::Sass),
             ["1-4\t⋯ comment, 4 line(s)", "5\t.x", "6\t", "9\t  appearance: none"]
+        );
+    }
+
+    // Checks runs of 10+ rules setting the same properties collapse, on one line or over several, and what ends a run: other properties, nesting, at-rules.
+    #[test]
+    fn test_rule_runs() {
+        let icons: String =
+            (1..=12).map(|n| format!(".i-{n}:before {{ content: \"\\f{n:03}\"; }}\n")).collect();
+        let v = view("a.css", &icons, Kind::Css).expect("view");
+        assert_eq!(v, "a.css 12 lines; terse: 1 rule runs\n1\t.i-1:before { content: \"\\f001\"; }\n2-11\t⋯ 10 rule(s) setting content\n12\t.i-12:before { content: \"\\f012\"; }");
+        let sizes: String =
+            (1..=10).map(|n| format!(".m-{n} {{\n  margin: {n}px;\n  padding: 0\n}}\n\n")).collect();
+        let v = view("b.css", &format!("{sizes}.x {{ color: red }}\n"), Kind::Css).expect("view");
+        assert!(v.contains("\n1\t.m-1 {\n2\t  margin: 1px;\n3\t  padding: 0\n4\t}\n6-44\t⋯ 8 rule(s) setting margin, padding\n46\t.m-10 {\n"), "{v}");
+        let mixed: String = (1..=12)
+            .map(|n| {
+                if n == 6 {
+                    ".odd { color: red }\n".to_string()
+                } else {
+                    format!(".c-{n} {{ margin: 0 }}\n")
+                }
+            })
+            .collect();
+        assert!(view("c.css", &mixed, Kind::Css).is_none());
+        assert!(
+            rule_block(&["@media x {"], 0).is_none()
+                && rule_block(&["a {", "  b {", "  }", "}"], 0).is_none()
+        );
+        assert!(rule_block(&["a { b { c: 1 } }"], 0).is_none() && rule_block(&["a { }"], 0).is_none());
+        assert!(rule_block(&["a { nope }"], 0).is_none() && rule_block(&["a {", "  nope", "}"], 0).is_none());
+        assert!(
+            rule_block(&["a {", "  b: 1"], 0).is_none()
+                && rule_block(&["a"], 0).is_none()
+                && rule_block(&["a { b: 1"], 0).is_none()
         );
     }
 }

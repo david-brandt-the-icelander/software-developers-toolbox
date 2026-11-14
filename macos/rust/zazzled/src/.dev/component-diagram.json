@@ -126,7 +126,7 @@
     {
       "id": "styles",
       "name": "Stylesheet terse view (styles.rs)",
-      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, and shortens inline data URIs.",
+      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties, and shortens inline data URIs.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -162,7 +162,7 @@
     {
       "id": "xml",
       "name": "XML terse view (xml.rs)",
-      "responsibility": "Builds the terse view of XML files line by line with markup.rs's Plan: collapses comments of 3+ lines and runs of 10+ sibling elements with the same tag to their first and last, and cuts long values and blobs.",
+      "responsibility": "Builds the terse view of XML and SVG files line by line with markup.rs's Plan: collapses comments of 3+ lines and runs of 10+ sibling elements with the same tag to their first and last, hides SVG editor metadata, and cuts long values (path data) and blobs; markup.rs reuses its sibling runs.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -185,8 +185,8 @@
     },
     {
       "id": "minified",
-      "name": "Minified JSON and XML terse view (minified.rs)",
-      "responsibility": "Detects JSON and XML written mostly on 500+ character lines, reformats it one value or element per line, runs data.rs's view (as generated data) or xml.rs's view over the result, and maps the view's line numbers back to the source.",
+      "name": "Minified JSON, XML, SVG, HTML and CSS terse view (minified.rs)",
+      "responsibility": "Detects JSON, XML, SVG, HTML and CSS written mostly on 500+ character lines, reformats it one value, element or declaration per line, runs data.rs's view (as generated data), xml.rs's, markup.rs's or styles.rs's view over the result, and maps the view's line numbers back to the source.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -735,7 +735,7 @@
       "from": "src",
       "to": "minified",
       "kind": "contains",
-      "description": "Terse view of minified JSON and XML."
+      "description": "Terse view of minified JSON, XML, SVG, HTML and CSS."
     },
     {
       "from": "minified",
@@ -747,13 +747,31 @@
       "from": "minified",
       "to": "xml",
       "kind": "depends-on",
-      "description": "Views reformatted XML."
+      "description": "Views reformatted XML and SVG."
+    },
+    {
+      "from": "minified",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Views reformatted HTML."
+    },
+    {
+      "from": "minified",
+      "to": "styles",
+      "kind": "depends-on",
+      "description": "Views reformatted CSS."
+    },
+    {
+      "from": "markup",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "Collapses HTML sibling runs with xml.rs's run."
     },
     {
       "from": "cmd",
       "to": "minified",
       "kind": "depends-on",
-      "description": "read's terse view of minified JSON and XML."
+      "description": "read's terse view of minified JSON, XML, SVG, HTML and CSS."
     },
     {
       "from": "cmd",
