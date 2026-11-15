@@ -70,9 +70,9 @@ enum Cmd {
     List(ListArgs),
     /// compress candidates in place (verified)
     ///
-    /// Each file is recompressed via `ditto --hfsCompression` into a temp file in the same directory,
-    /// checked (flags, size, mode, owner, xattrs, SHA-256, allocated size), then atomically swapped
-    /// in. Skips hard-linked, open, recently changed and flagged files.
+    /// Each file is cloned into a temp file in the same directory, given APFS LZFSE compression by the
+    /// built-in lzfse-zazzcat library, checked (flags, size, mode, owner, xattrs, SHA-256, allocated
+    /// size), then atomically swapped in. Skips hard-linked, open, recently changed and flagged files.
     Compress(CompressArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
     ///
