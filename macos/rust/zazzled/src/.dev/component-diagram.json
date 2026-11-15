@@ -126,7 +126,7 @@
     {
       "id": "styles",
       "name": "Stylesheet terse view (styles.rs)",
-      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties or of 10+ small utility rules, and shortens inline data URIs.",
+      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties or of 10+ small utility rules and runs of 12+ declarations, cuts long selector lists, and shortens inline data URIs.",
       "folder": "macos/rust/zazzled/src"
     },
     {

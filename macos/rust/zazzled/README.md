@@ -62,7 +62,8 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 
 - Hidden: `/* */` comments of 4+ lines and SCSS `//` runs of 4+ lines (shorter ones are usually section titles), `/*# sourceMappingURL */` comments, runs of 2+ `@import`/`@use`/`@forward` lines, `@font-face` blocks (`7-10 ⋯ @font-face "Inter", 4 line(s)`) and `@keyframes` blocks, vendor-prefixed declarations (`-webkit-`, `-moz-`, `-ms-`, `-o-`) when the same block also sets the plain property, and SCSS and Sass `@debug` lines. Less is read like SCSS; indented Sass finds its blocks (comments, `@font-face`, `@keyframes`, the block a prefixed declaration belongs to) by indentation and needs no `;`.
 - Runs of 10+ sibling rules that set the same properties, each on one line or over several (icon fonts), keep their first and last (`⋯ 1418 rule(s) setting --fa`); so do runs of 10+ small rules of one or two declarations each that set different properties (utility classes), whose note names the properties up to about 80 characters (`⋯ 40 rule(s) setting margin-top, margin-bottom, …`). Sass is not checked for them.
-- Shortened: `url(data:…)` values longer than 60 characters.
+- Runs of 12+ declarations in one block, one per line (a `:root` of custom properties), keep their first and last (`⋯ 115 declaration(s)`). Not in Sass.
+- Shortened: `url(data:…)` values longer than 60 characters, and selector lines over 120 characters, cut to the selectors that fit in about 80 (`.a,.b,.c,… +17 more {`).
 - Kept: everything else; a comment or block that shares its first or last line with other rules is not hidden. Minified CSS is reformatted first; see below.
 
 ## JSON, YAML, TOML and Markdown terse view
@@ -78,7 +79,7 @@ Any command accepts `--budget T` (caps output at about T tokens, default 8000; `
 
 ## Minified JSON, XML, SVG, HTML and CSS terse view
 
-A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when most of its text sits on lines of 500+ characters and those lines are most of its lines (or it has at most 5 lines), so a hand-written SVG with long path data is not. `src/minified.rs` reformats it in memory and runs the JSON, XML, HTML or CSS view over the result:
+A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when most of its text sits on lines of 500+ characters and its other lines are at most 10 (a licence banner, a source map comment) or fewer than the long ones, so a hand-written SVG with long path data is not. `src/minified.rs` reformats it in memory and runs the JSON, XML, HTML or CSS view over the result:
 
 - JSON is reformatted with two spaces and one value per line; strings and numbers stay as written. XML and SVG get one element per line, with an element holding only text kept on one line.
 - HTML gets the same, tolerating what browsers do: void elements (`<br>`, `<img>`, `<meta>`) stand alone, a stray or implied closing tag is not an error, and the text of `<script>`, `<style>` and `<textarea>` stays one line, cut to its first 80 characters when over 200 (`… (5120 characters)`).

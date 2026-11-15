@@ -520,6 +520,8 @@
         "Sass blocks, comments and prefix duplicates are found by indentation, Less follows the SCSS rules, and blank lines inside Sass blocks keep them together."
       ],
       "checks": [
+        {"type": "automated", "path": "macos/rust/zazzled/src/styles.rs", "symbol": "test_declarations_and_selectors", "command": "cargo test -p zazzled (in macos/rust)"},
+        {"type": "manual", "path": "macos/rust/zazzled/src/styles.rs", "symbol": "declaration_run", "command": "Ran the CSS view over the same 759 stylesheets with declaration runs, selector cutting and banner-tolerant minified detection: 312 minified files got a view, 6.1 MB becoming 2.1 MB (Bulma 678 KB to 209 KB, Bootstrap 232 KB to 137 KB with its 115 :root custom properties as one note, animate.css 72 KB to 18 KB); declaration notes cover only declaration lines of one block, and cut selector lists keep whole selectors, :not(..) arguments included."},
         {"type": "manual", "path": "macos/rust/zazzled/src/styles.rs", "symbol": "rule_run", "command": "Ran the CSS view over 759 stylesheets from Bootstrap, Bulma, Font Awesome, animate.css, highlight.js, Primer, swagger-ui, Inkscape and the icon sets: rule-run notes cover only plain rules of one indentation, and stop at at-rules, nested blocks and rules of three or more declarations; 94 of the minified ones got a view, 4.4 MB becoming 3.5 MB (Primer's utilities.css 118 KB to 30 KB)."},
         {"type": "automated", "path": "macos/rust/zazzled/src/styles.rs", "symbol": "test_rule_runs", "command": "cargo test -p zazzled (in macos/rust)"},
         {

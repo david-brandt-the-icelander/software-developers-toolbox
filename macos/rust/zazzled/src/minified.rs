@@ -5,6 +5,7 @@ use crate::styles;
 use crate::xml;
 
 const LONG_LINE: usize = 500;
+const FEW_SHORT_LINES: usize = 10;
 const LONG_RAW: usize = 200;
 const KEEP_RAW: usize = 80;
 const VOID: [&str; 14] = [
@@ -16,12 +17,13 @@ const RAW: [&str; 3] = ["script", "style", "textarea"];
 // One reformatted line and the source line (1-based) its first token is on.
 type Pretty = Vec<(String, usize)>;
 
-// True when most of the text sits on lines of 500+ characters, as minifiers and serializers write it, and those lines are most of the file's lines (or it has at most 5), so a hand-written SVG with long path data is not one.
+// True when most of the text sits on lines of 500+ characters, as minifiers and serializers write it, and the other lines are few (a licence banner, a source map comment) or fewer than the long ones, so a hand-written SVG with long path data is not one.
 pub fn is_minified(text: &str) -> bool {
     let lines: Vec<usize> = text.lines().map(str::len).filter(|&n| n > 0).collect();
     let long: Vec<&usize> = lines.iter().filter(|&&n| n >= LONG_LINE).collect();
     let bytes: usize = long.iter().copied().sum();
-    bytes > 0 && bytes * 2 >= text.len() && (lines.len() <= 5 || long.len() * 2 >= lines.len())
+    let short = lines.len() - long.len();
+    bytes > 0 && bytes * 2 >= text.len() && (short <= FEW_SHORT_LINES || long.len() >= short)
 }
 
 // Returns the view of a minified JSON file, where any 10+ sibling items or members collapse (as in a lock file), or None when it does not parse or nothing would be shortened.
@@ -444,7 +446,14 @@ mod tests {
         assert!(!is_minified("{\n  \"a\": 1\n}\n") && !is_minified(""));
         let long = "x".repeat(600);
         assert!(is_minified(&format!("{{\n{long}\n}}\n")) && is_minified(&format!("{long}\n{long}\nx\nx\n")));
-        assert!(!is_minified(&format!("{long}\n{long}\na\nb\nc\nd\ne\n")));
+        let banner = format!(
+            "/*!\n * Lib v1\n * (c) someone\n * MIT\n */\n{}\n/*# sourceMappingURL=a.map */\n",
+            long.repeat(4)
+        );
+        assert!(is_minified(&banner));
+        let svg: String =
+            (0..12).map(|n| format!("<g id=\"{n}\">\n")).collect::<String>() + &format!("{long}\n").repeat(3);
+        assert!(!is_minified(&svg));
         assert!(
             xml_view("a.xml", "<a>x</a>", false).is_none() && json_view("a.json", "[1]", false).is_none()
         );
