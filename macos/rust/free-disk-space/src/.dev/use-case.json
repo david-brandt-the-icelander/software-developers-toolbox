@@ -206,7 +206,7 @@
       "actor": "Developer",
       "goal": "Make large, old files take less space without changing what they read as.",
       "preconditions": [
-        "The developer is on a Mac with an APFS data volume and /usr/bin/ditto."
+        "The developer is on a Mac with an APFS data volume."
       ],
       "postconditions": [
         "The chosen candidates are compressed in place, or marked skipped or failed with a reason.",
@@ -275,7 +275,7 @@
         {
           "id": "compress",
           "actor": "free-disk-space",
-          "action": "Prints the plan, checks that ditto really compresses a probe file, asks for confirmation on a terminal, compresses each file through a verified temp copy with a progress line of files compressed and not, and prints the skips per reason and the verified saving beside the free-space change.",
+          "action": "Prints the plan, checks that a compressed probe copy reads back compressed and unchanged, asks for confirmation on a terminal, compresses each file through a verified temp copy with a progress line of files compressed and not, and prints the skips per reason and the verified saving beside the free-space change.",
           "sources": [
             {
               "path": "macos/rust/free-disk-space/src/compress.rs",
@@ -287,7 +287,7 @@
             },
             {
               "path": "macos/rust/free-disk-space/src/compress.rs",
-              "symbol": "ditto_compresses"
+              "symbol": "compression_works"
             }
           ],
           "participantKind": "system"
@@ -346,12 +346,12 @@
         },
         {
           "atStep": "compress",
-          "condition": "ditto --hfsCompression writes an uncompressed probe copy (the code names macOS 26/27).",
+          "condition": "A compressed probe copy does not read back as compressed and unchanged.",
           "outcome": "compress exits with an error before asking; nothing changed.",
           "sources": [
             {
               "path": "macos/rust/free-disk-space/src/compress.rs",
-              "symbol": "ditto_compresses"
+              "symbol": "compression_works"
             },
             {
               "path": "macos/rust/free-disk-space/src/compress.rs",

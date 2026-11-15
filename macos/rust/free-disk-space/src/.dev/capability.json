@@ -51,8 +51,8 @@
       "access": [
         "Any local user who can run the binary; the scan sees what that user can read.",
         "A file is compressed only if its directory is writable by the user, no process has it open, and it is unchanged since the scan.",
-        "Compressing needs macOS (ditto and APFS); elsewhere it refuses unless FDS_FORCE is set.",
-        "It does not start when ditto's probe copy does not come out compressed.",
+        "Compressing needs macOS (APFS transparent compression); elsewhere it refuses unless FDS_FORCE is set.",
+        "It does not start when a compressed probe copy does not read back as compressed and unchanged.",
         "On a terminal the user confirms the plan unless --yes is given."
       ]
     },

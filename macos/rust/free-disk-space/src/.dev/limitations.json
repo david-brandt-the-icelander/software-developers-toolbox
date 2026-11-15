@@ -187,23 +187,23 @@
       ]
     },
     {
-      "id": "compress-needs-working-ditto",
-      "title": "Compression needs a ditto that really compresses",
-      "summary": "Where ditto --hfsCompression reports success but writes plain copies (the code and README name macOS 26/27), compress refuses to run.",
+      "id": "compress-needs-kernel-acceptance",
+      "title": "Compression needs the kernel to accept the compressed copy",
+      "summary": "Where a compressed probe copy does not read back as compressed and unchanged, compress refuses to run. The library's compressed files are checked against the macOS kernel by lzfse-compression's own CI; through free-disk-space they have not yet been run on a real Mac.",
       "impact": "No files are compressed on such a system; the scan, dedupe and clean are unaffected.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
-          "symbol": "ditto_compresses"
+          "symbol": "compression_works"
         },
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
           "symbol": "cmd_compress"
         },
         {
-          "path": "macos/rust/free-disk-space/README.md",
-          "symbol": "Compress"
+          "path": "macos/rust/free-disk-space/src/lzfse.rs",
+          "symbol": "compress_onto"
         }
       ]
     },

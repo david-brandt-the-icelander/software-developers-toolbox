@@ -3,6 +3,7 @@ mod clean;
 mod compress;
 mod daemon;
 mod dedupe;
+mod lzfse;
 mod scan;
 #[cfg(test)]
 mod testkit;

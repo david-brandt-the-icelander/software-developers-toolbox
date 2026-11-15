@@ -65,7 +65,7 @@
     {
       "id": "path",
       "title": "Executable search path",
-      "summary": "PATH decides whether git, brew and docker are found and which lsof, ps, pgrep, git and docker run; tools named by absolute path (ditto, xattr, osascript, launchctl, lsof in compress) are not looked up.",
+      "summary": "PATH decides whether git, brew and docker are found and which lsof, ps, pgrep, git and docker run; tools named by absolute path (xattr, osascript, launchctl, lsof in compress) are not looked up.",
       "key": "PATH",
       "type": "environment variable",
       "sensitive": false,
@@ -121,7 +121,7 @@
     {
       "id": "fds-tools",
       "title": "Tool directory override",
-      "summary": "When set, every tool the code names by absolute path (/usr/bin/ditto, /usr/bin/xattr, /usr/sbin/lsof, /usr/bin/osascript, /bin/launchctl, and brew once found on PATH) is run from this directory instead, by file name; it exists so tests can fake macOS tools.",
+      "summary": "When set, every tool the code names by absolute path (/usr/bin/xattr, /usr/sbin/lsof, /usr/bin/osascript, /bin/launchctl, and brew once found on PATH) is run from this directory instead, by file name; it exists so tests can fake macOS tools.",
       "key": "FDS_TOOLS",
       "type": "environment variable (directory)",
       "default": "unset",
@@ -323,7 +323,10 @@
       "summary": "What the daemon cleans when below the threshold; any clean target, all included.",
       "key": "daemon --targets",
       "type": "list of clean targets",
-      "default": ["caches", "dev"],
+      "default": [
+        "caches",
+        "dev"
+      ],
       "sensitive": false,
       "scope": "per daemon; written into the plist at install",
       "takesEffect": "at-startup",

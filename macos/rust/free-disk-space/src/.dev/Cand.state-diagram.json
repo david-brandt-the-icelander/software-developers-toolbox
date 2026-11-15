@@ -3,7 +3,7 @@
   "kind": "state",
   "title": "Compression candidate state diagram",
   "folder": "macos/rust/free-disk-space/src",
-  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed, and never back. A dry run, a failed ditto probe (compress stops before touching any row when ditto --hfsCompression writes an uncompressed test copy), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the four.",
+  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed, and never back. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the four.",
   "sources": [
     {
       "path": "macos/rust/free-disk-space/src/scan.rs",
@@ -31,7 +31,7 @@
     },
     {
       "path": "macos/rust/free-disk-space/src/compress.rs",
-      "symbol": "ditto_compresses"
+      "symbol": "compression_works"
     }
   ],
   "machine": "cands.status (compress::Cand)",
@@ -61,22 +61,22 @@
     {
       "from": "pending",
       "to": "done",
-      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
-      "guard": "precheck passes; ditto succeeds; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's xattr names; the original is unchanged since",
+      "trigger": "compress (not --dry-run, and past the probe) reaches the row",
+      "guard": "precheck passes; the clone and the library's compressed form succeed; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's xattr names; the original is unchanged since",
       "action": "Restore the times on the temp copy, rename it over the original, write status done and the saving."
     },
     {
       "from": "pending",
       "to": "skipped",
-      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
+      "trigger": "compress (not --dry-run, and past the probe) reaches the row",
       "guard": "precheck finds a reason, APFS did not compress the copy, the gain is below --min-gain, or the original changed during compression",
       "action": "Remove the temp copy; write status skipped and the note."
     },
     {
       "from": "pending",
       "to": "failed",
-      "trigger": "compress (not --dry-run, and past the ditto probe) reaches the row",
-      "guard": "ditto fails, or size, permissions or ownership differ, xattrs were lost, the hash differs, or an I/O error occurs",
+      "trigger": "compress (not --dry-run, and past the probe) reaches the row",
+      "guard": "the clone or the library fails, or size, permissions or ownership differ, xattrs were lost, the hash differs, or an I/O error occurs",
       "action": "Remove the temp copy; write status failed and the note; after three failures in a row stop the run."
     }
   ]

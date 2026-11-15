@@ -89,11 +89,11 @@
           "symbol": "compress_verified"
         }
       ],
-      "behavior": "Pending candidates are taken largest estimated saving first, up to --sample or --max-files files and until --limit of estimated saving is planned. Before each file it checks the file is unchanged since the scan, single-linked, unflagged, not modified within --min-age-days, in a writable directory, not open (lsof), and that the data volume has the file's size plus --reserve (default 2G) free. ditto --hfsCompression copies it to .fds-<pid>-<name>.tmp beside it; the copy must carry the compressed flag, save at least --min-gain (default 64K) of allocated space, match the original's size, mode, owner, group and SHA-256, and keep every xattr name the original has. The original's access and modification times are put on the copy, the original is checked once more for change, and the copy is renamed over it. On macOS, before the first file and before asking for confirmation, it checks that ditto --hfsCompression really compresses: it copies a highly compressible probe file in the system temp directory and requires the copy to carry the compressed flag, and otherwise exits saying nothing was changed (the code names macOS 26/27, where ditto reports success but writes plain copies). While it runs, the progress line shows how many files were compressed and how many were not; per file it prints only failures, and at the end how many files were skipped for each reason, pointing at list --status skipped for each file's note.",
+      "behavior": "Pending candidates are taken largest estimated saving first, up to --sample or --max-files files and until --limit of estimated saving is planned. Before each file it checks the file is unchanged since the scan, single-linked, unflagged, not modified within --min-age-days, in a writable directory, not open (lsof), and that the data volume has the file's size plus --reserve (default 2G) free. It is cloned to .fds-<pid>-<name>.tmp beside it (clonefile, which keeps mode, owner, flags, xattrs and times), and the vendored lzfse-zazzcat library compresses the original with LZFSE on all cores and puts the compressed form on the clone (a resource fork or an inline com.apple.decmpfs attribute, an emptied data fork and the compressed flag); the copy must carry the compressed flag, save at least --min-gain (default 64K) of allocated space, match the original's size, mode, owner, group and SHA-256, and keep every xattr name the original has. The original's access and modification times are put on the copy, the original is checked once more for change, and the copy is renamed over it. On macOS, before the first file and before asking for confirmation, it checks that compressed copies work: it compresses a highly compressible probe file in the system temp directory the same way and requires the copy to carry the compressed flag and read back unchanged, and otherwise exits saying nothing was changed. While it runs, the progress line shows how many files were compressed and how many were not; per file it prints only failures, and at the end how many files were skipped for each reason, pointing at list --status skipped for each file's note.",
       "outcome": "Files read exactly as before and take less space; the run reports the verified saving and the volume's free-space change separately.",
       "constraints": [
         "macOS only, unless FDS_FORCE is set.",
-        "Refuses to start when the ditto probe copy does not come out compressed.",
+        "Refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
         "Stops after three failures in a row.",
         "--dry-run lists up to 25 planned files and changes nothing.",
         "A non-terminal run does not ask for confirmation."
@@ -129,7 +129,7 @@
         },
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
-          "symbol": "ditto_compresses"
+          "symbol": "compression_works"
         },
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
@@ -138,6 +138,10 @@
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
           "symbol": "print_skip_reasons"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/lzfse.rs",
+          "symbol": "compress_onto"
         }
       ]
     },

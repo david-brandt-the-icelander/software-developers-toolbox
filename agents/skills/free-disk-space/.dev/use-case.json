@@ -140,11 +140,11 @@
         },
         {
           "atStep": "compress",
-          "condition": "compress exits because ditto --hfsCompression wrote an uncompressed test copy (the binary names macOS 26/27).",
+          "condition": "compress exits because a compressed probe copy does not read back as compressed and unchanged.",
           "outcome": "Nothing was changed; the agent stops compressing, as the skill's rules say on any failure, and reports it.",
           "sources": [
             {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"},
-            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "ditto_compresses"}
+            {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "compression_works"}
           ]
         },
         {

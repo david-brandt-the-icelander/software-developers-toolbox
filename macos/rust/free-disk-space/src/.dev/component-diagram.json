@@ -36,6 +36,14 @@
     {
       "path": "macos/rust/free-disk-space/src/util.rs",
       "symbol": "run"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/lzfse.rs",
+      "symbol": "compress_onto"
+    },
+    {
+      "path": "macos/rust/free-disk-space/build.rs",
+      "symbol": "main"
     }
   ],
   "components": [
@@ -60,7 +68,7 @@
     {
       "id": "compress",
       "name": "Compression (compress.rs)",
-      "responsibility": "Compresses pending candidates in place: a verified ditto --hfsCompression copy into a temp file beside the original, swapped in by rename; first checks with a probe file that ditto really compresses, and tallies skips by reason.",
+      "responsibility": "Compresses pending candidates in place: clones each file into a temp file beside the original, has the lzfse module put the LZFSE compressed form on the clone, verifies it and swaps it in by rename; first checks with a probe file that a compressed copy reads back compressed and unchanged, and tallies skips by reason.",
       "folder": "macos/rust/free-disk-space/src"
     },
     {
@@ -88,6 +96,18 @@
       "folder": "macos/rust/free-disk-space/src"
     },
     {
+      "id": "lzfse",
+      "name": "LZFSE library wrapper (lzfse.rs)",
+      "responsibility": "Maps a file read-only and calls the lzfse-zazzcat library to compress it into decmpfs attributes and apply them to an open copy, naming the failed step on error; off macOS the copy stays plain.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
+      "id": "lzfse-zazzcat",
+      "name": "lzfse-zazzcat C library",
+      "responsibility": "Vendored LZFSE compressor (macos/c/lzfse-zazzcat, MPL-2.0), compiled into the binary by build.rs: lzfse_zazzcat_decmpfs_compress builds the com.apple.decmpfs header and resource fork on all cores, and lzfse_zazzcat_decmpfs_apply sets them on a file, empties its data fork and sets the compressed flag.",
+      "folder": "macos/c/lzfse-zazzcat"
+    },
+    {
       "id": "state",
       "name": "Scan state file",
       "responsibility": "A SQLite database (bundled by rusqlite) at $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3, holding the scan's settings, progress, directories, file names and candidates.",
@@ -102,13 +122,13 @@
     {
       "id": "apfs",
       "name": "APFS clone and metadata calls",
-      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write and copy its ACL, mode, owner, flags, times and xattrs.",
+      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write (for dedupe and for compress's temp copy) and copy its ACL, mode, owner, flags, times and xattrs.",
       "external": true
     },
     {
       "id": "file-tools",
       "name": "macOS file tools",
-      "responsibility": "/usr/bin/ditto (compressed copy, and a probe copy in the temp directory) and /usr/bin/xattr (extended attribute names and removal).",
+      "responsibility": "/usr/bin/xattr (extended attribute names and removal).",
       "external": true
     },
     {
@@ -192,6 +212,12 @@
       "description": "Shared helpers used by every module."
     },
     {
+      "from": "source",
+      "to": "lzfse",
+      "kind": "contains",
+      "description": "The C library wrapper."
+    },
+    {
       "from": "cli",
       "to": "scan",
       "kind": "depends-on",
@@ -273,7 +299,7 @@
       "from": "compress",
       "to": "file-tools",
       "kind": "depends-on",
-      "description": "ditto --hfsCompression of a probe file before the run, then into each temp file; xattr to compare attribute names."
+      "description": "xattr to compare attribute names."
     },
     {
       "from": "compress",
@@ -328,6 +354,24 @@
       "to": "launchd",
       "kind": "depends-on",
       "description": "install writes the plist and runs launchctl bootout then bootstrap; uninstall runs bootout; status runs print."
+    },
+    {
+      "from": "compress",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "clonefile into the temp file and the probe copy (macOS only; a plain copy elsewhere)."
+    },
+    {
+      "from": "compress",
+      "to": "lzfse",
+      "kind": "depends-on",
+      "description": "compress_onto for each temp copy and for the probe."
+    },
+    {
+      "from": "lzfse",
+      "to": "lzfse-zazzcat",
+      "kind": "depends-on",
+      "description": "decmpfs_compress, decmpfs_apply, decmpfs_free and status_string over the C ABI."
     }
   ]
 }

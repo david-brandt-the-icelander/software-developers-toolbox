@@ -499,6 +499,27 @@ pub fn xattr_names(path: &Path) -> std::io::Result<std::collections::BTreeSet<St
         .collect())
 }
 
+// clonefile flag: do not follow a symlink at the source (sys/clonefile.h; the libc crate does not define it).
+#[cfg(target_os = "macos")]
+const CLONE_NOFOLLOW: u32 = 0x0001;
+
+// Copy a file to a new path as an APFS clone, which keeps its owner, mode, flags, extended attributes and times.
+#[cfg(target_os = "macos")]
+pub fn clone_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let (s, d) = (cstring(src)?, cstring(dst)?);
+    // SAFETY: both are valid NUL-terminated paths.
+    if unsafe { libc::clonefile(s.as_ptr(), d.as_ptr(), CLONE_NOFOLLOW) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+// Copy a file to a new path with its mode, the stand-in for an APFS clone off macOS.
+#[cfg(not(target_os = "macos"))]
+pub fn clone_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::copy(src, dst).map(|_| ())
+}
+
 // Build a same-directory temp path for an in-place file swap.
 pub fn temp_beside(path: &Path) -> PathBuf {
     let name: String =

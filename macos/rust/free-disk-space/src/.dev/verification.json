@@ -3,7 +3,7 @@
   "kind": "verification",
   "title": "free-disk-space verification",
   "folder": "macos/rust/free-disk-space/src",
-  "description": "How the binary's behavior is checked. The unit tests sit at the end of each module and run on macOS and Linux in CI (cargo test --workspace). Each test runs in a testkit::Sandbox: a private HOME and state file, and a bin directory that FDS_TOOLS points the absolute tool paths at, so ditto, xattr, lsof, ps, launchctl and the rest are shell-script fakes. Several compress and dedupe tests are compiled only off macOS and so run only on the Linux CI runner (see their entities). Run them as a non-root user, or the permission tests cannot fail the way they should. Run one with `cargo test -p free-disk-space <test name>` in macos/rust.",
+  "description": "How the binary's behavior is checked. The unit tests sit at the end of each module and run on macOS and Linux in CI (cargo test --workspace). Each test runs in a testkit::Sandbox: a private HOME and state file, and a bin directory that FDS_TOOLS points the absolute tool paths at, so xattr, lsof, ps, launchctl and the rest are shell-script fakes. Several compress and dedupe tests are compiled only off macOS and so run only on the Linux CI runner (see their entities). Run them as a non-root user, or the permission tests cannot fail the way they should. Run one with `cargo test -p free-disk-space <test name>` in macos/rust.",
   "entities": [
     {
       "id": "scan",
@@ -68,7 +68,7 @@
         "Planning honours --sample, --max-files and --limit",
         "Only a y answer confirms",
         "compress refuses off macOS without FDS_FORCE",
-        "The ditto probe passes only when ditto succeeds and its copy carries the compressed flag",
+        "The probe passes only when the compressed copy succeeds, carries the compressed flag and reads back unchanged",
         "Skip notes are tallied by their reason, without per-file details"
       ],
       "checks": [
@@ -83,9 +83,13 @@
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_cmd_compress_planning_modes", "command": "cargo test -p free-disk-space test_cmd_compress_planning_modes"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_cmd_compress_run", "command": "cargo test -p free-disk-space test_cmd_compress_run"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_reason_key_groups", "command": "cargo test -p free-disk-space test_reason_key_groups"},
-        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_ditto_compresses_probe", "command": "cargo test -p free-disk-space test_ditto_compresses_probe"}
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compression_works_probe", "command": "cargo test -p free-disk-space test_compression_works_probe"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compressed_copy_keeps_contents", "command": "cargo test -p free-disk-space test_compressed_copy_keeps_contents"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_compress_onto_plain_copy_off_macos", "command": "cargo test -p free-disk-space test_compress_onto_plain_copy_off_macos"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_compress_onto_empty_file", "command": "cargo test -p free-disk-space test_compress_onto_empty_file"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_failure_names_the_step", "command": "cargo test -p free-disk-space test_failure_names_the_step"}
       ],
-      "details": "ditto, xattr and lsof are fakes in these tests, so they check the decisions around APFS compression, not APFS compression itself. test_compress_verified_outcomes, test_compress_one_outcomes, test_cmd_compress_run and test_ditto_compresses_probe are compiled only off macOS (cfg(not(target_os = \"macos\"))), where the BSD file flags can be scripted, so they run on Linux only.",
+      "details": "xattr and lsof are fakes in these tests, and off macOS the library cannot apply the compressed form (the copy stays plain while the BSD file flags are scripted), so they check the decisions around APFS compression, not APFS compression itself; lzfse-compression's macOS CI checks lzfse_zazzcat_decmpfs_apply against the kernel. Copy failures are injected through compress_verified's copy-function parameter and the test-only fail_copies switch. test_compress_verified_outcomes, test_compress_one_outcomes, test_cmd_compress_run and test_compression_works_probe are compiled only off macOS (cfg(not(target_os = \"macos\"))), where the BSD file flags can be scripted, so they run on Linux only.",
       "evidenceStatus": "source-verified",
       "sources": [
         {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "tests"}
@@ -250,7 +254,7 @@
         {"type": "manual", "command": "free-disk-space dedupe --sample 5 --apply", "description": "After a scan, check each cloned file's content, mode, owner, times and xattrs, and the free-space change."},
         {"type": "manual", "command": "free-disk-space clean trash docker --apply", "description": "With something in the Trash and Docker Desktop running, check both are cleaned and Docker has quit."}
       ],
-      "details": "The README's Caveats say the tool is unit-tested in CI on macOS and Linux and smoke-tested on Linux only for the scan and dry-run paths, and that compress, dedupe --apply, the Finder trash and the Docker steps are untested on a real Mac. The agent skill tells agents to stop on any failure for the same reason. The README's Compress note adds that on macOS 26/27 ditto --hfsCompression reports success but writes uncompressed copies, so there compress stops at its probe and the compression check cannot be made until that changes.",
+      "details": "The README's Caveats say the tool is unit-tested in CI on macOS and Linux and smoke-tested on Linux only for the scan and dry-run paths, and that compress, dedupe --apply, the Finder trash and the Docker steps are untested on a real Mac. The agent skill tells agents to stop on any failure for the same reason. Compress no longer uses ditto --hfsCompression, which on macOS 26/27 reports success but writes uncompressed copies; it writes the compression itself through the vendored lzfse-zazzcat library, which has not yet been run through free-disk-space on a real Mac.",
       "evidenceStatus": "documented",
       "sources": [
         {"path": "macos/rust/free-disk-space/README.md", "symbol": "Caveats"},

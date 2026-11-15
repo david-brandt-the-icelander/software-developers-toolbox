@@ -7,16 +7,21 @@
     {
       "id": "folder",
       "title": "C programs",
-      "summary": "Holds zazzle, the C invoker for the zazzled daemon.",
-      "purpose": "A grouping folder for the repository's C code, which today is only zazzle/.",
+      "summary": "Holds zazzle, the C invoker for the zazzled daemon, and a vendored copy of the lzfse-zazzcat compression library.",
+      "purpose": "A grouping folder for the repository's C code: zazzle/, and lzfse-zazzcat/, an unchanged copy of the LZFSE library from the lzfse-compression repository that free-disk-space compiles in.",
       "boundaries": [
-        "No code of its own."
+        "No code of its own.",
+        "lzfse-zazzcat/ is changed only by copying a new version from its own repository."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "macos/c/zazzle/Makefile",
           "symbol": "all"
+        },
+        {
+          "path": "macos/c/lzfse-zazzcat/README.md",
+          "symbol": "lzfse-zazzcat (vendored)"
         }
       ]
     }

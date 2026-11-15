@@ -857,6 +857,7 @@ dependencies = [
 name = "free-disk-space"
 version = "0.0.0-dev"
 dependencies = [
+ "cc",
  "chrono",
  "clap",
  "ctrlc",

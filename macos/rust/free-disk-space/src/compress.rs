@@ -7,6 +7,7 @@ use std::path::Path;
 
 use rusqlite::params;
 
+use crate::lzfse;
 use crate::scan::{finished, open_db};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
@@ -68,20 +69,33 @@ fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts) -> Option<String> 
     None
 }
 
-// Copy with compression to the temp file, verify it and swap it in; return (status, note, saved).
+#[cfg(test)]
+thread_local! {
+    // Per-test switch that makes compressed_copy fail, standing in for a copy or library error.
+    static FAIL_COPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+// Make `tmp` a compressed copy of `path`: clone the file, then put the LZFSE library's compressed form on the clone.
+fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_COPY.with(std::cell::Cell::get) {
+        return Err(std::io::Error::other("copy failed"));
+    }
+    util::clone_file(path, tmp)?;
+    let source = fs::File::open(path)?;
+    let target = fs::OpenOptions::new().read(true).write(true).open(tmp)?;
+    lzfse::compress_onto(&source, &target)
+}
+
+// Make a compressed copy with `make`, verify it and swap it in; return (status, note, saved).
 fn compress_verified(
     path: &Path,
     tmp: &Path,
     st: &fs::Metadata,
     o: &CompressOpts,
+    make: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
 ) -> std::io::Result<(&'static str, String, i64)> {
-    let (p, t) = (path.to_string_lossy(), tmp.to_string_lossy());
-    let out = util::run(&["/usr/bin/ditto", "--hfsCompression", &p, &t], 3600.0, &[])
-        .ok_or_else(|| std::io::Error::other("cannot run ditto"))?;
-    if out.code != 0 {
-        let msg: String = out.stderr.trim().chars().take(200).collect();
-        return Ok(("failed", format!("ditto: {msg}"), 0));
-    }
+    make(path, tmp)?;
     let tm = fs::symlink_metadata(tmp)?;
     if util::flags(&tm) & util::UF_COMPRESSED == 0 {
         return Ok(("skipped", "APFS declined to compress (no gain)".into(), 0));
@@ -124,7 +138,7 @@ fn compress_one(cand: &Cand, o: &CompressOpts) -> (&'static str, String, i64) {
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);
-    let result = compress_verified(path, &tmp, &st, o);
+    let result = compress_verified(path, &tmp, &st, o, &compressed_copy);
     util::remove_temp(&tmp);
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
@@ -166,16 +180,16 @@ fn confirm(question: &str) -> bool {
     line.trim().eq_ignore_ascii_case("y")
 }
 
-// Tell whether ditto really compresses; on macOS 26/27 it reports success but writes a plain copy.
-fn ditto_compresses() -> bool {
+// Tell whether compressed copies work here: compress a probe file and read it back through the kernel.
+fn compression_works() -> bool {
     let dir = std::env::temp_dir().join(format!("fds-probe-{}", std::process::id()));
     let (src, dst) = (dir.join("probe.txt"), dir.join("probe.out"));
     let text = "free-disk-space compression probe\n".repeat(8192);
-    let (s, d) = (src.to_string_lossy(), dst.to_string_lossy());
     let ok = fs::create_dir_all(&dir).is_ok()
-        && fs::write(&src, text).is_ok()
-        && util::run(&["/usr/bin/ditto", "--hfsCompression", &s, &d], 60.0, &[]).is_some_and(|o| o.code == 0)
-        && fs::symlink_metadata(&dst).is_ok_and(|m| util::flags(&m) & util::UF_COMPRESSED != 0);
+        && fs::write(&src, &text).is_ok()
+        && compressed_copy(&src, &dst).is_ok()
+        && fs::symlink_metadata(&dst).is_ok_and(|m| util::flags(&m) & util::UF_COMPRESSED != 0)
+        && fs::read(&dst).is_ok_and(|back| back == text.as_bytes());
     let _ = fs::remove_dir_all(&dir);
     ok
 }
@@ -201,10 +215,7 @@ fn print_skip_reasons(reasons: &BTreeMap<String, usize>) {
 pub fn cmd_compress(o: &CompressOpts) {
     let forced = std::env::var_os("FDS_FORCE").is_some();
     if !cfg!(target_os = "macos") && !forced {
-        die("compress requires macOS (uses /usr/bin/ditto and APFS compression)");
-    }
-    if cfg!(target_os = "macos") && !Path::new("/usr/bin/ditto").exists() {
-        die("/usr/bin/ditto not found - cannot compress; nothing was changed");
+        die("compress requires macOS (APFS transparent compression)");
     }
     let (db, chosen, total) = plan(o);
     if chosen.is_empty() {
@@ -220,9 +231,8 @@ pub fn cmd_compress(o: &CompressOpts) {
         println!("Dry run - nothing changed.");
         return;
     }
-    if cfg!(target_os = "macos") && !ditto_compresses() {
-        die("ditto --hfsCompression wrote an uncompressed test copy (known on macOS 26/27); \
-             compress is unavailable until Apple fixes it. Nothing was changed.");
+    if cfg!(target_os = "macos") && !compression_works() {
+        die("a compressed test copy did not read back as compressed and unchanged; nothing was changed");
     }
     if util::is_tty() && !o.yes && !confirm("Compress these files in place? [y/N] ") {
         println!("Aborted.");
@@ -350,10 +360,19 @@ mod tests {
         paths
     }
 
+    // Make every compressed copy in this test thread fail, or work again.
+    fn fail_copies(on: bool) {
+        FAIL_COPY.with(|f| f.set(on));
+    }
+
     #[cfg(not(target_os = "macos"))]
-    // Install a fake ditto that copies the file and then runs an extra shell step on the copy.
-    fn fake_ditto(sb: &Sandbox, after: &str) {
-        sb.tool("ditto", &format!("cp \"$2\" \"$3\" || exit 1\n{after}"));
+    // Build a copy step that copies the file and then changes the copy with `after`.
+    fn copy_then(after: impl Fn(&Path) + 'static) -> impl Fn(&Path, &Path) -> std::io::Result<()> {
+        move |src: &Path, dst: &Path| {
+            fs::copy(src, dst)?;
+            after(dst);
+            Ok(())
+        }
     }
 
     // Read a candidate's recorded status and note.
@@ -432,46 +451,55 @@ mod tests {
         chmod(&file, 0o644);
         let tmp = util::temp_beside(&file);
         let o = opts(&sb);
-        let run = |o: &CompressOpts| {
+        let run = |o: &CompressOpts, make: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
             let st = fs::symlink_metadata(&file).unwrap();
-            let r = compress_verified(&file, &tmp, &st, o);
+            let r = compress_verified(&file, &tmp, &st, o, make);
             util::remove_temp(&tmp);
             r
         };
-        std::env::set_var("PATH", &sb.bin);
-        assert!(run(&o).unwrap_err().to_string().contains("cannot run ditto"));
-        std::env::set_var("PATH", format!("{}:/usr/bin:/bin", sb.bin.display()));
-        fake_ditto(&sb, "echo oops >&2; exit 1");
-        assert_eq!(run(&o).unwrap().0, "failed");
-        sb.tool("ditto", "echo 'bad thing' >&2; exit 4");
-        assert_eq!(run(&o).unwrap().1, "ditto: bad thing");
-        fake_ditto(&sb, "true");
+        let broken =
+            |_: &Path, _: &Path| Err(std::io::Error::other("lzfse: setting com.apple.decmpfs: denied"));
+        assert!(run(&o, &broken).unwrap_err().to_string().contains("setting com.apple.decmpfs"));
+        let plain = copy_then(|_| ());
         util::set_flags(&[0]);
-        assert_eq!(run(&o).unwrap().0, "skipped");
+        assert_eq!(run(&o, &plain).unwrap().0, "skipped");
         util::set_flags(&[util::UF_COMPRESSED]);
         let stingy = CompressOpts { min_gain: 1 << 40, ..opts(&sb) };
-        assert!(run(&stingy).unwrap().1.starts_with("gain too small"));
-        fake_ditto(&sb, "head -c 10 \"$2\" > \"$3\"");
-        assert_eq!(run(&o).unwrap().1, "size mismatch");
-        fake_ditto(&sb, "chmod 600 \"$3\"");
-        assert_eq!(run(&o).unwrap().1, "permissions/ownership differ");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        assert!(run(&stingy, &plain).unwrap().1.starts_with("gain too small"));
+        let short = copy_then(|d| fs::write(d, b"short").unwrap());
+        assert_eq!(run(&o, &short).unwrap().1, "size mismatch");
+        let private = copy_then(|d| chmod(d, 0o600));
+        assert_eq!(run(&o, &private).unwrap().1, "permissions/ownership differ");
         sb.tool("xattr", "case \"$1\" in *.tmp) ;; *) echo user.keep;; esac");
-        assert_eq!(run(&o).unwrap().1, "extended attributes lost");
+        assert_eq!(run(&o, &plain).unwrap().1, "extended attributes lost");
         sb.tool("xattr", "exit 0");
         let len = fs::metadata(&file).unwrap().len() as usize;
-        fake_ditto(&sb, &format!("head -c {len} /dev/zero | tr '\\0' 'z' > \"$3\"; chmod 644 \"$3\""));
-        assert_eq!(run(&o).unwrap().1, "content hash mismatch");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        let garbled = copy_then(move |d| fs::write(d, vec![b'z'; len]).unwrap());
+        assert_eq!(run(&o, &garbled).unwrap().1, "content hash mismatch");
         let stale = fs::symlink_metadata(&file).unwrap();
         util::set_times(&file, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
-        let r = compress_verified(&file, &tmp, &stale, &o).unwrap();
+        let r = compress_verified(&file, &tmp, &stale, &o, &plain).unwrap();
         util::remove_temp(&tmp);
         assert_eq!(r.1, "changed during compression");
         util::set_times(&file, 1_000_000_000_000_000_000, 1_000_000_000_000_000_000).unwrap();
-        let (status, note, saved) = run(&o).unwrap();
+        let (status, note, saved) = run(&o, &plain).unwrap();
         assert_eq!((status, note.as_str()), ("done", ""));
         assert!(saved >= 0);
+    }
+
+    // Check the real copy step clones the file and runs it through the library, keeping the contents.
+    #[test]
+    fn test_compressed_copy_keeps_contents() {
+        let sb = Sandbox::new();
+        let text = b"compress me through the library, please. ".repeat(3000);
+        let file = sb.write("data/x", &text);
+        let tmp = util::temp_beside(&file);
+        compressed_copy(&file, &tmp).unwrap();
+        assert_eq!(fs::read(&tmp).unwrap(), text);
+        util::remove_temp(&tmp);
+        fail_copies(true);
+        assert!(compressed_copy(&file, &tmp).is_err());
+        fail_copies(false);
     }
 
     // Check compress_one handles a vanished file, a skip, a failure and a success.
@@ -485,10 +513,10 @@ mod tests {
         let missing = Cand { path: sb.path("gone").to_string_lossy().into_owned(), ..cand(&file) };
         assert_eq!(compress_one(&missing, &o).0, "skipped");
         assert_eq!(compress_one(&Cand { size: 1, ..cand(&file) }, &o).1, "changed since scan");
-        fake_ditto(&sb, "exit 1");
+        fail_copies(true);
         util::set_flags(&[0, util::UF_COMPRESSED]);
-        assert_eq!(compress_one(&cand(&file), &o).0, "failed");
-        fake_ditto(&sb, "chmod 644 \"$3\"");
+        assert_eq!(compress_one(&cand(&file), &o), ("failed", "copy failed".to_string(), 0));
+        fail_copies(false);
         chmod(&file, 0o644);
         sb.tool("xattr", "exit 0");
         util::set_flags(&[0, util::UF_COMPRESSED]);
@@ -554,10 +582,11 @@ mod tests {
         let ask = CompressOpts { yes: false, ..opts(&sb) };
         with_stdin("n\n", || cmd_compress(&ask));
         assert_eq!(status_of(&sb, &sb.path("data/a")).0, "pending");
-        sb.tool("ditto", "exit 1");
+        fail_copies(true);
         sb.tool("lsof", "exit 1");
         with_stdin("y\n", || cmd_compress(&CompressOpts { sample: Some(1), yes: false, ..opts(&sb) }));
         assert_eq!(status_of(&sb, &sb.path("data/a")).0, "failed");
+        fail_copies(false);
     }
 
     // Check a full compress run records done, skipped and failed files and aborts after repeated failures.
@@ -571,14 +600,13 @@ mod tests {
         let files = seed(&sb, &["a", "b", "c", "d", "e", "f", "g"]);
         chmod(&files[0], 0o644);
         chmod(&files[1], 0o644);
-        fake_ditto(&sb, "chmod 644 \"$3\"");
         fs::hard_link(&files[1], sb.path("data/b-link")).unwrap();
         util::set_flags(&[0, util::UF_COMPRESSED]);
         let o = CompressOpts { sample: Some(2), ..opts(&sb) };
         cmd_compress(&o);
         assert_eq!(status_of(&sb, &files[0]).0, "done");
         assert_eq!(status_of(&sb, &files[1]).0, "skipped");
-        fake_ditto(&sb, "exit 1");
+        fail_copies(true);
         util::set_flags(&[0]);
         cmd_compress(&opts(&sb));
         let failed = files[2..].iter().filter(|f| status_of(&sb, f).0 == "failed").count();
@@ -587,6 +615,7 @@ mod tests {
         util::set_stop(true);
         cmd_compress(&opts(&sb));
         assert_eq!(status_of(&sb, &files[5]).0, "pending");
+        fail_copies(false);
     }
 
     // Check skip notes group by reason without per-file details.
@@ -602,19 +631,19 @@ mod tests {
         print_skip_reasons(&BTreeMap::new());
     }
 
-    // Check the ditto probe needs a successful run and a compressed copy.
+    // Check the probe needs a working compressed copy that reads as compressed.
     #[cfg(not(target_os = "macos"))]
     #[test]
-    fn test_ditto_compresses_probe() {
-        let sb = Sandbox::new();
-        fake_ditto(&sb, "true");
+    fn test_compression_works_probe() {
+        let _sb = Sandbox::new();
         util::set_flags(&[util::UF_COMPRESSED]);
-        assert!(ditto_compresses());
+        assert!(compression_works());
         util::set_flags(&[0]);
-        assert!(!ditto_compresses());
+        assert!(!compression_works());
         util::set_flags(&[util::UF_COMPRESSED]);
-        sb.tool("ditto", "exit 1");
-        assert!(!ditto_compresses());
+        fail_copies(true);
+        assert!(!compression_works());
+        fail_copies(false);
         util::set_flags(&[]);
     }
 }
