@@ -4,6 +4,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 const LONG_RULES: usize = 10;
+const LONG_DECLARATIONS: usize = 12;
+const LONG_SELECTORS: usize = 120;
+const KEEP_SELECTORS: usize = 80;
 const SMALL_RULE: usize = 2;
 const NAMED_PROPS: usize = 80;
 const LONG_COMMENT: usize = 4;
@@ -61,6 +64,11 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
         } else if t.starts_with("@debug ") && (kind == Kind::Scss && t.ends_with(';') || kind == Kind::Sass) {
             plan.count("log statements");
             i += 1;
+        } else if let Some(end) = declaration_run(&src, i).filter(|_| kind != Kind::Sass) {
+            keep_line(&mut plan, src[i], i);
+            plan.hide(i + 1, end - 1, format!("{} declaration(s)", end - i - 1), "declaration runs");
+            keep_line(&mut plan, src[end], end);
+            i = end + 1;
         } else if prefixed(t, kind).is_some_and(|p| plain.contains(&(blocks[i], p.to_string()))) {
             plan.count("vendor prefixes");
             i += 1;
@@ -83,11 +91,67 @@ pub fn view(shown: &str, text: &str, kind: Kind) -> Option<String> {
     Some(format!("{shown} {} lines; terse: {}\n{}", src.len(), steps.join(", "), plan.lines.join("\n")))
 }
 
-// Keeps a line with long data URIs cut.
+// Keeps a line with long data URIs and long selector lists cut.
 fn keep_line(plan: &mut Plan, line: &str, i: usize) {
     let (short, n) = shorten_data_uris(line);
     (0..n).for_each(|_| plan.count("data URIs"));
-    plan.keep(i, &short, n > 0);
+    let (short, cut) = match shorten_selectors(&short) {
+        Some(s) => {
+            plan.count("long selector lists");
+            (s, true)
+        }
+        None => (short, false),
+    };
+    plan.keep(i, &short, n > 0 || cut);
+}
+
+// Returns a selector line over 120 characters ending in `{` cut to the selectors that fit in about 80, then `…, +N more {`; None for shorter lines and at-rules.
+fn shorten_selectors(line: &str) -> Option<String> {
+    let t = line.trim_end();
+    let head = t.strip_suffix('{')?.trim_end();
+    if t.len() <= LONG_SELECTORS || head.trim_start().starts_with('@') {
+        return None;
+    }
+    let (mut parts, mut depth, mut start) = (Vec::new(), 0i32, 0);
+    for (k, c) in head.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&head[start..k]);
+                start = k + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&head[start..]);
+    let mut kept = String::new();
+    let mut n = 0;
+    while n < parts.len() && (n == 0 || kept.len() + parts[n].len() < KEEP_SELECTORS) {
+        kept.push_str(parts[n]);
+        kept.push(',');
+        n += 1;
+    }
+    (n < parts.len()).then(|| format!("{}… +{} more {{", kept, parts.len() - n))
+}
+
+// Returns the last line of a run of 12+ declaration lines starting at line i, the first declaration of its block: lines at one indentation with a `:` and no braces or at-rule.
+fn declaration_run(src: &[&str], i: usize) -> Option<usize> {
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let decl = |l: &str| {
+        let t = l.trim();
+        !t.is_empty()
+            && t.contains(':')
+            && !t.contains('{')
+            && !t.contains('}')
+            && !t.starts_with('@')
+            && !t.starts_with("/*")
+    };
+    if !decl(src[i]) || i > 0 && decl(src[i - 1]) && indent(src[i - 1]) == indent(src[i]) {
+        return None;
+    }
+    let n = src[i..].iter().take_while(|l| decl(l) && indent(l) == indent(src[i])).count();
+    (n >= LONG_DECLARATIONS).then(|| i + n - 1)
 }
 
 // Returns the first and last lines and sorted property names of a plain rule starting at line i: `sel { a: 1; b: 2; }` on one line, or a selector line ending in `{`, declaration lines and a `}` at its indentation; None for at-rules and nested blocks.
@@ -515,5 +579,30 @@ mod tests {
                 && rule_block(&["a"], 0).is_none()
                 && rule_block(&["a { b: 1"], 0).is_none()
         );
+    }
+
+    // Checks long declaration runs keep their first and last, long selector lists are cut, and what stays: short runs, at-rules, braces.
+    #[test]
+    fn test_declarations_and_selectors() {
+        let vars: String = (1..=14).map(|n| format!("  --c{n}: #{n:06};\n")).collect();
+        let sels: Vec<String> = (1..=20).map(|n| format!(".selector-{n}:not(.a,.b)")).collect();
+        let src = format!(":root {{\n{vars}}}\n{} {{\n  color: red;\n}}\n", sels.join(","));
+        let v = view("a.css", &src, Kind::Css).expect("view");
+        assert!(
+            v.contains("\n2\t  --c1: #000001;\n3-14\t⋯ 12 declaration(s)\n15\t  --c14: #000014;\n16\t}\n"),
+            "{v}"
+        );
+        assert!(
+            v.contains(
+                "\n17~\t.selector-1:not(.a,.b),.selector-2:not(.a,.b),.selector-3:not(.a,.b),… +17 more {\n"
+            ),
+            "{v}"
+        );
+        assert!(shorten_selectors(&format!("@media {} {{", "x".repeat(130))).is_none());
+        assert!(shorten_selectors("a, b {").is_none() && shorten_selectors(&"x".repeat(130)).is_none());
+        assert_eq!(shorten_selectors(&format!("{} {{", "y".repeat(130))), None);
+        let few: String = (1..=11).map(|n| format!("  a{n}: 1;\n")).collect();
+        assert!(declaration_run(&format!("a {{\n{few}}}\n").lines().collect::<Vec<_>>(), 1).is_none());
+        assert!(declaration_run(&["  a: 1;", "  b: 2;"], 1).is_none());
     }
 }

@@ -341,7 +341,7 @@
           "symbol": "CSS, SCSS, Sass and Less terse view"
         }
       ],
-      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it collapses runs of 10+ sibling rules setting the same properties (icon fonts), or of 10+ small rules of one or two declarations setting any properties (utility classes; the note names the properties up to about 80 characters; not in Sass) to their first and last, naming the properties; it shortens url(data:…) values longer than 60 characters. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
+      "behavior": "Without --source or --anchors, styles.rs hides comments of four or more lines (and SCSS // runs), source map comments, runs of two or more @import/@use/@forward lines, @font-face and @keyframes blocks (as one note with the font family or animation name), vendor-prefixed declarations whose block also sets the plain property, and SCSS and Sass @debug lines (Less is read like SCSS; indented Sass finds blocks by indentation); it collapses runs of 10+ sibling rules setting the same properties (icon fonts), or of 10+ small rules of one or two declarations setting any properties (utility classes; the note names the properties up to about 80 characters; not in Sass) to their first and last, naming the properties; it collapses runs of 12+ declarations in one block to their first and last (not in Sass), and shortens url(data:…) values longer than 60 characters and selector lines over 120 characters to the selectors that fit in about 80 and a count of the rest. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads stylesheets without paying for licence banners, font and animation boilerplate, duplicate prefixes and inline images, and still has to read the real stylesheet before it can edit it.",
       "constraints": [
         "The view carries no sha, so it cannot be used for --expect.",
@@ -601,7 +601,7 @@
     {
       "id": "minified-terse-view",
       "name": "Terse view of minified JSON and XML",
-      "description": "`read` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, which are most of its lines (or it has at most 5), returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
+      "description": "`read` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, with at most 10 other lines (a licence banner, a source map comment) or fewer other lines than long ones, returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
       "sources": [
         {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "json_view"},
         {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "xml_view"},
