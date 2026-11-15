@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 const LONG_RULES: usize = 10;
+const SMALL_RULE: usize = 2;
+const NAMED_PROPS: usize = 80;
 const LONG_COMMENT: usize = 4;
 const LONG_DATA_URI: usize = 60;
 const PREFIXES: [&str; 4] = ["-webkit-", "-moz-", "-ms-", "-o-"];
@@ -125,20 +127,54 @@ fn rule_block(src: &[&str], i: usize) -> Option<((usize, usize), Vec<String>)> {
 // The first and last lines of each rule in a run, and the properties they all set.
 type RuleRun = (Vec<(usize, usize)>, Vec<String>);
 
-// Returns the rules of a run of 10+ sibling plain rules starting at line i that set the same properties (icon classes, utility classes), and those properties; blank lines may separate them.
+// Returns the rules of a run of 10+ sibling plain rules starting at line i that set the same properties (icon classes), or else of 10+ small rules of one or two declarations each (utility classes), and the properties they set, named up to about 80 characters; blank lines may separate them.
 fn rule_run(src: &[&str], i: usize) -> Option<RuleRun> {
-    let ((a, b), props) = rule_block(src, i)?;
+    let (first, props) = rule_block(src, i)?;
+    let same = sibling_rules(src, i, first, |p| *p == props);
+    if same.len() >= LONG_RULES {
+        return Some((same, props));
+    }
+    let small = sibling_rules(src, i, first, |p| p.len() <= SMALL_RULE);
+    if props.len() > SMALL_RULE || small.len() < LONG_RULES {
+        return None;
+    }
+    let mut all: Vec<String> = Vec::new();
+    for &(a, _) in &small {
+        for p in rule_block(src, a).map(|r| r.1).unwrap_or_default() {
+            if !all.contains(&p) {
+                all.push(p);
+            }
+        }
+    }
+    let mut named: Vec<String> = Vec::new();
+    for p in &all {
+        if named.iter().map(|n| n.len() + 2).sum::<usize>() + p.len() > NAMED_PROPS {
+            named.push("…".into());
+            break;
+        }
+        named.push(p.clone());
+    }
+    Some((small, named))
+}
+
+// Returns the rules from line i on, the first spanning `first`, while each next sibling at the same indentation is a plain rule whose properties pass the test.
+fn sibling_rules(
+    src: &[&str],
+    i: usize,
+    first: (usize, usize),
+    test: impl Fn(&Vec<String>) -> bool,
+) -> Vec<(usize, usize)> {
     let k = src[i].len() - src[i].trim_start().len();
-    let mut rules = vec![(a, b)];
+    let mut rules = vec![first];
     loop {
         let next = (rules[rules.len() - 1].1 + 1..src.len()).find(|&l| !src[l].trim().is_empty());
         let Some(n) = next.filter(|&n| src[n].len() - src[n].trim_start().len() == k) else { break };
         match rule_block(src, n) {
-            Some((span, p)) if p == props => rules.push(span),
+            Some((span, p)) if test(&p) => rules.push(span),
             _ => break,
         }
     }
-    (rules.len() >= LONG_RULES).then_some((rules, props))
+    rules
 }
 
 // Returns, for each line, the id of the innermost block open at its start; braces in comments and strings are counted too, which only makes the view keep more.
@@ -455,10 +491,13 @@ mod tests {
             (1..=10).map(|n| format!(".m-{n} {{\n  margin: {n}px;\n  padding: 0\n}}\n\n")).collect();
         let v = view("b.css", &format!("{sizes}.x {{ color: red }}\n"), Kind::Css).expect("view");
         assert!(v.contains("\n1\t.m-1 {\n2\t  margin: 1px;\n3\t  padding: 0\n4\t}\n6-44\t⋯ 8 rule(s) setting margin, padding\n46\t.m-10 {\n"), "{v}");
+        let utilities = ".mt-1 { margin-top: 4px }\n.mb-1 { margin-bottom: 4px }\n.p-1 { padding: 4px; color: red }\n.d-none { display: none }\n.d-flex { display: flex }\n.text-center { text-align: center }\n.text-left { text-align: left }\n.fw-bold { font-weight: bold }\n.border-top-wide-and-long { border-top-width: 1px }\n.overflow-hidden { overflow: hidden }\n.position-relative { position: relative }\n.big { a: 1; b: 2; c: 3 }\n";
+        let v = view("u.css", utilities, Kind::Css).expect("view");
+        assert_eq!(v, "u.css 12 lines; terse: 1 rule runs\n1\t.mt-1 { margin-top: 4px }\n2-10\t⋯ 9 rule(s) setting margin-top, margin-bottom, color, padding, display, text-align, font-weight, …\n11\t.position-relative { position: relative }\n12\t.big { a: 1; b: 2; c: 3 }");
         let mixed: String = (1..=12)
             .map(|n| {
                 if n == 6 {
-                    ".odd { color: red }\n".to_string()
+                    ".odd { a: 1; b: 2; c: 3 }\n".to_string()
                 } else {
                     format!(".c-{n} {{ margin: 0 }}\n")
                 }

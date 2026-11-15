@@ -126,7 +126,7 @@
     {
       "id": "styles",
       "name": "Stylesheet terse view (styles.rs)",
-      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties, and shortens inline data URIs.",
+      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties or of 10+ small utility rules, and shortens inline data URIs.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -174,7 +174,7 @@
     {
       "id": "schema",
       "name": "HCL, Protobuf and GraphQL terse view (schema.rs)",
-      "responsibility": "Builds the terse view of HCL/Terraform, Protobuf and GraphQL files line by line with markup.rs's Plan: collapses comments and GraphQL descriptions of 3+ lines, HCL heredoc bodies, Protobuf import and option runs, and runs of 10+ enum values or HCL list and map items, and cuts long values.",
+      "responsibility": "Builds the terse view of HCL/Terraform, Protobuf and GraphQL files line by line with markup.rs's Plan: collapses comments of 3+ lines and multi-line GraphQL descriptions (to a note quoting their first line), HCL heredoc bodies, Protobuf import and option runs, and runs of 10+ enum values or HCL list and map items, and cuts long values.",
       "folder": "macos/rust/zazzled/src"
     },
     {
