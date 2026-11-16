@@ -83,7 +83,7 @@
       "summary": "The same tarballs and checksums, copied to the download bucket under zazzle/<tag>/ and zazzle/latest/, served at https://icelander.net/downloads/zazzle/.",
       "environment": "The icelander-downloads bucket on Cloudflare R2",
       "purpose": "A stable latest/ link for the README's curl install, and one folder per version.",
-      "deployedBy": "The release workflow, with the secret CLOUDFLARE_R2_TOKEN",
+      "deployedBy": "The release workflow, with the secret CLOUDFLARE_R2_TOKEN, through r2-put.sh, which retries each upload up to five times",
       "promotedFrom": "The same job's build; there is no staging.",
       "rollback": "No rollback is automated or documented. latest/ is overwritten by each release; zazzle/<tag>/ keeps every version.",
       "evidenceStatus": "source-verified",
@@ -99,6 +99,10 @@
         {
           "path": "README.md",
           "symbol": "Tools (macOS, Rust)"
+        },
+        {
+          "path": "macos/release/r2-put.sh",
+          "symbol": "wrangler@4 r2 object put"
         }
       ]
     },

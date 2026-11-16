@@ -168,6 +168,44 @@
           "path": "macos/release/pgo.sh"
         }
       ]
+    },
+    {
+      "id": "r2-upload-retries",
+      "title": "R2 upload retries",
+      "summary": "r2-put.test.sh runs r2-put.sh against a stand-in npx that fails a chosen number of times.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/delivery.json",
+          "entityId": "downloads"
+        }
+      ],
+      "criteria": [
+        "A first-try success makes one call, with the bucket key under icelander-downloads/, the file, the content type and --remote",
+        "Failures are retried until one succeeds",
+        "After five failed attempts the script gives up with a failure"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/release/r2-put.test.sh",
+          "symbol": "run"
+        }
+      ],
+      "notChecked": [
+        "The real Cloudflare API and the waits between attempts (the test sets them to zero).",
+        "That re-running the macos job uploads to an existing GitHub release; that needs a real release."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/r2-put.test.sh",
+          "symbol": "run"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "lint"
+        }
+      ]
     }
   ]
 }

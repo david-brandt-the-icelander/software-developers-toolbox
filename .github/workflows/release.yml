@@ -254,9 +254,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: >
-          gh release create "$TAG" --notes ""
-          zazzle-macos-universal.tar.gz zazzle-macos-universal.tar.gz.sha256
+        # Uploads to the release when it already exists, so a re-run of this job can finish publishing.
+        run: |
+          files=(zazzle-macos-universal.tar.gz zazzle-macos-universal.tar.gz.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber "${files[@]}"
+          else
+            gh release create "$TAG" --notes "" "${files[@]}"
+          fi
       - name: Publish to icelander.net
         if: needs.version.outputs.publish == 'true'
         env:
@@ -264,16 +269,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
+          put=macos/release/r2-put.sh
           for dir in "$TAG" latest; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz" \
-              --file zazzle-macos-universal.tar.gz --content-type application/gzip --remote
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" \
-              --file zazzle-macos-universal.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+            bash $put "zazzle/$dir/zazzle-macos-universal.tar.gz" zazzle-macos-universal.tar.gz application/gzip
+            bash $put "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
+              "text/plain; charset=utf-8"
           done
           # The modules belong to this release's zazzled only, so they go under the tag, not latest.
           for f in dist/languages/*; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$TAG/languages/macos-universal/${f##*/}" \
-              --file "$f" --content-type application/octet-stream --remote
+            bash $put "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
           done
 
   # Linux tarballs build beside the macOS jobs; only publishing them (linux-publish) waits for the GitHub release.
@@ -363,6 +367,8 @@ jobs:
         arch: [x86_64, aarch64]
     runs-on: ubuntu-24.04
     steps:
+      # The checkout comes first because it would clean away the downloaded files; it provides r2-put.sh.
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: zazzle-linux-${{ matrix.arch }}
@@ -381,15 +387,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
+          put=macos/release/r2-put.sh
           for dir in "$TAG" latest; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" \
-              --file zazzle-linux-${{ matrix.arch }}.tar.gz --content-type application/gzip --remote
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" \
-              --file zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 --content-type "text/plain; charset=utf-8" --remote
+            bash $put "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" zazzle-linux-${{ matrix.arch }}.tar.gz application/gzip
+            bash $put "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 \
+              "text/plain; charset=utf-8"
           done
           for f in macos/rust/dist/languages/*; do
-            npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" \
-              --file "$f" --content-type application/octet-stream --remote
+            bash $put "zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
           done
 
 

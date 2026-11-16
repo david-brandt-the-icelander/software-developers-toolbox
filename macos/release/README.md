@@ -103,6 +103,10 @@ All 34 tree-sitter grammars ship as language modules (zazzled links none) (`maco
 - `pgo.sh` needs the modules: zazzled has no grammars, so the release builds them first and points `PGO_LANGUAGES` at them; training loads them while it profiles the tree-sitter runtime in zazzled (the modules themselves are not profiled).
 - `language-modules.test.sh` builds the Lua module and checks its manifest line; CI runs it with shellcheck.
 
+## Uploads to icelander.net (`r2-put.sh`)
+
+`r2-put.sh KEY FILE CONTENT_TYPE` uploads one file to the `icelander-downloads` R2 bucket with `wrangler`. Cloudflare's API sometimes times out (HTTP 524), so it tries up to five times, waiting 15, 30, 60 and 120 seconds in between. If a release still fails while publishing, use "Re-run failed jobs": the `macos` job uploads to the GitHub release when it already exists instead of creating it, and every upload overwrites. `r2-put.test.sh` checks the retries against a stand-in `npx`.
+
 ## cyberspace-generator (`fetch-cyberspace-generator.sh`)
 
 `cyberspace-generator` is built and released in [cyberspace-explorer](https://github.com/david-brandt-the-icelander/cyberspace-explorer) (tags `generator-v*`). `cyberspace-generator.version` pins the release zazzle ships. The release job runs `fetch-cyberspace-generator.sh`, which downloads that release's binaries and checks them against its `SHA256SUMS`; the macOS job merges the two CPU types with `lipo` and signs the result with the other binaries, and each Linux tarball gets the static musl build.
