@@ -11,27 +11,49 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 ```bash
 brew install zazzcat/z/zazzle         # or build: cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
-zazzle setup --repo ~/src              # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
-zazzle setup --apply --repo ~/src --hook
-zazzle setup --check                  # after restarting the apps
+zazzle setup --workspace ~/dev --hook  # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
+zazzle setup --apply --workspace ~/dev --hook
+zazzle setup --check                   # after restarting the apps (and trusting the hook in Codex)
+zazzle setup --verify --repo ~/dev/api # uses zazzle like an agent would, from inside a repository and from elsewhere
+zazzle setup --report                  # what agents actually sent through zazzle in the last day, and the bypasses
 ```
 
-Tell an agent "run `zazzle setup` and follow it": the report says what it found, what it would change and when to ask you. Any other MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write. Its MCP handshake gives agents instructions for using it (`instructions`).
+Tell an agent "run `zazzle setup` and follow it": the report says what it found, what it would change and when to ask you. Any other MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths. Edits may write in the working directory and the git work tree holding it, in the roots an MCP client names (`roots/list`), and in your workspaces (`~/.zazzle/workspaces`, one folder per line, or `ZAZZLE_WORKSPACES`), never in your home folder or `/` as such. Its MCP handshake gives agents instructions for using it (`instructions`).
 
 ## Configuring clients: `zazzle setup`
 
-`zazzle setup` (`zazzled setup`, its own process) edits only user-level settings, never a repository's shared `.mcp.json`. One setup serves every repository: Claude Code and Codex start zazzle in the folder a session opens, and `--repo` only gives the desktop app a folder, which may hold several repositories.
+`zazzle setup` (`zazzled setup`, its own process) edits only user-level settings, never a repository's shared `.mcp.json` or `.codex/config.toml`. One setup serves every repository: Claude Code and Codex start zazzle in the folder a session opens, `--repo` gives the desktop app a folder (which may hold several repositories), and `--workspace DIR` (repeatable; `--repo` counts too) lets edits reach every repository below DIR wherever a chat starts.
 
 | client | file | zazzle entry |
 |---|---|---|
-| Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; with `--hook`, the C# indexer's hook in `~/.claude/settings.json` sends grep, cat, Glob and Read to zazzle |
+| Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; with `--hook`, `zazzled hook --client claude-code` in `~/.claude/settings.json` (Bash, Grep, Glob, Read and the edit tools) |
 | Claude desktop app (chat) | `~/Library/Application Support/Claude/claude_desktop_config.json` | the app starts servers in `/`, so with `--repo DIR` the entry is `/bin/sh -c "cd DIR && exec zazzled mcp"`; DIR may be a folder above several repositories (see C# structure) |
-| Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md` |
+| Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md`; with `--hook`, `zazzled hook --client codex` in `~/.codex/hooks.json` (shell commands and `apply_patch`), which Codex runs once you trust it (`/hooks` in the CLI, Settings > Hooks in the app) |
 
 - Other servers: a stdio server becomes `zazzled proxy --log -- ORIGINAL COMMAND` (its env and other settings kept). A Streamable HTTP server whose entry carries headers or a bearer-token variable is routed through `http://127.0.0.1:PORT/mcp` (from 8809, one port per upstream URL), where a LaunchAgent (`com.zazzle.proxy.PORT`, macOS) keeps `zazzled proxy --upstream URL` running; headers pass through. HTTP servers without headers sign in with OAuth, which the proxy cannot carry, and SSE servers use a transport it does not speak, so both are left alone with the reason in the report. `--no-wrap` leaves every other server alone.
 - Without `--apply`, `--undo` or `--check` it changes nothing and prints the plan. Clients that look installed are chosen; `--client NAME` (repeatable) chooses instead. `--apply` backs up each file it changes (`FILE.zazzle-backup-SECONDS`), and a second run changes nothing. Quit the apps first: they rewrite their settings files. Routes are recorded in `~/.zazzle/setup.json`.
-- `--undo` removes the zazzle entries, unwraps and unroutes the servers it changed, stops the proxy agents and removes the instructions and the hook.
-- `--check` starts every configured server the way its client does (same command, environment and folder: `/` for the desktop app, the project for Claude Code's project servers, else `--repo` or the current folder) and does a real handshake: `initialize`, `tools/list`, and for zazzle `zazzle_overview`; HTTP servers get an `initialize` with their headers (a 401 is reported as needing sign-in). Secrets are never printed.
+- `--undo` removes the zazzle entries, unwraps and unroutes the servers it changed, stops the proxy agents, and removes the instructions, the hooks and the workspace lines it added (lines you wrote stay).
+- Servers setup does not change, and so stay direct, are listed with the reason: OAuth and SSE servers, servers a Claude Code or Codex plugin provides (a plugin update would overwrite the change), and servers in repositories' shared `.mcp.json` and `.codex/config.toml` under `--repo` and your workspaces. Servers added after setup show up in `--check` as `direct: not wrapped yet`; running `--apply` again wraps them. Wrapping changes only `command` and `args`: env, `env_vars`, cwd, enabled state, tool lists, timeouts and approval settings stay as they were.
+- `--check` starts every configured server the way its client does (same command, environment and folder: the entry's `cwd`, `/` for the desktop app, the project for Claude Code's project servers, else `--repo` or the current folder) and does a real handshake: `initialize`, `tools/list`, and for zazzle `zazzle_overview`; HTTP servers get an `initialize` with their headers (a 401 is reported as needing sign-in). Secrets are never printed. Each server is marked `[zazzle]`, `[proxied: stdio]`, `[proxied: http]` or `[direct: why]`, and each client's routing is `enforced by the hook` (with a self-test that feeds the hook `rg`, `cargo test` and `git status`) or `instructions only`. It also says where zazzle may edit from the current folder, and sums up the last day of the activity log.
+- `--verify` uses zazzle the way an agent would, on `--repo` or the current repository: `zazzle_find`, `zazzle_read source=true`, a reversible edit (it creates `.zazzle-verify-PID.txt`, edits it with the read's sha, and removes it) and `zazzle_overview`, once with zazzle started inside the repository and once started in your home folder with absolute paths (which only works when the repository is in a workspace); then `zazzle run` with a failing command (exit code kept), `tools/list` through every wrapped server, and each hook's self-test. It ends with the activity-log entries the run produced as evidence.
+- `--report` reads the activity log (`~/.zazzle/activity.log`, `ZAZZLE_ACTIVITY_LOG` to move it): zazzle commands by name and session, `zazzle run` runs, MCP calls through the proxy by server and tool, raw commands the hook redirected, and bypasses: native edits, `# allow-raw` and calls let through while zazzle was unavailable. It also lists what the log cannot see.
+
+## Routing: what is enforced and what is asked
+
+| | Claude Code (terminal, VS Code, desktop Code tab) | Codex (CLI and app; the IDE extension reads the same `~/.codex`, but OpenAI's docs do not say it runs hooks, so check it with `--report`) | Claude desktop chat |
+|---|---|---|---|
+| raw `grep`/`rg`/`git grep`, `find`, `cat`/`head`/`tail`/`sed -n` in the shell | hook refuses, names the zazzle tool | hook refuses, names the zazzle tool | no shell |
+| builds and tests (`cargo`, `dotnet`, `go`, `npm`/`pnpm`/`yarn`, `make`, `pytest`, `gradle`, `mvn`, `tsc`, ...) | hook refuses, asks for `zazzle run -- CMD` | same | no shell |
+| built-in search and listing | Grep and Glob refused | none besides the shell | none |
+| built-in reads | Read of `.cs` refused (terse view); other files allowed | none besides the shell | none |
+| edits | Edit/Write allowed and logged as native edits; refused with `--hook-edits` | `apply_patch` allowed and logged; refused with `--hook-edits` | zazzle_edit only |
+| other MCP servers | wrapped stdio servers and routed HTTP servers pass through zazzle's proxy | same | same |
+| everything else | instructions only | instructions only | instructions only |
+
+- The hook (`zazzled hook`) answers in the PreToolUse format both clients read (`permissionDecision: deny` with the reason the agent sees). It never rewrites a command or approves one, so permission prompts and sandboxing stay as they were; the agent re-issues the command through zazzle, which goes through the same approvals.
+- A command ending in `# allow-raw` passes and is logged as a bypass. When zazzle cannot be reached, the hook lets everything through and logs `zazzle-unavailable`; `ZAZZLE_HOOK=off` turns it off.
+- Repository instructions win over zazzle's instructions when they conflict, but they rarely do: when a repository says "run `cargo test`", the hook asks for exactly that command behind `zazzle run --`, which runs it unchanged with the same exit code. If an instruction insists on a native tool, `# allow-raw` keeps it possible and visible.
+- Not intercepted: Claude Code's Read of non-C# files (Edit needs it), WebFetch/WebSearch and hosted tools, MCP servers that stay direct, the desktop chat, Codex sessions that have not trusted the hook, and anything run outside an agent. `--report` lists these as not visible rather than counting them as covered.
 
 ## Commands
 
@@ -42,7 +64,7 @@ Tell an agent "run `zazzle setup` and follow it": the report says what it found,
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else |
 | `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
-| `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read --source`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory |
+| `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read --source`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory, its git work tree, the client's roots and your workspaces |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |

@@ -46,6 +46,8 @@ pub struct Server {
     pub env: Vec<(String, String)>,
     pub headers: Vec<(String, String)>,
     pub bearer: Option<String>,
+    pub cwd: Option<String>,
+    pub enabled: bool,
 }
 
 // A configuration file's parsed contents: JSON for the Claude apps, TOML for Codex.
@@ -138,6 +140,8 @@ impl ConfigFile {
                             env: json_pairs(e.get("env")),
                             headers: json_pairs(e.get("headers")),
                             bearer: None,
+                            cwd: e["cwd"].as_str().map(str::to_string),
+                            enabled: e["disabled"] != json!(true) && e["enabled"] != json!(false),
                         });
                     }
                 }
@@ -152,6 +156,8 @@ impl ConfigFile {
                             env: toml_pairs(e.get("env")),
                             headers: toml_pairs(e.get("http_headers")),
                             bearer: e.get("bearer_token_env_var").and_then(Item::as_str).map(str::to_string),
+                            cwd: e.get("cwd").and_then(Item::as_str).map(str::to_string),
+                            enabled: e.get("enabled").and_then(Item::as_bool) != Some(false),
                         });
                     }
                 }

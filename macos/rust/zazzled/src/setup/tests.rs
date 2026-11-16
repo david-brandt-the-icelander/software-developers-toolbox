@@ -60,15 +60,21 @@ fn test_parse() {
             action: Action::Apply,
             clients: vec![Client::Codex],
             repo: Some("/r".into()),
+            workspaces: vec![],
             hook: true,
+            hook_edits: false,
             wrap: false
         }
     );
+    let o = opts(&["--hook-edits", "--workspace", "/a", "--workspace", "/b", "--verify"]);
+    assert!(o.hook && o.hook_edits && o.workspaces == [PathBuf::from("/a"), PathBuf::from("/b")]);
+    assert_eq!((o.action, opts(&["--report"]).action), (Action::Verify, Action::Report));
     let bad = |w: &[&str]| parse(&w.iter().map(|x| x.to_string()).collect::<Vec<_>>()).expect_err("bad");
     assert!(bad(&["--apply", "--undo"]).contains("give one of"));
     assert!(bad(&["--client", "vscode"]).contains("unknown client"));
     assert!(bad(&["--client"]).contains("needs a name"));
     assert!(bad(&["--repo"]).contains("needs a directory"));
+    assert!(bad(&["--workspace"]).contains("needs a directory"));
     assert!(bad(&["--what"]).contains("unknown setup option"));
     assert_eq!(bad(&["--help"]), USAGE);
 }
@@ -98,7 +104,10 @@ fn test_plan() {
         "{r}"
     );
     assert!(r.contains("  ~ route api (http) through http://127.0.0.1:"), "{r}");
-    assert!(r.contains("  + add zazzle's instructions to ~/.claude/CLAUDE.md\n  + add the hook"), "{r}");
+    assert!(r.contains("  + add zazzle's instructions to ~/.claude/CLAUDE.md\n  + add the hook in ~/.claude/settings.json (Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit): /opt/z/zazzled hook --client claude-code\n"), "{r}");
+    assert!(r.contains("+ add the hook in ~/.codex/hooks.json (Bash|apply_patch): /opt/z/zazzled hook --client codex\n    Codex runs a new or changed hook only once you trust it"), "{r}");
+    assert!(r.contains("= no hook: the desktop app's chat has none"), "{r}");
+    assert!(r.contains("  + add workspace ~/repo: zazzle may edit files below it"), "{r}");
     assert!(
         r.contains(&format!(
             "+ add zazzle: /bin/sh -c cd '{}' && exec '/opt/z/zazzled' mcp",
@@ -107,7 +116,7 @@ fn test_plan() {
         "{r}"
     );
     assert!(
-        r.contains("not changed, since it may be shared with your team") && r.contains("team (stdio)"),
+        r.contains("not changed (they stay direct, outside zazzle's proxy):\n  = team (stdio) (~/repo/.mcp.json): shared with the repository's other users"),
         "{r}"
     );
     assert!(r.contains("Next, for an agent: show this plan to the user and ask before applying."), "{r}");
@@ -134,11 +143,25 @@ fn test_apply_and_undo() {
     let env = env(&t, true);
     seed(&env);
     LAUNCHCTL.lock().expect("lock").clear();
-    let r = run(&opts(&["--apply", "--hook"]), &env).expect("apply");
+    let dev = t.path().join("dev");
+    std::fs::create_dir_all(&dev).expect("mkdir");
+    std::fs::create_dir_all(env.home.join(".zazzle")).expect("mkdir");
+    std::fs::write(crate::workspace::file(&env.home), "/mine\n").expect("write");
+    let old = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/x/zazzle-csharp-indexer hook"}]}]}}"#;
+    std::fs::write(env.home.join(".claude/settings.json"), old).expect("write");
+    let ws = dev.to_string_lossy().to_string();
+    let r = run(&opts(&["--apply", "--hook", "--workspace", &ws]), &env).expect("apply");
+    assert!(
+        r.contains("~ updated the hook in ~/.claude/settings.json")
+            && r.contains("+ added the hook in ~/.codex/hooks.json"),
+        "{r}"
+    );
+    assert!(r.contains("+ added workspace ~/dev") && r.contains("= workspace /mine"), "{r}");
     assert!(
         r.contains("+ added zazzle")
             && r.contains("~ wrapped gh")
-            && r.contains("backups:\n  ~/.claude.json.zazzle-backup-"),
+            && r.contains("backups:\n")
+            && r.contains("\n  ~/.claude.json.zazzle-backup-"),
         "{r}"
     );
     let code: Value =
@@ -160,16 +183,31 @@ fn test_apply_and_undo() {
     assert!(std::fs::read_to_string(env.codex_home.join("AGENTS.md"))
         .expect("md")
         .starts_with("<!-- zazzle setup: begin -->"));
-    assert!(std::fs::read_to_string(env.home.join(".claude/settings.json"))
-        .expect("settings")
-        .contains("/opt/z/zazzle-csharp-indexer hook"));
+    let settings = std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("settings");
+    assert!(
+        settings.contains("/opt/z/zazzled hook --client claude-code") && !settings.contains("indexer"),
+        "{settings}"
+    );
+    assert!(std::fs::read_to_string(env.codex_home.join("hooks.json"))
+        .expect("hooks")
+        .contains("hook --client codex"));
+    let canon = dev.canonicalize().expect("canon").display().to_string();
+    assert_eq!(
+        std::fs::read_to_string(crate::workspace::file(&env.home)).expect("ws"),
+        format!("/mine\n{canon}\n")
+    );
     let routes = load_routes(&env);
     assert_eq!(routes.len(), 1);
     assert!(LAUNCHCTL.lock().expect("lock").iter().any(|c| c.starts_with("bootstrap gui/501 ")));
     let plist = env.home.join(format!("Library/LaunchAgents/com.zazzle.proxy.{}.plist", routes[0].0));
     assert!(std::fs::read_to_string(plist).expect("plist").contains("<string>https://api/mcp</string>"));
 
-    let again = run(&opts(&["--apply", "--hook"]), &env).expect("again");
+    let again = run(&opts(&["--apply", "--hook", "--workspace", &ws]), &env).expect("again");
+    assert!(
+        again.contains("= hook in ~/.claude/settings.json")
+            && again.contains("= hook in ~/.codex/hooks.json"),
+        "{again}"
+    );
     assert!(
         again.contains("= leave gh (stdio): already behind the proxy") && again.contains("already routed"),
         "{again}"
@@ -182,7 +220,9 @@ fn test_apply_and_undo() {
         "{undo}"
     );
     assert!(
-        undo.contains("~ unrouted api (http): back to https://api/mcp") && undo.contains("- remove the hook"),
+        undo.contains("~ unrouted api (http): back to https://api/mcp")
+            && undo.contains("- remove zazzle's hook from ~/.claude/settings.json")
+            && undo.contains("- remove workspace"),
         "{undo}"
     );
     let code: Value =
@@ -192,9 +232,9 @@ fn test_apply_and_undo() {
     assert_eq!(code["mcpServers"]["api"]["url"], json!("https://api/mcp"));
     assert!(code["mcpServers"].get("zazzle").is_none());
     assert_eq!(std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md"), "# Mine\n\n");
-    assert!(!std::fs::read_to_string(env.home.join(".claude/settings.json"))
-        .expect("settings")
-        .contains("hook\""));
+    assert!(!env.home.join(".claude/settings.json").exists(), "only zazzle's hooks were in it");
+    assert!(!env.codex_home.join("hooks.json").exists() && !env.codex_home.join("AGENTS.md").exists());
+    assert_eq!(std::fs::read_to_string(crate::workspace::file(&env.home)).expect("ws"), "/mine\n");
     assert!(load_routes(&env).is_empty() && !env.state_path().exists());
     assert!(LAUNCHCTL
         .lock()
@@ -220,7 +260,7 @@ fn test_other_cases() {
     assert!(!r.contains("route api") && r.contains("only macOS has"), "{r}");
     assert!(
         r.contains("\ncodex: not installed, skipped")
-            && r.contains("= no hook: it comes with the C# indexer"),
+            && r.contains("+ add the hook in ~/.claude/settings.json"),
         "{r}"
     );
     let r = run(&opts(&["--no-wrap", "--client", "codex"]), &env).expect("plan");
@@ -233,6 +273,21 @@ fn test_other_cases() {
     assert!(run(&opts(&["--repo", "/no/such/repo"]), &env)
         .expect_err("bad repo")
         .contains("not a directory"));
+    let home = env.home.to_string_lossy().to_string();
+    assert!(run(&opts(&["--workspace", &home]), &env).expect_err("broad").contains("too broad"));
+    assert!(run(&opts(&["--workspace", "/no/such/dir"]), &env)
+        .expect_err("missing")
+        .contains("not a directory"));
+    let file = t.write("plain.txt", b"x");
+    assert!(run(&opts(&["--workspace", &file.to_string_lossy()]), &env)
+        .expect_err("file")
+        .contains("not a directory"));
+    let r = run(&opts(&["--client", "claude-code"]), &env).expect("plan");
+    assert!(
+        r.contains("none: edits stay inside the folder a chat starts in")
+            && r.contains("= no hook (add --hook"),
+        "{r}"
+    );
     std::fs::write(env.config_path(Client::ClaudeDesktop), "{broken").expect("write");
     assert!(run(&opts(&["--client", "claude-desktop"]), &env).is_err());
 }
@@ -255,17 +310,32 @@ fn test_block_and_hook() {
     assert!(std::fs::read_to_string(&md).expect("md").starts_with("no newline\n\n<!--"));
     let s = t.path().join("settings.json");
     std::fs::write(&s, r#"{"hooks": {"PreToolUse": 3}, "other": 1}"#).expect("write");
-    edit_hook(&s, Path::new("/opt/zazzle-csharp-indexer"), false, &mut backups).expect("add");
-    edit_hook(&s, Path::new("/opt/zazzle-csharp-indexer"), false, &mut backups).expect("again");
+    let h = HookSpec { path: s.clone(), matcher: "Bash", command: "/z/zazzled hook --client codex".into() };
+    edit_hook(&s, Some(&h), &mut backups).expect("add");
+    edit_hook(&s, Some(&h), &mut backups).expect("again");
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
     assert_eq!(v["hooks"]["PreToolUse"].as_array().expect("array").len(), 1);
-    assert!(hook_present(&s));
-    edit_hook(&s, Path::new(""), true, &mut backups).expect("remove");
-    assert!(!hook_present(&s));
+    assert_eq!(hook_command(&s).as_deref(), Some("/z/zazzled hook --client codex"));
+    edit_hook(&s, None, &mut backups).expect("remove");
+    edit_hook(&s, None, &mut backups).expect("remove again");
+    assert_eq!(std::fs::read_to_string(&s).expect("kept"), "{\n  \"other\": 1\n}\n");
+    let only = t.path().join("only.json");
+    edit_hook(&only, Some(&h), &mut backups).expect("add");
+    edit_hook(&only, None, &mut backups).expect("remove");
+    assert!(!only.exists());
+    assert!(write_or_remove(t.path(), "").is_err());
+    assert_eq!(hook_command(&s), None);
     std::fs::write(&s, "[1]").expect("write");
-    edit_hook(&s, Path::new("/ix"), false, &mut backups).expect("replaces a non-object");
+    edit_hook(&s, Some(&h), &mut backups).expect("replaces a non-object");
     std::fs::write(&s, "{bad").expect("write");
-    assert!(edit_hook(&s, Path::new("/ix"), false, &mut backups).is_err());
+    assert!(edit_hook(&s, Some(&h), &mut backups).is_err());
+    assert_eq!(hook_command(&s), None);
+    let mut spaced = env(&t, false);
+    spaced.zazzled = PathBuf::from("/Apps/My Tools/zazzled");
+    assert_eq!(
+        hook_spec(&spaced, Client::Codex, true).expect("spec").command,
+        "'/Apps/My Tools/zazzled' hook --client codex --edits"
+    );
     assert!(write_file(Path::new("/proc/zazzle-no/x"), "y").is_err());
 }
 
@@ -279,6 +349,8 @@ fn test_helpers() {
         env: vec![],
         headers: vec![],
         bearer: None,
+        cwd: None,
+        enabled: true,
     };
     assert!(
         is_zazzle(&s("/a/zazzled", &["mcp"]))
@@ -302,11 +374,18 @@ fn test_helpers() {
     let t = TempDir::new();
     let e = env(&t, true);
     let one: Routes = vec![(8809, "https://a".into())];
-    save_routes(&e, &one).expect("save");
-    assert_eq!(load_routes(&e), one);
+    save_state(&e, &one, &["/w".into()]).expect("save");
+    assert_eq!(load_state(&e), (one.clone(), vec!["/w".to_string()]));
     assert!(free_port(&one) > 8809);
     assert_eq!(e.short(Path::new("/elsewhere")), "/elsewhere");
     assert!(Env::detect().is_ok());
+    let cellar = t.path().join("Cellar/zazzle/1.2.11/bin/zazzled");
+    assert_eq!(stable_exe(&cellar), cellar);
+    std::fs::create_dir_all(t.path().join("opt/zazzle/bin")).expect("mkdir");
+    std::fs::write(t.path().join("opt/zazzle/bin/zazzled"), b"x").expect("write");
+    assert_eq!(stable_exe(&cellar), t.path().join("opt/zazzle/bin/zazzled"));
+    assert_eq!(stable_exe(&t.path().join("Cellar/zazzle")), t.path().join("Cellar/zazzle"));
+    assert_eq!(stable_exe(Path::new("/usr/bin/zazzled")), PathBuf::from("/usr/bin/zazzled"));
 }
 
 // Checks undo with nothing to undo, odd entries, a repository with and without a shared .mcp.json, and other files' content kept.
@@ -321,11 +400,32 @@ fn test_edges() {
     let repo = t.path().join("repo");
     std::fs::create_dir_all(&repo).expect("mkdir");
     let r = run(&opts(&["--client", "claude-code", "--repo", &repo.to_string_lossy()]), &env).expect("plan");
-    assert!(!r.contains("shared with your team"), "{r}");
+    assert!(!r.contains("shared with the repository"), "{r}");
     let shared = r#"{"mcpServers": {"zazzle": {"command": "zazzled", "args": ["mcp"]}}}"#;
     std::fs::write(repo.join(".mcp.json"), shared).expect("write");
     let r = run(&opts(&["--client", "claude-code", "--repo", &repo.to_string_lossy()]), &env).expect("plan");
-    assert!(!r.contains("shared with your team"), "{r}");
+    assert!(!r.contains("shared with the repository"), "{r}");
+    std::fs::create_dir_all(repo.join("svc/.git")).expect("mkdir");
+    std::fs::create_dir_all(repo.join("svc/.codex")).expect("mkdir");
+    std::fs::write(repo.join("svc/.codex/config.toml"), "[mcp_servers.db]\ncommand = \"db\"\n")
+        .expect("write");
+    let plugin = env.home.join(".claude/plugins/cache/p/1.0");
+    std::fs::create_dir_all(&plugin).expect("mkdir");
+    std::fs::write(plugin.join(".mcp.json"), r#"{"mcpServers": {"pl": {"command": "x"}, "bad": 1}}"#)
+        .expect("write");
+    std::fs::write(env.config_path(Client::Codex), "[plugins.\"s@m\".mcp_servers.ps]\nenabled = true\n")
+        .expect("write");
+    let r = run(&opts(&["--client", "claude-code", "--repo", &repo.to_string_lossy()]), &env).expect("plan");
+    assert!(
+        r.contains("= db (stdio) (~/repo/svc/.codex/config.toml): shared with the repository's other users"),
+        "{r}"
+    );
+    assert!(
+        r.contains("= pl (Claude Code plugin, ~/.claude/plugins/cache/p/1.0/.mcp.json)")
+            && !r.contains("= bad"),
+        "{r}"
+    );
+    assert!(r.contains("= ps (Codex plugin s@m)"), "{r}");
     let mut backups = Vec::new();
     let md = t.path().join("B.md");
     std::fs::write(&md, "a\n\n").expect("write");
@@ -334,8 +434,13 @@ fn test_edges() {
     let s = t.path().join("s.json");
     let other = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]}]}}"#;
     std::fs::write(&s, other).expect("write");
-    assert!(!hook_present(&s));
-    edit_hook(&s, Path::new("/opt/zazzle-csharp-indexer"), false, &mut backups).expect("add");
+    assert_eq!(hook_command(&s), None);
+    let h = HookSpec {
+        path: s.clone(),
+        matcher: CLAUDE_MATCHER,
+        command: "/z/zazzled hook --client claude-code".into(),
+    };
+    edit_hook(&s, Some(&h), &mut backups).expect("add");
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
     assert_eq!(v["hooks"]["PreToolUse"].as_array().expect("array").len(), 2);
 }

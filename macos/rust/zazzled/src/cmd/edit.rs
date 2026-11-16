@@ -1,4 +1,4 @@
-// The edit command: safe text and line edits, confined to the working directory and written atomically.
+// The edit command: safe text and line edits, confined to the working directory, its git work tree and the user's workspaces, written atomically.
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::meta::{anchor_str, line_anchor, Meta};
@@ -27,25 +27,9 @@ type SpanEnd = (usize, Option<String>);
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-// Checks a path stays inside the working directory after resolving symlinks, and returns its real location.
-fn confine(cwd: &Path, path: &Path) -> Result<PathBuf, String> {
-    let root = cwd.canonicalize().map_err(|e| format!("{}: {}", cwd.display(), crate::walk::reason(&e)))?;
-    let mut base = path.to_path_buf();
-    let mut tail = Vec::new();
-    while !base.exists() {
-        let Some(name) = base.file_name().map(|n| n.to_os_string()) else {
-            return Err("path with .. through a missing directory".into());
-        };
-        tail.push(name);
-        base.pop();
-    }
-    let mut real =
-        base.canonicalize().map_err(|e| format!("{}: {}", base.display(), crate::walk::reason(&e)))?;
-    real.extend(tail.iter().rev());
-    if real.starts_with(&root) {
-        return Ok(real);
-    }
-    Err(format!("refusing to write outside {} (run from a parent directory)", root.display()))
+// Checks a path is inside a folder this command may write to: see workspace::roots.
+fn confine(ctx: &Ctx, path: &Path) -> Result<PathBuf, String> {
+    crate::workspace::confine(&crate::workspace::roots(&ctx.cwd, &ctx.roots), path)
 }
 
 // Converts text to the file's line-ending style.
@@ -105,7 +89,7 @@ struct Target {
 fn open_target(ctx: &Ctx, arg: &str) -> Result<Target, String> {
     let wanted = resolve(arg, &ctx.cwd);
     let shown = display(&wanted, &ctx.cwd);
-    let path = confine(&ctx.cwd, &wanted)?;
+    let path = confine(ctx, &wanted)?;
     let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
     if loaded.meta.binary {
         return Err(format!("{shown}: binary file"));
@@ -315,7 +299,7 @@ fn insert_after(
 fn create_file(ctx: &Ctx, arg: &str, new: &str) -> Result<Output, String> {
     let wanted = resolve(arg, &ctx.cwd);
     let shown = display(&wanted, &ctx.cwd);
-    let path = confine(&ctx.cwd, &wanted)?;
+    let path = confine(ctx, &wanted)?;
     let io = |e: std::io::Error| format!("{shown}: {}", crate::walk::reason(&e));
     let mut data = new.as_bytes().to_vec();
     if !data.is_empty() && !data.ends_with(b"\n") {
@@ -572,6 +556,7 @@ mod tests {
         t.write("a.txt", b"old\n");
         let e = crate::engine::Engine::new();
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: t.path().to_path_buf(),
             session: String::new(),
@@ -616,7 +601,7 @@ mod tests {
         std::fs::write(work.join("in.txt"), b"in\n").expect("write");
         std::os::unix::fs::symlink(outer.path().join("secret.txt"), work.join("link.txt")).expect("symlink");
         let run = |args: &[&str]| run_signed(&work, args).text;
-        let refused = |s: String| s.starts_with("error: refusing to write outside ");
+        let refused = |s: String| s.starts_with("error: refusing to write outside the working directory");
         assert!(refused(run(&["edit", "../secret.txt", "--old", "s", "--new", "x"])));
         assert!(refused(run(&["edit", "link.txt", "--old", "s", "--new", "x"])));
         assert!(refused(run(&[
@@ -711,6 +696,7 @@ mod tests {
         let p = t.write("a.txt", b"x\n");
         let e = crate::engine::Engine::new();
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: t.path().to_path_buf(),
             session: String::new(),

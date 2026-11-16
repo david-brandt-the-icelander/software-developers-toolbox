@@ -485,6 +485,7 @@ mod tests {
     fn go(args: &[&str], input: &str) -> Output {
         let e = Engine::new();
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: PathBuf::from("/"),
             session: String::new(),
@@ -788,6 +789,7 @@ mod tests {
         let e = Engine::new();
         let big = vec![b'a'; MAX_INPUT + 10];
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: PathBuf::from("/"),
             session: String::new(),

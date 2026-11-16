@@ -11,6 +11,9 @@ const VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 pub trait Backend {
     // Runs the arguments as one zazzle command.
     fn call(&self, args: Vec<String>) -> Result<(u8, String), String>;
+
+    // Records the workspace folders the client named, which later commands may write in.
+    fn set_roots(&self, _roots: Vec<String>) {}
 }
 
 // The real backend: a unix-socket client that starts the daemon on demand.
@@ -18,14 +21,21 @@ pub struct DaemonBackend {
     pub sock: PathBuf,
     pub cwd: String,
     pub session: String,
+    pub roots: std::cell::RefCell<Vec<String>>,
 }
 
 impl Backend for DaemonBackend {
     // Sends the command to zazzled in relay mode.
     fn call(&self, args: Vec<String>) -> Result<(u8, String), String> {
-        let req = Request { cwd: self.cwd.clone(), session: self.session.clone(), args };
+        let session = crate::proto::join_session(&self.session, &self.roots.borrow());
+        let req = Request { cwd: self.cwd.clone(), session, args };
         client::call_autostart(&self.sock, &req, &client::spawn_daemon)
             .map_err(|e| format!("cannot reach zazzled: {e}"))
+    }
+
+    // Keeps the client's roots for the following calls.
+    fn set_roots(&self, roots: Vec<String>) {
+        *self.roots.borrow_mut() = roots;
     }
 }
 
@@ -71,7 +81,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_edit",
-        description: "Edit one file safely: replace unique text, replace lines or insert after a line (each needs expect, the sha from zazzle_read with source=true, or anchors), or create a file. Writes are confined to the working directory.",
+        description: "Edit one file safely: replace unique text, replace lines or insert after a line (each needs expect, the sha from zazzle_read with source=true, or anchors), or create a file. Writes are confined to the working directory, its git work tree, the workspaces the client names and those in ~/.zazzle/workspaces.",
         schema: edit_schema,
         map: edit_args,
     },
@@ -441,12 +451,65 @@ pub fn handle_line(line: &str, backend: &dyn Backend) -> Option<Value> {
     })
 }
 
-// Serves newline-delimited JSON-RPC from the input until it closes.
+// The id of the roots/list request zazzle sends a client that offers roots.
+const ROOTS_ID: &str = "zazzle-roots";
+
+// Turns a roots/list result into folder paths: `file://` URIs, percent-decoded.
+fn root_paths(result: &Value) -> Vec<String> {
+    let decode = |s: &str| -> String {
+        let b = s.as_bytes();
+        let mut out = Vec::with_capacity(b.len());
+        let mut i = 0;
+        while i < b.len() {
+            match (
+                b[i],
+                b.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok()),
+            ) {
+                (b'%', Some(v)) => {
+                    out.push(v);
+                    i += 3;
+                }
+                (c, _) => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    };
+    result["roots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["uri"].as_str()?.strip_prefix("file://").map(decode))
+        .collect()
+}
+
+// Serves newline-delimited JSON-RPC from the input until it closes; asks a client that offers roots for them, and again when they change.
 pub fn serve(input: &mut dyn BufRead, output: &mut dyn Write, backend: &dyn Backend) -> io::Result<()> {
+    let mut offers_roots = false;
     for line in input.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
+        }
+        let msg: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+        match msg["method"].as_str() {
+            Some("initialize") => offers_roots = msg.pointer("/params/capabilities/roots").is_some(),
+            None if msg["id"] == ROOTS_ID => {
+                backend.set_roots(root_paths(&msg["result"]));
+                continue;
+            }
+            _ => {}
+        }
+        let ask_roots = offers_roots
+            && matches!(
+                msg["method"].as_str(),
+                Some("notifications/initialized" | "notifications/roots/list_changed")
+            );
+        if ask_roots {
+            writeln!(output, "{}", json!({"jsonrpc": "2.0", "id": ROOTS_ID, "method": "roots/list"}))?;
+            output.flush()?;
         }
         if let Some(resp) = handle_line(&line, backend) {
             writeln!(output, "{resp}")?;
@@ -490,6 +553,7 @@ mod tests {
     struct Fake {
         calls: RefCell<Vec<Vec<String>>>,
         answer: Result<(u8, String), String>,
+        roots: RefCell<Vec<String>>,
     }
 
     impl Backend for Fake {
@@ -498,11 +562,16 @@ mod tests {
             self.calls.borrow_mut().push(args);
             self.answer.clone()
         }
+
+        // Records the roots.
+        fn set_roots(&self, roots: Vec<String>) {
+            *self.roots.borrow_mut() = roots;
+        }
     }
 
     // Builds a fake that answers with text.
     fn fake(status: u8, text: &str) -> Fake {
-        Fake { calls: RefCell::new(vec![]), answer: Ok((status, text.into())) }
+        Fake { calls: RefCell::new(vec![]), roots: RefCell::new(vec![]), answer: Ok((status, text.into())) }
     }
 
     // Sends one request line and returns the response.
@@ -687,7 +756,11 @@ mod tests {
             (r["result"]["isError"].as_bool(), r["result"]["content"][0]["text"].as_str()),
             (Some(true), Some("error: bad"))
         );
-        let down = Fake { calls: RefCell::new(vec![]), answer: Err("cannot reach zazzled: boom".into()) };
+        let down = Fake {
+            calls: RefCell::new(vec![]),
+            roots: RefCell::new(vec![]),
+            answer: Err("cannot reach zazzled: boom".into()),
+        };
         let r =
             ask(&down, json!({"id":2,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{}}}));
         assert_eq!(r["result"]["content"][0]["text"], "error: cannot reach zazzled: boom");
@@ -709,6 +782,43 @@ mod tests {
         assert!(lines[0].contains("\"id\":1") && lines[1].contains("\"id\":2"));
     }
 
+    // Checks a client offering roots is asked for them after initializing and when they change, and the answer is kept, decoded.
+    #[test]
+    fn test_serve_roots() {
+        let b = fake(0, "");
+        let input = [
+            json!({"id": 1, "method": "initialize", "params": {"capabilities": {"roots": {"listChanged": true}}}}),
+            json!({"method": "notifications/initialized"}),
+            json!({"id": "zazzle-roots", "result": {"roots": [{"uri": "file:///w/my%20app"}, {"uri": "https://x"}, {"uri": "file:///w/%zz"}]}}),
+            json!({"method": "notifications/roots/list_changed"}),
+        ]
+        .iter()
+        .map(|v| v.to_string() + "\n")
+        .collect::<String>();
+        let mut out = Vec::new();
+        serve(&mut input.as_bytes(), &mut out, &b).expect("serve");
+        let text = String::from_utf8(out).expect("utf8");
+        assert_eq!(text.matches("\"method\":\"roots/list\"").count(), 2, "{text}");
+        assert_eq!(*b.roots.borrow(), ["/w/my app", "/w/%zz"]);
+        let plain = fake(0, "");
+        let mut out = Vec::new();
+        let input = "{\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"method\":\"notifications/initialized\"}\n";
+        serve(&mut input.as_bytes(), &mut out, &plain).expect("serve");
+        assert!(!String::from_utf8(out).expect("utf8").contains("roots/list"));
+        let be = DaemonBackend {
+            sock: "/nonexistent".into(),
+            cwd: "/".into(),
+            session: "s".into(),
+            roots: Default::default(),
+        };
+        be.set_roots(vec!["/w".into()]);
+        assert_eq!(*be.roots.borrow(), ["/w"]);
+        assert_eq!(
+            crate::proto::split_session(&crate::proto::join_session("s", &["/w".into(), "/v".into()])),
+            ("s".to_string(), vec![PathBuf::from("/w"), PathBuf::from("/v")])
+        );
+    }
+
     // Checks write failures surface as errors.
     #[test]
     fn test_serve_write_error() {
@@ -725,6 +835,8 @@ mod tests {
         }
         let b = fake(0, "");
         assert!(serve(&mut "{\"id\":1,\"method\":\"ping\"}\n".as_bytes(), &mut Broken, &b).is_err());
+        let roots = "{\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{\"roots\":{}}}}\n{\"method\":\"notifications/initialized\"}\n";
+        assert!(serve(&mut roots.as_bytes(), &mut Broken, &b).is_err());
     }
 
     // Checks session ids look like mcp- plus twelve hex digits and differ.
@@ -739,7 +851,8 @@ mod tests {
     fn test_daemon_backend_errors() {
         let dir = crate::testutil::TempDir::new();
         let file = dir.write("f", b"x");
-        let be = DaemonBackend { sock: file, cwd: "/".into(), session: "s".into() };
+        let be =
+            DaemonBackend { sock: file, cwd: "/".into(), session: "s".into(), roots: Default::default() };
         assert!(be.call(vec!["version".into()]).unwrap_err().starts_with("cannot reach zazzled: "));
     }
 
@@ -747,7 +860,12 @@ mod tests {
     #[test]
     fn test_daemon_backend_live() {
         let srv = crate::server::tests::Running::start(std::time::Duration::from_secs(30));
-        let be = DaemonBackend { sock: srv.sock.clone(), cwd: "/".into(), session: "s".into() };
+        let be = DaemonBackend {
+            sock: srv.sock.clone(),
+            cwd: "/".into(),
+            session: "s".into(),
+            roots: Default::default(),
+        };
         let (status, text) = be.call(vec!["version".into()]).expect("call");
         assert_eq!(status, 0);
         assert!(text.starts_with("zazzle "));

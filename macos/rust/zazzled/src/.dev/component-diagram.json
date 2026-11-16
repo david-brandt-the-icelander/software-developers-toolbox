@@ -291,6 +291,24 @@
       "responsibility": "The WebAssembly host binary in this repository that compiles, tests and runs scripts, started by the zazz module.",
       "folder": "macos/rust/zazz-worker",
       "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
+    },
+    {
+      "id": "hook",
+      "name": "PreToolUse hook (hook.rs)",
+      "responsibility": "Decides Claude Code and Codex tool calls: refuses raw searches, reads, listings and builds with the zazzle equivalent, logs bypasses.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "workspace",
+      "name": "Workspaces (workspace.rs)",
+      "responsibility": "Computes where edits may write and confines paths to it.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "activity",
+      "name": "Activity log (activity.rs)",
+      "responsibility": "Appends and reads the JSON lines that record what went through zazzle.",
+      "folder": "macos/rust/zazzled/src"
     }
   ],
   "relationships": [
@@ -971,6 +989,66 @@
       "to": "modules",
       "kind": "depends-on",
       "description": "Gets the Rust, Python, C, C#, JavaScript, TypeScript and TSX grammars."
+    },
+    {
+      "from": "src",
+      "to": "hook",
+      "kind": "contains",
+      "description": "PreToolUse hook (hook.rs)"
+    },
+    {
+      "from": "src",
+      "to": "workspace",
+      "kind": "contains",
+      "description": "Workspaces (workspace.rs)"
+    },
+    {
+      "from": "src",
+      "to": "activity",
+      "kind": "contains",
+      "description": "Activity log (activity.rs)"
+    },
+    {
+      "from": "cli",
+      "to": "hook",
+      "kind": "depends-on",
+      "description": "Runs `zazzled hook`."
+    },
+    {
+      "from": "hook",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs its decisions."
+    },
+    {
+      "from": "server",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs each command."
+    },
+    {
+      "from": "cmd",
+      "to": "workspace",
+      "kind": "depends-on",
+      "description": "edit confines writes."
+    },
+    {
+      "from": "proxy",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs proxied tool calls."
+    },
+    {
+      "from": "wrap",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs runs."
+    },
+    {
+      "from": "setup",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "--check, --verify and --report read it."
     }
   ]
 }

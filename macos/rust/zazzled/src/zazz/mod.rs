@@ -407,6 +407,7 @@ fn snapshot() {
             conn: None,
         };
         let ctx = crate::cmd::Ctx {
+            roots: Vec::new(),
             engine: e,
             cwd: cwd.to_path_buf(),
             session: String::new(),

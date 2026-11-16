@@ -118,9 +118,15 @@ impl Pending {
             let Some(id) = m.get("id") else { continue };
             let asked = match m.get("method").and_then(Value::as_str) {
                 Some("tools/call") => {
-                    Asked::Tool(m.pointer("/params/name").and_then(Value::as_str).unwrap_or("").to_string())
+                    let name = m.pointer("/params/name").and_then(Value::as_str).unwrap_or("").to_string();
+                    crate::activity::record(serde_json::json!({"src": "proxy", "tool": name}));
+                    Asked::Tool(name)
                 }
                 Some("resources/read") => Asked::Resource,
+                Some("tools/list") => {
+                    crate::activity::record(serde_json::json!({"src": "proxy", "tool": "(tools/list)"}));
+                    continue;
+                }
                 _ => continue,
             };
             self.0.insert(id.to_string(), asked);
