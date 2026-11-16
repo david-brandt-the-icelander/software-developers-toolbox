@@ -1,0 +1,113 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle setup features",
+  "folder": "macos/rust/zazzled/src/setup",
+  "description": "What `zazzle setup` does to the MCP clients' user-level settings, and what it checks.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzled/src/setup/mod.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/zazzled/src/setup/check.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "client-setup",
+      "name": "Configure MCP clients for zazzle",
+      "description": "`zazzle setup` plans, `--apply` makes and `--undo` reverses the user-level settings that make Claude Code, the Claude desktop app and Codex start zazzle, carry zazzle's instructions, and send their other MCP servers through the zazzle proxy.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "plan_client"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "apply_plan"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/clients.rs",
+          "symbol": "ConfigFile"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Configuring clients: `zazzle setup`"
+        }
+      ],
+      "behavior": "Clients that look installed (their settings file or folder exists) are chosen unless --client names them. For each: zazzle is added when missing (Claude Code: `zazzled mcp` in ~/.claude.json's user scope; desktop app: with --repo, `/bin/sh -c \"cd REPO && exec zazzled mcp\"`, since it starts servers in /; Codex: `[mcp_servers.zazzle]` in config.toml); each other stdio server becomes `zazzled proxy --log -- ORIGINAL`; each Streamable HTTP server whose entry has headers or a bearer-token variable is routed through http://127.0.0.1:PORT/mcp (from 8809, one port per upstream), where a LaunchAgent keeps `zazzled proxy --upstream URL` running (macOS only); HTTP servers without static auth (OAuth), SSE servers and broken entries are left alone with the reason; --no-wrap leaves every other server alone. The instructions go between markers in ~/.claude/CLAUDE.md and Codex's AGENTS.md, and --hook adds the C# indexer's PreToolUse hook to ~/.claude/settings.json. Without --apply nothing changes and the report ends with what an agent should ask the user. --apply backs up each changed file as FILE.zazzle-backup-SECONDS and records routes in ~/.zazzle/setup.json; running it twice changes nothing. --undo removes zazzle, unwraps and unroutes servers, stops the proxy agents and removes the instructions and the hook. A repository's shared .mcp.json is reported, never changed; secrets in env and headers are never printed.",
+      "outcome": "An agent told to run `zazzle setup` can configure every client the user has, with the user's consent, and reverse it.",
+      "constraints": [
+        "The apps rewrite their settings files, so they should be quit before --apply.",
+        "HTTP servers that sign in with OAuth cannot be proxied: the proxy forwards every request to one upstream URL.",
+        "HTTP routing needs launchd (macOS)."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "plan_client"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "edit_block"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "edit_hook"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "agent"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/clients.rs",
+          "symbol": "ConfigFile::set_command"
+        }
+      ]
+    },
+    {
+      "id": "client-check",
+      "name": "Check configured MCP servers",
+      "description": "`zazzle setup --check` starts every server each chosen client configures the way that client would and reports what works.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "probe_stdio"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "probe_http"
+        }
+      ],
+      "behavior": "A stdio server is started with its command, arguments and environment in its client's folder (`/` for the desktop app, the project for Claude Code's project servers, else --repo or the current folder) and sent initialize, notifications/initialized and tools/list, and for zazzle tools/call zazzle_overview, within 20 seconds; it is stopped afterwards. An HTTP server gets an initialize POST with its headers and its bearer-token variable's value. Each line reads ok, note (a 401 or 403 asking for sign-in, an unset token variable, zazzle without the indexer) or FAIL (cannot start, error, no answer, HTTP error) with the reason and the tail of its stderr; a client without zazzle fails. The report ends with counts and fixes for common failures.",
+      "outcome": "The user and their agent learn which servers each client will actually start, before relying on them.",
+      "constraints": [
+        "It cannot see a client's own environment: an app started from the Dock may lack the shell's PATH, which the report points out when a command does not start."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "folder"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "response"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "component",
+      "folder": "macos/rust/zazzled/src/setup",
+      "path": "macos/rust/zazzled/src/setup/.dev/component-diagram.json",
+      "relationship": "The parts that implement it."
+    }
+  ]
+}

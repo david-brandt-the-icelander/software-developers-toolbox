@@ -108,6 +108,63 @@ pub fn uninstall(
     }
 }
 
+// Builds a LaunchAgent property list that keeps a program running from login: zazzle setup's HTTP proxies.
+pub fn agent_plist(label: &str, exe: &Path, args: &[&str], log: &Path) -> String {
+    let args: String = args.iter().map(|a| format!("<string>{}</string>", xml(a))).collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{}</string>
+  <key>ProgramArguments</key>
+  <array><string>{}</string>{args}</array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>{}</string>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+"#,
+        xml(label),
+        xml(&exe.to_string_lossy()),
+        xml(&log.to_string_lossy())
+    )
+}
+
+// Writes a LaunchAgent's plist and (re)loads it into the user's launchd domain.
+pub fn install_agent(
+    label: &str,
+    plist: &str,
+    home: &Path,
+    uid: u32,
+    run: &dyn Fn(&[&str]) -> Result<(), String>,
+) -> Result<PathBuf, String> {
+    let path = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
+    std::fs::create_dir_all(path.parent().expect("plist has a parent"))
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(&path, plist).map_err(|e| format!("{}: {e}", path.display()))?;
+    let domain = format!("gui/{uid}");
+    let _ = run(&["bootout", &format!("{domain}/{label}")]);
+    run(&["bootstrap", &domain, &path.to_string_lossy()])?;
+    Ok(path)
+}
+
+// Unloads a LaunchAgent and removes its plist; a missing one is not an error.
+pub fn uninstall_agent(
+    label: &str,
+    home: &Path,
+    uid: u32,
+    run: &dyn Fn(&[&str]) -> Result<(), String>,
+) -> Result<(), String> {
+    let path = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
+    let _ = run(&["bootout", &format!("gui/{uid}/{label}")]);
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(format!("{}: {e}", path.display())),
+        _ => Ok(()),
+    }
+}
+
 // Returns the listener launchd opened for us, or None when not started by launchd.
 #[cfg(target_os = "macos")]
 pub fn activated_listener() -> io::Result<Option<UnixListener>> {
@@ -241,5 +298,36 @@ mod tests {
             .unwrap_err()
             .contains("timed out"));
         assert!(run_with_timeout("/no/such/program", &[], t).unwrap_err().starts_with("/no/such/program: "));
+    }
+
+    // Checks a proxy agent's plist, installing it (unloading an old one first) and removing it, including when it is already gone.
+    #[test]
+    fn test_proxy_agents() {
+        let t = crate::testutil::TempDir::new();
+        let plist = agent_plist(
+            "com.zazzle.proxy.8809",
+            Path::new("/bin/zazzled"),
+            &["proxy", "--upstream", "https://a/b?c&d"],
+            Path::new("/l"),
+        );
+        assert!(plist.contains("<string>/bin/zazzled</string><string>proxy</string><string>--upstream</string><string>https://a/b?c&amp;d</string>"));
+        assert!(plist.contains("<key>KeepAlive</key><true/>") && plist.contains("<string>/l</string>"));
+        let calls = std::cell::RefCell::new(Vec::new());
+        let run = |a: &[&str]| {
+            calls.borrow_mut().push(a.join(" "));
+            Ok(())
+        };
+        let path = install_agent("com.zazzle.proxy.8809", &plist, t.path(), 501, &run).expect("install");
+        assert!(path.ends_with("Library/LaunchAgents/com.zazzle.proxy.8809.plist") && path.exists());
+        assert_eq!(calls.borrow()[0], "bootout gui/501/com.zazzle.proxy.8809");
+        assert!(calls.borrow()[1].starts_with("bootstrap gui/501 "));
+        uninstall_agent("com.zazzle.proxy.8809", t.path(), 501, &run).expect("uninstall");
+        assert!(!path.exists());
+        uninstall_agent("com.zazzle.proxy.8809", t.path(), 501, &run).expect("already gone");
+        let fail = |_: &[&str]| Err("no".to_string());
+        assert!(install_agent("x", "p", t.path(), 1, &fail).is_err());
+        std::fs::create_dir_all(t.path().join("Library/LaunchAgents/y.plist")).expect("a folder in the way");
+        assert!(uninstall_agent("y", t.path(), 1, &run).is_err());
+        assert!(install_agent("z", "p", Path::new("/proc/zazzle-no"), 1, &run).is_err());
     }
 }

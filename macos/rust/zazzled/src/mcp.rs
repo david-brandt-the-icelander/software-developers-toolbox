@@ -372,14 +372,15 @@ fn rpc_result(id: Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
 
-// Answers initialize by agreeing a protocol version.
+// Answers initialize by agreeing a protocol version and telling the agent how to use zazzle.
 fn initialize(params: &Value) -> Value {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
     let version = VERSIONS.iter().find(|v| **v == asked).unwrap_or(&VERSIONS[0]);
     json!({
         "protocolVersion": version,
         "capabilities": {"tools": {}},
-        "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION}
+        "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION},
+        "instructions": crate::setup::INSTRUCTIONS
     })
 }
 

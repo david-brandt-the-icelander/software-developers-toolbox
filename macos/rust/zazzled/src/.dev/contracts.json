@@ -107,7 +107,7 @@
         "zazz_new needs name; zazz_test needs path and takes update; zazz_pack needs dir and takes output; zazz_add needs file; zazz_call needs id and takes input, or operation with params and body; zazz_describe needs id; zazz_ls takes nothing. Their results are the zazz command's JSON reply; a script called over MCP gets pipes, not the caller's streams, so its output is captured into the reply. `zazz trust` is not offered.",
         "A result is one text item with the command's output, and isError when the command's status is not 0.",
         "Notifications get no answer; methods other than initialize, ping, tools/list and tools/call get -32601.",
-        "The structure tools answer for the git work tree that holds the server's working directory, with the indexer's root:path references rewritten as paths relative to it."
+        "The structure tools answer for the git work tree that holds the server's working directory, or the repo argument's, or (in a folder above several) all of those below it, with the indexer's root:path references rewritten as paths relative to it."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

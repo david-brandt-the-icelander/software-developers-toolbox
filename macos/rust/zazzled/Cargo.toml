@@ -33,8 +33,10 @@ libc = "0.2"
 memchr = "2"
 # Regular-expression search; std has none.
 regex = "1"
-# MCP JSON-RPC messages.
-serde_json = "1"
+# MCP JSON-RPC messages, keeping key order so `zazzle setup` rewrites client settings without reordering them.
+serde_json = { version = "1", features = ["preserve_order"] }
+# Editing Codex's config.toml in `zazzle setup` while keeping its comments and layout.
+toml_edit = "0.22"
 # Exact syntax trees for symbol outlines.
 tree-sitter = "0.25"
 # The function type a language module returns its grammar as.

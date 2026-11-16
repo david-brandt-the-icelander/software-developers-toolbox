@@ -5,25 +5,25 @@ use serde_json::{json, Value};
 pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "zazzle_overview",
-        description: "Compact map of the git work tree from zazzle-csharp-indexer's index: file and line counts by language, top-level directories, entry points and project files, largest files. Start here on an unfamiliar repository.",
+        description: "Compact map of the git work tree from zazzle-csharp-indexer's index: file and line counts by language, top-level directories, entry points and project files, largest files. Start here on an unfamiliar repository. In a folder holding several repositories it lists them; pass repo for one's overview.",
         schema: overview_schema,
         map: overview_args,
     },
     Tool {
         name: "zazzle_find_symbol",
-        description: "Find declarations by name from zazzle-csharp-indexer's index (case-insensitive; substring unless exact=true): `path:line kind container.name | signature`, exact matches first. Use it to find where a type or member is declared; zazzle_refs for where it is used.",
+        description: "Find declarations by name from zazzle-csharp-indexer's index (case-insensitive; substring unless exact=true): `path:line kind container.name | signature`, exact matches first. Use it to find where a type or member is declared; zazzle_refs for where it is used. In a folder holding several repositories it searches all of them unless repo is given.",
         schema: find_symbol_schema,
         map: find_symbol_args,
     },
     Tool {
         name: "zazzle_changed_since",
-        description: "Files added (A), modified (M) or deleted (D) in the git work tree since a cursor from an earlier call; call without a cursor to get one. Use it to refresh your picture after edits or a build instead of listing again. Cursors expire when the indexer's daemon restarts.",
+        description: "Files added (A), modified (M) or deleted (D) in the git work tree since a cursor from an earlier call; call without a cursor to get one. Use it to refresh your picture after edits or a build instead of listing again. Cursors expire when the indexer's daemon restarts. In a folder holding several repositories it covers all of them unless repo is given.",
         schema: changed_since_schema,
         map: changed_since_args,
     },
     Tool {
         name: "zazzle_git_log",
-        description: "Recent commits as `hash date author subject`, optionally for one path, with an optional message filter. Use it instead of git log.",
+        description: "Recent commits as `hash date author subject`, optionally for one path, with an optional message filter, from the repository holding the path (or repo). Use it instead of git log.",
         schema: git_log_schema,
         map: git_log_args,
     },
@@ -43,7 +43,12 @@ pub(crate) const TOOLS: &[Tool] = &[
 
 // Schema for zazzle_overview.
 fn overview_schema() -> Value {
-    object(json!({}), &[])
+    object(json!({"repo": repo_prop()}), &[])
+}
+
+// The optional repo argument: which repository, when the working directory holds several.
+fn repo_prop() -> Value {
+    json!({"type": "string", "description": "A repository folder (or any path inside one), when the working folder holds several"})
 }
 
 // Schema for zazzle_find_symbol.
@@ -54,7 +59,8 @@ fn find_symbol_schema() -> Value {
             "exact": {"type": "boolean", "description": "Whole-name match only"},
             "kind": {"type": "string", "description": "Filter by kind: class, method, property, field, fn, def ..."},
             "limit": {"type": "integer", "description": "Max results (default 30)"},
-            "offset": {"type": "integer", "description": "Skip this many results (default 0)"}
+            "offset": {"type": "integer", "description": "Skip this many results (default 0)"},
+            "repo": repo_prop()
         }),
         &["name"],
     )
@@ -62,7 +68,10 @@ fn find_symbol_schema() -> Value {
 
 // Schema for zazzle_changed_since.
 fn changed_since_schema() -> Value {
-    object(json!({"cursor": {"type": "string", "description": "Cursor from a previous call"}}), &[])
+    object(
+        json!({"cursor": {"type": "string", "description": "Cursor from a previous call"}, "repo": repo_prop()}),
+        &[],
+    )
 }
 
 // Schema for zazzle_git_log.
@@ -71,7 +80,8 @@ fn git_log_schema() -> Value {
         json!({
             "path": {"type": "string", "description": "File or directory to limit history to"},
             "n": {"type": "integer", "description": "Number of commits (default 20)"},
-            "grep": {"type": "string", "description": "Only commits whose message matches"}
+            "grep": {"type": "string", "description": "Only commits whose message matches"},
+            "repo": repo_prop()
         }),
         &[],
     )
@@ -91,12 +101,25 @@ fn git_blame_schema() -> Value {
 
 // Schema for zazzle_report_gap.
 fn report_gap_schema() -> Value {
-    object(json!({"what": {"type": "string", "description": "What was missing or wrong"}}), &["what"])
+    object(
+        json!({"what": {"type": "string", "description": "What was missing or wrong"}, "repo": repo_prop()}),
+        &["what"],
+    )
 }
 
 // Maps zazzle_overview arguments to a command line.
-fn overview_args(_: &Value) -> Result<Vec<String>, String> {
-    Ok(vec!["overview".to_string()])
+fn overview_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["overview".to_string()];
+    push_repo(&mut a, v)?;
+    Ok(a)
+}
+
+// Adds `--repo DIR` when the repo argument was given.
+fn push_repo(a: &mut Vec<String>, v: &Value) -> Result<(), String> {
+    if let Some(r) = get_str(v, "repo")? {
+        a.extend(["--repo".to_string(), r]);
+    }
+    Ok(())
 }
 
 // Maps zazzle_find_symbol arguments to a command line.
@@ -108,6 +131,7 @@ fn find_symbol_args(v: &Value) -> Result<Vec<String>, String> {
     }
     push_num(&mut a, v, "limit", "--limit")?;
     push_num(&mut a, v, "offset", "--offset")?;
+    push_repo(&mut a, v)?;
     a.extend(["--".to_string(), need_str(v, "name")?]);
     Ok(a)
 }
@@ -115,6 +139,7 @@ fn find_symbol_args(v: &Value) -> Result<Vec<String>, String> {
 // Maps zazzle_changed_since arguments to a command line.
 fn changed_since_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["changed-since".to_string()];
+    push_repo(&mut a, v)?;
     if let Some(cursor) = get_str(v, "cursor")? {
         a.extend(["--".to_string(), cursor]);
     }
@@ -125,6 +150,7 @@ fn changed_since_args(v: &Value) -> Result<Vec<String>, String> {
 fn git_log_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["git-log".to_string()];
     push_num(&mut a, v, "n", "-n")?;
+    push_repo(&mut a, v)?;
     if let Some(g) = get_str(v, "grep")? {
         a.extend(["--grep".to_string(), g]);
     }
@@ -145,7 +171,10 @@ fn git_blame_args(v: &Value) -> Result<Vec<String>, String> {
 
 // Maps zazzle_report_gap arguments to a command line.
 fn report_gap_args(v: &Value) -> Result<Vec<String>, String> {
-    Ok(vec!["report-gap".to_string(), "--".to_string(), need_str(v, "what")?])
+    let mut a = vec!["report-gap".to_string()];
+    push_repo(&mut a, v)?;
+    a.extend(["--".to_string(), need_str(v, "what")?]);
+    Ok(a)
 }
 
 #[cfg(test)]
@@ -193,6 +222,19 @@ mod tests {
             map("zazzle_report_gap", json!({"what":"-no callers"})).expect("args"),
             ["report-gap", "--", "-no callers"]
         );
+        let r = json!({"repo": "api"});
+        assert_eq!(map("zazzle_overview", r.clone()).expect("args"), ["overview", "--repo", "api"]);
+        assert_eq!(
+            map("zazzle_find_symbol", json!({"name": "S", "repo": "api"})).expect("args"),
+            ["find-symbol", "--repo", "api", "--", "S"]
+        );
+        assert_eq!(map("zazzle_changed_since", r.clone()).expect("args"), ["changed-since", "--repo", "api"]);
+        assert_eq!(map("zazzle_git_log", r).expect("args"), ["git-log", "--repo", "api"]);
+        assert_eq!(
+            map("zazzle_report_gap", json!({"what": "x", "repo": "api"})).expect("args"),
+            ["report-gap", "--repo", "api", "--", "x"]
+        );
+        assert_eq!(map("zazzle_overview", json!({"repo": 1})).unwrap_err(), "'repo' must be a string");
     }
 
     // Checks argument validation and that every schema is an object with a required list.

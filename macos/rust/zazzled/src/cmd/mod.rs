@@ -22,6 +22,7 @@ const DEFAULT_BUDGET: usize = 8000;
 const MAX_DESC: usize = 100;
 
 const HELP: &str = "zazzle: file tool for agents
+setup [--apply | --undo | --check] [--client NAME].. [--repo DIR] [--hook] [--no-wrap]  configure Claude Code, the Claude desktop app and Codex to use zazzle and proxy their other MCP servers: run `zazzle setup` and follow it (own process)
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
 read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
@@ -32,13 +33,13 @@ CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shri
 proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
-From zazzle-csharp-indexer's index of the git work tree that holds the working directory:
-overview  languages, top directories, entry points, largest files
-find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]  declarations by name
-changed-since [CURSOR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
-git-log [PATH] [-n N] [--grep TEXT]  recent commits
+From zazzle-csharp-indexer's index of the git work tree that holds the working directory, --repo DIR, or a PATH; in a folder that is not one, of the git repositories below it:
+overview [--repo DIR]  languages, top directories, entry points, largest files; in a folder of repositories, the list of them
+find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]  declarations by name
+changed-since [CURSOR] [--repo DIR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
+git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]  recent commits
 git-blame PATH [--start N] [--end N]  who last changed each line
-report-gap TEXT  tell the maintainers what you needed and could not get
+report-gap TEXT [--repo DIR]  tell the maintainers what you needed and could not get
 status  daemon info
 languages [jit [on|off] | fetch [NAME..]]  language modules: list them, download on first use or not, download the missing ones
 C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.
@@ -215,10 +216,9 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "git-log" => structure::git_log(ctx, rest),
         "git-blame" => structure::git_blame(ctx, rest),
         "report-gap" => structure::report_gap(ctx, rest),
-        "proxy" => {
-            Err("proxy runs as its own process: start it with `zazzle proxy ..` (or `zazzled proxy ..`)"
-                .into())
-        }
+        "proxy" | "setup" => Err(format!(
+            "{cmd} runs as its own process: start it with `zazzle {cmd} ..` (or `zazzled {cmd} ..`)"
+        )),
         "run" => Err(
             "run executes in the caller's environment: use `zazzle run -- CMD ..` (or `zazzled wrap CMD ..`)"
                 .into(),
@@ -274,10 +274,11 @@ mod tests {
     #[test]
     fn test_version_and_status() {
         let t = TempDir::new();
-        assert!(run_cmd(t.path(), &["version"]).text.starts_with("zazzle 0."));
-        assert!(run_cmd(t.path(), &["--version"]).text.starts_with("zazzle 0."));
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(run_cmd(t.path(), &["version"]).text.starts_with(&format!("zazzle {version}")));
+        assert!(run_cmd(t.path(), &["--version"]).text.starts_with(&format!("zazzle {version}")));
         let s = run_cmd(t.path(), &["status"]).text;
-        assert!(s.starts_with("zazzled 0.") && s.contains("cache 0 hot + 0 stored"));
+        assert!(s.starts_with(&format!("zazzled {version}")) && s.contains("cache 0 hot + 0 stored"));
     }
 
     // Checks the unknown command error is one line and lists commands.
@@ -300,6 +301,7 @@ mod tests {
         let o = run_cmd(t.path(), &["proxy", "--", "srv"]);
         assert_eq!(o.status, 2);
         assert!(o.text.starts_with("error: proxy runs as its own process: start it with `zazzle proxy ..`"));
+        assert!(run_cmd(t.path(), &["setup"]).text.starts_with("error: setup runs as its own process"));
     }
 
     // Checks run is refused inside the daemon with a pointer to the right entry point.
