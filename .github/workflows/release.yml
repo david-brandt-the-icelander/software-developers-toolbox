@@ -269,15 +269,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          put=macos/release/r2-put.sh
+          put="$GITHUB_WORKSPACE/macos/release/r2-put.sh"
           for dir in "$TAG" latest; do
-            bash $put "zazzle/$dir/zazzle-macos-universal.tar.gz" zazzle-macos-universal.tar.gz application/gzip
-            bash $put "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
+            bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz" zazzle-macos-universal.tar.gz application/gzip
+            bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
               "text/plain; charset=utf-8"
           done
           # The modules belong to this release's zazzled only, so they go under the tag, not latest.
           for f in dist/languages/*; do
-            bash $put "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
+            bash "$put" "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
           done
 
   # Linux tarballs build beside the macOS jobs; only publishing them (linux-publish) waits for the GitHub release.
@@ -387,14 +387,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          put=macos/release/r2-put.sh
+          put="$GITHUB_WORKSPACE/macos/release/r2-put.sh"
           for dir in "$TAG" latest; do
-            bash $put "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" zazzle-linux-${{ matrix.arch }}.tar.gz application/gzip
-            bash $put "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 \
+            bash "$put" "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" zazzle-linux-${{ matrix.arch }}.tar.gz application/gzip
+            bash "$put" "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 \
               "text/plain; charset=utf-8"
           done
           for f in macos/rust/dist/languages/*; do
-            bash $put "zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
+            bash "$put" "zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
           done
 
 
