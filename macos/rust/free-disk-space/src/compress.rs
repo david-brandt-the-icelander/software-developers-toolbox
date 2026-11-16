@@ -485,10 +485,13 @@ mod tests {
         #[cfg(target_os = "macos")]
         {
             sb.tool("lsof", "exit 1");
+            // Writing the fork changes the modification time, so age the file again and describe it afresh.
             meta::set_xattr(&file, "com.apple.ResourceFork", b"an old resource fork").unwrap();
+            age_tree(&file);
+            let forked = cand(&file);
             let md = fs::symlink_metadata(&file).unwrap();
-            assert_eq!(precheck(&good, &md, &o, 0).unwrap(), "has a resource fork");
-            assert_eq!(precheck(&good, &md, &o, util::UF_COMPRESSED), None);
+            assert_eq!(precheck(&forked, &md, &o, 0).unwrap(), "has a resource fork");
+            assert_eq!(precheck(&forked, &md, &o, util::UF_COMPRESSED), None);
         }
     }
 
