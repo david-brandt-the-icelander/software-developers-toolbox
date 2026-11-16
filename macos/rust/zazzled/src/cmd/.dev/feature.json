@@ -759,13 +759,14 @@
           "symbol": "C# structure"
         }
       ],
-      "behavior": "zazzled finds the git work tree that holds the working directory, makes path arguments relative to it (refusing paths outside it), calls the indexer's tool of the same name over the daemon socket with the work tree as the session's root, starting the daemon when nothing listens, and rewrites the `root:path` references at the start of the answer's lines (or after an `A `, `M ` or `D ` mark) as paths relative to the working directory. The answer then goes through the same budget and session dedupe as every command; report-gap's is never deduplicated.",
+      "behavior": "zazzled picks the repositories: --repo's work tree, else the one holding the working directory, else (a folder above several) the git work trees below it, up to three levels deep, outermost only, skipping hidden folders, node_modules, bin, obj and target, at most 24. overview there lists them instead of asking the indexer; git-log and git-blame use the work tree holding their PATH, and git-log without one asks which. It calls the indexer's tool of the same name over the daemon socket with those work trees as the session's roots (named by their path from the folder), starting the daemon when nothing listens, and rewrites the `root:path` references at the start of the answer's lines (or after an `A `, `M ` or `D ` mark) as paths relative to the working directory. The answer then goes through the same budget and session dedupe as every command; report-gap's is never deduplicated.",
       "outcome": "An agent asks one server for files and for structure, and can read what find-symbol or changed-since names with zazzle read straight away.",
       "constraints": [
-        "The working directory must be inside a git work tree, and the indexer installed ($ZAZZLE_INDEXER, beside zazzled, or on PATH).",
+        "The working directory must be inside a git work tree or hold some below it, and the indexer installed ($ZAZZLE_INDEXER, beside zazzled, or on PATH).",
+        "In a folder of more than 24 repositories, find-symbol and changed-since search the first 24 by path and say so; --repo reaches the others.",
         "Answers wait up to 45 s for the indexer, which itself waits up to 30 s for a cold index before overview and find-symbol answer.",
         "Paths with a colon in them are cut at the colon when rewritten.",
-        "The indexer's tools see only the one work tree zazzle attached, so their root filters are not offered."
+        "The indexer's root filters are not offered: --repo narrows to one work tree instead."
       ],
       "implementation": [
         {

@@ -222,12 +222,12 @@
         "symbol": "overview"
       },
       "action": "query",
-      "transport": "zazzle overview; MCP tool zazzle_overview",
+      "transport": "zazzle overview [--repo DIR]; MCP tool zazzle_overview {repo?}",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
-      "result": "The indexer's overview of the work tree: `<root>: N files`, then languages, top directories, entry and project files, and the largest files.",
+      "result": "The indexer's overview of the work tree: `<root>: N files`, then languages, top directories, entry and project files, and the largest files. In a folder holding several repositories, `N git repositories below this folder` and their paths, without asking the indexer.",
       "failures": [
         "Any argument: the usage line.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "The working directory is not inside a git work tree and has none below it: `error: not inside a git work tree, and no git repositories below this folder`; --repo DIR outside any: `error: DIR: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so.",
         "The index is still building after 30 s: the indexer's index_cold error."
@@ -252,13 +252,13 @@
         "symbol": "find_symbol"
       },
       "action": "query",
-      "transport": "zazzle find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]; MCP tool zazzle_find_symbol {name, exact?, kind?, limit?, offset?}",
+      "transport": "zazzle find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]; MCP tool zazzle_find_symbol {name, exact?, kind?, limit?, offset?, repo?}",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
       "result": "`path:line kind container.name | signature` per declaration, paths relative to the working directory, exact matches first, 30 by default, then a footer with the count or the next offset.",
       "failures": [
         "No name, or more than one: the usage line.",
         "A number flag that is not a number: `--limit needs a number`.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "The working directory is not inside a git work tree and has none below it: `error: not inside a git work tree, and no git repositories below this folder`; --repo DIR outside any: `error: DIR: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]
@@ -282,12 +282,12 @@
         "symbol": "changed_since"
       },
       "action": "query",
-      "transport": "zazzle changed-since [CURSOR]; MCP tool zazzle_changed_since {cursor?}",
+      "transport": "zazzle changed-since [CURSOR] [--repo DIR]; MCP tool zazzle_changed_since {cursor?, repo?}",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
       "result": "Without a cursor, `cursor: ...`; with one, `A|M|D path` lines (relative to the working directory) and a new cursor. A cursor from an earlier run of the indexer's daemon is reported expired with a new one.",
       "failures": [
         "More than one cursor: the usage line.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "The working directory is not inside a git work tree and has none below it: `error: not inside a git work tree, and no git repositories below this folder`; --repo DIR outside any: `error: DIR: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]
@@ -311,13 +311,14 @@
         "symbol": "git_log"
       },
       "action": "query",
-      "transport": "zazzle git-log [PATH] [-n N] [--grep TEXT]; MCP tool zazzle_git_log {path?, n?, grep?}",
+      "transport": "zazzle git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]; MCP tool zazzle_git_log {path?, n?, grep?, repo?}",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
       "result": "`hash date author subject` per commit, 20 by default.",
       "failures": [
-        "A path outside the git work tree: `error: PATH: outside the git work tree`.",
+        "A path in no git work tree: `error: PATH: not inside a git work tree`.",
+        "No PATH or --repo in a folder holding several repositories: `error: several git repositories below this folder: give a path or --repo (NAMES)`.",
         "git fails: git's message.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "The working directory is not inside a git work tree and has none below it: `error: not inside a git work tree, and no git repositories below this folder`; --repo DIR outside any: `error: DIR: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]
@@ -346,9 +347,8 @@
       "result": "git blame -w output for the range, 40 lines from --start by default.",
       "failures": [
         "No path: the usage line.",
-        "A path outside the git work tree: `error: PATH: outside the git work tree`.",
+        "A path in no git work tree: `error: PATH: not inside a git work tree`.",
         "git fails: git's message.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]
@@ -372,12 +372,12 @@
         "symbol": "report_gap"
       },
       "action": "command",
-      "transport": "zazzle report-gap TEXT; MCP tool zazzle_report_gap {what}",
+      "transport": "zazzle report-gap TEXT [--repo DIR]; MCP tool zazzle_report_gap {what, repo?}",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
       "result": "`recorded`, never deduplicated; the indexer stores the note in its usage log, where zazzle-csharp-indexer report lists it.",
       "failures": [
         "No text: the usage line.",
-        "The working directory is not inside a git work tree: `error: not inside a git work tree`.",
+        "The working directory is not inside a git work tree and has none below it: `error: not inside a git work tree, and no git repositories below this folder`; --repo DIR outside any: `error: DIR: not inside a git work tree`.",
         "zazzle-csharp-indexer is not installed or cannot run: `error: zazzle-csharp-indexer is not installed (beside zazzled or on PATH)` or `error: zazzle-csharp-indexer --version: ...`.",
         "The indexer daemon does not start within 5 s, refuses the hello or closes the connection: one `error:` line saying so."
       ]

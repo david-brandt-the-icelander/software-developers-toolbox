@@ -252,6 +252,13 @@
       "diagram": "macos/rust/zazzled/src/proxy/.dev/component-diagram.json"
     },
     {
+      "id": "setup",
+      "name": "zazzle setup",
+      "responsibility": "`zazzled setup`: plans, applies, undoes and checks the MCP clients' user-level settings for zazzle and the proxy.",
+      "folder": "macos/rust/zazzled/src/setup",
+      "diagram": "macos/rust/zazzled/src/setup/.dev/component-diagram.json"
+    },
+    {
       "id": "wrap",
       "name": "zazzle run",
       "responsibility": "`zazzled wrap`: runs a command and prints its output cleaned with a profile.",
@@ -436,6 +443,18 @@
       "to": "proxy",
       "kind": "contains",
       "description": "The MCP proxy."
+    },
+    {
+      "from": "src",
+      "to": "setup",
+      "kind": "contains",
+      "description": "Client setup."
+    },
+    {
+      "from": "cli",
+      "to": "setup",
+      "kind": "depends-on",
+      "description": "`zazzled setup`: setup::parse, Env::detect, setup::run."
     },
     {
       "from": "src",

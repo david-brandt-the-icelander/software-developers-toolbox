@@ -99,7 +99,7 @@
         "read-again reruns only ids of the caller's own session, in the working directory the request first ran in (again.rs rerun); a stored clean, run or proxy output is given to any caller that may use the daemon and names its id, from the store that process uses (again.rs run, outputs.rs load).",
         "Over MCP the working directory of `zazzled mcp` is the root for relative paths and for edits (cli.rs mcp_main).",
         "`zazzled run` runs the command in its own process with the caller's permissions.",
-        "The structure commands answer for the git work tree that holds the working directory, through zazzle-csharp-indexer's daemon socket, which only the user can open."
+        "The structure commands answer for the git work tree that holds the working directory (or --repo's, a path's, or those below a folder that is not one), through zazzle-csharp-indexer's daemon socket, which only the user can open."
       ]
     }
   ],

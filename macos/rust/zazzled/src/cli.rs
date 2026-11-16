@@ -1,4 +1,4 @@
-// Command-line entry for the zazzled binary: serve, mcp, install, uninstall and in-process run.
+// Command-line entry for the zazzled binary: serve, mcp, proxy, setup, install, uninstall and in-process run.
 use crate::client;
 use crate::cmd::{self, Ctx};
 use crate::engine::Engine;
@@ -6,6 +6,7 @@ use crate::launchd;
 use crate::mcp::{self, DaemonBackend};
 use crate::proxy::{self, Upstream};
 use crate::server::{self, Config};
+use crate::setup;
 use crate::store::{self, Store};
 use crate::wrap;
 use std::cell::RefCell;
@@ -16,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | wrap .. | install | uninstall | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | install | uninstall | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -28,6 +29,7 @@ pub enum Cli {
     Uninstall,
     Run(Vec<String>),
     Proxy(proxy::Opts),
+    Setup(setup::Opts),
     Wrap(Vec<String>),
     Version,
 }
@@ -60,6 +62,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "uninstall" => Ok(Cli::Uninstall),
         "run" => Ok(Cli::Run(rest.to_vec())),
         "proxy" => proxy::parse(rest).map(Cli::Proxy),
+        "setup" => setup::parse(rest).map(Cli::Setup),
         "wrap" => Ok(Cli::Wrap(rest.to_vec())),
         "version" | "--version" => Ok(Cli::Version),
         _ => Err(USAGE.into()),
@@ -192,6 +195,7 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),
         Cli::Wrap(rest) => match wrap::main(&rest, &mut std::io::stdout()) {
             Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
             Err(e) => finish(Err(e)),
@@ -238,6 +242,10 @@ mod tests {
         let _g = crate::testutil::env_lock();
         assert_eq!(parse(&v(&["mcp"])), Ok(Cli::Mcp));
         assert_eq!(parse(&v(&["install"])), Ok(Cli::Install));
+        assert!(
+            matches!(parse(&v(&["setup", "--check"])), Ok(Cli::Setup(o)) if o.action == setup::Action::Check)
+        );
+        assert!(parse(&v(&["setup", "--bad"])).is_err());
         assert_eq!(parse(&v(&["uninstall"])), Ok(Cli::Uninstall));
         assert_eq!(parse(&v(&["version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
