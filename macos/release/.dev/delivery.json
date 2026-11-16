@@ -11,7 +11,7 @@
       "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (zazzle with z as a relative link to it, the same invoker as zazz, nine universal binaries, among them zazz-worker and the three zazzle-git programs, and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, z as a link to it, zazz, zazzled, zazz-worker, zazzle-csharp-indexer, cyberspace-generator), their checksums and the Homebrew bottle.",
       "environment": "GitHub releases of this repository",
       "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
-      "deployedBy": "The release workflow (macos, linux and homebrew jobs)",
+      "deployedBy": "The release workflow (macos, linux-publish and homebrew jobs)",
       "rollback": "No rollback is automated or documented. Each tag keeps its own release, so an earlier version stays downloadable.",
       "evidenceStatus": "source-verified",
       "sources": [
@@ -148,7 +148,7 @@
       "summary": "Each release's language modules (one .dylib per language, universal, on macOS; one .so per language and Linux architecture) and their manifest, under icelander.net/downloads/zazzle/vX.Y.Z/languages/{macos-universal,linux-x86_64,linux-aarch64}/. Only the tag's directory gets them, not latest, because a zazzled accepts only its own release's modules.",
       "environment": "Cloudflare R2 bucket icelander-downloads, served as icelander.net/downloads",
       "purpose": "zazzled downloads a module from here the first time a file needs it, or on `zazzle languages fetch`.",
-      "deployedBy": "The release workflow (macos and linux jobs, Publish to icelander.net)",
+      "deployedBy": "The release workflow (macos and linux-publish jobs, Publish to icelander.net)",
       "rollback": "No rollback; each tag keeps its own directory, which its zazzled keeps using.",
       "evidenceStatus": "source-verified",
       "sources": [
