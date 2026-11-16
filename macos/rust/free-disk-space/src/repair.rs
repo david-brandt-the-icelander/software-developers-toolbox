@@ -372,6 +372,7 @@ mod tests {
     #[test]
     fn test_cmd_repair_macos() {
         let sb = Sandbox::new();
+        sb.tool("lsof", "exit 1");
         let text = b"stored raw, so this flagged file saves nothing. ".repeat(4000);
         let raw = sb.write("data/raw", &text);
         let chunks: Vec<&[u8]> = text.chunks(65536).collect();

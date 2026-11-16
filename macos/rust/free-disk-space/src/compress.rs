@@ -76,7 +76,8 @@ thread_local! {
     static FAIL_COPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-// Make `tmp` a compressed copy of `path`: clone the file, then put the LZFSE library's compressed form on the clone.
+// Make `tmp` a compressed copy of `path`: clone the file, give it the original's ACL, then put the LZFSE library's
+// compressed form on it.
 fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     #[cfg(test)]
     if FAIL_COPY.with(std::cell::Cell::get) {
@@ -85,6 +86,8 @@ fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     util::clone_file(path, tmp)?;
     let source = fs::File::open(path)?;
     let target = fs::OpenOptions::new().read(true).write(true).open(tmp)?;
+    // The clone's ACL does not always read back the same as the original's, so set it explicitly.
+    meta::copy_acl(path, &target)?;
     lzfse::compress_onto(&source, &target)
 }
 
