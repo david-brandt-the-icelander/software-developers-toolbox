@@ -472,3 +472,58 @@ fn test_edges() {
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
     assert_eq!(v["hooks"]["PreToolUse"].as_array().expect("array").len(), 2);
 }
+
+// Checks --off undoes an --apply but remembers it, --on redoes it, and --uninstall undoes it, forgets it and stops zazzled's agent.
+#[test]
+fn test_off_on_uninstall() {
+    let t = TempDir::new();
+    let env = env(&t, true);
+    seed(&env);
+    let dev = t.path().join("dev");
+    std::fs::create_dir_all(&dev).expect("mkdir");
+    let ws = dev.to_string_lossy().to_string();
+    assert!(run(&opts(&["--off"]), &env)
+        .expect_err("nothing applied")
+        .contains("run `zazzle setup --apply`"));
+    assert!(run(&opts(&["--on"]), &env).is_err());
+    let before = std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex");
+    run(&opts(&["--apply", "--hook", "--workspace", &ws, "--client", "codex"]), &env).expect("apply");
+    let applied = std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex");
+    let off = run(&opts(&["--off"]), &env).expect("off");
+    assert!(
+        off.starts_with("zazzle setup --off: zazzle is out of the way") && off.contains("- removed zazzle"),
+        "{off}"
+    );
+    assert_eq!(std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex"), before);
+    assert!(!env.codex_home.join("hooks.json").exists() && !crate::workspace::file(&env.home).exists());
+    assert!(
+        !off.contains("claude-code: ~/.claude.json") && !off.contains("= workspace"),
+        "only what was applied: {off}"
+    );
+    let on = run(&opts(&["--on"]), &env).expect("on");
+    assert!(
+        on.starts_with("zazzle setup --on: the setup from before --off is back.")
+            && on.contains("+ added the hook"),
+        "{on}"
+    );
+    assert_eq!(std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex"), applied);
+    assert!(std::fs::read_to_string(crate::workspace::file(&env.home)).expect("ws").contains("dev"));
+    LAUNCHCTL.lock().expect("lock").clear();
+    let gone = run(&opts(&["--uninstall"]), &env).expect("uninstall");
+    assert!(
+        gone.contains("- removed zazzle")
+            && gone.contains("zazzled's LaunchAgent: not installed")
+            && gone.contains("brew uninstall zazzle"),
+        "{gone}"
+    );
+    assert!(LAUNCHCTL.lock().expect("lock").iter().any(|c| c.starts_with("bootout gui/501/")));
+    assert_eq!(std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex"), before);
+    assert!(run(&opts(&["--on"]), &env).is_err(), "uninstall forgets the setup");
+    run(&opts(&["--apply", "--client", "codex"]), &env).expect("apply");
+    run(&opts(&["--undo", "--client", "codex"]), &env).expect("undo");
+    assert!(run(&opts(&["--off"]), &env).is_err(), "undo forgets it too");
+    let linux = Env { macos: false, ..env.clone() };
+    assert!(!run(&opts(&["--uninstall", "--client", "codex"]), &linux)
+        .expect("uninstall")
+        .contains("LaunchAgent"));
+}

@@ -49,7 +49,10 @@
         "Undo",
         "Check",
         "Verify",
-        "Report"
+        "Report",
+        "Off",
+        "On",
+        "Uninstall"
       ]
     },
     {
