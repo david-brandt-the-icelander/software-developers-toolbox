@@ -188,6 +188,21 @@
               "symbol": "homebrew: Write and push the formula"
             }
           ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "An upload to icelander.net fails, for example because Cloudflare's API times out.",
+          "outcome": "Each file is tried up to five times, waiting 15, 30, 60 and 120 seconds in between. If every attempt fails, the job fails, and \"Re-run failed jobs\" finishes publishing: the GitHub release step uploads to a release that already exists instead of creating it.",
+          "sources": [
+            {
+              "path": "macos/release/r2-put.sh",
+              "symbol": "attempt"
+            },
+            {
+              "path": ".github/workflows/release.yml",
+              "symbol": "macos: Publish release"
+            }
+          ]
         }
       ]
     }
