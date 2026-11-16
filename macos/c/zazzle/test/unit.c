@@ -356,7 +356,7 @@ static void test_tool_exec(void)
 	CHECK(run(2, argv6, env_home) == 0 && M.exec_path[0] == 0);
 }
 
-/* Checks that `zazzle proxy` and `zazzle run` exec `zazzled proxy` and `zazzled wrap`, from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */
+/* Checks that `zazzle proxy`, `zazzle setup` and `zazzle run` exec `zazzled proxy`, `zazzled setup` and `zazzled wrap`, from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */
 static void test_proxy_exec(void)
 {
 	char *argv[] = {"zazzle", "proxy", "--", "srv", 0};
@@ -376,6 +376,9 @@ static void test_proxy_exec(void)
 	reset();
 	CHECK(run(4, argv4, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzled") == 0);
 	CHECK(strcmp(M.exec_arg0, "/opt/bin/zazzled") == 0 && strcmp(M.exec_arg1, "wrap") == 0);
+	char *argv5[] = {"zazzle", "setup", "--check", 0};
+	reset();
+	CHECK(run(3, argv5, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
 }
 
 /* Runs every test and reports. */

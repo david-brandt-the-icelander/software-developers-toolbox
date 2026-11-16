@@ -9,13 +9,29 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 ## Setup
 
 ```bash
-cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make     # or download the release tarball
+brew install zazzcat/z/zazzle         # or build: cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
-export ZAZZLE_SESSION=$(date +%s)     # optional: ids and dedupe for CLI use
-claude mcp add zazzle -- zazzled mcp     # MCP: tools zazzle_find, zazzle_read, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_read_again, and the C# structure tools below
+zazzle setup --repo ~/src/YourRepo    # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
+zazzle setup --apply --repo ~/src/YourRepo --hook
+zazzle setup --check                  # after restarting the apps
 ```
 
-Any MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write.
+Tell an agent "run `zazzle setup` and follow it": the report says what it found, what it would change and when to ask you. Any other MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths and the only place edits may write. Its MCP handshake gives agents instructions for using it (`instructions`).
+
+## Configuring clients: `zazzle setup`
+
+`zazzle setup` (`zazzled setup`, its own process) edits only user-level settings, never a repository's shared `.mcp.json`:
+
+| client | file | zazzle entry |
+|---|---|---|
+| Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; with `--hook`, the C# indexer's hook in `~/.claude/settings.json` sends grep, cat, Glob and Read to zazzle |
+| Claude desktop app (chat) | `~/Library/Application Support/Claude/claude_desktop_config.json` | the app starts servers in `/`, so with `--repo DIR` the entry is `/bin/sh -c "cd DIR && exec zazzled mcp"` |
+| Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md` |
+
+- Other servers: a stdio server becomes `zazzled proxy --log -- ORIGINAL COMMAND` (its env and other settings kept). A Streamable HTTP server whose entry carries headers or a bearer-token variable is routed through `http://127.0.0.1:PORT/mcp` (from 8809, one port per upstream URL), where a LaunchAgent (`com.zazzle.proxy.PORT`, macOS) keeps `zazzled proxy --upstream URL` running; headers pass through. HTTP servers without headers sign in with OAuth, which the proxy cannot carry, and SSE servers use a transport it does not speak, so both are left alone with the reason in the report. `--no-wrap` leaves every other server alone.
+- Without `--apply`, `--undo` or `--check` it changes nothing and prints the plan. Clients that look installed are chosen; `--client NAME` (repeatable) chooses instead. `--apply` backs up each file it changes (`FILE.zazzle-backup-SECONDS`), and a second run changes nothing. Quit the apps first: they rewrite their settings files. Routes are recorded in `~/.zazzle/setup.json`.
+- `--undo` removes the zazzle entries, unwraps and unroutes the servers it changed, stops the proxy agents and removes the instructions and the hook.
+- `--check` starts every configured server the way its client does (same command, environment and folder: `/` for the desktop app, the project for Claude Code's project servers, else `--repo` or the current folder) and does a real handshake: `initialize`, `tools/list`, and for zazzle `zazzle_overview`; HTTP servers get an `initialize` with their headers (a 401 is reported as needing sign-in). Secrets are never printed.
 
 ## Commands
 

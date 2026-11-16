@@ -22,6 +22,7 @@ const DEFAULT_BUDGET: usize = 8000;
 const MAX_DESC: usize = 100;
 
 const HELP: &str = "zazzle: file tool for agents
+setup [--apply | --undo | --check] [--client NAME].. [--repo DIR] [--hook] [--no-wrap]  configure Claude Code, the Claude desktop app and Codex to use zazzle and proxy their other MCP servers: run `zazzle setup` and follow it (own process)
 find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
 read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
 ls [DIR] [-d N] [-m N] [-u]  tree with line counts
@@ -215,10 +216,9 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "git-log" => structure::git_log(ctx, rest),
         "git-blame" => structure::git_blame(ctx, rest),
         "report-gap" => structure::report_gap(ctx, rest),
-        "proxy" => {
-            Err("proxy runs as its own process: start it with `zazzle proxy ..` (or `zazzled proxy ..`)"
-                .into())
-        }
+        "proxy" | "setup" => Err(format!(
+            "{cmd} runs as its own process: start it with `zazzle {cmd} ..` (or `zazzled {cmd} ..`)"
+        )),
         "run" => Err(
             "run executes in the caller's environment: use `zazzle run -- CMD ..` (or `zazzled wrap CMD ..`)"
                 .into(),
@@ -301,6 +301,7 @@ mod tests {
         let o = run_cmd(t.path(), &["proxy", "--", "srv"]);
         assert_eq!(o.status, 2);
         assert!(o.text.starts_with("error: proxy runs as its own process: start it with `zazzle proxy ..`"));
+        assert!(run_cmd(t.path(), &["setup"]).text.starts_with("error: setup runs as its own process"));
     }
 
     // Checks run is refused inside the daemon with a pointer to the right entry point.

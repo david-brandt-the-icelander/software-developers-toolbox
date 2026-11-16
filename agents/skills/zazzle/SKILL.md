@@ -8,6 +8,7 @@ description: Read, search, outline and edit files with the `zazzle` tool (or its
 Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`.
 
 ## Use
+- Configure clients with `zazzle setup` (the plan; follow it, ask the user before `--apply`, then `--check` after they restart the apps): it adds zazzle to Claude Code, the Claude desktop app and Codex and puts their other MCP servers behind the zazzle proxy; `--undo` reverses it. If zazzle's tools are missing or failing, run `zazzle setup --check` and show the user its report.
 - MCP (best, no process spawn): add the server `zazzled mcp`; tools `zazzle_find`, `zazzle_read`, `zazzle_ls`, `zazzle_outline`, `zazzle_refs`, `zazzle_edit`, and from the C# indexer `zazzle_overview`, `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`, `zazzle_report_gap`.
 - CLI: `zazzle find|read|ls|outline|refs|edit ...`; run `zazzle help` for flags. Set `ZAZZLE_SESSION=<any stable id>` in the shell so repeats are deduplicated.
 - Locate first, read second: `zazzle outline FILE` (ranges per symbol), `zazzle find PATTERN`, `zazzle refs SYMBOL` (definitions first, each use shows its enclosing symbol), then `zazzle read FILE:A-B`, or read one symbol with its doc comments directly: `zazzle read FILE --symbol Type.method` (overloads by parameter types, `Type.method(int, string)`, which stay right when code moves, or `#N`; a miss lists the candidates).

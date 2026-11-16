@@ -4,7 +4,8 @@ The C# side of zazzle: a per-user daemon that keeps an index of git work trees c
 
 ## Quick start
 ```bash
-zazzle-csharp-indexer init            # in a project: writes .mcp.json and .claude/settings.json (the zazzle server, its permission, the redirect hook)
+zazzle setup --hook                   # instead, for every client and project at once: zazzle in Claude Code, the Claude desktop app and Codex, and this hook (see zazzled's README)
+zazzle-csharp-indexer init            # in one project: writes .mcp.json and .claude/settings.json (the zazzle server, its permission, the redirect hook)
 zazzle-csharp-indexer report          # after some use: what to improve next
 ```
 `zazzle` is the front door: agents read, search, list and edit files through it, and ask it for structure (`zazzle_overview`, `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`, `zazzle_report_gap`), which it answers from this indexer. `init` registers `zazzle` (`zazzled mcp`, found beside the indexer or on `PATH`), removes an earlier registration of this indexer's own server, and prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle-csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and the built-in Read on `.cs` files, and points at the matching zazzle tool; add `# allow-raw` to a command to bypass it (logged).

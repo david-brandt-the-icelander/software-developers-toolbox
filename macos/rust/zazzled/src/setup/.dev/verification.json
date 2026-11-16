@@ -1,0 +1,74 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle setup verification",
+  "folder": "macos/rust/zazzled/src/setup",
+  "entities": [
+    {
+      "id": "setup-tests",
+      "title": "Planning, applying, undoing and checking",
+      "summary": "Unit tests read and edit each client's file format, plan, apply and undo in a temporary home with a fake launchctl, and probe fake stdio and HTTP servers; an end-to-end run with the real zazzled configured, checked and undid three clients in a scratch home.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/setup/.dev/feature.json",
+          "entityId": "client-setup"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/.dev/feature.json",
+          "entityId": "client-check"
+        }
+      ],
+      "criteria": [
+        "Each client's servers are read by kind, and edits keep JSON key order, TOML comments and other settings.",
+        "The plan changes nothing, never prints secrets, and leaves OAuth, SSE and shared project servers alone with reasons.",
+        "--apply writes backups, routes one proxy per upstream and is idempotent; --undo restores the servers, instructions and hook.",
+        "--check reports working servers, sign-in requests, start failures and timeouts."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/clients.rs",
+          "symbol": "test_codex_toml",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/clients.rs",
+          "symbol": "test_claude_code_servers",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/tests.rs",
+          "symbol": "test_apply_and_undo",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/tests.rs",
+          "symbol": "test_plan",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "test_probe_stdio",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "test_probe_http",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "manual",
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "run",
+          "command": "In a scratch HOME on Linux with a Codex config (a comment and a stdio server), a ~/.claude.json with an OAuth HTTP server and a desktop folder: the plan listed every change, --apply wrote them with backups and kept the TOML comment, --check started the real `zazzled mcp` for all three clients and the wrapped server through the proxy, and --undo returned ~/.claude.json to its original content and the Codex server to its command."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

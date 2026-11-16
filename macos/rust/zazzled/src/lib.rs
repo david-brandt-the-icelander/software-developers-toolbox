@@ -31,6 +31,7 @@ pub mod proxy;
 pub mod schema;
 pub mod server;
 pub mod session;
+pub mod setup;
 pub mod sql;
 pub mod store;
 pub mod styles;

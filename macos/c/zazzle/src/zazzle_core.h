@@ -224,7 +224,7 @@ static void exec_tool(char **argv, char **envp)
 	die_errno("cannot run the tool", -r, 69);
 }
 
-/* Replaces this process with `zazzled SUB ARGS`, for commands that need the caller's environment (the MCP proxy, run), so they are not daemon requests. */
+/* Replaces this process with `zazzled SUB ARGS`, for commands that need the caller's environment (the MCP proxy, setup, run), so they are not daemon requests. */
 static void exec_daemon(char **argv, char **envp, const char *sub)
 {
 	pick_daemon(envp);
@@ -311,14 +311,14 @@ static int read_status(int fd)
 	return b;
 }
 
-/* Runs a tool, the MCP proxy or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), and returns the daemon's exit status. */
+/* Runs a tool, the MCP proxy, setup or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && str_eq(own_name(argc, argv), "zazzle")) {
 		if (is_tool(argv[1]))
 			exec_tool(argv, envp);
-		if (str_eq(argv[1], "proxy"))
-			exec_daemon(argv, envp, "proxy");
+		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup"))
+			exec_daemon(argv, envp, argv[1]);
 		if (str_eq(argv[1], "run"))
 			exec_daemon(argv, envp, "wrap");
 	}
