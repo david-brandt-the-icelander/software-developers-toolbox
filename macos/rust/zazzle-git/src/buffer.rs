@@ -142,9 +142,9 @@ impl Buffer {
             return self.lines[a.row][a.col..b.col].iter().collect();
         }
         let mut out: String = self.lines[a.row][a.col..].iter().collect();
-        for row in a.row + 1..b.row {
+        for line in &self.lines[a.row + 1..b.row] {
             out.push('\n');
-            out.extend(self.lines[row].iter());
+            out.extend(line.iter());
         }
         out.push('\n');
         out.extend(self.lines[b.row][..b.col].iter());

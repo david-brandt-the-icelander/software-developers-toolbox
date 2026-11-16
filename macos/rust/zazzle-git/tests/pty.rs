@@ -27,8 +27,15 @@ impl Pty {
         let (mut m, mut s) = (0, 0);
         let mut ws = libc::winsize { ws_row: 24, ws_col: 100, ws_xpixel: 0, ws_ypixel: 0 };
         // SAFETY: openpty writes two descriptors into the given ints.
-        let rc =
-            unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) };
+        let rc = unsafe {
+            libc::openpty(
+                &mut m,
+                &mut s,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::addr_of_mut!(ws) as _,
+            )
+        };
         assert_eq!(rc, 0);
         // SAFETY: openpty returned these descriptors and nothing else owns them.
         let (master, slave) = unsafe { (fs::File::from_raw_fd(m), OwnedFd::from_raw_fd(s)) };
