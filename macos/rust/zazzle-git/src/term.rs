@@ -105,11 +105,19 @@ impl Term {
         (ws.ws_col as usize, ws.ws_row as usize)
     }
 
-    // Waits up to the timeout (-1 forever) for input; returns true if there is some.
+    // Waits up to the timeout (-1 forever) for input; returns true if there is some (select, because macOS poll does not work on terminals).
     fn ready(&self, timeout_ms: i32) -> bool {
-        let mut p = libc::pollfd { fd: self.tty.as_raw_fd(), events: libc::POLLIN, revents: 0 };
-        // SAFETY: poll gets one valid pollfd.
-        unsafe { libc::poll(&mut p, 1, timeout_ms) > 0 }
+        let fd = self.tty.as_raw_fd();
+        let mut tv =
+            libc::timeval { tv_sec: (timeout_ms / 1000) as _, tv_usec: ((timeout_ms % 1000) * 1000) as _ };
+        let tvp: *mut libc::timeval = if timeout_ms < 0 { std::ptr::null_mut() } else { &mut tv };
+        // SAFETY: select gets a zeroed fd_set holding one open descriptor and a timeout that both live for the call.
+        unsafe {
+            let mut set: libc::fd_set = std::mem::zeroed();
+            libc::FD_ZERO(&mut set);
+            libc::FD_SET(fd, &mut set);
+            libc::select(fd + 1, &mut set, std::ptr::null_mut(), std::ptr::null_mut(), tvp) > 0
+        }
     }
 
     // Runs the editor until it saves or cancels, or a signal stops it (which cancels).
@@ -132,7 +140,10 @@ impl Term {
                 continue;
             }
             let mut chunk = [0u8; 4096];
-            let n = self.tty.read(&mut chunk)?;
+            let n = match self.tty.read(&mut chunk) {
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                other => other?,
+            };
             if n == 0 {
                 return Ok(Outcome::Cancel);
             }

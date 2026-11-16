@@ -331,7 +331,6 @@ fn test_editor_resize_copy_and_signal() {
     p.expect("\x1b]52;c;Ym9keSB0ZXh0\x07");
     p.keys(b"more");
     p.signal(libc::SIGTERM);
-    p.keys(b"x");
     p.expect("\x1b[?1049l");
     assert_eq!(p.exit(), 1);
     assert_eq!(fs::read_to_string(&f).unwrap(), "body text\n");
