@@ -7,7 +7,7 @@ use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap] [--probe]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -15,7 +15,15 @@ const BLOCK_END: &str = "<!-- zazzle setup: end -->";
 const CLAUDE_MATCHER: &str = "Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit";
 const CODEX_MATCHER: &str = "Bash|apply_patch";
 
-// What agents are told: in the MCP handshake, and in the instruction files setup writes.
+// What agents are told in the MCP handshake: short, since some clients repeat it with every tool they list.
+pub const MCP_INSTRUCTIONS: &str = "\
+Prefer zazzle over shell grep, rg, find, cat and sed and the built-in Read and Grep: answers are capped and deduplicated.
+- zazzle_read gives a terse view; source=true gives the exact code and the sha zazzle_edit needs. Read a range or one symbol, not whole files.
+- Run builds and tests as `zazzle run -- CMD` (same command and exit code, cleaned output).
+- Look up only the tools you need; do not print the whole tool list.
+- If the C# indexer fails, carry on with zazzle_find, zazzle_read, zazzle_outline and zazzle_refs.";
+
+// What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
 pub const INSTRUCTIONS: &str = "\
 Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of shell grep, rg, find, cat, sed or the built-in Read and Grep tools; its answers are shorter, capped and deduplicated per session.
 - `zazzle_read` gives code as a terse view for many languages (C# from zazzle-csharp-indexer) with source line numbers and no sha; read with `source: true` for the exact code and the sha that `zazzle_edit` needs.
@@ -52,6 +60,7 @@ pub struct Opts {
     pub hook: bool,
     pub hook_edits: bool,
     pub wrap: bool,
+    pub probe: bool,
 }
 
 // Parses the arguments after `zazzled setup`.
@@ -64,6 +73,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         hook: false,
         hook_edits: false,
         wrap: true,
+        probe: false,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -84,6 +94,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--on" => action(Action::On)?,
             "--uninstall" => action(Action::Uninstall)?,
             "--hook" => o.hook = true,
+            "--probe" => o.probe = true,
             "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
             "--workspace" => {
                 o.workspaces.push(PathBuf::from(it.next().ok_or("--workspace needs a directory")?))
@@ -318,6 +329,7 @@ fn load_applied(env: &Env, action: Action) -> Option<Opts> {
         hook: a["hook"].as_bool().unwrap_or(false),
         hook_edits: a["hook_edits"].as_bool().unwrap_or(false),
         wrap: a["wrap"].as_bool().unwrap_or(true),
+        probe: false,
     })
 }
 
@@ -718,6 +730,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                     hook: false,
                     hook_edits: false,
                     wrap: true,
+                    probe: false,
                 })
             };
             let mut out = change(&undo, env)?;

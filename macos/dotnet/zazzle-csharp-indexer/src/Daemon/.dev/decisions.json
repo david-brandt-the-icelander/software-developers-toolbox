@@ -70,12 +70,12 @@
     },
     {
       "id": "version-restart",
-      "title": "Replace a daemon of another version when it is idle",
-      "summary": "A client whose version differs from the daemon's makes an otherwise idle daemon stop, then starts a new one from its own executable.",
+      "title": "Replace an older daemon once its clients finish",
+      "summary": "A newer client makes an older daemon drain and stop when its last client leaves; the client then starts a new daemon from its own executable.",
       "status": "accepted",
       "context": "After an upgrade, the daemon still running may be the old binary.",
-      "decision": "The handshake compares versions exactly; if they differ and the asking client is the only one connected, the daemon replies restart: true and stops, and the client retries. With other clients connected the daemon keeps running and the new client serves in process.",
-      "rationale": "Sessions already connected to the old daemon are not cut off.",
+      "decision": "The handshake compares versions; a newer client puts the daemon into draining, in which every new client is told restart: true and the daemon stops when its client count reaches zero, while clients retry with backoff. An older client is refused with restart: false, so two versions never take turns replacing each other.",
+      "rationale": "Sessions already connected to the old daemon are not cut off, and an older zazzled still running elsewhere cannot restart the newer daemon in a loop (the agent reports showed repeated restart failures).",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -88,7 +88,7 @@
         },
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/tests/DaemonTests.cs",
-          "symbol": "test_version_mismatch_requests_restart"
+          "symbol": "test_version_mismatch"
         }
       ],
       "relationships": [

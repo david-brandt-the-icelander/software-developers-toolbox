@@ -96,7 +96,7 @@ impl Target {
     // Finds the indexer and the repositories a command works on.
     fn locate(ctx: &Ctx, repo: Option<&str>) -> Result<Target, String> {
         let repos = repos(ctx, repo)?;
-        Ok(Target { indexer: Indexer::locate()?, repos, cwd: ctx.cwd.clone() })
+        Ok(Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() })
     }
 
     // Finds the indexer and the work tree holding a path argument, wherever the working directory is; returns the path relative to it.
@@ -106,12 +106,13 @@ impl Target {
             work_tree(&full).ok_or_else(|| format!("{arg}: not inside a git work tree"))?.to_path_buf();
         let rel = full.strip_prefix(&root).expect("work tree holds the path").to_string_lossy().into_owned();
         let repos = Repos { roots: vec![single(&root)], found: 1, below: false };
-        Ok((Target { indexer: Indexer::locate()?, repos, cwd: ctx.cwd.clone() }, rel))
+        Ok((Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() }, rel))
     }
 
     // Runs one indexer tool on every repository and rewrites its root:path references for the working directory.
     fn ask(&self, tool: &str, args: Map<String, Value>) -> Result<Output, String> {
-        let text = self.indexer.ask(&self.repos.roots, tool, Value::Object(args))?;
+        let text =
+            self.indexer.ask(&self.repos.roots, tool, Value::Object(args)).map_err(|e| unavailable(&e))?;
         let mut text = localize(&text, &self.repos.roots, &self.cwd);
         if self.repos.found > self.repos.roots.len() {
             text.push_str(&format!(
@@ -122,6 +123,16 @@ impl Target {
         }
         Ok(Output::ok(text))
     }
+}
+
+// What a structure command says when the indexer cannot answer: why, in one line, and what still works.
+fn unavailable(why: &str) -> String {
+    format!("C# indexer unavailable: {why}. find, read, ls, outline and refs work without it.")
+}
+
+// Finds the indexer, or says in one line why there is none and what still works.
+fn indexer() -> Result<Indexer, String> {
+    Indexer::locate().map_err(|e| unavailable(&e))
 }
 
 // Puts a numeric flag's value into the tool arguments under a key when it was given.
@@ -148,7 +159,7 @@ pub fn overview(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             list.join("\n")
         )));
     }
-    Target { indexer: Indexer::locate()?, repos: r, cwd: ctx.cwd.clone() }.ask("overview", Map::new())
+    Target { indexer: indexer()?, repos: r, cwd: ctx.cwd.clone() }.ask("overview", Map::new())
 }
 
 // Runs find-symbol: declarations by name from the index, across every repository below a folder that is not one.
@@ -241,9 +252,13 @@ pub fn report_gap(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if what.trim().is_empty() {
         return Err(GAP_USAGE.into());
     }
-    let t = Target::locate(ctx, p.value("repo"))?;
-    let text = t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what}))?;
-    Ok(Output::plain(text))
+    crate::activity::record(json!({"src": "gap", "what": what, "session": ctx.session, "cwd": ctx.cwd}));
+    let indexed = Target::locate(ctx, p.value("repo"))
+        .and_then(|t| t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what})));
+    Ok(Output::plain(match indexed {
+        Ok(text) => text,
+        Err(_) => "recorded in zazzle's activity log (the indexer's own log is unavailable)".into(),
+    }))
 }
 
 #[cfg(test)]
@@ -337,10 +352,18 @@ mod tests {
         let loose = TempDir::new();
         let none = "error: not inside a git work tree, and no git repositories below this folder";
         assert_eq!(run_cmd(loose.path(), &["overview"]).text, none);
-        assert_eq!(run_cmd(loose.path(), &["report-gap", "x"]).text, none);
+        assert_eq!(
+            run_cmd(loose.path(), &["report-gap", "x"]).text,
+            "recorded in zazzle's activity log (the indexer's own log is unavailable)"
+        );
         assert_eq!(run(&["find-symbol", "a", "--repo", "/"]), "error: /: not inside a git work tree");
         std::env::set_var("ZAZZLE_INDEXER", t.path().join("missing"));
-        assert!(run(&["overview"]).starts_with("error: zazzle-csharp-indexer --version: "));
+        let down = run(&["overview"]);
+        assert!(
+            down.starts_with("error: C# indexer unavailable: zazzle-csharp-indexer --version: ")
+                && down.ends_with("find, read, ls, outline and refs work without it."),
+            "{down}"
+        );
         restore(saved);
     }
 

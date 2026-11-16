@@ -72,7 +72,7 @@
     {
       "id": "mcp",
       "name": "MCP server (mcp.rs, mcp_structure.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines), each call forwarded to the daemon under one session per connection.",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1), with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -102,7 +102,7 @@
     {
       "id": "outline",
       "name": "Outliner (outline.rs, arena.rs)",
-      "responsibility": "Symbols with line ranges: tree-sitter for Rust, Python, C, C#, JavaScript, TypeScript and TSX up to 1 MiB, its allocations in a per-thread arena during each parse; headings, tables and keys for Markdown, TOML and JSON; keywords and indentation for the rest.",
+      "responsibility": "Symbols with line ranges: tree-sitter for Rust, Python, C, C#, JavaScript, TypeScript and TSX up to 1 MiB, its allocations in a per-thread arena during each parse; headings, tables and keys for Markdown, TOML and JSON; keywords and indentation for the rest, plus methods and constructors in C-like languages such as C# and Java when no grammar is installed.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -216,7 +216,7 @@
     {
       "id": "indexer",
       "name": "C# indexer bridge (indexer.rs)",
-      "responsibility": "Finds zazzle-csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the git work tree, asks its `view` tool for a C# file's terse view and its structure tools for overview, find_symbol, changed_since, git_log, git_blame and report_gap, and rewrites root:path references for the working directory.",
+      "responsibility": "Finds zazzle-csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the git work tree, asks its `view` tool for a C# file's terse view and its structure tools for overview, find_symbol, changed_since, git_log, git_blame and report_gap, retries a restarting daemon with backoff for up to 15 s, remembers a failed connection for 15 s so later calls fail at once, and rewrites root:path references for the working directory.",
       "folder": "macos/rust/zazzled/src"
     },
     {

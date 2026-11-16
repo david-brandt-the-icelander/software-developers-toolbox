@@ -63,7 +63,8 @@ fn test_parse() {
             workspaces: vec![],
             hook: true,
             hook_edits: false,
-            wrap: false
+            wrap: false,
+            probe: false
         }
     );
     let o = opts(&["--hook-edits", "--workspace", "/a", "--workspace", "/b", "--verify"]);

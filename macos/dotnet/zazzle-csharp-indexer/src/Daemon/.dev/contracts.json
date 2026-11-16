@@ -13,11 +13,11 @@
         "zazzle-csharp-indexer serve (Proxy.Connect), from the same or another build of the binary",
         "zazzled (macos/rust/zazzled/), which connects to call the view tool when zazzle reads a .cs file"
       ],
-      "definition": "Hello: {\"version\": ToolVersion.Text, \"roots\": [\"name=/abs/path\" | \"/abs/path\", ...]}. Reply: {\"ok\": true}, or {\"ok\": false, \"error\": text} when a root is rejected, or {\"ok\": false, \"restart\": bool, \"error\": \"daemon version differs\"} when the versions differ. After ok, newline-delimited JSON-RPC as in src/Mcp/.dev/contracts.json until the client closes.",
+      "definition": "Hello: {\"version\": ToolVersion.Text, \"roots\": [\"name=/abs/path\" | \"/abs/path\", ...]}. Reply: {\"ok\": true}, or {\"ok\": false, \"error\": text} when a root is rejected, or {\"ok\": false, \"restart\": bool, \"error\": text} when the versions differ. After ok, newline-delimited JSON-RPC as in src/Mcp/.dev/contracts.json until the client closes.",
       "guarantees": [
         "The socket file is readable and writable by its owner only (not set on Windows).",
-        "A daemon whose version differs from the client's replies restart: true and stops when that client is its only one; with other clients connected it replies restart: false and keeps running.",
-        "A client told to restart waits 500 ms and tries again, at most three attempts in all, starting a new daemon when nothing answers.",
+        "A daemon older than the client (ToolVersion.Newer; a -dev build counts as newest) starts draining: it replies restart: true to that client and every later one, and stops once its last client disconnects. A daemon newer than the client replies restart: false with an error telling the user to restart zazzled, and keeps running.",
+        "zazzled, told to restart, tries again with backoff from 50 ms up to 1 s for at most 15 s, starting a new daemon when nothing answers.",
         "A second daemon refuses to start while one answers on the socket; a stale socket file with nothing behind it is deleted."
       ],
       "compatibility": "The version check is an exact string match on ToolVersion.Text, which every release takes from its tag (macos/dotnet/zazzle-csharp-indexer/.dev/decisions.json, tool-version-source), so a released change to the handshake or to MCP behaviour reaches clients once the old daemon is idle. Builds outside a release all say 0.0.0-dev and are not told apart.",

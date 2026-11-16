@@ -14,7 +14,10 @@ const IO_TIMEOUT: Duration = Duration::from_secs(20);
 const INDEX_TIMEOUT: Duration = Duration::from_secs(45);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(20);
-const HELLO_TRIES: usize = 3;
+// How long to keep retrying while an older daemon makes way for this version.
+const RESTART_WAIT: Duration = if cfg!(test) { Duration::from_millis(600) } else { Duration::from_secs(15) };
+// How long a failed connection is remembered, so a broken indexer costs one quick error per call instead of a wait.
+const FAIL_MEMORY: Duration = Duration::from_secs(15);
 
 // Where the indexer is: its executable and the state directory that holds its daemon socket.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +28,9 @@ pub struct Indexer {
 
 // The indexer version per executable, asked once per process.
 static VERSIONS: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
+
+// The last failed connection per indexer state folder, with when it failed.
+static FAILED: Mutex<Vec<(PathBuf, Instant, String)>> = Mutex::new(Vec::new());
 
 // Returns an environment variable when it is set and not empty.
 fn env(name: &str) -> Option<String> {
@@ -182,39 +188,76 @@ impl Indexer {
 
     // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version.
     fn call(&self, roots: &[Root], tool: &str, args: Value, timeout: Duration) -> Result<String, String> {
+        if let Some(msg) = self.recent_failure() {
+            return Err(msg);
+        }
         let name = &roots[0].0;
         let specs: Vec<String> = roots.iter().map(|(n, p)| format!("{n}={}", p.display())).collect();
-        let hello = json!({"version": self.version()?, "roots": specs});
-        for _ in 0..HELLO_TRIES {
+        let opened = self.version().and_then(|v| self.open(&json!({"version": v, "roots": specs}), timeout));
+        let mut failed = FAILED.lock().expect("failure lock");
+        failed.retain(|(state, _, _)| *state != self.state);
+        let (mut w, mut r) = match opened {
+            Ok(x) => x,
+            Err(e) => {
+                failed.push((self.state.clone(), Instant::now(), e.clone()));
+                return Err(e);
+            }
+        };
+        drop(failed);
+        let mut args = args.clone();
+        if let Some(rel) = args.get("path").and_then(Value::as_str).map(str::to_string) {
+            args["path"] = json!(format!("{name}:{rel}"));
+        }
+        send(
+            &mut w,
+            &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}),
+        )?;
+        loop {
+            let msg = receive(&mut r)?;
+            if msg["id"] == json!(1) {
+                return result_text(&msg);
+            }
+        }
+    }
+
+    // Returns the failure of a connection attempt made in the last FAIL_MEMORY, said so.
+    fn recent_failure(&self) -> Option<String> {
+        let failed = FAILED.lock().expect("failure lock");
+        let (_, at, msg) =
+            failed.iter().find(|(state, at, _)| *state == self.state && at.elapsed() < FAIL_MEMORY)?;
+        Some(format!(
+            "{msg} ({}s ago; zazzle tries the indexer again {}s after a failure)",
+            at.elapsed().as_secs(),
+            FAIL_MEMORY.as_secs()
+        ))
+    }
+
+    // Connects and says hello, retrying with growing pauses while an older daemon makes way for this version.
+    fn open(&self, hello: &Value, timeout: Duration) -> Result<(UnixStream, BufReader<UnixStream>), String> {
+        let end = Instant::now() + RESTART_WAIT;
+        let mut pause = Duration::from_millis(50);
+        loop {
             let mut w = self.connect()?;
             let _ = w.set_read_timeout(Some(timeout));
             let _ = w.set_write_timeout(Some(timeout));
             let mut r = BufReader::new(w.try_clone().map_err(|e| format!("indexer connection: {e}"))?);
-            send(&mut w, &hello)?;
+            send(&mut w, hello)?;
             let reply = receive(&mut r)?;
-            if reply["ok"] != json!(true) {
-                if reply["restart"] == json!(true) {
-                    std::thread::sleep(Duration::from_millis(500));
-                    continue;
+            match (reply["ok"] == json!(true), reply["restart"] == json!(true)) {
+                (true, _) => return Ok((w, r)),
+                (false, true) if Instant::now() < end => {
+                    std::thread::sleep(pause);
+                    pause = (pause * 2).min(Duration::from_secs(1));
                 }
-                return Err(format!("indexer refused: {}", reply["error"].as_str().unwrap_or("no reason")));
-            }
-            let mut args = args.clone();
-            if let Some(rel) = args.get("path").and_then(Value::as_str).map(str::to_string) {
-                args["path"] = json!(format!("{name}:{rel}"));
-            }
-            send(
-                &mut w,
-                &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}),
-            )?;
-            loop {
-                let msg = receive(&mut r)?;
-                if msg["id"] == json!(1) {
-                    return result_text(&msg);
+                (false, true) => return Err("the indexer daemon kept restarting".into()),
+                (false, false) => {
+                    return Err(format!(
+                        "indexer refused: {}",
+                        reply["error"].as_str().unwrap_or("no reason")
+                    ))
                 }
             }
         }
-        Err("the indexer daemon kept restarting".into())
     }
 
     // Returns the terse view of a C# file: a header line, then `N`, `N~` and `A-B` lines from the indexer.
@@ -424,6 +467,14 @@ pub mod tests {
         let (_t, f) = repo();
         let ix = Indexer { exe, state: dir.path().to_path_buf() };
         assert_eq!(ix.view(&f).unwrap_err(), "indexer closed the connection");
+        let cached = ix.view(&f).unwrap_err();
+        assert!(
+            cached.starts_with(
+                "indexer closed the connection (0s ago; zazzle tries the indexer again 15s after"
+            ),
+            "{cached}"
+        );
+        FAILED.lock().expect("lock").clear();
         assert_eq!(ix.view(&f).unwrap_err(), "indexer sent something that is not JSON");
     }
 

@@ -17,7 +17,7 @@ fn targets(ctx: &Ctx, args: &[String]) -> Result<Vec<PathBuf>, String> {
     for a in args {
         let path = locate(a, &ctx.cwd);
         let md = std::fs::metadata(&path)
-            .map_err(|e| format!("{}: {}", display(&path, &ctx.cwd), walk::reason(&e)))?;
+            .map_err(|e| format!("{}: {}{}", display(&path, &ctx.cwd), walk::reason(&e), hint(ctx, a, &e)))?;
         if md.is_dir() {
             let all = walk::collect(std::slice::from_ref(&path), &WalkOpts::default(), &ctx.engine.walks)?;
             files.extend(all.into_iter().filter(|f| outline::worth_outlining(f)));
@@ -26,6 +26,15 @@ fn targets(ctx: &Ctx, args: &[String]) -> Result<Vec<PathBuf>, String> {
         }
     }
     Ok(files)
+}
+
+// Offers similar files when a path argument does not exist.
+pub(super) fn hint(ctx: &Ctx, arg: &str, e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        crate::util::similar(arg, &ctx.cwd, &ctx.engine.walks)
+    } else {
+        String::new()
+    }
 }
 
 // Renders one symbol line, indented by depth.
@@ -146,6 +155,24 @@ mod tests {
             run_cmd(t.path(), &["outline", "nope.rs"]).text,
             "error: nope.rs: no such file or directory"
         );
+        for i in 0..4 {
+            t.write(&format!("lib/x{i}/readme.md"), b"# R\n");
+        }
+        assert_eq!(run_cmd(t.path(), &["outline", "a.rs"]).text, "error: a.rs: no such file or directory");
+        assert_eq!(
+            run_cmd(t.path(), &["outline", "README.MD"]).text,
+            "error: README.MD: no such file or directory; similar: docs/readme.md, lib/x0/readme.md, lib/x1/readme.md (+2 more)"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["ls", "src/notes"]).text,
+            "error: src/notes: no such file or directory; similar: notes.txt"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["read", "x/notes.md"]).text,
+            "error: x/notes.md: no such file or directory; similar: notes.txt"
+        );
+        let none = run_cmd(t.path(), &["read", "--symbol", "f", "zzzz.rs"]).text;
+        assert_eq!(none, "error: zzzz.rs: no such file or directory");
     }
 
     // Checks a file that cannot be loaded is reported with its name.

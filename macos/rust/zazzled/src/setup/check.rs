@@ -124,7 +124,10 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
     };
     let routes = super::load_routes(env);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let mut out = String::from("zazzle setup --check: each server started the way its client starts it.\n");
+    let mut out = String::from(match opts.probe {
+        true => "zazzle setup --check --probe: each server started or contacted the way its client does.\n",
+        false => "zazzle setup --check: zazzle itself is started; other servers are only read from the settings (--probe starts and contacts them).\n",
+    });
     let (mut ok, mut failed) = (0, 0);
     let mut hints: Vec<&str> = Vec::new();
     for c in chosen {
@@ -147,6 +150,13 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                 continue;
             }
             let folder = folder(c, s, opts.repo.as_deref(), &cwd);
+            if !opts.probe && !is_zazzle(s) {
+                out.push_str(&format!(
+                    "  --   {} [{route}]: not started or contacted (--probe does)\n",
+                    s.name
+                ));
+                continue;
+            }
             let outcome = probe(s, &folder);
             let (word, text) = match &outcome {
                 Outcome::Ok(t) => ("ok  ", t),
@@ -418,9 +428,14 @@ impl Session {
         err
     }
 
-    // Stops the server and adds the end of its standard error to a failure.
+    // Stops the server and adds the end of its standard error to a failure; an HTML page is named, not shown.
     pub fn fail(self, why: String) -> String {
         let err = self.stop();
+        let err = if err.to_ascii_lowercase().contains("<html") {
+            format!("(an HTML page of {} bytes)", err.len())
+        } else {
+            err
+        };
         let tail: String =
             err.trim().chars().rev().take(STDERR_TAIL).collect::<Vec<_>>().into_iter().rev().collect();
         match tail.is_empty() {
@@ -633,7 +648,14 @@ mod tests {
         std::fs::create_dir_all(home.join(".codex")).expect("mkdir");
         let codex = "[mcp_servers.api]\nurl = \"http://127.0.0.1:1/mcp\"\nbearer_token_env_var = \"ZAZZLE_TEST_UNSET_TOKEN\"\n";
         std::fs::write(env.config_path(Client::Codex), codex).expect("write");
-        let opts = super::super::parse(&["--check".to_string()]).expect("parse");
+        let local = run(&super::super::parse(&["--check".to_string()]).expect("parse"), &env).expect("run");
+        assert!(
+            local.contains("--   gone [direct: not wrapped yet")
+                && local.contains("not started or contacted (--probe does)")
+                && local.contains("ok   zazzle [zazzle]"),
+            "{local}"
+        );
+        let opts = super::super::parse(&["--check".to_string(), "--probe".to_string()]).expect("parse");
         let r = run(&opts, &env).expect("run");
         assert!(r.contains("claude-code: ~/.claude.json\n  routing: enforced by the hook in ~/.claude/settings.json (self-test passed; native edits allowed and logged); no instructions in ~/.claude/CLAUDE.md"), "{r}");
         assert!(r.contains("ok   zazzle [zazzle]:") && r.contains("repository access from"), "{r}");
@@ -739,5 +761,16 @@ mod tests {
         assert!(hook_selftest("exit 0").unwrap_err().contains("`rg zazzle_selftest` was let through"));
         assert_eq!(tally(["a", "b", "a"].into_iter()), "a 2, b 1");
         assert!(access(Path::new("/nonexistent-zz")).starts_with("no git repository"));
+        let html = probe_stdio(
+            "/bin/sh",
+            &["-c".into(), "echo '<HTML><body>502 Bad Gateway</body></HTML>' >&2".into()],
+            &[],
+            Path::new("/"),
+            false,
+        );
+        assert!(
+            matches!(&html, Outcome::Fail(t) if t.contains("(an HTML page of ") && !t.contains("Bad Gateway")),
+            "{html:?}"
+        );
     }
 }

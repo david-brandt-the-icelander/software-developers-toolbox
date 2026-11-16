@@ -22,10 +22,10 @@ public class DaemonTests
     }
 
     // Starts a daemon for a repo and returns it with its socket path.
-    private static (DaemonServer daemon, string sock) StartDaemon(TempRepo repo, TimeSpan? idle = null)
+    private static (DaemonServer daemon, string sock) StartDaemon(TempRepo repo, TimeSpan? idle = null, string? version = null)
     {
         var sock = Path.Combine(Directory.CreateTempSubdirectory("d").FullName, "d.sock");
-        var daemon = new DaemonServer(repo.Engine, sock, idle ?? TimeSpan.FromMinutes(5));
+        var daemon = new DaemonServer(repo.Engine, sock, idle ?? TimeSpan.FromMinutes(5), version);
         daemon.Start();
         return (daemon, sock);
     }
@@ -50,18 +50,43 @@ public class DaemonTests
     }
 
     [Fact]
-    // A client with a different version is told to restart when it is the only one connected.
-    public async Task test_version_mismatch_requests_restart()
+    // An older client is told to restart its zazzled and the daemon stays; a newer one makes the daemon drain: busy clients finish, new ones are refused, then it exits.
+    public async Task test_version_mismatch()
     {
         using var repo = new TempRepo(new() { ["a.txt"] = "x\n" });
-        var (daemon, sock) = StartDaemon(repo);
+        var (daemon, sock) = StartDaemon(repo, version: "1.2.17");
         using var _ = daemon;
-        var socket = Proxy.TryConnect(sock)!;
-        using var s = new NetworkStream(socket, true);
-        var reply = Rpc(s, "{\"version\":\"0.0.0\",\"roots\":[]}");
-        Assert.False(reply["ok"]!.GetValue<bool>());
-        Assert.True(reply["restart"]!.GetValue<bool>());
+        JsonNode Hello(string version)
+        {
+            using var s = new NetworkStream(Proxy.TryConnect(sock)!, true);
+            return Rpc(s, $"{{\"version\":\"{version}\",\"roots\":[]}}");
+        }
+        var old = Hello("0.0.1");
+        Assert.False(old["restart"]!.GetValue<bool>());
+        Assert.Contains("newer than this client's 0.0.1", old["error"]!.GetValue<string>());
+        Assert.Contains("version 1.2.17", old["error"]!.GetValue<string>());
+        Assert.False(daemon.Done.IsCompleted);
+        var busy = new NetworkStream(Proxy.TryConnect(sock)!, true);
+        Rpc(busy, "{\"version\":\"1.2.17\",\"roots\":[]}");
+        var newer = Hello("1.2.18");
+        Assert.True(newer["restart"]!.GetValue<bool>());
+        Assert.True(Hello("1.2.17")["restart"]!.GetValue<bool>());
+        Assert.False(daemon.Done.IsCompleted);
+        busy.Dispose();
         Assert.Same(daemon.Done, await Task.WhenAny(daemon.Done, Task.Delay(5000)));
+    }
+
+    [Fact]
+    // Versions compare by major.minor.patch, and a development build is newest.
+    public void test_newer()
+    {
+        Assert.True(ToolVersion.Newer("1.2.18", "1.2.17"));
+        Assert.False(ToolVersion.Newer("1.2.9", "1.2.17"));
+        Assert.False(ToolVersion.Newer("1.2.17", "1.2.17"));
+        Assert.True(ToolVersion.Newer("2.0", "1.9.9"));
+        Assert.True(ToolVersion.Newer("0.0.0-dev", "9.9.9"));
+        Assert.False(ToolVersion.Newer("9.9.9", "0.0.0-dev"));
+        Assert.False(ToolVersion.Newer("x", "1.0.0"));
     }
 
     [Fact]

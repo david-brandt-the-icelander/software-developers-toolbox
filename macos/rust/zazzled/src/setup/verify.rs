@@ -192,7 +192,12 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
     section(format!("chat started elsewhere ({}, absolute paths):", elsewhere.display()), outside, &mut out);
     section(
         "commands and MCP servers:".into(),
-        std::iter::once(run_step(env, &repo)).chain(proxy_steps(env, &clients)).collect(),
+        std::iter::once(run_step(env, &repo))
+            .chain(match opts.probe {
+                true => proxy_steps(env, &clients),
+                false => vec![Step { ok: true, what: "MCP calls through the proxy: not made, since they start other servers (--probe makes them)".into() }],
+            })
+            .collect(),
         &mut out,
     );
     let hooks: Vec<Step> = clients
@@ -322,7 +327,14 @@ for line in sys.stdin:
         std::env::set_var("ZAZZLE_ACTIVITY_LOG", &log);
         let wrapped = json!({"mcpServers": {"tools": {"command": env.zazzled, "args": ["proxy", "--log", "--", "x"]}, "zazzle": {"command": env.zazzled, "args": ["mcp"]}}});
         std::fs::write(env.config_path(Client::ClaudeCode), wrapped.to_string()).expect("write");
-        let opts = Opts { repo: Some(repo.join(".")), ..super::super::parse(&[]).expect("opts") };
+        let local = Opts { repo: Some(repo.join(".")), ..super::super::parse(&[]).expect("opts") };
+        let wrapped =
+            json!({"mcpServers": {"tools": {"command": env.zazzled, "args": ["proxy", "--log", "--", "x"]}}});
+        std::fs::write(env.config_path(Client::ClaudeCode), wrapped.to_string()).expect("write");
+        assert!(run(&local, &env).expect("verify").contains(
+            "MCP calls through the proxy: not made, since they start other servers (--probe makes them)"
+        ));
+        let opts = Opts { probe: true, ..local };
         let r = run(&opts, &env).expect("verify");
         assert!(r.contains("ok   search: zazzle_find \"Orders\" in .: README.md"), "{r}");
         assert!(
@@ -346,7 +358,7 @@ for line in sys.stdin:
             "{r}"
         );
         assert!(r.contains("no hook installed: routing is by instructions only"), "{r}");
-        assert!(r.contains("through zazzle: 12 commands") && r.ends_with("All steps passed. This shows zazzle works; `zazzle setup --report` shows what agents actually route through it.\n"), "{r}");
+        assert!(r.contains("through zazzle: 24 commands") && r.ends_with("All steps passed. This shows zazzle works; `zazzle setup --report` shows what agents actually route through it.\n"), "{r}");
         assert!(std::fs::read_dir(&repo).expect("dir").all(|e| !e
             .expect("entry")
             .file_name()

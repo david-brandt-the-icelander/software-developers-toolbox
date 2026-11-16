@@ -7,11 +7,13 @@ using ZazzleIndexer.Mcp;
 namespace ZazzleIndexer.Daemon;
 
 // Listens on a unix socket; each connection starts with a JSON handshake naming its roots.
-public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idleExit) : IDisposable
+public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idleExit, string? version = null) : IDisposable
 {
+    private readonly string _version = version ?? ToolVersion.Text;
     private readonly Socket _listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
     private readonly CancellationTokenSource _stop = new();
     private int _clients;
+    private int _draining;
     private DateTime _lastActive = DateTime.UtcNow;
 
     private readonly TaskCompletionSource _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -91,25 +93,33 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
         finally
         {
             _lastActive = DateTime.UtcNow;
-            Interlocked.Decrement(ref _clients);
+            if (Interlocked.Decrement(ref _clients) == 0 && Volatile.Read(ref _draining) == 1)
+                _stop.Cancel();
         }
     }
 
-    // Reads the hello line, checks the version, attaches roots and replies; returns null if the session must end.
+    // Reads the hello line, checks the version, attaches roots and replies; returns null if the session must end. A newer client makes the daemon drain (finish its clients, refuse new ones, then exit) so the client can start its own; an older one is told to restart its zazzled, so two versions never take turns stopping each other.
     private async Task<List<Root>?> Handshake(StreamReader reader, StreamWriter writer)
     {
         var hello = JsonNode.Parse(await reader.ReadLineAsync() ?? "{}");
-        if (hello?["version"]?.GetValue<string>() != ToolVersion.Text)
+        var theirs = hello?["version"]?.GetValue<string>() ?? "";
+        if (theirs != _version && !ToolVersion.Newer(theirs, _version))
         {
-            var idle = Volatile.Read(ref _clients) == 1;
-            await Reply(writer, new JsonObject { ["ok"] = false, ["restart"] = idle, ["error"] = "daemon version differs" });
-            if (idle)
+            await Reply(writer, new JsonObject { ["ok"] = false, ["restart"] = false, ["error"] = $"the indexer daemon is version {_version}, newer than this client's {theirs}: restart zazzled (zazzled uninstall && zazzled install, or quit the apps)" });
+            return null;
+        }
+        if (theirs != _version)
+            Volatile.Write(ref _draining, 1);
+        if (Volatile.Read(ref _draining) == 1)
+        {
+            await Reply(writer, new JsonObject { ["ok"] = false, ["restart"] = true, ["error"] = "the indexer daemon is making way for a newer version" });
+            if (Volatile.Read(ref _clients) == 1)
                 _stop.Cancel();
             return null;
         }
         try
         {
-            var roots = hello["roots"]!.AsArray().Select(r => Root.Parse(r!.GetValue<string>(), engine)).ToList();
+            var roots = (hello?["roots"]?.AsArray() ?? []).Select(r => Root.Parse(r!.GetValue<string>(), engine)).ToList();
             await Reply(writer, new JsonObject { ["ok"] = true });
             return roots;
         }
