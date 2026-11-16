@@ -238,9 +238,19 @@ fn run_request(mut stream: UnixStream, engine: &Engine, req: Request, mut fds: F
     let cwd = working_dir(&req, &fds)?;
     let caller = caller_of(&stream, &fds);
     let stdin: Option<Box<dyn Read>> = fds.stdin.take().map(|fd| Box::new(File::from(fd)) as Box<dyn Read>);
-    let ctx =
-        Ctx { engine, cwd, session: req.session, stdin: RefCell::new(stdin), caller: RefCell::new(caller) };
+    let (session, roots) = crate::proto::split_session(&req.session);
+    let ctx = Ctx { engine, cwd, session, roots, stdin: RefCell::new(stdin), caller: RefCell::new(caller) };
     let out = cmd::run(&ctx, &req.args);
+    let quiet = matches!(req.args.first().map(String::as_str), None | Some("version" | "status"));
+    if !quiet {
+        crate::activity::record(serde_json::json!({
+        "src": "zazzle",
+        "cmd": req.args.first(),
+        "session": ctx.session,
+        "cwd": ctx.cwd,
+        "status": out.status,
+        }));
+    }
     drop(ctx);
     respond(&mut stream, &out, fds)
 }

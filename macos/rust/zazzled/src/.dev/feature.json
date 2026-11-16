@@ -188,6 +188,126 @@
           "symbol": "run"
         }
       ]
+    },
+    {
+      "id": "pretooluse-hook",
+      "name": "Routing hook for Claude Code and Codex",
+      "description": "`zazzled hook --client claude-code|codex [--edits]` is the PreToolUse hook setup installs: it refuses raw shell searches, listings, reads and builds with a pointer to the zazzle tool or `zazzle run`, and logs what it lets through.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "decide"
+        },
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Routing: what is enforced and what is asked"
+        }
+      ],
+      "behavior": "It reads the hook payload on stdin. Shell commands (Claude Code's Bash, Codex's shell, including `bash -lc` scripts) are split into pipeline segments; a segment that runs grep, rg, ag, ack or git grep, find without actions, cat/head/tail/less/bat/nl on files, sed -n on files, or a build or test runner (cargo build/test/check/clippy, dotnet build/test, go build/test, npm/pnpm/yarn/bun test/run/install, make, pytest, gradle, mvn, tsc, jest, vitest, xcodebuild and others) is refused with `permissionDecision: deny` and the zazzle tool or `zazzle run --` to use instead. Claude Code's Grep and Glob are refused, Read only for .cs files. Edit tools (Edit, Write, MultiEdit, NotebookEdit, apply_patch) are allowed and logged as native edits, or refused with --edits (which also refuses Read). A command ending in `# allow-raw` passes and is logged; when the zazzle daemon cannot be reached every refusal becomes a logged pass; ZAZZLE_HOOK=off turns it off. It never rewrites or approves a command.",
+      "outcome": "Raw tool calls that zazzle can answer more cheaply are sent back to the agent with the zazzle equivalent, in both Claude Code and Codex, and every bypass is visible in the activity log.",
+      "constraints": [
+        "Codex runs a new or changed hook only after the user trusts it.",
+        "Claude Code's Read of non-C# files is allowed, since its Edit tool needs it.",
+        "Hosted tools, web tools and MCP servers left direct are not seen."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "segments"
+        },
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "classify"
+        },
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "zazzle_reachable"
+        }
+      ]
+    },
+    {
+      "id": "edit-workspaces",
+      "name": "Workspace boundaries for edits",
+      "description": "Edits may write in the working directory, the git work tree holding it, the roots the MCP client names and the user's workspaces, and nowhere else.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/workspace.rs",
+          "symbol": "roots"
+        },
+        {
+          "path": "macos/rust/zazzled/src/workspace.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "serve"
+        }
+      ],
+      "behavior": "workspace::roots collects the command's working directory and its git work tree (so a chat started in a subdirectory edits the whole repository), the roots an MCP client returns for roots/list (asked after initialize when the client offers roots, and again on roots/list_changed, carried to the daemon after the session id), and the folders in ~/.zazzle/workspaces (one per line, `~/` allowed, written by `zazzle setup --workspace`) and ZAZZLE_WORKSPACES. The home folder and / never count, so a chat started there edits only its workspaces. confine resolves symlinks and `..` and refuses anything outside, naming the allowed folders and how to add one.",
+      "outcome": "One global setup lets an agent edit any repository under ~/dev from a chat started anywhere, including by absolute path and across repositories, without unrestricted writes.",
+      "constraints": [
+        "A linked git worktree outside every workspace is refused until its folder is added."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/workspace.rs",
+          "symbol": "configured"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/edit.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proto.rs",
+          "symbol": "split_session"
+        }
+      ]
+    },
+    {
+      "id": "activity-log",
+      "name": "Activity log",
+      "description": "Every zazzle command the daemon runs, every `zazzle run`, every tool call through the proxy and every hook decision other than a plain allow is appended to ~/.zazzle/activity.log as one JSON line.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/activity.rs",
+          "symbol": "record"
+        },
+        {
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "run_request"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "summary"
+        }
+      ],
+      "behavior": "Entries carry the time, the source (zazzle, run, proxy, hook), the session, the folder and what ran with its status or outcome; the proxy adds the server it fronts. version and status calls are left out. The log is moved to activity.log.1 past 2 MiB; ZAZZLE_ACTIVITY_LOG moves it, an empty value turns it off. Failures to write are ignored.",
+      "outcome": "`zazzle setup --report` and `--verify` can show what actually went through zazzle and what bypassed it, instead of inferring coverage from configuration.",
+      "constraints": [
+        "Tool calls that never reach zazzle (native tools the hook allows, direct MCP servers) leave no entry."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/activity.rs",
+          "symbol": "read"
+        },
+        {
+          "path": "macos/rust/zazzled/src/hook.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Pending::note_text"
+        }
+      ]
     }
   ],
   "relatedViews": [

@@ -37,7 +37,7 @@ fn single(root: &Path) -> Root {
 }
 
 // Finds the git work trees below a folder, outermost only, skipping hidden and build folders, sorted by path.
-fn repos_below(dir: &Path) -> Vec<PathBuf> {
+pub fn repos_below(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut level = vec![dir.to_path_buf()];
     for _ in 0..REPO_DEPTH {

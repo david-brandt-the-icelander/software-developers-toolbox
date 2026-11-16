@@ -28,7 +28,7 @@
     {
       "id": "plan",
       "name": "Plan, apply and undo (mod.rs)",
-      "responsibility": "Parses the options and finds the environment; plans each client's operations (add or remove zazzle, wrap or unwrap stdio servers, route or unroute HTTP servers, leave with a reason); reports them; with --apply or --undo writes the settings files with backups, the instructions block, the hook and the route record, and starts or stops proxy agents.",
+      "responsibility": "Parses the options and finds the environment; plans each client's operations (add or remove zazzle, wrap or unwrap stdio servers, route or unroute HTTP servers, leave with a reason); reports them; with --apply or --undo writes the settings files with backups, the instructions block, the Claude Code and Codex hooks, the workspaces file and the setup record, and starts or stops proxy agents. Lists plugin and project servers it leaves direct.",
       "folder": "macos/rust/zazzled/src/setup"
     },
     {
@@ -40,7 +40,7 @@
     {
       "id": "check",
       "name": "Check (check.rs)",
-      "responsibility": "Starts each configured stdio server with its client's command, environment and folder, or posts to each HTTP server with its headers, and does initialize, tools/list and for zazzle zazzle_overview, reporting what works and what to fix.",
+      "responsibility": "Starts each configured stdio server with its client's command, environment and folder, or posts to each HTTP server with its headers, and does initialize, tools/list and for zazzle zazzle_overview, reporting what works and what to fix. Marks each server zazzle, proxied or direct, each client's routing enforced or instructed, repository access, and summarizes the activity log (--report).",
       "folder": "macos/rust/zazzled/src/setup"
     },
     {
@@ -54,6 +54,12 @@
       "name": "zazzle MCP proxy (src/proxy)",
       "responsibility": "What wrapped and routed servers run behind.",
       "folder": "macos/rust/zazzled/src/proxy"
+    },
+    {
+      "id": "verify",
+      "name": "Verify (verify.rs)",
+      "responsibility": "Exercises zazzle through a real `zazzled mcp` inside a repository and from the home folder, runs a command and the wrapped servers and hooks, and shows the activity entries produced.",
+      "folder": "macos/rust/zazzled/src/setup"
     }
   ],
   "relationships": [
@@ -98,6 +104,18 @@
       "to": "clients",
       "kind": "depends-on",
       "description": "Reads the servers to check."
+    },
+    {
+      "from": "setup",
+      "to": "verify",
+      "kind": "contains",
+      "description": "Verifying zazzle end to end."
+    },
+    {
+      "from": "verify",
+      "to": "check",
+      "kind": "depends-on",
+      "description": "Its MCP session and hook self-test."
     }
   ]
 }

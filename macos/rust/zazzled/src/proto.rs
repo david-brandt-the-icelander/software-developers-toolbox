@@ -11,6 +11,18 @@ pub struct Request {
     pub args: Vec<String>,
 }
 
+// Splits a session field into the session id and the workspace roots an MCP client named, which follow it one per line.
+pub fn split_session(field: &str) -> (String, Vec<std::path::PathBuf>) {
+    let mut lines = field.split('\n');
+    let id = lines.next().unwrap_or_default().to_string();
+    (id, lines.filter(|l| !l.is_empty()).map(std::path::PathBuf::from).collect())
+}
+
+// Joins a session id and an MCP client's workspace roots into one session field.
+pub fn join_session(id: &str, roots: &[String]) -> String {
+    std::iter::once(id).chain(roots.iter().map(String::as_str)).collect::<Vec<_>>().join("\n")
+}
+
 // Decodes the NUL-terminated field block into a request.
 pub fn decode(block: &[u8]) -> Result<Request, String> {
     let mut parts: Vec<&[u8]> = block.split(|b| *b == 0).collect();

@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | install | uninstall | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | install | uninstall | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -31,6 +31,7 @@ pub enum Cli {
     Proxy(proxy::Opts),
     Setup(setup::Opts),
     Wrap(Vec<String>),
+    Hook(crate::hook::Opts),
     Version,
 }
 
@@ -52,6 +53,12 @@ fn parse_serve(rest: &[String]) -> Result<Cli, String> {
     Ok(Cli::Serve { socket, idle: Duration::from_secs(idle) })
 }
 
+// Runs a stdio proxy, naming its server in the activity log first.
+fn proxy_stdio(c: &[String], filter: &proxy::Filter) -> Result<i32, String> {
+    crate::activity::set_command_label(c);
+    proxy::stdio::run(c, filter)
+}
+
 // Parses the command line.
 pub fn parse(args: &[String]) -> Result<Cli, String> {
     let Some((cmd, rest)) = args.split_first() else { return Err(USAGE.into()) };
@@ -64,6 +71,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "proxy" => proxy::parse(rest).map(Cli::Proxy),
         "setup" => setup::parse(rest).map(Cli::Setup),
         "wrap" => Ok(Cli::Wrap(rest.to_vec())),
+        "hook" => crate::hook::parse(rest).map(Cli::Hook),
         "version" | "--version" => Ok(Cli::Version),
         _ => Err(USAGE.into()),
     }
@@ -79,6 +87,7 @@ pub fn run_in_process(
     err: &mut dyn Write,
 ) -> u8 {
     let ctx = Ctx {
+        roots: Vec::new(),
         engine,
         cwd: cwd.to_path_buf(),
         session: session.to_string(),
@@ -132,7 +141,9 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
 fn mcp_main() -> Result<(), String> {
     let sock = client::socket_path().map_err(|e| e.to_string())?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
-    let backend = DaemonBackend { sock, cwd, session: mcp::new_session_id() };
+    let session =
+        std::env::var("ZAZZLE_SESSION").ok().filter(|s| !s.is_empty()).unwrap_or_else(mcp::new_session_id);
+    let backend = DaemonBackend { sock, cwd, session, roots: Default::default() };
     mcp::serve(&mut std::io::stdin().lock(), &mut std::io::stdout().lock(), &backend)
         .map_err(|e| e.to_string())
 }
@@ -195,17 +206,24 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Hook(o) => {
+            let mut payload = String::new();
+            let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload);
+            print!("{}", crate::hook::run(&o, &payload, &crate::hook::zazzle_reachable));
+            ExitCode::SUCCESS
+        }
         Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),
         Cli::Wrap(rest) => match wrap::main(&rest, &mut std::io::stdout()) {
             Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
             Err(e) => finish(Err(e)),
         },
         Cli::Proxy(o) => match o.upstream {
-            Upstream::Command(c) => match proxy::stdio::run(&c, &o.filter) {
+            Upstream::Command(c) => match proxy_stdio(&c, &o.filter) {
                 Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
                 Err(e) => finish(Err(e)),
             },
             Upstream::Http { url, listen } => {
+                crate::activity::set_label(&url);
                 finish(proxy::http::run(&url, &listen, &o.filter).map(|()| String::new()))
             }
         },

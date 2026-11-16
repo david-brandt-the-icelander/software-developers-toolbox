@@ -57,6 +57,7 @@ pub fn run_cmd_with(
     args: &[&str],
 ) -> crate::cmd::Output {
     let ctx = crate::cmd::Ctx {
+        roots: Vec::new(),
         engine,
         cwd: cwd.to_path_buf(),
         session: session.to_string(),
@@ -75,6 +76,7 @@ pub fn run_cmd_stdin(
     stdin: &'static [u8],
 ) -> crate::cmd::Output {
     let ctx = crate::cmd::Ctx {
+        roots: Vec::new(),
         engine,
         cwd: cwd.to_path_buf(),
         session: String::new(),

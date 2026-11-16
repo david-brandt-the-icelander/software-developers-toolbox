@@ -1,16 +1,19 @@
 // `zazzle setup`: plans, applies, undoes and checks the user-level configuration that makes Claude Code, the Claude desktop app and Codex use zazzle, and sends their other MCP servers through the zazzle proxy.
 pub mod check;
 pub mod clients;
+pub mod verify;
 
 use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --check] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--hook] [--no-wrap]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
-const HOOK_MATCHER: &str = "Bash|Grep|Glob|Read";
+// The tools each client's hook sees: shell commands and search, read and edit tools (edits are logged, or refused with --hook-edits).
+const CLAUDE_MATCHER: &str = "Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit";
+const CODEX_MATCHER: &str = "Bash|apply_patch";
 
 // What agents are told: in the MCP handshake, and in the instruction files setup writes.
 pub const INSTRUCTIONS: &str = "\
@@ -19,6 +22,9 @@ Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of
 - `zazzle_find`, `zazzle_refs`, `zazzle_outline` and `zazzle_ls` locate code; read a range or one symbol rather than whole files.
 - For C# structure: `zazzle_overview` (start here on an unfamiliar repository), `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`. In a folder above several repositories they cover all of them; pass `repo` to pick one.
 - A reply tagged `[r:ID]` comes back exactly with `zazzle_read_again`; keep ids in notes instead of content.
+- Run builds and tests as `zazzle run -- CMD` (for example `zazzle run -- cargo test`): the same command in the same shell with the same exit code, its output cleaned. When repository instructions name a command such as `cargo test`, run exactly that command behind `zazzle run --`.
+- Edits may go anywhere in the git work tree you started in, in folders the client names and in the user's workspaces (`~/.zazzle/workspaces`).
+- If a zazzle tool is missing or fails, say so and use the native tool; where the hook refuses a raw command, `# allow-raw` at its end lets it through (logged).
 - Say what you needed and could not get with `zazzle_report_gap`. If zazzle seems misconfigured, run `zazzle setup --check` and show the user its report.";
 
 // What setup was asked to do.
@@ -28,6 +34,8 @@ pub enum Action {
     Apply,
     Undo,
     Check,
+    Verify,
+    Report,
 }
 
 // The parsed `zazzle setup` command line.
@@ -36,18 +44,28 @@ pub struct Opts {
     pub action: Action,
     pub clients: Vec<Client>,
     pub repo: Option<PathBuf>,
+    pub workspaces: Vec<PathBuf>,
     pub hook: bool,
+    pub hook_edits: bool,
     pub wrap: bool,
 }
 
 // Parses the arguments after `zazzled setup`.
 pub fn parse(args: &[String]) -> Result<Opts, String> {
-    let mut o = Opts { action: Action::Plan, clients: Vec::new(), repo: None, hook: false, wrap: true };
+    let mut o = Opts {
+        action: Action::Plan,
+        clients: Vec::new(),
+        repo: None,
+        workspaces: Vec::new(),
+        hook: false,
+        hook_edits: false,
+        wrap: true,
+    };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         let mut action = |x: Action| {
             if o.action != Action::Plan {
-                return Err(format!("give one of --apply, --undo and --check\n{USAGE}"));
+                return Err(format!("give one of --apply, --undo, --check, --verify and --report\n{USAGE}"));
             }
             o.action = x;
             Ok(())
@@ -56,7 +74,13 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--apply" => action(Action::Apply)?,
             "--undo" => action(Action::Undo)?,
             "--check" => action(Action::Check)?,
+            "--verify" => action(Action::Verify)?,
+            "--report" => action(Action::Report)?,
             "--hook" => o.hook = true,
+            "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
+            "--workspace" => {
+                o.workspaces.push(PathBuf::from(it.next().ok_or("--workspace needs a directory")?))
+            }
             "--no-wrap" => o.wrap = false,
             "--repo" => o.repo = Some(PathBuf::from(it.next().ok_or("--repo needs a directory")?)),
             "--client" => {
@@ -88,7 +112,7 @@ impl Env {
     pub fn detect() -> Result<Env, String> {
         let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
         let zazzled = std::env::current_exe().map_err(|e| format!("cannot find zazzled: {e}"))?;
-        let zazzled = zazzled.canonicalize().unwrap_or(zazzled);
+        let zazzled = stable_exe(&zazzled.canonicalize().unwrap_or(zazzled));
         let indexer = crate::indexer::Indexer::locate().ok().map(|ix| ix.exe);
         let codex_home =
             std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".codex"));
@@ -129,9 +153,7 @@ impl Env {
     // True when the client looks installed: its configuration file or folder exists.
     fn installed(&self, c: Client) -> bool {
         let p = self.config_path(c);
-        p.exists()
-            || p.parent().is_some_and(Path::exists)
-            || c == Client::ClaudeCode && self.home.join(".claude").exists()
+        p.exists() || p.parent().is_some_and(Path::exists)
     }
 
     // Returns the record of HTTP servers setup routed through local proxies.
@@ -142,6 +164,22 @@ impl Env {
     // Writes a path with the home directory as `~`.
     fn short(&self, p: &Path) -> String {
         p.strip_prefix(&self.home).map_or_else(|_| p.display().to_string(), |r| format!("~/{}", r.display()))
+    }
+}
+
+// Returns a path that survives upgrades: Homebrew's versioned `Cellar/NAME/VERSION/...` becomes its `opt/NAME/...` link when that exists.
+fn stable_exe(p: &Path) -> PathBuf {
+    let parts: Vec<_> = p.components().collect();
+    let Some(at) = parts.iter().position(|c| c.as_os_str() == "Cellar") else { return p.to_path_buf() };
+    let (Some(name), true) = (parts.get(at + 1), parts.len() > at + 3) else { return p.to_path_buf() };
+    let mut opt: PathBuf = parts[..at].iter().collect();
+    opt.push("opt");
+    opt.push(name);
+    opt.extend(&parts[at + 3..]);
+    if opt.exists() {
+        opt
+    } else {
+        p.to_path_buf()
     }
 }
 
@@ -164,34 +202,63 @@ pub struct ClientPlan {
     pub file: ConfigFile,
     pub ops: Vec<Op>,
     pub instructions: Option<PathBuf>,
-    pub hook: Option<PathBuf>,
+    pub hook: Option<HookSpec>,
+}
+
+// A client's PreToolUse hook: the file it lives in, the tools it sees and the command it runs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HookSpec {
+    pub path: PathBuf,
+    pub matcher: &'static str,
+    pub command: String,
+}
+
+// Returns the hook a client can have: Claude Code's in ~/.claude/settings.json, Codex's in hooks.json; the desktop app's chat has none.
+fn hook_spec(env: &Env, c: Client, edits: bool) -> Option<HookSpec> {
+    let z = env.zazzled.to_string_lossy();
+    let exe = if z.contains(char::is_whitespace) { sh_quote(&z) } else { z.to_string() };
+    let command = format!("{exe} hook --client {}{}", c.name(), if edits { " --edits" } else { "" });
+    match c {
+        Client::ClaudeCode => {
+            Some(HookSpec { path: env.home.join(".claude/settings.json"), matcher: CLAUDE_MATCHER, command })
+        }
+        Client::Codex => {
+            Some(HookSpec { path: env.codex_home.join("hooks.json"), matcher: CODEX_MATCHER, command })
+        }
+        Client::ClaudeDesktop => None,
+    }
 }
 
 // HTTP servers setup routed: local port to upstream URL.
 type Routes = Vec<(u16, String)>;
 
-// Reads the routes setup recorded.
-fn load_routes(env: &Env) -> Routes {
+// Reads setup's record: the routes, and the workspace lines setup added.
+fn load_state(env: &Env) -> (Routes, Vec<String>) {
     let text = std::fs::read_to_string(env.state_path()).unwrap_or_default();
     let v: Value = serde_json::from_str(&text).unwrap_or(json!({}));
     let routes = v.get("routes").and_then(Value::as_object);
-    routes
+    let routes = routes
         .map(|m| m.iter().filter_map(|(p, u)| Some((p.parse().ok()?, u.as_str()?.to_string()))).collect())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let added = v["workspaces"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from);
+    (routes, added.collect())
 }
 
-// Records the routes, or removes the record when there are none.
-fn save_routes(env: &Env, routes: &Routes) -> Result<(), String> {
+// Reads the routes setup recorded.
+fn load_routes(env: &Env) -> Routes {
+    load_state(env).0
+}
+
+// Records the routes and added workspaces, or removes the record when there are none.
+fn save_state(env: &Env, routes: &Routes, workspaces: &[String]) -> Result<(), String> {
     let p = env.state_path();
-    if routes.is_empty() {
+    if routes.is_empty() && workspaces.is_empty() {
         let _ = std::fs::remove_file(&p);
         return Ok(());
     }
     let map: serde_json::Map<String, Value> = routes.iter().map(|(p, u)| (p.to_string(), json!(u))).collect();
-    write_file(
-        &p,
-        &format!("{}\n", serde_json::to_string_pretty(&json!({"routes": map})).unwrap_or_default()),
-    )
+    let v = json!({"routes": map, "workspaces": workspaces});
+    write_file(&p, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
 }
 
 // Returns the local URL an HTTP proxy on a port serves.
@@ -315,8 +382,7 @@ fn plan_client(env: &Env, opts: &Opts, c: Client, routes: &mut Routes) -> Result
         }
     }
     let instructions = env.instructions_path(c);
-    let hook =
-        (c == Client::ClaudeCode && (opts.hook || undo)).then(|| env.home.join(".claude/settings.json"));
+    let hook = hook_spec(env, c, opts.hook_edits).filter(|_| opts.hook || undo);
     Ok(ClientPlan { client: c, file, ops, instructions, hook })
 }
 
@@ -390,10 +456,177 @@ fn report_ops(env: &Env, plan: &ClientPlan, done: bool, out: &mut String) {
     }
 }
 
+// Checks the folders given with --workspace and --repo and returns them canonical, or says which one cannot be a workspace.
+fn wanted_workspaces(env: &Env, opts: &Opts) -> Result<Vec<PathBuf>, String> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for w in opts.workspaces.iter().chain(opts.repo.iter()) {
+        let real = w.canonicalize().map_err(|_| format!("--workspace {}: not a directory", w.display()))?;
+        if !real.is_dir() {
+            return Err(format!("--workspace {}: not a directory", w.display()));
+        }
+        if crate::workspace::too_broad(&real, &env.home) {
+            return Err(format!(
+                "--workspace {}: too broad; name the folder that holds your repositories, such as ~/dev",
+                w.display()
+            ));
+        }
+        if !out.contains(&real) {
+            out.push(real);
+        }
+    }
+    Ok(out)
+}
+
+// Plans, and with --apply or --undo makes, the workspace lines: adds the wanted folders, or removes the lines setup added.
+fn workspaces(
+    env: &Env,
+    opts: &Opts,
+    added: &mut Vec<String>,
+    backups: &mut Vec<PathBuf>,
+    out: &mut String,
+) -> Result<(), String> {
+    let file = crate::workspace::file(&env.home);
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let new = match opts.action {
+        Action::Undo => {
+            let gone: Vec<&str> =
+                lines.iter().copied().filter(|l| added.iter().any(|a| a == l.trim())).collect();
+            gone.iter().for_each(|l| out.push_str(&format!("  - remove workspace {l}\n")));
+            added.clear();
+            lines.iter().copied().filter(|l| !gone.contains(l)).map(|l| format!("{l}\n")).collect::<String>()
+        }
+        _ => {
+            let mut t = text.clone();
+            for w in wanted_workspaces(env, opts)? {
+                let line = w.display().to_string();
+                if lines.iter().any(|l| l.trim() == line) {
+                    continue;
+                }
+                let verb = if opts.action == Action::Apply { "added" } else { "add" };
+                out.push_str(&format!(
+                    "  + {verb} workspace {}: zazzle may edit files below it\n",
+                    env.short(&w)
+                ));
+                if !t.is_empty() && !t.ends_with('\n') {
+                    t.push('\n');
+                }
+                t.push_str(&format!("{line}\n"));
+                added.push(line);
+            }
+            t
+        }
+    };
+    let configured = crate::workspace::configured(&env.home);
+    if configured.is_empty() && new == text {
+        out.push_str("  none: edits stay inside the folder a chat starts in and its git work tree (add one with --workspace DIR, such as ~/dev)\n");
+    }
+    configured.iter().for_each(|w| out.push_str(&format!("  = workspace {}\n", env.short(w))));
+    if new != text && opts.action != Action::Plan {
+        backup(&file, backups)?;
+        write_or_remove(&file, &new)?;
+    }
+    Ok(())
+}
+
+// Finds MCP servers setup does not change: those plugins provide, and those in repositories' shared project files.
+pub fn unmanaged(env: &Env, opts: &Opts) -> Vec<String> {
+    let mut out = Vec::new();
+    let plugins = env.home.join(".claude/plugins");
+    for f in files_named(&plugins, &[".mcp.json", "plugin.json"], 6) {
+        let v: Value =
+            serde_json::from_str(&std::fs::read_to_string(&f).unwrap_or_default()).unwrap_or_default();
+        let servers = v.get("mcpServers").unwrap_or(&v);
+        for name in servers.as_object().into_iter().flatten().filter(|(_, s)| s.is_object()).map(|(n, _)| n) {
+            out.push(format!("{name} (Claude Code plugin, {}): a plugin update would overwrite a change, so it stays direct", env.short(&f)));
+        }
+    }
+    if let Ok(t) = std::fs::read_to_string(env.config_path(Client::Codex)) {
+        if let Ok(doc) = t.parse::<toml_edit::DocumentMut>() {
+            for (plugin, p) in
+                doc.get("plugins").and_then(|p| p.as_table_like()).into_iter().flat_map(|t| t.iter())
+            {
+                let servers =
+                    p.as_table_like().and_then(|t| t.get("mcp_servers")).and_then(|m| m.as_table_like());
+                for (name, _) in servers.into_iter().flat_map(|m| m.iter()) {
+                    out.push(format!(
+                        "{name} (Codex plugin {plugin}): the plugin starts it, so it stays direct"
+                    ));
+                }
+            }
+        }
+    }
+    let roots: Vec<PathBuf> =
+        opts.repo.iter().cloned().chain(crate::workspace::configured(&env.home)).collect();
+    for root in roots {
+        for dir in std::iter::once(root.clone()).chain(crate::cmd::structure::repos_below(&root)) {
+            for (file, client) in [(".mcp.json", Client::ClaudeCode), (".codex/config.toml", Client::Codex)] {
+                let Ok(f) = ConfigFile::load(client, &dir.join(file)) else { continue };
+                for s in f.servers().iter().filter(|s| !is_zazzle(s)) {
+                    out.push(format!(
+                        "{} ({}): shared with the repository's other users, so it stays direct",
+                        describe(s),
+                        env.short(&dir.join(file))
+                    ));
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+// Lists files with one of the names below a folder, up to a depth, without following links.
+fn files_named(dir: &Path, names: &[&str], depth: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else { return out };
+    for e in entries.flatten() {
+        let Ok(t) = e.file_type() else { continue };
+        let name = e.file_name().to_string_lossy().into_owned();
+        if t.is_file() && names.contains(&name.as_str()) {
+            out.push(e.path());
+        } else if t.is_dir() && depth > 1 && name != "node_modules" {
+            out.extend(files_named(&e.path(), names, depth - 1));
+        }
+    }
+    out.sort();
+    out
+}
+
+// Writes the hook line for one client's plan.
+fn report_hook(env: &Env, h: &HookSpec, c: Client, action: Action, out: &mut String) {
+    let present = hook_command(&h.path);
+    let line = match (action, present.as_deref()) {
+        (Action::Undo, Some(_)) => format!("- remove zazzle's hook from {}", env.short(&h.path)),
+        (Action::Undo, None) => return,
+        (_, Some(p)) if p == h.command => format!("= hook in {}: {}", env.short(&h.path), h.command),
+        (a, p) => format!(
+            "{} the hook in {} ({}): {}",
+            match (a, p) {
+                (Action::Apply, None) => "+ added",
+                (Action::Apply, Some(_)) => "~ updated",
+                (_, None) => "+ add",
+                _ => "~ update",
+            },
+            env.short(&h.path),
+            h.matcher,
+            h.command
+        ),
+    };
+    out.push_str(&format!("  {line}\n"));
+    if c == Client::Codex && action != Action::Undo {
+        out.push_str("    Codex runs a new or changed hook only once you trust it: `/hooks` in the CLI, Settings > Hooks in the app\n");
+    }
+}
+
 // Runs setup and returns its report.
 pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
-    if opts.action == Action::Check {
-        return check::run(opts, env);
+    match opts.action {
+        Action::Check => return check::run(opts, env),
+        Action::Verify => return verify::run(opts, env),
+        Action::Report => return check::report(env),
+        _ => {}
     }
     if let Some(r) = &opts.repo {
         if !r.is_dir() {
@@ -401,9 +634,8 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         }
     }
     let repo = opts.repo.as_ref().map(|r| r.canonicalize().unwrap_or_else(|_| r.clone()));
-    let opts =
-        Opts { action: opts.action, clients: opts.clients.clone(), repo, hook: opts.hook, wrap: opts.wrap };
-    let mut routes = load_routes(env);
+    let opts = Opts { repo, clients: opts.clients.clone(), workspaces: opts.workspaces.clone(), ..*opts };
+    let (mut routes, mut added) = load_state(env);
     let chosen: Vec<Client> = if opts.clients.is_empty() {
         Client::ALL.into_iter().filter(|c| env.installed(*c)).collect()
     } else {
@@ -426,6 +658,8 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         None => out.push_str("no --repo: the Claude desktop app starts servers in /, so pass --repo DIR to give its zazzle a folder\n"),
     }
     let mut backups = Vec::new();
+    out.push_str(&format!("\nworkspaces ({}):\n", env.short(&crate::workspace::file(&env.home))));
+    workspaces(env, &opts, &mut added, &mut backups, &mut out)?;
     for c in Client::ALL.into_iter().filter(|c| !chosen.contains(c)) {
         out.push_str(&format!(
             "\n{}: not installed, skipped (name it with --client to configure it anyway)\n",
@@ -451,22 +685,13 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                 _ => {}
             }
         }
-        if let Some(p) = &hook {
-            let verb = match (opts.action, hook_present(p), &env.indexer) {
-                (Action::Undo, true, _) => Some("- remove"),
-                (Action::Apply, false, Some(_)) => Some("+ added"),
-                (Action::Plan, false, Some(_)) => Some("+ add"),
-                (Action::Plan | Action::Apply, false, None) => {
-                    out.push_str("  = no hook: it comes with the C# indexer, which is not installed\n");
-                    None
-                }
-                _ => None,
-            };
-            if let Some(verb) = verb {
-                out.push_str(&format!(
-                    "  {verb} the hook that sends grep, cat, Glob and Read to zazzle, in {}\n",
-                    env.short(p)
-                ));
+        match &hook {
+            Some(h) => report_hook(env, h, c, opts.action, &mut out),
+            None if c == Client::ClaudeDesktop => out.push_str(
+                "  = no hook: the desktop app's chat has none, so it relies on zazzle's instructions\n",
+            ),
+            None => {
+                out.push_str("  = no hook (add --hook to send raw searches, reads and builds to zazzle)\n")
             }
         }
         if apply {
@@ -474,25 +699,15 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
             if let Some(p) = instr {
                 edit_block(p.as_path(), opts.action == Action::Undo, &mut backups)?;
             }
-            match (hook, opts.action, &env.indexer) {
-                (Some(p), Action::Undo, _) => edit_hook(&p, Path::new(""), true, &mut backups)?,
-                (Some(p), _, Some(ix)) => edit_hook(&p, ix, false, &mut backups)?,
-                _ => {}
+            if let Some(h) = &hook {
+                edit_hook(&h.path, (opts.action != Action::Undo).then_some(h), &mut backups)?;
             }
         }
     }
-    if let Some(r) = &opts.repo {
-        let shared = r.join(".mcp.json");
-        if let Ok(f) = ConfigFile::load(Client::ClaudeCode, &shared) {
-            let names: Vec<String> = f.servers().iter().filter(|s| !is_zazzle(s)).map(describe).collect();
-            if !names.is_empty() {
-                out.push_str(&format!(
-                    "\nnot changed, since it may be shared with your team: {}: {}\n",
-                    shared.display(),
-                    names.join(", ")
-                ));
-            }
-        }
+    let direct = unmanaged(env, &opts);
+    if !direct.is_empty() {
+        out.push_str("\nnot changed (they stay direct, outside zazzle's proxy):\n");
+        direct.iter().for_each(|d| out.push_str(&format!("  = {d}\n")));
     }
     if apply {
         let used: Routes = if opts.action == Action::Undo { Vec::new() } else { routes.clone() };
@@ -503,12 +718,12 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         for (port, url) in stale.iter().filter(|_| env.macos) {
             agent(env, *port, url, false)?;
         }
-        save_routes(env, &used)?;
+        save_state(env, &used, &added)?;
         if !backups.is_empty() {
             out.push_str("\nbackups:\n");
             backups.iter().for_each(|b: &PathBuf| out.push_str(&format!("  {}\n", env.short(b))));
         }
-        out.push_str("\nNext: restart Claude Code, the Claude desktop app and Codex (they read their settings at start), then run `zazzle setup --check`.\n");
+        out.push_str("\nNext: restart Claude Code, the Claude desktop app and Codex (they read their settings at start), trust the hook in Codex if asked, then run `zazzle setup --check` and `zazzle setup --verify`.\n");
     } else {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
@@ -583,25 +798,28 @@ fn edit_block(path: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(
         _ => return Ok(()),
     };
     backup(path, backups)?;
-    write_file(path, &new)
+    write_or_remove(path, &new)
 }
 
-// Adds the indexer's PreToolUse hook to Claude Code's user settings, or removes it.
-fn edit_hook(path: &Path, indexer: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(), String> {
+// True for a PreToolUse entry setup wrote: `zazzled hook`, or the C# indexer's hook from earlier versions.
+fn our_hook(e: &Value) -> bool {
+    e["hooks"].as_array().is_some_and(|hs| {
+        hs.iter().any(|h| {
+            h["command"].as_str().is_some_and(|c| {
+                c.contains("zazzled") && c.contains(" hook --client ")
+                    || c.contains("zazzle-csharp-indexer") && c.ends_with(" hook")
+            })
+        })
+    })
+}
+
+// Puts zazzle's PreToolUse hook into a hooks file (Claude Code settings or Codex hooks.json), replacing an older one, or removes it when `want` is None.
+fn edit_hook(path: &Path, want: Option<&HookSpec>, backups: &mut Vec<PathBuf>) -> Result<(), String> {
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let mut v: Value = if text.trim().is_empty() {
         json!({})
     } else {
         serde_json::from_str(&text).map_err(|e| format!("{}: not valid JSON: {e}", path.display()))?
-    };
-    let ours = |e: &Value| {
-        e["hooks"].as_array().is_some_and(|hs| {
-            hs.iter().any(|h| {
-                h["command"]
-                    .as_str()
-                    .is_some_and(|c| c.contains("zazzle-csharp-indexer") && c.ends_with(" hook"))
-            })
-        })
     };
     if !v.is_object() {
         v = json!({});
@@ -611,23 +829,39 @@ fn edit_hook(path: &Path, indexer: &Path, remove: bool, backups: &mut Vec<PathBu
         *pre = json!([]);
     }
     let list = pre.as_array_mut().expect("an array");
-    let had = list.iter().any(ours);
-    list.retain(|e| !ours(e));
-    if had != remove {
+    let entry = want.map(|h| json!({"matcher": h.matcher, "hooks": [{"type": "command", "command": h.command, "timeout": 30}]}));
+    let ours: Vec<Value> = list.iter().filter(|e| our_hook(e)).cloned().collect();
+    if ours == entry.iter().cloned().collect::<Vec<_>>() {
         return Ok(());
     }
-    if !remove {
-        let command = format!("{} hook", indexer.display());
-        list.push(json!({"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": command}]}));
+    list.retain(|e| !our_hook(e));
+    list.extend(entry);
+    if list.is_empty() {
+        v["hooks"].as_object_mut().expect("an object").remove("PreToolUse");
+        if v["hooks"].as_object().is_some_and(|h| h.is_empty()) {
+            v.as_object_mut().expect("an object").remove("hooks");
+        }
     }
     backup(path, backups)?;
-    write_file(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
+    write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
 }
 
-// True when Claude Code's settings file has the indexer's hook.
-fn hook_present(path: &Path) -> bool {
-    let text = std::fs::read_to_string(path).unwrap_or_default();
-    text.contains("zazzle-csharp-indexer") && text.contains(" hook\"")
+// Writes a file, or removes it when nothing of substance is left (`{}` or blank), as when undo empties a file setup created.
+fn write_or_remove(path: &Path, text: &str) -> Result<(), String> {
+    match matches!(text.trim(), "" | "{}") {
+        true => std::fs::remove_file(path).or_else(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(format!("{}: {e}", path.display())),
+        }),
+        false => write_file(path, text),
+    }
+}
+
+// Returns the command of zazzle's hook in a hooks file, if it has one.
+fn hook_command(path: &Path) -> Option<String> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let entry = v["hooks"]["PreToolUse"].as_array()?.iter().find(|e| our_hook(e))?.clone();
+    entry["hooks"].as_array()?.iter().find_map(|h| h["command"].as_str().map(String::from))
 }
 
 // Starts (or stops) the LaunchAgent that keeps an HTTP proxy for one upstream running on a local port.

@@ -56,6 +56,7 @@ pub struct Ctx<'a> {
     pub engine: &'a Engine,
     pub cwd: PathBuf,
     pub session: String,
+    pub roots: Vec<PathBuf>,
     pub stdin: RefCell<Option<Box<dyn Read>>>,
     pub caller: RefCell<Option<Caller>>,
 }
@@ -328,6 +329,7 @@ mod tests {
         use super::*;
         let e = Engine::new();
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: PathBuf::from("/"),
             session: String::new(),
@@ -351,6 +353,7 @@ mod tests {
         }
         let e = Engine::new();
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: &e,
             cwd: PathBuf::from("/"),
             session: String::new(),

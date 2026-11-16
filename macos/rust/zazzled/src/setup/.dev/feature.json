@@ -35,9 +35,13 @@
         {
           "path": "macos/rust/zazzled/README.md",
           "symbol": "Configuring clients: `zazzle setup`"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "unmanaged"
         }
       ],
-      "behavior": "Clients that look installed (their settings file or folder exists) are chosen unless --client names them. For each: zazzle is added when missing (Claude Code: `zazzled mcp` in ~/.claude.json's user scope; desktop app: with --repo, `/bin/sh -c \"cd REPO && exec zazzled mcp\"`, since it starts servers in /; Codex: `[mcp_servers.zazzle]` in config.toml); each other stdio server becomes `zazzled proxy --log -- ORIGINAL`; each Streamable HTTP server whose entry has headers or a bearer-token variable is routed through http://127.0.0.1:PORT/mcp (from 8809, one port per upstream), where a LaunchAgent keeps `zazzled proxy --upstream URL` running (macOS only); HTTP servers without static auth (OAuth), SSE servers and broken entries are left alone with the reason; --no-wrap leaves every other server alone. The instructions go between markers in ~/.claude/CLAUDE.md and Codex's AGENTS.md, and --hook adds the C# indexer's PreToolUse hook to ~/.claude/settings.json. Without --apply nothing changes and the report ends with what an agent should ask the user. --apply backs up each changed file as FILE.zazzle-backup-SECONDS and records routes in ~/.zazzle/setup.json; running it twice changes nothing. --undo removes zazzle, unwraps and unroutes servers, stops the proxy agents and removes the instructions and the hook. A repository's shared .mcp.json is reported, never changed; secrets in env and headers are never printed.",
+      "behavior": "Clients that look installed (their settings file or folder exists) are chosen unless --client names them. For each: zazzle is added when missing (Claude Code: `zazzled mcp` in ~/.claude.json's user scope; desktop app: with --repo, `/bin/sh -c \"cd REPO && exec zazzled mcp\"`, since it starts servers in /; Codex: `[mcp_servers.zazzle]` in config.toml); each other stdio server becomes `zazzled proxy --log -- ORIGINAL`; each Streamable HTTP server whose entry has headers or a bearer-token variable is routed through http://127.0.0.1:PORT/mcp (from 8809, one port per upstream), where a LaunchAgent keeps `zazzled proxy --upstream URL` running (macOS only); HTTP servers without static auth (OAuth), SSE servers and broken entries are left alone with the reason; --no-wrap leaves every other server alone. The instructions go between markers in ~/.claude/CLAUDE.md and Codex's AGENTS.md, and --hook adds `zazzled hook` as a PreToolUse hook to ~/.claude/settings.json (Claude Code) and ~/.codex/hooks.json (Codex, which asks the user to trust it), replacing the C# indexer's hook from earlier versions; --hook-edits makes it refuse native edits. --workspace DIR (and --repo) adds folders to ~/.zazzle/workspaces, refusing the home folder and /. Without --apply nothing changes and the report ends with what an agent should ask the user. --apply backs up each changed file as FILE.zazzle-backup-SECONDS and records routes in ~/.zazzle/setup.json; running it twice changes nothing. --undo removes zazzle, unwraps and unroutes servers, stops the proxy agents and removes the instructions, the hooks and the workspace lines it added. Servers it does not change are listed with the reason: plugin servers (Claude Code plugin .mcp.json and plugin.json, Codex [plugins.*.mcp_servers]) and repositories' shared .mcp.json and .codex/config.toml under --repo and the workspaces; wrapping changes only command and args, so env, cwd, enabled state and tool policy stay; secrets in env and headers are never printed.",
       "outcome": "An agent told to run `zazzle setup` can configure every client the user has, with the user's consent, and reverse it.",
       "constraints": [
         "The apps rewrite their settings files, so they should be quit before --apply.",
@@ -81,7 +85,7 @@
           "symbol": "probe_http"
         }
       ],
-      "behavior": "A stdio server is started with its command, arguments and environment in its client's folder (`/` for the desktop app, the project for Claude Code's project servers, else --repo or the current folder) and sent initialize, notifications/initialized and tools/list, and for zazzle tools/call zazzle_overview, within 20 seconds; it is stopped afterwards. An HTTP server gets an initialize POST with its headers and its bearer-token variable's value. Each line reads ok, note (a 401 or 403 asking for sign-in, an unset token variable, zazzle without the indexer) or FAIL (cannot start, error, no answer, HTTP error) with the reason and the tail of its stderr; a client without zazzle fails. The report ends with counts and fixes for common failures.",
+      "behavior": "A stdio server is started with its command, arguments and environment in its client's folder (`/` for the desktop app, the project for Claude Code's project servers, else --repo or the current folder) and sent initialize, notifications/initialized and tools/list, and for zazzle tools/call zazzle_overview, within 20 seconds; it is stopped afterwards. An HTTP server gets an initialize POST with its headers and its bearer-token variable's value. Each line reads ok, note (a 401 or 403 asking for sign-in, an unset token variable, zazzle without the indexer) or FAIL (cannot start, error, no answer, HTTP error) with the reason and the tail of its stderr; a client without zazzle fails. The report ends with counts and fixes for common failures. Each server is marked [zazzle], [proxied: stdio], [proxied: http] or [direct: reason] (OAuth, not wrapped or routed yet, disabled), each client's routing as enforced by the hook (with a self-test that feeds it rg, cargo test and git status) or instructions only, zazzle's repository access from the folder it starts in (git work tree or repositories below, and where edits are allowed), and the last day of the activity log.",
       "outcome": "The user and their agent learn which servers each client will actually start, before relying on them.",
       "constraints": [
         "It cannot see a client's own environment: an app started from the Dock may lack the shell's PATH, which the report points out when a command does not start."
@@ -98,6 +102,66 @@
         {
           "path": "macos/rust/zazzled/src/setup/check.rs",
           "symbol": "response"
+        }
+      ]
+    },
+    {
+      "id": "client-verify",
+      "name": "Verify zazzle end to end",
+      "description": "`zazzle setup --verify [--repo DIR]` uses zazzle as an agent would and shows the activity entries it produced.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "exercise"
+        }
+      ],
+      "behavior": "On --repo or the current repository it starts `zazzled mcp` inside the repository (relative paths) and again in the home folder (absolute paths), and in each does zazzle_find for a word of a tracked file, zazzle_read source=true, a reversible edit (create .zazzle-verify-PID.txt, edit it with the read's sha, remove it) and zazzle_overview. It then runs a failing command through `zazzled wrap` and checks the exit code, calls tools/list through every wrapped server, self-tests each installed hook, and lists the activity-log entries since it started; no logged zazzle command counts as a failure.",
+      "outcome": "The user sees which operations actually traversed zazzle, from a chat started inside a repository and from one started elsewhere.",
+      "constraints": [
+        "The edit from the home folder works only when the repository is in a workspace."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "run_step"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "proxy_steps"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "Session"
+        }
+      ]
+    },
+    {
+      "id": "client-report",
+      "name": "Report what went through zazzle",
+      "description": "`zazzle setup --report` summarizes the last day of the activity log and names what it cannot see.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "report"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "summary"
+        }
+      ],
+      "behavior": "It counts zazzle commands by name and session, `zazzle run` runs and failures, MCP calls through the proxy by server and tool, raw commands the hook redirected, and bypasses (native edits, # allow-raw, zazzle unavailable), then lists what never reaches the log: native tools the hook allows, direct MCP servers, the desktop chat and clients without a trusted hook.",
+      "outcome": "Coverage claims rest on what agents did, not on configuration entries.",
+      "constraints": [
+        "Covers only clients that use this machine's zazzled and its log."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/activity.rs",
+          "symbol": "read"
         }
       ]
     }
