@@ -169,7 +169,7 @@
         "--limit is not a size: exits with an error.",
         "No pending candidates: prints so and stops.",
         "The scan has not finished: warns and works from the candidates found so far.",
-        "Three failures in a row: prints that it is aborting for safety and stops."
+        "A file fails verification: prints NOT COMPRESSIBLE with the reason, leaves it as it was, records it as failed so later runs skip it, and carries on; the summary groups these files by reason."
       ]
     },
     {
@@ -237,7 +237,7 @@
         "No file names recorded in the state: exits with an error asking for a new scan.",
         "--apply and lsof gives no snapshot of open files: exits with an error; nothing changed.",
         "The scan has not finished: warns and works from the file names found so far.",
-        "A clone fails verification: prints FAILED with the reason and keeps the original; three in a row abort the run."
+        "A clone fails verification: prints NOT DEDUPLICATED with the reason, keeps the original, records it (cloned = 2) so later runs leave it alone, and carries on."
       ]
     },
     {

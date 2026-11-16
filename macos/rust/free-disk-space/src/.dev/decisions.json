@@ -74,18 +74,18 @@
       ]
     },
     {
-      "id": "abort-after-three",
-      "title": "Abort after three failures in a row",
-      "summary": "compress and dedupe stop the run when three files in a row fail.",
+      "id": "carry-on-past-failures",
+      "title": "Carry on past failures, recording each file",
+      "summary": "compress and dedupe no longer stop after three failures in a row: each file that fails verification is left as it was, recorded, reported with its reason, and the run carries on.",
       "status": "accepted",
-      "context": "A failure leaves the file untouched, but a run of them suggests something is wrong with the machine or the tool rather than with one file.",
-      "decision": "Count consecutive failures; reset on success; at three, print `3 consecutive failures - aborting for safety.` and stop.",
-      "rationale": "Safety, as the message says; the README and the skill tell users and agents to stop on failure while compress and dedupe are untested on real Macs.",
+      "context": "They used to stop after three failures in a row, for safety. On the owner's Mac, three files in a row failed for the same reason (macOS would not keep their com.apple.provenance), which ended the run although nothing was at risk: a failure never replaces the original.",
+      "decision": "On a failure, print NOT COMPRESSIBLE (compress) or NOT DEDUPLICATED (dedupe) with the reason, record it (status failed in cands, cloned = 2 in files) so later runs skip it, and continue; compress's summary groups the failures by reason.",
+      "rationale": "The owner asked for it. Every failure leaves the file untouched, so carrying on costs only time, and recording the file keeps later runs from trying it again.",
       "evidenceStatus": "source-verified",
       "sources": [
         {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
         {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "dedupe_group"},
-        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Rules"}
+        {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "NOT_CLONABLE"}
       ]
     },
     {

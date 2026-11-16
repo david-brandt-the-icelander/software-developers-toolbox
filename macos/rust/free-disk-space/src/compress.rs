@@ -254,15 +254,15 @@ fn reason_key(note: &str) -> &str {
     note.split([':', '(']).next().unwrap_or(note).trim()
 }
 
-// Print how many files were skipped for each reason, most common first.
-fn print_skip_reasons(reasons: &BTreeMap<String, usize>) {
+// Print how many files ended with this status for each reason, most common first, and how to list them.
+fn print_reasons(label: &str, status: &str, reasons: &BTreeMap<String, usize>) {
     let mut rows: Vec<_> = reasons.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1));
     for (reason, n) in rows {
-        println!("  skipped {n:>7}  {reason}");
+        println!("  {label} {n:>7}  {reason}");
     }
     if !reasons.is_empty() {
-        println!("  (per file: free-disk-space list --status skipped)");
+        println!("  (per file: free-disk-space list --status {status})");
     }
 }
 
@@ -296,8 +296,8 @@ pub fn cmd_compress(o: &CompressOpts) {
     util::install_sigint();
     let free0 = util::report_free("Initial");
     let mut tk = util::Ticker::new();
-    let (mut saved_total, mut n_done, mut n_skip, mut n_fail, mut streak) = (0i64, 0, 0, 0, 0);
-    let mut reasons = BTreeMap::new();
+    let (mut saved_total, mut n_done, mut n_skip, mut n_fail) = (0i64, 0, 0, 0);
+    let (mut reasons, mut failures) = (BTreeMap::new(), BTreeMap::new());
     let t0 = now();
     for (i, cand) in chosen.iter().enumerate() {
         if util::stopped() {
@@ -325,20 +325,16 @@ pub fn cmd_compress(o: &CompressOpts) {
             "done" => {
                 n_done += 1;
                 saved_total += saved;
-                streak = 0;
             }
             "skipped" => {
                 n_skip += 1;
                 *reasons.entry(reason_key(&note).to_string()).or_insert(0) += 1;
             }
+            // The original is untouched and recorded as failed, so later runs skip it; carry on with the next file.
             _ => {
                 n_fail += 1;
-                streak += 1;
-                println!("{} {}: {note}", c("31", "FAILED"), cand.path);
-                if streak >= 3 {
-                    println!("{}", c("31", "3 consecutive failures - aborting for safety."));
-                    break;
-                }
+                *failures.entry(reason_key(&note).to_string()).or_insert(0) += 1;
+                println!("{} {}: {note}; left as it was", c("33", "NOT COMPRESSIBLE"), cand.path);
             }
         }
         if !util::is_tty() && now() - tk.last >= 15.0 {
@@ -353,8 +349,9 @@ pub fn cmd_compress(o: &CompressOpts) {
         }
     }
     let free1 = util::report_free("Final");
-    println!("Compressed {n_done}, skipped {n_skip}, failed {n_fail} in {}", hms(now() - t0));
-    print_skip_reasons(&reasons);
+    println!("Compressed {n_done}, skipped {n_skip}, not compressible {n_fail} in {}", hms(now() - t0));
+    print_reasons("skipped", "skipped", &reasons);
+    print_reasons("not compressible", "failed", &failures);
     println!("Verified allocated-space saving (sum over files): {}", c("1", &human_i(saved_total)));
     println!("Overall free-space change on the volume:         {}", c("1", &human_i(free1 - free0)));
     println!("(These can differ: snapshots, shared blocks/clones and other writers affect free space.)");
@@ -749,7 +746,8 @@ mod tests {
         fail_copies(false);
     }
 
-    // Check a full compress run records done, skipped and failed files and aborts after repeated failures.
+    // Check a full compress run records done, skipped and failed files, carries on past failures, and stops when
+    // interrupted.
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn test_cmd_compress_run() {
@@ -769,12 +767,12 @@ mod tests {
         util::set_flags(&[0]);
         cmd_compress(&opts(&sb));
         let failed = files[2..].iter().filter(|f| status_of(&sb, f).0 == "failed").count();
-        assert_eq!(failed, 3);
-        assert_eq!(status_of(&sb, &files[5]).0, "pending");
+        assert_eq!(failed, 5, "every failure is recorded and the run carries on");
+        fail_copies(false);
+        let more = seed(&sb, &["h"]);
         util::set_stop(true);
         cmd_compress(&opts(&sb));
-        assert_eq!(status_of(&sb, &files[5]).0, "pending");
-        fail_copies(false);
+        assert_eq!(status_of(&sb, &more[0]).0, "pending");
     }
 
     // Check skip notes group by reason without per-file details.
@@ -786,8 +784,8 @@ mod tests {
         let mut r = BTreeMap::new();
         r.insert("a".to_string(), 1);
         r.insert("b".to_string(), 3);
-        print_skip_reasons(&r);
-        print_skip_reasons(&BTreeMap::new());
+        print_reasons("skipped", "skipped", &r);
+        print_reasons("not compressible", "failed", &BTreeMap::new());
     }
 
     // Check the probe needs a working compressed copy that reads as compressed.
