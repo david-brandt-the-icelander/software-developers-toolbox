@@ -88,6 +88,8 @@ Keep everything else equal: the same model and settings, the same repository sta
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
 
+`zazzle` alone (or `zazzle help`) prints an overview of the commands, grouped by purpose and wrapped to 80 columns; `zazzle help COMMAND` and `zazzle COMMAND --help` print a command's usage, options with their defaults, and examples (`src/cmd/help.rs`, one table for all of them). `run`, `proxy` and `setup` print the same pages from `zazzled`, which the invoker hands them to.
+
 ## C# terse view
 
 `zazzle read FILE.cs` returns a terse behavioural view from `zazzle-csharp-indexer` (Roslyn) instead of the code, and no sha. `--source` (or `--anchors`) returns the code and its sha, which every edit needs.

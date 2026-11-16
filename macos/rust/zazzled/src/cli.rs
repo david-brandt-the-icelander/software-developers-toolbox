@@ -32,6 +32,7 @@ pub enum Cli {
     Setup(setup::Opts),
     Wrap(Vec<String>),
     Hook(crate::hook::Opts),
+    Help(&'static str),
     Version,
 }
 
@@ -59,9 +60,25 @@ fn proxy_stdio(c: &[String], filter: &proxy::Filter) -> Result<i32, String> {
     proxy::stdio::run(c, filter)
 }
 
+// Names the help page for `zazzle run|proxy|setup --help`, which the invoker hands to zazzled instead of the daemon.
+fn help_page(cmd: &str, rest: &[String]) -> Option<&'static str> {
+    if !matches!(rest.first().map(String::as_str), Some("--help" | "-h")) {
+        return None;
+    }
+    match cmd {
+        "wrap" => Some("run"),
+        "proxy" => Some("proxy"),
+        "setup" => Some("setup"),
+        _ => None,
+    }
+}
+
 // Parses the command line.
 pub fn parse(args: &[String]) -> Result<Cli, String> {
     let Some((cmd, rest)) = args.split_first() else { return Err(USAGE.into()) };
+    if let Some(page) = help_page(cmd, rest) {
+        return Ok(Cli::Help(page));
+    }
     match cmd.as_str() {
         "serve" => parse_serve(rest),
         "mcp" => Ok(Cli::Mcp),
@@ -222,6 +239,7 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Help(page) => finish(cmd::help::page(page)),
         Cli::Hook(o) => {
             let mut payload = String::new();
             let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload);
@@ -314,6 +332,19 @@ mod tests {
         std::env::set_var("ZAZZLE_IDLE_SECS", "soon");
         assert_eq!(parse(&v(&["serve"])), Ok(Cli::Serve { socket: None, idle: Duration::from_secs(1800) }));
         std::env::remove_var("ZAZZLE_IDLE_SECS");
+    }
+
+    // Checks --help after run (wrap), proxy and setup asks for their help page, but not after a run's command.
+    #[test]
+    fn test_parse_help() {
+        assert_eq!(parse(&v(&["wrap", "--help"])), Ok(Cli::Help("run")));
+        assert_eq!(parse(&v(&["proxy", "-h"])), Ok(Cli::Help("proxy")));
+        assert_eq!(parse(&v(&["setup", "--help"])), Ok(Cli::Help("setup")));
+        assert_eq!(parse(&v(&["wrap", "--", "ls", "--help"])), Ok(Cli::Wrap(v(&["--", "ls", "--help"]))));
+        assert_eq!(parse(&v(&["serve", "--help"])).unwrap_err(), "unknown serve option '--help'");
+        for page in ["run", "proxy", "setup"] {
+            assert!(cmd::help::page(page).is_ok(), "{page}");
+        }
     }
 
     // Checks usage errors for no command and unknown commands.

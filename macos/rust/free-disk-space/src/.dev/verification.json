@@ -149,13 +149,15 @@
         "System files are recognised by owner and by path prefix",
         "Unwritable, hard-linked, open, flagged and already-cloned files are kept but not replaced",
         "A keeper is chosen per set of identical files, and unusable groups are ignored",
-        "A clone whose metadata or hash differs, or whose target changed, is not swapped in",
+        "A replaced file keeps its own mode, owner, flags, ACL, times and attribute values, not the kept copy's, and loses attributes only the kept copy had",
+        "A clone whose permissions, flags, attribute values, ACL, times or hash differ, or whose target changed, is not swapped in",
         "A dry run past fifty duplicates stops printing but keeps counting",
         "dedupe refuses a state without file names, and --apply without a process snapshot or off macOS"
       ],
       "checks": [
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_is_system_file_rules", "command": "cargo test -p free-disk-space test_is_system_file_rules"},
-        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_sync_metadata_cases", "command": "cargo test -p free-disk-space test_sync_metadata_cases"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_keep_metadata_cases", "command": "cargo test -p free-disk-space test_keep_metadata_cases"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_dedupe_keeps_macos_metadata", "command": "cargo test -p free-disk-space test_dedupe_keeps_macos_metadata (on macOS)"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_filters", "command": "cargo test -p free-disk-space test_members_filters"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_unwritable", "command": "cargo test -p free-disk-space test_members_unwritable"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_plan_groups", "command": "cargo test -p free-disk-space test_plan_groups"},
@@ -168,7 +170,7 @@
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_cmd_dedupe_guards", "command": "cargo test -p free-disk-space test_cmd_dedupe_guards"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_cmd_dedupe_runs", "command": "cargo test -p free-disk-space test_cmd_dedupe_runs"}
       ],
-      "details": "test_sync_metadata_cases, test_members_filters, test_clone_verified_outcomes, test_clone_over_results, test_dedupe_group_modes and test_cmd_dedupe_runs are compiled only off macOS (cfg(not(target_os = \"macos\"))), so they run on Linux, against the apfs module's plain-copy stand-ins; the real clonefile and copyfile are called by no test. xattr and lsof are fakes.",
+      "details": "test_members_filters, test_clone_verified_outcomes, test_clone_over_results, test_dedupe_group_modes and test_cmd_dedupe_runs are compiled only off macOS (cfg(not(target_os = \"macos\"))), so they run on Linux, against the apfs module's plain-copy stand-ins, with real user attributes. test_dedupe_keeps_macos_metadata runs only on macOS, with the real clonefile and copyfile: a kept copy and a duplicate with different tag values, an attribute only the kept copy has, and an ACL, the hidden flag and an old creation time on the duplicate. lsof is a fake.",
       "evidenceStatus": "source-verified",
       "sources": [
         {"path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "tests"},

@@ -118,6 +118,27 @@ pub fn set_xattr(path: &Path, name: &str, value: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+// Remove an extended attribute without following a symlink, falling back to /usr/bin/xattr where macOS refuses.
+pub fn remove_xattr(path: &Path, name: &str) -> std::io::Result<()> {
+    let (p, n) = (cstring(path)?, CString::new(name).map_err(std::io::Error::other)?);
+    // SAFETY: valid NUL-terminated strings.
+    #[cfg(target_os = "macos")]
+    let rc = unsafe { libc::removexattr(p.as_ptr(), n.as_ptr(), libc::XATTR_NOFOLLOW) };
+    // SAFETY: valid NUL-terminated strings.
+    #[cfg(not(target_os = "macos"))]
+    let rc = unsafe { libc::lremovexattr(p.as_ptr(), n.as_ptr()) };
+    if rc == 0 {
+        return Ok(());
+    }
+    let direct = std::io::Error::last_os_error();
+    let target = path.to_string_lossy();
+    match crate::util::run(&["/usr/bin/xattr", "-s", "-d", name, &target], 60.0, &[]) {
+        Some(out) if out.code == 0 => Ok(()),
+        Some(out) => Err(std::io::Error::other(format!("{direct}; xattr -d: {}", out.stderr.trim()))),
+        None => Err(std::io::Error::other(format!("{direct}; xattr -d did not finish"))),
+    }
+}
+
 #[cfg(target_os = "macos")]
 extern "C" {
     fn acl_get_link_np(path: *const c_char, acl_type: libc::c_int) -> *mut c_void;
@@ -404,6 +425,24 @@ mod tests {
         assert!(differing_xattrs(&from, &to).unwrap().is_empty());
         assert_eq!(xattrs(&to).unwrap(), xattrs(&from).unwrap());
         assert!(copy_xattrs(&sb.path("missing"), &to).is_err());
+    }
+
+    // Check an attribute is removed directly, and one the direct call cannot remove goes to /usr/bin/xattr -d.
+    #[test]
+    fn test_remove_xattr() {
+        let sb = Sandbox::new();
+        let file = sb.write("f", b"x");
+        let name = if cfg!(target_os = "macos") { "com.example.tag" } else { "user.tag" };
+        if !set_xattr(&file, name, b"blue") {
+            return;
+        }
+        remove_xattr(&file, name).unwrap();
+        assert_eq!(xattr(&file, name).unwrap(), None);
+        sb.tool("xattr", &format!("[ \"$1 $2 $3\" = '-s -d {name}' ] || exit 3"));
+        remove_xattr(&file, name).unwrap();
+        sb.tool("xattr", "echo refused >&2; exit 1");
+        let err = remove_xattr(&file, name).unwrap_err().to_string();
+        assert!(err.ends_with("; xattr -d: refused"), "{err}");
     }
 
     // Check a value the direct call cannot set goes through /usr/bin/xattr with its hex value, and a value that still

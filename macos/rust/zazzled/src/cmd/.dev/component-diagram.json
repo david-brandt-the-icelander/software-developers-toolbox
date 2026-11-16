@@ -36,7 +36,7 @@
     {
       "id": "dispatch",
       "name": "Dispatcher (mod.rs)",
-      "responsibility": "Strips the global options, routes the command (with the aliases grep and cat), hands read-again to again.rs, answers status, help and version, refuses proxy and run with a pointer to their own processes, cuts output to the token budget and applies session ids, dedupe and replay records.",
+      "responsibility": "Strips the global options, routes the command (with the aliases grep and cat), hands read-again to again.rs, answers status and version, hands help (and COMMAND --help or -h) to help.rs, refuses proxy and run with a pointer to their own processes, cuts output to the token budget and applies session ids, dedupe and replay records.",
       "folder": "macos/rust/zazzled/src/cmd"
     },
     {
@@ -97,6 +97,12 @@
       "id": "languages",
       "name": "languages (languages.rs)",
       "responsibility": "Lists the language modules this zazzled trusts and which are installed, turns downloading on first use (JIT) on or off, and downloads the modules not yet installed.",
+      "folder": "macos/rust/zazzled/src/cmd"
+    },
+    {
+      "id": "help",
+      "name": "Help (help.rs)",
+      "responsibility": "The overview printed by bare zazzle and zazzle help, and one page per command (usage, options, examples), all from one table and wrapped to 80 columns for people at a terminal.",
       "folder": "macos/rust/zazzled/src/cmd"
     },
     {
@@ -323,6 +329,18 @@
       "to": "pin",
       "kind": "contains",
       "description": "Commit pins."
+    },
+    {
+      "from": "cmd",
+      "to": "help",
+      "kind": "contains",
+      "description": "Help."
+    },
+    {
+      "from": "dispatch",
+      "to": "help",
+      "kind": "depends-on",
+      "description": "zazzle, zazzle help [COMMAND] and COMMAND --help."
     }
   ]
 }
