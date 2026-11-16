@@ -10,7 +10,7 @@
       "summary": "The repository's crates and the indexer say 0.0.0-dev; a release takes its version from its vX.Y.Z tag and stamps it into every binary at build time.",
       "status": "accepted",
       "context": "Every tool ships in one release, and its --version should report that release.",
-      "decision": "version.sh takes a pushed vX.Y.Z tag as it is, or computes the next version after the latest vX.Y.Z tag for a manual run's bump (patch, minor or major; none only builds), and the run tags the commit itself. set-version.sh writes that version into every crate's manifest and Cargo.lock entry without resolving anything, so --locked still holds, and the indexer is published with -p:Version. Releases are created with no release notes.",
+      "decision": "version.sh takes a pushed vX.Y.Z tag as it is, or takes a manual run's exact version input (X.Y.Z, refused when the tag exists), or computes the next version after the latest vX.Y.Z tag for a manual run's bump (patch, minor or major; none only builds), and the run tags the commit itself. set-version.sh writes that version into every crate's manifest and Cargo.lock entry without resolving anything, so --locked still holds, and the indexer is published with -p:Version. Releases are created with no release notes.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

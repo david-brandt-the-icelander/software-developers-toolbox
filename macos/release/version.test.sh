@@ -19,6 +19,11 @@ for t in v1.2.9 v1.2.10 v1.10.0 v0.9.9 notes; do git -C "$tmp" tag "$t"; done
 [ "$(run branch main major)" = $'tag=v2.0.0\nversion=2.0.0\npublish=true' ] || fail "major"
 [ "$(run branch main none)" = $'tag=\nversion=0.0.0-dev\npublish=false' ] || fail "build only"
 [ "$(run tag v3.4.5 none)" = $'tag=v3.4.5\nversion=3.4.5\npublish=true' ] || fail "pushed tag"
+[ "$(run branch main patch 1.2.19)" = $'tag=v1.2.19\nversion=1.2.19\npublish=true' ] || fail "exact version"
+[ "$(run branch main none v2.5.0)" = $'tag=v2.5.0\nversion=2.5.0\npublish=true' ] || fail "exact version with v"
+[ "$(run tag v3.4.5 none 9.9.9)" = $'tag=v3.4.5\nversion=3.4.5\npublish=true' ] || fail "pushed tag wins over version"
+if run branch main patch 1.2 2>/dev/null; then fail "bad exact version accepted"; fi
+if run branch main patch 1.10.0 2>/dev/null; then fail "existing tag accepted as exact version"; fi
 if run tag release-1 none 2>/dev/null; then fail "bad tag accepted"; fi
 if run branch main huge 2>/dev/null; then fail "bad bump accepted"; fi
 echo "version ok"

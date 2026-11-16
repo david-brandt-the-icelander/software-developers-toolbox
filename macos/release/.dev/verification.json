@@ -18,7 +18,8 @@
         "With no tag, a patch bump gives v0.0.1",
         "Tags sort as versions, so the next patch after v1.2.9, v1.2.10 and v1.10.0 is v1.10.1; minor and major bump likewise",
         "bump none gives no tag, version 0.0.0-dev and no publish; a pushed vX.Y.Z tag is taken as it is",
-        "A pushed tag that is not vX.Y.Z, and an unknown bump, are refused"
+        "A pushed tag that is not vX.Y.Z, and an unknown bump, are refused",
+        "An exact version (X.Y.Z or vX.Y.Z) is released as given and wins over the bump; a pushed tag wins over it; a malformed version or one whose tag exists is refused"
       ],
       "checks": [
         {

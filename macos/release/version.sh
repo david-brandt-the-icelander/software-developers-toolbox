@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Prints this release run's tag, version and whether to publish, as GitHub step outputs: a pushed v* tag as is, else the next version after the latest v* tag for a bump, else a development build.
-# usage: version.sh REF_TYPE REF_NAME BUMP   (BUMP: none, patch, minor or major)
+# Prints this release run's tag, version and whether to publish, as GitHub step outputs: a pushed v* tag as is, else an
+# exact VERSION when given, else the next version after the latest v* tag for a bump, else a development build.
+# usage: version.sh REF_TYPE REF_NAME BUMP [VERSION]   (BUMP: none, patch, minor or major; VERSION: X.Y.Z or vX.Y.Z)
 set -euo pipefail
 
-ref_type=$1 ref_name=$2 bump=$3
+ref_type=$1 ref_name=$2 bump=$3 exact=${4:-}
 
 # Prints the version after the latest vX.Y.Z tag for a bump; v0.0.0 counts as the latest when there is none.
 next() {
@@ -22,6 +23,10 @@ next() {
 if [ "$ref_type" = tag ]; then
   [[ $ref_name =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag '$ref_name' is not vX.Y.Z" >&2; exit 1; }
   tag=$ref_name publish=true
+elif [ -n "$exact" ]; then
+  tag=v${exact#v} publish=true
+  [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version '$exact' is not X.Y.Z" >&2; exit 1; }
+  [ -z "$(git tag -l "$tag")" ] || { echo "$tag already exists" >&2; exit 1; }
 elif [ "$bump" != none ]; then
   tag=$(next "$bump") publish=true
 else
