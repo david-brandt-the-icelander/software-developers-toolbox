@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(run(&["overview"]), "\"overview\" {}");
         assert_eq!(
             run(&["find-symbol", "Spin", "--exact", "-k", "method", "-m", "5", "--offset", "2"]),
-            "\"find_symbol\" {\"exact\":true,\"kind\":\"method\",\"limit\":5,\"name\":\"Spin\",\"offset\":2}"
+            "\"find_symbol\" {\"name\":\"Spin\",\"exact\":true,\"kind\":\"method\",\"limit\":5,\"offset\":2}"
         );
         assert_eq!(run(&["find-symbol", "Spin"]), "\"find_symbol\" {\"name\":\"Spin\"}");
         assert_eq!(run(&["changed-since"]), "\"changed_since\" {}");
@@ -184,12 +184,12 @@ mod tests {
         assert_eq!(run(&["git-log"]), "\"git_log\" {}");
         assert_eq!(
             run(&["git-log", "src", "-n", "3", "--grep", "fix"]),
-            format!("\"git_log\" {{\"grep\":\"fix\",\"n\":3,\"path\":\"{name}:src\"}}")
+            format!("\"git_log\" {{\"path\":\"{name}:src\",\"n\":3,\"grep\":\"fix\"}}")
         );
         let sub = run_cmd(&t.path().join("src"), &["git-blame", "C.cs", "--start", "2", "--end", "4"]).text;
         assert_eq!(
             sub,
-            format!("\"git_blame\" {{\"end_line\":4,\"path\":\"{name}:src/C.cs\",\"start_line\":2}}")
+            format!("\"git_blame\" {{\"path\":\"{name}:src/C.cs\",\"start_line\":2,\"end_line\":4}}")
         );
         let gap = run_cmd(t.path(), &["report-gap", "--", "no", "callers", "of", "X"]);
         assert_eq!((gap.text.as_str(), gap.idable), ("\"report_gap\" {\"what\":\"no callers of X\"}", false));

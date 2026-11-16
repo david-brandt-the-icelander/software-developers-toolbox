@@ -308,3 +308,34 @@ fn test_helpers() {
     assert_eq!(e.short(Path::new("/elsewhere")), "/elsewhere");
     assert!(Env::detect().is_ok());
 }
+
+// Checks undo with nothing to undo, odd entries, a repository with and without a shared .mcp.json, and other files' content kept.
+#[test]
+fn test_edges() {
+    let t = TempDir::new();
+    let env = env(&t, true);
+    let code = r#"{"mcpServers": {"x": 5, "tool": {"command": "npx"}}}"#;
+    std::fs::write(env.config_path(Client::ClaudeCode), code).expect("write");
+    let r = run(&opts(&["--undo", "--client", "claude-code"]), &env).expect("undo");
+    assert!(r.contains("no servers"), "{r}");
+    let repo = t.path().join("repo");
+    std::fs::create_dir_all(&repo).expect("mkdir");
+    let r = run(&opts(&["--client", "claude-code", "--repo", &repo.to_string_lossy()]), &env).expect("plan");
+    assert!(!r.contains("shared with your team"), "{r}");
+    let shared = r#"{"mcpServers": {"zazzle": {"command": "zazzled", "args": ["mcp"]}}}"#;
+    std::fs::write(repo.join(".mcp.json"), shared).expect("write");
+    let r = run(&opts(&["--client", "claude-code", "--repo", &repo.to_string_lossy()]), &env).expect("plan");
+    assert!(!r.contains("shared with your team"), "{r}");
+    let mut backups = Vec::new();
+    let md = t.path().join("B.md");
+    std::fs::write(&md, "a\n\n").expect("write");
+    edit_block(&md, false, &mut backups).expect("add");
+    assert!(std::fs::read_to_string(&md).expect("md").starts_with("a\n\n<!--"));
+    let s = t.path().join("s.json");
+    let other = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]}]}}"#;
+    std::fs::write(&s, other).expect("write");
+    assert!(!hook_present(&s));
+    edit_hook(&s, Path::new("/opt/zazzle-csharp-indexer"), false, &mut backups).expect("add");
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
+    assert_eq!(v["hooks"]["PreToolUse"].as_array().expect("array").len(), 2);
+}

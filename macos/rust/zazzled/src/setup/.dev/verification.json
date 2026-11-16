@@ -62,6 +62,18 @@
           "command": "cargo test -p zazzled (in macos/rust)"
         },
         {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "test_run",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/tests.rs",
+          "symbol": "test_edges",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
           "type": "manual",
           "path": "macos/rust/zazzled/src/setup/mod.rs",
           "symbol": "run",

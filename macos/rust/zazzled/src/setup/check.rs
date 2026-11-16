@@ -297,6 +297,42 @@ mod tests {
         assert!(matches!(probe(&other, Path::new("/")), Outcome::Note(_)));
     }
 
+    // Checks a whole run over installed clients: a working zazzle, a command that does not start, a missing zazzle and an unset token.
+    #[test]
+    fn test_run() {
+        let t = crate::testutil::TempDir::new();
+        let home = t.path().to_path_buf();
+        let env = Env {
+            home: home.clone(),
+            zazzled: PathBuf::from("/opt/z/zazzled"),
+            indexer: None,
+            codex_home: home.join(".codex"),
+            macos: false,
+            uid: 501,
+            launchctl: |_| Ok(()),
+        };
+        let (cmd, mut args) = fake_server(3, false);
+        args[1].push_str("; : zazzled mcp");
+        let code = json!({"mcpServers": {
+            "zazzle": {"command": cmd, "args": args},
+            "gone": {"command": "/no/such/server"}
+        }});
+        std::fs::write(env.config_path(Client::ClaudeCode), code.to_string()).expect("write");
+        std::fs::create_dir_all(home.join(".codex")).expect("mkdir");
+        let codex = "[mcp_servers.api]\nurl = \"http://127.0.0.1:1/mcp\"\nbearer_token_env_var = \"ZAZZLE_TEST_UNSET_TOKEN\"\n";
+        std::fs::write(env.config_path(Client::Codex), codex).expect("write");
+        let opts = super::super::parse(&["--check".to_string()]).expect("parse");
+        let r = run(&opts, &env).expect("run");
+        assert!(r.contains("claude-code: ~/.claude.json"), "{r}");
+        assert!(r.contains("ok   zazzle:"), "{r}");
+        assert!(r.contains("FAIL gone:"), "{r}");
+        assert!(r.contains("codex: ~/.codex/config.toml\n  FAIL zazzle: not configured"), "{r}");
+        assert!(r.contains("note api: its token variable ZAZZLE_TEST_UNSET_TOKEN"), "{r}");
+        assert!(!r.contains("claude-desktop"), "{r}");
+        assert!(r.contains("2 working, 2 failed."), "{r}");
+        assert!(r.contains("absolute path") && r.contains("zazzle setup --apply"), "{r}");
+    }
+
     // Checks which folder each client starts servers in.
     #[test]
     fn test_folder() {

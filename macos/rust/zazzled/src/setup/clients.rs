@@ -390,7 +390,7 @@ mod tests {
     fn test_codex_toml() {
         let t = TempDir::new();
         let p = t.path().join("config.toml");
-        std::fs::write(&p, "# my settings\nmodel = \"o\"\n\n[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"gh\"]\nenv = { T = \"1\" }\n\n[mcp_servers.linear]\nurl = \"https://l/mcp\"\nbearer_token_env_var = \"LINEAR\"\n\n[mcp_servers.open]\nurl = \"https://o/mcp\"\n\n[mcp_servers.hdr]\nurl = \"https://h/mcp\"\nhttp_headers = { X = \"y\" }\n\n[mcp_servers.bad]\nx = 1\n").expect("write");
+        std::fs::write(&p, "# my settings\nmodel = \"o\"\n\n[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"gh\"]\nenv = { T = \"1\" }\n\n[mcp_servers.linear]\nurl = \"https://l/mcp\"\nbearer_token_env_var = \"LINEAR\"\n\n[mcp_servers.open]\nurl = \"https://o/mcp\"\n\n[mcp_servers.hdr]\nurl = \"https://h/mcp\"\nhttp_headers = { X = \"y\" }\n\n[mcp_servers.bad]\nx = 1\n\n[mcp_servers]\nnum = 5\n").expect("write");
         let mut f = ConfigFile::load(Client::Codex, &p).expect("load");
         let s = f.servers();
         assert_eq!(s.len(), 5);
@@ -400,6 +400,9 @@ mod tests {
         assert!(matches!(&s[3].kind, Kind::Http { auth: true, .. }) && s[3].headers.len() == 1);
         assert!(matches!(s[4].kind, Kind::Other(_)));
         let table = f.tables()[0].clone();
+        f.set_command(&table, "missing", "x", &[]);
+        f.set_url(&table, "missing", "u");
+        assert!(!f.text().contains("missing"));
         f.put_stdio(&table, "zazzle", "/bin/zazzled", &["mcp".into()]);
         f.set_command(&table, "gh", "/bin/zazzled", &["proxy".into(), "--".into(), "npx".into()]);
         f.set_url(&table, "open", "http://127.0.0.1:8809/mcp");
