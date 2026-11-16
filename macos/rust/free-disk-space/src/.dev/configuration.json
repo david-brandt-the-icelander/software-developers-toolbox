@@ -65,7 +65,7 @@
     {
       "id": "path",
       "title": "Executable search path",
-      "summary": "PATH decides whether git, brew and docker are found and which lsof, ps, pgrep, git and docker run; tools named by absolute path (xattr, osascript, launchctl, lsof in compress) are not looked up.",
+      "summary": "PATH decides whether git, brew and docker are found and which lsof, ps, pgrep, git and docker run; tools named by absolute path (xattr in dedupe, osascript, launchctl, lsof in compress) are not looked up.",
       "key": "PATH",
       "type": "environment variable",
       "sensitive": false,

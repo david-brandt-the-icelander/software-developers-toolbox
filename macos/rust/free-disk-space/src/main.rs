@@ -4,6 +4,7 @@ mod compress;
 mod daemon;
 mod dedupe;
 mod lzfse;
+mod meta;
 mod scan;
 #[cfg(test)]
 mod testkit;

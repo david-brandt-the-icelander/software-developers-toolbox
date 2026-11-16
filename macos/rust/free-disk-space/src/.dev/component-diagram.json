@@ -96,6 +96,12 @@
       "folder": "macos/rust/free-disk-space/src"
     },
     {
+      "id": "meta",
+      "name": "File metadata (meta.rs)",
+      "responsibility": "Reads every extended attribute's value (without the compression attributes), the ACL as text and the birth time, and sets the birth time, so compress can check a copy keeps them.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
       "id": "lzfse",
       "name": "LZFSE library wrapper (lzfse.rs)",
       "responsibility": "Maps a file read-only and calls the lzfse-zazzcat library to compress it into decmpfs attributes and apply them to an open copy, naming the failed step on error; off macOS the copy stays plain.",
@@ -122,7 +128,7 @@
     {
       "id": "apfs",
       "name": "APFS clone and metadata calls",
-      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write (for dedupe and for compress's temp copy) and copy its ACL, mode, owner, flags, times and xattrs.",
+      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write (for dedupe and for compress's temp copy) and copy its ACL, mode, owner, flags, times and xattrs; the xattr, ACL and setattrlist calls meta uses.",
       "external": true
     },
     {
@@ -297,9 +303,15 @@
     },
     {
       "from": "compress",
-      "to": "file-tools",
+      "to": "meta",
       "kind": "depends-on",
-      "description": "xattr to compare attribute names."
+      "description": "Compares attribute values and the ACL of the original and the copy, and puts the original's birth time on the copy."
+    },
+    {
+      "from": "meta",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "listxattr and getxattr, acl_get_link_np and acl_to_text, and setattrlist for the birth time (ACL and birth time on macOS only)."
     },
     {
       "from": "compress",

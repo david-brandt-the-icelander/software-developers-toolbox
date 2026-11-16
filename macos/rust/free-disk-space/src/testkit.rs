@@ -149,3 +149,15 @@ pub fn with_stdin<T>(text: &str, f: impl FnOnce() -> T) -> T {
         out
     }
 }
+
+// Set an extended attribute in a test, returning false where the filesystem does not support them.
+pub fn set_xattr(path: &Path, name: &str, value: &[u8]) -> bool {
+    let (p, n) = (crate::util::cstring(path).unwrap(), std::ffi::CString::new(name).unwrap());
+    // SAFETY: valid NUL-terminated strings and a value slice valid for its length.
+    #[cfg(target_os = "macos")]
+    let rc = unsafe { libc::setxattr(p.as_ptr(), n.as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) };
+    // SAFETY: valid NUL-terminated strings and a value slice valid for its length.
+    #[cfg(not(target_os = "macos"))]
+    let rc = unsafe { libc::lsetxattr(p.as_ptr(), n.as_ptr(), value.as_ptr().cast(), value.len(), 0) };
+    rc == 0
+}

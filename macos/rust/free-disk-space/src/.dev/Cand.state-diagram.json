@@ -62,8 +62,8 @@
       "from": "pending",
       "to": "done",
       "trigger": "compress (not --dry-run, and past the probe) reaches the row",
-      "guard": "precheck passes; the clone and the library's compressed form succeed; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's xattr names; the original is unchanged since",
-      "action": "Restore the times on the temp copy, rename it over the original, write status done and the saving."
+      "guard": "precheck passes; the clone and the library's compressed form succeed; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's extended attribute values and ACL; the birth time can be set on it; the original is unchanged since",
+      "action": "Restore the access, modification and birth times on the temp copy, rename it over the original, write status done and the saving."
     },
     {
       "from": "pending",
@@ -76,7 +76,7 @@
       "from": "pending",
       "to": "failed",
       "trigger": "compress (not --dry-run, and past the probe) reaches the row",
-      "guard": "the clone or the library fails, or size, permissions or ownership differ, xattrs were lost, the hash differs, or an I/O error occurs",
+      "guard": "the clone or the library fails, or size, permissions or ownership differ, an extended attribute's value or the ACL differs, the hash differs, the birth time does not hold, or an I/O error occurs",
       "action": "Remove the temp copy; write status failed and the note; after three failures in a row stop the run."
     }
   ]
