@@ -5,6 +5,7 @@ mod daemon;
 mod dedupe;
 mod lzfse;
 mod meta;
+mod repair;
 mod scan;
 #[cfg(test)]
 mod testkit;
@@ -75,6 +76,14 @@ enum Cmd {
     /// built-in lzfse-zazzcat library, checked (flags, size, mode, owner, xattrs, SHA-256, allocated
     /// size), then atomically swapped in. Skips hard-linked, open, recently changed and flagged files.
     Compress(CompressArgs),
+    /// find and repair files falsely claimed to be compressed (dry run unless --apply)
+    ///
+    /// Checks every file the scan recorded. A file the state file records as compressed that is not
+    /// is reset to pending for `compress`. A flagged file whose com.apple.decmpfs attribute is missing,
+    /// invalid or unreadable is reported and recorded as broken (`list --status broken`); nothing can be
+    /// recovered from it. A flagged file that saves no space is rewritten and compressed for real,
+    /// verified like `compress`.
+    Repair(RepairArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
     ///
     /// Files recorded by the scan that share a leaf name and size are SHA-256 hashed when at least
@@ -167,6 +176,7 @@ enum Status {
     Done,
     Skipped,
     Failed,
+    Broken,
 }
 
 // Options for list.
@@ -207,6 +217,25 @@ struct CompressArgs {
     /// don't ask for confirmation
     #[arg(short, long)]
     yes: bool,
+}
+
+// Options for repair.
+#[derive(Args)]
+struct RepairArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// actually repair (default is a dry run)
+    #[arg(long)]
+    apply: bool,
+    /// only rewrite files at least this many days old
+    #[arg(long, default_value_t = 14)]
+    min_age_days: i64,
+    /// min verified gain per rewritten file
+    #[arg(long, value_parser = size_arg, default_value = "64K")]
+    min_gain: i64,
+    /// extra free space to keep beyond the temp copy
+    #[arg(long, value_parser = size_arg, default_value = "2G")]
+    reserve: i64,
 }
 
 // Options for dedupe.
@@ -300,6 +329,20 @@ fn run(cli: Cli) {
             dry_run: a.dry_run,
             yes: a.yes,
         }),
+        Cmd::Repair(a) => repair::cmd_repair(&repair::RepairOpts {
+            compress: compress::CompressOpts {
+                state: a.state.state,
+                sample: None,
+                max_files: None,
+                limit: None,
+                min_age_days: a.min_age_days,
+                min_gain: a.min_gain,
+                reserve: a.reserve,
+                dry_run: false,
+                yes: true,
+            },
+            apply: a.apply,
+        }),
         Cmd::Dedupe(a) => dedupe::cmd_dedupe(&dedupe::DedupeOpts {
             state: a.state.state,
             apply: a.apply,
@@ -389,6 +432,7 @@ mod tests {
         go(&["list", "--top", "3", "--status", "done"]);
         go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
         go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);
+        go(&["repair", "--min-age-days", "0", "--min-gain", "1", "--reserve", "0"]);
         let home = sb.home().to_string_lossy().into_owned();
         go(&["clean", "caches", "trash", "--dev-root", &home]);
         sb.tool("launchctl", "exit 0");

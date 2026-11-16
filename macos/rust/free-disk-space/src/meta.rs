@@ -1,7 +1,8 @@
-// Reads and restores the file metadata a compressed copy must keep: extended attribute values, the ACL and the birth time.
+// Reads and restores the file metadata a compressed copy must keep: extended attribute values, the ACL, flags and the birth time.
 use std::collections::BTreeMap;
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::fs::Metadata;
+use std::fs::{File, Metadata};
+use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use crate::util::cstring;
@@ -78,11 +79,46 @@ pub fn xattrs(path: &Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
     Ok(out)
 }
 
+// The error a missing extended attribute gives (ENOATTR on macOS, ENODATA on Linux).
+#[cfg(target_os = "macos")]
+const NO_ATTR: i32 = libc::ENOATTR;
+// The error a missing extended attribute gives on Linux.
+#[cfg(not(target_os = "macos"))]
+const NO_ATTR: i32 = libc::ENODATA;
+
+// Return one extended attribute's value, or None when the file does not have it.
+pub fn xattr(path: &Path, name: &str) -> std::io::Result<Option<Vec<u8>>> {
+    let (cpath, cname) = (cstring(path)?, CString::new(name).map_err(std::io::Error::other)?);
+    match read_sized(|buf, size| get_raw(&cpath, &cname, buf.cast(), size)) {
+        Ok(value) => Ok(Some(value)),
+        Err(e) if e.raw_os_error() == Some(NO_ATTR) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+// Set an extended attribute without following a symlink.
+pub fn set_xattr(path: &Path, name: &str, value: &[u8]) -> std::io::Result<()> {
+    let (p, n) = (cstring(path)?, CString::new(name).map_err(std::io::Error::other)?);
+    // SAFETY: valid NUL-terminated strings and a value slice valid for its length.
+    #[cfg(target_os = "macos")]
+    let rc = unsafe {
+        libc::setxattr(p.as_ptr(), n.as_ptr(), value.as_ptr().cast(), value.len(), 0, libc::XATTR_NOFOLLOW)
+    };
+    // SAFETY: valid NUL-terminated strings and a value slice valid for its length.
+    #[cfg(not(target_os = "macos"))]
+    let rc = unsafe { libc::lsetxattr(p.as_ptr(), n.as_ptr(), value.as_ptr().cast(), value.len(), 0) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 extern "C" {
     fn acl_get_link_np(path: *const c_char, acl_type: libc::c_int) -> *mut c_void;
     fn acl_to_text(acl: *mut c_void, len: *mut isize) -> *mut c_char;
     fn acl_free(obj: *mut c_void) -> libc::c_int;
+    fn acl_set_fd_np(fd: libc::c_int, acl: *mut c_void, acl_type: libc::c_int) -> libc::c_int;
 }
 
 // The extended (NFSv4-style) ACL type, the only kind macOS files carry (sys/acl.h).
@@ -115,6 +151,50 @@ pub fn acl_text(path: &Path) -> std::io::Result<Option<String>> {
         acl_free(acl);
     }
     result
+}
+
+// Give an open file the ACL of another file, if that one has an ACL.
+#[cfg(target_os = "macos")]
+pub fn copy_acl(from: &Path, to: &File) -> std::io::Result<()> {
+    let cpath = cstring(from)?;
+    // SAFETY: cpath is NUL-terminated; the returned ACL is freed below.
+    let acl = unsafe { acl_get_link_np(cpath.as_ptr(), ACL_TYPE_EXTENDED) };
+    if acl.is_null() {
+        let e = std::io::Error::last_os_error();
+        return if e.raw_os_error() == Some(libc::ENOENT) { Ok(()) } else { Err(e) };
+    }
+    // SAFETY: a valid descriptor and ACL; the ACL is freed once afterwards.
+    let rc = unsafe { acl_set_fd_np(to.as_raw_fd(), acl, ACL_TYPE_EXTENDED) };
+    let result = if rc == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) };
+    // SAFETY: allocated by acl_get_link_np and freed once.
+    unsafe { acl_free(acl) };
+    result
+}
+
+// Do nothing, since ACLs as copied here exist only on macOS.
+#[cfg(not(target_os = "macos"))]
+pub fn copy_acl(_from: &Path, _to: &File) -> std::io::Result<()> {
+    Ok(())
+}
+
+// Give an open file these BSD flags.
+#[cfg(target_os = "macos")]
+pub fn set_flags(to: &File, flags: u32) -> std::io::Result<()> {
+    // SAFETY: a valid descriptor; fchflags only changes the file's flags.
+    if unsafe { libc::fchflags(to.as_raw_fd(), flags) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+// Accept only no flags, since BSD file flags exist only on macOS.
+#[cfg(not(target_os = "macos"))]
+pub fn set_flags(to: &File, flags: u32) -> std::io::Result<()> {
+    let _ = to.as_raw_fd();
+    if flags != 0 {
+        return Err(std::io::Error::from_raw_os_error(libc::ENOTSUP));
+    }
+    Ok(())
 }
 
 // Report that a file has no ACL, since ACLs as compared here exist only on macOS.
@@ -193,6 +273,9 @@ mod tests {
         let all = xattrs(&file).unwrap();
         assert_eq!(all.get(name).map(Vec::as_slice), Some(&b"blue"[..]));
         assert!(xattrs(&sb.path("missing")).is_err());
+        assert_eq!(xattr(&file, name).unwrap().as_deref(), Some(&b"blue"[..]));
+        assert_eq!(xattr(&file, "user.absent").unwrap(), None);
+        assert!(xattr(&sb.path("missing"), name).is_err());
     }
 
     // Check a plain file reports no ACL and, off macOS, no birth time.
@@ -208,6 +291,12 @@ mod tests {
         } else {
             assert_eq!(birth_ns(&md), None);
             set_birth(&file, 0).unwrap();
+            assert!(set_flags(&std::fs::File::open(&file).unwrap(), 1).is_err());
         }
+        let copy = sb.write("g", b"y");
+        let target = std::fs::File::open(&copy).unwrap();
+        copy_acl(&file, &target).unwrap();
+        set_flags(&target, 0).unwrap();
+        assert_eq!(acl_text(&copy).unwrap(), None);
     }
 }

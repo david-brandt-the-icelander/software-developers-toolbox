@@ -40,7 +40,7 @@
       "id": "cli",
       "name": "free-disk-space command",
       "kind": "process",
-      "description": "One run of a subcommand: scan, status, list, compress, dedupe, clean, or daemon install, uninstall or status. Runs as the invoking user and exits. Started directly, or through the zazzle invoker (macos/c/zazzle/), which replaces itself with this binary from its own directory and passes the arguments on."
+      "description": "One run of a subcommand: scan, status, list, compress, repair, dedupe, clean, or daemon install, uninstall or status. Runs as the invoking user and exits. Started directly, or through the zazzle invoker (macos/c/zazzle/), which replaces itself with this binary from its own directory and passes the arguments on."
     },
     {
       "id": "launchd",
@@ -107,7 +107,7 @@
     {"from": "launchd", "to": "daemon", "kind": "hosts", "description": "Starts daemon run from the plist at load and login, and keeps it alive."},
     {"from": "terminal", "to": "cli", "kind": "connects-to", "description": "Runs commands; reads stdout and stderr."},
     {"from": "agent", "to": "cli", "kind": "connects-to", "description": "Runs the commands the skill names in a shell; reads their output."},
-    {"from": "cli", "to": "state", "kind": "connects-to", "description": "new and resume write it; status, list, compress and dedupe read it; compress and dedupe record outcomes."},
+    {"from": "cli", "to": "state", "kind": "connects-to", "description": "new and resume write it; status, list, compress, repair and dedupe read it; compress, repair and dedupe record outcomes."},
     {"from": "cli", "to": "progress", "kind": "connects-to", "description": "clean --apply reads it at the start, appends each finished step and removes it when the run completes."},
     {"from": "daemon", "to": "progress", "kind": "connects-to", "description": "The same, for the clean --apply it runs below the threshold."},
     {"from": "cli", "to": "launchd", "kind": "connects-to", "description": "daemon install, uninstall and status run /bin/launchctl bootstrap, bootout and print."},

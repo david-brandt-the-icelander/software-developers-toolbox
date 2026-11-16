@@ -25,7 +25,7 @@
           "symbol": "compress_verified"
         }
       ],
-      "responsibility": "Keeps a resumable scan of a directory tree in a state file, estimates each file's saving from samples, and compresses chosen candidates in place only after verifying the compressed copy.",
+      "responsibility": "Keeps a resumable scan of a directory tree in a state file, estimates each file's saving from samples, and compresses chosen candidates in place only after verifying the compressed copy. It also finds files falsely recorded or flagged as compressed and repairs the ones that can be repaired.",
       "operations": [
         {
           "path": "macos/rust/free-disk-space/src/scan.rs",
@@ -46,6 +46,10 @@
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
           "symbol": "cmd_compress"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
         }
       ],
       "access": [

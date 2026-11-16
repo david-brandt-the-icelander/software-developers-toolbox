@@ -44,6 +44,10 @@
     {
       "path": "macos/rust/free-disk-space/build.rs",
       "symbol": "main"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/repair.rs",
+      "symbol": "cmd_repair"
     }
   ],
   "components": [
@@ -78,6 +82,12 @@
       "folder": "macos/rust/free-disk-space/src"
     },
     {
+      "id": "repair",
+      "name": "Compression repair (repair.rs)",
+      "responsibility": "Checks every file the scan recorded for a false compression claim: resets files recorded as compressed that are not, records flagged files with broken compressed data, and rewrites flagged files that save no space through compress's verified path.",
+      "folder": "macos/rust/free-disk-space/src"
+    },
+    {
       "id": "clean",
       "name": "Cleanup (clean.rs)",
       "responsibility": "Deletes regenerable files per target: caches, Xcode derived data, Downloads, Trash, dev build artifacts, Homebrew's cache and Docker's images and build cache, with a running total; records the steps an applying run finishes so an interrupted run resumes after them; also the process snapshot dedupe reuses.",
@@ -98,7 +108,7 @@
     {
       "id": "meta",
       "name": "File metadata (meta.rs)",
-      "responsibility": "Reads every extended attribute's value (without the compression attributes), the ACL as text and the birth time, and sets the birth time, so compress can check a copy keeps them.",
+      "responsibility": "Reads every extended attribute's value (without the compression attributes) or a single one, the ACL as text and the birth time; sets an attribute, the birth time and BSD flags, and copies an ACL onto an open file, so compress can check a copy keeps them and repair can rebuild one.",
       "folder": "macos/rust/free-disk-space/src"
     },
     {
@@ -201,6 +211,12 @@
     },
     {
       "from": "source",
+      "to": "repair",
+      "kind": "contains",
+      "description": "Compression repair."
+    },
+    {
+      "from": "source",
       "to": "clean",
       "kind": "contains",
       "description": "Cleanup targets."
@@ -240,6 +256,12 @@
       "to": "dedupe",
       "kind": "depends-on",
       "description": "dedupe calls cmd_dedupe with DedupeOpts."
+    },
+    {
+      "from": "cli",
+      "to": "repair",
+      "kind": "depends-on",
+      "description": "repair calls cmd_repair with RepairOpts."
     },
     {
       "from": "cli",
@@ -384,6 +406,30 @@
       "to": "lzfse-zazzcat",
       "kind": "depends-on",
       "description": "decmpfs_compress, decmpfs_apply, decmpfs_free and status_string over the C ABI."
+    },
+    {
+      "from": "repair",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads the files table and done candidates; writes pending, broken and rewrite results to cands."
+    },
+    {
+      "from": "repair",
+      "to": "compress",
+      "kind": "depends-on",
+      "description": "rewrite_flagged and the compression probe, so a rewrite is checked and swapped in exactly like compress."
+    },
+    {
+      "from": "repair",
+      "to": "meta",
+      "kind": "depends-on",
+      "description": "Reads the decmpfs header and resource fork, and copies attribute values, the ACL and flags onto the plain copy."
+    },
+    {
+      "from": "repair",
+      "to": "lzfse",
+      "kind": "depends-on",
+      "description": "compress_onto for the plain copy of a flagged file that saves no space."
     }
   ]
 }

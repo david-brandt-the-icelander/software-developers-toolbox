@@ -42,15 +42,15 @@ fn in_use(path: &str) -> bool {
     }
 }
 
-// Check that a candidate is still safe to compress and return a skip note if not.
-fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts) -> Option<String> {
+// Check that a candidate is still safe to compress and return a skip note if not; `allowed` flags do not block it.
+fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts, allowed: u32) -> Option<String> {
     if !md.is_file() || md.nlink() != 1 {
         return Some("not a plain single-link file".into());
     }
     if (md.len() as i64, util::mtime_ns(md), md.ino() as i64) != (cand.size, cand.mtime_ns, cand.ino) {
         return Some("changed since scan".into());
     }
-    if util::flags(md) & util::NO_TOUCH_FLAGS != 0 {
+    if util::flags(md) & util::NO_TOUCH_FLAGS & !allowed != 0 {
         return Some("already compressed / flagged".into());
     }
     if now() - (md.mtime() as f64) < o.min_age_days as f64 * 86400.0 {
@@ -146,11 +146,37 @@ fn compress_one(cand: &Cand, o: &CompressOpts) -> (&'static str, String, i64) {
         Ok(st) => st,
         Err(e) => return ("skipped", format!("gone: {e}"), 0),
     };
-    if let Some(note) = precheck(cand, &st, o) {
+    if let Some(note) = precheck(cand, &st, o, 0) {
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);
     let result = compress_verified(path, &tmp, &st, o, &compressed_copy);
+    util::remove_temp(&tmp);
+    result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
+}
+
+// Replace a file that is flagged compressed but saves no space with a verified copy that `make` compresses for real.
+pub fn rewrite_flagged(
+    path: &Path,
+    o: &CompressOpts,
+    make: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> (&'static str, String, i64) {
+    let st = match fs::symlink_metadata(path) {
+        Ok(st) => st,
+        Err(e) => return ("skipped", format!("gone: {e}"), 0),
+    };
+    let cand = Cand {
+        path: path.to_string_lossy().into_owned(),
+        size: st.len() as i64,
+        mtime_ns: util::mtime_ns(&st),
+        ino: st.ino() as i64,
+        est: 0,
+    };
+    if let Some(note) = precheck(&cand, &st, o, util::UF_COMPRESSED) {
+        return ("skipped", note, 0);
+    }
+    let tmp = util::temp_beside(path);
+    let result = compress_verified(path, &tmp, &st, o, make);
     util::remove_temp(&tmp);
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
@@ -193,7 +219,7 @@ fn confirm(question: &str) -> bool {
 }
 
 // Tell whether compressed copies work here: compress a probe file and read it back through the kernel.
-fn compression_works() -> bool {
+pub fn compression_works() -> bool {
     let dir = std::env::temp_dir().join(format!("fds-probe-{}", std::process::id()));
     let (src, dst) = (dir.join("probe.txt"), dir.join("probe.out"));
     let text = "free-disk-space compression probe\n".repeat(8192);
@@ -417,7 +443,7 @@ mod tests {
         sb.tool("lsof", "exit 1");
         let file = seed(&sb, &["a"]).remove(0);
         let o = opts(&sb);
-        let check = |c: &Cand, o: &CompressOpts| precheck(c, &fs::symlink_metadata(&c.path).unwrap(), o);
+        let check = |c: &Cand, o: &CompressOpts| precheck(c, &fs::symlink_metadata(&c.path).unwrap(), o, 0);
         let good = cand(&file);
         assert_eq!(check(&good, &o), None);
         let dir = sb.dir("data/adir");
@@ -430,6 +456,8 @@ mod tests {
         {
             util::set_flags(&[util::UF_COMPRESSED]);
             assert_eq!(check(&good, &o).unwrap(), "already compressed / flagged");
+            let md = fs::symlink_metadata(&file).unwrap();
+            assert_eq!(precheck(&good, &md, &o, util::UF_COMPRESSED), None);
             util::set_flags(&[]);
         }
         let recent = CompressOpts { min_age_days: 100_000, ..opts(&sb) };
@@ -450,7 +478,7 @@ mod tests {
         let file = seed(&sb, &["a"]).remove(0);
         chmod(&sb.path("data"), 0o555);
         let md = fs::symlink_metadata(&file).unwrap();
-        assert_eq!(precheck(&cand(&file), &md, &opts(&sb)).unwrap(), "directory not writable");
+        assert_eq!(precheck(&cand(&file), &md, &opts(&sb), 0).unwrap(), "directory not writable");
         chmod(&sb.path("data"), 0o755);
     }
 

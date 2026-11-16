@@ -673,6 +673,126 @@
         }
       ],
       "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "repair-compression",
+      "name": "Repair false compression claims",
+      "description": "After a scan, the developer previews which files are falsely claimed to be compressed, then repairs them and compresses the ones reset to pending.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Make every file that claims to be compressed really compressed, and learn which ones are broken.",
+      "preconditions": [
+        "A scan has recorded file names in the state file.",
+        "The developer is on a Mac with an APFS volume."
+      ],
+      "postconditions": [
+        "Files recorded as compressed that are not are pending again.",
+        "Broken flagged files are recorded as broken, unchanged.",
+        "Flagged files that saved nothing are compressed for real, or recorded as skipped or failed."
+      ],
+      "flow": [
+        {
+          "id": "preview",
+          "actor": "Developer",
+          "action": "Runs repair without --apply.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/main.rs",
+              "symbol": "RepairArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "check",
+          "actor": "free-disk-space",
+          "action": "Checks every recorded file, prints each finding and a count per kind, and says nothing changed.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/repair.rs",
+              "symbol": "check"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/repair.rs",
+              "symbol": "cmd_repair"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "apply",
+          "actor": "Developer",
+          "action": "Runs repair --apply.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/repair.rs",
+              "symbol": "cmd_repair"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "repair",
+          "actor": "free-disk-space",
+          "action": "Resets falsely recorded files to pending, records broken ones and rewrites flagged files that save no space through the verified compress path.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/repair.rs",
+              "symbol": "repair_one"
+            },
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "rewrite_flagged"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "compress",
+          "actor": "Developer",
+          "action": "Runs compress for the files reset to pending and restores broken files from a backup.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "cmd_compress"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "repair",
+          "condition": "The compressed probe copy does not read back as compressed and unchanged.",
+          "outcome": "repair exits before changing anything.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/repair.rs",
+              "symbol": "cmd_repair"
+            }
+          ]
+        },
+        {
+          "atStep": "repair",
+          "condition": "A rewritten copy fails verification.",
+          "outcome": "That file is kept as it was, reported as FAILED and recorded as failed.",
+          "sources": [
+            {
+              "path": "macos/rust/free-disk-space/src/compress.rs",
+              "symbol": "rewrite_flagged"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
     }
   ],
   "relatedViews": [

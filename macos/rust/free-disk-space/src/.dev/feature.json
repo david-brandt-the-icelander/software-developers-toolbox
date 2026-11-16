@@ -154,6 +154,51 @@
       ]
     },
     {
+      "id": "compression-repair",
+      "name": "Repair of false compression claims",
+      "description": "Files the state file or the compressed flag falsely claim are compressed are found and, where possible, repaired.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "repair_one"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "rewrite_flagged"
+        }
+      ],
+      "behavior": "Every file the scan recorded, plus every candidate recorded as done, is checked. A file recorded as done that does not carry the compressed flag is reset to pending. A flagged file is read: a missing or invalid com.apple.decmpfs header, a header size different from the file size, or a read error makes it broken. A flagged file whose decmpfs attribute and resource fork together hold at least as many bytes as its contents saves no space; it is rewritten as a plain copy with its mode, group, BSD flags (without the compressed flag), extended attribute values and ACL, compressed by the library and verified and swapped in like compress.",
+      "outcome": "The state file matches what is compressed on disk, broken files are listed for restoring from a backup, and flagged files that saved nothing are compressed for real.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "macOS only, unless FDS_FORCE is set; with --apply it refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
+        "Broken files are only recorded (list --status broken), never changed or deleted.",
+        "A rewrite is skipped for the same reasons as compress (age, links, open files, writable directory, free space), except that the compressed flag is allowed."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "rewritten_copy"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/meta.rs",
+          "symbol": "xattr"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/meta.rs",
+          "symbol": "copy_acl"
+        }
+      ]
+    },
+    {
       "id": "clone-dedupe",
       "name": "Copy-on-write dedupe",
       "description": "Identical same-named files become clones of one kept copy, each keeping its own metadata.",

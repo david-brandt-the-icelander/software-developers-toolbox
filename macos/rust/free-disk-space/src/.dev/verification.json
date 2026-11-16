@@ -100,6 +100,39 @@
       ]
     },
     {
+      "id": "repair",
+      "title": "Compression repair",
+      "summary": "Each kind of false compression claim is found, and only the repairable ones are changed.",
+      "subject": [
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "compression-repair"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/Cand.state-diagram.json"
+        }
+      ],
+      "criteria": [
+        "A decmpfs header is accepted only with its magic and full 16 bytes",
+        "An unflagged file is a finding only when recorded as done; a flagged file without a header is broken",
+        "The plain copy keeps the contents, mode and attribute values and refuses flags it cannot set",
+        "A dry run changes nothing; --apply resets, records broken files and rewrites wasteful ones through the verified path",
+        "On macOS a real raw-chunk file is compressed for real, a header without a fork is broken, and a falsely recorded file is reset"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_header_size", "command": "cargo test -p free-disk-space test_header_size"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_check_findings", "command": "cargo test -p free-disk-space test_check_findings"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_rewritten_copy", "command": "cargo test -p free-disk-space test_rewritten_copy"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_cmd_repair_linux", "command": "cargo test -p free-disk-space test_cmd_repair_linux"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_cmd_repair_macos", "command": "cargo test -p free-disk-space test_cmd_repair_macos"}
+      ],
+      "details": "test_check_findings, test_rewritten_copy and test_cmd_repair_linux run only off macOS, with scripted BSD flags and real user.* attributes. test_cmd_repair_macos runs only on macOS: it builds a flagged file by hand whose LZVN resource fork (type 8) stores every 64 KiB chunk raw behind a 0x06 marker, a flagged file with a header but no resource fork, and a plain file the state file records as done, then runs repair --apply and checks the three outcomes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "tests"}
+      ]
+    },
+    {
       "id": "dedupe",
       "title": "Clone dedupe",
       "summary": "Which files may be replaced, which is kept, and that a clone is swapped in only after it verifies.",
