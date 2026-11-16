@@ -309,7 +309,8 @@ const PAGES: &[Page] = &[
         ],
         options: &[
             ("--apply", "Make the changes in the plan"),
-            ("--check", "Start every configured server and check it answers"),
+            ("--check", "Check the settings, the hook and zazzle itself, without starting other servers"),
+            ("--probe", "With --check, also start every configured server and check it answers"),
             ("--verify", "Use zazzle as an agent would, in this repository"),
             ("--report", "Summarize the activity log"),
             ("--off, --on", "Turn the setup off, keeping its options, and on again"),
