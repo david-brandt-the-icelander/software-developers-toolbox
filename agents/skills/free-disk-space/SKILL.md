@@ -29,6 +29,7 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 1. Preview: `... dedupe` hashes same-named, same-sized files and lists identical ones; nothing changes.
 2. Verify first: `... dedupe --sample 5 --apply`, check the files and the free-space change, then `... dedupe --apply`.
 3. Add `--include-system` only with explicit user authorization; default touches only files the user owns outside system paths.
+   Likewise `--include-no-provenance`: by default files without a `com.apple.provenance` (Apple's and system files) are left alone.
 4. Scans made before version 1.1 hold no file names; rerun `new`.
 
 ## Background daemon (launchd login item)

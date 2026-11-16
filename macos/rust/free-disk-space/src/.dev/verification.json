@@ -74,6 +74,7 @@
       "checks": [
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_in_use_probe", "command": "cargo test -p free-disk-space test_in_use_probe"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_precheck_reasons", "command": "cargo test -p free-disk-space test_precheck_reasons"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_requeue", "command": "cargo test -p free-disk-space test_requeue"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_precheck_unwritable_dir", "command": "cargo test -p free-disk-space test_precheck_unwritable_dir"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_verified_outcomes", "command": "cargo test -p free-disk-space test_compress_verified_outcomes"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_one_outcomes", "command": "cargo test -p free-disk-space test_compress_one_outcomes"},
@@ -159,6 +160,7 @@
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_keep_metadata_cases", "command": "cargo test -p free-disk-space test_keep_metadata_cases"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_dedupe_keeps_macos_metadata", "command": "cargo test -p free-disk-space test_dedupe_keeps_macos_metadata (on macOS)"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_filters", "command": "cargo test -p free-disk-space test_members_filters"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_hold_files_without_provenance", "command": "cargo test -p free-disk-space test_members_hold_files_without_provenance"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_members_unwritable", "command": "cargo test -p free-disk-space test_members_unwritable"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_plan_groups", "command": "cargo test -p free-disk-space test_plan_groups"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/dedupe.rs", "symbol": "test_plan_skips_files_that_cannot_be_cloned", "command": "cargo test -p free-disk-space test_plan_skips_files_that_cannot_be_cloned"},

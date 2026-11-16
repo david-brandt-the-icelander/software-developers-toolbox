@@ -94,6 +94,8 @@
       "constraints": [
         "macOS only, unless FDS_FORCE is set.",
         "Refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
+        "A file without a com.apple.provenance (missing or empty: Apple's and system files) is skipped with the note 'no provenance' unless --include-no-provenance; a copy may carry this tool's provenance instead of the original's, which verification accepts, while every other attribute must match.",
+        "Files that failed only because of the provenance go back in the queue on the next run; --retry-failed puts every earlier failure back.",
         "A file that fails verification is recorded as failed and the run carries on.",
         "--dry-run lists up to 25 planned files and changes nothing.",
         "A non-terminal run does not ask for confirmation."
@@ -158,6 +160,10 @@
         {
           "path": "macos/rust/free-disk-space/src/lzfse.rs",
           "symbol": "compress_onto"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "requeue"
         }
       ]
     },
@@ -228,7 +234,9 @@
         "Hard-linked, open, compressed, immutable, append-only and dataless (iCloud placeholder) files are never replaced.",
         "Only files the scan recorded, and only same-named ones, are compared.",
         "--sample N stops after N duplicates; a duplicate whose clone fails verification is recorded (cloned = 2) and the run carries on.",
-        "--apply needs macOS, unless FDS_FORCE is set, and a successful lsof snapshot."
+        "--apply needs macOS, unless FDS_FORCE is set, and a successful lsof snapshot.",
+        "A duplicate without a com.apple.provenance (missing or empty) is not replaced unless --include-no-provenance, but may be the kept copy; the summary counts those left alone. A clone may carry this tool's provenance instead of the duplicate's, which verification accepts.",
+        "--retry-failed puts the duplicates earlier runs left as they were (cloned = 2) back in the queue."
       ],
       "implementation": [
         {

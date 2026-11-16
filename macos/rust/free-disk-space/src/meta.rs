@@ -7,6 +7,16 @@ use std::path::Path;
 
 use crate::util::cstring;
 
+// The attribute in which macOS records which app made a file; a copy made here gets this process's, which macOS may
+// not let be changed back.
+#[cfg(target_os = "macos")]
+pub const PROVENANCE: &str = "com.apple.provenance";
+
+// A user attribute that stands in for com.apple.provenance off macOS, where only user.* attributes exist, so the
+// rules around it can be tested there.
+#[cfg(not(target_os = "macos"))]
+pub const PROVENANCE: &str = "user.provenance";
+
 // Attributes that hold the compressed form itself rather than the file's metadata.
 const COMPRESSION_XATTRS: [&str; 2] = ["com.apple.decmpfs", "com.apple.ResourceFork"];
 
@@ -101,6 +111,17 @@ pub fn xattr(path: &Path, name: &str) -> std::io::Result<Option<Vec<u8>>> {
     }
 }
 
+// Tell whether a file has a non-empty provenance; one without (Apple's and system files) is only changed when asked.
+// A provenance that cannot be read counts as none, which leaves the file alone.
+pub fn has_provenance(path: &Path) -> bool {
+    matches!(xattr(path, PROVENANCE), Ok(Some(value)) if !value.is_empty())
+}
+
+// Drop the provenance from a list of attribute names, since a copy may carry this process's instead.
+pub fn without_provenance(names: Vec<String>) -> Vec<String> {
+    names.into_iter().filter(|name| name != PROVENANCE).collect()
+}
+
 // Set an extended attribute without following a symlink.
 pub fn set_xattr(path: &Path, name: &str, value: &[u8]) -> std::io::Result<()> {
     let (p, n) = (cstring(path)?, CString::new(name).map_err(std::io::Error::other)?);
@@ -173,7 +194,8 @@ fn set_xattr_with_tool(path: &Path, name: &str, value: &[u8]) -> std::io::Result
 }
 
 // Give `to` every extended attribute value of `from` that it lacks or holds differently, such as the provenance
-// macOS stamps on a new file, falling back to /usr/bin/xattr; fail naming each value that still differs and why.
+// macOS stamps on a new file, falling back to /usr/bin/xattr; fail naming each value that still differs and why,
+// except the provenance, which macOS may not let be kept.
 pub fn copy_xattrs(from: &Path, to: &Path) -> std::io::Result<()> {
     let values = xattrs(from)?;
     let mut refused = BTreeMap::new();
@@ -184,7 +206,7 @@ pub fn copy_xattrs(from: &Path, to: &Path) -> std::io::Result<()> {
             }
         }
     }
-    let still = differing_xattrs(from, to)?;
+    let still = without_provenance(differing_xattrs(from, to)?);
     if still.is_empty() {
         return Ok(());
     }
@@ -443,6 +465,40 @@ mod tests {
         sb.tool("xattr", "echo refused >&2; exit 1");
         let err = remove_xattr(&file, name).unwrap_err().to_string();
         assert!(err.ends_with("; xattr -d: refused"), "{err}");
+    }
+
+    // Check a missing or empty provenance counts as none, and the provenance is dropped from attribute lists.
+    #[test]
+    fn test_provenance_helpers() {
+        let sb = Sandbox::new();
+        let file = sb.write("f", b"x");
+        assert_eq!(without_provenance(vec![PROVENANCE.into(), "a".into()]), ["a"]);
+        if has_provenance(&file) || !set_xattr(&file, PROVENANCE, b"") {
+            return;
+        }
+        assert!(!has_provenance(&file), "an empty provenance counts as none");
+        if set_xattr(&file, PROVENANCE, b"an app") {
+            assert!(has_provenance(&file));
+        }
+        assert!(!has_provenance(&sb.path("missing")));
+    }
+
+    // Check a provenance that cannot be set is not an error, while any other attribute still is.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_copy_xattrs_tolerates_provenance() {
+        let sb = Sandbox::new();
+        let (from, to) = (sb.write("from", b"a"), sb.write("to", b"b"));
+        if !set_xattr(&from, PROVENANCE, b"an app") {
+            return;
+        }
+        // Linux refuses user attributes on a symlink itself, so neither the direct call nor the tool can set them.
+        let link = sb.path("link");
+        std::os::unix::fs::symlink(&to, &link).unwrap();
+        sb.tool("xattr", "exit 1");
+        copy_xattrs(&from, &link).unwrap();
+        assert!(set_xattr(&from, "user.tag", b"blue"));
+        assert!(copy_xattrs(&from, &link).unwrap_err().to_string().contains("user.tag"));
     }
 
     // Check a value the direct call cannot set goes through /usr/bin/xattr with its hex value, and a value that still
