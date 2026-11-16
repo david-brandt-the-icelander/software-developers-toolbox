@@ -30,6 +30,6 @@ A file downloaded with `curl` runs as is. Downloaded in a browser, an unsigned b
 
 Or build with `cd macos/rust && cargo build --release`.
 
-Linux tarballs with `zazzle`, `zazzled` and `zazzle-csharp-indexer` (`zazzle-linux-x86_64.tar.gz`, `zazzle-linux-aarch64.tar.gz`) are next to the macOS one. `zazzle` is arm64-only on macOS; Intel Macs use `zazzled mcp` or `zazzled run`.
+The tarballs also hold `z`, a link to `zazzle`. Linux tarballs with `zazzle` (and `z`), `zazzled` and `zazzle-csharp-indexer` (`zazzle-linux-x86_64.tar.gz`, `zazzle-linux-aarch64.tar.gz`) are next to the macOS one. `zazzle` is arm64-only on macOS; Intel Macs use `zazzled mcp` or `zazzled run`.
 
 A specific version is at `https://icelander.net/downloads/zazzle/<tag>/`. The GitHub releases carry the same files.

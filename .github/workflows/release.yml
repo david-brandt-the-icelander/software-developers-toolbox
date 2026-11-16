@@ -101,6 +101,7 @@ jobs:
           done
           cp ../c/zazzle/build/zazzle dist/zazzle
           cp ../c/zazzle/build/zazzle dist/zazz
+          ln -sf zazzle dist/z
       # cyberspace-generator is built in cyberspace-explorer; ship the release pinned in macos/release/cyberspace-generator.version.
       - name: Add cyberspace-generator
         run: |
@@ -132,7 +133,7 @@ jobs:
         run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator
       - name: Package
         run: |
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle z zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
@@ -228,9 +229,10 @@ jobs:
           mkdir -p dist
           cp macos/rust/target/release/zazzled macos/rust/target/release/zazz-worker macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
           cp macos/c/zazzle/build/zazzle dist/zazz
+          ln -sf zazzle dist/z
           bash macos/release/fetch-cyberspace-generator.sh cg ${{ matrix.arch }}-unknown-linux-musl
           cp cg/cyberspace-generator-${{ matrix.arch }}-unknown-linux-musl dist/cyberspace-generator
-          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle zazz zazzled zazz-worker zazzle-csharp-indexer cyberspace-generator
+          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle z zazz zazzled zazz-worker zazzle-csharp-indexer cyberspace-generator
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
