@@ -33,13 +33,13 @@ CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shri
 proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
-From zazzle-csharp-indexer's index of the git work tree that holds the working directory:
-overview  languages, top directories, entry points, largest files
-find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]  declarations by name
-changed-since [CURSOR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
-git-log [PATH] [-n N] [--grep TEXT]  recent commits
+From zazzle-csharp-indexer's index of the git work tree that holds the working directory, --repo DIR, or a PATH; in a folder that is not one, of the git repositories below it:
+overview [--repo DIR]  languages, top directories, entry points, largest files; in a folder of repositories, the list of them
+find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]  declarations by name
+changed-since [CURSOR] [--repo DIR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
+git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]  recent commits
 git-blame PATH [--start N] [--end N]  who last changed each line
-report-gap TEXT  tell the maintainers what you needed and could not get
+report-gap TEXT [--repo DIR]  tell the maintainers what you needed and could not get
 status  daemon info
 languages [jit [on|off] | fetch [NAME..]]  language modules: list them, download on first use or not, download the missing ones
 C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.

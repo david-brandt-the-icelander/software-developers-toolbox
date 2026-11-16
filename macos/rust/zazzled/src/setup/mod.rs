@@ -17,7 +17,7 @@ pub const INSTRUCTIONS: &str = "\
 Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of shell grep, rg, find, cat, sed or the built-in Read and Grep tools; its answers are shorter, capped and deduplicated per session.
 - `zazzle_read` gives code as a terse view for many languages (C# from zazzle-csharp-indexer) with source line numbers and no sha; read with `source: true` for the exact code and the sha that `zazzle_edit` needs.
 - `zazzle_find`, `zazzle_refs`, `zazzle_outline` and `zazzle_ls` locate code; read a range or one symbol rather than whole files.
-- For C# structure: `zazzle_overview` (start here on an unfamiliar repository), `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`.
+- For C# structure: `zazzle_overview` (start here on an unfamiliar repository), `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`. In a folder above several repositories they cover all of them; pass `repo` to pick one.
 - A reply tagged `[r:ID]` comes back exactly with `zazzle_read_again`; keep ids in notes instead of content.
 - Say what you needed and could not get with `zazzle_report_gap`. If zazzle seems misconfigured, run `zazzle setup --check` and show the user its report.";
 

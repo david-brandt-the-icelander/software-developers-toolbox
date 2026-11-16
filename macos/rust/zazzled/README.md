@@ -11,8 +11,8 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 ```bash
 brew install zazzcat/z/zazzle         # or build: cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
-zazzle setup --repo ~/src/YourRepo    # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
-zazzle setup --apply --repo ~/src/YourRepo --hook
+zazzle setup --repo ~/src              # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
+zazzle setup --apply --repo ~/src --hook
 zazzle setup --check                  # after restarting the apps
 ```
 
@@ -20,12 +20,12 @@ Tell an agent "run `zazzle setup` and follow it": the report says what it found,
 
 ## Configuring clients: `zazzle setup`
 
-`zazzle setup` (`zazzled setup`, its own process) edits only user-level settings, never a repository's shared `.mcp.json`:
+`zazzle setup` (`zazzled setup`, its own process) edits only user-level settings, never a repository's shared `.mcp.json`. One setup serves every repository: Claude Code and Codex start zazzle in the folder a session opens, and `--repo` only gives the desktop app a folder, which may hold several repositories.
 
 | client | file | zazzle entry |
 |---|---|---|
 | Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; with `--hook`, the C# indexer's hook in `~/.claude/settings.json` sends grep, cat, Glob and Read to zazzle |
-| Claude desktop app (chat) | `~/Library/Application Support/Claude/claude_desktop_config.json` | the app starts servers in `/`, so with `--repo DIR` the entry is `/bin/sh -c "cd DIR && exec zazzled mcp"` |
+| Claude desktop app (chat) | `~/Library/Application Support/Claude/claude_desktop_config.json` | the app starts servers in `/`, so with `--repo DIR` the entry is `/bin/sh -c "cd DIR && exec zazzled mcp"`; DIR may be a folder above several repositories (see C# structure) |
 | Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md` |
 
 - Other servers: a stdio server becomes `zazzled proxy --log -- ORIGINAL COMMAND` (its env and other settings kept). A Streamable HTTP server whose entry carries headers or a bearer-token variable is routed through `http://127.0.0.1:PORT/mcp` (from 8809, one port per upstream URL), where a LaunchAgent (`com.zazzle.proxy.PORT`, macOS) keeps `zazzled proxy --upstream URL` running; headers pass through. HTTP servers without headers sign in with OAuth, which the proxy cannot carry, and SSE servers use a transport it does not speak, so both are left alone with the reason in the report. `--no-wrap` leaves every other server alone.
@@ -172,14 +172,16 @@ A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when m
 
 `zazzle-csharp-indexer` lists no tools of its own: agents ask zazzle, and `zazzled` calls the indexer's daemon over the same bridge as the terse view (starting it when nothing listens), for the git work tree that holds the working directory. Answers come from the index the daemon keeps current, so they need no file reads. `root:path` in the indexer's answers becomes a path relative to the working directory.
 
+A session opened in a folder above several repositories works too. When the working directory is not inside a work tree, zazzled looks for repositories below it: up to three levels deep, outermost only, skipping hidden folders, `node_modules`, `bin`, `obj` and `target`. `overview` then lists them, and `find-symbol` and `changed-since` search the first 24 together in one indexer call, with paths relative to the folder (`api/src/Order.cs:12`). `--repo DIR` (MCP `repo`) narrows any of these to the repository holding DIR. `git-log PATH` and `git-blame PATH` use the repository holding PATH, wherever the session is; `git-log` without a path asks for one in a folder of several repositories.
+
 | MCP tool | command | output |
 |---|---|---|
-| `zazzle_overview` | `overview` | file and line counts by language, top directories, entry points and project files, largest files; start here on an unfamiliar repository |
-| `zazzle_find_symbol` | `find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
-| `zazzle_changed_since` | `changed-since [CURSOR]` | `A`/`M`/`D path` since a cursor from an earlier call, then a new cursor; cursors expire when the indexer's daemon restarts |
-| `zazzle_git_log` | `git-log [PATH] [-n N] [--grep TEXT]` | `hash date author subject` |
+| `zazzle_overview` | `overview [--repo DIR]` | file and line counts by language, top directories, entry points and project files, largest files; start here on an unfamiliar repository |
+| `zazzle_find_symbol` | `find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
+| `zazzle_changed_since` | `changed-since [CURSOR] [--repo DIR]` | `A`/`M`/`D path` since a cursor from an earlier call, then a new cursor; cursors expire when the indexer's daemon restarts |
+| `zazzle_git_log` | `git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]` | `hash date author subject` |
 | `zazzle_git_blame` | `git-blame PATH [--start N] [--end N]` | `git blame -w` for a range (default 40 lines) |
-| `zazzle_report_gap` | `report-gap TEXT` | records what the agent needed and could not get in the indexer's usage log, where `zazzle-csharp-indexer report` lists it |
+| `zazzle_report_gap` | `report-gap TEXT [--repo DIR]` | records what the agent needed and could not get in the indexer's usage log, where `zazzle-csharp-indexer report` lists it |
 
 Where a symbol is used is `zazzle_refs` (`refs`); the indexer's `find_references` is gone. Unlike it, `refs` shows each use's enclosing symbol, but it lists declarations of fields, locals and parameters as uses rather than definitions, and pages with `-m` and narrower paths instead of an offset.
 

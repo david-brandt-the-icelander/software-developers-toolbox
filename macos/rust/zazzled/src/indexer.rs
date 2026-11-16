@@ -64,8 +64,11 @@ pub fn work_tree(path: &Path) -> Option<&Path> {
     path.ancestors().find(|a| a.join(".git").exists())
 }
 
+// One root the indexer works on: the name its references carry and the work tree's path.
+pub type Root = (String, PathBuf);
+
 // Returns the name the indexer gives a root: the last part of its path.
-fn root_name(root: &Path) -> String {
+pub fn root_name(root: &Path) -> String {
     root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "root".into())
 }
 
@@ -178,9 +181,10 @@ impl Indexer {
     }
 
     // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version.
-    fn call(&self, root: &Path, tool: &str, args: Value, timeout: Duration) -> Result<String, String> {
-        let name = root_name(root);
-        let hello = json!({"version": self.version()?, "roots": [format!("{name}={}", root.display())]});
+    fn call(&self, roots: &[Root], tool: &str, args: Value, timeout: Duration) -> Result<String, String> {
+        let name = &roots[0].0;
+        let specs: Vec<String> = roots.iter().map(|(n, p)| format!("{n}={}", p.display())).collect();
+        let hello = json!({"version": self.version()?, "roots": specs});
         for _ in 0..HELLO_TRIES {
             let mut w = self.connect()?;
             let _ = w.set_read_timeout(Some(timeout));
@@ -217,33 +221,40 @@ impl Indexer {
     pub fn view(&self, path: &Path) -> Result<String, String> {
         let root = work_tree(path).ok_or("not inside a git work tree")?;
         let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
-        self.call(root, "view", json!({"path": rel.to_string_lossy()}), IO_TIMEOUT)
+        self.call(
+            &[(root_name(root), root.to_path_buf())],
+            "view",
+            json!({"path": rel.to_string_lossy()}),
+            IO_TIMEOUT,
+        )
     }
 
     // Returns the indexer's terse view of C# text that stands for a file, such as a Razor file's code blocks padded to its line numbers.
     pub fn view_text(&self, path: &Path, text: &str) -> Result<String, String> {
         let root = work_tree(path).ok_or("not inside a git work tree")?;
         let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
-        self.call(root, "view", json!({"path": rel.to_string_lossy(), "text": text}), IO_TIMEOUT)
+        let roots = [(root_name(root), root.to_path_buf())];
+        self.call(&roots, "view", json!({"path": rel.to_string_lossy(), "text": text}), IO_TIMEOUT)
     }
 
-    // Runs one of the indexer's structure tools on a git work tree; a `path` argument is relative to that tree.
-    pub fn ask(&self, root: &Path, tool: &str, args: Value) -> Result<String, String> {
-        self.call(root, tool, args, INDEX_TIMEOUT)
+    // Runs one of the indexer's structure tools on one or more git work trees; a `path` argument is relative to the first.
+    pub fn ask(&self, roots: &[Root], tool: &str, args: Value) -> Result<String, String> {
+        self.call(roots, tool, args, INDEX_TIMEOUT)
     }
 }
 
 // Rewrites the indexer's `root:path` references at the start of a line (or after an `A `, `M ` or `D ` change mark) as paths relative to the working directory.
-pub fn localize(text: &str, root: &Path, cwd: &Path) -> String {
-    let tag = format!("{}:", root_name(root));
+pub fn localize(text: &str, roots: &[Root], cwd: &Path) -> String {
     let local = |line: &str| -> String {
         let (mark, rest) = match line.get(..2) {
             Some(m @ ("A " | "M " | "D ")) => (m, &line[2..]),
             _ => ("", line),
         };
-        let Some(tail) = rest.strip_prefix(&tag).filter(|t| !t.is_empty() && !t.starts_with(' ')) else {
-            return line.to_string();
-        };
+        let found = roots.iter().find_map(|(name, root)| {
+            let tail = rest.strip_prefix(name.as_str())?.strip_prefix(':')?;
+            (!tail.is_empty() && !tail.starts_with(' ')).then_some((root, tail))
+        });
+        let Some((root, tail)) = found else { return line.to_string() };
         let end = tail.find(':').unwrap_or(tail.len());
         format!("{mark}{}{}", crate::util::display(&root.join(&tail[..end]), cwd), &tail[end..])
     };
@@ -433,22 +444,47 @@ pub mod tests {
         let (t, _) = repo();
         let name = t.path().file_name().expect("name").to_string_lossy().into_owned();
         let ix = fake.indexer();
-        assert_eq!(ix.ask(t.path(), "overview", json!({})).expect("overview"), "\"overview\" {}");
-        let blame =
-            ix.ask(t.path(), "git_blame", json!({"path": "src/C.cs", "start_line": 2})).expect("blame");
+        let roots = [(name.clone(), t.path().to_path_buf())];
+        assert_eq!(ix.ask(&roots, "overview", json!({})).expect("overview"), "\"overview\" {}");
+        let blame = ix.ask(&roots, "git_blame", json!({"path": "src/C.cs", "start_line": 2})).expect("blame");
         assert_eq!(blame, format!("\"git_blame\" {{\"path\":\"{name}:src/C.cs\",\"start_line\":2}}"));
+    }
+
+    // Checks the handshake names every root it is given.
+    #[test]
+    fn test_ask_sends_every_root() {
+        let fake = FakeIndexer::start(|hello, _| {
+            let text = hello["roots"].to_string();
+            (
+                json!({"ok": true}),
+                Some(
+                    json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}),
+                ),
+            )
+        });
+        let roots = [("a".to_string(), PathBuf::from("/w/a")), ("g/b".to_string(), PathBuf::from("/w/g/b"))];
+        assert_eq!(
+            fake.indexer().ask(&roots, "find_symbol", json!({})).expect("ask"),
+            r#"["a=/w/a","g/b=/w/g/b"]"#
+        );
     }
 
     // Checks root:path references become paths relative to the working directory, and other lines are kept.
     #[test]
     fn test_localize() {
         let root = Path::new("/w/repo");
+        let one = [("repo".to_string(), root.to_path_buf())];
         let text = "repo:src/A.cs:4 class repo.A | public class A\nA repo:b.cs\nD repo:sub/c d.cs\nrepo: 3 files\ncursor: e;repo=2\nrepo:";
         assert_eq!(
-            localize(text, root, root),
+            localize(text, &one, root),
             "src/A.cs:4 class repo.A | public class A\nA b.cs\nD sub/c d.cs\nrepo: 3 files\ncursor: e;repo=2\nrepo:"
         );
-        assert_eq!(localize("repo:x.cs:1 y", root, Path::new("/w/repo/src")), "/w/repo/x.cs:1 y");
+        assert_eq!(localize("repo:x.cs:1 y", &one, Path::new("/w/repo/src")), "/w/repo/x.cs:1 y");
+        let two = [("a".to_string(), PathBuf::from("/w/a")), ("g/b".to_string(), PathBuf::from("/w/g/b"))];
+        assert_eq!(
+            localize("a:x.cs:1 C\nM g/b:y.cs\nab:z.cs\ncursor: e;a=1;g/b=2", &two, Path::new("/w")),
+            "a/x.cs:1 C\nM g/b/y.cs\nab:z.cs\ncursor: e;a=1;g/b=2"
+        );
         assert_eq!(work_tree(Path::new("/nonexistent/a/b")), None);
     }
 
