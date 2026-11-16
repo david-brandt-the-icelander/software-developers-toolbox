@@ -363,6 +363,17 @@ static void test_tool_exec(void)
 	char *argv6[] = {"zazzle", "free-disk-spaces", 0};
 	reset();
 	CHECK(run(2, argv6, env_home) == 0 && M.exec_path[0] == 0);
+	char *argv7[] = {"zazzle", "git", "status", 0};
+	reset();
+	CHECK(run(3, argv7, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/zazzle-git") == 0 && strcmp(M.exec_arg1, "status") == 0);
+	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv9[] = {"/usr/bin/z", "git", 0};
+	reset();
+	CHECK(run(2, argv9, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
+	char *argv8[] = {"zazzle", "gi", 0};
+	reset();
+	CHECK(run(2, argv8, env_home) == 0 && M.exec_path[0] == 0);
 }
 
 /* Checks that `zazzle proxy`, `zazzle setup` and `zazzle run` exec `zazzled proxy`, `zazzled setup` and `zazzled wrap`, from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */

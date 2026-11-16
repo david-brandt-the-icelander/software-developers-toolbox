@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzle invoker component diagram",
   "folder": "macos/c/zazzle",
-  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, and the standalone tools the invoker runs for `zazzle free-disk-space` and `zazzle fix-network`. The same program, run as `zazz` or under an installed script's name, sends zazz requests to the daemon.",
+  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, and the standalone tools the invoker runs for `zazzle free-disk-space`, `zazzle fix-network` and `zazzle git`. The same program, run as `zazz` or under an installed script's name, sends zazz requests to the daemon.",
   "sources": [
     {
       "path": "macos/c/zazzle/Makefile",
@@ -19,7 +19,7 @@
     },
     {
       "path": "macos/c/zazzle/src/zazzle_core.h",
-      "symbol": "is_tool"
+      "symbol": "tool_binary"
     },
     {
       "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -72,6 +72,13 @@
       "responsibility": "The standalone tool `zazzle fix-network` runs.",
       "folder": "macos/rust/fix-network",
       "diagram": "macos/rust/fix-network/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle-git",
+      "name": "zazzle-git",
+      "responsibility": "The git front end and commit message editor `zazzle git` runs.",
+      "folder": "macos/rust/zazzle-git",
+      "diagram": "macos/rust/zazzle-git/.dev/component-diagram.json"
     }
   ],
   "relationships": [
@@ -81,6 +88,7 @@
     { "from": "src", "to": "zazzled", "kind": "depends-on", "description": "Sends every daemon command over its socket (prefixed `zazz` or `zazz exec-name NAME` when run under another name) and starts it when nothing listens; execs `zazzled wrap` and `zazzled proxy`." },
     { "from": "src", "to": "free-disk-space", "kind": "depends-on", "description": "Execs the free-disk-space binary beside itself." },
     { "from": "src", "to": "fix-network", "kind": "depends-on", "description": "Execs the fix-network binary beside itself." },
+    { "from": "src", "to": "zazzle-git", "kind": "depends-on", "description": "Execs the zazzle-git binary beside itself for `zazzle git`." },
     { "from": "test", "to": "src", "kind": "depends-on", "description": "unit.c includes zazzle_core.h with the mock; smoke.sh runs build/zazzle." },
     { "from": "test", "to": "zazzled", "kind": "depends-on", "description": "smoke.sh runs the release zazzled (ZAZZLED)." },
     { "from": "bench", "to": "src", "kind": "depends-on", "description": "exit0.c reuses entry.h; run.sh and refs.sh time build/zazzle." },

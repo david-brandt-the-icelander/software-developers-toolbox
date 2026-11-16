@@ -1,6 +1,6 @@
 ---
 name: zazzle
-description: Read, search, outline and edit files with the `zazzle` tool (or its MCP server `zazzled mcp`) instead of cat, sed, grep -r, find or sed -i, and shrink noisy command output with `zazzle clean`. Use for any code search, reading part of a large file, finding where a symbol is defined and used, or making a safe edit; replies are short, capped and deduplicated per session.
+description: Read, search, outline and edit files with the `zazzle` tool (or its MCP server `zazzled mcp`) instead of cat, sed, grep -r, find or sed -i, shrink noisy command output with `zazzle clean`, and run git or commit with `zazzle git commit -m`. Use for any code search, reading part of a large file, finding where a symbol is defined and used, or making a safe edit; replies are short, capped and deduplicated per session.
 ---
 
 # zazzle
@@ -39,6 +39,9 @@ Prefer `zazzle` over shell reads and edits. Docs: `macos/rust/zazzled/README.md`
 - Lines: `zazzle edit FILE --lines A-B --new TEXT --expect SHA` with the sha from `zazzle read`'s header, or `--at A#xyz-B#xyz` anchors from `zazzle read --anchors`. A stale sha or anchor is refused: read again.
 - Also `--after N --new TEXT --expect SHA` and `--create --new TEXT`. `--new -` reads standard input.
 - Edits are written atomically and only inside the current directory (symlinks are resolved first).
+
+## Git
+- `zazzle git ARGS` runs git (`zazzle git status -sb`); `zazzle git commit -m MSG [--no-add]` commits all tracked changes (or only the staged ones), like `git commit -a -m`. Agents always pass `-m`: without it the command opens an interactive terminal editor (`zazzle git message`) meant for people.
 
 ## Build
 - `cd macos/rust && cargo build --release -p zazzled`, then `cd ../c/zazzle && make`; binaries `target/release/zazzled` and `macos/c/zazzle/build/zazzle`.
