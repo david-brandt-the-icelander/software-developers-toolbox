@@ -487,6 +487,7 @@ mod tests {
     }
 
     // Turn keep_metadata's failure on or off for this test thread.
+    #[cfg(not(target_os = "macos"))]
     fn fail_keep(on: bool) {
         FAIL_KEEP.with(|f| f.set(on));
     }
@@ -730,8 +731,12 @@ mod tests {
         let (keeper, target) = (&files[0], &files[1]);
         assert!(set_xattr(keeper, &tag("tag"), b"red") && set_xattr(keeper, &tag("keeper"), b"only here"));
         assert!(set_xattr(target, &tag("tag"), b"blue"));
-        let acl = std::process::Command::new("/bin/chmod").arg("+a").arg("everyone allow read").arg(target);
-        assert!(acl.status().unwrap().success());
+        let acl = std::process::Command::new("/bin/chmod")
+            .arg("+a")
+            .arg("everyone allow read")
+            .arg(target)
+            .status();
+        assert!(acl.unwrap().success());
         let hidden = 0x8000;
         let file = fs::File::open(target).unwrap();
         meta::set_flags(&file, util::flags(&file.metadata().unwrap()) | hidden).unwrap();
