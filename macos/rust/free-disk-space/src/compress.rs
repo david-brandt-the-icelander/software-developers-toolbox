@@ -53,6 +53,11 @@ fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts, allowed: u32) -> O
     if util::flags(md) & util::NO_TOUCH_FLAGS & !allowed != 0 {
         return Some("already compressed / flagged".into());
     }
+    if allowed & util::UF_COMPRESSED == 0 {
+        if let Some(note) = meta::resource_fork_note(Path::new(&cand.path)) {
+            return Some(note);
+        }
+    }
     if now() - (md.mtime() as f64) < o.min_age_days as f64 * 86400.0 {
         return Some("modified recently".into());
     }
@@ -101,7 +106,8 @@ fn compress_verified(
 ) -> std::io::Result<(&'static str, String, i64)> {
     make(path, tmp)?;
     let tm = fs::symlink_metadata(tmp)?;
-    if util::flags(&tm) & util::UF_COMPRESSED == 0 {
+    let tmp_flags = util::flags(&tm);
+    if tmp_flags & util::UF_COMPRESSED == 0 {
         return Ok(("skipped", "APFS declined to compress (no gain)".into(), 0));
     }
     let saved = util::alloc(st) - util::alloc(&tm);
@@ -114,6 +120,9 @@ fn compress_verified(
     let owner = |m: &fs::Metadata| (util::perm_bits(m), m.uid(), m.gid());
     if owner(&tm) != owner(st) {
         return Ok(("failed", "permissions/ownership differ".into(), 0));
+    }
+    if !meta::same_flags(util::flags(st), tmp_flags) {
+        return Ok(("failed", "file flags differ".into(), 0));
     }
     let copied = meta::xattrs(tmp)?;
     if meta::xattrs(path)?.iter().any(|(name, value)| copied.get(name) != Some(value)) {
@@ -129,9 +138,9 @@ fn compress_verified(
     // Set after the other times: macOS moves a birth time later than the modification time back to it.
     if let Some(born) = meta::birth_ns(st) {
         meta::set_birth(tmp, born)?;
-        if meta::birth_ns(&fs::symlink_metadata(tmp)?) != Some(born) {
-            return Ok(("failed", "creation time differs".into(), 0));
-        }
+    }
+    if !meta::same_times(st, &fs::symlink_metadata(tmp)?) {
+        return Ok(("failed", "times differ".into(), 0));
     }
     let st2 = fs::symlink_metadata(path)?;
     let ident = |m: &fs::Metadata| (m.len(), util::mtime_ns(m), m.ino(), m.nlink());
@@ -469,6 +478,18 @@ mod tests {
         assert!(check(&good, &greedy).unwrap().starts_with("not enough free space"));
         sb.tool("lsof", "echo 1");
         assert_eq!(check(&good, &o).unwrap(), "file is open by a process");
+        assert_eq!(meta::resource_fork_note(&file), None);
+        assert!(meta::resource_fork_note(&sb.path("missing"))
+            .unwrap()
+            .starts_with("cannot read resource fork"));
+        #[cfg(target_os = "macos")]
+        {
+            sb.tool("lsof", "exit 1");
+            meta::set_xattr(&file, "com.apple.ResourceFork", b"an old resource fork").unwrap();
+            let md = fs::symlink_metadata(&file).unwrap();
+            assert_eq!(precheck(&good, &md, &o, 0).unwrap(), "has a resource fork");
+            assert_eq!(precheck(&good, &md, &o, util::UF_COMPRESSED), None);
+        }
     }
 
     // Check a candidate in an unwritable directory is skipped.
@@ -513,6 +534,9 @@ mod tests {
         assert_eq!(run(&o, &short).unwrap().1, "size mismatch");
         let private = copy_then(|d| chmod(d, 0o600));
         assert_eq!(run(&o, &private).unwrap().1, "permissions/ownership differ");
+        util::set_flags(&[util::UF_COMPRESSED, 0x8000]);
+        assert_eq!(run(&o, &plain).unwrap().1, "file flags differ");
+        util::set_flags(&[util::UF_COMPRESSED]);
         let len = fs::metadata(&file).unwrap().len() as usize;
         let garbled = copy_then(move |d| fs::write(d, vec![b'z'; len]).unwrap());
         assert_eq!(run(&o, &garbled).unwrap().1, "content hash mismatch");
@@ -567,6 +591,9 @@ mod tests {
             .status()
             .unwrap();
         assert!(acl.success());
+        let hidden = 0x8000;
+        let flags = util::flags(&fs::symlink_metadata(&file).unwrap());
+        meta::set_flags(&fs::File::open(&file).unwrap(), flags | hidden).unwrap();
         let born = 1_000_000_000_000_000_000;
         meta::set_birth(&file, born).unwrap();
         let mtime = util::mtime_ns(&fs::symlink_metadata(&file).unwrap());
@@ -590,6 +617,13 @@ mod tests {
             Ok(())
         };
         assert_eq!(run(&retagged).1, "extended attributes differ");
+        let shown = |s: &Path, d: &Path| {
+            compressed_copy(s, d)?;
+            let target = fs::File::open(d)?;
+            meta::set_flags(&target, util::flags(&target.metadata()?) & !hidden)
+        };
+        assert_eq!(run(&shown).1, "file flags differ");
+        let before = fs::symlink_metadata(&file).unwrap();
         let (status, note, _) = run(&compressed_copy);
         assert_eq!((status, note.as_str()), ("done", ""));
         let md = fs::symlink_metadata(&file).unwrap();
@@ -602,6 +636,8 @@ mod tests {
         assert!(meta::acl_text(&file).unwrap().unwrap().contains("allow"));
         assert_eq!(meta::birth_ns(&md), Some(born));
         assert_eq!(util::mtime_ns(&md), mtime);
+        assert!(meta::same_times(&before, &md));
+        assert_ne!(util::flags(&md) & hidden, 0);
     }
 
     // Check the real copy step clones the file and runs it through the library, keeping the contents.

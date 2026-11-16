@@ -64,7 +64,7 @@
       "summary": "compress and dedupe never write into a user's file: they build a temp copy beside it, check it, and rename it over the original.",
       "status": "accepted",
       "context": "Both commands replace files the user may care about, on a file system that also holds snapshots and clones.",
-      "decision": "Write .fds-<pid>-<name>.tmp in the same directory; check mode, owner, group, xattr names and SHA-256 against the original (and size, for compression) (and, for compression, the compressed flag, the gain, every extended attribute's value, the ACL and, after setting it, the birth time); re-read the original's size, mtime, inode and link count; then rename. Any mismatch leaves the original and removes the temp file.",
+      "decision": "Write .fds-<pid>-<name>.tmp in the same directory; check mode, owner, group, xattr names and SHA-256 against the original (and size, for compression) (and, for compression, the compressed flag, the gain, every extended attribute's value, the ACL, the other BSD flags and, after setting them, the access, modification and birth times; a file with a real resource fork is skipped, since compression would overwrite it); re-read the original's size, mtime, inode and link count; then rename. Any mismatch leaves the original and removes the temp file.",
       "evidenceStatus": "source-verified",
       "sources": [
         {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "compress_verified"},
