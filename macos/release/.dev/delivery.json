@@ -8,7 +8,7 @@
     {
       "id": "github-release",
       "title": "GitHub release",
-      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (zazzle and the same invoker as zazz, six universal binaries, among them zazz-worker, and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, zazz, zazzled, zazz-worker, zazzle-csharp-indexer, cyberspace-generator), their checksums and the Homebrew bottle.",
+      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (zazzle with z as a relative link to it, the same invoker as zazz, six universal binaries, among them zazz-worker, and the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 (zazzle, z as a link to it, zazz, zazzled, zazz-worker, zazzle-csharp-indexer, cyberspace-generator), their checksums and the Homebrew bottle.",
       "environment": "GitHub releases of this repository",
       "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
       "deployedBy": "The release workflow (macos, linux and homebrew jobs)",

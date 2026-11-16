@@ -260,6 +260,29 @@ pub fn set_birth(_path: &Path, _ns: i64) -> std::io::Result<()> {
     Ok(())
 }
 
+// Say why a file with a real resource fork must be skipped: compression stores its data in that same attribute.
+pub fn resource_fork_note(path: &Path) -> Option<String> {
+    match xattr(path, "com.apple.ResourceFork") {
+        Ok(None) => None,
+        Ok(Some(_)) => Some("has a resource fork".into()),
+        Err(e) if e.raw_os_error() == Some(libc::ENOTSUP) => None,
+        Err(e) => Some(format!("cannot read resource fork: {e}")),
+    }
+}
+
+// Tell whether two files have the same BSD flags apart from the compressed flag.
+pub fn same_flags(a: u32, b: u32) -> bool {
+    a & !crate::util::UF_COMPRESSED == b & !crate::util::UF_COMPRESSED
+}
+
+// Tell whether two files have the same access, modification and (where reported) birth times.
+pub fn same_times(a: &Metadata, b: &Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let times =
+        |m: &Metadata| (m.atime() * 1_000_000_000 + m.atime_nsec(), crate::util::mtime_ns(m), birth_ns(m));
+    times(a) == times(b)
+}
+
 // Unit tests for the metadata helpers.
 #[cfg(test)]
 mod tests {
@@ -303,5 +326,23 @@ mod tests {
         copy_acl(&file, &target).unwrap();
         set_flags(&target, 0).unwrap();
         assert_eq!(acl_text(&copy).unwrap(), None);
+    }
+
+    // Check flags compare without the compressed flag and times compare exactly.
+    #[test]
+    fn test_same_flags_and_times() {
+        assert!(same_flags(0x8000, 0x8000 | crate::util::UF_COMPRESSED));
+        assert!(!same_flags(0x8000, crate::util::UF_COMPRESSED));
+        let sb = Sandbox::new();
+        let (a, b) = (sb.write("a", b"a"), sb.write("b", b"b"));
+        crate::util::set_times(&a, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
+        crate::util::set_times(&b, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
+        set_birth(&a, 900_000_000_000_000_000).unwrap();
+        set_birth(&b, 900_000_000_000_000_000).unwrap();
+        let md = |p: &Path| std::fs::symlink_metadata(p).unwrap();
+        assert!(same_times(&md(&a), &md(&b)));
+        assert!(same_times(&md(&a), &md(&a)));
+        crate::util::set_times(&b, 1_000_000_000_000_000_000, 1_100_000_000_000_000_001).unwrap();
+        assert!(!same_times(&md(&a), &md(&b)));
     }
 }
