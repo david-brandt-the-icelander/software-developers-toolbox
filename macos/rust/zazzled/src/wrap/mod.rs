@@ -205,6 +205,12 @@ pub fn deliver(o: &Opts, ran: &Ran, store: Option<&std::path::Path>) -> String {
 pub fn main(args: &[String], out: &mut dyn io::Write) -> Result<i32, String> {
     let o = parse(args)?;
     let ran = run_command(&o.argv, o.timeout)?;
+    let cmd: String = o.argv.join(" ").chars().take(120).collect();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let session = std::env::var("ZAZZLE_SESSION").unwrap_or_default();
+    crate::activity::record(
+        serde_json::json!({"src": "run", "cmd": cmd, "cwd": cwd, "status": ran.code, "session": session}),
+    );
     writeln!(out, "{}", deliver(&o, &ran, crate::outputs::dir().as_deref())).map_err(|e| e.to_string())?;
     Ok(ran.code)
 }

@@ -48,6 +48,7 @@ class Zazzle < Formula
 
   def install
     bin.install "zazzle", "zazz", "zazzled", "zazz-worker", "afs", "fix-network", "free-disk-space", "zazzle-git", "zazzle-git-commit", "zazzle-git-commit-message-editor", "cyberspace-generator"
+    bin.install_symlink "zazzle" => "z"
     (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
     (bin/"zazzle-csharp-indexer").write <<~SH
       #!/bin/sh
@@ -68,6 +69,7 @@ class Zazzle < Formula
 
   test do
     assert_match "zazzle", shell_output("#{bin}/zazzle version")
+    assert_match "zazzle", shell_output("#{bin}/z version")
     assert_match "zazzled", shell_output("#{bin}/zazzled --version")
     assert_match "zazz", shell_output("#{bin}/zazz help")
     assert_match "zazz-worker", shell_output("#{bin}/zazz-worker version")

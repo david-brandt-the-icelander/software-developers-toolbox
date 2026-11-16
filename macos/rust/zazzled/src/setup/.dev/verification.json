@@ -22,7 +22,10 @@
         "Each client's servers are read by kind, and edits keep JSON key order, TOML comments and other settings.",
         "The plan changes nothing, never prints secrets, and leaves OAuth, SSE and shared project servers alone with reasons.",
         "--apply writes backups, routes one proxy per upstream and is idempotent; --undo restores the servers, instructions and hook.",
-        "--check reports working servers, sign-in requests, start failures and timeouts."
+        "--check reports working servers, sign-in requests, start failures and timeouts.",
+        "--hook installs zazzled hook for Claude Code and Codex and replaces the indexer's older hook; --workspace adds folders and --undo removes only the lines it added.",
+        "--check marks servers zazzle, proxied or direct and routing enforced or instructed, self-testing hooks; --report separates traffic through zazzle from bypasses.",
+        "--verify passes search, exact read, a reversible edit and the overview from inside a repository and from the home folder, keeps a command's exit code, calls wrapped servers, and fails when nothing reached zazzle's log."
       ],
       "checks": [
         {
@@ -74,10 +77,40 @@
           "command": "cargo test -p zazzled (in macos/rust)"
         },
         {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/check.rs",
+          "symbol": "test_folder",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/tests.rs",
+          "symbol": "test_other_cases",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/tests.rs",
+          "symbol": "test_block_and_hook",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "test_verify_run",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/setup/verify.rs",
+          "symbol": "test_helpers",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
           "type": "manual",
           "path": "macos/rust/zazzled/src/setup/mod.rs",
           "symbol": "run",
-          "command": "In a scratch HOME on Linux with a Codex config (a comment and a stdio server), a ~/.claude.json with an OAuth HTTP server and a desktop folder: the plan listed every change, --apply wrote them with backups and kept the TOML comment, --check started the real `zazzled mcp` for all three clients and the wrapped server through the proxy, and --undo returned ~/.claude.json to its original content and the Codex server to its command."
+          "command": "In a scratch HOME on Linux with a Codex config (a comment and a stdio server), a ~/.claude.json with an OAuth HTTP server and a desktop folder: the plan listed every change, --apply wrote them with backups and kept the TOML comment, --check started the real `zazzled mcp` for all three clients and the wrapped server through the proxy, and --undo returned ~/.claude.json to its original content and the Codex server to its command. Again with routing: in a scratch HOME with two git repositories under ~/dev, a fake stdio server in Claude Code and Codex (env, env_vars, cwd, enabled_tools, timeouts, approval mode, a disabled server), --apply --workspace ~/dev --hook kept every one of those settings and was idempotent; --check marked servers proxied or direct (OAuth) and both hooks enforced with passing self-tests; --verify passed inside the repository and from the home folder, and refused the edit from the home folder once the workspace was removed; a simulated Codex session's redirects, allow-raw pass and apply_patch showed in --report; --undo restored config.toml byte for byte and ~/.claude.json to the same JSON and removed the files setup had created."
         }
       ],
       "evidenceStatus": "source-verified"

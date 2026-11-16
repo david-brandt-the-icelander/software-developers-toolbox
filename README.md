@@ -12,7 +12,7 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 
 ```bash
-brew install zazzcat/z/zazzle   # zazzle, zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
+brew install zazzcat/z/zazzle   # zazzle (also as z), zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
 ```
 
 The formula lives in the [`zazzcat/homebrew-z`](https://github.com/zazzcat/homebrew-z) tap; brew adds it on first use. If you tapped the old `toolbox` tap, run `brew untap david-brandt-the-icelander/toolbox`.
@@ -30,6 +30,6 @@ A file downloaded with `curl` runs as is. Downloaded in a browser, an unsigned b
 
 Or build with `cd macos/rust && cargo build --release`.
 
-Linux tarballs with `zazzle`, `zazzled` and `zazzle-csharp-indexer` (`zazzle-linux-x86_64.tar.gz`, `zazzle-linux-aarch64.tar.gz`) are next to the macOS one. `zazzle` is arm64-only on macOS; Intel Macs use `zazzled mcp` or `zazzled run`.
+The tarballs also hold `z`, a link to `zazzle`. Linux tarballs with `zazzle` (and `z`), `zazzled` and `zazzle-csharp-indexer` (`zazzle-linux-x86_64.tar.gz`, `zazzle-linux-aarch64.tar.gz`) are next to the macOS one. `zazzle` is arm64-only on macOS; Intel Macs use `zazzled mcp` or `zazzled run`.
 
 A specific version is at `https://icelander.net/downloads/zazzle/<tag>/`. The GitHub releases carry the same files.

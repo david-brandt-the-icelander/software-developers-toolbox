@@ -24,7 +24,7 @@
       ],
       "criteria": [
         "The request carries an empty cwd field, the session and the arguments, and the four descriptors.",
-        "Run as zazz the arguments follow a `zazz` field, under any other name `zazz exec-name NAME`; as zazzle (or with no argv[0]) they go as they are, and only zazzle execs the standalone tools, `zazzled wrap` and `zazzled proxy` (`zazz run NAME` and a script given `proxy` are zazz requests).",
+        "Run as zazz the arguments follow a `zazz` field, under any other name `zazz exec-name NAME`; as zazzle or z (or with no argv[0]) they go as they are, and only zazzle or z execs the standalone tools, `zazzled wrap` and `zazzled proxy` (`zazz run NAME` and a script given `proxy` are zazz requests).",
         "ZAZZLE_SOCK overrides HOME, and lookalike variables are ignored.",
         "Autostart picks ZAZZLE_DAEMON or zazzled beside the executable, for both not-running errors, and gives up after the wait.",
         "A fast reply is read during the spin; a slow one falls back to the blocking read; an error ends the spin.",

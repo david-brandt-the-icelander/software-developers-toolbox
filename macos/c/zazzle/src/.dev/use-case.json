@@ -76,7 +76,7 @@
         {
           "id": "build",
           "actor": "zazzle",
-          "action": "Builds the request: an empty working-directory field, the session from ZAZZLE_SESSION, then `zazz` when it runs as zazz, or `zazz exec-name NAME` when it runs under any other name NAME, then its arguments; and the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock.",
+          "action": "Builds the request: an empty working-directory field, the session from ZAZZLE_SESSION, then `zazz` when it runs as zazz, or `zazz exec-name NAME` when it runs under any other name NAME than zazzle, its short name z and zazz, then its arguments; and the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",

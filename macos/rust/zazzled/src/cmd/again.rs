@@ -18,6 +18,7 @@ fn rerun(ctx: &Ctx, id: &str) -> Option<Output> {
     let (replay, desc) = ctx.engine.sessions.replay(&ctx.session, id)?;
     let (cmd, args) = replay.args.split_first()?;
     let again = Ctx {
+        roots: ctx.roots.clone(),
         engine: ctx.engine,
         cwd: replay.cwd.clone(),
         session: ctx.session.clone(),
@@ -140,6 +141,7 @@ mod tests {
     // Runs clean over the input with an engine that stores outputs in the directory.
     fn clean_stored(e: &Engine, cwd: &std::path::Path, input: &'static [u8], args: &[&str]) -> String {
         let ctx = Ctx {
+            roots: Vec::new(),
             engine: e,
             cwd: cwd.to_path_buf(),
             session: String::new(),

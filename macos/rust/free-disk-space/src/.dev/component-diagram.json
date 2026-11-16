@@ -108,7 +108,7 @@
     {
       "id": "meta",
       "name": "File metadata (meta.rs)",
-      "responsibility": "Reads every extended attribute's value (without the compression attributes) or a single one, the ACL as text and the birth time; sets an attribute, the birth time and BSD flags, and copies an ACL onto an open file, so compress can check a copy keeps them and repair can rebuild one.",
+      "responsibility": "Reads every extended attribute's value (without the compression attributes) or a single one, the ACL as text and the birth time; sets an attribute, the birth time and BSD flags, and copies an ACL onto an open file; tells whether a file has a real resource fork and whether two files' flags (apart from the compressed flag) and times match, so compress can check a copy keeps them and repair can rebuild one.",
       "folder": "macos/rust/free-disk-space/src"
     },
     {
@@ -327,7 +327,7 @@
       "from": "compress",
       "to": "meta",
       "kind": "depends-on",
-      "description": "Compares attribute values and the ACL of the original and the copy, and puts the original's birth time on the copy."
+      "description": "Compares attribute values, the ACL, BSD flags and times of the original and the copy, skips files with a real resource fork, and puts the original's birth time on the copy."
     },
     {
       "from": "meta",

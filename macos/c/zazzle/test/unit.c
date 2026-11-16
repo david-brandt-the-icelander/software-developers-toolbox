@@ -89,7 +89,8 @@ static void test_no_session_no_args(void)
 	CHECK(M.sent_len == 4 + 2 && memcmp(M.sent + 4, "\0\0", 2) == 0);
 }
 
-/* Checks the invoker's own name: zazz prefixes the zazz command, any other name runs that installed script. */
+/* Checks the invoker's own name: zazzle and z are zazzle, zazz prefixes the zazz command, any other name runs that
+   installed script. */
 static void test_argv0_dispatch(void)
 {
 	reset();
@@ -104,6 +105,14 @@ static void test_argv0_dispatch(void)
 	char *as_zazzle[] = {"./build/zazzle", "read", 0};
 	CHECK(run(2, as_zazzle, env_home) == 0);
 	CHECK(memcmp(M.sent + 4, "\0\0read\0", 7) == 0);
+	reset();
+	char *as_z[] = {"/opt/homebrew/bin/z", "read", 0};
+	CHECK(run(2, as_z, env_home) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0read\0", 7) == 0);
+	reset();
+	char *as_zz[] = {"zz", "read", 0};
+	CHECK(run(2, as_zz, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0zz\0read\0", 25) == 0);
 	reset();
 	char *none[] = {0};
 	CHECK(run(0, none, env_home) == 0);
@@ -359,6 +368,9 @@ static void test_tool_exec(void)
 	CHECK(run(3, argv7, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
 	CHECK(strcmp(M.exec_arg0, "/opt/bin/zazzle-git") == 0 && strcmp(M.exec_arg1, "status") == 0);
 	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv9[] = {"/usr/bin/z", "git", 0};
+	reset();
+	CHECK(run(2, argv9, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
 	char *argv8[] = {"zazzle", "gi", 0};
 	reset();
 	CHECK(run(2, argv8, env_home) == 0 && M.exec_path[0] == 0);
@@ -387,6 +399,9 @@ static void test_proxy_exec(void)
 	char *argv5[] = {"zazzle", "setup", "--check", 0};
 	reset();
 	CHECK(run(3, argv5, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
+	char *as_z[] = {"/opt/homebrew/bin/z", "setup", 0};
+	reset();
+	CHECK(run(2, as_z, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
 }
 
 /* Runs every test and reports. */
