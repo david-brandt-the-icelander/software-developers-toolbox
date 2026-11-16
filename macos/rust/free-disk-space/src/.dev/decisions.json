@@ -38,7 +38,7 @@
     {
       "id": "tool-override-in-release",
       "title": "Whether FDS_TOOLS stays in release builds",
-      "summary": "The test seam that redirects /usr/bin/ditto, /usr/bin/xattr, /bin/launchctl and the other absolute tool paths is read by release builds too.",
+      "summary": "The test seam that redirects /usr/bin/xattr, /bin/launchctl and the other absolute tool paths is read by release builds too.",
       "status": "open",
       "waitingOn": "owner",
       "context": "util::tool rewrites any absolute program path to $FDS_TOOLS/<name> when that variable is set; its comment says it is there so tests can fake macOS tools. It is not behind cfg(test), so in normal use whatever sets FDS_TOOLS in the environment decides which programs compress, dedupe, trash and the daemon install run.",

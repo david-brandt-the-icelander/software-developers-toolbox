@@ -73,7 +73,7 @@
       "id": "tools",
       "name": "macOS and developer tools",
       "kind": "external-service",
-      "description": "Programs run as child processes with time limits: ditto, xattr, lsof, ps, pgrep, git, osascript (Finder and Docker Desktop), brew and docker; the ones found on PATH are used only if installed."
+      "description": "Programs run as child processes with time limits: xattr, lsof, ps, pgrep, git, osascript (Finder and Docker Desktop), brew and docker; the ones found on PATH are used only if installed."
     },
     {
       "id": "docker",
@@ -89,7 +89,7 @@
       "name": "free-disk-space",
       "source": "macos/rust/free-disk-space/Cargo.toml",
       "deployedTo": "mac",
-      "description": "The one binary: cargo build --release -p free-disk-space, or the universal (arm64 and x86_64) build in zazzle-macos-universal.tar.gz from a release, which the zazzle Homebrew formula installs with the toolbox's other binaries."
+      "description": "The one binary: cargo build --release -p free-disk-space, or the universal (arm64 and x86_64) build in zazzle-macos-universal.tar.gz from a release, which the zazzle Homebrew formula installs with the toolbox's other binaries. It contains the vendored lzfse-zazzcat C library (macos/c/lzfse-zazzcat, MPL-2.0), compiled in by build.rs, which writes the compressed files for compress."
     },
     {
       "id": "plist",
@@ -111,7 +111,7 @@
     {"from": "cli", "to": "progress", "kind": "connects-to", "description": "clean --apply reads it at the start, appends each finished step and removes it when the run completes."},
     {"from": "daemon", "to": "progress", "kind": "connects-to", "description": "The same, for the clean --apply it runs below the threshold."},
     {"from": "cli", "to": "launchd", "kind": "connects-to", "description": "daemon install, uninstall and status run /bin/launchctl bootstrap, bootout and print."},
-    {"from": "cli", "to": "tools", "kind": "connects-to", "description": "Child processes for compression (and the probe that checks ditto really compresses), xattrs, open files, git checks, Finder and Homebrew."},
+    {"from": "cli", "to": "tools", "kind": "connects-to", "description": "Child processes for xattrs, open files, git checks, Finder and Homebrew."},
     {"from": "daemon", "to": "tools", "kind": "connects-to", "description": "The same child processes, when it cleans."},
     {"from": "cli", "to": "docker", "kind": "connects-to", "description": "clean docker, only if it is already running."},
     {"from": "daemon", "to": "docker", "kind": "connects-to", "description": "Only if docker is among the daemon's targets and Docker Desktop is running."}

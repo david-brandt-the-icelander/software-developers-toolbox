@@ -150,7 +150,7 @@
         },
         {
           "path": "macos/rust/free-disk-space/src/compress.rs",
-          "symbol": "ditto_compresses"
+          "symbol": "compression_works"
         }
       ],
       "entrypoint": {
@@ -163,8 +163,8 @@
       "result": "The plan (file count and estimated saving); a progress line with the position in the plan, the files compressed and not compressed, the saving so far and the elapsed time; a FAILED line with a note for each failed file; then the initial and final free space, counts, how many files were skipped for each reason (with a pointer to list --status skipped), the verified allocated-space saving and the overall free-space change, which it says can differ.",
       "failures": [
         "Not macOS and FDS_FORCE unset: exits with an error.",
-        "/usr/bin/ditto missing: exits with an error; nothing changed.",
-        "On macOS, not --dry-run, ditto --hfsCompression writes an uncompressed probe copy (the message names macOS 26/27): exits with an error before asking; nothing changed.",
+        "On macOS, not --dry-run, a compressed probe copy does not read back as compressed and unchanged: exits with an error before asking; nothing changed.",
+        "The clone or a library step fails for one file: that file is recorded failed with the step named (for example lzfse: setting com.apple.decmpfs: <reason>), the original is untouched and the temp copy removed.",
         "No state file: exits with an error pointing at new.",
         "--limit is not a size: exits with an error.",
         "No pending candidates: prints so and stops.",

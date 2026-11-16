@@ -80,7 +80,7 @@
           "context": "Wants old, large files to take less space.",
           "touchpoint": "free-disk-space compress",
           "action": "Compresses a sample of 5 and compares the verified saving with the free-space change, then compresses up to a limit with --yes.",
-          "outcome": "`Sample finished. If it looks right, run compress without --sample.`, then the larger run's verified saving and how many files were skipped for each reason. Where ditto --hfsCompression does not really compress (macOS 26/27), compress stops before changing anything.",
+          "outcome": "`Sample finished. If it looks right, run compress without --sample.`, then the larger run's verified saving and how many files were skipped for each reason. Where a compressed probe copy does not read back as compressed and unchanged, compress stops before changing anything.",
           "sources": [
             {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
             {"path": "macos/rust/free-disk-space/README.md", "symbol": "Caveats"}
