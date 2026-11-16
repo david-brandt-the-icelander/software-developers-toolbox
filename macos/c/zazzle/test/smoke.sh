@@ -42,6 +42,10 @@ out=$("$zazzle" version)
 want=$("$zazzled" version)
 [ "$out" = "zazzle ${want#zazzled }" ] || fail "version: '$out', daemon says '$want'"
 
+# Help: the overview with no arguments and a page from the daemon (run --help, answered by zazzled itself, is checked below).
+case $("$zazzle") in "$out: read, search and edit code"*) ;; *) fail "help overview" ;; esac
+case $("$zazzle" find --help) in "zazzle find: "*"Usage:"*) ;; *) fail "find --help" ;; esac
+
 out=$("$zazzle" find alpha)
 want="src/a.txt
 1: alpha one
@@ -107,6 +111,8 @@ case $out in *"2: beta two"*) ;; *) fail "autostart output: '$out'" ;; esac
 status=$("$zazzle" status)
 echo "$status" | sed -n 's/^zazzled [^ ]* pid \([0-9]*\) .*/\1/p' > "$tmp/auto.pid"
 [ -s "$tmp/auto.pid" ] || fail "no pid in status: $status"
+# zazzled itself answers run --help, since the invoker hands run to it instead of the daemon.
+case $("$zazzle" run --help) in "zazzle run: "*"Usage:"*) ;; *) fail "run --help" ;; esac
 
 # The standalone tools (and `zazzle git`, which runs zazzle-git) run as their own process, found beside the invoker, with exit status and arguments passed through (no daemon involved).
 mkdir "$tmp/bin"

@@ -1030,6 +1030,46 @@
           "symbol": "footer"
         }
       ]
+    },
+    {
+      "id": "human-help",
+      "name": "Help for people",
+      "description": "zazzle explains itself in a terminal: an overview of every command, and a page per command.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "PAGES"
+        }
+      ],
+      "behavior": "zazzle with no arguments, and zazzle help, print an overview grouped by purpose (files; repository structure; command output; setup and the daemon; other tools), one line per command with its arguments and a summary, then the options every command takes. zazzle help COMMAND and zazzle COMMAND --help (or -h) print that command's usage lines, what it does, each option with its default, and examples. grep and cat show the find and read pages. run, proxy and setup, which the invoker hands to zazzled, print the same pages from zazzled itself. Text is wrapped to 80 columns; a term too long for the left column puts its description on the next line.",
+      "outcome": "A person can learn zazzle from the command itself, and an agent finds every option of a command with zazzle help COMMAND.",
+      "constraints": [
+        "Only the first argument counts as a request for help, so a value such as edit --new -h is not mistaken for it.",
+        "zazz, git, free-disk-space and fix-network keep their own help; their pages say how to reach it.",
+        "Usage and example lines are not wrapped, so a command can be copied whole."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "overview"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "page"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "row"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "command_help"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "help_page"
+        }
+      ]
     }
   ],
   "relatedViews": [

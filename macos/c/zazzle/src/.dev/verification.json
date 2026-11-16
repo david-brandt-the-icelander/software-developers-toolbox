@@ -76,7 +76,7 @@
     {
       "id": "end-to-end",
       "title": "The real invoker against the real daemon",
-      "summary": "test/smoke.sh runs build/zazzle against a freshly built zazzled: output, exit status, errors, session dedupe and read-again, standard input, the sha requirement, write confinement, autostart, the execs of the standalone tools, run and proxy, and the invoker run as zazz and as a script's shim.",
+      "summary": "test/smoke.sh runs build/zazzle against a freshly built zazzled: output, help, exit status, errors, session dedupe and read-again, standard input, the sha requirement, write confinement, autostart, the execs of the standalone tools, run and proxy, and the invoker run as zazz and as a script's shim.",
       "subject": [
         {
           "path": "macos/c/zazzle/src/.dev/use-case.json",
@@ -91,6 +91,7 @@
         "Without a daemon that ever listens, zazzle gives up with exactly `zazzle: daemon did not start`, and a missing tool with `zazzle: cannot run the tool (error N)`.",
         "`zazzle version` prints `zazzle` and the version `zazzled version` reports (the release tag's, `0.0.0-dev` in the repository), not a fixed number.",
         "find and read print the expected text; an unknown command exits 2 with its error on standard error.",
+        "`zazzle` alone prints the help overview, `zazzle find --help` the find page from the daemon, and `zazzle run --help` the run page from zazzled.",
         "A daemon zazzle autostarts does not keep zazzle's standard output open.",
         "Linked as `zazz` the invoker reaches the zazz command (`zazz help`); linked under an unknown script's name it fails with `NAME: not_found` on standard error.",
         "A stand-in tool beside the invoker, and a stand-in zazzled named by ZAZZLE_DAEMON, get the arguments and pass their exit status back; a missing tool fails.",

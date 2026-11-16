@@ -1543,6 +1543,66 @@
         }
       ],
       "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "human-help",
+      "title": "Help for people",
+      "summary": "Unit tests check the overview and the pages and how a command line reaches them; the invoker's smoke test runs bare zazzle, find --help and run --help end to end.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/.dev/feature.json",
+          "entityId": "human-help"
+        }
+      ],
+      "criteria": [
+        "No line of the overview or of any page is wider than 80 columns, except usage and example lines, and every summary fits on its line.",
+        "The overview starts with the version and lists every command once, under its group.",
+        "A page has its usage, options and examples; a term too long for the left column puts its description on the next line.",
+        "Bare zazzle, help, --help and -h print the overview; help COMMAND, COMMAND --help and the grep and cat aliases print the page; an unknown command, or help with two arguments, is an error.",
+        "zazzled answers --help after run (wrap), proxy and setup with their pages, but not --help after a command given to run."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "test_help_fits_width",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "test_help_overview_lists_commands",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "test_help_page",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_help_variants",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "test_parse_help",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/c/zazzle/test/smoke.sh",
+          "symbol": "help overview",
+          "command": "sh test/smoke.sh (in macos/c/zazzle, after building zazzled)"
+        }
+      ],
+      "notChecked": [
+        "Whether the descriptions stay true when a command's options change: the pages are written by hand, beside each command's USAGE."
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

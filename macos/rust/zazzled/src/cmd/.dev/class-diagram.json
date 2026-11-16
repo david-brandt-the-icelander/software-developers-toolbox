@@ -318,6 +318,24 @@
       ]
     },
     {
+      "id": "help.Page",
+      "name": "help.Page",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/help.rs"
+      ],
+      "members": [
+        "name: &str",
+        "group: usize",
+        "brief: &str",
+        "summary: &str",
+        "usage: &[&str]",
+        "about: &[&str]",
+        "options: &[(&str, &str)]",
+        "examples: &[&str]"
+      ]
+    },
+    {
       "id": "Engine",
       "name": "Engine",
       "kind": "struct",

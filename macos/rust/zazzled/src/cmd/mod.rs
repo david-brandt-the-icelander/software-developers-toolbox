@@ -10,6 +10,7 @@ pub mod again;
 pub mod clean;
 pub mod edit;
 pub mod find;
+pub mod help;
 pub mod languages;
 pub mod ls;
 pub mod outline;
@@ -21,32 +22,6 @@ pub mod structure;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_BUDGET: usize = 8000;
 const MAX_DESC: usize = 100;
-
-const HELP: &str = "zazzle: file tool for agents
-setup [--apply | --undo | --check] [--client NAME].. [--repo DIR] [--hook] [--no-wrap]  configure Claude Code, the Claude desktop app and Codex to use zazzle and proxy their other MCP servers: run `zazzle setup` and follow it (own process)
-find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]  regex search grouped by file
-read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]
-ls [DIR] [-d N] [-m N] [-u]  tree with line counts
-outline PATH.. [-d N] [-m N]  symbols with line ranges
-refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their enclosing symbol; in C# files, not in comments or strings
-edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
-CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
-proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
-trace [on [DIR] | off | status]  while on, every proxy writes each request to DIR/MMDD_HHmmss: the request, the response before and after cleaning, and results.json (tokens, timings); switches running proxies at once
-run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
-read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
-From zazzle-csharp-indexer's index of the git work tree that holds the working directory, --repo DIR, or a PATH; in a folder that is not one, of the git repositories below it:
-overview [--repo DIR]  languages, top directories, entry points, largest files; in a folder of repositories, the list of them
-find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]  declarations by name
-changed-since [CURSOR] [--repo DIR]  files added (A), modified (M) or deleted (D) since a cursor; without one, a starting cursor
-git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]  recent commits
-git-blame PATH [--start N] [--end N]  who last changed each line
-report-gap TEXT [--repo DIR]  tell the maintainers what you needed and could not get
-status  daemon info
-languages [jit [on|off] | fetch [NAME..]]  language modules: list them, download on first use or not, download the missing ones
-C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.
-Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.
-Repository commands (find, refs, ls, outline, read, edit, overview, find-symbol, changed-since, git-log, git-blame): --commit SHA (a prefix, or HEAD) answers only from repositories checked out at that commit, refuses one at another commit and says where it is checked out, narrows a folder of repositories to those at it, and ends with [commit SHA REPO].";
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
 pub struct Caller {
@@ -203,7 +178,10 @@ pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String,
 
 // Runs one command line and returns its output, tagged or deduplicated for the caller's session, remembering how to run it again.
 pub fn run(ctx: &Ctx, args: &[String]) -> Output {
-    let Some((cmd, rest)) = args.split_first() else { return Output::plain(HELP.into()) };
+    let Some((cmd, rest)) = args.split_first() else { return Output::plain(help::overview()) };
+    if let Some(text) = command_help(cmd, rest) {
+        return Output::plain(text);
+    }
     if cmd == "read-again" {
         return again::run(ctx, rest).unwrap_or_else(|e| Output::err(&e));
     }
@@ -214,6 +192,19 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
         out.text = ctx.engine.sessions.apply_with(&ctx.session, &desc, Some(replay), out.text, dedupe);
     }
     out
+}
+
+// Returns a command's help page when its first argument is --help or -h (zazz answers its own).
+fn command_help(cmd: &str, rest: &[String]) -> Option<String> {
+    if cmd == "zazz" || !matches!(rest.first().map(String::as_str), Some("--help" | "-h")) {
+        return None;
+    }
+    help::page(match cmd {
+        "grep" => "find",
+        "cat" => "read",
+        other => other,
+    })
+    .ok()
 }
 
 // Routes the first argument to a command.
@@ -243,7 +234,11 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "status" => Ok(Output::plain(status(ctx))),
         "trace" => crate::proxy::trace::command(rest, &ctx.cwd).map(Output::plain),
         "languages" => languages::run(ctx, rest),
-        "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
+        "help" | "--help" | "-h" => match rest {
+            [] => Ok(Output::plain(help::overview())),
+            [name] => help::page(name).map(Output::plain),
+            _ => Err("usage: zazzle help [COMMAND]".into()),
+        },
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
         other => Err(format!(
             "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
@@ -282,9 +277,24 @@ mod tests {
         let t = TempDir::new();
         for args in [vec![], vec!["help"], vec!["--help"], vec!["-h"]] {
             let o = run_cmd(t.path(), &args);
-            assert!(o.text.starts_with("zazzle: file tool"), "{args:?}");
+            assert!(o.text.starts_with(&format!("zazzle {VERSION}: read, search and edit")), "{args:?}");
             assert_eq!(o.status, 0);
         }
+        let page = run_cmd(t.path(), &["help", "find"]).text;
+        assert!(page.starts_with("zazzle find: Search files"));
+        for args in [["find", "--help"], ["grep", "-h"], ["read-again", "--help"], ["ls", "-h"]] {
+            let o = run_cmd(t.path(), &args);
+            assert!(o.text.starts_with("zazzle "), "{args:?}");
+            assert!(o.text.contains("\nUsage:\n"), "{args:?}");
+        }
+        assert_eq!(run_cmd(t.path(), &["find", "--help"]).text, page);
+        let o = run_cmd(t.path(), &["help", "nope"]);
+        assert_eq!(
+            (o.text.as_str(), o.status),
+            ("error: no command 'nope'; run `zazzle help` for the list", 2)
+        );
+        assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
+        assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
     }
 
     // Checks version and status output.
