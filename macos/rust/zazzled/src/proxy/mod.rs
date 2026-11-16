@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub mod config;
 pub mod http;
 pub mod stdio;
+pub mod trace;
 
 pub const USAGE: &str =
     "usage: zazzle proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] \
@@ -46,9 +47,9 @@ enum Asked {
     Resource,
 }
 
-// Client requests still waiting for their responses, keyed by JSON-RPC id.
+// Client requests still waiting for their responses, keyed by JSON-RPC id: those whose results are cleaned, and those being traced.
 #[derive(Debug, Default)]
-pub struct Pending(HashMap<String, Asked>);
+pub struct Pending(HashMap<String, Asked>, Vec<(String, trace::Open)>);
 
 // One cleaned response: what it answered and its text size in bytes before and after.
 #[derive(Debug, PartialEq)]
@@ -114,6 +115,7 @@ impl Pending {
     // Records the tools/call and resources/read requests in a client payload; anything else is ignored.
     pub fn note_text(&mut self, text: &str) {
         let Ok(mut msg) = serde_json::from_str::<Value>(text) else { return };
+        trace::note(&mut self.1, &msg);
         for m in each_mut(&mut msg) {
             let Some(id) = m.get("id") else { continue };
             let asked = match m.get("method").and_then(Value::as_str) {
@@ -135,7 +137,7 @@ impl Pending {
 
     // Returns true when no response is awaited, so server messages need not be parsed.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.0.is_empty() && self.1.is_empty()
     }
 
     // Removes and returns the request a server response answers; server requests carry a method and answer nothing.
@@ -239,7 +241,25 @@ impl Filter {
             return None;
         }
         let mut msg: Value = serde_json::from_str(text).ok()?;
+        let traced: Vec<(usize, trace::Open, Value)> = each_mut(&mut msg)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, m)| trace::take(&mut pending.1, m).map(|o| (i, o, m.clone())))
+            .collect();
+        let started = std::time::Instant::now();
         let saved = self.rewrite(pending, &mut msg);
+        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        for (i, open, raw) in traced {
+            let returned = each_mut(&mut msg).get(i).map(|m| (**m).clone()).unwrap_or(Value::Null);
+            let asked = match open.request.pointer("/params/name").and_then(Value::as_str) {
+                Some(name) if open.request["method"] == "tools/call" => Some(Asked::Tool(name.to_string())),
+                _ if open.request["method"] == "resources/read" => Some(Asked::Resource),
+                _ => None,
+            };
+            let (skipped, lossy, budget) =
+                asked.as_ref().map_or((true, self.lossy, self.budget), |a| self.settings(a));
+            trace::write(open, &raw, &returned, &trace::Filtering { skipped, lossy, budget, ms });
+        }
         if saved.is_empty() {
             return None;
         }
@@ -470,5 +490,101 @@ mod tests {
         assert!(p.is_empty());
         p.note_text(r#"{"id":4,"method":"tools/call","params":{"name":"logged"}}"#);
         assert!(f.rewrite_text(&mut p, &json!({"id": 4, "result": body}).to_string()).is_some());
+    }
+
+    // Checks tracing: while on, each answered request gets a folder with the request, the raw and returned responses and the results; off, nothing is written. Other tests may trace into the folder meanwhile, so only this test's ids count.
+    #[test]
+    fn test_trace_requests() {
+        let _g = crate::testutil::env_lock();
+        let t = crate::testutil::TempDir::new();
+        let saved = std::env::var_os("ZAZZLE_TRACE_CONTROL");
+        std::env::set_var("ZAZZLE_TRACE_CONTROL", t.path().join("trace.json"));
+        let traces = t.path().join("traces");
+        trace::command(&["on".to_string(), traces.to_string_lossy().into_owned()], t.path()).expect("on");
+        let f = filter();
+        let mut p = Pending::default();
+        p.note_text(r#"{"jsonrpc":"2.0","id":"tr-1","method":"tools/call","params":{"name":"get","arguments":{"q":1}}}"#);
+        p.note_text(r#"{"jsonrpc":"2.0","id":"tr-2","method":"tools/list"}"#);
+        p.note_text(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
+        let big = (0..200)
+            .map(|i| format!("line {i}: the same long repeated text that clean keeps once"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + &"\n".repeat(50);
+        let call = json!({"jsonrpc":"2.0","id":"tr-1","result":{"content":[{"type":"text","text": big}]}})
+            .to_string();
+        assert!(f.rewrite_text(&mut p, &call).is_some());
+        assert!(f.rewrite_text(&mut p, r#"[{"jsonrpc":"2.0","id":"tr-2","result":{"tools":[]}},{"jsonrpc":"2.0","id":"tr-9","result":{}}]"#).is_none());
+        let read = |d: &std::path::Path, f: &str| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(d.join(f)).unwrap_or_default())
+                .unwrap_or(Value::Null)
+        };
+        let ours = |id: &str| -> Vec<std::path::PathBuf> {
+            std::fs::read_dir(&traces)
+                .expect("traces")
+                .flatten()
+                .map(|e| e.path())
+                .filter(|d| read(d, "1-request.json")["id"] == id)
+                .collect()
+        };
+        let (call_dir, list_dir) = (ours("tr-1").remove(0), ours("tr-2").remove(0));
+        assert!(ours("tr-9").is_empty(), "a response nobody asked for is not traced");
+        let mut files: Vec<String> = std::fs::read_dir(&call_dir)
+            .expect("dir")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(files, ["1-request.json", "2-response-raw.json", "3-response.json", "4-results.json"]);
+        let name = call_dir.file_name().expect("name").to_string_lossy().into_owned();
+        assert!(name.len() >= 11 && name.as_bytes()[4] == b'_', "{name}");
+        assert_eq!(read(&call_dir, "1-request.json")["params"]["name"], "get");
+        assert_eq!(read(&call_dir, "2-response-raw.json")["result"]["content"][0]["text"], big.as_str());
+        let r = read(&call_dir, "4-results.json");
+        assert_eq!(
+            (r["method"].as_str(), r["tool"].as_str(), r["filter"]["changed"].as_bool()),
+            (Some("tools/call"), Some("get"), Some(true))
+        );
+        assert!(
+            r["tokens"]["raw"].as_u64() > r["tokens"]["returned"].as_u64()
+                && r["tokens"]["saved_percent"].as_f64() > Some(0.0),
+            "{r}"
+        );
+        assert!(
+            r["timing_ms"]["filter"].is_number()
+                && r["requested_at"].as_str().is_some_and(|s| s.contains('T'))
+                && r["proxy"]["pid"].is_number()
+        );
+        assert_ne!(read(&call_dir, "3-response.json"), read(&call_dir, "2-response-raw.json"));
+        let l = read(&list_dir, "4-results.json");
+        assert_eq!(
+            (l["method"].as_str(), l["filter"]["changed"].as_bool(), l["filter"]["skipped"].as_bool()),
+            (Some("tools/list"), Some(false), Some(true))
+        );
+        assert_eq!(read(&list_dir, "3-response.json"), read(&list_dir, "2-response-raw.json"));
+        trace::command(&["off".to_string()], t.path()).expect("off");
+        p.note_text(r#"{"jsonrpc":"2.0","id":"tr-3","method":"tools/list"}"#);
+        assert!(f.rewrite_text(&mut p, r#"{"jsonrpc":"2.0","id":"tr-3","result":{"tools":[]}}"#).is_none());
+        assert!(ours("tr-3").is_empty(), "nothing traced while off");
+        trace::command(&["on".to_string()], t.path()).expect("on");
+        let mut many = Pending::default();
+        for id in 0..1002 {
+            many.note_text(&format!(r#"{{"id":{id},"method":"ping"}}"#));
+        }
+        assert_eq!(many.1.len(), 1000);
+        many.note_text(r#"[{"id":"tr-a","method":"ping"},{"id":"tr-b","method":"ping"}]"#);
+        assert!(f
+            .rewrite_text(&mut many, r#"[{"id":"tr-a","result":{}},{"id":"tr-b","result":{}}]"#)
+            .is_none());
+        assert_eq!((ours("tr-a").len(), ours("tr-b").len()), (1, 1));
+        many.note_text(r#"{"id":"tr-r","method":"resources/read","params":{"uri":"x"}}"#);
+        assert!(f
+            .rewrite_text(&mut many, r#"{"id":"tr-r","result":{"contents":[{"uri":"x","text":"t"}]}}"#)
+            .is_none());
+        assert_eq!(read(&ours("tr-r")[0], "4-results.json")["filter"]["skipped"], false);
+        match saved {
+            Some(v) => std::env::set_var("ZAZZLE_TRACE_CONTROL", v),
+            None => std::env::remove_var("ZAZZLE_TRACE_CONTROL"),
+        }
     }
 }

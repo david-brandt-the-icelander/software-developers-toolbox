@@ -16,6 +16,8 @@ zazzle setup --apply --workspace ~/dev --hook
 zazzle setup --check                   # after restarting the apps (and trusting the hook in Codex)
 zazzle setup --verify --repo ~/dev/api # uses zazzle like an agent would, from inside a repository and from elsewhere
 zazzle setup --report                  # what agents actually sent through zazzle in the last day, and the bypasses
+zazzle setup --off                     # zazzle out of the way (for a benchmark); `--on` puts the same setup back
+zazzle setup --uninstall               # undo everything and stop zazzled's agent, then `brew uninstall zazzle`
 ```
 
 Tell an agent "run `zazzle setup` and follow it": the report says what it found, what it would change and when to ask you. Any other MCP client works with `{"mcpServers":{"zazzle":{"command":"zazzled","args":["mcp"]}}}`; the working directory of the server is the root for relative paths. Edits may write in the working directory and the git work tree holding it, in the roots an MCP client names (`roots/list`), and in your workspaces (`~/.zazzle/workspaces`, one folder per line, or `ZAZZLE_WORKSPACES`), never in your home folder or `/` as such. Its MCP handshake gives agents instructions for using it (`instructions`).
@@ -37,6 +39,18 @@ Tell an agent "run `zazzle setup` and follow it": the report says what it found,
 - `--check` starts every configured server the way its client does (same command, environment and folder: the entry's `cwd`, `/` for the desktop app, the project for Claude Code's project servers, else `--repo` or the current folder) and does a real handshake: `initialize`, `tools/list`, and for zazzle `zazzle_overview`; HTTP servers get an `initialize` with their headers (a 401 is reported as needing sign-in). Secrets are never printed. Each server is marked `[zazzle]`, `[proxied: stdio]`, `[proxied: http]` or `[direct: why]`, and each client's routing is `enforced by the hook` (with a self-test that feeds the hook `rg`, `cargo test` and `git status`) or `instructions only`. It also says where zazzle may edit from the current folder, and sums up the last day of the activity log.
 - `--verify` uses zazzle the way an agent would, on `--repo` or the current repository: `zazzle_find`, `zazzle_read source=true`, a reversible edit (it creates `.zazzle-verify-PID.txt`, edits it with the read's sha, and removes it) and `zazzle_overview`, once with zazzle started inside the repository and once started in your home folder with absolute paths (which only works when the repository is in a workspace); then `zazzle run` with a failing command (exit code kept), `tools/list` through every wrapped server, and each hook's self-test. It ends with the activity-log entries the run produced as evidence.
 - `--report` reads the activity log (`~/.zazzle/activity.log`, `ZAZZLE_ACTIVITY_LOG` to move it): zazzle commands by name and session, `zazzle run` runs, MCP calls through the proxy by server and tool, raw commands the hook redirected, and bypasses: native edits, `# allow-raw` and calls let through while zazzle was unavailable. It also lists what the log cannot see.
+
+- `--off` undoes everything the last `--apply` did (zazzle entries, wrapped and routed servers, proxy agents, instructions, hooks, workspace lines) but keeps a record of its options in `~/.zazzle/setup.json`; `--on` applies them again. `--undo` and `--uninstall` forget the record. `--uninstall` also stops zazzled's own LaunchAgent and prints how to remove the programs and `~/.zazzle`.
+
+## Benchmarking with and without zazzle
+
+1. With zazzle set up (`zazzle setup --apply --workspace ~/dev --hook`), quit Claude Code, the Claude desktop app and Codex.
+2. `zazzle setup --off`, then start the apps: they run as if zazzle was never installed (the binaries stay, unused).
+3. Run the benchmark task and note each client's own token and time figures (from its usage or cost view).
+4. Quit the apps, `zazzle setup --on`, start them again (trust the hook again in Codex if it asks), and run the same task from the same commit.
+5. `zazzle setup --report` shows what that run sent through zazzle and what bypassed it, so a result can be read against how much zazzle was actually used.
+
+Keep everything else equal: the same model and settings, the same repository state (a worktree pinned to one commit helps), and a fresh chat each time. Run each side more than once; single runs vary.
 
 ## Routing: what is enforced and what is asked
 
@@ -291,6 +305,7 @@ claude mcp add --transport http example http://127.0.0.1:8808/mcp
   {"tools": {"read_file": {"lossless": true, "budget": 30000}, "github_*": {"budget": 2000}, "get_secret": {"skip": true}},
    "resources": {"lossless": true}}
   ```
+- Tracing: `zazzle trace on [DIR]` (default `~/.zazzle/traces`) makes every proxy, already running or not, write each request it serves to a folder `DIR/MMDD_HHmmss` (`_2`, `_3` for more in the same second): `1-request.json` (the agent's JSON-RPC request), `2-response-raw.json` (the server's response as it came), `3-response.json` (what the proxy returned), and `4-results.json`: method and tool, server, request and response times, estimated tokens of the raw and returned responses with the saving and the request's own tokens, bytes, the text items' tokens, lines and count, the time spent upstream and in the filter, the filter's settings for that call (skipped, lossless, budget) and whether it changed anything, the read-again id of a stored original, whether the response was an error, and the proxy's pid and version. `zazzle trace off` stops it and `zazzle trace` says how it stands; the switch is the file `~/.zazzle/trace.json` (`$ZAZZLE_TRACE_CONTROL`), read on each request, so no proxy needs a restart. Notifications and server-to-client requests are not traced; at most 1000 requests per proxy wait for their responses.
 - stdio: the server runs as a child with stderr passed through; the proxy exits with its exit code when it closes its output.
 - HTTP: only Streamable HTTP (MCP 2025-03-26 and later), not the older HTTP+SSE transport. Connections stay open for further requests unless the client asks to close them (`Connection: close`, or HTTP/1.0 without keep-alive), sends something unreadable or stays idle for 60 seconds; replies of unknown length are chunked on open connections, and the upstream side reuses its connections too. JSON replies are cleaned whole (up to 64 MiB, larger ones are passed through), `text/event-stream` replies event by event as they stream, and anything else (including compressed bodies) is copied. Headers such as `Mcp-Session-Id` and `Authorization` pass both ways; hop-by-hop headers are dropped, bodies are requested uncompressed, redirects and error statuses are returned to the client. `Origin` headers from hosts other than localhost are refused (403). It listens on `127.0.0.1:8808` unless told otherwise; request bodies need `Content-Length`. Upstream TLS uses the operating system's trust store, and `HTTPS_PROXY`/`NO_PROXY` are honoured.
 

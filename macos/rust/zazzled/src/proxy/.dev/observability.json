@@ -48,6 +48,48 @@
           "symbol": "run"
         }
       ]
+    },
+    {
+      "id": "request-trace",
+      "title": "Request traces",
+      "summary": "While tracing is on, each request a proxy serves gets a folder with the request, the response before and after cleaning, and a results file.",
+      "signalType": "trace",
+      "name": "DIR/MMDD_HHmmss/{1-request,2-response-raw,3-response,4-results}.json",
+      "meaning": "One agent request and its answer, as the server sent it and as the agent got it, with what cleaning saved and how long each side took.",
+      "unit": "Estimated tokens, bytes, lines and milliseconds.",
+      "dimensions": [
+        "method and tool",
+        "server",
+        "tokens raw, returned, saved and saved percent",
+        "bytes",
+        "text tokens, lines and items",
+        "upstream and filter milliseconds",
+        "filter settings and whether it changed the answer",
+        "read-again id",
+        "error",
+        "proxy pid and version"
+      ],
+      "access": "The user who switched tracing on, in the folder they named.",
+      "retention": "Kept until the user deletes the folders.",
+      "cadence": "Per answered request while `zazzle trace on` holds; switched by ~/.zazzle/trace.json, read on every request.",
+      "excludes": [
+        "Notifications, server-to-client requests and requests never answered are not traced."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/trace.rs",
+          "symbol": "write"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/trace.rs",
+          "symbol": "command"
+        },
+        {
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "Filter::rewrite_text"
+        }
+      ]
     }
   ]
 }

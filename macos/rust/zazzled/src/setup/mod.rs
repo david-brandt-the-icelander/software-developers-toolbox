@@ -7,7 +7,7 @@ use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -37,6 +37,9 @@ pub enum Action {
     Check,
     Verify,
     Report,
+    Off,
+    On,
+    Uninstall,
 }
 
 // The parsed `zazzle setup` command line.
@@ -66,7 +69,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
     while let Some(a) = it.next() {
         let mut action = |x: Action| {
             if o.action != Action::Plan {
-                return Err(format!("give one of --apply, --undo, --check, --verify and --report\n{USAGE}"));
+                return Err(format!("give one of --apply, --undo, --off, --on, --uninstall, --check, --verify and --report\n{USAGE}"));
             }
             o.action = x;
             Ok(())
@@ -77,6 +80,9 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--check" => action(Action::Check)?,
             "--verify" => action(Action::Verify)?,
             "--report" => action(Action::Report)?,
+            "--off" => action(Action::Off)?,
+            "--on" => action(Action::On)?,
+            "--uninstall" => action(Action::Uninstall)?,
             "--hook" => o.hook = true,
             "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
             "--workspace" => {
@@ -250,16 +256,69 @@ fn load_routes(env: &Env) -> Routes {
     load_state(env).0
 }
 
-// Records the routes and added workspaces, or removes the record when there are none.
+// Records the routes and added workspaces, keeping the rest of the record.
 fn save_state(env: &Env, routes: &Routes, workspaces: &[String]) -> Result<(), String> {
-    let p = env.state_path();
-    if routes.is_empty() && workspaces.is_empty() {
-        let _ = std::fs::remove_file(&p);
-        return Ok(());
-    }
     let map: serde_json::Map<String, Value> = routes.iter().map(|(p, u)| (p.to_string(), json!(u))).collect();
-    let v = json!({"routes": map, "workspaces": workspaces});
-    write_file(&p, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
+    let routes = (!map.is_empty()).then(|| json!(map));
+    let workspaces = (!workspaces.is_empty()).then(|| json!(workspaces));
+    update_state(env, &[("routes", routes), ("workspaces", workspaces)])
+}
+
+// Sets or removes keys of setup's record, removing the file when nothing is left.
+fn update_state(env: &Env, keys: &[(&str, Option<Value>)]) -> Result<(), String> {
+    let p = env.state_path();
+    let mut v: Value =
+        serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_default()).unwrap_or(json!({}));
+    if !v.is_object() {
+        v = json!({});
+    }
+    let m = v.as_object_mut().expect("an object");
+    for (k, val) in keys {
+        match val {
+            Some(val) => m.insert(k.to_string(), val.clone()),
+            None => m.remove(*k),
+        };
+    }
+    write_or_remove(&p, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
+}
+
+// Records the options of the last --apply, so --off and --on can undo and redo exactly that; None forgets them.
+fn save_applied(env: &Env, opts: Option<&Opts>) -> Result<(), String> {
+    let v = opts.map(|o| {
+        json!({
+            "clients": o.clients.iter().map(|c| c.name()).collect::<Vec<_>>(),
+            "repo": o.repo,
+            "workspaces": o.workspaces,
+            "hook": o.hook,
+            "hook_edits": o.hook_edits,
+            "wrap": o.wrap,
+        })
+    });
+    update_state(env, &[("applied", v)])
+}
+
+// Reads the options of the last --apply, if setup recorded them.
+fn load_applied(env: &Env, action: Action) -> Option<Opts> {
+    let text = std::fs::read_to_string(env.state_path()).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let a = v.get("applied")?;
+    let paths = |k: &str| {
+        a[k].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect::<Vec<_>>()
+    };
+    Some(Opts {
+        action,
+        clients: a["clients"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| Client::parse(c.as_str()?))
+            .collect(),
+        repo: a["repo"].as_str().map(PathBuf::from),
+        workspaces: paths("workspaces"),
+        hook: a["hook"].as_bool().unwrap_or(false),
+        hook_edits: a["hook_edits"].as_bool().unwrap_or(false),
+        wrap: a["wrap"].as_bool().unwrap_or(true),
+    })
 }
 
 // Returns the local URL an HTTP proxy on a port serves.
@@ -518,11 +577,19 @@ fn workspaces(
             t
         }
     };
-    let configured = crate::workspace::configured(&env.home);
-    if configured.is_empty() && new == text {
+    let entries = |t: &str| {
+        t.lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect::<Vec<_>>()
+    };
+    let (after, before) = (entries(&new), entries(&text));
+    if after.is_empty() {
         out.push_str("  none: edits stay inside the folder a chat starts in and its git work tree (add one with --workspace DIR, such as ~/dev)\n");
     }
-    configured.iter().for_each(|w| out.push_str(&format!("  = workspace {}\n", env.short(w))));
+    for w in after.iter().filter(|w| before.contains(w)) {
+        out.push_str(&format!("  = workspace {}\n", env.short(Path::new(w))));
+    }
     if new != text && opts.action != Action::Plan {
         backup(&file, backups)?;
         write_or_remove(&file, &new)?;
@@ -623,12 +690,54 @@ fn report_hook(env: &Env, h: &HookSpec, c: Client, action: Action, out: &mut Str
 
 // Runs setup and returns its report.
 pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
+    let applied = |action| {
+        load_applied(env, action).ok_or("setup has no record of an --apply to turn off or on: run `zazzle setup --apply` with your options first")
+    };
     match opts.action {
-        Action::Check => return check::run(opts, env),
-        Action::Verify => return verify::run(opts, env),
-        Action::Report => return check::report(env),
-        _ => {}
+        Action::Check => check::run(opts, env),
+        Action::Verify => verify::run(opts, env),
+        Action::Report => check::report(env),
+        Action::Off => {
+            let a = applied(Action::Undo)?;
+            let out = change(&a, env)?;
+            save_applied(env, Some(&a))?;
+            Ok(format!("zazzle setup --off: zazzle is out of the way, as if it was never set up; `zazzle setup --on` puts back the same setup.\n{out}"))
+        }
+        Action::On => {
+            let a = applied(Action::Apply)?;
+            Ok(format!("zazzle setup --on: the setup from before --off is back.\n{}", change(&a, env)?))
+        }
+        Action::Uninstall => {
+            let undo = Opts {
+                action: Action::Undo,
+                ..load_applied(env, Action::Undo).unwrap_or_else(|| Opts {
+                    action: Action::Undo,
+                    clients: opts.clients.clone(),
+                    repo: None,
+                    workspaces: vec![],
+                    hook: false,
+                    hook_edits: false,
+                    wrap: true,
+                })
+            };
+            let mut out = change(&undo, env)?;
+            save_applied(env, None)?;
+            if env.macos {
+                let msg = crate::launchd::uninstall(&env.home, env.uid, &|a| (env.launchctl)(a))?;
+                out.push_str(&format!("\nzazzled's LaunchAgent: {msg}\n"));
+            }
+            out.push_str(&format!(
+                "\nzazzle is no longer configured anywhere. To remove the programs too:\n  brew uninstall zazzle    (or delete {} and the zazzle, zazzle-csharp-indexer and z binaries beside it)\n  rm -rf ~/.zazzle          (the activity log, workspaces and caches; your backups stay beside each file)\n",
+                env.zazzled.display()
+            ));
+            Ok(out)
+        }
+        _ => change(opts, env),
     }
+}
+
+// Plans, applies or undoes the setup and returns its report; --apply records its options for --off and --on, --undo forgets them.
+fn change(opts: &Opts, env: &Env) -> Result<String, String> {
     if let Some(r) = &opts.repo {
         if !r.is_dir() {
             return Err(format!("--repo {}: not a directory", r.display()));
@@ -720,6 +829,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
             agent(env, *port, url, false)?;
         }
         save_state(env, &used, &added)?;
+        save_applied(env, (opts.action == Action::Apply).then_some(&opts))?;
         if !backups.is_empty() {
             out.push_str("\nbackups:\n");
             backups.iter().for_each(|b: &PathBuf| out.push_str(&format!("  {}\n", env.short(b))));
