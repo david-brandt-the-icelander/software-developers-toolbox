@@ -217,6 +217,8 @@ mod tests {
             reserve: 0,
             dry_run: false,
             yes: true,
+            include_no_provenance: true,
+            retry_failed: false,
         };
         RepairOpts { compress, apply }
     }

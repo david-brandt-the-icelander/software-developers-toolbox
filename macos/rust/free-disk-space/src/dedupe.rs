@@ -26,6 +26,8 @@ pub struct DedupeOpts {
     pub include_system: bool,
     pub min_size: String,
     pub sample: Option<u64>,
+    pub include_no_provenance: bool,
+    pub retry_failed: bool,
 }
 
 // One file of a name group that still matches the scan.
@@ -33,6 +35,7 @@ struct Member {
     path: String,
     md: Metadata,
     replaceable: bool,
+    held: bool,
 }
 
 // Running totals across groups.
@@ -42,6 +45,7 @@ struct Tally {
     bytes: i64,
     failed: u64,
     skipped: u64,
+    held: u64,
 }
 
 // Tell whether a file is not one of the invoking user's own files.
@@ -132,6 +136,11 @@ fn keep_metadata(target: &Path, tmp: &Path) -> std::io::Result<()> {
     meta::copy_xattrs(target, tmp)?;
     let keep = meta::xattrs(target)?;
     for name in meta::xattrs(tmp)?.into_keys().filter(|n| !keep.contains_key(n)) {
+        // The clone may carry this process's provenance, which macOS may not let be removed; that is allowed.
+        if name == meta::PROVENANCE {
+            let _ = meta::remove_xattr(tmp, &name);
+            continue;
+        }
         meta::remove_xattr(tmp, &name)
             .map_err(|e| std::io::Error::other(format!("cannot remove extended attribute {name}: {e}")))?;
     }
@@ -159,12 +168,14 @@ fn members(rows: Vec<(String, bool)>, size: i64, o: &DedupeOpts, snap: &Snapshot
         }
         let p = Path::new(&path);
         let dir = p.parent().unwrap_or(Path::new("/"));
+        let held = !o.include_no_provenance && !meta::has_provenance(p);
         let replaceable = !cloned
+            && !held
             && md.nlink() == 1
             && util::access(p, libc::W_OK)
             && util::access(dir, libc::W_OK | libc::X_OK)
             && !snap.has_open(&path);
-        out.push(Member { path, md, replaceable });
+        out.push(Member { path, md, replaceable, held });
     }
     out
 }
@@ -187,14 +198,15 @@ fn clone_probe(src: &Path, dev: u64) -> std::io::Result<()> {
 // Identical files, the copy to clone from and the copies to replace.
 type Plan = (String, String, Vec<Member>);
 
-// Hash a name group and return a plan per set of identical files on one volume, plus the files that cannot be
-// cloned (path, error), which are neither cloned from nor replaced.
+// Hash a name group and return a plan per set of identical files on one volume, the files that cannot be cloned
+// (path, error), which are neither cloned from nor replaced, and how many duplicates are left alone for having no
+// provenance.
 fn plan(
     members: Vec<Member>,
     probe: &dyn Fn(&Member) -> std::io::Result<()>,
-) -> (Vec<Plan>, Vec<(String, String)>) {
+) -> (Vec<Plan>, Vec<(String, String)>, u64) {
     if members.len() < 2 || !members.iter().any(|m| m.replaceable) {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), 0);
     }
     let mut by_content: HashMap<(u64, String), Vec<Member>> = HashMap::new();
     for m in members {
@@ -202,7 +214,7 @@ fn plan(
             by_content.entry((m.md.dev(), digest)).or_default().push(m);
         }
     }
-    let (mut plans, mut blocked) = (Vec::new(), Vec::new());
+    let (mut plans, mut blocked, mut held) = (Vec::new(), Vec::new(), 0);
     for ((_dev, digest), same) in by_content {
         if same.len() < 2 {
             continue;
@@ -229,12 +241,13 @@ fn plan(
             ))
         });
         let keeper = same.remove(0).path;
+        held += same.iter().filter(|m| m.held).count() as u64;
         let targets: Vec<Member> = same.into_iter().filter(|m| m.replaceable).collect();
         if !targets.is_empty() {
             plans.push((digest, keeper, targets));
         }
     }
-    (plans, blocked)
+    (plans, blocked, held)
 }
 
 // Clone the keeper to the temp path, give it the target's metadata with `keep`, verify both and swap it over the
@@ -258,8 +271,9 @@ fn clone_verified(
     if !meta::same_flags(util::flags(st), util::flags(&t)) {
         return Ok(Some("file flags differ".into()));
     }
-    let mut differ = meta::differing_xattrs(target, tmp)?;
-    for name in meta::differing_xattrs(tmp, target)? {
+    // The clone may carry this process's provenance instead of the target's, which is allowed.
+    let mut differ = meta::without_provenance(meta::differing_xattrs(target, tmp)?);
+    for name in meta::without_provenance(meta::differing_xattrs(tmp, target)?) {
         if !differ.contains(&name) {
             differ.push(name);
         }
@@ -311,7 +325,8 @@ fn dedupe_group(
     tally: &mut Tally,
     tk: &mut util::Ticker,
 ) -> bool {
-    let (plans, blocked) = plan(group, &|m| clone_probe(Path::new(&m.path), m.md.dev()));
+    let (plans, blocked, held) = plan(group, &|m| clone_probe(Path::new(&m.path), m.md.dev()));
+    tally.held += held;
     for (path, error) in blocked {
         tally.skipped += 1;
         tk.clear();
@@ -379,6 +394,10 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
         die("dedupe --apply requires macOS (APFS clonefile)");
     }
     let db = open_db(&o.state, false);
+    if o.retry_failed {
+        let n = db.execute("UPDATE files SET cloned=0 WHERE cloned=?", [NOT_CLONABLE]).unwrap_or(0);
+        println!("Back in the queue: {n} duplicates that earlier runs left as they were.");
+    }
     let has_files: bool =
         db.query_row("SELECT EXISTS(SELECT 1 FROM files)", [], |r| r.get(0)).unwrap_or(false);
     if !has_files {
@@ -430,6 +449,12 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
         tally.failed,
         hms(now() - t0)
     );
+    if tally.held > 0 {
+        println!(
+            "Left {} duplicates without a provenance (Apple or system files) as they were; --include-no-provenance changes them too.",
+            tally.held
+        );
+    }
     println!(
         "Allocated size of the replaced duplicates (upper bound on savings): {}",
         c("1", &human_i(tally.bytes))
@@ -451,7 +476,15 @@ mod tests {
 
     // Build dedupe options for the sandbox state that include temp-dir files.
     fn opts(sb: &Sandbox, apply: bool) -> DedupeOpts {
-        DedupeOpts { state: sb.state(), apply, include_system: true, min_size: "1".into(), sample: None }
+        DedupeOpts {
+            state: sb.state(),
+            apply,
+            include_system: true,
+            min_size: "1".into(),
+            sample: None,
+            include_no_provenance: true,
+            retry_failed: false,
+        }
     }
 
     // Write n identical same-named files in separate directories and record them in the state file.
@@ -529,6 +562,34 @@ mod tests {
         assert!(set_xattr(&tmp, &tag("keep"), b"keeper") && set_xattr(&tmp, &tag("extra"), b"keeper only"));
         keep_metadata(&target, &tmp).unwrap();
         assert_eq!(meta::xattrs(&tmp).unwrap(), meta::xattrs(&target).unwrap());
+    }
+
+    // Check a duplicate without a provenance is left alone unless asked, can still be the kept copy, and is counted.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_members_hold_files_without_provenance() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 3);
+        fake_procs(&sb, &[]);
+        if !set_xattr(&files[1], meta::PROVENANCE, b"an app") {
+            return;
+        }
+        let snap = Snapshot::capture();
+        let rows: Vec<_> = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+        let strict = DedupeOpts { include_no_provenance: false, ..opts(&sb, true) };
+        let group = members(rows.clone(), 6000, &strict, &snap);
+        let held: Vec<bool> = group.iter().map(|m| m.held).collect();
+        assert_eq!(held, [true, false, true]);
+        assert!(group.iter().all(|m| m.replaceable != m.held));
+        let (plans, _, n_held) = plan(group, &|_| Ok(()));
+        assert_eq!(n_held, 1, "one copy without a provenance is kept, the other is left alone and counted");
+        assert_eq!(plans.len(), 1);
+        assert_eq!(
+            plans[0].2.iter().map(|m| m.path.as_str()).collect::<Vec<_>>(),
+            [files[1].to_str().unwrap()]
+        );
+        let all = members(rows, 6000, &opts(&sb, true), &snap);
+        assert!(all.iter().all(|m| !m.held && m.replaceable));
     }
 
     // Check which recorded files are kept and which are replaceable.
@@ -611,7 +672,7 @@ mod tests {
                 Ok(())
             }
         };
-        let (plans, blocked) = plan(members(rows.clone(), 6000, &opts(&sb, true), &snap), &refuse_first);
+        let (plans, blocked, _) = plan(members(rows.clone(), 6000, &opts(&sb, true), &snap), &refuse_first);
         assert_eq!(blocked.len(), 1);
         assert_eq!(blocked[0].0, first);
         assert_eq!(plans.len(), 1);
@@ -619,7 +680,7 @@ mod tests {
         assert_eq!(plans[0].2.len(), 1);
         assert!(plans[0].2.iter().all(|m| m.path != first));
         let refuse_all = |_: &Member| Err(std::io::Error::from_raw_os_error(libc::EPERM));
-        let (plans, blocked) = plan(members(rows, 6000, &opts(&sb, true), &snap), &refuse_all);
+        let (plans, blocked, _) = plan(members(rows, 6000, &opts(&sb, true), &snap), &refuse_all);
         assert!(plans.is_empty());
         assert_eq!(blocked.len(), 3);
         let md = fs::symlink_metadata(&files[0]).unwrap();
@@ -708,6 +769,17 @@ mod tests {
             };
             let note = format!("extended attributes differ: {}", tag("extra"));
             assert_eq!(go(&st(), &digest, &extra).unwrap(), Some(note));
+            assert!(set_xattr(target, meta::PROVENANCE, b"the duplicate's app"));
+            let restamped = |t: &Path, d: &Path| {
+                keep_metadata(t, d)?;
+                assert!(set_xattr(d, meta::PROVENANCE, b"this tool"));
+                Ok(())
+            };
+            assert_eq!(
+                go(&st(), &digest, &restamped).unwrap(),
+                None,
+                "another provenance on the clone is accepted"
+            );
         }
         assert_eq!(go(&st(), &digest, &keep_metadata).unwrap(), None);
         assert_eq!(fs::read(target).unwrap(), fs::read(keeper).unwrap());
@@ -906,5 +978,11 @@ mod tests {
         fail_keep(true);
         cmd_dedupe(&DedupeOpts { sample: Some(1), ..opts(&sb, true) });
         fail_keep(false);
+        let marked = |db: &Connection| -> i64 {
+            db.query_row("SELECT SUM(cloned=2) FROM files", [], |r| r.get(0)).unwrap()
+        };
+        assert!(marked(&db) >= 1, "the failing run marked its duplicate");
+        cmd_dedupe(&DedupeOpts { retry_failed: true, ..opts(&sb, false) });
+        assert_eq!(marked(&db), 0, "--retry-failed puts earlier failures back in the queue");
     }
 }

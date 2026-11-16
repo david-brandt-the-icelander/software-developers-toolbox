@@ -3,7 +3,7 @@
   "kind": "state",
   "title": "Compression candidate state diagram",
   "folder": "macos/rust/free-disk-space/src",
-  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed; only repair moves a row again: a done row whose file is not compressed back to pending, and any recorded file whose compressed data is broken to broken. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the five.",
+  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it to done, skipped or failed; before planning, compress puts back in the queue (pending) the rows that failed only because of com.apple.provenance, every failed row with --retry-failed, and the rows skipped for having no provenance with --include-no-provenance; repair moves a done row whose file is not compressed back to pending, and any recorded file whose compressed data is broken to broken. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged) or a stop request leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the five.",
   "sources": [
     {
       "path": "macos/rust/free-disk-space/src/scan.rs",
@@ -60,13 +60,11 @@
     },
     {
       "id": "skipped",
-      "description": "Left as it was, with a note why: gone, changed, flagged, recently modified, open, directory not writable, not enough free space for the temp copy, APFS declined, or gain below --min-gain.",
-      "terminal": true
+      "description": "Left as it was, with a note why: gone, changed, flagged, without a provenance (unless --include-no-provenance), recently modified, open, directory not writable, not enough free space for the temp copy, APFS declined, or gain below --min-gain."
     },
     {
       "id": "failed",
-      "description": "A verification or I/O step failed; the original is untouched and the note says which step.",
-      "terminal": true
+      "description": "A verification or I/O step failed; the original is untouched and the note says which step."
     },
     {
       "id": "broken",
@@ -116,6 +114,20 @@
       "trigger": "repair --apply finds a flagged file that stores at least as many bytes as its contents",
       "guard": "the same precheck as compress, allowing the compressed flag, and the same verification of the rewritten copy",
       "action": "Rewrite it as a plain copy with its metadata, compress it with the library, swap it in and write status done and the saving (skipped or failed with the note when a check stops it)."
+    },
+    {
+      "from": "failed",
+      "to": "pending",
+      "trigger": "compress plans a run",
+      "guard": "the note says only com.apple.provenance differed or could not be kept, or --retry-failed is given",
+      "action": "Clear the note and saving and put the row back in the queue."
+    },
+    {
+      "from": "skipped",
+      "to": "pending",
+      "trigger": "compress plans a run with --include-no-provenance",
+      "guard": "the row was skipped for having no provenance",
+      "action": "Clear the note and saving and put the row back in the queue."
     }
   ]
 }

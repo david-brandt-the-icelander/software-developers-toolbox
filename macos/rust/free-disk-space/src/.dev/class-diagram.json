@@ -309,7 +309,9 @@
         "pub min_gain: i64",
         "pub reserve: i64",
         "pub dry_run: bool",
-        "pub yes: bool"
+        "pub yes: bool",
+        "pub include_no_provenance: bool",
+        "pub retry_failed: bool"
       ]
     },
     {
@@ -364,7 +366,9 @@
         "pub apply: bool",
         "pub include_system: bool",
         "pub min_size: String",
-        "pub sample: Option<u64>"
+        "pub sample: Option<u64>",
+        "pub include_no_provenance: bool",
+        "pub retry_failed: bool"
       ]
     },
     {
@@ -377,7 +381,8 @@
       "members": [
         "path: String",
         "md: Metadata",
-        "replaceable: bool"
+        "replaceable: bool",
+        "held: bool"
       ]
     },
     {
@@ -391,7 +396,8 @@
         "files: u64",
         "bytes: i64",
         "failed: u64",
-        "streak: u64"
+        "skipped: u64",
+        "held: u64"
       ]
     },
     {

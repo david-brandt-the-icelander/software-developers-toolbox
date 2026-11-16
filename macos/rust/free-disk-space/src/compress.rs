@@ -23,6 +23,8 @@ pub struct CompressOpts {
     pub reserve: i64,
     pub dry_run: bool,
     pub yes: bool,
+    pub include_no_provenance: bool,
+    pub retry_failed: bool,
 }
 
 // A pending candidate as recorded by the scan.
@@ -42,6 +44,13 @@ fn in_use(path: &str) -> bool {
     }
 }
 
+// The skip note for a file without a provenance (Apple's and system files), left alone unless asked.
+const NO_PROVENANCE: &str = "no provenance (Apple or system file; --include-no-provenance to change it)";
+
+// Notes of earlier failures caused only by the provenance, which is no longer compared, so those files get another try.
+const PROVENANCE_ONLY_FAILURES: &str =
+    "status='failed' AND (note=?1 OR (note LIKE ?2 AND note NOT LIKE '%), %'))";
+
 // Check that a candidate is still safe to compress and return a skip note if not; `allowed` flags do not block it.
 fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts, allowed: u32) -> Option<String> {
     if !md.is_file() || md.nlink() != 1 {
@@ -57,6 +66,9 @@ fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts, allowed: u32) -> O
         if let Some(note) = meta::resource_fork_note(Path::new(&cand.path)) {
             return Some(note);
         }
+    }
+    if !o.include_no_provenance && !meta::has_provenance(Path::new(&cand.path)) {
+        return Some(NO_PROVENANCE.into());
     }
     if now() - (md.mtime() as f64) < o.min_age_days as f64 * 86400.0 {
         return Some("modified recently".into());
@@ -129,7 +141,8 @@ fn compress_verified(
     if !meta::same_flags(util::flags(st), tmp_flags) {
         return Ok(("failed", "file flags differ".into(), 0));
     }
-    let differ = meta::differing_xattrs(path, tmp)?;
+    // The copy may carry this process's provenance instead of the original's, which is allowed.
+    let differ = meta::without_provenance(meta::differing_xattrs(path, tmp)?);
     if !differ.is_empty() {
         return Ok(("failed", format!("extended attributes differ: {}", differ.join(", ")), 0));
     }
@@ -198,9 +211,32 @@ pub fn decompress_flagged(
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
 
-// Load pending candidates up to the file and size limits.
+// Put files back in the queue that earlier runs left only because of the provenance, every earlier failure with
+// --retry-failed, and files skipped for having no provenance with --include-no-provenance; return how many.
+fn requeue(db: &rusqlite::Connection, o: &CompressOpts) -> usize {
+    let attr = meta::PROVENANCE;
+    let only = (
+        format!("extended attributes differ: {attr}"),
+        format!("cannot keep extended attributes: {attr} (%"),
+    );
+    let set = "UPDATE cands SET status='pending', note=NULL, saved=0 WHERE ";
+    let mut n = db.execute(&format!("{set}{PROVENANCE_ONLY_FAILURES}"), params![only.0, only.1]).unwrap_or(0);
+    if o.retry_failed {
+        n += db.execute(&format!("{set}status='failed'"), []).unwrap_or(0);
+    }
+    if o.include_no_provenance {
+        n += db.execute(&format!("{set}status='skipped' AND note=?1"), [NO_PROVENANCE]).unwrap_or(0);
+    }
+    n
+}
+
+// Load pending candidates up to the file and size limits, after putting eligible files back in the queue.
 fn plan(o: &CompressOpts) -> (rusqlite::Connection, Vec<Cand>, i64) {
     let db = open_db(&o.state, false);
+    let back = requeue(&db, o);
+    if back > 0 {
+        println!("Back in the queue: {back} files that earlier runs left as they were.");
+    }
     if !finished(&db) {
         warn("scan is not complete; compressing from the candidates found so far");
     }
@@ -379,6 +415,8 @@ mod tests {
             reserve: 0,
             dry_run: false,
             yes: true,
+            include_no_provenance: true,
+            retry_failed: false,
         }
     }
 
@@ -466,6 +504,17 @@ mod tests {
         assert_eq!(check(&good, &o).unwrap(), "not a plain single-link file");
         fs::remove_file(sb.path("data/link")).unwrap();
         assert_eq!(check(&Cand { size: 1, ..cand(&file) }, &o).unwrap(), "changed since scan");
+        // On macOS the test's own file may already carry a provenance, and macOS may refuse to set one.
+        let strict = CompressOpts { include_no_provenance: false, ..opts(&sb) };
+        if !meta::has_provenance(&file) {
+            assert_eq!(check(&good, &strict).unwrap(), NO_PROVENANCE);
+        }
+        if set_xattr(&file, meta::PROVENANCE, b"") {
+            assert_eq!(check(&good, &strict).unwrap(), NO_PROVENANCE, "an empty provenance counts as none");
+        }
+        if set_xattr(&file, meta::PROVENANCE, b"\x01\x02app") {
+            assert_eq!(check(&good, &strict), None);
+        }
         #[cfg(not(target_os = "macos"))]
         {
             util::set_flags(&[util::UF_COMPRESSED]);
@@ -577,6 +626,52 @@ mod tests {
         util::set_flags(&[util::UF_COMPRESSED]);
         assert_eq!(run(b"no").1, "extended attributes differ: user.keep");
         assert_eq!(run(b"yes").0, "done");
+        assert!(set_xattr(&file, meta::PROVENANCE, b"the original's app"));
+        let st = fs::symlink_metadata(&file).unwrap();
+        let restamped = copy_then(|d| {
+            assert!(set_xattr(d, "user.keep", b"yes") && set_xattr(d, meta::PROVENANCE, b"this tool"))
+        });
+        let r = compress_verified(&file, &tmp, &st, &opts(&sb), &restamped, true).unwrap();
+        util::remove_temp(&tmp);
+        assert_eq!(r.0, "done", "a copy with another provenance is accepted");
+    }
+
+    // Check which earlier results go back in the queue: failures only for the provenance always, every failure with
+    // --retry-failed, and files skipped for having no provenance with --include-no-provenance.
+    #[test]
+    fn test_requeue() {
+        let sb = Sandbox::new();
+        let files = seed(&sb, &["a", "b", "c", "d", "e", "f"]);
+        let db = open_db(&sb.state(), false);
+        let attr = meta::PROVENANCE;
+        let notes = [
+            ("failed", format!("extended attributes differ: {attr}")),
+            ("failed", format!("cannot keep extended attributes: {attr} (refused)")),
+            ("failed", format!("cannot keep extended attributes: {attr} (refused), user.x (refused)")),
+            ("failed", "ACL differs".to_string()),
+            ("skipped", NO_PROVENANCE.to_string()),
+            ("skipped", "modified recently".to_string()),
+        ];
+        let reset = || {
+            for (f, (status, note)) in files.iter().zip(&notes) {
+                db.execute(
+                    "UPDATE cands SET status=?, note=? WHERE path=?",
+                    params![status, note, f.to_str()],
+                )
+                .unwrap();
+            }
+        };
+        let pending = || files.iter().map(|f| status_of(&sb, f).0 == "pending").collect::<Vec<_>>();
+        let base = CompressOpts { include_no_provenance: false, ..opts(&sb) };
+        reset();
+        assert_eq!(requeue(&db, &base), 2);
+        assert_eq!(pending(), [true, true, false, false, false, false]);
+        reset();
+        assert_eq!(requeue(&db, &CompressOpts { retry_failed: true, ..base }), 4);
+        assert_eq!(pending(), [true, true, true, true, false, false]);
+        reset();
+        assert_eq!(requeue(&db, &opts(&sb)), 3);
+        assert_eq!(pending(), [true, true, false, false, true, false]);
     }
 
     // Check on macOS that a real compressed replacement keeps an ACL, an attribute value and the birth time, and that

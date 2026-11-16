@@ -341,6 +341,39 @@
           "symbol": "Target"
         }
       ]
+    },
+    {
+      "id": "provenance-flags",
+      "title": "Files without a provenance, and earlier failures",
+      "summary": "--include-no-provenance lets compress, repair and dedupe change files without a com.apple.provenance (Apple's and system files), whose copies then get this tool's; --retry-failed puts the files earlier compress or dedupe runs left as they were back in the queue.",
+      "key": "compress/repair/dedupe --include-no-provenance; compress/dedupe --retry-failed",
+      "type": "command-line flags",
+      "default": {
+        "include-no-provenance": false,
+        "retry-failed": false
+      },
+      "sensitive": false,
+      "scope": "per run",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "CompressArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "DedupeArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/compress.rs",
+          "symbol": "requeue"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/meta.rs",
+          "symbol": "has_provenance"
+        }
+      ]
     }
   ]
 }

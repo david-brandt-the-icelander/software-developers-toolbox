@@ -217,6 +217,12 @@ struct CompressArgs {
     /// don't ask for confirmation
     #[arg(short, long)]
     yes: bool,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
+    /// try again the files earlier runs left as they were
+    #[arg(long)]
+    retry_failed: bool,
 }
 
 // Options for repair.
@@ -236,6 +242,9 @@ struct RepairArgs {
     /// extra free space to keep beyond the temp copy
     #[arg(long, value_parser = size_arg, default_value = "2G")]
     reserve: i64,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
 }
 
 // Options for dedupe.
@@ -255,6 +264,12 @@ struct DedupeArgs {
     /// only process N duplicates, then stop
     #[arg(long, value_name = "N")]
     sample: Option<u64>,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
+    /// try again the files earlier runs left as they were
+    #[arg(long)]
+    retry_failed: bool,
 }
 
 // Cleanup targets.
@@ -328,6 +343,8 @@ fn run(cli: Cli) {
             reserve: a.reserve,
             dry_run: a.dry_run,
             yes: a.yes,
+            include_no_provenance: a.include_no_provenance,
+            retry_failed: a.retry_failed,
         }),
         Cmd::Repair(a) => repair::cmd_repair(&repair::RepairOpts {
             compress: compress::CompressOpts {
@@ -340,6 +357,8 @@ fn run(cli: Cli) {
                 reserve: a.reserve,
                 dry_run: false,
                 yes: true,
+                include_no_provenance: a.include_no_provenance,
+                retry_failed: false,
             },
             apply: a.apply,
         }),
@@ -349,6 +368,8 @@ fn run(cli: Cli) {
             include_system: a.include_system,
             min_size: a.min_size,
             sample: a.sample,
+            include_no_provenance: a.include_no_provenance,
+            retry_failed: a.retry_failed,
         }),
         Cmd::Daemon(a) => match a.action {
             DaemonAction::Run(o) => daemon::cmd_run(&daemon_settings(o)),
