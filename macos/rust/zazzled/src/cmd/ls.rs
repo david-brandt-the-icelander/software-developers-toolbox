@@ -110,8 +110,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let root = p.positional.first().map_or_else(|| ctx.cwd.clone(), |a| locate(a, &ctx.cwd));
     let depth = p.number("depth")?.unwrap_or(DEFAULT_DEPTH);
     let max = p.number("max")?.unwrap_or(DEFAULT_MAX).max(1);
-    let md = std::fs::metadata(&root)
-        .map_err(|e| format!("{}: {}", display(&root, &ctx.cwd), walk::reason(&e)))?;
+    let md = std::fs::metadata(&root).map_err(|e| {
+        let arg = p.positional.first().map_or("", String::as_str);
+        format!("{}: {}{}", display(&root, &ctx.cwd), walk::reason(&e), super::outline::hint(ctx, arg, &e))
+    })?;
     if md.is_file() {
         let name = display(&root, &ctx.cwd);
         return Ok(Output::ok(format!("{name} {}", summary(ctx.engine, &root))));

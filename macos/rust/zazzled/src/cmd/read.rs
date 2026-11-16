@@ -18,7 +18,7 @@ use crate::styles;
 use crate::symbols::{self, Miss};
 use crate::terse;
 use crate::tokens;
-use crate::util::{clip, display, hex8, locate};
+use crate::util::{clip, display, hex8, locate, similar};
 use crate::xml;
 
 pub(super) const SPEC: &[Flag] = &[
@@ -34,6 +34,8 @@ pub(super) const SPEC: &[Flag] = &[
 ];
 const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
 const DEFAULT_BUDGET: usize = 3000;
+// A multi-path read shares one budget, each file getting an even share of what is left; below this many tokens it stops and names the files it did not read.
+const MIN_SHARE: usize = 100;
 const DEFAULT_CTX: usize = 20;
 const MINIFIED_CLIP: usize = 400;
 
@@ -132,6 +134,16 @@ struct Opts {
     terse: bool,
 }
 
+// Formats a load error, offering similar files when the path does not exist.
+fn missing(ctx: &Ctx, arg: &str, shown: &str, e: String) -> String {
+    let hint = if e == "no such file or directory" {
+        similar(arg, &ctx.cwd, &ctx.engine.walks)
+    } else {
+        String::new()
+    };
+    format!("{shown}: {e}{hint}")
+}
+
 // Renders one file according to the options; the label names a symbol in the header.
 fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String> {
     let (path_arg, range) = split_target(arg);
@@ -142,7 +154,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     };
     let path = locate(path_arg, &ctx.cwd);
     let shown = display(&path, &ctx.cwd);
-    let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
+    let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, path_arg, &shown, e))?;
     let (data, meta) = (&loaded.data, &loaded.meta);
     let sha = hex8(&meta.hash);
     if meta.binary {
@@ -324,7 +336,7 @@ fn render_symbol(ctx: &Ctx, arg: &str, query: &str, o: &Opts) -> Result<String, 
     }
     let path = locate(arg, &ctx.cwd);
     let shown = display(&path, &ctx.cwd);
-    let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
+    let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, arg, &shown, e))?;
     if loaded.meta.binary {
         return render(ctx, arg, o, "");
     }
@@ -380,11 +392,22 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         return Err("--symbol picks the lines itself; drop --around, --head and --tail".into());
     }
     let mut parts = Vec::new();
-    for arg in &paths {
-        parts.push(match symbol {
+    let (mut opts, mut left) = (opts, budget);
+    for (i, arg) in paths.iter().enumerate() {
+        opts.budget = (left / (paths.len() - i)).max(MIN_SHARE.min(left));
+        if i > 0 && left < MIN_SHARE {
+            let rest = paths[i..].join(" ");
+            parts.push(format!(
+                "not read, the {budget}-token budget is spent: {rest} (read them next, or pass --budget)"
+            ));
+            break;
+        }
+        let part = match symbol {
             Some(q) => render_symbol(ctx, arg, q, &opts)?,
             None => render(ctx, arg, &opts, "")?,
-        });
+        };
+        left = left.saturating_sub(tokens::estimate(&part));
+        parts.push(part);
     }
     Ok(Output::ok(parts.join("\n\n")))
 }
@@ -461,6 +484,26 @@ mod tests {
         assert!(o.contains("1\tthis is line number 1") && o.contains("200\tthis is line number 200"));
         let full = run_cmd(t.path(), &["read", "big.txt", "--full"]).text;
         assert!(!full.contains("elided") && full.lines().count() == 201);
+    }
+
+    // Checks several paths share one budget evenly, and that files past a spent budget are named instead of read.
+    #[test]
+    fn test_read_shared_budget() {
+        let t = TempDir::new();
+        let body: String = (1..=400).map(|i| format!("line {i} with a few words\n")).collect();
+        for f in ["a.txt", "b.txt", "c.txt"] {
+            t.write(f, body.as_bytes());
+        }
+        let all = run_cmd(t.path(), &["read", "a.txt", "b.txt", "c.txt", "--budget", "600"]).text;
+        assert!(tokens::estimate(&all) < 800, "{}", tokens::estimate(&all));
+        assert_eq!(all.matches(" lines elided ").count(), 3, "{all}");
+        let few = run_cmd(t.path(), &["read", "a.txt", "b.txt", "c.txt", "--budget", "150"]).text;
+        assert!(
+            few.ends_with(
+                "not read, the 150-token budget is spent: b.txt c.txt (read them next, or pass --budget)"
+            ),
+            "{few}"
+        );
     }
 
     // Checks the default budget applies to large files.

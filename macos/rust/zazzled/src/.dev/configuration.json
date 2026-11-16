@@ -293,6 +293,25 @@
       ]
     },
     {
+      "id": "ZAZZLE_MCP_ZAZZ",
+      "title": "ZAZZLE_MCP_ZAZZ",
+      "summary": "Whether `zazzled mcp` lists the zazzle_zazz_* tools.",
+      "key": "ZAZZLE_MCP_ZAZZ",
+      "type": "enum",
+      "default": "unset: listed only when the zazz store ($ZAZZ_STORE or ~/.zazzle/v1/zazz) has a registered script",
+      "sensitive": false,
+      "scope": "Read by `zazzled mcp` for each tools/list.",
+      "takesEffect": "immediately",
+      "details": "`1` always lists them, any other value never does; hiding them saves about 5,000 characters of tool catalog per session.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "offers_zazz"
+        }
+      ]
+    },
+    {
       "id": "ZAZZLE_LANGUAGES_DIR",
       "title": "ZAZZLE_LANGUAGES_DIR",
       "summary": "Where language modules and the JIT setting are kept.",

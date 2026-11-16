@@ -74,7 +74,7 @@
     {
       "id": "client-check",
       "name": "Check configured MCP servers",
-      "description": "`zazzle setup --check` starts every server each chosen client configures the way that client would and reports what works.",
+      "description": "`zazzle setup --check` reports locally how each chosen client is configured and tests zazzle and the hook; `--check --probe` also starts every other server the way that client would and reports what works.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/setup/check.rs",

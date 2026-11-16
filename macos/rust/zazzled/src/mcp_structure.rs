@@ -5,37 +5,37 @@ use serde_json::{json, Value};
 pub(crate) const TOOLS: &[Tool] = &[
     Tool {
         name: "zazzle_overview",
-        description: "Compact map of the git work tree from zazzle-csharp-indexer's index: file and line counts by language, top-level directories, entry points and project files, largest files. Start here on an unfamiliar repository. In a folder holding several repositories it lists them; pass repo for one's overview.",
+        description: "Map of the repository from the C# indexer: languages, top directories, entry and project files, largest files. Start here; in a folder of repositories it lists them.",
         schema: overview_schema,
         map: overview_args,
     },
     Tool {
         name: "zazzle_find_symbol",
-        description: "Find declarations by name from zazzle-csharp-indexer's index (case-insensitive; substring unless exact=true): `path:line kind container.name | signature`, exact matches first. Use it to find where a type or member is declared; zazzle_refs for where it is used. In a folder holding several repositories it searches all of them unless repo is given.",
+        description: "Where a type or member is declared, from the C# indexer (substring unless exact): path:line kind name | signature. zazzle_refs for uses.",
         schema: find_symbol_schema,
         map: find_symbol_args,
     },
     Tool {
         name: "zazzle_changed_since",
-        description: "Files added (A), modified (M) or deleted (D) in the git work tree since a cursor from an earlier call; call without a cursor to get one. Use it to refresh your picture after edits or a build instead of listing again. Cursors expire when the indexer's daemon restarts. In a folder holding several repositories it covers all of them unless repo is given.",
+        description: "Files added, modified or deleted since a cursor from an earlier call (none: get one); refresh after edits instead of listing again.",
         schema: changed_since_schema,
         map: changed_since_args,
     },
     Tool {
         name: "zazzle_git_log",
-        description: "Recent commits as `hash date author subject`, optionally for one path, with an optional message filter, from the repository holding the path (or repo). Use it instead of git log.",
+        description: "Recent commits (hash date author subject), optionally for a path or a message filter. Use instead of git log.",
         schema: git_log_schema,
         map: git_log_args,
     },
     Tool {
         name: "zazzle_git_blame",
-        description: "Who last changed each line of a range of a file: `hash (author date line) text`. Use it instead of git blame.",
+        description: "Who last changed each line of a range. Use instead of git blame.",
         schema: git_blame_schema,
         map: git_blame_args,
     },
     Tool {
         name: "zazzle_report_gap",
-        description: "Tell the zazzle maintainers what you wanted to know about the code but could not get from these tools, or what was slow, wrong or too verbose. One or two sentences; no code or secrets.",
+        description: "Tell zazzle's maintainers, in a sentence, what you needed and could not get, or what was slow or wrong. No code or secrets.",
         schema: report_gap_schema,
         map: report_gap_args,
     },
@@ -48,14 +48,14 @@ fn overview_schema() -> Value {
 
 // The optional repo argument: which repository, when the working directory holds several.
 fn repo_prop() -> Value {
-    json!({"type": "string", "description": "A repository folder (or any path inside one), when the working folder holds several"})
+    json!({"type": "string", "description": "Repository, if the folder holds several"})
 }
 
 // Schema for zazzle_find_symbol.
 fn find_symbol_schema() -> Value {
     object(
         json!({
-            "name": {"type": "string", "description": "Symbol name or part of it; Namespace.Type.Member (or a trailing part of it) narrows to that container"},
+            "name": {"type": "string", "description": "Name or part; Namespace.Type.Member narrows"},
             "exact": {"type": "boolean", "description": "Whole-name match only"},
             "kind": {"type": "string", "description": "Filter by kind: class, method, property, field, fn, def ..."},
             "limit": {"type": "integer", "description": "Max results (default 30)"},

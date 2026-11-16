@@ -62,7 +62,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read_again",
-        description: "Get a response again by its r:ID: the same text if nothing changed, else the current version under a new id. Outputs of clean, run and proxy are kept for an hour; full=true gives their uncut text. Use it instead of repeating a request whose result you no longer have.",
+        description: "Get an [r:ID] response again (the current version if it changed); clean, run and proxy outputs are kept an hour, full=true gives them uncut.",
         schema: read_again_schema,
         map: read_again_args,
     },
@@ -81,7 +81,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_edit",
-        description: "Edit one file safely: replace unique text, replace lines or insert after a line (each needs expect, the sha from zazzle_read with source=true, or anchors), or create a file. Writes are confined to the working directory, its git work tree, the workspaces the client names and those in ~/.zazzle/workspaces.",
+        description: "Edit one file: replace unique text or lines, or insert after a line (expect = sha from zazzle_read source=true), or create a file. Writes stay in the repository, client roots and workspaces.",
         schema: edit_schema,
         map: edit_args,
     },
@@ -113,9 +113,9 @@ fn find_schema() -> Value {
 fn read_schema() -> Value {
     object(
         json!({
-            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted); may be left out with symbol, which then finds the file through the C# indexer"},
-            "source": {"type": "boolean", "description": "C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files come as a terse view without a sha; true gives the code and its sha, which edits need"},
-            "symbol": {"type": "string", "description": "Read one symbol by name (Namespace.Type.Method, Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes; without paths, the file that declares it is found in the index"},
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B; optional with symbol"},
+            "source": {"type": "boolean", "description": "Exact code and its sha (edits need it); default is a terse view"},
+            "symbol": {"type": "string", "description": "One symbol with its docs: Namespace.Type.Member, Type.method or a::b; overloads Name(T1, T2) or #N; without paths, found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
@@ -130,7 +130,7 @@ fn read_again_schema() -> Value {
     object(
         json!({
             "id": {"type": "string", "description": "The id from a response's [r:ID] tag"},
-            "full": {"type": "boolean", "description": "For clean, run and proxy outputs (kept for an hour): the uncut text with line numbers"},
+            "full": {"type": "boolean", "description": "Uncut text of a clean, run or proxy output"},
             "lines": {"type": "string", "description": "With full: a line range A-B"},
             "budget": {"type": "integer", "description": "With full: token budget (default 3000)"}
         }),
@@ -183,7 +183,7 @@ fn edit_schema() -> Value {
             "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
             "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from zazzle_read with anchors"},
             "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
-            "expect": {"type": "string", "description": "The sha from zazzle_read's header (source=true for C#); needed by every edit except create"}
+            "expect": {"type": "string", "description": "Sha from zazzle_read source=true; every edit but create needs it"}
         }),
         &["path", "new"],
     )
@@ -390,7 +390,7 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION},
-        "instructions": crate::setup::INSTRUCTIONS
+        "instructions": crate::setup::MCP_INSTRUCTIONS
     })
 }
 
@@ -399,13 +399,26 @@ fn all_tools() -> impl Iterator<Item = &'static Tool> {
     TOOLS.iter().chain(crate::mcp_structure::TOOLS).chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
+// True when the zazz tools are worth their place in every request: ZAZZLE_MCP_ZAZZ=1, or at least one script is registered; the zazz CLI works either way.
+fn offers_zazz() -> bool {
+    if let Ok(v) = std::env::var("ZAZZLE_MCP_ZAZZ") {
+        return v == "1";
+    }
+    let meta = crate::zazz::registry::default_root().map(|r| r.join("meta"));
+    meta.ok()
+        .and_then(|m| std::fs::read_dir(m).ok())
+        .is_some_and(|mut es| es.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "json"))))
+}
+
 // Lists the tools with their schemas.
 fn list_tools() -> Value {
+    let zazz = offers_zazz();
     let tools: Vec<Value> = all_tools()
+        .filter(|t| zazz || !t.name.starts_with("zazz_"))
         .map(|t| {
             let mut schema = (t.schema)();
             if PINNABLE.contains(&t.name) {
-                schema["properties"]["commit"] = json!({"type": "string", "description": "The commit sha (or a prefix, or HEAD) the answer must come from: repositories checked out at another commit are refused or left out, and the answer ends with [commit SHA REPO]"});
+                schema["properties"]["commit"] = json!({"type": "string", "description": "Answer only from repositories at this commit (sha or HEAD)"});
             }
             json!({"name": t.name, "description": t.description, "inputSchema": schema})
         })
@@ -997,11 +1010,28 @@ mod tests {
     // Checks every tool has a schema object with its required list.
     #[test]
     fn test_all_tool_schemas() {
+        let _g = crate::testutil::env_lock();
+        let saved = (std::env::var_os("ZAZZLE_MCP_ZAZZ"), std::env::var_os("ZAZZ_STORE"));
+        std::env::set_var("ZAZZLE_MCP_ZAZZ", "1");
         let l = list_tools();
         for t in l["tools"].as_array().expect("tools") {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
         assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
+        std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 13);
+        std::env::remove_var("ZAZZLE_MCP_ZAZZ");
+        let store = crate::testutil::TempDir::new();
+        std::env::set_var("ZAZZ_STORE", store.path());
+        assert!(!offers_zazz(), "no scripts registered");
+        store.write("meta/abc.json", b"{}");
+        assert!(offers_zazz(), "a registered script brings the zazz tools");
+        for (k, v) in [("ZAZZLE_MCP_ZAZZ", saved.0), ("ZAZZ_STORE", saved.1)] {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 }

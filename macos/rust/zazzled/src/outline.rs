@@ -386,6 +386,10 @@ fn indent_end(lines: &[&str], at: usize) -> usize {
             end = j;
             continue;
         }
+        if t.starts_with('{') {
+            end = j;
+            continue;
+        }
         if t.starts_with(['}', ')', ']']) || t == "end" {
             end = j;
         }
@@ -394,20 +398,51 @@ fn indent_end(lines: &[&str], at: usize) -> usize {
     end + 1
 }
 
-// Outlines other languages with declaration keywords and indentation.
-fn generic_outline(lines: &[&str]) -> Vec<Symbol> {
+// Returns the regex that recognises method and constructor declarations in C-like languages, which name no keyword: modifiers, a return type unless it is a constructor, a name and `(`.
+fn method_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\s*((?:(?:public|private|protected|internal|static|async|override|virtual|abstract|sealed|final|synchronized|extern|unsafe|partial|native|default|inline|const|constexpr)\s+)*)(?:(<[^>]*>\s+)?([A-Za-z_][\w.]*(?:<[^()]*?>)?(?:\[\])*\??)\s+)?([A-Za-z_]\w*)\s*(?:<[^()]*?>)?\s*\([^;]*$")
+            .expect("method regex is valid")
+    })
+}
+
+// Returns the name of the method or constructor a C-like line declares, if it declares one; statements such as `return f(` and `new T(` are not declarations.
+fn method_name(line: &str) -> Option<String> {
+    const NOT_TYPES: [&str; 12] =
+        ["return", "new", "await", "throw", "else", "yield", "case", "goto", "using", "var", "in", "is"];
+    const NOT_NAMES: [&str; 9] =
+        ["if", "for", "foreach", "while", "switch", "catch", "lock", "using", "fixed"];
+    let c = method_regex().captures(line)?;
+    let name = c.get(4)?.as_str();
+    let typ = c.get(3).map(|m| m.as_str());
+    let modifiers = c.get(1).is_some_and(|m| !m.as_str().is_empty());
+    let keyword = NOT_NAMES.contains(&name) || typ.is_some_and(|t| NOT_TYPES.contains(&t));
+    (!keyword && (typ.is_some() || modifiers)).then(|| name.to_string())
+}
+
+// Outlines other languages with declaration keywords and indentation, and in C-like languages also their methods.
+fn generic_outline(lines: &[&str], methods: bool) -> Vec<Symbol> {
     let re = declaration_regex();
     let mut out: Vec<Symbol> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        let Some(c) = re.captures(line) else { continue };
-        let kind = match &c[2] {
-            "fn" | "func" | "function" | "def" => "fn",
-            "mod" | "module" => "mod",
-            other => KIND_NAMES.iter().find(|k| **k == other).copied().unwrap_or("decl"),
+        let (kind, name) = match re.captures(line) {
+            Some(c) => (
+                match &c[2] {
+                    "fn" | "func" | "function" | "def" => "fn",
+                    "mod" | "module" => "mod",
+                    other => KIND_NAMES.iter().find(|k| **k == other).copied().unwrap_or("decl"),
+                },
+                c[3].to_string(),
+            ),
+            None => match methods.then(|| method_name(line)).flatten() {
+                Some(n) => ("method", n),
+                None => continue,
+            },
         };
         let (start, end) = (i + 1, indent_end(lines, i));
         let depth = out.iter().filter(|s| s.end >= end).count();
-        out.push(Symbol { kind, name: c[3].to_string(), start, end, depth });
+        out.push(Symbol { kind, name, start, end, depth });
     }
     out
 }
@@ -437,7 +472,12 @@ pub fn outline(path: &Path, data: &[u8], starts: &[u32]) -> Vec<Symbol> {
         Lang::Markdown => markdown_outline(&lines),
         Lang::Toml => toml_outline(&lines),
         Lang::Json => json_outline(data, starts, lines.len()),
-        _ => generic_outline(&lines),
+        _ => {
+            const C_LIKE: [&str; 10] =
+                ["cs", "java", "cpp", "cc", "cxx", "hpp", "dart", "groovy", "kt", "scala"];
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            generic_outline(&lines, C_LIKE.contains(&ext.as_str()))
+        }
     }
 }
 
@@ -634,6 +674,34 @@ mod tests {
         assert_eq!(odd[0].kind, "mod");
     }
 
+    // Checks the line-based fallback finds C#, Java and C++ methods, test methods under attributes and Allman braces, and skips statements.
+    #[test]
+    fn test_generic_methods() {
+        let src = "namespace Shop.Tests\n{\n    public class OrderTests\n    {\n        private readonly Order _o = new Order();\n\n        [Fact]\n        public async Task Submits_order()\n        {\n            if (_o.Empty) {\n                return Run(\n                    1);\n            }\n            await _o.Submit();\n        }\n\n        public OrderTests(int x) { }\n\n        static List<T> Of<T>(params T[] xs)\n        {\n            foreach (var x in xs) { }\n            return new List<T>(\n                xs);\n        }\n        abstract void Later();\n    }\n}\n";
+        let lines: Vec<&str> = src.lines().collect();
+        let got = brief(&generic_outline(&lines, true));
+        assert_eq!(
+            got,
+            [
+                "namespace Shop.Tests 1-27/0",
+                "class OrderTests 3-26/1",
+                "method Submits_order 8-15/2",
+                "method OrderTests 17-17/2",
+                "method Of 19-24/2"
+            ]
+        );
+        assert_eq!(brief(&generic_outline(&lines, false)).len(), 2);
+        assert_eq!(
+            brief(&out("T.java", "class T {\n  @Test\n  void ok() {\n  }\n}\n")),
+            ["class T 1-5/0", "method ok 3-4/1"]
+        );
+        for line in
+            ["return f(", "new T(", "else if (x)", "x(", "int x = f(", "public static void g(string[] args)"]
+        {
+            assert_eq!(method_name(line), line.starts_with("public").then(|| "g".to_string()), "{line}");
+        }
+    }
+
     // Checks the generic outliner labels unknown keywords as declarations.
     #[test]
     fn test_generic_unknown_keyword_label() {
@@ -716,7 +784,7 @@ mod tests {
         assert_eq!(outline(p, small, &line_starts(small))[0].kind, "fn");
         let big = small.repeat(MAX_PARSE_BYTES / small.len() + 1);
         let starts = line_starts(&big);
-        assert_eq!(outline(p, &big, &starts), generic_outline(&text_lines(&big, &starts)));
+        assert_eq!(outline(p, &big, &starts), generic_outline(&text_lines(&big, &starts), false));
     }
 
     // Checks the kind-id table marks symbol kinds and variable declarators, and leaves other kinds plain.

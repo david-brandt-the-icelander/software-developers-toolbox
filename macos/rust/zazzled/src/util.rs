@@ -66,6 +66,31 @@ pub fn locate(arg: &str, cwd: &Path) -> PathBuf {
     }
 }
 
+// Names up to three files in the work tree (or the working directory) whose name matches a missing path's file name or contains its stem, for an error to offer.
+pub fn similar(arg: &str, cwd: &Path, walks: &crate::walk::WalkCache) -> String {
+    let want = Path::new(arg).file_name().and_then(|n| n.to_str()).unwrap_or(arg).to_lowercase();
+    let stem = want.split('.').next().unwrap_or(&want).to_string();
+    if stem.len() < 3 {
+        return String::new();
+    }
+    let root = crate::indexer::work_tree(cwd).unwrap_or(cwd).to_path_buf();
+    let Ok(files) = crate::walk::collect(&[root], &crate::walk::WalkOpts::default(), walks) else {
+        return String::new();
+    };
+    let name = |f: &PathBuf| f.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+    let mut hits: Vec<&PathBuf> = files.iter().filter(|f| name(f) == want).collect();
+    if hits.is_empty() {
+        hits = files.iter().filter(|f| name(f).contains(&stem)).collect();
+    }
+    hits.sort_by_key(|f| rank(f));
+    let shown: Vec<String> = hits.iter().take(3).map(|f| display(f, cwd)).collect();
+    match (shown.len(), hits.len()) {
+        (0, _) => String::new(),
+        (n, all) if all > n => format!("; similar: {} (+{} more)", shown.join(", "), all - n),
+        _ => format!("; similar: {}", shown.join(", ")),
+    }
+}
+
 // True when a folder holds a Visual Studio solution file.
 fn has_solution(dir: &Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|mut es| {

@@ -308,6 +308,53 @@
           "symbol": "Pending::note_text"
         }
       ]
+    },
+    {
+      "id": "agent-token-economy",
+      "name": "Small fixed cost per agent session",
+      "description": "What an agent pays for zazzle before and around its work is kept small: short MCP instructions, a catalog without the zazz tools until a script is registered, one shared budget for a multi-path read, similar files offered for a missing path, and one immediate message while the C# indexer is unavailable.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "MCP_INSTRUCTIONS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "offers_zazz"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "MIN_SHARE"
+        },
+        {
+          "path": "macos/rust/zazzled/src/util.rs",
+          "symbol": "similar"
+        },
+        {
+          "path": "macos/rust/zazzled/src/indexer.rs",
+          "symbol": "FAIL_MEMORY"
+        }
+      ],
+      "behavior": "Initialize sends about 500 characters of instructions (the full text stays in CLAUDE.md and AGENTS.md); tools/list has 13 tools unless ZAZZLE_MCP_ZAZZ=1 or a zazz script is registered; read gives each remaining path an even share of what is left of its budget and names files it did not reach; read, outline and ls add `similar: ...` with up to three files of the same name or stem; after a failed indexer connection, structure tools answer `C# indexer unavailable: WHY` at once for 15 s, and report_gap still records the gap in the activity log.",
+      "outcome": "Measured on this repository: instructions 2,044 to 524 characters, catalog 14,370 to 8,939 characters, a four-file read of 2,000-line files 39,137 to 10,358 bytes, and a Java test class outline from 1 symbol to 5 (class and its four methods).",
+      "constraints": [
+        "Clients that repeat the instructions per tool (Codex tool discovery) still pay them once per discovered tool.",
+        "Suggestions only search the work tree holding the working directory (or the working directory), and only by file name."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "unavailable"
+        },
+        {
+          "path": "macos/rust/zazzled/src/outline.rs",
+          "symbol": "method_name"
+        }
+      ]
     }
   ],
   "relatedViews": [
