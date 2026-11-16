@@ -39,6 +39,21 @@ pub fn plist(exe: &Path, sock: &Path) -> String {
     )
 }
 
+// Returns the program a LaunchAgent plist starts (the first ProgramArguments string), or None without one.
+pub fn plist_program(text: &str) -> Option<PathBuf> {
+    let after = &text[text.find("<key>ProgramArguments</key>")?..];
+    let start = after.find("<string>")? + "<string>".len();
+    let end = start + after[start..].find("</string>")?;
+    let raw = &after[start..end];
+    let unescaped = raw
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    Some(PathBuf::from(unescaped))
+}
+
 // Returns where the LaunchAgent plist lives for a home directory.
 pub fn plist_path(home: &Path) -> PathBuf {
     home.join("Library/LaunchAgents").join(format!("{LABEL}.plist"))
@@ -205,6 +220,16 @@ mod tests {
     use super::*;
     use crate::testutil::TempDir;
     use std::cell::RefCell;
+
+    // Checks the program is read back from a plist, unescaped, and a plist without one gives none.
+    #[test]
+    fn test_plist_program() {
+        let exe = Path::new("/opt/a&b<c>\"d'/zazzled");
+        assert_eq!(plist_program(&plist(exe, Path::new("/s"))).as_deref(), Some(exe));
+        assert_eq!(plist_program("<plist><dict></dict></plist>"), None);
+        assert_eq!(plist_program("<key>ProgramArguments</key><array></array>"), None);
+        assert_eq!(plist_program("<key>ProgramArguments</key><array><string>/x"), None);
+    }
 
     // Checks the plist names the label, program and socket and escapes XML.
     #[test]

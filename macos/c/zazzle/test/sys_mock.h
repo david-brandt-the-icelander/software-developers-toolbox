@@ -29,6 +29,8 @@ struct mock {
 	int write_n, write_calls;
 	long read_rc;
 	int read_calls;
+	const char *reply;
+	size_t reply_len, reply_pos;
 	long recv_rc;
 	int recv_calls, relax_calls;
 	uint64_t clock;
@@ -58,12 +60,17 @@ static inline __attribute__((noreturn)) void sys_exit(int code)
 	longjmp(M.jb, 1);
 }
 
-/* Returns the scripted read result and status byte. */
+/* Returns the scripted reply bytes while any are left, then the scripted read result and status byte. */
 static inline long sys_read(int fd, void *buf, size_t n)
 {
 	(void)fd;
-	(void)n;
 	M.read_calls++;
+	if (M.reply_pos < M.reply_len) {
+		size_t k = M.reply_len - M.reply_pos < n ? M.reply_len - M.reply_pos : n;
+		memcpy(buf, M.reply + M.reply_pos, k);
+		M.reply_pos += k;
+		return (long)k;
+	}
 	if (M.read_rc == 1)
 		*(unsigned char *)buf = M.status;
 	return M.read_rc;

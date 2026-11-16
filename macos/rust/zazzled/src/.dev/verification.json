@@ -128,9 +128,28 @@
         "A live daemon on the socket is refused; a stale socket is cleared.",
         "ZAZZLE_IDLE_SECS sets the default idle time and a bad value is ignored.",
         "The client starts the daemon when none listens, retries, and gives up after its deadline.",
-        "A daemon the invoker starts does not keep the caller's standard output open."
+        "A daemon the invoker starts does not keep the caller's standard output open.",
+        "A daemon whose binary an upgrade replaced retires: on its own socket it removes the socket and answers queued connections with RESTART; on launchd's socket it exits without accepting them; a binary left untouched or missing from the start is not taken as replaced."
       ],
       "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "test_exe_watch_replaced",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "test_replaced_binary_restarts_own_socket",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/server.rs",
+          "symbol": "test_replaced_binary_leaves_launchd_socket",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
         {
           "type": "automated",
           "path": "macos/rust/zazzled/src/server.rs",
@@ -192,11 +211,17 @@
         }
       ],
       "criteria": [
-        "The plist names the label, the program with `serve`, the socket with mode 0600, and escapes XML.",
+        "The plist names the label, the program with `serve`, the socket with mode 0600, and escapes XML; the program is read back from it, unescaped.",
         "install writes the plist and runs bootout then bootstrap; uninstall boots out and removes it, or says it was not installed.",
         "launchctl that fails or hangs is reported."
       ],
       "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/launchd.rs",
+          "symbol": "test_plist_program",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
         {
           "type": "automated",
           "path": "macos/rust/zazzled/src/launchd.rs",

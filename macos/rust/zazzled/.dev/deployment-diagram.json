@@ -115,7 +115,7 @@
       "id": "zazzle",
       "name": "zazzle process",
       "kind": "process",
-      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with zazzled instead. Run as `zazz` it sends `zazz ARGS`, and under an installed script's name `zazz exec-name NAME ARGS`."
+      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with zazzled instead. Run as `zazz` it sends `zazz ARGS`, and under an installed script's name `zazz exec-name NAME ARGS`. On RESTART from a retiring daemon it reconnects and sends the request once more."
     },
     {
       "id": "mcp",
@@ -127,7 +127,7 @@
       "id": "daemon",
       "name": "zazzled serve process",
       "kind": "process",
-      "description": "The daemon, listening on $ZAZZLE_SOCK (by default ~/.zazzle/sock, mode 0600 in a 0700 directory): 2 to 8 worker threads and a pool of helper threads; exits after the idle time (default 1800 s) with no connection open."
+      "description": "The daemon, listening on $ZAZZLE_SOCK (by default ~/.zazzle/sock, mode 0600 in a 0700 directory): 2 to 8 worker threads and a pool of helper threads; exits after the idle time (default 1800 s) with no connection open. It also exits once an upgrade has replaced its binary, answering connections still queued on its own socket with RESTART so the invoker resends them to the new daemon."
     },
     {
       "id": "cache",

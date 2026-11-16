@@ -175,7 +175,7 @@ impl Env {
 }
 
 // Returns a path that survives upgrades: Homebrew's versioned `Cellar/NAME/VERSION/...` becomes its `opt/NAME/...` link when that exists.
-fn stable_exe(p: &Path) -> PathBuf {
+pub fn stable_exe(p: &Path) -> PathBuf {
     let parts: Vec<_> = p.components().collect();
     let Some(at) = parts.iter().position(|c| c.as_os_str() == "Cellar") else { return p.to_path_buf() };
     let (Some(name), true) = (parts.get(at + 1), parts.len() > at + 3) else { return p.to_path_buf() };
