@@ -105,6 +105,12 @@
       "responsibility": "The engine, walker, outliner, symbol finder, pool, indexer bridge, session table and helpers the commands run on.",
       "folder": "macos/rust/zazzled/src",
       "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "pin",
+      "name": "Commit pins (pin.rs)",
+      "responsibility": "Checks the repositories a command names are at the --commit sha, narrows folder-wide searches to those that are, and writes the [commit SHA REPO] lines.",
+      "folder": "macos/rust/zazzled/src/cmd"
     }
   ],
   "relationships": [
@@ -311,6 +317,12 @@
       "to": "languages",
       "kind": "depends-on",
       "description": "Runs `languages`."
+    },
+    {
+      "from": "cmd",
+      "to": "pin",
+      "kind": "contains",
+      "description": "Commit pins."
     }
   ]
 }

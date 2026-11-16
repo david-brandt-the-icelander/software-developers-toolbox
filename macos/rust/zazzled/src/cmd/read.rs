@@ -21,7 +21,7 @@ use crate::tokens;
 use crate::util::{clip, display, hex8, locate};
 use crate::xml;
 
-const SPEC: &[Flag] = &[
+pub(super) const SPEC: &[Flag] = &[
     opt("around", 'a'),
     opt("ctx", '\0'),
     opt("head", 'n'),
@@ -61,7 +61,7 @@ pub(super) fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
 }
 
 // Splits PATH:A-B into the path and an optional range.
-fn split_target(arg: &str) -> (&str, Option<(usize, Option<usize>)>) {
+pub(super) fn split_target(arg: &str) -> (&str, Option<(usize, Option<usize>)>) {
     if let Some(i) = arg.rfind(':') {
         if i > 0 {
             if let Some(range) = parse_range(&arg[i + 1..]) {

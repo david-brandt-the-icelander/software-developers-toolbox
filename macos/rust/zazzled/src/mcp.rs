@@ -402,14 +402,43 @@ fn all_tools() -> impl Iterator<Item = &'static Tool> {
 // Lists the tools with their schemas.
 fn list_tools() -> Value {
     let tools: Vec<Value> = all_tools()
-        .map(|t| json!({"name": t.name, "description": t.description, "inputSchema": (t.schema)()}))
+        .map(|t| {
+            let mut schema = (t.schema)();
+            if PINNABLE.contains(&t.name) {
+                schema["properties"]["commit"] = json!({"type": "string", "description": "The commit sha (or a prefix, or HEAD) the answer must come from: repositories checked out at another commit are refused or left out, and the answer ends with [commit SHA REPO]"});
+            }
+            json!({"name": t.name, "description": t.description, "inputSchema": schema})
+        })
         .collect();
     json!({"tools": tools})
 }
 
+// The tools that read a repository and take `commit`.
+const PINNABLE: &[&str] = &[
+    "zazzle_find",
+    "zazzle_read",
+    "zazzle_ls",
+    "zazzle_outline",
+    "zazzle_refs",
+    "zazzle_edit",
+    "zazzle_overview",
+    "zazzle_find_symbol",
+    "zazzle_changed_since",
+    "zazzle_git_log",
+    "zazzle_git_blame",
+];
+
 // Wraps text as an MCP tool result.
 fn tool_result(text: &str, is_error: bool) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": is_error})
+}
+
+// Puts `--commit SHA` right after the command name when a repository tool is given `commit`.
+fn pin_args(tool: &str, mut argv: Vec<String>, args: &Value) -> Result<Vec<String>, String> {
+    if let Some(c) = get_str(args, "commit")?.filter(|_| PINNABLE.contains(&tool)) {
+        argv.splice(1..1, ["--commit".to_string(), c]);
+    }
+    Ok(argv)
 }
 
 // Runs a tool call and returns its result, or a protocol error for an unknown tool.
@@ -420,7 +449,7 @@ fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     };
     let empty = json!({});
     let args = params.get("arguments").unwrap_or(&empty);
-    let argv = match (tool.map)(args) {
+    let argv = match (tool.map)(args).and_then(|a| pin_args(name, a, args)) {
         Ok(a) => a,
         Err(e) => return Ok(tool_result(&format!("error: {e}"), true)),
     };
@@ -822,6 +851,32 @@ mod tests {
         assert_eq!(
             crate::proto::split_session(&crate::proto::join_session("s", &["/w".into(), "/v".into()])),
             ("s".to_string(), vec![PathBuf::from("/w"), PathBuf::from("/v")])
+        );
+    }
+
+    // Checks repository tools take commit, passed as --commit after the command, and others do not offer it.
+    #[test]
+    fn test_commit_argument() {
+        let b = fake(0, "ok");
+        ask(
+            &b,
+            json!({"id":5,"method":"tools/call","params":{"name":"zazzle_find","arguments":{"pattern":"x","commit":"abc123"}}}),
+        );
+        assert_eq!(b.calls.borrow()[0][..3], ["find", "--commit", "abc123"]);
+        let bad = ask(
+            &b,
+            json!({"id":6,"method":"tools/call","params":{"name":"zazzle_find","arguments":{"pattern":"x","commit":1}}}),
+        );
+        assert_eq!(bad["result"]["content"][0]["text"], "error: 'commit' must be a string");
+        let tools = list_tools();
+        let schema = |n: &str| {
+            tools["tools"].as_array().expect("tools").iter().find(|t| t["name"] == n).expect("tool")
+                ["inputSchema"]
+                .clone()
+        };
+        assert!(
+            schema("zazzle_read")["properties"]["commit"].is_object()
+                && schema("zazzle_read_again")["properties"]["commit"].is_null()
         );
     }
 

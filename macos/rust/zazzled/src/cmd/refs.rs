@@ -9,7 +9,7 @@ use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use std::path::{Path, PathBuf};
 
-const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u')];
+pub(super) const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u')];
 const USAGE: &str = "usage: refs SYMBOL [PATH..] [-g GLOB] [-m N] [-u]";
 const DEFAULT_MAX: usize = 50;
 const PER_FILE: usize = 1000;

@@ -6,7 +6,7 @@ use crate::util::{display, locate};
 use crate::walk::{self, WalkOpts};
 use std::path::PathBuf;
 
-const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm')];
+pub(super) const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm')];
 const USAGE: &str = "usage: outline PATH.. [-d N] [-m N]";
 const DEFAULT_DEPTH: usize = 3;
 const DEFAULT_MAX: usize = 200;

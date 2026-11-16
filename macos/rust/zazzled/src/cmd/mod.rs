@@ -13,6 +13,7 @@ pub mod find;
 pub mod languages;
 pub mod ls;
 pub mod outline;
+mod pin;
 pub mod read;
 pub mod refs;
 pub mod structure;
@@ -43,7 +44,8 @@ report-gap TEXT [--repo DIR]  tell the maintainers what you needed and could not
 status  daemon info
 languages [jit [on|off] | fetch [NAME..]]  language modules: list them, download on first use or not, download the missing ones
 C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files read as a terse view without a sha; --source gives the code and the sha every edit needs.
-Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.";
+Any command: --budget T caps output at ~T tokens (default 8000; read and clean have their own); --disable-session-deduping resends output already sent in this session.
+Repository commands (find, refs, ls, outline, read, edit, overview, find-symbol, changed-since, git-log, git-blame): --commit SHA (a prefix, or HEAD) answers only from repositories checked out at that commit, refuses one at another commit and says where it is checked out, narrows a folder of repositories to those at it, and ends with [commit SHA REPO].";
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
 pub struct Caller {
@@ -117,12 +119,13 @@ impl Output {
 struct Globals {
     dedupe: bool,
     budget: Option<usize>,
+    commit: Option<String>,
 }
 
 // Pulls the global options out of a command's arguments; read keeps its own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
     let takes_budget = !matches!(cmd, "read" | "cat" | "clean");
-    let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None });
+    let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None, commit: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if a == "--" {
@@ -130,6 +133,9 @@ fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), S
             rest.extend(it.by_ref().cloned());
         } else if a == "--disable-session-deduping" {
             g.dedupe = false;
+        } else if a == "--commit" || a.starts_with("--commit=") {
+            let value = a.strip_prefix("--commit=").map(str::to_string).or_else(|| it.next().cloned());
+            g.commit = Some(value.filter(|v| !v.is_empty()).ok_or("--commit needs a commit sha (or HEAD)")?);
         } else if takes_budget && (a == "--budget" || a.starts_with("--budget=")) {
             let value = a.strip_prefix("--budget=").map(str::to_string).or_else(|| it.next().cloned());
             let n: usize = value.and_then(|v| v.parse().ok()).ok_or("--budget needs a number")?;
@@ -176,12 +182,20 @@ pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String,
         Ok(x) => x,
         Err(e) => return (Output::err(&e), String::new(), true),
     };
+    let (rest, pinned) = match globals.commit.as_deref().map(|c| pin::apply(ctx, cmd, &rest, c)) {
+        None => (rest, String::new()),
+        Some(Ok(x)) => x,
+        Some(Err(e)) => return (Output::err(&e), String::new(), true),
+    };
     let mut out = match dispatch(ctx, cmd, &rest) {
         Ok(o) => o,
         Err(msg) => Output::err(&msg),
     };
     if out.idable && !matches!(cmd, "read" | "cat" | "clean") {
         out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
+    }
+    if !pinned.is_empty() {
+        out.text = format!("{}\n{pinned}", out.text.trim_end());
     }
     (out, describe(cmd, &rest), globals.dedupe)
 }

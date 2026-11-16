@@ -8,7 +8,7 @@ use crate::walk::{self, WalkOpts};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm'), flag("no-ignore", 'u')];
+pub(super) const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm'), flag("no-ignore", 'u')];
 const USAGE: &str = "usage: ls [DIR] [-d N] [-m N] [-u]";
 const DEFAULT_DEPTH: usize = 2;
 const DEFAULT_MAX: usize = 150;

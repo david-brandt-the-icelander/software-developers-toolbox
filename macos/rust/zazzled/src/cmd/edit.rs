@@ -9,7 +9,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const SPEC: &[Flag] = &[
+pub(super) const SPEC: &[Flag] = &[
     opt("old", '\0'),
     opt("new", '\0'),
     flag("all", '\0'),

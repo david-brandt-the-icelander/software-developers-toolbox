@@ -12,7 +12,7 @@ use std::fs::{File, Metadata};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-const SPEC: &[Flag] = &[
+pub(super) const SPEC: &[Flag] = &[
     flag("ignore-case", 'i'),
     flag("fixed", 'F'),
     flag("word", 'w'),

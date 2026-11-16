@@ -7,10 +7,10 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 const REPO: Flag = opt("repo", 'r');
-const SYMBOL_SPEC: &[Flag] =
+pub(super) const SYMBOL_SPEC: &[Flag] =
     &[flag("exact", 'x'), opt("kind", 'k'), opt("limit", 'm'), opt("offset", 'o'), REPO];
-const LOG_SPEC: &[Flag] = &[opt("n", 'n'), opt("grep", '\0'), REPO];
-const BLAME_SPEC: &[Flag] = &[opt("start", '\0'), opt("end", '\0')];
+pub(super) const LOG_SPEC: &[Flag] = &[opt("n", 'n'), opt("grep", '\0'), REPO];
+pub(super) const BLAME_SPEC: &[Flag] = &[opt("start", '\0'), opt("end", '\0')];
 const OVERVIEW_USAGE: &str = "usage: overview [--repo DIR]";
 const SYMBOL_USAGE: &str =
     "usage: find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]";

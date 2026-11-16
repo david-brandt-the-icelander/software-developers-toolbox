@@ -991,6 +991,45 @@
           "symbol": "read_args"
         }
       ]
+    },
+    {
+      "id": "commit-pinning",
+      "name": "Answers pinned to a commit",
+      "description": "Repository commands take --commit SHA (MCP commit): they answer only from repositories checked out at that commit and name the commit each answer came from.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "apply"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "pin_args"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Pinning to a commit"
+        }
+      ],
+      "behavior": "split_globals takes --commit; pin::apply parses the command's own flags to find the paths it names (read's ranges dropped, edit's and git-blame's file, --repo), maps each to its git work tree and compares `git rev-parse HEAD` with the sha (a prefix of four or more hex digits, or HEAD). A named repository at another commit is refused with its commit and, from `git worktree list`, the worktree that has the commit, or whether `git cat-file` finds it. With no path in a repository (a folder of repositories, named or the working directory), the repositories below are filtered to those at the commit and the arguments narrowed to them (paths for find, refs, ls and outline; --repo for the structure tools when exactly one). After the command, one `[commit SHA REPO]` line per repository is added, noting uncommitted changes from `git status --porcelain --untracked-files=no` over the named files or the tree.",
+      "outcome": "An agent can say which commit it is reasoning about and never gets a mix of answers from repositories or worktrees at other commits.",
+      "constraints": [
+        "Only checked-out files are read: a commit that no worktree has is refused, not read from history.",
+        "Commands that read no repository (clean, run, status, zazz) refuse --commit."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "elsewhere"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "footer"
+        }
+      ]
     }
   ],
   "relatedViews": [

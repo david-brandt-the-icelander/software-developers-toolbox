@@ -211,6 +211,14 @@ Where a symbol is used is `zazzle_refs` (`refs`); the indexer's `find_references
 
 Every edit except `--create` needs proof that the caller read the current code: `--expect SHA` from `read --source`, or `--at` anchors from `read --source --anchors`. A refusal never reveals the current sha or anchors (`the file is not the version you read; read it again with --source`). A successful edit returns the new sha, since the caller wrote the change.
 
+## Pinning to a commit
+
+Every repository command takes `--commit SHA` (MCP `commit`): a full sha, a prefix of at least four hex digits, or `HEAD`. zazzle works out which repositories the request touches (the paths it names, else the working directory's repository, else the repositories below the working directory) and answers only from those checked out at that commit:
+
+- A path in a repository at another commit is refused, naming the commit it is at; if a worktree of that repository has the commit checked out, the refusal names it, and otherwise says whether the repository has the commit at all. zazzle never reads history: it answers from checked-out files.
+- In a folder of several repositories (or worktrees), a search, listing or outline is narrowed to the repositories at the commit, so a sibling checked out elsewhere never contributes; the structure tools need one such repository (else `--repo`).
+- The answer ends with `[commit SHA REPO]` for each repository it came from, with the full sha, and `, with uncommitted changes in these files` (or `in the work tree`) when the files read, or the tree searched, differ from the commit. `HEAD` asks for these lines without pinning.
+
 ## Paths
 
 Paths are absolute or relative to the working directory. A relative path that is not there is also looked for from the folders above it that hold a solution (`.sln`, `.slnx`), up to the repository root, then from the repository root; in a folder of repositories, from the one repository below that has it. `REPO:path` names a repository the way zazzle shows it (`api:src/Orders/OrderService.cs`). New files (`edit --create`) still go where the path says from the working directory.
