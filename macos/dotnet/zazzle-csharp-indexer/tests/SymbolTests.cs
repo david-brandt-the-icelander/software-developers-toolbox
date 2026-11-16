@@ -49,6 +49,11 @@ public class SymbolTests
         Assert.Contains("r:engine.rs:", Call(tool, "{\"name\":\"engin\"}"));
         Assert.DoesNotContain("Widget.cs", Call(tool, "{\"name\":\"engin\"}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Widget\",\"kind\":\"method\"}"));
+        Assert.Contains("r:Widget.cs:9 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"Demo.Widget.Spin\",\"exact\":true}"));
+        Assert.Contains("r:Widget.cs:9 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"widget::spin\",\"exact\":true}"));
+        Assert.Contains("Demo.Widget.Spin", Call(tool, "{\"name\":\"Widget.sp\"}"));
+        Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Other.Widget.Spin\",\"exact\":true}"));
+        Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"emo.Widget.Spin\",\"exact\":true}"));
     }
 
     [Fact]

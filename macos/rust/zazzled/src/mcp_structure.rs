@@ -55,7 +55,7 @@ fn repo_prop() -> Value {
 fn find_symbol_schema() -> Value {
     object(
         json!({
-            "name": {"type": "string", "description": "Symbol name or part of it"},
+            "name": {"type": "string", "description": "Symbol name or part of it; Namespace.Type.Member (or a trailing part of it) narrows to that container"},
             "exact": {"type": "boolean", "description": "Whole-name match only"},
             "kind": {"type": "string", "description": "Filter by kind: class, method, property, field, fn, def ..."},
             "limit": {"type": "integer", "description": "Max results (default 30)"},

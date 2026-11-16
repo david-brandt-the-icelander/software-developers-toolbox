@@ -211,11 +211,16 @@ Where a symbol is used is `zazzle_refs` (`refs`); the indexer's `find_references
 
 Every edit except `--create` needs proof that the caller read the current code: `--expect SHA` from `read --source`, or `--at` anchors from `read --source --anchors`. A refusal never reveals the current sha or anchors (`the file is not the version you read; read it again with --source`). A successful edit returns the new sha, since the caller wrote the change.
 
+## Paths
+
+Paths are absolute or relative to the working directory. A relative path that is not there is also looked for from the folders above it that hold a solution (`.sln`, `.slnx`), up to the repository root, then from the repository root; in a folder of repositories, from the one repository below that has it. `REPO:path` names a repository the way zazzle shows it (`api:src/Orders/OrderService.cs`). New files (`edit --create`) still go where the path says from the working directory.
+
 ## Symbols
 
 `zazzle read FILE --symbol NAME` (`-s`) reads one symbol instead of the whole file: the outline gives its range, which is extended upward over the doc comments, comments and attributes directly above it (`///`, `/** */`, `#[...]`, C# `[...]`, `@decorator`, Python `#`), so a C# method's XML doc comes with it.
 
-- `NAME` is the symbol's name or the last parts of its qualified name: `Invoice.Total`, `billing::tax::total`. Containers come from nesting (classes, impls, modules, namespaces); `impl Display for A` counts as `A`; generics are ignored. Exact case is tried first, then any case.
+- `NAME` is the symbol's name or the last parts of its qualified name: `Invoice.Total`, `billing::tax::total`, `Acme.Shop.Orders.OrderService.Submit`. Containers come from nesting (classes, impls, modules, namespaces, and a C# file-scoped `namespace X;` for everything after it); `impl Display for A` counts as `A`; generics are ignored. Exact case is tried first, then any case.
+- Without a file (`zazzle read --symbol Acme.Shop.Orders.OrderService.Submit`, or `zazzle_read` with `symbol` and no `paths`), the file comes from zazzle-csharp-indexer's index: the one file that declares it is read; if several do, they are listed (`path:line kind Namespace.Type.Member | signature`) to pick from or to qualify the name further. `find-symbol Namespace.Type.Member` (or any trailing part) searches the index the same way.
 - Overloads are picked by parameter types: `Total(decimal, int)`, `Total()`. Types are compared as written in the declaration, ignoring spaces (`Dictionary<string,int>` matches `Dictionary<string, int>`, but `decimal` does not match `System.Decimal`); both `Type name` and `name: Type` declarations work, defaults, attributes and modifiers (`ref`, `out`, `params`, `mut`) are ignored, receivers (`self`, `&self`, Python's `self`/`cls`) are not counted, and an untyped parameter matches by name. A list that fits no overload shows the overloads there are.
 - Several matches (overloads, the same method in two impls) are listed with their lines and declaration line, numbered; add the parameter types or `#N` (`Total#2`) to pick one. No match lists similar names, or points at `zazzle outline`.
 - The usual budget applies, and `--symbol` cannot be combined with `PATH:A-B`, `--around`, `--head` or `--tail`. Over MCP, `zazzle_read` takes `symbol`.

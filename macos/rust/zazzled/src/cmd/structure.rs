@@ -2,7 +2,7 @@
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::indexer::{localize, root_name, work_tree, Indexer, Root};
-use crate::util::{display, resolve};
+use crate::util::{display, locate};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -68,7 +68,7 @@ pub fn repos_below(dir: &Path) -> Vec<PathBuf> {
 // Picks the repositories: --repo's work tree, else the working directory's, else up to MAX_REPOS below it named by their path from it.
 fn repos(ctx: &Ctx, repo: Option<&str>) -> Result<Repos, String> {
     if let Some(r) = repo {
-        let root = work_tree(&resolve(r, &ctx.cwd))
+        let root = work_tree(&locate(r, &ctx.cwd))
             .map(single)
             .ok_or_else(|| format!("{r}: not inside a git work tree"))?;
         return Ok(Repos { roots: vec![root], found: 1, below: false });
@@ -101,7 +101,7 @@ impl Target {
 
     // Finds the indexer and the work tree holding a path argument, wherever the working directory is; returns the path relative to it.
     fn for_path(ctx: &Ctx, arg: &str) -> Result<(Target, String), String> {
-        let full = resolve(arg, &ctx.cwd);
+        let full = locate(arg, &ctx.cwd);
         let root =
             work_tree(&full).ok_or_else(|| format!("{arg}: not inside a git work tree"))?.to_path_buf();
         let rel = full.strip_prefix(&root).expect("work tree holds the path").to_string_lossy().into_owned();
@@ -166,6 +166,16 @@ pub fn find_symbol(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     put_number(&p, "limit", "limit", &mut a)?;
     put_number(&p, "offset", "offset", &mut a)?;
     Target::locate(ctx, p.value("repo"))?.ask("find_symbol", a)
+}
+
+// Finds where a symbol is declared through the index: the `path:line kind name | signature` lines, paths relative to the working directory.
+pub fn declarations(ctx: &Ctx, name: &str) -> Result<Vec<String>, String> {
+    let mut a = Map::new();
+    a.insert("name".into(), json!(name));
+    a.insert("exact".into(), json!(true));
+    a.insert("limit".into(), json!(50));
+    let out = Target::locate(ctx, None)?.ask("find_symbol", a)?;
+    Ok(out.text.lines().filter(|l| !l.starts_with('[')).map(String::from).collect())
 }
 
 // Runs changed-since: files added, modified or deleted since a cursor, and a new cursor, across every repository below a folder that is not one.

@@ -5,7 +5,7 @@ use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
 use crate::outline::{csharp_identifier_lines, enclosing, lang_of, Lang, Symbol};
 use crate::pool::{cpus, par_map};
-use crate::util::{clip, display, resolve, MAX_LINE};
+use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use std::path::{Path, PathBuf};
 
@@ -81,7 +81,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let max = p.number("max")?.unwrap_or(DEFAULT_MAX).max(1);
     let re = build_regex(name, false, true, true)?;
     let roots: Vec<PathBuf> = if p.positional.len() > 1 {
-        p.positional[1..].iter().map(|a| resolve(a, &ctx.cwd)).collect()
+        p.positional[1..].iter().map(|a| locate(a, &ctx.cwd)).collect()
     } else {
         vec![ctx.cwd.clone()]
     };

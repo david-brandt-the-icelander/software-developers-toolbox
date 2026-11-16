@@ -113,15 +113,15 @@ fn find_schema() -> Value {
 fn read_schema() -> Value {
     object(
         json!({
-            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted); may be left out with symbol, which then finds the file through the C# indexer"},
             "source": {"type": "boolean", "description": "C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files come as a terse view without a sha; true gives the code and its sha, which edits need"},
-            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes"},
+            "symbol": {"type": "string", "description": "Read one symbol by name (Namespace.Type.Method, Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes; without paths, the file that declares it is found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
             "disable_session_deduping": {"type": "boolean"}
         }),
-        &["paths"],
+        &[],
     )
 }
 
@@ -293,8 +293,8 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
         a.push(sym);
     }
     let paths = get_list(v, "paths")?;
-    if paths.is_empty() {
-        return Err("'paths' is required".into());
+    if paths.is_empty() && !a.contains(&"--symbol".to_string()) {
+        return Err("'paths' is required (or give symbol alone)".into());
     }
     a.push("--".into());
     a.extend(paths);
@@ -688,7 +688,12 @@ mod tests {
             json!({"id":2,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{"path":"src","depth":1,"max":5,"no_ignore":true}}}),
         );
         ask(&b, json!({"id":3,"method":"tools/call","params":{"name":"zazzle_ls"}}));
+        ask(
+            &b,
+            json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read","arguments":{"symbol":"Acme.A.b"}}}),
+        );
         let calls = b.calls.borrow();
+        assert_eq!(calls[3], ["read", "--symbol", "Acme.A.b", "--"]);
         assert_eq!(
             calls[0],
             [
@@ -743,7 +748,7 @@ mod tests {
             text(json!({"pattern":"x","max":-1}), "zazzle_find"),
             "error: 'max' must be a non-negative integer"
         );
-        assert_eq!(text(json!({}), "zazzle_read"), "error: 'paths' is required");
+        assert_eq!(text(json!({}), "zazzle_read"), "error: 'paths' is required (or give symbol alone)");
         assert!(b.calls.borrow().is_empty());
     }
 

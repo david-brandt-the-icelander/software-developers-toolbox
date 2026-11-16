@@ -18,7 +18,7 @@ use crate::styles;
 use crate::symbols::{self, Miss};
 use crate::terse;
 use crate::tokens;
-use crate::util::{clip, display, hex8, resolve};
+use crate::util::{clip, display, hex8, locate};
 use crate::xml;
 
 const SPEC: &[Flag] = &[
@@ -32,7 +32,7 @@ const SPEC: &[Flag] = &[
     flag("source", '\0'),
     flag("full", '\0'),
 ];
-const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full]";
+const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
 const DEFAULT_BUDGET: usize = 3000;
 const DEFAULT_CTX: usize = 20;
 const MINIFIED_CLIP: usize = 400;
@@ -140,7 +140,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
         (s, None) => s,
         (_, Some(_)) => return Err("give either PATH:A-B or --around/--head/--tail, not both".into()),
     };
-    let path = resolve(path_arg, &ctx.cwd);
+    let path = locate(path_arg, &ctx.cwd);
     let shown = display(&path, &ctx.cwd);
     let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
     let (data, meta) = (&loaded.data, &loaded.meta);
@@ -281,6 +281,25 @@ fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &
     out
 }
 
+// Finds the one file that declares a symbol named without a path, through the C# indexer's index; several files are listed for the caller to pick from.
+fn declared_in(ctx: &Ctx, query: &str) -> Result<Vec<String>, String> {
+    let name = query.split(['(', '#']).next().unwrap_or(query).trim();
+    let found = crate::cmd::structure::declarations(ctx, name)
+        .map_err(|e| format!("--symbol without a path looks it up in the index: {e}"))?;
+    let mut files: Vec<&str> =
+        found.iter().filter_map(|l| l.split_once(' ')?.0.rsplit_once(':').map(|(p, _)| p)).collect();
+    files.dedup();
+    match files.as_slice() {
+        [] => Err(format!("no declaration of '{name}' in the index; search with zazzle find")),
+        [one] => Ok(vec![one.to_string()]),
+        _ => Err(format!(
+            "'{name}' is declared in {} files; give the file too, or qualify the name:\n{}",
+            files.len(),
+            found.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+        )),
+    }
+}
+
 // Explains a symbol name that did not resolve, listing what can be asked for instead.
 fn miss_text(shown: &str, query: &str, miss: Miss) -> String {
     match miss {
@@ -303,7 +322,7 @@ fn render_symbol(ctx: &Ctx, arg: &str, query: &str, o: &Opts) -> Result<String, 
     if split_target(arg).1.is_some() {
         return Err("give either PATH:A-B or --symbol, not both".into());
     }
-    let path = resolve(arg, &ctx.cwd);
+    let path = locate(arg, &ctx.cwd);
     let shown = display(&path, &ctx.cwd);
     let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
     if loaded.meta.binary {
@@ -338,8 +357,10 @@ fn selection(p: &args::Parsed) -> Result<Select, String> {
 // Runs the read command.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
-    if p.positional.is_empty() {
-        return Err(USAGE.into());
+    let mut paths = p.positional.clone();
+    if paths.is_empty() {
+        let Some(q) = p.value("symbol") else { return Err(USAGE.into()) };
+        paths = declared_in(ctx, q)?;
     }
     let budget = match p.number("budget")? {
         Some(0) => return Err("--budget must be at least 1".into()),
@@ -359,7 +380,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         return Err("--symbol picks the lines itself; drop --around, --head and --tail".into());
     }
     let mut parts = Vec::new();
-    for arg in &p.positional {
+    for arg in &paths {
         parts.push(match symbol {
             Some(q) => render_symbol(ctx, arg, q, &opts)?,
             None => render(ctx, arg, &opts, "")?,
@@ -809,5 +830,72 @@ mod tests {
             ),
             "f.cs 1 lines, terse view: nothing to shorten; read --source for the code and its sha"
         );
+    }
+
+    // Checks C# symbols read by their namespace-qualified names, for block and file-scoped namespaces.
+    #[test]
+    fn test_csharp_qualified_symbols() {
+        let t = TempDir::new();
+        t.write("A.cs", b"namespace Acme.Shop.Orders\n{\n    public class OrderService\n    {\n        public int Submit(int id) { return id; }\n        public int Submit(string c) { return 0; }\n    }\n}\n");
+        t.write("B.cs", b"namespace Acme.Shop.Billing;\n\npublic class Invoice\n{\n    public decimal Total() => 0m;\n}\n");
+        let read = |f: &str, q: &str| run_cmd(t.path(), &["read", f, "--source", "--symbol", q]).text;
+        assert!(read("A.cs", "Acme.Shop.Orders.OrderService.Submit(int)").contains("[5-5 method Submit]"));
+        assert!(read("A.cs", "Orders.OrderService.Submit(string)").contains("[6-6 method Submit]"));
+        assert!(read("B.cs", "Acme.Shop.Billing.Invoice.Total").contains("[5-5 method Total]"));
+        assert!(read("B.cs", "Billing.Invoice").contains("[3-6 class Invoice]"));
+        assert!(read("B.cs", "Invoice.Total").contains("[5-5 method Total]"));
+    }
+
+    // A daemon whose find_symbol finds `Submit` in one file, `Run` in two and nothing else, under the first root's name.
+    fn declaring(
+        hello: &serde_json::Value,
+        req: &serde_json::Value,
+    ) -> (serde_json::Value, Option<serde_json::Value>) {
+        let root = hello["roots"][0].as_str().unwrap_or("").split('=').next().unwrap_or("").to_string();
+        let text = match req.pointer("/params/arguments/name").and_then(serde_json::Value::as_str) {
+            Some("Acme.Shop.Orders.OrderService.Submit") | Some("Submit") => format!("{root}:A.cs:5 method Acme.Shop.Orders.OrderService.Submit | int Submit(int id)\n{root}:A.cs:6 method Acme.Shop.Orders.OrderService.Submit | int Submit(string c)\n[2 symbols]"),
+            Some("Run") => format!("{root}:A.cs:3 method A.Run | void Run()\n{root}:B.cs:3 method B.Run | void Run()\n[2 symbols]"),
+            _ => "[0 symbols]".to_string(),
+        };
+        (
+            serde_json::json!({"ok": true}),
+            Some(
+                serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}),
+            ),
+        )
+    }
+
+    // Checks --symbol without a path: one declaring file is read, several are listed, none and a missing indexer are explained.
+    #[test]
+    fn test_symbol_without_path() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(declaring);
+        let saved: Vec<_> = ["ZAZZLE_INDEXER", "ZAZZLE_INDEXER_STATE_DIR"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        std::env::set_var("ZAZZLE_INDEXER", &fake.exe);
+        std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", fake.dir.path());
+        let t = TempDir::new();
+        std::fs::create_dir_all(t.path().join(".git")).expect("git");
+        t.write("A.cs", b"namespace Acme.Shop.Orders\n{\n    public class OrderService\n    {\n        public int Submit(int id) { return id; }\n        public int Submit(string c) { return 0; }\n    }\n}\n");
+        let read = |q: &str| run_cmd(t.path(), &["read", "--source", "--symbol", q]).text;
+        assert!(read("Acme.Shop.Orders.OrderService.Submit(string)").contains("[6-6 method Submit]"));
+        assert!(read("Submit#1").contains("[5-5 method Submit]"));
+        let several = read("Run");
+        assert!(several.starts_with("error: 'Run' is declared in 2 files; give the file too, or qualify the name:\nA.cs:3 method A.Run"), "{several}");
+        assert_eq!(
+            read("Nothing"),
+            "error: no declaration of 'Nothing' in the index; search with zazzle find"
+        );
+        std::env::set_var("ZAZZLE_INDEXER", t.path().join("missing"));
+        assert!(read("Submit").starts_with("error: --symbol without a path looks it up in the index: "));
+        assert_eq!(run_cmd(t.path(), &["read"]).text, format!("error: {USAGE}"));
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 }

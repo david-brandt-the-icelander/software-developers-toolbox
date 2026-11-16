@@ -22,7 +22,7 @@ zazzle-csharp-indexer report          # after some use: what to improve next
 |---|---|---|
 | `view` | `zazzle_read` of a `.cs` file (`zazzle read` on the command line), and of a Razor file's `@code`/`@functions` blocks, which zazzled passes as `text` padded to the file's line numbers | terse behavioural view (usings, logging, regions, field-assigning constructors and log-and-rethrow catches hidden or collapsed; access modifiers dropped; `var` where the type is spelled out; long local variable names shortened to initials), keeping source line numbers and giving no hash |
 | `overview` | `zazzle_overview` | languages, top directories, entry points, largest files, from the index |
-| `find_symbol` | `zazzle_find_symbol` | declarations by name; C# parsed with Roslyn (exact), other languages by a regex extractor |
+| `find_symbol` | `zazzle_find_symbol` | declarations by name, or by a dotted `Namespace.Type.Member` (any trailing part) whose leading parts must end the container; C# parsed with Roslyn (exact), other languages by a regex extractor |
 | `changed_since` | `zazzle_changed_since` | changes since a cursor (valid within one daemon run) |
 | `git_log`, `git_blame` | `zazzle_git_log`, `zazzle_git_blame` | compact git history and authorship |
 | `report_gap` | `zazzle_report_gap` | the agent says what it could not get; stored in the log |

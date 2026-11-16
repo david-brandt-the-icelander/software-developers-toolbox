@@ -2,7 +2,7 @@
 use super::{Ctx, Output};
 use crate::args::{self, opt, Flag};
 use crate::outline::{self, Symbol};
-use crate::util::{display, resolve};
+use crate::util::{display, locate};
 use crate::walk::{self, WalkOpts};
 use std::path::PathBuf;
 
@@ -15,7 +15,7 @@ const DEFAULT_MAX: usize = 200;
 fn targets(ctx: &Ctx, args: &[String]) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     for a in args {
-        let path = resolve(a, &ctx.cwd);
+        let path = locate(a, &ctx.cwd);
         let md = std::fs::metadata(&path)
             .map_err(|e| format!("{}: {}", display(&path, &ctx.cwd), walk::reason(&e)))?;
         if md.is_dir() {

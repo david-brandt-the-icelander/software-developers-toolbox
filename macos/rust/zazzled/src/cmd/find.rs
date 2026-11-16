@@ -3,7 +3,7 @@ use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
 use crate::meta::{line_starts, looks_binary};
-use crate::util::{clip, display, resolve, MAX_LINE};
+use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use memchr::{memchr_iter, memrchr};
 use regex::bytes::{Regex, RegexBuilder};
@@ -330,7 +330,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let context = p.number("context")?.unwrap_or(0);
     let re = build_regex(pattern, p.has("ignore-case"), p.has("fixed"), p.has("word"))?;
     let roots: Vec<PathBuf> = if p.positional.len() > 1 {
-        p.positional[1..].iter().map(|a| resolve(a, &ctx.cwd)).collect()
+        p.positional[1..].iter().map(|a| locate(a, &ctx.cwd)).collect()
     } else {
         vec![ctx.cwd.clone()]
     };

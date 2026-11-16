@@ -35,6 +35,52 @@ pub fn resolve(arg: &str, cwd: &Path) -> PathBuf {
     }
 }
 
+// Resolves a path argument of a file command: like resolve, but a relative path that does not exist from the working directory is also looked for from the solution folders above it (holding a .sln or .slnx), its repository's root, or the one repository below it that has it; `REPO:path` names a repository as zazzle shows it.
+pub fn locate(arg: &str, cwd: &Path) -> PathBuf {
+    let local = resolve(arg, cwd);
+    if local.exists() || Path::new(arg).is_absolute() {
+        return local;
+    }
+    if let Some((name, rest)) = arg.split_once(':') {
+        if let Some(r) = repositories(cwd).into_iter().find(|(n, _)| n == name).map(|(_, r)| r.join(rest)) {
+            return r;
+        }
+    }
+    let tree = crate::indexer::work_tree(cwd);
+    let solutions = cwd
+        .ancestors()
+        .skip(1)
+        .take_while(|a| tree.is_none_or(|t| a.starts_with(t)))
+        .filter(|a| has_solution(a));
+    let above = solutions.chain(tree).map(|d| d.join(arg)).find(|p| p.exists());
+    if let Some(p) = above {
+        return p;
+    }
+    let below: Vec<PathBuf> = match tree {
+        Some(_) => Vec::new(),
+        None => repositories(cwd).into_iter().map(|(_, r)| r.join(arg)).filter(|p| p.exists()).collect(),
+    };
+    match below.as_slice() {
+        [one] => one.clone(),
+        _ => local,
+    }
+}
+
+// True when a folder holds a Visual Studio solution file.
+fn has_solution(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|mut es| {
+        es.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "sln" || x == "slnx")))
+    })
+}
+
+// Lists the repositories a working directory reaches, by the names zazzle shows: its own work tree (by folder name), else those below it (by path from it).
+fn repositories(cwd: &Path) -> Vec<(String, PathBuf)> {
+    match crate::indexer::work_tree(cwd) {
+        Some(t) => vec![(crate::indexer::root_name(t), t.to_path_buf())],
+        None => crate::cmd::structure::repos_below(cwd).into_iter().map(|r| (display(&r, cwd), r)).collect(),
+    }
+}
+
 // Renders the first four bytes of a hash as eight hex digits.
 pub fn hex8(hash: &[u8; 32]) -> String {
     hash[..4].iter().map(|b| format!("{b:02x}")).collect()
@@ -106,6 +152,32 @@ mod tests {
     fn test_resolve_variants() {
         assert_eq!(resolve("/a/b", Path::new("/w")), PathBuf::from("/a/b"));
         assert_eq!(resolve("a/b", Path::new("/w")), PathBuf::from("/w/a/b"));
+    }
+
+    // Checks locate: the working directory first, then solution folders, the repository root, one repository below, and REPO:path.
+    #[test]
+    fn test_locate() {
+        let t = crate::testutil::TempDir::new();
+        let w = t.path().canonicalize().expect("canon");
+        for d in ["api/.git", "api/src/Shop/Orders", "web/.git", "web/src"] {
+            std::fs::create_dir_all(w.join(d)).expect("mkdir");
+        }
+        std::fs::write(w.join("api/src/Shop/Shop.sln"), "").expect("sln");
+        std::fs::write(w.join("api/src/Shop/Orders/A.cs"), "").expect("cs");
+        std::fs::write(w.join("api/README.md"), "").expect("md");
+        std::fs::write(w.join("web/src/app.ts"), "").expect("ts");
+        std::fs::write(w.join("web/README.md"), "").expect("md");
+        let deep = w.join("api/src/Shop/Orders");
+        assert_eq!(locate("A.cs", &deep), deep.join("A.cs"));
+        assert_eq!(locate("Orders/A.cs", &deep), w.join("api/src/Shop/Orders/A.cs"));
+        assert_eq!(locate("README.md", &deep), w.join("api/README.md"));
+        assert_eq!(locate("api:src/Shop/Orders/A.cs", &deep), w.join("api/src/Shop/Orders/A.cs"));
+        assert_eq!(locate("new.cs", &deep), deep.join("new.cs"));
+        assert_eq!(locate("src/app.ts", &w), w.join("web/src/app.ts"));
+        assert_eq!(locate("README.md", &w), w.join("README.md"));
+        assert_eq!(locate("web:src/app.ts", &w), w.join("web/src/app.ts"));
+        assert_eq!(locate("nope:x", &w), w.join("nope:x"));
+        assert_eq!(locate("/abs/x", &w), PathBuf::from("/abs/x"));
     }
 
     // Checks the hex rendering.
