@@ -252,7 +252,7 @@
         {
           "id": "write",
           "actor": "zazzled",
-          "action": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist: this executable with `serve`, and a listener socket at ZAZZLE_SOCK or the default path with mode 0600.",
+          "action": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist: this executable with `serve` (Homebrew's opt path rather than the versioned Cellar path), and a listener socket at ZAZZLE_SOCK or the default path with mode 0600.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/launchd.rs",

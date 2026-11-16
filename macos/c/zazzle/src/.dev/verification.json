@@ -7,7 +7,7 @@
     {
       "id": "invoker-logic",
       "title": "Invoker logic against a mock syscall layer",
-      "summary": "test/unit.c compiles zazzle_core.h against test/sys_mock.h and drives every path: request layout, the name it runs under, socket path, autostart, waiting, the spin, sending, the execs and every failure with its exit code.",
+      "summary": "test/unit.c compiles zazzle_core.h against test/sys_mock.h and drives every path: request layout, the name it runs under, socket path, autostart, waiting, the spin, sending, resending once after a retiring daemon's restart reply, the execs and every failure with its exit code.",
       "subject": [
         {
           "path": "macos/c/zazzle/src/.dev/use-case.json",
@@ -35,6 +35,7 @@
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_happy_path", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_no_session_no_args", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_argv0_dispatch", "command": "make unit (in macos/c/zazzle)" },
+        { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_restart_resends", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_zazzle_sock_override", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_path_errors", "command": "make unit (in macos/c/zazzle)" },
         { "type": "automated", "path": "macos/c/zazzle/test/unit.c", "symbol": "test_arguments_too_long", "command": "make unit (in macos/c/zazzle)" },

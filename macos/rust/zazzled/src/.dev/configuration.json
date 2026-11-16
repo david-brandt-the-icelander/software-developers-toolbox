@@ -14,7 +14,7 @@
       "sensitive": false,
       "scope": "Read by `zazzled serve` (unless --socket is given or launchd passed a socket), by `zazzled mcp` to reach the daemon, and by `zazzled install`, which writes it into the LaunchAgent. The C invoker reads it too (macos/c/zazzle/src/zazzle_core.h build_path).",
       "takesEffect": "at-startup",
-      "details": "A daemon installed as a LaunchAgent keeps the path that was current when `zazzled install` ran.",
+      "details": "A daemon installed as a LaunchAgent keeps the socket path that was current when `zazzled install` ran.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

@@ -117,6 +117,6 @@
     { "from": "CloseGuard", "to": "Batch", "kind": "depends-on", "description": "Closes the batch even when the caller panics." },
     { "from": "ScopeGuard", "to": "Arena", "kind": "depends-on", "description": "Ends one parse scope on the thread's arena." },
     { "from": "Owner", "to": "Arena", "kind": "depends-on", "description": "Releases the thread's arena when the thread ends." },
-    { "from": "Cli", "to": "Config", "kind": "depends-on", "description": "Serve's idle time becomes the server's Config." }
+    { "from": "Cli", "to": "Config", "kind": "depends-on", "description": "Serve's idle time, the binary to watch for an upgrade and the socket it bound become the server's Config." }
   ]
 }

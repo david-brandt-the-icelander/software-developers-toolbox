@@ -4,13 +4,13 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 
 - `zazzle` (`macos/c/zazzle/`): a tiny C program with no libc on Linux (raw syscalls); on macOS it links libSystem but still uses raw syscalls for all I/O. It sends its arguments, working-directory descriptor and standard streams to the daemon and exits with the daemon's status byte.
 - `zazz`: the same invoker under another name, for the zazz script commands below; installed scripts are symlinks to it.
-- `zazzled` (this crate): the long-lived daemon. `zazzled serve` listens on `~/.zazzle/sock`; `zazzled mcp` is an MCP stdio server in front of the same daemon (no process spawn per call); `zazzled run CMD..` runs one command in-process; `zazzled proxy` is the MCP proxy that `zazzle proxy` execs ([MCP proxy](#mcp-proxy)); `zazzled install` / `uninstall` manage the macOS LaunchAgent.
+- `zazzled` (this crate): the long-lived daemon. `zazzled serve` listens on `~/.zazzle/sock`; `zazzled mcp` is an MCP stdio server in front of the same daemon (no process spawn per call); `zazzled run CMD..` runs one command in-process; `zazzled proxy` is the MCP proxy that `zazzle proxy` execs ([MCP proxy](#mcp-proxy)); `zazzled install` / `uninstall` manage the macOS LaunchAgent. A daemon whose binary an upgrade replaced (the program the LaunchAgent names, else the Homebrew opt path of its own binary) retires before serving anything more, so `zazzle` never answers from the old version: on its own socket it removes the socket and answers queued requests with a restart reply, which `zazzle` resends to a new daemon; under launchd it exits and launchd starts the new binary.
 
 ## Setup
 
 ```bash
 brew install zazzcat/z/zazzle         # or build: cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make
-zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself)
+zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself); writes the Homebrew opt path, so upgrades keep working
 zazzle setup --workspace ~/dev --hook  # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
 zazzle setup --apply --workspace ~/dev --hook
 zazzle setup --check                   # after restarting the apps (and trusting the hook in Codex)

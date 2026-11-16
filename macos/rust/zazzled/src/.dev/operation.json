@@ -36,7 +36,7 @@
       "action": "command",
       "transport": "zazzled serve [--socket PATH] [--idle SECS]; started by the invoker, by the MCP front end or by launchd",
       "authorization": "Whoever can run the binary; the socket it creates is mode 0600 in a 0700 directory, and each connection is served only if its peer has the daemon's uid.",
-      "result": "Serves connections; exits after --idle seconds (default from ZAZZLE_IDLE_SECS, else 1800) with no connection open, flushing the cache and removing a socket it bound itself (launchd's socket stays).",
+      "result": "Serves connections; exits after --idle seconds (default from ZAZZLE_IDLE_SECS, else 1800) with no connection open, flushing the cache and removing a socket it bound itself (launchd's socket stays). It also retires once an upgrade has replaced its binary (the program the LaunchAgent plist names under launchd, else the Homebrew opt path of its own binary): on its own socket it removes the socket and answers queued connections with RESTART; under launchd it exits without accepting, so launchd starts the new binary.",
       "failures": [
         "A daemon already answers on the socket: `a daemon is already running`.",
         "The socket cannot be bound, or HOME is unset when no socket is given.",
@@ -97,7 +97,7 @@
       "action": "command",
       "transport": "zazzled install",
       "authorization": "The user, in their own gui launchd domain; nothing else is checked.",
-      "result": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist for this executable and the socket path, unloads any loaded copy and bootstraps it; prints `installed PATH`.",
+      "result": "Writes ~/Library/LaunchAgents/com.zazzle.zazzled.plist for this executable (Homebrew's opt path instead of its versioned Cellar path, so upgrades keep working) and the socket path, unloads any loaded copy and bootstraps it; prints `installed PATH`.",
       "failures": [
         "Not macOS: `install is for macOS launchd; elsewhere the invoker starts zazzled on demand`.",
         "The plist cannot be written.",
