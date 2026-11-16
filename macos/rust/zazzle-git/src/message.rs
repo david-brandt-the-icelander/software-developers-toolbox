@@ -19,9 +19,7 @@ pub const MAX_BYTES: u64 = 256 * 1024;
 pub const HELP: &str = "usage: zazzle git message FILE
 
 Edits a commit message, pull request body, changelog entry or rebase todo list
-in a small editor (no modes). Use it as git's editor:
-
-  git config --global core.editor 'zazzle git message'
+in a small editor (no modes).
 
 Exit status 0 means saved, 1 means cancelled (git then aborts).
 Keys: Ctrl+S save/commit, Esc cancel, F1 or Ctrl+G help.
@@ -105,7 +103,7 @@ pub fn main(args: &[String]) -> i32 {
     let file = match file_arg(args) {
         Ok(Some(f)) => f,
         Ok(None) => {
-            print!("{HELP}");
+            print!("{HELP}\n{}", crate::offer::HOW_TO);
             return 0;
         }
         Err(e) => {
