@@ -205,20 +205,24 @@ static void pick_daemon(char **envp)
 	append(daemon_path, sizeof daemon_path, &at, "zazzled", "daemon path too long", 78);
 }
 
-/* Returns true if the argument names a standalone tool that runs as its own process, not through the daemon. */
-static int is_tool(const char *a)
+/* Returns the executable of the standalone tool the argument names (it runs as its own process, not through the daemon), or 0. */
+static const char *tool_binary(const char *a)
 {
-	return str_eq(a, "free-disk-space") || str_eq(a, "fix-network");
+	if (str_eq(a, "free-disk-space") || str_eq(a, "fix-network"))
+		return a;
+	if (str_eq(a, "git"))
+		return "zazzle-git";
+	return 0;
 }
 
-/* Replaces this process with the tool named by argv[1], found beside this executable, passing the rest of the arguments; returns only on failure. */
-static void exec_tool(char **argv, char **envp)
+/* Replaces this process with the tool executable, found beside this executable, passing the arguments after argv[1]; returns only on failure. */
+static void exec_tool(char **argv, char **envp, const char *tool)
 {
 	size_t at = 0;
 	if (!exe_dir())
 		die("cannot find the tool", 69);
 	append(daemon_path, sizeof daemon_path, &at, exe_path, "tool path too long", 78);
-	append(daemon_path, sizeof daemon_path, &at, argv[1], "tool path too long", 78);
+	append(daemon_path, sizeof daemon_path, &at, tool, "tool path too long", 78);
 	argv[1] = daemon_path;
 	long r = sys_exec(daemon_path, argv + 1, envp);
 	die_errno("cannot run the tool", -r, 69);
@@ -315,8 +319,9 @@ static int read_status(int fd)
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && str_eq(own_name(argc, argv), "zazzle")) {
-		if (is_tool(argv[1]))
-			exec_tool(argv, envp);
+		const char *tool = tool_binary(argv[1]);
+		if (tool)
+			exec_tool(argv, envp, tool);
 		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup"))
 			exec_daemon(argv, envp, argv[1]);
 		if (str_eq(argv[1], "run"))

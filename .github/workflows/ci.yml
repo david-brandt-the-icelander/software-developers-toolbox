@@ -81,6 +81,8 @@ jobs:
           ./target/release/fix-network --help
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches
+          ./target/release/zazzle-git --version
+          ./target/release/zazzle-git help commit
 
   msrv:
     runs-on: ubuntu-24.04
@@ -104,7 +106,7 @@ jobs:
         working-directory: macos/c/zazzle
         run: make && make unit && sh test/smoke.sh
 
-  # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs and fix-network must keep 95% of branches and lines.
+  # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs, fix-network and zazzle-git must keep 95% of branches and lines.
   coverage:
     runs-on: ubuntu-24.04
     steps:
@@ -127,6 +129,11 @@ jobs:
           cargo llvm-cov -p fix-network --branch --locked --summary-only --json --output-path cov.json --fail-under-lines 95
           jq -e '.data[0].totals.branches.percent >= 95' cov.json \
             || { echo "::error::fix-network branch coverage is below 95%"; exit 1; }
+      - name: zazzle-git needs 95% line and branch coverage (includes the pseudo-terminal end-to-end tests)
+        run: |
+          cargo llvm-cov -p zazzle-git --branch --locked --fail-under-lines 95 --lcov --output-path lcov-zazzle-git.info
+          awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
+            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov-zazzle-git.info
       - name: Rust branch coverage (at least 95%)
         run: sh zazzled/coverage.sh 95
       - name: zazz crates branch coverage (at least 95%)
