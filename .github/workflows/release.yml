@@ -148,7 +148,7 @@ jobs:
           export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/zazzled.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
           cargo build --workspace --release --locked --target "${{ matrix.target }}"
           mkdir -p bin
-          for b in zazzled zazz-worker afs fix-network free-disk-space; do
+          for b in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-git-commit-message-editor; do
             cp "target/${{ matrix.target }}/release/$b" bin/
           done
           tar -C bin -cf bin.tar .
@@ -201,7 +201,7 @@ jobs:
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             tar -C "bin/$t" -xf "artifacts/macos-bin-$t/bin.tar"
           done
-          for bin in zazzled zazz-worker afs fix-network free-disk-space; do
+          for bin in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-git-commit-message-editor; do
             lipo -create -output "dist/$bin" "bin/aarch64-apple-darwin/$bin" "bin/x86_64-apple-darwin/$bin"
           done
           cp -R artifacts/macos-languages/languages dist/languages
@@ -232,10 +232,10 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator
+        run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-git-commit-message-editor cyberspace-generator
       - name: Package
         run: |
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle z zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle z zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-git-commit-message-editor cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:

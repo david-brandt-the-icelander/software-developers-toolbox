@@ -1,0 +1,28 @@
+[package]
+name = "zazzle-git"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zazzle-git"
+path = "src/bin/zazzle-git.rs"
+
+[[bin]]
+name = "zazzle-git-commit"
+path = "src/bin/zazzle-git-commit.rs"
+
+[[bin]]
+name = "zazzle-git-commit-message-editor"
+path = "src/bin/zazzle-git-commit-message-editor.rs"
+
+# libc: raw terminal mode, window size and signals; serde_json: the saved file marks; unicode-width: cursor columns for wide characters.
+[dependencies]
+libc = "0.2"
+serde_json = "1"
+unicode-width = "0.2"
+
+# cargo llvm-cov sets coverage_nightly to keep test code out of the coverage figures.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }

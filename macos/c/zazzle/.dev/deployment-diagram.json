@@ -83,7 +83,7 @@
       "id": "exec",
       "name": "Program the invoker becomes",
       "kind": "process",
-      "description": "For `zazzle run`, `zazzle proxy`, `zazzle free-disk-space` and `zazzle fix-network`, the same process after exec: `zazzled wrap`, `zazzled proxy`, or the tool found beside the invoker, with the caller's environment, streams and exit status."
+      "description": "For `zazzle run`, `zazzle proxy`, `zazzle free-disk-space`, `zazzle fix-network` and `zazzle git`, the same process after exec: `zazzled wrap`, `zazzled proxy`, or the tool found beside the invoker (zazzle-git for `git`), with the caller's environment, streams and exit status."
     }
   ],
   "artifacts": [

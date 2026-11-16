@@ -108,7 +108,7 @@ status=$("$zazzle" status)
 echo "$status" | sed -n 's/^zazzled [^ ]* pid \([0-9]*\) .*/\1/p' > "$tmp/auto.pid"
 [ -s "$tmp/auto.pid" ] || fail "no pid in status: $status"
 
-# The standalone tools run as their own process, found beside the invoker, with exit status and arguments passed through (no daemon involved).
+# The standalone tools (and `zazzle git`, which runs zazzle-git) run as their own process, found beside the invoker, with exit status and arguments passed through (no daemon involved).
 mkdir "$tmp/bin"
 cp "$zazzle" "$tmp/bin/zazzle"
 printf '#!/bin/sh\necho "fix-network $*"\nexit 3\n' > "$tmp/bin/fix-network"
@@ -116,6 +116,11 @@ chmod +x "$tmp/bin/fix-network"
 rc=0
 out=$(ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" fix-network --verbose x 2>&1) || rc=$?
 [ "$rc" = 3 ] && [ "$out" = "fix-network --verbose x" ] || fail "tool exec: rc=$rc out='$out'"
+printf '#!/bin/sh\necho "zazzle-git $*"\nexit 5\n' > "$tmp/bin/zazzle-git"
+chmod +x "$tmp/bin/zazzle-git"
+rc=0
+out=$(ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" git commit --no-add 2>&1) || rc=$?
+[ "$rc" = 5 ] && [ "$out" = "zazzle-git commit --no-add" ] || fail "git exec: rc=$rc out='$out'"
 if ZAZZLE_SOCK=$tmp/none "$tmp/bin/zazzle" free-disk-space 2>"$tmp/err"; then fail "missing tool must fail"; fi
 grep -q "^zazzle: cannot run the tool (error " "$tmp/err" || fail "missing tool message: $(cat "$tmp/err")"
 # `zazzle proxy` and `zazzle run` exec `zazzled proxy` and `zazzled wrap` (here a stand-in from $ZAZZLE_DAEMON) with the arguments and exit status.

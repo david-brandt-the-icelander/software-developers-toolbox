@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-git sources",
+  "folder": "macos/rust/zazzle-git/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-git sources",
+      "summary": "The zazzle-git library, flat, and the three binaries in bin/ that call it: routing `zazzle git`, the commit flow, and the modeless message editor with its terminal, keys, rendering and git access.",
+      "purpose": "Holds the whole tool. router.rs decides what `zazzle git ARGS` asks for; commit.rs runs `zazzle git commit` with files.rs (marks and the git steps they become); message.rs runs `zazzle git message FILE`; editor.rs holds the editor state and what each key does, over buffer.rs (text, cursor, undo), find.rs, rebase.rs (todo-list commands), kind.rs (file kinds), tap.rs (double and triple arrow taps) and clipboard.rs; keys.rs decodes terminal bytes, render.rs draws a frame, term.rs owns /dev/tty; git.rs runs git and other commands. bin/ holds three four-line entry points.",
+      "boundaries": [
+        "Every external program (git and the clipboard commands) is started through git.rs: captured with a timeout, attached to the terminal, or by replacing the process.",
+        "The editor's logic (editor.rs, render.rs, keys.rs) is pure: it takes key events with a time and returns frames, so editor_tests.rs and render_tests.rs drive it without a terminal; term.rs alone touches /dev/tty, raw mode and signals.",
+        "The binaries contain no logic of their own: each calls router::main, commit::main or message::main with the program's arguments."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/lib.rs", "symbol": "args" },
+        { "path": "macos/rust/zazzle-git/src/bin/zazzle-git.rs", "symbol": "main" },
+        { "path": "macos/rust/zazzle-git/src/router.rs", "symbol": "main" },
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::handle" },
+        { "path": "macos/rust/zazzle-git/src/term.rs", "symbol": "Term::run" },
+        { "path": "macos/rust/zazzle-git/src/git.rs", "symbol": "run_with_input" }
+      ]
+    }
+  ]
+}
