@@ -4,6 +4,7 @@ use crate::editor::Outcome;
 use crate::files::{self, Action, Entry};
 use crate::git::{git, git_interactive};
 use crate::message;
+use crate::offer;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,6 +19,9 @@ By default changed tracked files start as [ADD], like `git commit -a`.
   --no-add   start with only what is already staged marked [ADD]
 With -m, -F, -C or --no-edit the editor is skipped and git commit runs directly
 (with -a unless --no-add). Other options (--amend, --signoff, ...) go to git commit.
+
+The first run asks once whether to make `zazzle git message` git's editor, so
+plain `git commit`, `git rebase -i` and `git merge` use it too.
 ";
 
 // The draft message file inside the git directory.
@@ -158,6 +162,7 @@ fn run(a: &Args) -> Result<i32, String> {
     if entries.is_empty() && !a.amend {
         return Err("nothing to commit".to_string());
     }
+    offer::offer();
     if !draft.exists() {
         let branch = git(&["branch", "--show-current"]).unwrap_or_default();
         let text = initial_draft(&draft_start(a.amend), message::comment_char(), branch.trim());
@@ -176,7 +181,7 @@ fn run(a: &Args) -> Result<i32, String> {
 pub fn main(args: &[String]) -> i32 {
     let a = parse_args(args);
     if a.help {
-        print!("{HELP}");
+        print!("{HELP}\n{}", offer::HOW_TO);
         return 0;
     }
     match run(&a) {

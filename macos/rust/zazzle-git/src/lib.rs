@@ -10,6 +10,7 @@ pub mod git;
 pub mod keys;
 pub mod kind;
 pub mod message;
+pub mod offer;
 pub mod rebase;
 pub mod render;
 pub mod router;

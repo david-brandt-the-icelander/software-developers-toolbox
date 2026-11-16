@@ -42,9 +42,9 @@ impl Pty {
         let mut cmd = Command::new(prog);
         cmd.args(args)
             .current_dir(dir)
-            .envs(env.iter().copied())
-            .env("HOME", dir)
-            .env("GIT_CONFIG_NOSYSTEM", "1");
+            .env("HOME", offered_home(dir))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .envs(env.iter().copied());
         cmd.stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave));
@@ -117,6 +117,14 @@ impl Pty {
         let _ = self.child.kill();
         panic!("did not exit: {:?}", String::from_utf8_lossy(&self.screen.lock().unwrap()));
     }
+}
+
+// Returns a home directory beside the given one whose git config says the editor offer was already made.
+fn offered_home(dir: &Path) -> PathBuf {
+    let home = PathBuf::from(format!("{}-home", dir.display()));
+    fs::create_dir_all(&home).unwrap();
+    fs::write(home.join(".gitconfig"), "[zazzle]\n\teditorOffered = true\n").unwrap();
+    home
 }
 
 // Makes an empty scratch directory.
@@ -382,4 +390,30 @@ fn test_commit_cancel_and_no_add_message() {
         Command::new(ZCOMMIT).args(["--no-add", "-m", "x"]).current_dir(&d).env("HOME", &d).output().unwrap();
     assert_ne!(out.status.code(), Some(0));
     assert_eq!(git(&d, &["rev-list", "--count", "HEAD"]).trim(), "1");
+}
+
+// Checks the one-time offer to make zazzle git's editor: yes sets core.editor, no leaves it, and neither asks again.
+#[test]
+fn test_commit_offers_editor_once() {
+    for (answer, set) in [("y", true), ("n", false)] {
+        let d = repo(&format!("offer-{answer}"));
+        let home = scratch(&format!("offer-home-{answer}"));
+        fs::write(d.join("a.txt"), "two\n").unwrap();
+        let env = [("HOME", home.to_str().unwrap())];
+        let mut p = Pty::spawn(ZCOMMIT, &[], &d, &env);
+        p.expect("[y/N]");
+        p.keys(format!("{answer}\r").as_bytes());
+        p.expect("^S Commit");
+        p.keys(b"\x1b");
+        assert_eq!(p.exit(), 1);
+        let config = fs::read_to_string(home.join(".gitconfig")).unwrap();
+        assert_eq!(config.contains("editor = zazzle git message"), set, "{config}");
+        assert!(config.contains("editorOffered = true"));
+        let mut q = Pty::spawn(ZCOMMIT, &[], &d, &env);
+        q.expect("^S Commit");
+        q.keys(b"\x1b");
+        let screen = String::from_utf8_lossy(&q.screen.lock().unwrap()).into_owned();
+        assert_eq!(q.exit(), 1);
+        assert!(!screen.contains("[y/N]"));
+    }
 }

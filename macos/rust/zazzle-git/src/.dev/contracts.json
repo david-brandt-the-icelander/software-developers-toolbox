@@ -68,6 +68,28 @@
         { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
         { "path": "macos/release/formula.sh", "symbol": "Zazzle.install" }
       ]
+    },
+    {
+      "id": "editor-offer",
+      "title": "The one-time offer to become git's editor",
+      "summary": "The first interactive zazzle git commit asks once whether to set the global core.editor to `zazzle git message`, and records in the global git config that it asked.",
+      "contractType": "behaviour",
+      "consumers": ["A developer running zazzle git commit for the first time", "git, which then opens zazzle git message for git commit, rebase -i and merge"],
+      "definition": "Before the editor opens, zazzle git commit reads core.editor and the global key zazzle.editorOffered. If core.editor does not already name zazzle git message, z git message or zazzle-git-commit-message-editor, and zazzle.editorOffered is not true, it prints the question with the exact git config command on /dev/tty and reads one line: y or yes runs `git config --global core.editor 'zazzle git message'`; anything else changes nothing. Either way it sets zazzle.editorOffered to true.",
+      "guarantees": [
+        "The question is asked at most once per user (global git config), whatever the answer.",
+        "Nothing is changed without a yes; the default answer is no.",
+        "It is never asked with -m, -F, -C or --no-edit, nor without a terminal.",
+        "The help texts of zazzle git, zazzle git commit and zazzle git message show the same command and how to undo it."
+      ],
+      "compatibility": "Removing zazzle.editorOffered from the global git config makes the next zazzle git commit ask again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/offer.rs", "symbol": "offer" },
+        { "path": "macos/rust/zazzle-git/src/offer.rs", "symbol": "HOW_TO" },
+        { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_offers_editor_once" }
+      ]
     }
   ]
 }

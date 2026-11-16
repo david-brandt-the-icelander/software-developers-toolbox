@@ -22,6 +22,7 @@ One crate builds three programs, installed beside `zazzle`, which hands `zazzle 
 - The draft message lives in `.git/ZAZZLE_COMMIT_MSG` and the file marks in `.git/ZAZZLE_COMMIT_FILES` until a commit succeeds, so a failing hook or a cancel never loses them; marks are forgotten when `HEAD` moves.
 - Tab opens the Files view. Each changed file shows what will happen to it: `[ADD]`, `[IGNORE]` (added to `.gitignore`; a tracked file is also untracked), `[REMOVE]` (untracked, kept on disk), `[DELETE]` (deleted from disk, asked again before committing) or blank (left out of this commit).
 - Changed tracked files start as `[ADD]` (like `git commit -a`); with `--no-add` only staged files do, and a file you staged keeps exactly what you staged.
+- The first run asks once whether to make `zazzle git message` git's editor for every repository (`git config --global core.editor 'zazzle git message'`); either answer is remembered as `zazzle.editorOffered` in your global git config, and the default is no. Undo with `git config --global --unset core.editor`; remove `zazzle.editorOffered` to be asked again.
 - Then it runs `git commit --cleanup=strip -F DRAFT` with your other options (`--amend`, `--signoff`, ...). With `-m`, `-F`, `-C` or `--no-edit` it runs `git commit [-a]` directly.
 
 ## Keys

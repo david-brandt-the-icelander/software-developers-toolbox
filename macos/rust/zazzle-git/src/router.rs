@@ -1,7 +1,7 @@
 // `zazzle git ARGS`: answers help and version itself, runs `message` and `commit`, and hands everything else to git unchanged.
 
 use crate::git::{exec_git, git};
-use crate::{commit, message};
+use crate::{commit, message, offer};
 
 // The help text for `zazzle git`.
 pub const HELP: &str = "usage: zazzle git [message FILE | commit [--no-add] [OPTIONS] | GIT ARGS...]
@@ -54,9 +54,9 @@ pub fn version() -> String {
 // Runs `zazzle git ARGS` and returns the exit code (git's own when forwarding).
 pub fn main(args: &[String]) -> i32 {
     match route(args) {
-        Route::Help => print!("{HELP}"),
-        Route::MessageHelp => print!("{}", message::HELP),
-        Route::CommitHelp => print!("{}", commit::HELP),
+        Route::Help => print!("{HELP}\n{}", offer::HOW_TO),
+        Route::MessageHelp => print!("{}\n{}", message::HELP, offer::HOW_TO),
+        Route::CommitHelp => print!("{}\n{}", commit::HELP, offer::HOW_TO),
         Route::Version => print!("{}", version()),
         Route::Message(rest) => return message::main(&rest),
         Route::Commit(rest) => return commit::main(&rest),
