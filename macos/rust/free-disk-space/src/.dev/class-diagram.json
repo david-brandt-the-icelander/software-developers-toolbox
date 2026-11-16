@@ -24,6 +24,10 @@
     {
       "path": "macos/rust/free-disk-space/src/clean.rs",
       "symbol": "Snapshot"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/repair.rs",
+      "symbol": "Finding"
     }
   ],
   "types": [
@@ -51,6 +55,7 @@
         "Status(StateArg)",
         "List(ListArgs)",
         "Compress(CompressArgs)",
+        "Repair(RepairArgs)",
         "Dedupe(DedupeArgs)",
         "Clean(CleanArgs)",
         "Daemon(DaemonArgs)"
@@ -96,7 +101,8 @@
         "Pending",
         "Done",
         "Skipped",
-        "Failed"
+        "Failed",
+        "Broken"
       ]
     },
     {
@@ -129,6 +135,21 @@
         "reserve: i64",
         "dry_run: bool",
         "yes: bool"
+      ]
+    },
+    {
+      "id": "main::RepairArgs",
+      "name": "RepairArgs",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "apply: bool",
+        "min_age_days: i64",
+        "min_gain: i64",
+        "reserve: i64"
       ]
     },
     {
@@ -304,6 +325,31 @@
         "mtime_ns: i64",
         "ino: i64",
         "est: i64"
+      ]
+    },
+    {
+      "id": "repair::RepairOpts",
+      "name": "RepairOpts",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/free-disk-space/src/repair.rs"
+      ],
+      "members": [
+        "pub compress: CompressOpts",
+        "pub apply: bool"
+      ]
+    },
+    {
+      "id": "repair::Finding",
+      "name": "Finding",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/repair.rs"
+      ],
+      "members": [
+        "Unflagged",
+        "Broken(String)",
+        "Wasteful"
       ]
     },
     {
@@ -539,6 +585,12 @@
     },
     {
       "from": "main::Cmd",
+      "to": "main::RepairArgs",
+      "kind": "depends-on",
+      "description": "Arguments of repair."
+    },
+    {
+      "from": "main::Cmd",
       "to": "main::DedupeArgs",
       "kind": "depends-on",
       "description": "Arguments of dedupe."
@@ -604,6 +656,12 @@
       "description": "run copies the arguments into CompressOpts."
     },
     {
+      "from": "main::RepairArgs",
+      "to": "repair::RepairOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into RepairOpts and its CompressOpts."
+    },
+    {
       "from": "main::DedupeArgs",
       "to": "dedupe::DedupeOpts",
       "kind": "depends-on",
@@ -632,6 +690,18 @@
       "to": "compress::Cand",
       "kind": "depends-on",
       "description": "plan picks pending candidates up to the sample, file and size limits."
+    },
+    {
+      "from": "repair::RepairOpts",
+      "to": "compress::CompressOpts",
+      "kind": "depends-on",
+      "description": "The age, gain and reserve limits a rewrite of a flagged file is checked against."
+    },
+    {
+      "from": "repair::RepairOpts",
+      "to": "repair::Finding",
+      "kind": "depends-on",
+      "description": "cmd_repair acts on each Finding as the options allow."
     },
     {
       "from": "dedupe::DedupeOpts",

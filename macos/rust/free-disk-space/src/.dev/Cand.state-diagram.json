@@ -3,7 +3,7 @@
   "kind": "state",
   "title": "Compression candidate state diagram",
   "folder": "macos/rust/free-disk-space/src",
-  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed, and never back. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the four.",
+  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it once, to done, skipped or failed; only repair moves a row again: a done row whose file is not compressed back to pending, and any recorded file whose compressed data is broken to broken. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged), a stop request or the three-failure abort leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the five.",
   "sources": [
     {
       "path": "macos/rust/free-disk-space/src/scan.rs",
@@ -32,6 +32,18 @@
     {
       "path": "macos/rust/free-disk-space/src/compress.rs",
       "symbol": "compression_works"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/repair.rs",
+      "symbol": "cmd_repair"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/repair.rs",
+      "symbol": "record"
+    },
+    {
+      "path": "macos/rust/free-disk-space/src/compress.rs",
+      "symbol": "rewrite_flagged"
     }
   ],
   "machine": "cands.status (compress::Cand)",
@@ -55,6 +67,11 @@
       "id": "failed",
       "description": "A verification or I/O step failed; the original is untouched and the note says which step.",
       "terminal": true
+    },
+    {
+      "id": "broken",
+      "description": "Recorded by repair: the file is flagged compressed but its com.apple.decmpfs attribute is missing or invalid, its header size differs from the file size, or it cannot be read back. Nothing can be recovered; the note says why.",
+      "terminal": true
     }
   ],
   "transitions": [
@@ -62,8 +79,8 @@
       "from": "pending",
       "to": "done",
       "trigger": "compress (not --dry-run, and past the probe) reaches the row",
-      "guard": "precheck passes; the clone and the library's compressed form succeed; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's xattr names; the original is unchanged since",
-      "action": "Restore the times on the temp copy, rename it over the original, write status done and the saving."
+      "guard": "precheck passes; the clone and the library's compressed form succeed; the copy is compressed, saves at least --min-gain, matches size, mode, owner, group and SHA-256, and keeps the original's extended attribute values and ACL; the birth time can be set on it; the original is unchanged since",
+      "action": "Restore the access, modification and birth times on the temp copy, rename it over the original, write status done and the saving."
     },
     {
       "from": "pending",
@@ -76,8 +93,29 @@
       "from": "pending",
       "to": "failed",
       "trigger": "compress (not --dry-run, and past the probe) reaches the row",
-      "guard": "the clone or the library fails, or size, permissions or ownership differ, xattrs were lost, the hash differs, or an I/O error occurs",
+      "guard": "the clone or the library fails, or size, permissions or ownership differ, an extended attribute's value or the ACL differs, the hash differs, the birth time does not hold, or an I/O error occurs",
       "action": "Remove the temp copy; write status failed and the note; after three failures in a row stop the run."
+    },
+    {
+      "from": "done",
+      "to": "pending",
+      "trigger": "repair --apply reaches the row",
+      "guard": "the file exists and does not carry the compressed flag",
+      "action": "Refresh size, allocation, mtime and inode and write status pending with an empty note, so the next compress run handles it."
+    },
+    {
+      "from": "pending",
+      "to": "broken",
+      "trigger": "repair --apply checks a file the scan recorded (adding a row if the scan made none)",
+      "guard": "the file carries the compressed flag and its decmpfs header is missing or invalid, its size differs from the file size, or reading it back fails",
+      "action": "Write status broken and the reason; the file is left as it is."
+    },
+    {
+      "from": "pending",
+      "to": "done",
+      "trigger": "repair --apply finds a flagged file that stores at least as many bytes as its contents",
+      "guard": "the same precheck as compress, allowing the compressed flag, and the same verification of the rewritten copy",
+      "action": "Rewrite it as a plain copy with its metadata, compress it with the library, swap it in and write status done and the saving (skipped or failed with the note when a check stops it)."
     }
   ]
 }

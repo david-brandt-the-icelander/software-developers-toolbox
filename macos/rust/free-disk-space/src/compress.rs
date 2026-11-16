@@ -8,6 +8,7 @@ use std::path::Path;
 use rusqlite::params;
 
 use crate::lzfse;
+use crate::meta;
 use crate::scan::{finished, open_db};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
@@ -41,15 +42,15 @@ fn in_use(path: &str) -> bool {
     }
 }
 
-// Check that a candidate is still safe to compress and return a skip note if not.
-fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts) -> Option<String> {
+// Check that a candidate is still safe to compress and return a skip note if not; `allowed` flags do not block it.
+fn precheck(cand: &Cand, md: &fs::Metadata, o: &CompressOpts, allowed: u32) -> Option<String> {
     if !md.is_file() || md.nlink() != 1 {
         return Some("not a plain single-link file".into());
     }
     if (md.len() as i64, util::mtime_ns(md), md.ino() as i64) != (cand.size, cand.mtime_ns, cand.ino) {
         return Some("changed since scan".into());
     }
-    if util::flags(md) & util::NO_TOUCH_FLAGS != 0 {
+    if util::flags(md) & util::NO_TOUCH_FLAGS & !allowed != 0 {
         return Some("already compressed / flagged".into());
     }
     if now() - (md.mtime() as f64) < o.min_age_days as f64 * 86400.0 {
@@ -75,7 +76,8 @@ thread_local! {
     static FAIL_COPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-// Make `tmp` a compressed copy of `path`: clone the file, then put the LZFSE library's compressed form on the clone.
+// Make `tmp` a compressed copy of `path`: clone the file, give it the original's ACL, then put the LZFSE library's
+// compressed form on it.
 fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     #[cfg(test)]
     if FAIL_COPY.with(std::cell::Cell::get) {
@@ -84,6 +86,8 @@ fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     util::clone_file(path, tmp)?;
     let source = fs::File::open(path)?;
     let target = fs::OpenOptions::new().read(true).write(true).open(tmp)?;
+    // The clone's ACL does not always read back the same as the original's, so set it explicitly.
+    meta::copy_acl(path, &target)?;
     lzfse::compress_onto(&source, &target)
 }
 
@@ -111,13 +115,24 @@ fn compress_verified(
     if owner(&tm) != owner(st) {
         return Ok(("failed", "permissions/ownership differ".into(), 0));
     }
-    if !util::xattr_names(path)?.is_subset(&util::xattr_names(tmp)?) {
-        return Ok(("failed", "extended attributes lost".into(), 0));
+    let copied = meta::xattrs(tmp)?;
+    if meta::xattrs(path)?.iter().any(|(name, value)| copied.get(name) != Some(value)) {
+        return Ok(("failed", "extended attributes differ".into(), 0));
+    }
+    if meta::acl_text(path)? != meta::acl_text(tmp)? {
+        return Ok(("failed", "ACL differs".into(), 0));
     }
     if util::sha256(path)? != util::sha256(tmp)? {
         return Ok(("failed", "content hash mismatch".into(), 0));
     }
     util::set_times(tmp, st.atime() * 1_000_000_000 + st.atime_nsec(), util::mtime_ns(st))?;
+    // Set after the other times: macOS moves a birth time later than the modification time back to it.
+    if let Some(born) = meta::birth_ns(st) {
+        meta::set_birth(tmp, born)?;
+        if meta::birth_ns(&fs::symlink_metadata(tmp)?) != Some(born) {
+            return Ok(("failed", "creation time differs".into(), 0));
+        }
+    }
     let st2 = fs::symlink_metadata(path)?;
     let ident = |m: &fs::Metadata| (m.len(), util::mtime_ns(m), m.ino(), m.nlink());
     if ident(&st2) != (st.len(), util::mtime_ns(st), st.ino(), 1) {
@@ -134,11 +149,37 @@ fn compress_one(cand: &Cand, o: &CompressOpts) -> (&'static str, String, i64) {
         Ok(st) => st,
         Err(e) => return ("skipped", format!("gone: {e}"), 0),
     };
-    if let Some(note) = precheck(cand, &st, o) {
+    if let Some(note) = precheck(cand, &st, o, 0) {
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);
     let result = compress_verified(path, &tmp, &st, o, &compressed_copy);
+    util::remove_temp(&tmp);
+    result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
+}
+
+// Replace a file that is flagged compressed but saves no space with a verified copy that `make` compresses for real.
+pub fn rewrite_flagged(
+    path: &Path,
+    o: &CompressOpts,
+    make: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> (&'static str, String, i64) {
+    let st = match fs::symlink_metadata(path) {
+        Ok(st) => st,
+        Err(e) => return ("skipped", format!("gone: {e}"), 0),
+    };
+    let cand = Cand {
+        path: path.to_string_lossy().into_owned(),
+        size: st.len() as i64,
+        mtime_ns: util::mtime_ns(&st),
+        ino: st.ino() as i64,
+        est: 0,
+    };
+    if let Some(note) = precheck(&cand, &st, o, util::UF_COMPRESSED) {
+        return ("skipped", note, 0);
+    }
+    let tmp = util::temp_beside(path);
+    let result = compress_verified(path, &tmp, &st, o, make);
     util::remove_temp(&tmp);
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
@@ -181,7 +222,7 @@ fn confirm(question: &str) -> bool {
 }
 
 // Tell whether compressed copies work here: compress a probe file and read it back through the kernel.
-fn compression_works() -> bool {
+pub fn compression_works() -> bool {
     let dir = std::env::temp_dir().join(format!("fds-probe-{}", std::process::id()));
     let (src, dst) = (dir.join("probe.txt"), dir.join("probe.out"));
     let text = "free-disk-space compression probe\n".repeat(8192);
@@ -312,7 +353,7 @@ pub fn cmd_compress(o: &CompressOpts) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testkit::{age_tree, chmod, is_root, with_stdin, Sandbox};
+    use crate::testkit::{age_tree, chmod, is_root, set_xattr, with_stdin, Sandbox};
     use std::path::PathBuf;
 
     // Build compress options for the sandbox state with permissive limits.
@@ -405,7 +446,7 @@ mod tests {
         sb.tool("lsof", "exit 1");
         let file = seed(&sb, &["a"]).remove(0);
         let o = opts(&sb);
-        let check = |c: &Cand, o: &CompressOpts| precheck(c, &fs::symlink_metadata(&c.path).unwrap(), o);
+        let check = |c: &Cand, o: &CompressOpts| precheck(c, &fs::symlink_metadata(&c.path).unwrap(), o, 0);
         let good = cand(&file);
         assert_eq!(check(&good, &o), None);
         let dir = sb.dir("data/adir");
@@ -418,6 +459,8 @@ mod tests {
         {
             util::set_flags(&[util::UF_COMPRESSED]);
             assert_eq!(check(&good, &o).unwrap(), "already compressed / flagged");
+            let md = fs::symlink_metadata(&file).unwrap();
+            assert_eq!(precheck(&good, &md, &o, util::UF_COMPRESSED), None);
             util::set_flags(&[]);
         }
         let recent = CompressOpts { min_age_days: 100_000, ..opts(&sb) };
@@ -438,7 +481,7 @@ mod tests {
         let file = seed(&sb, &["a"]).remove(0);
         chmod(&sb.path("data"), 0o555);
         let md = fs::symlink_metadata(&file).unwrap();
-        assert_eq!(precheck(&cand(&file), &md, &opts(&sb)).unwrap(), "directory not writable");
+        assert_eq!(precheck(&cand(&file), &md, &opts(&sb), 0).unwrap(), "directory not writable");
         chmod(&sb.path("data"), 0o755);
     }
 
@@ -470,9 +513,6 @@ mod tests {
         assert_eq!(run(&o, &short).unwrap().1, "size mismatch");
         let private = copy_then(|d| chmod(d, 0o600));
         assert_eq!(run(&o, &private).unwrap().1, "permissions/ownership differ");
-        sb.tool("xattr", "case \"$1\" in *.tmp) ;; *) echo user.keep;; esac");
-        assert_eq!(run(&o, &plain).unwrap().1, "extended attributes lost");
-        sb.tool("xattr", "exit 0");
         let len = fs::metadata(&file).unwrap().len() as usize;
         let garbled = copy_then(move |d| fs::write(d, vec![b'z'; len]).unwrap());
         assert_eq!(run(&o, &garbled).unwrap().1, "content hash mismatch");
@@ -485,6 +525,83 @@ mod tests {
         let (status, note, saved) = run(&o, &plain).unwrap();
         assert_eq!((status, note.as_str()), ("done", ""));
         assert!(saved >= 0);
+    }
+
+    // Check an extended attribute whose value the copy does not keep fails verification, and one it keeps passes.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_compress_verified_xattr_values() {
+        let sb = Sandbox::new();
+        let file = seed(&sb, &["a"]).remove(0);
+        chmod(&file, 0o644);
+        if !set_xattr(&file, "user.keep", b"yes") {
+            return;
+        }
+        let tmp = util::temp_beside(&file);
+        let run = |value: &'static [u8]| {
+            let st = fs::symlink_metadata(&file).unwrap();
+            let make = copy_then(move |d| assert!(set_xattr(d, "user.keep", value)));
+            let r = compress_verified(&file, &tmp, &st, &opts(&sb), &make).unwrap();
+            util::remove_temp(&tmp);
+            r
+        };
+        util::set_flags(&[util::UF_COMPRESSED]);
+        assert_eq!(run(b"no").1, "extended attributes differ");
+        assert_eq!(run(b"yes").0, "done");
+    }
+
+    // Check on macOS that a real compressed replacement keeps an ACL, an attribute value and the birth time, and that
+    // a copy losing the ACL or changing the value fails verification.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_compress_keeps_macos_metadata() {
+        let sb = Sandbox::new();
+        let text = b"metadata must survive compression. ".repeat(4000);
+        let file = sb.write("data/m", &text);
+        chmod(&file, 0o644);
+        assert!(set_xattr(&file, "com.example.tag", b"blue"));
+        let acl = std::process::Command::new("/bin/chmod")
+            .arg("+a")
+            .arg("everyone allow read")
+            .arg(&file)
+            .status()
+            .unwrap();
+        assert!(acl.success());
+        let born = 1_000_000_000_000_000_000;
+        meta::set_birth(&file, born).unwrap();
+        let mtime = util::mtime_ns(&fs::symlink_metadata(&file).unwrap());
+        let tmp = util::temp_beside(&file);
+        let o = CompressOpts { min_gain: 0, ..opts(&sb) };
+        let run = |make: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
+            let st = fs::symlink_metadata(&file).unwrap();
+            let r = compress_verified(&file, &tmp, &st, &o, make).unwrap();
+            util::remove_temp(&tmp);
+            r
+        };
+        let unprotected = |s: &Path, d: &Path| {
+            compressed_copy(s, d)?;
+            assert!(std::process::Command::new("/bin/chmod").arg("-N").arg(d).status()?.success());
+            Ok(())
+        };
+        assert_eq!(run(&unprotected).1, "ACL differs");
+        let retagged = |s: &Path, d: &Path| {
+            compressed_copy(s, d)?;
+            assert!(set_xattr(d, "com.example.tag", b"red"));
+            Ok(())
+        };
+        assert_eq!(run(&retagged).1, "extended attributes differ");
+        let (status, note, _) = run(&compressed_copy);
+        assert_eq!((status, note.as_str()), ("done", ""));
+        let md = fs::symlink_metadata(&file).unwrap();
+        assert_ne!(util::flags(&md) & util::UF_COMPRESSED, 0);
+        assert_eq!(fs::read(&file).unwrap(), text);
+        assert_eq!(
+            meta::xattrs(&file).unwrap().get("com.example.tag").map(Vec::as_slice),
+            Some(&b"blue"[..])
+        );
+        assert!(meta::acl_text(&file).unwrap().unwrap().contains("allow"));
+        assert_eq!(meta::birth_ns(&md), Some(born));
+        assert_eq!(util::mtime_ns(&md), mtime);
     }
 
     // Check the real copy step clones the file and runs it through the library, keeping the contents.
@@ -518,7 +635,6 @@ mod tests {
         assert_eq!(compress_one(&cand(&file), &o), ("failed", "copy failed".to_string(), 0));
         fail_copies(false);
         chmod(&file, 0o644);
-        sb.tool("xattr", "exit 0");
         util::set_flags(&[0, util::UF_COMPRESSED]);
         assert_eq!(compress_one(&cand(&file), &o).0, "done");
     }
@@ -596,7 +712,6 @@ mod tests {
         let sb = Sandbox::new();
         std::env::set_var("FDS_FORCE", "1");
         sb.tool("lsof", "exit 1");
-        sb.tool("xattr", "exit 0");
         let files = seed(&sb, &["a", "b", "c", "d", "e", "f", "g"]);
         chmod(&files[0], 0o644);
         chmod(&files[1], 0o644);

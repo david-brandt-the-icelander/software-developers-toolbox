@@ -85,14 +85,51 @@
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_reason_key_groups", "command": "cargo test -p free-disk-space test_reason_key_groups"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compression_works_probe", "command": "cargo test -p free-disk-space test_compression_works_probe"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compressed_copy_keeps_contents", "command": "cargo test -p free-disk-space test_compressed_copy_keeps_contents"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_verified_xattr_values", "command": "cargo test -p free-disk-space test_compress_verified_xattr_values"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "test_compress_keeps_macos_metadata", "command": "cargo test -p free-disk-space test_compress_keeps_macos_metadata"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/meta.rs", "symbol": "test_xattrs_values", "command": "cargo test -p free-disk-space test_xattrs_values"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/meta.rs", "symbol": "test_acl_and_birth_defaults", "command": "cargo test -p free-disk-space test_acl_and_birth_defaults"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_compress_onto_plain_copy_off_macos", "command": "cargo test -p free-disk-space test_compress_onto_plain_copy_off_macos"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_compress_onto_empty_file", "command": "cargo test -p free-disk-space test_compress_onto_empty_file"},
         {"type": "automated", "path": "macos/rust/free-disk-space/src/lzfse.rs", "symbol": "test_failure_names_the_step", "command": "cargo test -p free-disk-space test_failure_names_the_step"}
       ],
-      "details": "xattr and lsof are fakes in these tests, and off macOS the library cannot apply the compressed form (the copy stays plain while the BSD file flags are scripted), so they check the decisions around APFS compression, not APFS compression itself; lzfse-compression's macOS CI checks lzfse_zazzcat_decmpfs_apply against the kernel. Copy failures are injected through compress_verified's copy-function parameter and the test-only fail_copies switch. test_compress_verified_outcomes, test_compress_one_outcomes, test_cmd_compress_run and test_compression_works_probe are compiled only off macOS (cfg(not(target_os = \"macos\"))), where the BSD file flags can be scripted, so they run on Linux only.",
+      "details": "lsof is a fake in these tests, and off macOS the library cannot apply the compressed form (the copy stays plain while the BSD file flags are scripted), so they check the decisions around APFS compression, not APFS compression itself; lzfse-compression's macOS CI checks lzfse_zazzcat_decmpfs_apply against the kernel. Copy failures are injected through compress_verified's copy-function parameter and the test-only fail_copies switch. test_compress_verified_outcomes, test_compress_one_outcomes, test_cmd_compress_run and test_compression_works_probe are compiled only off macOS (cfg(not(target_os = \"macos\"))), where the BSD file flags can be scripted, so they run on Linux only. Extended attributes are real: test_compress_verified_xattr_values (Linux, a user.keep attribute) checks a changed value fails, and test_compress_keeps_macos_metadata (macOS only) gives a file an ACL with chmod +a, a com.example.tag attribute and an old birth time, checks a copy losing the ACL or changing the value fails, and that a real compressed replacement keeps all three.",
       "evidenceStatus": "source-verified",
       "sources": [
         {"path": "macos/rust/free-disk-space/src/compress.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "repair",
+      "title": "Compression repair",
+      "summary": "Each kind of false compression claim is found, and only the repairable ones are changed.",
+      "subject": [
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/feature.json",
+          "entityId": "compression-repair"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/.dev/Cand.state-diagram.json"
+        }
+      ],
+      "criteria": [
+        "A decmpfs header is accepted only with its magic and full 16 bytes",
+        "An unflagged file is a finding only when recorded as done; a flagged file without a header is broken",
+        "The plain copy keeps the contents, mode and attribute values and refuses flags it cannot set",
+        "A dry run changes nothing; --apply resets, records broken files and rewrites wasteful ones through the verified path",
+        "On macOS a real raw-chunk file is compressed for real, a header without a fork is broken, and a falsely recorded file is reset"
+      ],
+      "checks": [
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_header_size", "command": "cargo test -p free-disk-space test_header_size"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_check_findings", "command": "cargo test -p free-disk-space test_check_findings"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_rewritten_copy", "command": "cargo test -p free-disk-space test_rewritten_copy"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_cmd_repair_linux", "command": "cargo test -p free-disk-space test_cmd_repair_linux"},
+        {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_cmd_repair_macos", "command": "cargo test -p free-disk-space test_cmd_repair_macos"}
+      ],
+      "details": "test_check_findings, test_rewritten_copy and test_cmd_repair_linux run only off macOS, with scripted BSD flags and real user.* attributes. test_cmd_repair_macos runs only on macOS: it builds a flagged file by hand whose LZVN resource fork (type 8) stores every 64 KiB chunk raw behind a 0x06 marker, a flagged file with a header but no resource fork, and a plain file the state file records as done, then runs repair --apply and checks the three outcomes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "tests"}
       ]
     },
     {

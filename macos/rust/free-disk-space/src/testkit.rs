@@ -149,3 +149,8 @@ pub fn with_stdin<T>(text: &str, f: impl FnOnce() -> T) -> T {
         out
     }
 }
+
+// Set an extended attribute in a test, returning false where the filesystem does not support them.
+pub fn set_xattr(path: &Path, name: &str, value: &[u8]) -> bool {
+    crate::meta::set_xattr(path, name, value).is_ok()
+}

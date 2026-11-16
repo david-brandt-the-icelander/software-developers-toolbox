@@ -173,6 +173,39 @@
       ]
     },
     {
+      "id": "repair",
+      "name": "Repair false compression claims",
+      "description": "Finds files recorded or flagged as compressed that are not really compressed and, with --apply, repairs them.",
+      "sources": [
+        {
+          "path": "macos/rust/free-disk-space/src/main.rs",
+          "symbol": "RepairArgs"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/repair.rs",
+          "symbol": "repair_one"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/free-disk-space/src/repair.rs",
+        "symbol": "cmd_repair"
+      },
+      "action": "command",
+      "transport": "free-disk-space repair [--apply] [--min-age-days N] [--min-gain SIZE] [--reserve SIZE] [--state FILE]",
+      "authorization": "None checked beyond the file system; a rewrite needs a writable directory and a file no process has open.",
+      "result": "Each finding on its own line (BROKEN in red), then the number of files checked and a count per kind of finding; a dry run says nothing changed; with --apply, the verified saving from rewrites and a reminder to run compress for files reset to pending.",
+      "failures": [
+        "Off macOS without FDS_FORCE: exits with an error.",
+        "No state file: exits with an error pointing at new.",
+        "--apply and the compressed probe copy does not read back as compressed and unchanged: exits before changing anything.",
+        "A rewrite fails verification: prints FAILED with the reason, records failed and keeps the original."
+      ]
+    },
+    {
       "id": "dedupe",
       "name": "Replace duplicates with clones",
       "description": "Finds byte-identical same-named, same-sized files the scan recorded and, with --apply, replaces all but one with copy-on-write clones of the kept copy.",
