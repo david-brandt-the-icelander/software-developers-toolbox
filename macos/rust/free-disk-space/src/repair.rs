@@ -82,12 +82,10 @@ fn rewritten_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     std::io::copy(&mut fs::File::open(path)?, &mut target)?;
     target.set_permissions(st.permissions())?;
     std::os::unix::fs::fchown(&target, None, Some(st.gid()))?;
-    for (name, value) in meta::xattrs(path)? {
-        meta::set_xattr(tmp, &name, &value)?;
-    }
     meta::copy_acl(path, &target)?;
     meta::set_flags(&target, util::flags(&st) & !util::UF_COMPRESSED)?;
-    lzfse::compress_onto(&fs::File::open(path)?, &target)
+    lzfse::compress_onto(&fs::File::open(path)?, &target)?;
+    meta::copy_xattrs(path, tmp)
 }
 
 // Record a file's repair result in the state file, adding it as a candidate if the scan had not.

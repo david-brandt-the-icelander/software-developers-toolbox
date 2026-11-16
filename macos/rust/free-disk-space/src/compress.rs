@@ -81,8 +81,8 @@ thread_local! {
     static FAIL_COPY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-// Make `tmp` a compressed copy of `path`: clone the file, give it the original's ACL, then put the LZFSE library's
-// compressed form on it.
+// Make `tmp` a compressed copy of `path`: clone it, give it the original's ACL, put the library's compressed form on
+// it, then restore attribute values the clone got its own of (macOS stamps a clone with its maker's provenance).
 fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     #[cfg(test)]
     if FAIL_COPY.with(std::cell::Cell::get) {
@@ -93,7 +93,8 @@ fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     let target = fs::OpenOptions::new().read(true).write(true).open(tmp)?;
     // The clone's ACL does not always read back the same as the original's, so set it explicitly.
     meta::copy_acl(path, &target)?;
-    lzfse::compress_onto(&source, &target)
+    lzfse::compress_onto(&source, &target)?;
+    meta::copy_xattrs(path, tmp)
 }
 
 // Make a compressed copy with `make`, verify it and swap it in; return (status, note, saved).
@@ -124,9 +125,9 @@ fn compress_verified(
     if !meta::same_flags(util::flags(st), tmp_flags) {
         return Ok(("failed", "file flags differ".into(), 0));
     }
-    let copied = meta::xattrs(tmp)?;
-    if meta::xattrs(path)?.iter().any(|(name, value)| copied.get(name) != Some(value)) {
-        return Ok(("failed", "extended attributes differ".into(), 0));
+    let differ = meta::differing_xattrs(path, tmp)?;
+    if !differ.is_empty() {
+        return Ok(("failed", format!("extended attributes differ: {}", differ.join(", ")), 0));
     }
     if meta::acl_text(path)? != meta::acl_text(tmp)? {
         return Ok(("failed", "ACL differs".into(), 0));
@@ -573,7 +574,7 @@ mod tests {
             r
         };
         util::set_flags(&[util::UF_COMPRESSED]);
-        assert_eq!(run(b"no").1, "extended attributes differ");
+        assert_eq!(run(b"no").1, "extended attributes differ: user.keep");
         assert_eq!(run(b"yes").0, "done");
     }
 
@@ -619,7 +620,7 @@ mod tests {
             assert!(set_xattr(d, "com.example.tag", b"red"));
             Ok(())
         };
-        assert_eq!(run(&retagged).1, "extended attributes differ");
+        assert_eq!(run(&retagged).1, "extended attributes differ: com.example.tag");
         let shown = |s: &Path, d: &Path| {
             compressed_copy(s, d)?;
             let target = fs::File::open(d)?;
