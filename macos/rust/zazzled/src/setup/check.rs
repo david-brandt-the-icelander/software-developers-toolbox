@@ -260,14 +260,37 @@ mod tests {
         );
     }
 
+    // Reads a whole HTTP request (headers and content-length body), so closing afterwards does not reset the connection.
+    fn read_request(s: &mut std::net::TcpStream) {
+        let mut got = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let text = String::from_utf8_lossy(&got).to_ascii_lowercase();
+            if let Some(end) = text.find("\r\n\r\n") {
+                let length = text[..end]
+                    .lines()
+                    .find_map(|l| {
+                        l.strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                if got.len() >= end + 4 + length {
+                    return;
+                }
+            }
+            match s.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => got.extend_from_slice(&buf[..n]),
+            }
+        }
+    }
+
     // Serves one HTTP reply with a status.
     fn http_once(status: u16) -> String {
         let l = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = l.local_addr().expect("addr");
         std::thread::spawn(move || {
             if let Ok((mut s, _)) = l.accept() {
-                let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf);
+                read_request(&mut s);
                 let _ =
                     write!(s, "HTTP/1.1 {status} X\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}");
             }
