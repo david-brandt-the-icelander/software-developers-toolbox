@@ -22,7 +22,7 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 
 ## Repair (files falsely claimed to be compressed)
 1. After a scan: `... repair` lists files recorded as compressed that are not, flagged files with broken compressed data, and flagged files that save no space; nothing changes.
-2. `... repair --apply` resets the first kind to pending, records broken files as `broken` and rewrites the wasteful ones compressed for real; then run `... compress` for the reset files.
+2. `... repair --apply` resets the first kind to pending, records broken files as `broken` and decompresses the wasteful ones (a compressed form that takes as many disk blocks as the plain file; small files compressed inside their attribute are fine); then run `... compress` for the reset files.
 3. Broken files cannot be recovered (`list --status broken`); tell the user to restore them from a backup and never delete them.
 
 ## Dedupe (after a scan, before compress)

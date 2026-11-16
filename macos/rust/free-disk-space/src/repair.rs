@@ -8,10 +8,9 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 
 use crate::compress::{self, CompressOpts};
-use crate::lzfse;
 use crate::meta;
 use crate::scan::open_db;
-use crate::util::{self, c, hms, human_i, now};
+use crate::util::{self, c, hms, now};
 
 // Options for the repair command.
 pub struct RepairOpts {
@@ -44,8 +43,8 @@ fn read_through(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-// Check a flagged file: its header must match its size, its contents must read back, and what it stores must be
-// smaller than its contents.
+// Check a flagged file: its header must match its size, its contents must read back, and its compressed form must
+// take fewer disk blocks than the plain file would. Data kept inside the attribute (small files) takes no block.
 fn check_flagged(path: &Path, md: &fs::Metadata) -> Option<Finding> {
     let read =
         |name: &str| meta::xattr(path, name).map_err(|e| Finding::Broken(format!("reading {name}: {e}")));
@@ -63,9 +62,13 @@ fn check_flagged(path: &Path, md: &fs::Metadata) -> Option<Finding> {
     if let Err(e) = read_through(path) {
         return Some(Finding::Broken(format!("unreadable: {e}")));
     }
-    let stored = raw.map_or(0, |r| r.len()) + fork.map_or(0, |f| f.len());
-    (md.len() > 0 && stored as u64 >= md.len()).then_some(Finding::Wasteful)
+    let blocks = |bytes: u64| bytes.div_ceil(BLOCK);
+    let fork_len = fork.map_or(0, |f| f.len()) as u64;
+    (md.len() > 0 && blocks(fork_len) >= blocks(md.len())).then_some(Finding::Wasteful)
 }
+
+// The APFS allocation block size, in which a plain file and a resource fork take space.
+const BLOCK: u64 = 4096;
 
 // Decide what, if anything, is wrong with a file, given whether the state file records it as compressed.
 fn check(path: &Path, md: &fs::Metadata, recorded_done: bool) -> Option<Finding> {
@@ -75,19 +78,16 @@ fn check(path: &Path, md: &fs::Metadata, recorded_done: bool) -> Option<Finding>
     check_flagged(path, md)
 }
 
-// Make `tmp` a plain copy of `path` with its mode, group, attributes, ACL and other flags, then compress it.
-fn rewritten_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
+// Make `tmp` a plain, uncompressed copy of `path` with its mode, group, attributes, ACL and other flags.
+fn plain_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     let st = fs::symlink_metadata(path)?;
     let mut target = fs::OpenOptions::new().read(true).write(true).create_new(true).open(tmp)?;
     std::io::copy(&mut fs::File::open(path)?, &mut target)?;
     target.set_permissions(st.permissions())?;
     std::os::unix::fs::fchown(&target, None, Some(st.gid()))?;
-    for (name, value) in meta::xattrs(path)? {
-        meta::set_xattr(tmp, &name, &value)?;
-    }
     meta::copy_acl(path, &target)?;
     meta::set_flags(&target, util::flags(&st) & !util::UF_COMPRESSED)?;
-    lzfse::compress_onto(&fs::File::open(path)?, &target)
+    meta::copy_xattrs(path, tmp)
 }
 
 // Record a file's repair result in the state file, adding it as a candidate if the scan had not.
@@ -112,37 +112,43 @@ fn recorded_files(db: &Connection) -> Vec<(String, bool)> {
     rows.map(|it| it.flatten().collect()).unwrap_or_default()
 }
 
-// Act on one finding and return the tally key it counts under and the bytes a rewrite saved.
-fn repair_one(db: &Connection, path: &str, finding: Finding, o: &RepairOpts) -> (&'static str, i64) {
+// Act on one finding and return the tally key it counts under.
+fn repair_one(db: &Connection, path: &str, finding: Finding, o: &RepairOpts) -> &'static str {
     match finding {
         Finding::Unflagged => {
             println!("recorded as compressed but is not: {path}");
             if o.apply {
                 record(db, path, "pending", "", 0);
             }
-            ("recorded but not compressed (reset to pending)", 0)
+            "recorded but not compressed (reset to pending)"
         }
         Finding::Broken(note) => {
             println!("{} {path}: {note}", c("31", "BROKEN"));
             if o.apply {
                 record(db, path, "broken", &note, 0);
             }
-            ("flagged compressed, data broken (restore from a backup)", 0)
+            "flagged compressed, data broken (restore from a backup)"
         }
         Finding::Wasteful if !o.apply => {
             println!("flagged compressed but saves no space: {path}");
-            ("flagged compressed, saves no space", 0)
+            "flagged compressed, saves no space"
         }
         Finding::Wasteful => {
-            let (status, note, saved) =
-                compress::rewrite_flagged(Path::new(path), &o.compress, &rewritten_copy);
-            record(db, path, status, &note, saved);
+            let (status, note, _) = compress::decompress_flagged(Path::new(path), &o.compress, &plain_copy);
             match status {
-                "done" => ("flagged compressed, saved no space: compressed for real", saved),
-                "skipped" => ("flagged compressed, saves no space: skipped", 0),
+                "done" => {
+                    // Recorded as skipped, so compress does not pick the file up again.
+                    record(db, path, "skipped", "decompressed: compression saved no space", 0);
+                    "flagged compressed, saved no space: decompressed"
+                }
+                "skipped" => {
+                    record(db, path, status, &note, 0);
+                    "flagged compressed, saves no space: skipped"
+                }
                 _ => {
+                    record(db, path, status, &note, 0);
                     println!("{} {path}: {note}", c("31", "FAILED"));
-                    ("flagged compressed, saves no space: rewrite failed", 0)
+                    "flagged compressed, saves no space: decompressing failed"
                 }
             }
         }
@@ -156,18 +162,13 @@ pub fn cmd_repair(o: &RepairOpts) {
         util::die("repair requires macOS (APFS transparent compression)");
     }
     let db = open_db(&o.compress.state, false);
-    if o.apply && cfg!(target_os = "macos") && !compress::compression_works() {
-        util::die(
-            "a compressed test copy did not read back as compressed and unchanged; nothing was changed",
-        );
-    }
     if o.apply {
         util::install_sigint();
     }
     let files = recorded_files(&db);
     let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
     let mut tk = util::Ticker::new();
-    let (t0, mut saved) = (now(), 0);
+    let t0 = now();
     for (i, (path, done)) in files.iter().enumerate() {
         if util::stopped() {
             break;
@@ -179,9 +180,7 @@ pub fn cmd_repair(o: &RepairOpts) {
         }
         if let Some(finding) = check(Path::new(path), &md, *done) {
             tk.clear();
-            let (what, bytes) = repair_one(&db, path, finding, o);
-            *tally.entry(what).or_insert(0) += 1;
-            saved += bytes;
+            *tally.entry(repair_one(&db, path, finding, o)).or_insert(0) += 1;
         }
     }
     tk.clear();
@@ -197,9 +196,6 @@ pub fn cmd_repair(o: &RepairOpts) {
     }
     if o.apply && tally.keys().any(|k| k.contains("reset to pending")) {
         println!("Run `free-disk-space compress` to compress the files reset to pending.");
-    }
-    if saved > 0 {
-        println!("Verified allocated-space saving from rewrites: {}", c("1", &human_i(saved)));
     }
 }
 
@@ -275,26 +271,26 @@ mod tests {
         assert!(read_through(&sb.path("missing")).is_err());
     }
 
-    // Check the rewritten copy keeps the contents, mode and attribute values, and refuses flags Linux cannot set.
+    // Check the plain copy keeps the contents, mode and attribute values, and refuses flags Linux cannot set.
     #[cfg(not(target_os = "macos"))]
     #[test]
-    fn test_rewritten_copy() {
+    fn test_plain_copy() {
         let sb = Sandbox::new();
         let file = sb.write("f", &b"rewrite me ".repeat(1000));
         crate::testkit::chmod(&file, 0o640);
         let tagged = crate::testkit::set_xattr(&file, "user.keep", b"yes");
         let tmp = sb.path("f.tmp");
         util::set_flags(&[util::UF_COMPRESSED]);
-        rewritten_copy(&file, &tmp).unwrap();
+        plain_copy(&file, &tmp).unwrap();
         assert_eq!(fs::read(&tmp).unwrap(), fs::read(&file).unwrap());
         assert_eq!(util::perm_bits(&fs::symlink_metadata(&tmp).unwrap()), 0o640);
         if tagged {
             assert_eq!(meta::xattr(&tmp, "user.keep").unwrap().as_deref(), Some(&b"yes"[..]));
         }
-        assert!(rewritten_copy(&file, &tmp).is_err());
+        assert!(plain_copy(&file, &tmp).is_err());
         fs::remove_file(&tmp).unwrap();
         util::set_flags(&[util::UF_COMPRESSED | 0x8000]);
-        assert!(rewritten_copy(&file, &tmp).is_err());
+        assert!(plain_copy(&file, &tmp).is_err());
         util::set_flags(&[]);
     }
 
@@ -328,24 +324,30 @@ mod tests {
         let w = sb.write("data/w", &text);
         crate::testkit::age_tree(&w);
         let o = opts(&sb, true);
-        assert_eq!(repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &opts(&sb, false)).1, 0);
-        let (what, _) = repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &o);
-        assert!(what.ends_with("compressed for real"));
-        assert_eq!(status_of(&db, &w).0, "done");
+        let dry = repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &opts(&sb, false));
+        assert_eq!(dry, "flagged compressed, saves no space");
+        // Flags read: precheck and the copy see the original as compressed, the copy reads plain, the original again.
+        util::set_flags(&[util::UF_COMPRESSED, util::UF_COMPRESSED, 0, util::UF_COMPRESSED]);
+        let what = repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &o);
+        assert!(what.ends_with("decompressed"), "{what}");
+        assert_eq!(
+            status_of(&db, &w),
+            ("skipped".to_string(), "decompressed: compression saved no space".to_string())
+        );
         assert_eq!(fs::read(&w).unwrap(), text);
         let missing = sb.path("data/missing").to_string_lossy().into_owned();
-        assert!(repair_one(&db, &missing, Finding::Wasteful, &o).0.ends_with("skipped"));
+        assert!(repair_one(&db, &missing, Finding::Wasteful, &o).ends_with("skipped"));
         let nodir = sb.dir("data/locked");
         let locked = sb.write("data/locked/l", &text);
         crate::testkit::chmod(&nodir, 0o555);
-        let (what, _) = repair_one(&db, &locked.to_string_lossy(), Finding::Wasteful, &o);
+        let what = repair_one(&db, &locked.to_string_lossy(), Finding::Wasteful, &o);
         crate::testkit::chmod(&nodir, 0o755);
         if !crate::testkit::is_root() {
             assert!(what.ends_with("skipped"));
         }
         util::set_flags(&[util::UF_COMPRESSED, 0x8000]);
-        let (what, _) = repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &o);
-        assert!(what.ends_with("rewrite failed"), "{what}");
+        let what = repair_one(&db, &w.to_string_lossy(), Finding::Wasteful, &o);
+        assert!(what.ends_with("decompressing failed"), "{what}");
         util::set_flags(&[]);
     }
 
@@ -398,10 +400,19 @@ mod tests {
         cmd_repair(&opts(&sb, true));
         assert_eq!(status_of(&db, &unflagged).0, "pending");
         assert_eq!(status_of(&db, &broken).0, "broken");
-        assert_eq!(status_of(&db, &raw), ("done".to_string(), String::new()));
+        let decompressed = ("skipped".to_string(), "decompressed: compression saved no space".to_string());
+        assert_eq!(status_of(&db, &raw), decompressed);
         let md = fs::symlink_metadata(&raw).unwrap();
-        assert_ne!(util::flags(&md) & util::UF_COMPRESSED, 0);
+        assert_eq!(util::flags(&md) & util::UF_COMPRESSED, 0);
         assert_eq!(fs::read(&raw).unwrap(), text);
-        assert_eq!(check(&raw, &md, true), None);
+        assert_eq!(check(&raw, &md, false), None);
+        // A small file compressed inside its attribute takes no disk block, so it saves space and is left alone.
+        let small = sb.write("data/small.strings", b"\"Hello\" = \"Hello\";\n");
+        let target = sb.write("data/small-compressed.strings", b"\"Hello\" = \"Hello\";\n");
+        let file = fs::OpenOptions::new().read(true).write(true).open(&target).unwrap();
+        crate::lzfse::compress_onto(&fs::File::open(&small).unwrap(), &file).unwrap();
+        let md = fs::symlink_metadata(&target).unwrap();
+        assert_ne!(util::flags(&md) & util::UF_COMPRESSED, 0);
+        assert_eq!(check(&target, &md, false), None);
     }
 }

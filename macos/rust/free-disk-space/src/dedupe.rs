@@ -37,6 +37,7 @@ struct Tally {
     files: u64,
     bytes: i64,
     failed: u64,
+    skipped: u64,
     streak: u64,
 }
 
@@ -146,10 +147,32 @@ fn members(rows: Vec<(String, bool)>, size: i64, o: &DedupeOpts, snap: &Snapshot
     out
 }
 
-// Hash a name group and return (digest, keeper path, targets) per set of identical files on one volume.
-fn plan(members: Vec<Member>) -> Vec<(String, String, Vec<Member>)> {
+// Clone a file into the temp directory and delete the clone, to learn in advance whether macOS lets this process
+// clone it (privacy protection can refuse a clone of a file it lets the process read). A file on another volume
+// than the temp directory is not probed.
+fn clone_probe(src: &Path, dev: u64) -> std::io::Result<()> {
+    let dir = std::env::temp_dir();
+    if fs::metadata(&dir)?.dev() != dev {
+        return Ok(());
+    }
+    let tmp = dir.join(format!(".fds-clone-probe-{}", std::process::id()));
+    let _ = fs::remove_file(&tmp);
+    let result = apfs::clone_file(src, &tmp);
+    let _ = fs::remove_file(&tmp);
+    result
+}
+
+// Identical files, the copy to clone from and the copies to replace.
+type Plan = (String, String, Vec<Member>);
+
+// Hash a name group and return a plan per set of identical files on one volume, plus the files that cannot be
+// cloned (path, error), which are neither cloned from nor replaced.
+fn plan(
+    members: Vec<Member>,
+    probe: &dyn Fn(&Member) -> std::io::Result<()>,
+) -> (Vec<Plan>, Vec<(String, String)>) {
     if members.len() < 2 || !members.iter().any(|m| m.replaceable) {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let mut by_content: HashMap<(u64, String), Vec<Member>> = HashMap::new();
     for m in members {
@@ -157,8 +180,24 @@ fn plan(members: Vec<Member>) -> Vec<(String, String, Vec<Member>)> {
             by_content.entry((m.md.dev(), digest)).or_default().push(m);
         }
     }
-    let mut plans = Vec::new();
-    for ((_dev, digest), mut same) in by_content {
+    let (mut plans, mut blocked) = (Vec::new(), Vec::new());
+    for ((_dev, digest), same) in by_content {
+        if same.len() < 2 {
+            continue;
+        }
+        let mut same: Vec<Member> = same
+            .into_iter()
+            .filter(|m| match probe(m) {
+                Ok(()) => true,
+                Err(e) => {
+                    blocked.push((m.path.clone(), e.to_string()));
+                    false
+                }
+            })
+            .collect();
+        if same.len() < 2 {
+            continue;
+        }
         // Keep a file that cannot be replaced if there is one, else the oldest.
         same.sort_by(|a, b| {
             (a.replaceable, util::mtime_ns(&a.md), &a.path).cmp(&(
@@ -173,7 +212,7 @@ fn plan(members: Vec<Member>) -> Vec<(String, String, Vec<Member>)> {
             plans.push((digest, keeper, targets));
         }
     }
-    plans
+    (plans, blocked)
 }
 
 // Clone the keeper to the temp path, verify it and swap it over the target.
@@ -184,7 +223,8 @@ fn clone_verified(
     st: &Metadata,
     digest: &str,
 ) -> std::io::Result<Option<&'static str>> {
-    apfs::clone_file(keeper, tmp)?;
+    apfs::clone_file(keeper, tmp)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("cloning from {}: {e}", keeper.display())))?;
     sync_metadata(target, tmp)?;
     util::set_times(tmp, st.atime() * 1_000_000_000 + st.atime_nsec(), util::mtime_ns(st))?;
     let t = fs::symlink_metadata(tmp)?;
@@ -228,7 +268,13 @@ fn dedupe_group(
     tally: &mut Tally,
     tk: &mut util::Ticker,
 ) -> bool {
-    for (digest, keeper, targets) in plan(group) {
+    let (plans, blocked) = plan(group, &|m| clone_probe(Path::new(&m.path), m.md.dev()));
+    for (path, error) in blocked {
+        tally.skipped += 1;
+        tk.clear();
+        println!("{} {path}: macOS does not let this process clone it ({error})", c("33", "SKIPPED"));
+    }
+    for (digest, keeper, targets) in plans {
         for target in targets {
             if util::stopped() || o.sample.is_some_and(|n| tally.files >= n) {
                 return false;
@@ -337,7 +383,13 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
     tk.clear();
     let free1 = util::report_free("Final  ");
     let verb = if o.apply { "Cloned" } else { "Would clone" };
-    println!("{verb} {} duplicate files, failed {} in {}", tally.files, tally.failed, hms(now() - t0));
+    println!(
+        "{verb} {} duplicate files, skipped {} that cannot be cloned, failed {} in {}",
+        tally.files,
+        tally.skipped,
+        tally.failed,
+        hms(now() - t0)
+    );
     println!(
         "Allocated size of the replaced duplicates (upper bound on savings): {}",
         c("1", &human_i(tally.bytes))
@@ -495,6 +547,48 @@ mod tests {
         chmod(files[1].parent().unwrap(), 0o755);
     }
 
+    // Plan a group with every file cloneable, returning only the plans.
+    fn plan_ok(group: Vec<Member>) -> Vec<Plan> {
+        plan(group, &|_| Ok(())).0
+    }
+
+    // Check a file that cannot be cloned is never the source or a target, and the next file is used instead.
+    #[test]
+    fn test_plan_skips_files_that_cannot_be_cloned() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 3);
+        fake_procs(&sb, &[]);
+        let snap = Snapshot::capture();
+        let rows: Vec<_> = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
+        let first = files[0].to_string_lossy().into_owned();
+        let refuse_first = |m: &Member| {
+            if m.path == first {
+                Err(std::io::Error::from_raw_os_error(libc::EPERM))
+            } else {
+                Ok(())
+            }
+        };
+        let (plans, blocked) = plan(members(rows.clone(), 6000, &opts(&sb, true), &snap), &refuse_first);
+        assert_eq!(blocked.len(), 1);
+        assert_eq!(blocked[0].0, first);
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].1, files[1].to_string_lossy());
+        assert_eq!(plans[0].2.len(), 1);
+        assert!(plans[0].2.iter().all(|m| m.path != first));
+        let refuse_all = |_: &Member| Err(std::io::Error::from_raw_os_error(libc::EPERM));
+        let (plans, blocked) = plan(members(rows, 6000, &opts(&sb, true), &snap), &refuse_all);
+        assert!(plans.is_empty());
+        assert_eq!(blocked.len(), 3);
+        let md = fs::symlink_metadata(&files[0]).unwrap();
+        clone_probe(&files[0], md.dev()).unwrap();
+        assert!(clone_probe(&sb.path("missing"), md.dev()).is_err());
+        clone_probe(&sb.path("missing"), md.dev() + 1).unwrap();
+        let st = fs::symlink_metadata(&files[1]).unwrap();
+        let tmp = util::temp_beside(&files[1]);
+        let err = clone_verified(&sb.path("missing"), &files[1], &tmp, &st, "x").unwrap_err();
+        assert!(err.to_string().starts_with("cloning from "), "{err}");
+    }
+
     // Check planning picks keepers and targets and ignores unusable groups.
     #[test]
     fn test_plan_groups() {
@@ -506,26 +600,26 @@ mod tests {
             let rows = paths.iter().map(|p| (p.to_string_lossy().into_owned(), cloned)).collect();
             members(rows, 6000, &opts(&sb, true), &snap)
         };
-        let plans = plan(build(&[&files[0], &files[1], &files[2]], false));
+        let plans = plan_ok(build(&[&files[0], &files[1], &files[2]], false));
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].1, files[0].to_string_lossy());
         assert_eq!(plans[0].2.len(), 2);
-        assert!(plan(build(&[&files[0]], false)).is_empty());
-        assert!(plan(build(&[&files[0], &files[1]], true)).is_empty());
+        assert!(plan_ok(build(&[&files[0]], false)).is_empty());
+        assert!(plan_ok(build(&[&files[0], &files[1]], true)).is_empty());
         let mut mixed = build(&[&files[0], &files[1]], false);
         mixed[0].replaceable = false;
-        let plans = plan(mixed);
+        let plans = plan_ok(mixed);
         assert_eq!((plans[0].1.as_str(), plans[0].2.len()), (files[0].to_str().unwrap(), 1));
         let odd = sb.write("data/odd/same.txt", &[b'z'; 6000]);
         let mut group = build(&[&files[0], &files[1], &odd], false);
         group[0].replaceable = false;
         group[1].replaceable = false;
-        let plans = plan(group);
+        let plans = plan_ok(group);
         assert!(plans.is_empty());
         let mut gone = build(&[&files[0], &files[1]], false);
         fs::remove_file(&files[0]).unwrap();
         gone.truncate(2);
-        assert!(plan(gone).is_empty());
+        assert!(plan_ok(gone).is_empty());
     }
 
     // Check every outcome of the verified clone swap.

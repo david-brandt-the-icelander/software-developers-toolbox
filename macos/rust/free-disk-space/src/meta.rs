@@ -130,6 +130,26 @@ extern "C" {
 #[cfg(target_os = "macos")]
 const ACL_TYPE_EXTENDED: libc::c_int = 0x0000_0100;
 
+// Name the extended attributes of `from` that `to` lacks or holds with a different value.
+pub fn differing_xattrs(from: &Path, to: &Path) -> std::io::Result<Vec<String>> {
+    let have = xattrs(to)?;
+    Ok(xattrs(from)?
+        .into_iter()
+        .filter(|(name, value)| have.get(name) != Some(value))
+        .map(|(name, _)| name)
+        .collect())
+}
+
+// Give `to` every extended attribute value of `from` that it lacks or holds differently, such as the provenance
+// macOS stamps on a new file. A value that cannot be set is left for verification to report.
+pub fn copy_xattrs(from: &Path, to: &Path) -> std::io::Result<()> {
+    let values = xattrs(from)?;
+    for name in differing_xattrs(from, to)? {
+        let _ = set_xattr(to, &name, &values[&name]);
+    }
+    Ok(())
+}
+
 // Return a file's ACL as text, or None when it has none, without following a symlink.
 #[cfg(target_os = "macos")]
 pub fn acl_text(path: &Path) -> std::io::Result<Option<String>> {
@@ -344,5 +364,23 @@ mod tests {
         assert!(same_times(&md(&a), &md(&a)));
         crate::util::set_times(&b, 1_000_000_000_000_000_000, 1_100_000_000_000_000_001).unwrap();
         assert!(!same_times(&md(&a), &md(&b)));
+    }
+
+    // Check attribute values are copied where missing or different, and a missing file is an error.
+    #[test]
+    fn test_copy_xattrs() {
+        let sb = Sandbox::new();
+        let (from, to) = (sb.write("from", b"a"), sb.write("to", b"b"));
+        let name = if cfg!(target_os = "macos") { "com.example.tag" } else { "user.tag" };
+        let other = if cfg!(target_os = "macos") { "com.example.other" } else { "user.other" };
+        if !set_xattr(&from, name, b"blue") || !set_xattr(&to, name, b"red") {
+            return;
+        }
+        assert!(set_xattr(&from, other, b"x"));
+        assert_eq!(differing_xattrs(&from, &to).unwrap(), [other, name].map(String::from).to_vec());
+        copy_xattrs(&from, &to).unwrap();
+        assert!(differing_xattrs(&from, &to).unwrap().is_empty());
+        assert_eq!(xattrs(&to).unwrap(), xattrs(&from).unwrap());
+        assert!(copy_xattrs(&sb.path("missing"), &to).is_err());
     }
 }
