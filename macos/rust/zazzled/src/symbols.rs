@@ -25,16 +25,22 @@ fn segments(name: &str) -> Vec<String> {
         .collect()
 }
 
-// Returns each symbol's qualified path: its containers' segments followed by its own.
+// Returns each symbol's qualified path: its containers' segments followed by its own; a one-line namespace (C#'s `namespace X;`) also contains the symbols after it at its depth.
 fn paths(syms: &[Symbol]) -> Vec<Vec<String>> {
     let mut stack: Vec<(usize, Vec<String>)> = Vec::new();
+    let mut scoped: Option<(usize, Vec<String>)> = None;
     let mut out = Vec::with_capacity(syms.len());
-    for s in syms {
+    for (i, s) in syms.iter().enumerate() {
         while stack.last().is_some_and(|(d, _)| *d >= s.depth) {
             stack.pop();
         }
-        let mut path = stack.last().map(|(_, p)| p.clone()).unwrap_or_default();
+        let outer = scoped.as_ref().filter(|(d, _)| *d == s.depth).map(|(_, p)| p.clone());
+        let mut path = stack.last().map(|(_, p)| p.clone()).or(outer).unwrap_or_default();
         path.extend(segments(&s.name));
+        let nests = syms.get(i + 1).is_some_and(|n| n.depth > s.depth && n.start <= s.end);
+        if s.kind == "namespace" && s.start == s.end && !nests {
+            scoped = Some((s.depth, path.clone()));
+        }
         stack.push((s.depth, path.clone()));
         out.push(path);
     }
@@ -208,6 +214,26 @@ mod tests {
         assert_eq!(p[3], v(&["Invoice", "total"]));
         assert_eq!(p[5], v(&["Invoice", "fmt"]));
         assert_eq!(p[7], v(&["billing", "tax", "total"]));
+        let sym = |kind: &'static str, name: &str, start: usize, end: usize, depth: usize| Symbol {
+            kind,
+            name: name.into(),
+            start,
+            end,
+            depth,
+        };
+        let file_scoped = [
+            sym("namespace", "Acme.Billing", 1, 1, 0),
+            sym("class", "Invoice", 3, 9, 0),
+            sym("method", "Total", 5, 5, 1),
+            sym("namespace", "Old", 10, 10, 0),
+            sym("interface", "I", 10, 10, 1),
+        ];
+        let p = paths(&file_scoped);
+        assert_eq!(p[2], v(&["Acme", "Billing", "Invoice", "Total"]));
+        assert_eq!(p[4], v(&["Acme", "Billing", "Old", "I"]));
+        let block =
+            [sym("namespace", "Old", 1, 1, 0), sym("interface", "I", 1, 1, 1), sym("class", "C", 2, 3, 0)];
+        assert_eq!(paths(&block)[2], v(&["C"]));
     }
 
     // Checks queries with dots, double colons, parameter types and #N picks.

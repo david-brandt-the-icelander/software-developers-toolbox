@@ -2,14 +2,14 @@
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::meta::{anchor_str, line_anchor, Meta};
-use crate::util::{display, hex8, resolve};
+use crate::util::{display, hex8, locate};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const SPEC: &[Flag] = &[
+pub(super) const SPEC: &[Flag] = &[
     opt("old", '\0'),
     opt("new", '\0'),
     flag("all", '\0'),
@@ -87,7 +87,7 @@ struct Target {
 
 // Loads the file to edit, refusing binary files.
 fn open_target(ctx: &Ctx, arg: &str) -> Result<Target, String> {
-    let wanted = resolve(arg, &ctx.cwd);
+    let wanted = locate(arg, &ctx.cwd);
     let shown = display(&wanted, &ctx.cwd);
     let path = confine(ctx, &wanted)?;
     let loaded = ctx.engine.load(&path).map_err(|e| format!("{shown}: {e}"))?;
@@ -297,7 +297,7 @@ fn insert_after(
 
 // Creates a new file inside the working directory.
 fn create_file(ctx: &Ctx, arg: &str, new: &str) -> Result<Output, String> {
-    let wanted = resolve(arg, &ctx.cwd);
+    let wanted = locate(arg, &ctx.cwd);
     let shown = display(&wanted, &ctx.cwd);
     let path = confine(ctx, &wanted)?;
     let io = |e: std::io::Error| format!("{shown}: {}", crate::walk::reason(&e));

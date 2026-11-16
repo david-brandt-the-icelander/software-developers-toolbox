@@ -581,9 +581,18 @@
       "name": "Terse CMake and Makefile view",
       "description": "`read` on a CMake file (CMakeLists.txt, .cmake) or a Makefile (Makefile, makefile, GNUmakefile, Makefile.*, .mk, .mak) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
       "sources": [
-        {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "view"},
-        {"path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "other_view"},
-        {"path": "macos/rust/zazzled/README.md", "symbol": "CMake and Makefile terse view"}
+        {
+          "path": "macos/rust/zazzled/src/buildfile.rs",
+          "symbol": "view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "CMake and Makefile terse view"
+        }
       ],
       "behavior": "Without --source or --anchors, buildfile.rs collapses runs of three or more `#` comment lines and CMake bracket comments of three or more lines, runs of three or more includes, and lists of six or more one-word items to their first and last (the arguments of a CMake command left open on its line, stopping at an upper-case keyword, except in function, macro, add_custom_command, add_custom_target, execute_process and add_test; the continued lines after a Make line ending in a backslash); hides CMake message(STATUS|VERBOSE|DEBUG|TRACE|CHECK_* ..) calls, with the mode on the same or the next line, and Make $(info ..) lines; and cuts quoted values over 120 characters and runs of 120+ base64-style characters to their first 40. read renders the result like the C# view. A file with nothing to shorten is returned as source with its sha.",
       "outcome": "An agent reads build files without paying for license banners, module documentation, long source and object lists and status messages, and still has to read the real file before it can edit it.",
@@ -593,9 +602,18 @@
         "Warnings, errors and plain message(..) calls stay: they are what the build tells its user."
       ],
       "implementation": [
-        {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "list"},
-        {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "log_end"},
-        {"path": "macos/rust/zazzled/src/buildfile.rs", "symbol": "comment_end"}
+        {
+          "path": "macos/rust/zazzled/src/buildfile.rs",
+          "symbol": "list"
+        },
+        {
+          "path": "macos/rust/zazzled/src/buildfile.rs",
+          "symbol": "log_end"
+        },
+        {
+          "path": "macos/rust/zazzled/src/buildfile.rs",
+          "symbol": "comment_end"
+        }
       ]
     },
     {
@@ -603,10 +621,22 @@
       "name": "Terse view of minified JSON and XML",
       "description": "`read` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, with at most 10 other lines (a licence banner, a source map comment) or fewer other lines than long ones, returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
       "sources": [
-        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "json_view"},
-        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "xml_view"},
-        {"path": "macos/rust/zazzled/src/cmd/read.rs", "symbol": "other_view"},
-        {"path": "macos/rust/zazzled/README.md", "symbol": "Minified JSON and XML terse view"}
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "json_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "xml_view"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "other_view"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Minified JSON and XML terse view"
+        }
       ],
       "behavior": "Without --source or --anchors, minified.rs reformats JSON with two spaces and one value per line (strings and numbers as written), XML and SVG with one element per line (text-only elements on one line), HTML the same way tolerating void elements and stray or implied closing tags and cutting script, style and textarea text over 200 characters to its first 80, and CSS with one selector, declaration, brace or comment per line (strings and parentheses whole); it runs data.rs's view as generated data (any 10+ sibling items or members collapse, and a note on hidden members lists their keys up to about 80 characters), xml.rs's, markup.rs's or styles.rs's view over it, and rewrites each view line's key to its source line (`N~` for a kept line, `A-B` for a note) and the header to the source's line count plus `N minified lines reformatted`. Text that does not parse, or with nothing to shorten, falls back to the line-based view; a view longer than the minified file is kept, since the budget can cut it at line boundaries. When the view of one source line is over the budget, read's footer counts the elided view lines and points to --full.",
       "outcome": "An agent can read the shape and a sample of a minified API response, data bundle or Office XML part, which as source is one line it cannot page through.",
@@ -616,10 +646,22 @@
         "Generated data loses the same-keys check, so lists of different things collapse too."
       ],
       "implementation": [
-        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "pretty_json"},
-        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "pretty_xml"},
-        {"path": "macos/rust/zazzled/src/minified.rs", "symbol": "remap"},
-        {"path": "macos/rust/zazzled/src/data.rs", "symbol": "view_generated"}
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "pretty_json"
+        },
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "pretty_xml"
+        },
+        {
+          "path": "macos/rust/zazzled/src/minified.rs",
+          "symbol": "remap"
+        },
+        {
+          "path": "macos/rust/zazzled/src/data.rs",
+          "symbol": "view_generated"
+        }
       ]
     },
     {
@@ -908,6 +950,84 @@
         {
           "path": "macos/rust/zazzle-lang/src/lib.rs",
           "symbol": "zazzle_language"
+        }
+      ]
+    },
+    {
+      "id": "qualified-lookup",
+      "name": "Qualified symbols and root-relative paths",
+      "description": "C# symbols are found by namespace-qualified names in one file, across the index without a file, and paths resolve from the solution or repository root when they are not under the working directory.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/symbols.rs",
+          "symbol": "paths"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "declared_in"
+        },
+        {
+          "path": "macos/rust/zazzled/src/util.rs",
+          "symbol": "locate"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
+          "symbol": "InContainer"
+        }
+      ],
+      "behavior": "Qualified paths treat a one-line namespace symbol not followed by a nested one (C#'s file-scoped `namespace X;`) as the container of the symbols after it at its depth. read --symbol without a path strips parameter types and #N, asks the indexer's find_symbol for the exact name (a dotted name narrows by container), reads the one declaring file, and lists the hits when several files declare it. File commands resolve a missing relative path from solution folders above the working directory (holding .sln or .slnx) up to the work tree, then the work tree root, then the one repository below that has it; `REPO:path` names a repository by the name zazzle shows.",
+      "outcome": "An agent can read `Acme.Shop.Orders.OrderService.Submit` without knowing its file, and paths copied from solution-relative docs or tools work from any subfolder.",
+      "constraints": [
+        "Path-less symbol reads need zazzle-csharp-indexer and a git work tree.",
+        "A relative path present in several repositories below a folder stays unresolved."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/structure.rs",
+          "symbol": "declarations"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "read_args"
+        }
+      ]
+    },
+    {
+      "id": "commit-pinning",
+      "name": "Answers pinned to a commit",
+      "description": "Repository commands take --commit SHA (MCP commit): they answer only from repositories checked out at that commit and name the commit each answer came from.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "apply"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "pin_args"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Pinning to a commit"
+        }
+      ],
+      "behavior": "split_globals takes --commit; pin::apply parses the command's own flags to find the paths it names (read's ranges dropped, edit's and git-blame's file, --repo), maps each to its git work tree and compares `git rev-parse HEAD` with the sha (a prefix of four or more hex digits, or HEAD). A named repository at another commit is refused with its commit and, from `git worktree list`, the worktree that has the commit, or whether `git cat-file` finds it. With no path in a repository (a folder of repositories, named or the working directory), the repositories below are filtered to those at the commit and the arguments narrowed to them (paths for find, refs, ls and outline; --repo for the structure tools when exactly one). After the command, one `[commit SHA REPO]` line per repository is added, noting uncommitted changes from `git status --porcelain --untracked-files=no` over the named files or the tree.",
+      "outcome": "An agent can say which commit it is reasoning about and never gets a mix of answers from repositories or worktrees at other commits.",
+      "constraints": [
+        "Only checked-out files are read: a commit that no worktree has is refused, not read from history.",
+        "Commands that read no repository (clean, run, status, zazz) refuse --commit."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "elsewhere"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/pin.rs",
+          "symbol": "footer"
         }
       ]
     }

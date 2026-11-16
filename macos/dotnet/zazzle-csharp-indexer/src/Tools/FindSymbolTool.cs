@@ -9,10 +9,13 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
 {
     public string Name => "find_symbol";
 
-    // Finds matching declarations in every selected root.
+    // Finds matching declarations in every selected root; a dotted name (Namespace.Type.Member, or with ::) also needs its leading parts to end the declaration's container.
     public string Run(JsonNode? args, CallInfo info)
     {
-        var name = Args.Str(args, "name");
+        var query = Args.Str(args, "name").Replace("::", ".");
+        var cut = query.LastIndexOf('.');
+        var name = cut < 0 ? query : query[(cut + 1)..];
+        var qualifier = cut < 0 ? "" : query[..cut];
         var exact = Args.Bool(args, "exact", false);
         var kind = Args.OptStr(args, "kind");
         var limit = Args.Int(args, "limit", 30);
@@ -26,7 +29,7 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
             var blobs = root.Index.Engine.BlobsDeclaring(name, exact);
             foreach (var f in root.Index.Files().Where(f => blobs.Contains(f.BlobId)))
                 foreach (var s in Sym.FromJson(root.Index.Engine.Store.Symbols(f.BlobId)))
-                    if ((exact ? s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) : s.Name.Contains(name, StringComparison.OrdinalIgnoreCase)) && (kind is null || s.Kind == kind))
+                    if ((exact ? s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) : s.Name.Contains(name, StringComparison.OrdinalIgnoreCase)) && (kind is null || s.Kind == kind) && InContainer(s.Container, qualifier))
                         hits.Add((s.Name.Equals(name, StringComparison.OrdinalIgnoreCase), $"{root.Name}:{f.Path}:{s.Line}", $"{s.Kind} {(s.Container == "" ? "" : s.Container + ".")}{s.Name} | {s.Sig}"));
         }
         var ordered = hits.OrderByDescending(h => h.exact).ThenBy(h => h.label, StringComparer.Ordinal).ToList();
@@ -35,4 +38,8 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
         info.Truncated = offset + page.Count < ordered.Count;
         return string.Join('\n', page.Append(info.Truncated ? $"[{page.Count} of {ordered.Count}; next offset {offset + page.Count}]" : $"[{ordered.Count} symbols]"));
     }
+
+    // True when the qualifier is empty or names the end of the container at a dot, ignoring case.
+    private static bool InContainer(string container, string qualifier) =>
+        qualifier == "" || container.Equals(qualifier, StringComparison.OrdinalIgnoreCase) || container.EndsWith("." + qualifier, StringComparison.OrdinalIgnoreCase);
 }

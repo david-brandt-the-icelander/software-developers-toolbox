@@ -384,6 +384,33 @@
       "members": [
         "ask(root, tool, args) -> Result<String, String>"
       ]
+    },
+    {
+      "id": "Shape",
+      "name": "Shape (pin)",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/pin.rs"
+      ],
+      "members": [
+        "spec: &[Flag]",
+        "first_path: usize",
+        "one_path: bool",
+        "narrow: Narrow"
+      ]
+    },
+    {
+      "id": "Narrow",
+      "name": "Narrow (pin)",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzled/src/cmd/pin.rs"
+      ],
+      "members": [
+        "Paths",
+        "Repo",
+        "No"
+      ]
     }
   ],
   "relationships": [
@@ -488,6 +515,12 @@
       "to": "Output",
       "kind": "depends-on",
       "description": "Wraps the rewritten answer."
+    },
+    {
+      "from": "Shape",
+      "to": "Narrow",
+      "kind": "depends-on",
+      "description": "How a search is narrowed."
     }
   ]
 }

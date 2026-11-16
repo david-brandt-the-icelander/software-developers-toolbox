@@ -113,15 +113,15 @@ fn find_schema() -> Value {
 fn read_schema() -> Value {
     object(
         json!({
-            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted)"},
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B (A-, A also accepted); may be left out with symbol, which then finds the file through the C# indexer"},
             "source": {"type": "boolean", "description": "C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI and Dockerfile files come as a terse view without a sha; true gives the code and its sha, which edits need"},
-            "symbol": {"type": "string", "description": "Read one symbol by name (Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes"},
+            "symbol": {"type": "string", "description": "Read one symbol by name (Namespace.Type.Method, Type.method or a::b; overloads by parameter types, Name(T1, T2), or #N) with its doc comments and attributes; without paths, the file that declares it is found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
             "budget": {"type": "integer", "description": "Token budget (default 3000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
             "disable_session_deduping": {"type": "boolean"}
         }),
-        &["paths"],
+        &[],
     )
 }
 
@@ -293,8 +293,8 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
         a.push(sym);
     }
     let paths = get_list(v, "paths")?;
-    if paths.is_empty() {
-        return Err("'paths' is required".into());
+    if paths.is_empty() && !a.contains(&"--symbol".to_string()) {
+        return Err("'paths' is required (or give symbol alone)".into());
     }
     a.push("--".into());
     a.extend(paths);
@@ -402,14 +402,43 @@ fn all_tools() -> impl Iterator<Item = &'static Tool> {
 // Lists the tools with their schemas.
 fn list_tools() -> Value {
     let tools: Vec<Value> = all_tools()
-        .map(|t| json!({"name": t.name, "description": t.description, "inputSchema": (t.schema)()}))
+        .map(|t| {
+            let mut schema = (t.schema)();
+            if PINNABLE.contains(&t.name) {
+                schema["properties"]["commit"] = json!({"type": "string", "description": "The commit sha (or a prefix, or HEAD) the answer must come from: repositories checked out at another commit are refused or left out, and the answer ends with [commit SHA REPO]"});
+            }
+            json!({"name": t.name, "description": t.description, "inputSchema": schema})
+        })
         .collect();
     json!({"tools": tools})
 }
 
+// The tools that read a repository and take `commit`.
+const PINNABLE: &[&str] = &[
+    "zazzle_find",
+    "zazzle_read",
+    "zazzle_ls",
+    "zazzle_outline",
+    "zazzle_refs",
+    "zazzle_edit",
+    "zazzle_overview",
+    "zazzle_find_symbol",
+    "zazzle_changed_since",
+    "zazzle_git_log",
+    "zazzle_git_blame",
+];
+
 // Wraps text as an MCP tool result.
 fn tool_result(text: &str, is_error: bool) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": is_error})
+}
+
+// Puts `--commit SHA` right after the command name when a repository tool is given `commit`.
+fn pin_args(tool: &str, mut argv: Vec<String>, args: &Value) -> Result<Vec<String>, String> {
+    if let Some(c) = get_str(args, "commit")?.filter(|_| PINNABLE.contains(&tool)) {
+        argv.splice(1..1, ["--commit".to_string(), c]);
+    }
+    Ok(argv)
 }
 
 // Runs a tool call and returns its result, or a protocol error for an unknown tool.
@@ -420,7 +449,7 @@ fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     };
     let empty = json!({});
     let args = params.get("arguments").unwrap_or(&empty);
-    let argv = match (tool.map)(args) {
+    let argv = match (tool.map)(args).and_then(|a| pin_args(name, a, args)) {
         Ok(a) => a,
         Err(e) => return Ok(tool_result(&format!("error: {e}"), true)),
     };
@@ -688,7 +717,12 @@ mod tests {
             json!({"id":2,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{"path":"src","depth":1,"max":5,"no_ignore":true}}}),
         );
         ask(&b, json!({"id":3,"method":"tools/call","params":{"name":"zazzle_ls"}}));
+        ask(
+            &b,
+            json!({"id":4,"method":"tools/call","params":{"name":"zazzle_read","arguments":{"symbol":"Acme.A.b"}}}),
+        );
         let calls = b.calls.borrow();
+        assert_eq!(calls[3], ["read", "--symbol", "Acme.A.b", "--"]);
         assert_eq!(
             calls[0],
             [
@@ -743,7 +777,7 @@ mod tests {
             text(json!({"pattern":"x","max":-1}), "zazzle_find"),
             "error: 'max' must be a non-negative integer"
         );
-        assert_eq!(text(json!({}), "zazzle_read"), "error: 'paths' is required");
+        assert_eq!(text(json!({}), "zazzle_read"), "error: 'paths' is required (or give symbol alone)");
         assert!(b.calls.borrow().is_empty());
     }
 
@@ -817,6 +851,32 @@ mod tests {
         assert_eq!(
             crate::proto::split_session(&crate::proto::join_session("s", &["/w".into(), "/v".into()])),
             ("s".to_string(), vec![PathBuf::from("/w"), PathBuf::from("/v")])
+        );
+    }
+
+    // Checks repository tools take commit, passed as --commit after the command, and others do not offer it.
+    #[test]
+    fn test_commit_argument() {
+        let b = fake(0, "ok");
+        ask(
+            &b,
+            json!({"id":5,"method":"tools/call","params":{"name":"zazzle_find","arguments":{"pattern":"x","commit":"abc123"}}}),
+        );
+        assert_eq!(b.calls.borrow()[0][..3], ["find", "--commit", "abc123"]);
+        let bad = ask(
+            &b,
+            json!({"id":6,"method":"tools/call","params":{"name":"zazzle_find","arguments":{"pattern":"x","commit":1}}}),
+        );
+        assert_eq!(bad["result"]["content"][0]["text"], "error: 'commit' must be a string");
+        let tools = list_tools();
+        let schema = |n: &str| {
+            tools["tools"].as_array().expect("tools").iter().find(|t| t["name"] == n).expect("tool")
+                ["inputSchema"]
+                .clone()
+        };
+        assert!(
+            schema("zazzle_read")["properties"]["commit"].is_object()
+                && schema("zazzle_read_again")["properties"]["commit"].is_null()
         );
     }
 

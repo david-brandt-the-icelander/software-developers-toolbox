@@ -3,12 +3,12 @@ use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
 use crate::pool::{cpus, par_map};
-use crate::util::{display, resolve};
+use crate::util::{display, locate};
 use crate::walk::{self, WalkOpts};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm'), flag("no-ignore", 'u')];
+pub(super) const SPEC: &[Flag] = &[opt("depth", 'd'), opt("max", 'm'), flag("no-ignore", 'u')];
 const USAGE: &str = "usage: ls [DIR] [-d N] [-m N] [-u]";
 const DEFAULT_DEPTH: usize = 2;
 const DEFAULT_MAX: usize = 150;
@@ -107,7 +107,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if p.positional.len() > 1 {
         return Err(USAGE.into());
     }
-    let root = p.positional.first().map_or_else(|| ctx.cwd.clone(), |a| resolve(a, &ctx.cwd));
+    let root = p.positional.first().map_or_else(|| ctx.cwd.clone(), |a| locate(a, &ctx.cwd));
     let depth = p.number("depth")?.unwrap_or(DEFAULT_DEPTH);
     let max = p.number("max")?.unwrap_or(DEFAULT_MAX).max(1);
     let md = std::fs::metadata(&root)

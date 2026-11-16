@@ -45,7 +45,7 @@
     {
       "id": "find-symbol",
       "name": "find_symbol",
-      "description": "Declarations whose name contains (or equals, with exact) the query, case-insensitively, optionally of one kind; agents ask for it with zazzle_find_symbol.",
+      "description": "Declarations whose name contains (or equals, with exact) the query, case-insensitively, optionally of one kind; agents ask for it with zazzle_find_symbol. A dotted name (Namespace.Type.Member, `::` too) matches the member by its last part and needs the rest to end the declaration's container, ignoring case.",
       "sources": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Tools/FindSymbolTool.cs",
