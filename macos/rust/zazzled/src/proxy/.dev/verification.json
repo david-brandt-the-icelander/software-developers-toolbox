@@ -206,6 +206,42 @@
         }
       ],
       "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "tracing",
+      "title": "Request traces",
+      "summary": "Unit tests switch tracing on and off, check folder names and stamps, and trace a cleaned tool call, an untouched list, a batch and an unasked response; a real stdio proxy traced two requests and stopped at once when switched off while running.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/proxy/.dev/observability.json",
+          "entityId": "request-trace"
+        }
+      ],
+      "criteria": [
+        "Each answered request gets MMDD_HHmmss with four files; the raw file is the server's answer and the returned file what the agent got.",
+        "Switching off stops writing at the next request without restarting the proxy."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/mod.rs",
+          "symbol": "test_trace_requests",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/trace.rs",
+          "symbol": "test_command",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/proxy/trace.rs",
+          "symbol": "test_folders_and_stamps",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

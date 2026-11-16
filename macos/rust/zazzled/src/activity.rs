@@ -15,6 +15,11 @@ pub fn set_label(label: &str) {
     let _ = LABEL.set(label.to_string());
 }
 
+// Returns the MCP server this proxy process fronts, if it is one.
+pub fn label() -> Option<String> {
+    LABEL.get().cloned()
+}
+
 // Names the stdio MCP server this proxy process fronts by its program name and arguments.
 pub fn set_command_label(cmd: &[String]) {
     let name = cmd.first().map(|c| c.rsplit('/').next().unwrap_or(c)).unwrap_or_default();

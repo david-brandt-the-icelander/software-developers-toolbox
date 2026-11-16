@@ -383,6 +383,8 @@ fn test_helpers() {
     let t = TempDir::new();
     let e = env(&t, true);
     let one: Routes = vec![(8809, "https://a".into())];
+    std::fs::create_dir_all(e.home.join(".zazzle")).expect("mkdir");
+    std::fs::write(e.state_path(), "[1]").expect("not an object");
     save_state(&e, &Vec::new(), &["/w".into()]).expect("save");
     assert_eq!(load_state(&e), (vec![], vec!["/w".to_string()]));
     save_state(&e, &one, &["/w".into()]).expect("save");

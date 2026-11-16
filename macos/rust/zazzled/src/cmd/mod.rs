@@ -32,6 +32,7 @@ refs SYMBOL [PATH..] [-g GLOB] [-m N]  definitions first, then uses with their e
 edit PATH --old T --new T [--all] --expect SHA | --lines A-B --new T (--expect SHA | --at A#xyz-B#xyz) | --after N --new T --expect SHA | --create --new T
 CMD | clean [--as auto|grep|json|text] [--lossless] [--budget T] [--stats]  shrink piped output: colours, redraws, blank runs, repeats, grep grouping, JSON, progress bars, blobs, long lines
 proxy [--lossless] [--budget T] [--skip TOOL].. [--config FILE] [--log] (-- CMD ARGS.. | --upstream URL [--listen ADDR])  MCP proxy that cleans another server's results (own process)
+trace [on [DIR] | off | status]  while on, every proxy writes each request to DIR/MMDD_HHmmss: the request, the response before and after cleaning, and results.json (tokens, timings); switches running proxies at once
 run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..  run a command; output cleaned with a profile for cargo, pytest, go, dotnet, jest/vitest, tsc, installs; exits with its code (own process)
 read-again r:ID [--full [--lines A-B]]  a response again (same text, or the current version under a new id); clean/run/proxy outputs are stored for an hour, --full gives the uncut text
 From zazzle-csharp-indexer's index of the git work tree that holds the working directory, --repo DIR, or a PATH; in a folder that is not one, of the git repositories below it:
@@ -240,6 +241,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         ),
         "zazz" => crate::zazz::run(ctx, rest),
         "status" => Ok(Output::plain(status(ctx))),
+        "trace" => crate::proxy::trace::command(rest, &ctx.cwd).map(Output::plain),
         "languages" => languages::run(ctx, rest),
         "help" | "--help" | "-h" => Ok(Output::plain(HELP.into())),
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),

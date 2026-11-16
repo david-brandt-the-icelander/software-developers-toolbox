@@ -295,6 +295,12 @@ mod tests {
         assert!(run(&w.join("web"), &["read", "b.txt", "--commit", &first[..10]])
             .contains("the repository has it, but no worktree has it checked out"));
         assert_eq!(run(&w, &["read", "--commit"]), "error: --commit needs a commit sha (or HEAD)");
+        assert!(run(&w.join("api"), &["edit", "a.txt", "--old", "x", "--new", "y", "--commit", "abcd1234"])
+            .contains("not abcd1234"));
+        assert!(run(&w.join("api"), &["ls", "--commit", "abcd1234"])
+            .starts_with("error: the working directory is in"));
+        let empty = TempDir::new();
+        assert!(run(empty.path(), &["find", "x", "--commit", "abcd1234"]).contains("(none found)"));
         assert!(run(&w, &["find", "x", "--zz", "--commit", "HEAD"]).starts_with("error: unknown flag"));
     }
 }

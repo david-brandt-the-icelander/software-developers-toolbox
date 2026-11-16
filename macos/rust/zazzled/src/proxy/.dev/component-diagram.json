@@ -79,21 +79,104 @@
       "name": "Upstream MCP server",
       "responsibility": "Any MCP server: a command speaking stdio, or a Streamable HTTP endpoint.",
       "external": true
+    },
+    {
+      "id": "trace",
+      "name": "Trace (trace.rs)",
+      "responsibility": "Switches tracing with ~/.zazzle/trace.json and writes each traced request's folder: the request, the raw and returned responses and the results.",
+      "folder": "macos/rust/zazzled/src/proxy"
     }
   ],
   "relationships": [
-    { "from": "proxy", "to": "filter", "kind": "contains", "description": "Options, request tracking and rewriting." },
-    { "from": "proxy", "to": "stdio", "kind": "contains", "description": "The stdio transport." },
-    { "from": "proxy", "to": "http", "kind": "contains", "description": "The HTTP transport." },
-    { "from": "proxy", "to": "config", "kind": "contains", "description": "The --config file." },
-    { "from": "client", "to": "stdio", "kind": "depends-on", "description": "Starts the proxy and speaks newline-delimited JSON-RPC on its standard streams." },
-    { "from": "client", "to": "http", "kind": "depends-on", "description": "Sends Streamable HTTP requests to the listen address." },
-    { "from": "stdio", "to": "filter", "kind": "depends-on", "description": "Pending::note_text on client lines; Filter::rewrite_text on server lines." },
-    { "from": "http", "to": "filter", "kind": "depends-on", "description": "Pending::note_text on the request body; Filter::rewrite_text on JSON bodies and event data." },
-    { "from": "filter", "to": "clean", "kind": "depends-on", "description": "clean::shrink_steps with the lossless and budget settings for the answer, and clean::cuts." },
-    { "from": "filter", "to": "config", "kind": "depends-on", "description": "config::load for --config; Config::tool and the resources rule for each answer." },
-    { "from": "filter", "to": "outputs", "kind": "depends-on", "description": "outputs::dir at start; outputs::id_of and save for each shortened text." },
-    { "from": "stdio", "to": "upstream", "kind": "depends-on", "description": "Runs the server command as a child process." },
-    { "from": "http", "to": "upstream", "kind": "depends-on", "description": "HTTP or HTTPS through one ureq agent shared by all connections, with the operating system's trust store and the environment's proxy settings." }
+    {
+      "from": "proxy",
+      "to": "filter",
+      "kind": "contains",
+      "description": "Options, request tracking and rewriting."
+    },
+    {
+      "from": "proxy",
+      "to": "stdio",
+      "kind": "contains",
+      "description": "The stdio transport."
+    },
+    {
+      "from": "proxy",
+      "to": "http",
+      "kind": "contains",
+      "description": "The HTTP transport."
+    },
+    {
+      "from": "proxy",
+      "to": "config",
+      "kind": "contains",
+      "description": "The --config file."
+    },
+    {
+      "from": "client",
+      "to": "stdio",
+      "kind": "depends-on",
+      "description": "Starts the proxy and speaks newline-delimited JSON-RPC on its standard streams."
+    },
+    {
+      "from": "client",
+      "to": "http",
+      "kind": "depends-on",
+      "description": "Sends Streamable HTTP requests to the listen address."
+    },
+    {
+      "from": "stdio",
+      "to": "filter",
+      "kind": "depends-on",
+      "description": "Pending::note_text on client lines; Filter::rewrite_text on server lines."
+    },
+    {
+      "from": "http",
+      "to": "filter",
+      "kind": "depends-on",
+      "description": "Pending::note_text on the request body; Filter::rewrite_text on JSON bodies and event data."
+    },
+    {
+      "from": "filter",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "clean::shrink_steps with the lossless and budget settings for the answer, and clean::cuts."
+    },
+    {
+      "from": "filter",
+      "to": "config",
+      "kind": "depends-on",
+      "description": "config::load for --config; Config::tool and the resources rule for each answer."
+    },
+    {
+      "from": "filter",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "outputs::dir at start; outputs::id_of and save for each shortened text."
+    },
+    {
+      "from": "stdio",
+      "to": "upstream",
+      "kind": "depends-on",
+      "description": "Runs the server command as a child process."
+    },
+    {
+      "from": "http",
+      "to": "upstream",
+      "kind": "depends-on",
+      "description": "HTTP or HTTPS through one ureq agent shared by all connections, with the operating system's trust store and the environment's proxy settings."
+    },
+    {
+      "from": "proxy",
+      "to": "trace",
+      "kind": "contains",
+      "description": "Request traces."
+    },
+    {
+      "from": "filter",
+      "to": "trace",
+      "kind": "depends-on",
+      "description": "rewrite_text writes the traces of the responses it handles."
+    }
   ]
 }
