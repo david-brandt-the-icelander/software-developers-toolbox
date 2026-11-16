@@ -274,10 +274,11 @@ mod tests {
     #[test]
     fn test_version_and_status() {
         let t = TempDir::new();
-        assert!(run_cmd(t.path(), &["version"]).text.starts_with("zazzle 0."));
-        assert!(run_cmd(t.path(), &["--version"]).text.starts_with("zazzle 0."));
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(run_cmd(t.path(), &["version"]).text.starts_with(&format!("zazzle {version}")));
+        assert!(run_cmd(t.path(), &["--version"]).text.starts_with(&format!("zazzle {version}")));
         let s = run_cmd(t.path(), &["status"]).text;
-        assert!(s.starts_with("zazzled 0.") && s.contains("cache 0 hot + 0 stored"));
+        assert!(s.starts_with(&format!("zazzled {version}")) && s.contains("cache 0 hot + 0 stored"));
     }
 
     // Checks the unknown command error is one line and lists commands.
