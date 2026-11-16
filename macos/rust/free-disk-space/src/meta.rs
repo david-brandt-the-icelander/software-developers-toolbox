@@ -24,11 +24,16 @@ fn list_raw(path: &CStr, buf: *mut c_char, size: usize) -> isize {
     unsafe { libc::llistxattr(path.as_ptr(), buf, size) }
 }
 
-// Read one extended attribute's value into buf, without following a symlink.
+// Let getxattr read the compression attributes, which macOS hides on a compressed file (sys/xattr.h).
+#[cfg(target_os = "macos")]
+const XATTR_SHOWCOMPRESSION: libc::c_int = 0x0020;
+
+// Read one extended attribute's value into buf, without following a symlink, including hidden compression ones.
 #[cfg(target_os = "macos")]
 fn get_raw(path: &CStr, name: &CStr, buf: *mut c_void, size: usize) -> isize {
+    let options = libc::XATTR_NOFOLLOW | XATTR_SHOWCOMPRESSION;
     // SAFETY: both strings are NUL-terminated and buf is null (size query) or valid for size bytes.
-    unsafe { libc::getxattr(path.as_ptr(), name.as_ptr(), buf, size, 0, libc::XATTR_NOFOLLOW) }
+    unsafe { libc::getxattr(path.as_ptr(), name.as_ptr(), buf, size, 0, options) }
 }
 
 // Read one extended attribute's value into buf, without following a symlink.

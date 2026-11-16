@@ -587,7 +587,8 @@ mod tests {
             Ok(())
         };
         assert_eq!(run(&retagged).1, "extended attributes differ");
-        assert_eq!(run(&compressed_copy).0, "done");
+        let (status, note, _) = run(&compressed_copy);
+        assert_eq!((status, note.as_str()), ("done", ""));
         let md = fs::symlink_metadata(&file).unwrap();
         assert_ne!(util::flags(&md) & util::UF_COMPRESSED, 0);
         assert_eq!(fs::read(&file).unwrap(), text);
