@@ -38,7 +38,14 @@ jobs:
           git tag "${{ steps.v.outputs.tag }}" "$GITHUB_SHA"
           git push origin "${{ steps.v.outputs.tag }}"
 
-  macos:
+  # The macOS release is five jobs so independent work runs side by side: the tests, the language modules (with the
+  # PGO profile trained on them), the C# indexer and one build per CPU type, then one job that assembles, signs and
+  # publishes. Rust jobs restore a build cache (keyed before the version is stamped, so it survives version changes).
+
+  # Language modules (macos/release/README.md): one universal dylib per grammar (zazzled links none). They are signed
+  # before their hashes go into the manifest that zazzled embeds, so a signed zazzled loads them under library validation.
+  # The PGO profile for zazzled's C code (tree-sitter) is trained on arm64 with them and used for both CPU types.
+  macos-languages:
     needs: version
     runs-on: macos-latest
     defaults:
@@ -48,14 +55,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin, wasm32-wasip1
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: macos/rust
+          key: release-languages
       - name: Stamp the version
         working-directory: .
         run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
-      - run: cargo build --release -p zazz-worker --locked
-      - run: cargo test --workspace --locked
-      # Language modules (macos/release/README.md): one universal dylib per grammar (zazzled links none). They are signed
-      # before their hashes go into the manifest that zazzled embeds, so a signed zazzled loads them under library validation.
       - name: Build the language modules
         run: bash ../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
       - name: Sign the language modules
@@ -71,34 +78,141 @@ jobs:
           ../../../release/sign-and-notarize.sh . *.dylib
       - name: Write the language module manifest
         run: bash ../release/language-modules.sh --manifest dist/languages
-      # Profile-guided optimization of the C code (tree-sitter): train on arm64, use the profile for both slices.
       - name: Train the PGO profile for zazzled's C code
         env:
           PGO_LANGUAGES: dist/languages
-        run: sh ../release/pgo.sh >> "$GITHUB_ENV"
-      - name: Build both architectures
+        run: |
+          sh ../release/pgo.sh > pgo.env
+          mkdir -p dist/pgo
+          cp target/pgo/zazzled.profdata dist/pgo/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-languages
+          path: |
+            macos/rust/dist/languages
+            macos/rust/dist/pgo
+
+  # The workspace tests, run beside the builds instead of before them.
+  macos-test:
+    needs: version
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos/rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: macos/rust
+          key: release-test
+      - name: Stamp the version
+        working-directory: .
+        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
+      - run: cargo build --release -p zazz-worker --locked
+      - run: cargo test --workspace --locked
+
+  # One build of the workspace per CPU type, with the language manifest and PGO profile from macos-languages.
+  macos-build:
+    needs: [version, macos-languages]
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos/rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}, wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: macos/rust
+          key: release-${{ matrix.target }}
+      - name: Stamp the version
+        working-directory: .
+        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-languages
+          path: macos/rust/dist
+      - name: Build
         env:
           CC: clang
-          CFLAGS: ${{ env.PGO_CFLAGS }}
           ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
         run: |
-          for t in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo build --workspace --release --locked --target "$t"
+          export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/zazzled.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
+          cargo build --workspace --release --locked --target "${{ matrix.target }}"
+          mkdir -p bin
+          for b in zazzled zazz-worker afs fix-network free-disk-space; do
+            cp "target/${{ matrix.target }}/release/$b" bin/
           done
+          tar -C bin -cf bin.tar .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-bin-${{ matrix.target }}
+          path: macos/rust/bin.tar
+
+  # The indexer is a self-contained single file per CPU type (not universal); the formula expands the matching one.
+  macos-indexer:
+    needs: version
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos/dotnet/zazzle-csharp-indexer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - name: Test and build for both CPU types
+        run: |
+          dotnet test tests
+          mkdir -p gz
+          for pair in arm64:osx-arm64 x64:osx-x64; do
+            dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}" -p:Version="${{ needs.version.outputs.version }}"
+            gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "gz/zazzle-csharp-indexer-${pair%%:*}.gz"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-indexer
+          path: macos/dotnet/zazzle-csharp-indexer/gz
+
+  # Assemble the universal binaries, build the arm64 zazzle invoker, sign, package and publish.
+  macos:
+    needs: [version, macos-languages, macos-test, macos-build, macos-indexer]
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos/rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: macos-*
+          path: macos/rust/artifacts
+      - name: Make universal binaries
+        run: |
+          mkdir -p dist bin/aarch64-apple-darwin bin/x86_64-apple-darwin
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            tar -C "bin/$t" -xf "artifacts/macos-bin-$t/bin.tar"
+          done
+          for bin in zazzled zazz-worker afs fix-network free-disk-space; do
+            lipo -create -output "dist/$bin" "bin/aarch64-apple-darwin/$bin" "bin/x86_64-apple-darwin/$bin"
+          done
+          cp -R artifacts/macos-languages/languages dist/languages
+          cp artifacts/macos-indexer/*.gz dist/
       - name: Build and smoke test the zazzle invoker (arm64 only; Intel Macs use zazzled mcp or zazzled run)
         env:
-          ZAZZLED: target/aarch64-apple-darwin/release/zazzled
+          ZAZZLED: bin/aarch64-apple-darwin/zazzled
         run: |
           make -C ../c/zazzle
           make -C ../c/zazzle unit
           sh ../c/zazzle/test/smoke.sh
-      - name: Make universal binaries
-        run: |
-          mkdir -p dist
-          for bin in zazzled zazz-worker afs fix-network free-disk-space; do
-            lipo -create -output "dist/$bin" \
-              "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
-          done
           cp ../c/zazzle/build/zazzle dist/zazzle
           cp ../c/zazzle/build/zazzle dist/zazz
           ln -sf zazzle dist/z
@@ -108,18 +222,6 @@ jobs:
           bash ../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
           lipo -create -output dist/cyberspace-generator cg/cyberspace-generator-aarch64-apple-darwin cg/cyberspace-generator-x86_64-apple-darwin
           ./dist/cyberspace-generator --version
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 8.0.x
-      # The indexer is a self-contained single file per CPU type (not universal); the formula expands the matching one.
-      - name: Build the C# indexer for both CPU types
-        working-directory: macos/dotnet/zazzle-csharp-indexer
-        run: |
-          dotnet test tests
-          for pair in arm64:osx-arm64 x64:osx-x64; do
-            dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}" -p:Version="${{ needs.version.outputs.version }}"
-            gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "../../rust/dist/zazzle-csharp-indexer-${pair%%:*}.gz"
-          done
       # Optional Developer ID signature and Apple notarization (macos/release/README.md): skipped with a
       # warning without the Apple secrets, unless the repository variable REQUIRE_SIGNING is "true".
       - name: Sign and notarize
@@ -168,8 +270,9 @@ jobs:
               --file "$f" --content-type application/octet-stream --remote
           done
 
+  # Linux tarballs build beside the macOS jobs; only publishing them (linux-publish) waits for the GitHub release.
   linux:
-    needs: [version, macos]
+    needs: version
     strategy:
       matrix:
         include:
@@ -181,6 +284,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: macos/rust
+          key: release-linux-${{ matrix.arch }}
       - name: Stamp the version
         run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
       - name: Test zazzled
@@ -240,13 +347,26 @@ jobs:
           path: |
             zazzle-linux-${{ matrix.arch }}.tar.gz
             zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
+            macos/rust/dist/languages
+  # Attach the Linux tarballs to the release the macos job created, and upload them and their language modules.
+  linux-publish:
+    needs: [version, macos, linux]
+    if: needs.version.outputs.publish == 'true'
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: zazzle-linux-${{ matrix.arch }}
       - name: Attach to the GitHub release
         if: needs.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
         run: >
-          gh release upload "$TAG" --clobber
+          gh release upload "$TAG" --clobber --repo "$GITHUB_REPOSITORY"
           zazzle-linux-${{ matrix.arch }}.tar.gz zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - name: Publish to icelander.net
         if: needs.version.outputs.publish == 'true'
@@ -265,6 +385,7 @@ jobs:
             npx --yes wrangler@4 r2 object put "icelander-downloads/zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" \
               --file "$f" --content-type application/octet-stream --remote
           done
+
 
   # Write the zazzle formula for this release into the zazzcat/homebrew-z tap. HOMEBREW_TAP_TOKEN is a fine-grained
   # token with "Contents: read and write" on that repository only; GITHUB_TOKEN cannot push to another account.

@@ -40,6 +40,7 @@ Tree-sitter's C code dominates parsing, so the release compiles it with clang PG
 - It trains that build by running `outline` and `refs` over the crate sources that building `zazzled` downloaded (`$CARGO_HOME/registry/src`). Then it merges the profile with the matching `llvm-profdata` (Xcode's on macOS) and prints `PGO_CFLAGS=...` for `$GITHUB_ENV`.
 - The release builds with `CC=clang` and `CFLAGS=$PGO_CFLAGS`. On macOS the arm64-trained profile also serves the x86_64 slice, because tree-sitter's C code is the same on both.
 - Linux runners need `clang`, `llvm` and `libclang-rt-<version>-dev` (the profile runtime); the release job installs them.
+- The release splits the macOS work into parallel jobs: `macos-languages` builds and signs the modules and trains the profile, `macos-build` builds each CPU type with them, `macos-test` and `macos-indexer` run beside them, and `macos` joins, signs and publishes. The Linux jobs build at the same time and only publish (`linux-publish`) once `macos` has created the release. Every Rust job restores a build cache.
 - `.github/workflows/zazzle-bench.yml` times `refs` with and without the profile on macOS and Linux. It trains and measures on the same crate sources, so its PGO numbers are an upper bound.
 
 ## Signing and notarization (`sign-and-notarize.sh`, optional)
