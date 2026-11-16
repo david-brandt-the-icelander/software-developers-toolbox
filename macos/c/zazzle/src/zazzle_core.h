@@ -132,9 +132,15 @@ static const char *own_name(int argc, char **argv)
 	return argc > 0 ? base_name(argv[0]) : "zazzle";
 }
 
+/* Tells whether the invoker runs as zazzle itself, under its own name or the short name "z". */
+static int is_zazzle_name(const char *me)
+{
+	return str_eq(me, "zazzle") || str_eq(me, "z");
+}
+
 /* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
-   Run as "zazz" the arguments go to the zazz command; run under any other name (an installed script's
-   shim) they go to that script. */
+   Run as "zazz" the arguments go to the zazz command; run under any name but "zazzle", "z" and "zazz" (an
+   installed script's shim) they go to that script. */
 static size_t build_request(int argc, char **argv, char **envp)
 {
 	size_t at = 4;
@@ -142,7 +148,7 @@ static size_t build_request(int argc, char **argv, char **envp)
 	const char *me = own_name(argc, argv);
 	at = put_field(at, "");
 	at = put_field(at, session ? session : "");
-	if (!str_eq(me, "zazzle")) {
+	if (!is_zazzle_name(me)) {
 		at = put_field(at, "zazz");
 		if (!str_eq(me, "zazz")) {
 			at = put_field(at, "exec-name");
@@ -314,7 +320,7 @@ static int read_status(int fd)
 /* Runs a tool, the MCP proxy, setup or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
-	if (argc > 1 && str_eq(own_name(argc, argv), "zazzle")) {
+	if (argc > 1 && is_zazzle_name(own_name(argc, argv))) {
 		if (is_tool(argv[1]))
 			exec_tool(argv, envp);
 		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup"))

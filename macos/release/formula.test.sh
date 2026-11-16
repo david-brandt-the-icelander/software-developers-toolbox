@@ -65,6 +65,8 @@ class Formula
     attr_reader :installed, :path
     def initialize(path) = @path = Pathname(path)
     def install(*files) = (@installed ||= []).concat(files)
+    def install_symlink(links) = (@links ||= {}).merge!(links)
+    def links = @links || {}
     def write(text) = (@path.dirname.mkpath; @path.write(text))
     def to_s = @path.to_s
     def /(other) = Dir_.new(@path / other)
@@ -77,7 +79,7 @@ class Formula
     @installs = {}
   end
   def libexec = @libexec_root.tap { |d| d.define_singleton_method(:/) { |o| @installs ||= {}; (@installs[o] ||= Dir_.new(@path / o)) } }
-  def shell_output(cmd) = ((@commands ||= []) << cmd) && "#{cmd.split("/").last.split.first == "afs" ? "agent-fs" : cmd.split("/").last.split.first} 2.1.0\n"
+  def shell_output(cmd) = ((@commands ||= []) << cmd) && "#{{ "afs" => "agent-fs", "z" => "zazzle" }.fetch(cmd.split("/").last.split.first) { |n| n }} 2.1.0\n"
   def assert_match(pattern, text) = (text.include?(pattern) or raise "#{pattern.inspect} not in #{text.inspect}")
   def chmod(mode, path) = File.chmod(mode, path.to_s)
 end
@@ -100,6 +102,7 @@ inst = f.new
 inst.install
 want = %w[zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cyberspace-generator]
 raise "installed #{inst.bin.installed}" unless inst.bin.installed == want
+raise "links #{inst.bin.links}" unless inst.bin.links == { "zazzle" => "z" }
 indexer = inst.libexec / "indexer"
 raise "indexer files #{indexer.installed}" unless indexer.installed == %w[zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz]
 # The placeholder brew links at pour time, then the one post-install step run for real against a fake keg and uname.
@@ -125,7 +128,7 @@ raise "expanded #{File.read(indexer_bin).inspect}" unless File.read(indexer_bin)
 raise "mode" unless File.stat(indexer_bin).mode & 0o777 == 0o755
 raise "temporary file left" if File.exist?("#{indexer_bin}.tmp")
 inst.instance_eval(&f.test_block)
-need = %w[zazzle zazzled zazz zazz-worker fix-network free-disk-space afs zazzle-csharp-indexer cyberspace-generator]
+need = %w[zazzle z zazzled zazz zazz-worker fix-network free-disk-space afs zazzle-csharp-indexer cyberspace-generator]
 raise "test ran #{inst.commands}" unless inst.commands.length == need.length
 bottles = ENV.fetch("BOTTLES", "")
 spec = f.bottle_spec
@@ -177,9 +180,10 @@ file="$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz"
 grep -q "^$(sha256sum "$file" | cut -d' ' -f1)  zazzle-2.1.0.all.bottle.tar.gz$" "$tmp/bottle.out" || fail "printed sha256"
 cmp -s "$file" "$tmp/again/$(basename "$file")" || fail "bottle is not reproducible"
 listing=$(tar tzf "$file" | grep -v '/$' | tr '\n' ' ')
-want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/cyberspace-generator zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/zazz zazzle/2.1.0/bin/zazz-worker zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzle-csharp-indexer zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
+want="zazzle/2.1.0/bin/afs zazzle/2.1.0/bin/cyberspace-generator zazzle/2.1.0/bin/fix-network zazzle/2.1.0/bin/free-disk-space zazzle/2.1.0/bin/z zazzle/2.1.0/bin/zazz zazzle/2.1.0/bin/zazz-worker zazzle/2.1.0/bin/zazzle zazzle/2.1.0/bin/zazzle-csharp-indexer zazzle/2.1.0/bin/zazzled zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-arm64.gz zazzle/2.1.0/libexec/indexer/zazzle-csharp-indexer-x64.gz "
 [ "$listing" = "$want" ] || fail "contents $listing"
 tar tvzf "$file" | grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/afs$" || fail "binary not 0755 root-owned"
+tar tvzf "$file" | grep -q "^l.* zazzle/2.1.0/bin/z -> zazzle$" || fail "bin/z is not a link to zazzle"
 # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.
 mkdir "$tmp/x" && tar xzf "$file" -C "$tmp/x"
 if [ "$(ls -A "$tmp/x")" != "zazzle" ] || [ "$(ls -A "$tmp/x/zazzle")" != "2.1.0" ]; then fail "not NAME/VERSION only"; fi

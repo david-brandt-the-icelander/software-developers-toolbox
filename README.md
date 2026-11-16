@@ -12,7 +12,7 @@ Call it utils, call it miscellaneous, or call it whatever... this is a repo for 
 Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 
 ```bash
-brew install zazzcat/z/zazzle   # zazzle, zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
+brew install zazzcat/z/zazzle   # zazzle (also as z), zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
 ```
 
 The formula lives in the [`zazzcat/homebrew-z`](https://github.com/zazzcat/homebrew-z) tap; brew adds it on first use. If you tapped the old `toolbox` tap, run `brew untap david-brandt-the-icelander/toolbox`.

@@ -28,6 +28,8 @@ for binary in zazzle zazz zazzled zazz-worker afs fix-network free-disk-space cy
   [ -f "$bin_dir/$binary" ] || { echo "missing binary: $bin_dir/$binary" >&2; exit 1; }
   install -m 0755 "$bin_dir/$binary" "$root/bin/$binary"
 done
+# z is the short name for zazzle: a relative link, so it survives the keg moving.
+ln -s zazzle "$root/bin/z"
 for arch in arm64 x64; do
   file="zazzle-csharp-indexer-$arch.gz"
   [ -f "$bin_dir/$file" ] || { echo "missing indexer: $bin_dir/$file" >&2; exit 1; }

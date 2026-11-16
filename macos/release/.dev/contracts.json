@@ -14,7 +14,7 @@
       ],
       "guarantees": [
         "Named zazzle-VERSION.all.bottle.tar.gz (one hyphen), the name Homebrew downloads from a plain root_url",
-        "Holds exactly zazzle/VERSION/: bin/ with zazzle, zazz, zazzled, zazz-worker, afs, fix-network, free-disk-space, cyberspace-generator and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
+        "Holds exactly zazzle/VERSION/: bin/ with zazzle, z (a relative link to zazzle), zazz, zazzled, zazz-worker, afs, fix-network, free-disk-space, cyberspace-generator and the zazzle-csharp-indexer placeholder (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
         "The placeholder is identical to the one the formula's install writes",
         "Reproducible: the same files give the same archive",
         "The formula's bottle block names the release's download folder as root_url, one sha256 tagged all, with cellar :any_skip_relocation"
