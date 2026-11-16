@@ -94,7 +94,7 @@
       "to": "failed",
       "trigger": "compress (not --dry-run, and past the probe) reaches the row",
       "guard": "the clone or the library fails, or size, permissions, ownership or the other BSD flags differ, an extended attribute's value or the ACL differs, the hash differs, the times set on the copy do not read back, or an I/O error occurs",
-      "action": "Remove the temp copy; write status failed and the note; after three failures in a row stop the run."
+      "action": "Remove the temp copy; write status failed and the note; carry on with the next candidate."
     },
     {
       "from": "done",

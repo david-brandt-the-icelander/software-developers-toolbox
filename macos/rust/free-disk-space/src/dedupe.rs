@@ -11,6 +11,9 @@ use crate::meta;
 use crate::scan::{finished, open_db, under, SKIP_PREFIXES};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
+// The cloned value that marks a duplicate whose clone failed verification, so later runs leave it alone (1 is cloned).
+const NOT_CLONABLE: i64 = 2;
+
 // Number of duplicates a dry run lists before it only counts.
 const DRY_RUN_LIST: u64 = 50;
 
@@ -39,7 +42,6 @@ struct Tally {
     bytes: i64,
     failed: u64,
     skipped: u64,
-    streak: u64,
 }
 
 // Tell whether a file is not one of the invoking user's own files.
@@ -321,22 +323,19 @@ fn dedupe_group(
                 return false;
             }
             let result = if o.apply { clone_over(&keeper, &target, &digest) } else { Ok(()) };
+            // The duplicate is untouched; record it so later runs leave it alone, and carry on with the next one.
             if let Err(note) = result {
                 tally.failed += 1;
-                tally.streak += 1;
+                let _ =
+                    db.execute("UPDATE files SET cloned=? WHERE path=?", params![NOT_CLONABLE, &target.path]);
                 tk.clear();
-                println!("{} {}: {note}", c("31", "FAILED"), target.path);
-                if tally.streak >= 3 {
-                    println!("{}", c("31", "3 consecutive failures - aborting for safety."));
-                    return false;
-                }
+                println!("{} {}: {note}; left as it was", c("33", "NOT DEDUPLICATED"), target.path);
                 continue;
             }
             if o.apply {
                 let _ = db.execute("UPDATE files SET cloned=1 WHERE path=?", [&target.path]);
             }
             let size = util::alloc(&target.md);
-            tally.streak = 0;
             tally.files += 1;
             tally.bytes += size;
             if o.apply || tally.files <= DRY_RUN_LIST {
@@ -425,7 +424,7 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
     let free1 = util::report_free("Final  ");
     let verb = if o.apply { "Cloned" } else { "Would clone" };
     println!(
-        "{verb} {} duplicate files, skipped {} that cannot be cloned, failed {} in {}",
+        "{verb} {} duplicate files, skipped {} that cannot be cloned, {} not deduplicated in {}",
         tally.files,
         tally.skipped,
         tally.failed,
@@ -798,7 +797,8 @@ mod tests {
         fail_keep(false);
     }
 
-    // Check group handling in a dry run, an applied run, failures, sampling and interruption.
+    // Check group handling in a dry run, an applied run, failures (recorded, then carried past), sampling and
+    // interruption.
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn test_dedupe_group_modes() {
@@ -824,8 +824,10 @@ mod tests {
         fail_keep(true);
         let apply = opts(&sb, true);
         let mut tally = Tally::default();
-        assert!(!dedupe_group(&db, group(&apply), &apply, &mut tally, &mut util::Ticker::new()));
-        assert_eq!((tally.failed, tally.files), (3, 0));
+        assert!(dedupe_group(&db, group(&apply), &apply, &mut tally, &mut util::Ticker::new()));
+        assert_eq!((tally.failed, tally.files), (4, 0), "every failure is counted and the run carries on");
+        let marked: i64 = db.query_row("SELECT SUM(cloned=2) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(marked, 4);
         fail_keep(false);
         util::set_stop(true);
         assert!(!dedupe_group(&db, group(&dry), &dry, &mut Tally::default(), &mut util::Ticker::new()));

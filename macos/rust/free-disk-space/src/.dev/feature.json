@@ -94,7 +94,7 @@
       "constraints": [
         "macOS only, unless FDS_FORCE is set.",
         "Refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
-        "Stops after three failures in a row.",
+        "A file that fails verification is recorded as failed and the run carries on.",
         "--dry-run lists up to 25 planned files and changes nothing.",
         "A non-terminal run does not ask for confirmation."
       ],
@@ -227,7 +227,7 @@
         "Without --include-system it skips files owned by root or another user and files under /Library, /Applications, /private, /etc, /var, /tmp and the scan's SKIP_PREFIXES.",
         "Hard-linked, open, compressed, immutable, append-only and dataless (iCloud placeholder) files are never replaced.",
         "Only files the scan recorded, and only same-named ones, are compared.",
-        "--sample N stops after N duplicates; three failures in a row stop the run.",
+        "--sample N stops after N duplicates; a duplicate whose clone fails verification is recorded (cloned = 2) and the run carries on.",
         "--apply needs macOS, unless FDS_FORCE is set, and a successful lsof snapshot."
       ],
       "implementation": [

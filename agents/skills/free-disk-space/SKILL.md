@@ -40,4 +40,4 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 - Report initial/final free space, what was deleted/compressed, protected entries, failures.
 - Never claim summed file sizes equal reclaimed space.
 - Leave uncertain items untouched and list them.
-- Compress and dedupe are untested on real Macs beyond the sample step; stop on any failure.
+- Compress and dedupe are untested on real Macs beyond the sample step. A file that fails verification is left unchanged, recorded and skipped (NOT COMPRESSIBLE / NOT DEDUPLICATED), and the run carries on; report those files and their reasons.

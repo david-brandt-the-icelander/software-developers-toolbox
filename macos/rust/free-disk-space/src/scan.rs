@@ -576,7 +576,7 @@ pub fn cmd_status(state: &str) {
         }
     }
     let (names, cloned): (i64, Option<i64>) = db
-        .query_row("SELECT COUNT(*), SUM(cloned) FROM files", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_row("SELECT COUNT(*), SUM(cloned=1) FROM files", [], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap_or((0, None));
     println!("{}: {names} recorded, {} replaced by clones", c("1", "File names"), cloned.unwrap_or(0));
     util::report_free("Current");
