@@ -791,6 +791,7 @@ mod tests {
             json!({"method": "notifications/initialized"}),
             json!({"id": "zazzle-roots", "result": {"roots": [{"uri": "file:///w/my%20app"}, {"uri": "https://x"}, {"uri": "file:///w/%zz"}]}}),
             json!({"method": "notifications/roots/list_changed"}),
+            json!({"id": 7, "result": {}}),
         ]
         .iter()
         .map(|v| v.to_string() + "\n")

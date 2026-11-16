@@ -648,6 +648,34 @@ mod tests {
                 && r.contains("A hook did not answer as expected"),
             "{r}"
         );
+        let codex_hooks = json!({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": format!("{hook} # zazzled hook --client codex --edits")}]}]}});
+        std::fs::write(home.join(".codex/hooks.json"), codex_hooks.to_string()).expect("write");
+        let codex = "[mcp_servers.mute]\ncommand = \"/bin/sh\"\nargs = [\"-c\", \"exit 0\"]\n\n[mcp_servers.hdr]\nurl = \"http://127.0.0.1:1/mcp\"\nhttp_headers = { X = \"y\" }\n";
+        std::fs::write(env.config_path(Client::Codex), codex).expect("write");
+        let desktop = env.config_path(Client::ClaudeDesktop);
+        std::fs::create_dir_all(desktop.parent().expect("dir")).expect("mkdir");
+        std::fs::write(&desktop, "{}").expect("write");
+        let plugin = home.join(".claude/plugins/p");
+        std::fs::create_dir_all(&plugin).expect("mkdir");
+        std::fs::write(plugin.join(".mcp.json"), r#"{"mcpServers": {"pl": {"command": "x"}}}"#)
+            .expect("write");
+        std::env::set_var("ZAZZLE_ACTIVITY_LOG", "");
+        let r = run(&opts, &env).expect("run");
+        assert!(r.contains("native edits refused; Codex runs it once trusted (/hooks)"), "{r}");
+        assert!(r.contains("routing: instructions only (the desktop chat has no hooks)"), "{r}");
+        assert!(
+            r.contains("FAIL mute [direct: not wrapped yet")
+                && r.contains("FAIL hdr [direct: not routed yet"),
+            "{r}"
+        );
+        assert!(
+            r.contains("other servers, not configured by setup (direct):\n  pl (Claude Code plugin")
+                && !r.contains("last 24 hours"),
+            "{r}"
+        );
+        let only = super::super::parse(&["--check".to_string(), "--client".to_string(), "codex".to_string()])
+            .expect("parse");
+        assert!(!run(&only, &env).expect("run").contains("claude-code:"));
         match saved {
             Some(v) => std::env::set_var("ZAZZLE_ACTIVITY_LOG", v),
             None => std::env::remove_var("ZAZZLE_ACTIVITY_LOG"),

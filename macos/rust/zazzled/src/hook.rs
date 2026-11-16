@@ -331,6 +331,11 @@ mod tests {
             assert_eq!(bash(c), Decision::Allow, "{c}");
         }
         assert_eq!(bash("rg x # allow-raw"), Decision::Bypass { program: "rg".into(), why: "allow-raw" });
+        for c in ["a-b=c ls", "env A=1", "sed -ni p a b", "python -m pip install x", "a#b"] {
+            assert_eq!(bash(c), Decision::Allow, "{c}");
+        }
+        assert!(denied("sed --quiet -n p a b", READ_MSG));
+        assert_eq!(segments("\"a\\"), vec![vec!["a\\"]]);
         assert!(matches!(bash("cargo test"), Decision::Deny { program, .. } if program == "cargo test"));
         let codex = decide(&Opts::default(), "exec_command", &json!({"command": ["bash", "-lc", "rg x"]}));
         assert!(matches!(codex, Decision::Deny { .. }));

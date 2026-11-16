@@ -97,7 +97,7 @@ mod tests {
         std::fs::create_dir_all(h.join("wt/feature")).expect("mkdir");
         std::fs::create_dir_all(h.join("other")).expect("mkdir");
         std::fs::create_dir_all(h.join(".zazzle")).expect("mkdir");
-        std::fs::write(file(&h), "# mine\n~/wt\n\n/\n~\n").expect("write");
+        std::fs::write(file(&h), "# mine\n~/wt\n\n/\n~\nrelative\n~/wt\n").expect("write");
         std::env::set_var("HOME", &h);
         std::env::set_var("ZAZZLE_WORKSPACES", format!("{}:", h.join("other").display()));
         let r = roots(&h.join("dev/api/src"), &[h.join("client"), PathBuf::from("rel"), h.clone()]);
@@ -107,6 +107,8 @@ mod tests {
         assert_eq!(r[2], h.join("client"));
         assert_eq!(roots(&h, &[]), vec![h.join("wt"), h.join("other")]);
         assert_eq!(roots(Path::new("/"), &[]), vec![h.join("wt"), h.join("other")]);
+        assert_eq!(roots(&h.join("dev/api"), &[])[0], h.join("dev/api"));
+        assert_eq!(roots(&h.join("dev/api"), &[]).len(), 3);
         assert_eq!(confine(&r, &h.join("dev/api/new/x.txt")).expect("in tree"), h.join("dev/api/new/x.txt"));
         assert!(confine(&r, &h.join("wt/feature/y.rs")).is_ok());
         let err = confine(&r, &h.join("elsewhere/z")).unwrap_err();

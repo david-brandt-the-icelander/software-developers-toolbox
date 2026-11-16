@@ -153,9 +153,7 @@ impl Env {
     // True when the client looks installed: its configuration file or folder exists.
     fn installed(&self, c: Client) -> bool {
         let p = self.config_path(c);
-        p.exists()
-            || p.parent().is_some_and(Path::exists)
-            || c == Client::ClaudeCode && self.home.join(".claude").exists()
+        p.exists() || p.parent().is_some_and(Path::exists)
     }
 
     // Returns the record of HTTP servers setup routed through local proxies.
@@ -564,7 +562,7 @@ pub fn unmanaged(env: &Env, opts: &Opts) -> Vec<String> {
         for dir in std::iter::once(root.clone()).chain(crate::cmd::structure::repos_below(&root)) {
             for (file, client) in [(".mcp.json", Client::ClaudeCode), (".codex/config.toml", Client::Codex)] {
                 let Ok(f) = ConfigFile::load(client, &dir.join(file)) else { continue };
-                for s in f.servers().iter().filter(|s| f.exists && !is_zazzle(s)) {
+                for s in f.servers().iter().filter(|s| !is_zazzle(s)) {
                     out.push(format!(
                         "{} ({}): shared with the repository's other users, so it stays direct",
                         describe(s),

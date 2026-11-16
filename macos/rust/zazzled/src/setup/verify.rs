@@ -252,6 +252,7 @@ log = os.environ.get("ZAZZLE_ACTIVITY_LOG")
 def note(cmd):
     if log:
         open(log, "a").write(json.dumps({"src": "zazzle", "cmd": cmd, "session": os.environ.get("ZAZZLE_SESSION", ""), "ts": 9999999999}) + "\n")
+fail = os.environ.get("FAKE_FAIL")
 if sys.argv[1] == "wrap":
     print("zazzle verify\n[exit 3 in 0.0s]")
     sys.exit(3)
@@ -266,7 +267,9 @@ for line in sys.stdin:
         name, a = m["params"]["name"], m["params"]["arguments"]
         note(name)
         text, err = "", False
-        if name == "zazzle_find":
+        if fail:
+            text, err = "boom", True
+        elif name == "zazzle_find":
             text = "README.md\n1: " + a["pattern"]
         elif name == "zazzle_read":
             text = "[r:abcde]\n" + a["paths"][0] + " 1 lines, sha 0123abcd\n1\tx"
@@ -359,6 +362,30 @@ for line in sys.stdin:
         assert!(r.contains("FAIL MCP call: tools (claude-code) through zazzle's proxy"), "{r}");
         std::env::set_var("ZAZZLE_ACTIVITY_LOG", "");
         assert!(run(&opts, &env).expect("verify").contains("no activity log"));
+        std::fs::write(&env.zazzled, FAKE).expect("restore");
+        std::env::set_var("FAKE_FAIL", "1");
+        std::fs::write(env.config_path(Client::ClaudeCode), "{}").expect("no servers");
+        let r = run(&opts, &env).expect("verify");
+        std::env::remove_var("FAKE_FAIL");
+        assert!(
+            r.contains("FAIL search:")
+                && r.contains("FAIL exact read:")
+                && r.contains("FAIL reversible edit of"),
+            "{r}"
+        );
+        assert!(
+            r.contains("FAIL structure: zazzle_overview: boom")
+                && r.contains("no stdio server is wrapped yet"),
+            "{r}"
+        );
+        std::fs::create_dir_all(env.codex_home.clone()).expect("mkdir");
+        std::fs::write(env.config_path(Client::Codex), "[[[").expect("broken toml");
+        assert!(run(&opts, &env).expect("verify").contains("no stdio server is wrapped yet"));
+        let bare = env.home.join("bare");
+        std::fs::create_dir_all(&bare).expect("mkdir");
+        Command::new("git").args(["init", "-q"]).current_dir(&bare).output().expect("git");
+        let bare_opts = Opts { repo: Some(bare.clone()), ..super::super::parse(&[]).expect("opts") };
+        assert!(run(&bare_opts, &env).expect("verify").contains("no readable tracked text file to search"));
         match saved {
             Some(v) => std::env::set_var("ZAZZLE_ACTIVITY_LOG", v),
             None => std::env::remove_var("ZAZZLE_ACTIVITY_LOG"),

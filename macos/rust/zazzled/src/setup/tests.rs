@@ -146,7 +146,7 @@ fn test_apply_and_undo() {
     let dev = t.path().join("dev");
     std::fs::create_dir_all(&dev).expect("mkdir");
     std::fs::create_dir_all(env.home.join(".zazzle")).expect("mkdir");
-    std::fs::write(crate::workspace::file(&env.home), "/mine\n").expect("write");
+    std::fs::write(crate::workspace::file(&env.home), "/mine").expect("write");
     let old = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/x/zazzle-csharp-indexer hook"}]}]}}"#;
     std::fs::write(env.home.join(".claude/settings.json"), old).expect("write");
     let ws = dev.to_string_lossy().to_string();
@@ -318,6 +318,15 @@ fn test_block_and_hook() {
     assert_eq!(hook_command(&s).as_deref(), Some("/z/zazzled hook --client codex"));
     edit_hook(&s, None, &mut backups).expect("remove");
     edit_hook(&s, None, &mut backups).expect("remove again");
+    let keep = t.path().join("keep.json");
+    std::fs::write(&keep, r#"{"hooks": {"Stop": [1]}}"#).expect("write");
+    edit_hook(&keep, Some(&h), &mut backups).expect("add");
+    edit_hook(&keep, None, &mut backups).expect("remove");
+    assert_eq!(
+        std::fs::read_to_string(&keep).expect("kept"),
+        "{\n  \"hooks\": {\n    \"Stop\": [\n      1\n    ]\n  }\n}\n"
+    );
+    assert!(!our_hook(&json!({"hooks": [{"command": "/z/zazzled mcp"}]})));
     assert_eq!(std::fs::read_to_string(&s).expect("kept"), "{\n  \"other\": 1\n}\n");
     let only = t.path().join("only.json");
     edit_hook(&only, Some(&h), &mut backups).expect("add");
@@ -374,6 +383,8 @@ fn test_helpers() {
     let t = TempDir::new();
     let e = env(&t, true);
     let one: Routes = vec![(8809, "https://a".into())];
+    save_state(&e, &Vec::new(), &["/w".into()]).expect("save");
+    assert_eq!(load_state(&e), (vec![], vec!["/w".to_string()]));
     save_state(&e, &one, &["/w".into()]).expect("save");
     assert_eq!(load_state(&e), (one.clone(), vec!["/w".to_string()]));
     assert!(free_port(&one) > 8809);
@@ -426,6 +437,23 @@ fn test_edges() {
         "{r}"
     );
     assert!(r.contains("= ps (Codex plugin s@m)"), "{r}");
+    std::fs::write(repo.join("svc/.mcp.json"), "{broken").expect("write");
+    std::fs::write(env.config_path(Client::Codex), "[[[").expect("write");
+    std::fs::create_dir_all(env.home.join(".claude/plugins/node_modules/q")).expect("mkdir");
+    std::fs::write(env.home.join(".claude/plugins/node_modules/q/.mcp.json"), r#"{"nm": {"command": "x"}}"#)
+        .expect("write");
+    std::os::unix::fs::symlink("/nonexistent-zz", env.home.join(".claude/plugins/dangling"))
+        .expect("symlink");
+    let deep = env.home.join(".claude/plugins/a/b/c/d/e/f");
+    std::fs::create_dir_all(&deep).expect("mkdir");
+    std::fs::write(deep.join(".mcp.json"), r#"{"deep": {"command": "x"}}"#).expect("write");
+    let ws = repo.to_string_lossy().to_string();
+    let r = run(&opts(&["--client", "claude-code", "--repo", &ws, "--workspace", &ws]), &env).expect("plan");
+    assert!(
+        !r.contains("= nm ") && !r.contains("= deep ") && r.contains("= db (stdio)") && r.contains("= pl ("),
+        "{r}"
+    );
+    assert_eq!(r.matches("+ add workspace").count(), 1, "{r}");
     let mut backups = Vec::new();
     let md = t.path().join("B.md");
     std::fs::write(&md, "a\n\n").expect("write");
