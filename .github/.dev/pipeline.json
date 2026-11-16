@@ -57,7 +57,7 @@
       "id": "release",
       "title": "On a release run or a vX.Y.Z tag",
       "summary": "Works out the version from the tags, stamps it into every binary, tests and builds every tool, zazz-worker, the zazzle invoker (shipped also as zazz) and the C# indexer, signs the macOS binaries when configured, and publishes the macOS and Linux tarballs, the Homebrew bottle and the zazzle formula.",
-      "trigger": "A manual run of release.yml with bump patch (the default), minor or major, which releases the next version after the latest vX.Y.Z tag; or a pushed tag v*, which must be vX.Y.Z. A manual run with bump none builds and tests but publishes nothing.",
+      "trigger": "A manual run of release.yml with bump patch (the default), minor or major, which releases the next version after the latest vX.Y.Z tag, or with version X.Y.Z, which releases exactly that version when its tag does not exist yet; or a pushed tag v*, which must be vX.Y.Z. A manual run with bump none builds and tests but publishes nothing.",
       "checks": [
         "version: version.sh prints the tag, the version (0.0.0-dev for a build-only run) and whether to publish; a manual release run tags the commit and pushes the tag",
         "macos and linux: set-version.sh writes the version into every crate's manifest and Cargo.lock entry; the indexer is published with -p:Version",

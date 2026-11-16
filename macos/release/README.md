@@ -5,7 +5,7 @@
 ## Version numbers (`version.sh`, `set-version.sh`)
 
 - The git tag is the only source of version numbers; the repository's crates and the indexer say `0.0.0-dev`.
-- Run the Release workflow by hand with `bump` patch (default), minor or major: `version.sh` takes the latest `vX.Y.Z` tag (v0.0.0 when there is none), computes the next one, and the run tags the commit and publishes it. `bump: none` only builds. Pushing a `vX.Y.Z` tag yourself still releases that version.
+- Run the Release workflow by hand with `bump` patch (default), minor or major: `version.sh` takes the latest `vX.Y.Z` tag (v0.0.0 when there is none), computes the next one, and the run tags the commit and publishes it. `bump: none` only builds. Give `version` (`X.Y.Z`, a tag that doesn't exist yet) to release exactly that version instead of the bump. Pushing a `vX.Y.Z` tag yourself still releases that version.
 - `set-version.sh X.Y.Z` writes the version into every crate's manifest and its `Cargo.lock` entry (no network, so `--locked` still holds); the indexer gets `-p:Version=X.Y.Z`. Every binary's `--version` then reports the release.
 - `version.test.sh` checks the arithmetic (v1.10.0 sorts after v1.2.9) and the refusals; CI runs it with shellcheck.
 

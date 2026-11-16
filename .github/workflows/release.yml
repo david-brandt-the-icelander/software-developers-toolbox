@@ -1,4 +1,4 @@
-# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or the next one after the latest tag when run by hand with a bump (macos/release/version.sh); every binary is built with it.
+# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or, when run by hand, the exact version given or the next one after the latest tag for a bump (macos/release/version.sh); every binary is built with it.
 name: Release
 
 on:
@@ -11,6 +11,10 @@ on:
         type: choice
         options: [patch, minor, major, none]
         default: patch
+      version:
+        description: "Release exactly this version (X.Y.Z, a tag that does not exist yet) instead of the bump; leave empty to bump"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -30,7 +34,9 @@ jobs:
         with:
           fetch-depth: 0
       - id: v
-        run: bash macos/release/version.sh "${{ github.ref_type }}" "$GITHUB_REF_NAME" "${{ inputs.bump || 'none' }}" >> "$GITHUB_OUTPUT"
+        env:
+          EXACT_VERSION: ${{ inputs.version }}
+        run: bash macos/release/version.sh "${{ github.ref_type }}" "$GITHUB_REF_NAME" "${{ inputs.bump || 'none' }}" "$EXACT_VERSION" >> "$GITHUB_OUTPUT"
       # A tag pushed with GITHUB_TOKEN starts no other workflow, so this run goes on to publish it.
       - name: Tag the release
         if: github.ref_type != 'tag' && steps.v.outputs.publish == 'true'
