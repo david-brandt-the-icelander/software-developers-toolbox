@@ -404,12 +404,48 @@ static void test_proxy_exec(void)
 	CHECK(run(2, as_z, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
 }
 
+/* Scripts the daemon's reply bytes for the following reads. */
+static void reply(const char *bytes, size_t len)
+{
+	M.reply = bytes;
+	M.reply_len = len;
+	M.reply_pos = 0;
+}
+
+/* Checks a retiring daemon's RESTART reply makes the invoker reconnect and resend once, and that anything short of
+   the full tag, or a second RESTART, is returned as the status it looks like. */
+static void test_restart_resends(void)
+{
+	char *argv[] = {"zazzle", "read", "x", 0};
+	static const char restart[] = "\xfe" "zazzled-restart";
+	reset();
+	reply(restart, sizeof restart - 1);
+	M.status = 3;
+	CHECK(run(3, argv, env_home) == 3);
+	CHECK(M.connect_calls == 2 && M.closed >= 1);
+	CHECK(memcmp(M.sent + 4, "\0\0read\0x\0", 10) == 0);
+	reset();
+	static const char twice[] = "\xfe" "zazzled-restart" "\xfe" "zazzled-restart";
+	reply(twice, sizeof twice - 1);
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 2);
+	reset();
+	static const char other[] = "\xfe" "zazzled-restarX";
+	reply(other, sizeof other - 1);
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 1);
+	reset();
+	static const char cut[] = "\xfe" "zazz";
+	reply(cut, sizeof cut - 1);
+	M.read_rc = 0;
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 1);
+}
+
 /* Runs every test and reports. */
 int main(void)
 {
 	test_happy_path();
 	test_no_session_no_args();
 	test_argv0_dispatch();
+	test_restart_resends();
 	test_zazzle_sock_override();
 	test_path_errors();
 	test_arguments_too_long();

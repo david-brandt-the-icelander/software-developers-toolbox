@@ -321,7 +321,29 @@ static int read_status(int fd)
 	return b;
 }
 
-/* Runs a tool, the MCP proxy, setup or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), and returns the daemon's exit status. */
+/* A retiring daemon's reply instead of a status (zazzled's server::RESTART): this byte, then RESTART_TAG. */
+#define RESTART_STATUS 0xFE
+#define RESTART_TAG "zazzled-restart"
+
+/* Tells whether a reply that began with RESTART_STATUS goes on with RESTART_TAG, reading the rest of it. */
+static int is_restart(int fd)
+{
+	const char *tag = RESTART_TAG;
+	char got[sizeof RESTART_TAG - 1];
+	size_t n = 0;
+	while (n < sizeof got) {
+		long r = sys_read(fd, got + n, sizeof got - n);
+		if (r <= 0)
+			return 0;
+		n += (size_t)r;
+	}
+	for (size_t i = 0; i < sizeof got; i++)
+		if (got[i] != tag[i])
+			return 0;
+	return 1;
+}
+
+/* Runs a tool, the MCP proxy, setup or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && is_zazzle_name(own_name(argc, argv))) {
@@ -337,5 +359,13 @@ static int zazzle_run(int argc, char **argv, char **envp)
 	size_t pathlen = build_path(envp);
 	int fd = connect_daemon(pathlen, envp);
 	send_request(fd, total);
-	return read_status(fd);
+	int status = read_status(fd);
+	/* A daemon replaced by an upgrade did not run the request: send it once more, to the daemon that replaces it. */
+	if (status == RESTART_STATUS && is_restart(fd)) {
+		sys_close(fd);
+		fd = connect_daemon(pathlen, envp);
+		send_request(fd, total);
+		status = read_status(fd);
+	}
+	return status;
 }

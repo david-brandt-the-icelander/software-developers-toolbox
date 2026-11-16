@@ -114,7 +114,7 @@ mod tests {
                 crate::server::serve(
                     l,
                     engine,
-                    &crate::server::Config { idle: Duration::from_millis(300) },
+                    &crate::server::Config { idle: Duration::from_millis(300), ..Default::default() },
                     &stop,
                 )
             });

@@ -117,7 +117,20 @@ fn open_engine() -> Engine {
     engine.with_outputs(crate::outputs::dir())
 }
 
-// Binds the socket, serves until idle and removes the socket afterwards.
+// Watches the binary that will start the next daemon: the one launchd's plist names when launchd owns the socket (so
+// an old plist naming an old version never restarts into a loop), else the upgrade-proof path of this binary.
+fn exe_watch(own_socket: bool) -> Option<server::ExeWatch> {
+    let exe = std::env::current_exe().ok()?;
+    let plist = || {
+        let home = PathBuf::from(std::env::var_os("HOME")?);
+        launchd::plist_program(&std::fs::read_to_string(launchd::plist_path(&home)).ok()?)
+    };
+    let path = if own_socket { None } else { plist() };
+    let path = path.unwrap_or_else(|| crate::setup::stable_exe(&exe.canonicalize().unwrap_or(exe.clone())));
+    Some(server::ExeWatch::new(path, &exe))
+}
+
+// Binds the socket, serves until idle or replaced by an upgrade, and removes the socket afterwards.
 pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String> {
     let io = |e: std::io::Error| e.to_string();
     let (listener, bound) = match socket {
@@ -130,7 +143,8 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
             }
         },
     };
-    let result = server::serve(listener, Arc::new(open_engine()), &Config { idle }, &AtomicBool::new(false));
+    let cfg = Config { idle, watch: exe_watch(bound.is_some()), socket: bound.clone() };
+    let result = server::serve(listener, Arc::new(open_engine()), &cfg, &AtomicBool::new(false));
     bound.iter().for_each(|p| {
         let _ = std::fs::remove_file(p);
     });
@@ -171,6 +185,8 @@ pub fn agent_cmd(
 // Installs or removes the LaunchAgent using the real environment.
 fn agent_main(install: bool) -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Homebrew's versioned Cellar path would keep starting the old version after an upgrade; use its opt link.
+    let exe = crate::setup::stable_exe(&exe.canonicalize().unwrap_or(exe));
     let sock = client::socket_path().map_err(|e| e.to_string())?;
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
     // SAFETY: getuid has no preconditions.

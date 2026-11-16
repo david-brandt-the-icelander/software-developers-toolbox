@@ -18,9 +18,44 @@ const TICK_MS: i32 = 100;
 const FIRST_READ: usize = 4096;
 const CTL_WORDS: usize = 256;
 
-// Daemon settings.
+// The reply to a connection a retiring daemon will not serve: a status byte the invoker reads first, then a tag that
+// tells it apart from a command's own status, so the invoker reconnects to a new daemon and sends the request again.
+pub const RESTART: &[u8] = b"\xfezazzled-restart";
+
+// Daemon settings: the idle time before exiting, the binary to watch for an upgrade, and the socket path this process
+// bound itself (none when launchd owns the socket), which it removes when it retires.
+#[derive(Default)]
 pub struct Config {
     pub idle: Duration,
+    pub watch: Option<ExeWatch>,
+    pub socket: Option<PathBuf>,
+}
+
+// The path whose binary starts the next daemon, and the identity of the binary this daemon runs, to notice when an
+// upgrade has replaced it.
+#[derive(Clone)]
+pub struct ExeWatch {
+    path: PathBuf,
+    running: Option<(u64, u64, i64, i64, u64)>,
+}
+
+impl ExeWatch {
+    // Watches `path` against the binary at `running` as it is now.
+    pub fn new(path: PathBuf, running: &Path) -> ExeWatch {
+        ExeWatch { running: identity(running), path }
+    }
+
+    // Tells whether the binary at the watched path is no longer the one this daemon runs.
+    pub fn replaced(&self) -> bool {
+        identity(&self.path) != self.running
+    }
+}
+
+// Returns a file's device, inode, modification time and size, following links.
+fn identity(p: &Path) -> Option<(u64, u64, i64, i64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.dev(), m.ino(), m.mtime(), m.mtime_nsec(), m.len()))
 }
 
 // The descriptors an invoker passes: its standard streams and working directory.
@@ -277,6 +312,28 @@ struct Shared {
     last_ms: Arc<AtomicU64>,
     origin: Instant,
     uid: u32,
+    watch: Option<ExeWatch>,
+    socket: Option<PathBuf>,
+    retired: AtomicBool,
+}
+
+// Retires the daemon once its binary has been replaced: removes a socket it bound, so new connections start the new
+// binary, and stops the workers.
+fn retire_if_replaced(sh: &Shared) {
+    if !sh.watch.as_ref().is_some_and(ExeWatch::replaced) || sh.retired.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(p) = &sh.socket {
+        let _ = std::fs::remove_file(p);
+    }
+    sh.stop.store(true, Ordering::SeqCst);
+}
+
+// Answers every connection still queued on a retired daemon's own socket with RESTART.
+fn restart_pending(sh: &Shared) {
+    while let Ok((mut stream, _)) = sh.listener.accept() {
+        let _ = stream.set_nonblocking(false).and_then(|()| stream.write_all(RESTART));
+    }
 }
 
 // Reports an accept failure unless it only means another worker took the connection.
@@ -292,6 +349,10 @@ fn worker(sh: &Shared, external_stop: &AtomicBool) {
     while !stopped() {
         if !wait_readable(sh.listener.as_raw_fd(), TICK_MS) {
             continue;
+        }
+        retire_if_replaced(sh);
+        if sh.retired.load(Ordering::SeqCst) {
+            break;
         }
         let stream = match sh.listener.accept() {
             Ok((stream, _)) => stream,
@@ -330,15 +391,19 @@ pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &A
         last_ms: Arc::new(AtomicU64::new(0)),
         origin: Instant::now(),
         uid,
+        watch: cfg.watch.clone(),
+        socket: cfg.socket.clone(),
+        retired: AtomicBool::new(false),
     };
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| worker(&sh, stop));
         }
         let idle_ms = cfg.idle.as_millis() as u64;
-        while !stop.load(Ordering::SeqCst) {
+        while !stop.load(Ordering::SeqCst) && !sh.stop.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(TICK_MS as u64));
             flush_quietly(&sh.engine);
+            retire_if_replaced(&sh);
             let quiet = now_ms(&sh.origin).saturating_sub(sh.last_ms.load(Ordering::SeqCst));
             if sh.active.load(Ordering::SeqCst) == 0 && quiet >= idle_ms {
                 break;
@@ -347,6 +412,10 @@ pub fn serve(listener: UnixListener, engine: Arc<Engine>, cfg: &Config, stop: &A
         sh.stop.store(true, Ordering::SeqCst);
     });
     flush_quietly(&sh.engine);
+    // Under launchd the queued connections stay on launchd's socket, which starts the new binary once this one exits.
+    if sh.retired.load(Ordering::SeqCst) && sh.socket.is_some() {
+        restart_pending(&sh);
+    }
     Ok(())
 }
 
@@ -400,7 +469,9 @@ pub mod tests {
             let listener = bind(&sock).expect("bind");
             let stop = Arc::new(AtomicBool::new(false));
             let (s2, engine) = (Arc::clone(&stop), Arc::new(Engine::new()));
-            let handle = std::thread::spawn(move || serve(listener, engine, &Config { idle }, &s2));
+            let handle = std::thread::spawn(move || {
+                serve(listener, engine, &Config { idle, ..Config::default() }, &s2)
+            });
             Running { sock, stop, handle: Some(handle), _dir: dir }
         }
 
@@ -510,6 +581,68 @@ pub mod tests {
         let mut s = UnixStream::connect(&srv.sock).expect("connect");
         assert_eq!(proto::roundtrip(&mut s, &req).expect("still alive").0, 0);
         srv.finish().expect("finish");
+    }
+
+    // Replaces a file the way an upgrade does: a new file renamed over the old path.
+    fn replace(path: &Path, text: &str) {
+        let tmp = path.with_extension("new");
+        std::fs::write(&tmp, text).expect("write");
+        std::fs::rename(&tmp, path).expect("rename");
+    }
+
+    // Checks the watch notices a binary renamed over its path or removed, and not an untouched one.
+    #[test]
+    fn test_exe_watch_replaced() {
+        let dir = TempDir::new();
+        let exe = dir.path().join("zazzled");
+        std::fs::write(&exe, "v1").expect("write");
+        let watch = ExeWatch::new(exe.clone(), &exe);
+        assert!(!watch.replaced());
+        replace(&exe, "v2");
+        assert!(watch.replaced());
+        assert!(!ExeWatch::new(exe.clone(), &exe).replaced());
+        std::fs::remove_file(&exe).expect("remove");
+        assert!(ExeWatch::new(exe.clone(), &exe).running.is_none());
+        assert!(!ExeWatch::new(exe.clone(), &exe).replaced());
+    }
+
+    // Starts serving with a binary already replaced and one connection queued, and returns that connection.
+    fn serve_replaced(own_socket: bool) -> (UnixStream, PathBuf, TempDir) {
+        let dir = TempDir::new();
+        let (sock, exe) = (dir.path().join("s"), dir.path().join("zazzled"));
+        std::fs::write(&exe, "v1").expect("write");
+        let watch = ExeWatch::new(exe.clone(), &exe);
+        replace(&exe, "v2");
+        let listener = bind(&sock).expect("bind");
+        let queued = UnixStream::connect(&sock).expect("connect");
+        let cfg = Config {
+            idle: Duration::from_secs(30),
+            watch: Some(watch),
+            socket: own_socket.then(|| sock.clone()),
+        };
+        serve(listener, Arc::new(Engine::new()), &cfg, &AtomicBool::new(false)).expect("serve");
+        (queued, sock, dir)
+    }
+
+    // Checks a daemon whose own socket's binary was replaced removes the socket, answers queued work with RESTART
+    // and exits.
+    #[test]
+    fn test_replaced_binary_restarts_own_socket() {
+        let (mut queued, sock, _dir) = serve_replaced(true);
+        assert!(!sock.exists());
+        let mut reply = Vec::new();
+        queued.read_to_end(&mut reply).expect("read");
+        assert_eq!(reply, RESTART);
+    }
+
+    // Checks a daemon on launchd's socket exits without answering, leaving queued work for the new binary launchd starts.
+    #[test]
+    fn test_replaced_binary_leaves_launchd_socket() {
+        let (mut queued, sock, _dir) = serve_replaced(false);
+        assert!(sock.exists());
+        let mut reply = Vec::new();
+        let _ = queued.read_to_end(&mut reply);
+        assert!(reply.is_empty());
     }
 
     // Checks the server exits on its own once idle.
