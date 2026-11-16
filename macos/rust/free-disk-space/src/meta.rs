@@ -140,14 +140,36 @@ pub fn differing_xattrs(from: &Path, to: &Path) -> std::io::Result<Vec<String>> 
         .collect())
 }
 
+// Set an extended attribute with Apple's /usr/bin/xattr, which macOS lets set attributes it refuses other programs.
+fn set_xattr_with_tool(path: &Path, name: &str, value: &[u8]) -> std::io::Result<()> {
+    let hex: String = value.iter().map(|b| format!("{b:02x}")).collect();
+    let target = path.to_string_lossy();
+    match crate::util::run(&["/usr/bin/xattr", "-s", "-wx", name, &hex, &target], 60.0, &[]) {
+        Some(out) if out.code == 0 => Ok(()),
+        Some(out) => Err(std::io::Error::other(format!("xattr -wx: {}", out.stderr.trim()))),
+        None => Err(std::io::Error::other("xattr -wx did not finish")),
+    }
+}
+
 // Give `to` every extended attribute value of `from` that it lacks or holds differently, such as the provenance
-// macOS stamps on a new file. A value that cannot be set is left for verification to report.
+// macOS stamps on a new file, falling back to /usr/bin/xattr; fail naming each value that still differs and why.
 pub fn copy_xattrs(from: &Path, to: &Path) -> std::io::Result<()> {
     let values = xattrs(from)?;
+    let mut refused = BTreeMap::new();
     for name in differing_xattrs(from, to)? {
-        let _ = set_xattr(to, &name, &values[&name]);
+        if let Err(direct) = set_xattr(to, &name, &values[&name]) {
+            if let Err(tool) = set_xattr_with_tool(to, &name, &values[&name]) {
+                refused.insert(name, format!("{direct}; {tool}"));
+            }
+        }
     }
-    Ok(())
+    let still = differing_xattrs(from, to)?;
+    if still.is_empty() {
+        return Ok(());
+    }
+    let why = |name: &String| refused.get(name).map_or("set, then changed again".to_string(), |e| e.clone());
+    let notes: Vec<String> = still.iter().map(|name| format!("{name} ({})", why(name))).collect();
+    Err(std::io::Error::other(format!("cannot keep extended attributes: {}", notes.join(", "))))
 }
 
 // Return a file's ACL as text, or None when it has none, without following a symlink.
@@ -382,5 +404,30 @@ mod tests {
         assert!(differing_xattrs(&from, &to).unwrap().is_empty());
         assert_eq!(xattrs(&to).unwrap(), xattrs(&from).unwrap());
         assert!(copy_xattrs(&sb.path("missing"), &to).is_err());
+    }
+
+    // Check a value the direct call cannot set goes through /usr/bin/xattr with its hex value, and a value that still
+    // differs is named with the reason.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn test_copy_xattrs_fallback() {
+        let sb = Sandbox::new();
+        let (from, to) = (sb.write("from", b"a"), sb.write("to", b"b"));
+        if !set_xattr(&from, "user.tag", b"blue") {
+            return;
+        }
+        // Linux refuses user attributes on a symlink itself, so the direct call fails and the tool is used.
+        let link = sb.path("link");
+        std::os::unix::fs::symlink(&to, &link).unwrap();
+        sb.tool("xattr", "[ \"$1 $2 $3 $4\" = '-s -wx user.tag 626c7565' ] || exit 3");
+        let err = copy_xattrs(&from, &link).unwrap_err().to_string();
+        assert_eq!(err, "cannot keep extended attributes: user.tag (set, then changed again)");
+        sb.tool("xattr", "echo refused >&2; exit 1");
+        let err = copy_xattrs(&from, &link).unwrap_err().to_string();
+        assert!(
+            err.starts_with("cannot keep extended attributes: user.tag (")
+                && err.ends_with("xattr -wx: refused)"),
+            "{err}"
+        );
     }
 }
