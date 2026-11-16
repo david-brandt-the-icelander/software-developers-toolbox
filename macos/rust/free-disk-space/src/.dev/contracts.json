@@ -187,7 +187,7 @@
         },
         {
           "path": "macos/c/zazzle/src/zazzle_core.h",
-          "symbol": "is_tool"
+          "symbol": "tool_binary"
         },
         {
           "path": "agents/skills/free-disk-space/SKILL.md",

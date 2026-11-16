@@ -1,0 +1,90 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "zazzle git decisions",
+  "folder": "macos/rust/zazzle-git/src",
+  "entities": [
+    {
+      "id": "exec-not-daemon",
+      "title": "zazzle git runs as its own process, not through zazzled",
+      "summary": "The invoker execs the zazzle-git binary beside itself for `zazzle git`, and zazzle-git execs git for anything it does not answer itself.",
+      "status": "accepted",
+      "context": "Most zazzle commands are requests to the zazzled daemon, which answers over a socket. The commit flow and the editor need the caller's own terminal (/dev/tty in raw mode, signals, git hooks and signing that may ask the user), the caller's working directory and git's own exit status.",
+      "decision": "tool_binary maps `git` to zazzle-git, which exec_tool runs from the invoker's directory; zazzle-git replaces itself with `git ARGS` for forwarded commands and runs git commit attached to the terminal with no timeout.",
+      "rationale": "A process of its own keeps the terminal, streams, environment and exit status the caller's, with nothing resident, as for free-disk-space and fix-network.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "exec_tool" },
+        { "path": "macos/c/zazzle/README.md", "symbol": "What it does" },
+        { "path": "macos/rust/zazzle-git/src/git.rs", "symbol": "exec_git" },
+        { "path": "macos/rust/zazzle-git/src/git.rs", "symbol": "git_interactive" }
+      ]
+    },
+    {
+      "id": "no-modes",
+      "title": "A modeless editor",
+      "summary": "Keys type text; every command is a Ctrl, Alt, function or navigation key, and Ctrl+S saves and Esc cancels in every view.",
+      "status": "accepted",
+      "context": "The editor is git's editor for short texts: commit messages, pull request bodies, changelog entries and rebase todo lists.",
+      "decision": "No insert or command mode: Editor::handle handles Ctrl+S, Esc, help, Tab and find before any view's keys, and the editing view inserts every plain character.",
+      "rationale": "No key changes what the next key does, and the key bar always shows how to save and cancel.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::handle" },
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::edit_key" },
+        { "path": "macos/rust/zazzle-git/src/render.rs", "symbol": "key_bar" },
+        { "path": "macos/rust/zazzle-git/README.md", "symbol": "zazzle-git" }
+      ]
+    },
+    {
+      "id": "tab-switches-views",
+      "title": "Tab and Shift+Tab switch views",
+      "summary": "Tab moves forward and Shift+Tab back through the views offered (editing, then Files or Rebase); the editor never inserts a tab character.",
+      "status": "accepted",
+      "context": "The commit flow needs a second screen for choosing files and a todo list needs one for commands, and commit messages do not need tab characters.",
+      "decision": "Tab and BackTab are global keys handled by cycle_view; inside the find-and-replace bar they switch between the query and the replacement instead.",
+      "rationale": "One well-known key reaches the other view from anywhere, and the key bar names the view Tab goes to.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::cycle_view" },
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::find_key" },
+        { "path": "macos/rust/zazzle-git/src/render.rs", "symbol": "next_view_name" }
+      ]
+    },
+    {
+      "id": "no-ctrl-m-ctrl-h",
+      "title": "Ctrl+M and Ctrl+H are not commands",
+      "summary": "Terminals send Ctrl+M as the same byte as Enter (CR) and Ctrl+H as Backspace (BS), so the decoder treats them as Enter and Backspace and no command uses them.",
+      "status": "accepted",
+      "context": "Without the kitty keyboard protocol a program cannot tell Ctrl+M from Enter or Ctrl+H from Backspace.",
+      "decision": "decode_simple maps CR and LF to Enter and DEL and BS to Backspace; commands use other Ctrl letters (S, G, F, R, K, Z, Y, A, C, X, V).",
+      "rationale": "A binding on Ctrl+M or Ctrl+H would fire on every Enter or Backspace in most terminals.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/keys.rs", "symbol": "decode_simple" },
+        { "path": "macos/rust/zazzle-git/src/keys.rs", "symbol": "kitty_key" }
+      ]
+    },
+    {
+      "id": "arrow-taps",
+      "title": "Double and triple arrow taps instead of Ctrl+arrows, Home and End",
+      "summary": "A double tap moves by a word (left, right) or a page (up, down), a triple tap to the line's edge or the text's start or end; there are no Ctrl+arrow, Home or End bindings.",
+      "status": "accepted",
+      "context": "On macOS Ctrl+arrows switch desktops by default, and many Mac keyboards have no Home or End key.",
+      "decision": "Taps::press counts presses of the same arrow within 250 ms; edit_arrow and list_arrow move from where the first tap started; Key has no Home or End.",
+      "rationale": "The same movement works with the arrow keys alone on every keyboard and terminal.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/tap.rs", "symbol": "Taps::press" },
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::edit_arrow" },
+        { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::list_arrow" },
+        { "path": "macos/rust/zazzle-git/src/keys.rs", "symbol": "Key" },
+        { "path": "macos/rust/zazzle-git/src/render.rs", "symbol": "help_lines" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/zazzle-git/src/.dev/limitations.json", "entityId": "tap-heuristic" }
+      ]
+    }
+  ]
+}

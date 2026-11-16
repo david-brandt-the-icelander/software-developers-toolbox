@@ -22,7 +22,7 @@
         {"path": "macos/rust/free-disk-space/src/main.rs", "symbol": "Cli"},
         {"path": ".github/workflows/release.yml", "symbol": "free-disk-space"},
         {"path": "macos/release/formula.sh", "symbol": "install"},
-        {"path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "is_tool"}
+        {"path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary"}
       ]
     }
   ]
