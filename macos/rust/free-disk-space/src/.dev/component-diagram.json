@@ -424,12 +424,6 @@
       "to": "meta",
       "kind": "depends-on",
       "description": "Reads the decmpfs header and resource fork, and copies attribute values, the ACL and flags onto the plain copy."
-    },
-    {
-      "from": "repair",
-      "to": "lzfse",
-      "kind": "depends-on",
-      "description": "compress_onto for the plain copy of a flagged file that saves no space."
     }
   ]
 }

@@ -693,7 +693,7 @@
       "postconditions": [
         "Files recorded as compressed that are not are pending again.",
         "Broken flagged files are recorded as broken, unchanged.",
-        "Flagged files that saved nothing are compressed for real, or recorded as skipped or failed."
+        "Flagged files that saved nothing are decompressed and recorded as skipped, or recorded as skipped or failed."
       ],
       "flow": [
         {

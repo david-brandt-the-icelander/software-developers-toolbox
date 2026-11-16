@@ -81,8 +81,8 @@ enum Cmd {
     /// Checks every file the scan recorded. A file the state file records as compressed that is not
     /// is reset to pending for `compress`. A flagged file whose com.apple.decmpfs attribute is missing,
     /// invalid or unreadable is reported and recorded as broken (`list --status broken`); nothing can be
-    /// recovered from it. A flagged file that saves no space is rewritten and compressed for real,
-    /// verified like `compress`.
+    /// recovered from it. A flagged file whose compressed form takes as many disk blocks as the plain
+    /// file would is decompressed (a verified plain copy, flag cleared) and left alone by `compress`.
     Repair(RepairArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
     ///

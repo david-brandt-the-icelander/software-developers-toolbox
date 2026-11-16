@@ -119,7 +119,7 @@
         "An unflagged file is a finding only when recorded as done; a flagged file without a header is broken",
         "The plain copy keeps the contents, mode and attribute values and refuses flags it cannot set",
         "A dry run changes nothing; --apply resets, records broken files and rewrites wasteful ones through the verified path",
-        "On macOS a real raw-chunk file is compressed for real, a header without a fork is broken, and a falsely recorded file is reset"
+        "On macOS a real raw-chunk file is decompressed, a small file compressed inside its attribute is left alone, a header without a fork is broken, and a falsely recorded file is reset"
       ],
       "checks": [
         {"type": "automated", "path": "macos/rust/free-disk-space/src/repair.rs", "symbol": "test_header_size", "command": "cargo test -p free-disk-space test_header_size"},

@@ -97,22 +97,26 @@ fn compressed_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     meta::copy_xattrs(path, tmp)
 }
 
-// Make a compressed copy with `make`, verify it and swap it in; return (status, note, saved).
+// Make a copy with `make` that is compressed (or, for `compressed` false, plain), verify it and swap it in; return
+// (status, note, saved).
 fn compress_verified(
     path: &Path,
     tmp: &Path,
     st: &fs::Metadata,
     o: &CompressOpts,
     make: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+    compressed: bool,
 ) -> std::io::Result<(&'static str, String, i64)> {
     make(path, tmp)?;
     let tm = fs::symlink_metadata(tmp)?;
     let tmp_flags = util::flags(&tm);
-    if tmp_flags & util::UF_COMPRESSED == 0 {
-        return Ok(("skipped", "APFS declined to compress (no gain)".into(), 0));
+    if (tmp_flags & util::UF_COMPRESSED != 0) != compressed {
+        let note =
+            if compressed { "APFS declined to compress (no gain)" } else { "copy is still compressed" };
+        return Ok((if compressed { "skipped" } else { "failed" }, note.into(), 0));
     }
     let saved = util::alloc(st) - util::alloc(&tm);
-    if saved < o.min_gain {
+    if compressed && saved < o.min_gain {
         return Ok(("skipped", format!("gain too small ({})", human_i(saved.max(0))), 0));
     }
     if tm.len() != st.len() {
@@ -163,13 +167,13 @@ fn compress_one(cand: &Cand, o: &CompressOpts) -> (&'static str, String, i64) {
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);
-    let result = compress_verified(path, &tmp, &st, o, &compressed_copy);
+    let result = compress_verified(path, &tmp, &st, o, &compressed_copy, true);
     util::remove_temp(&tmp);
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
 
-// Replace a file that is flagged compressed but saves no space with a verified copy that `make` compresses for real.
-pub fn rewrite_flagged(
+// Replace a file that is flagged compressed but saves no space with a verified plain copy that `make` writes.
+pub fn decompress_flagged(
     path: &Path,
     o: &CompressOpts,
     make: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
@@ -189,7 +193,7 @@ pub fn rewrite_flagged(
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);
-    let result = compress_verified(path, &tmp, &st, o, make);
+    let result = compress_verified(path, &tmp, &st, o, make, false);
     util::remove_temp(&tmp);
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
@@ -521,7 +525,7 @@ mod tests {
         let o = opts(&sb);
         let run = |o: &CompressOpts, make: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
             let st = fs::symlink_metadata(&file).unwrap();
-            let r = compress_verified(&file, &tmp, &st, o, make);
+            let r = compress_verified(&file, &tmp, &st, o, make, true);
             util::remove_temp(&tmp);
             r
         };
@@ -546,7 +550,7 @@ mod tests {
         assert_eq!(run(&o, &garbled).unwrap().1, "content hash mismatch");
         let stale = fs::symlink_metadata(&file).unwrap();
         util::set_times(&file, 1_000_000_000_000_000_000, 1_100_000_000_000_000_000).unwrap();
-        let r = compress_verified(&file, &tmp, &stale, &o, &plain).unwrap();
+        let r = compress_verified(&file, &tmp, &stale, &o, &plain, true).unwrap();
         util::remove_temp(&tmp);
         assert_eq!(r.1, "changed during compression");
         util::set_times(&file, 1_000_000_000_000_000_000, 1_000_000_000_000_000_000).unwrap();
@@ -569,7 +573,7 @@ mod tests {
         let run = |value: &'static [u8]| {
             let st = fs::symlink_metadata(&file).unwrap();
             let make = copy_then(move |d| assert!(set_xattr(d, "user.keep", value)));
-            let r = compress_verified(&file, &tmp, &st, &opts(&sb), &make).unwrap();
+            let r = compress_verified(&file, &tmp, &st, &opts(&sb), &make, true).unwrap();
             util::remove_temp(&tmp);
             r
         };
@@ -605,7 +609,7 @@ mod tests {
         let o = CompressOpts { min_gain: 0, ..opts(&sb) };
         let run = |make: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
             let st = fs::symlink_metadata(&file).unwrap();
-            let r = compress_verified(&file, &tmp, &st, &o, make).unwrap();
+            let r = compress_verified(&file, &tmp, &st, &o, make, true).unwrap();
             util::remove_temp(&tmp);
             r
         };

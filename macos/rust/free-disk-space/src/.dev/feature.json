@@ -179,8 +179,8 @@
           "symbol": "rewrite_flagged"
         }
       ],
-      "behavior": "Every file the scan recorded, plus every candidate recorded as done, is checked. A file recorded as done that does not carry the compressed flag is reset to pending. A flagged file is read: a missing or invalid com.apple.decmpfs header, a header size different from the file size, or a read error makes it broken. A flagged file whose decmpfs attribute and resource fork together hold at least as many bytes as its contents saves no space; it is rewritten as a plain copy with its mode, group, BSD flags (without the compressed flag), extended attribute values and ACL, compressed by the library and verified and swapped in like compress.",
-      "outcome": "The state file matches what is compressed on disk, broken files are listed for restoring from a backup, and flagged files that saved nothing are compressed for real.",
+      "behavior": "Every file the scan recorded, plus every candidate recorded as done, is checked. A file recorded as done that does not carry the compressed flag is reset to pending. A flagged file is read: a missing or invalid com.apple.decmpfs header, a header size different from the file size, or a read error makes it broken. A flagged file whose resource fork takes at least as many 4 KiB blocks as the plain file would saves no space (data kept inside the attribute takes none, so small compressed files are fine); it is decompressed: rewritten as a plain copy with its mode, group, BSD flags (without the compressed flag), extended attribute values and ACL, verified and swapped in like compress, and recorded as skipped so compress leaves it alone.",
+      "outcome": "The state file matches what is compressed on disk, broken files are listed for restoring from a backup, and flagged files whose compression saved nothing are plain files again.",
       "constraints": [
         "A dry run unless --apply.",
         "macOS only, unless FDS_FORCE is set; with --apply it refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
