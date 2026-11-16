@@ -1,5 +1,4 @@
 // zazzle git: a git front end with a small commit message editor (`zazzle git message`) and a commit flow (`zazzle git commit`).
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod buffer;
 pub mod clipboard;
