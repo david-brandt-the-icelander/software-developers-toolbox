@@ -481,24 +481,6 @@ pub fn sha256(path: &Path) -> std::io::Result<String> {
     Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
-// Return a file's extended attribute names, excluding compression internals.
-pub fn xattr_names(path: &Path) -> std::io::Result<std::collections::BTreeSet<String>> {
-    let p = path.to_string_lossy();
-    let out = run(&["/usr/bin/xattr", &p], 120.0, &[])
-        .ok_or_else(|| std::io::Error::other("xattr failed to start"))?;
-    if out.code != 0 {
-        return Err(std::io::Error::other(format!("xattr failed: {}", out.stderr.trim())));
-    }
-    let ignore = ["com.apple.decmpfs", "com.apple.ResourceFork"];
-    Ok(out
-        .stdout
-        .lines()
-        .map(str::trim)
-        .filter(|x| !x.is_empty() && !ignore.contains(x))
-        .map(String::from)
-        .collect())
-}
-
 // clonefile flag: do not follow a symlink at the source (sys/clonefile.h; the libc crate does not define it).
 #[cfg(target_os = "macos")]
 const CLONE_NOFOLLOW: u32 = 0x0001;
@@ -759,20 +741,6 @@ mod tests {
         let md = std::fs::metadata(sb.write("f", b"x")).unwrap();
         set_flags(&[UF_COMPRESSED, 0]);
         assert_eq!((flags(&md), flags(&md), flags(&md)), (UF_COMPRESSED, 0, UF_COMPRESSED));
-    }
-
-    // Check extended attribute listing handles output, failure and missing tool.
-    #[test]
-    fn test_xattr_names_outcomes() {
-        let sb = Sandbox::new();
-        let file = sb.write("f", b"x");
-        sb.tool("xattr", "printf 'a\\n\\ncom.apple.decmpfs\\nb\\n'");
-        let names = xattr_names(&file).unwrap();
-        assert_eq!(names.into_iter().collect::<Vec<_>>(), ["a", "b"]);
-        sb.tool("xattr", "echo 'denied' >&2; exit 1");
-        assert!(xattr_names(&file).unwrap_err().to_string().contains("denied"));
-        std::fs::remove_file(sb.bin.join("xattr")).unwrap();
-        assert!(xattr_names(&file).unwrap_err().to_string().contains("failed to start"));
     }
 
     // Check temp names stay beside the file and are removed only when present.

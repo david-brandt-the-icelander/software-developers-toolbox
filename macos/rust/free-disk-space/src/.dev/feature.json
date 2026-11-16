@@ -253,7 +253,7 @@
         },
         {
           "path": "macos/rust/free-disk-space/src/dedupe.rs",
-          "symbol": "sync_metadata"
+          "symbol": "keep_metadata"
         },
         {
           "path": "macos/rust/free-disk-space/src/dedupe.rs",

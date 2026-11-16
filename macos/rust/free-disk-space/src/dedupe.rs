@@ -7,6 +7,7 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 
 use crate::clean::Snapshot;
+use crate::meta;
 use crate::scan::{finished, open_db, under, SKIP_PREFIXES};
 use crate::util::{self, c, die, hms, human_i, now, warn};
 
@@ -108,16 +109,35 @@ mod apfs {
     }
 }
 
-// Copy metadata and drop xattrs the source lacks.
-fn sync_metadata(src: &Path, dst: &Path) -> std::io::Result<()> {
-    apfs::copy_metadata(src, dst)?;
-    let keep = util::xattr_names(src)?;
-    for name in util::xattr_names(dst)?.difference(&keep) {
-        let d = dst.to_string_lossy();
-        let ok = util::run(&["/usr/bin/xattr", "-d", name, &d], 60.0, &[]).is_some_and(|o| o.code == 0);
-        if !ok {
-            return Err(std::io::Error::other(format!("cannot remove xattr {name}")));
-        }
+#[cfg(test)]
+thread_local! {
+    // Per-test switch that makes keep_metadata fail, standing in for an attribute macOS refuses to set.
+    static FAIL_KEEP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+// Give the clone everything of the target's that is not its data: mode, owner, ACL, BSD flags and every extended
+// attribute value (through Apple's tool where macOS refuses, as for provenance), and none the target lacks. The
+// clone keeps its own compressed state, since that describes the shared data, not the file.
+fn keep_metadata(target: &Path, tmp: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_KEEP.with(std::cell::Cell::get) {
+        return Err(std::io::Error::other("cannot keep extended attributes: user.tag"));
+    }
+    apfs::copy_metadata(target, tmp)?;
+    let file = fs::File::open(tmp)?;
+    // The clone's ACL does not always read back the same as the original's, so set it explicitly.
+    meta::copy_acl(target, &file)?;
+    meta::copy_xattrs(target, tmp)?;
+    let keep = meta::xattrs(target)?;
+    for name in meta::xattrs(tmp)?.into_keys().filter(|n| !keep.contains_key(n)) {
+        meta::remove_xattr(tmp, &name)
+            .map_err(|e| std::io::Error::other(format!("cannot remove extended attribute {name}: {e}")))?;
+    }
+    let have = util::flags(&file.metadata()?);
+    let want =
+        util::flags(&fs::symlink_metadata(target)?) & !util::UF_COMPRESSED | have & util::UF_COMPRESSED;
+    if have != want {
+        meta::set_flags(&file, want)?;
     }
     Ok(())
 }
@@ -215,33 +235,54 @@ fn plan(
     (plans, blocked)
 }
 
-// Clone the keeper to the temp path, verify it and swap it over the target.
+// Clone the keeper to the temp path, give it the target's metadata with `keep`, verify both and swap it over the
+// target.
 fn clone_verified(
     keeper: &Path,
     target: &Path,
     tmp: &Path,
     st: &Metadata,
     digest: &str,
-) -> std::io::Result<Option<&'static str>> {
+    keep: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<Option<String>> {
     apfs::clone_file(keeper, tmp)
         .map_err(|e| std::io::Error::new(e.kind(), format!("cloning from {}: {e}", keeper.display())))?;
-    sync_metadata(target, tmp)?;
-    util::set_times(tmp, st.atime() * 1_000_000_000 + st.atime_nsec(), util::mtime_ns(st))?;
+    keep(target, tmp)?;
     let t = fs::symlink_metadata(tmp)?;
     let owner = |m: &Metadata| (util::perm_bits(m), m.uid(), m.gid());
     if owner(&t) != owner(st) {
-        return Ok(Some("permissions/ownership differ"));
+        return Ok(Some("permissions/ownership differ".into()));
     }
-    if util::xattr_names(target)? != util::xattr_names(tmp)? {
-        return Ok(Some("extended attributes differ"));
+    if !meta::same_flags(util::flags(st), util::flags(&t)) {
+        return Ok(Some("file flags differ".into()));
+    }
+    let mut differ = meta::differing_xattrs(target, tmp)?;
+    for name in meta::differing_xattrs(tmp, target)? {
+        if !differ.contains(&name) {
+            differ.push(name);
+        }
+    }
+    if !differ.is_empty() {
+        return Ok(Some(format!("extended attributes differ: {}", differ.join(", "))));
+    }
+    if meta::acl_text(target)? != meta::acl_text(tmp)? {
+        return Ok(Some("ACL differs".into()));
     }
     if util::sha256(tmp)? != digest {
-        return Ok(Some("content hash mismatch"));
+        return Ok(Some("content hash mismatch".into()));
+    }
+    util::set_times(tmp, st.atime() * 1_000_000_000 + st.atime_nsec(), util::mtime_ns(st))?;
+    // Set after the other times: macOS moves a birth time later than the modification time back to it.
+    if let Some(born) = meta::birth_ns(st) {
+        meta::set_birth(tmp, born)?;
+    }
+    if !meta::same_times(st, &fs::symlink_metadata(tmp)?) {
+        return Ok(Some("times differ".into()));
     }
     let st2 = fs::symlink_metadata(target)?;
     let ident = |m: &Metadata| (m.len(), util::mtime_ns(m), m.ino(), m.nlink());
     if ident(&st2) != (st.len(), util::mtime_ns(st), st.ino(), 1) {
-        return Ok(Some("changed during dedupe"));
+        return Ok(Some("changed during dedupe".into()));
     }
     fs::rename(tmp, target)?;
     Ok(None)
@@ -251,11 +292,11 @@ fn clone_verified(
 fn clone_over(keeper: &str, target: &Member, digest: &str) -> Result<(), String> {
     let path = Path::new(&target.path);
     let tmp = util::temp_beside(path);
-    let result = clone_verified(Path::new(keeper), path, &tmp, &target.md, digest);
+    let result = clone_verified(Path::new(keeper), path, &tmp, &target.md, digest, &keep_metadata);
     util::remove_temp(&tmp);
     match result {
         Ok(None) => Ok(()),
-        Ok(Some(note)) => Err(note.to_string()),
+        Ok(Some(note)) => Err(note),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -406,7 +447,7 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testkit::{age_tree, chmod, is_root, Sandbox};
+    use crate::testkit::{age_tree, chmod, is_root, set_xattr, Sandbox};
     use std::path::PathBuf;
 
     // Build dedupe options for the sandbox state that include temp-dir files.
@@ -445,15 +486,18 @@ mod tests {
         sb.tool("ps", "echo idle");
     }
 
-    #[cfg(not(target_os = "macos"))]
-    // Install a fake xattr that lists the given names for the source and temp paths and removes with an exit code.
-    fn fake_xattr(sb: &Sandbox, source: &str, temp: &str, delete_exit: i32) {
-        sb.tool(
-            "xattr",
-            &format!(
-                "if [ \"$1\" = \"-d\" ]; then exit {delete_exit}; fi\ncase \"$1\" in *.tmp) echo '{temp}';; *) echo '{source}';; esac"
-            ),
-        );
+    // Turn keep_metadata's failure on or off for this test thread.
+    fn fail_keep(on: bool) {
+        FAIL_KEEP.with(|f| f.set(on));
+    }
+
+    // Name a user attribute this platform lets a test set: macOS takes any name, Linux needs the user. prefix.
+    fn tag(name: &str) -> String {
+        if cfg!(target_os = "macos") {
+            format!("com.example.{name}")
+        } else {
+            format!("user.{name}")
+        }
     }
 
     // Check the system-file test by owner and by path prefix.
@@ -469,23 +513,22 @@ mod tests {
         assert!(is_system_file("/home/me/f", &etc));
     }
 
-    // Check metadata syncing removes extra attributes and reports failures.
-    #[cfg(not(target_os = "macos"))]
+    // Check the clone gets the target's mode and attribute values, loses attributes only the keeper had, and a
+    // missing target is an error.
     #[test]
-    fn test_sync_metadata_cases() {
+    fn test_keep_metadata_cases() {
         let sb = Sandbox::new();
-        let (src, dst) = (sb.write("src", b"x"), sb.write("dst.tmp", b"y"));
-        chmod(&src, 0o640);
-        fake_xattr(&sb, "a", "a", 0);
-        sync_metadata(&src, &dst).unwrap();
-        assert_eq!(fs::metadata(&dst).unwrap().mode() & 0o777, 0o640);
-        fake_xattr(&sb, "a", "a\nextra", 0);
-        sync_metadata(&src, &dst).unwrap();
-        fake_xattr(&sb, "a", "a\nextra", 1);
-        assert!(sync_metadata(&src, &dst).unwrap_err().to_string().contains("cannot remove xattr extra"));
-        sb.tool("xattr", "exit 1");
-        assert!(sync_metadata(&src, &dst).is_err());
-        assert!(sync_metadata(&sb.path("none"), &dst).is_err());
+        let (target, tmp) = (sb.write("target", b"x"), sb.write("dst.tmp", b"x"));
+        chmod(&target, 0o640);
+        keep_metadata(&target, &tmp).unwrap();
+        assert_eq!(fs::metadata(&tmp).unwrap().mode() & 0o777, 0o640);
+        assert!(keep_metadata(&sb.path("none"), &tmp).is_err());
+        if !set_xattr(&target, &tag("keep"), b"target") {
+            return;
+        }
+        assert!(set_xattr(&tmp, &tag("keep"), b"keeper") && set_xattr(&tmp, &tag("extra"), b"keeper only"));
+        keep_metadata(&target, &tmp).unwrap();
+        assert_eq!(meta::xattrs(&tmp).unwrap(), meta::xattrs(&target).unwrap());
     }
 
     // Check which recorded files are kept and which are replaceable.
@@ -585,7 +628,7 @@ mod tests {
         clone_probe(&sb.path("missing"), md.dev() + 1).unwrap();
         let st = fs::symlink_metadata(&files[1]).unwrap();
         let tmp = util::temp_beside(&files[1]);
-        let err = clone_verified(&sb.path("missing"), &files[1], &tmp, &st, "x").unwrap_err();
+        let err = clone_verified(&sb.path("missing"), &files[1], &tmp, &st, "x", &keep_metadata).unwrap_err();
         assert!(err.to_string().starts_with("cloning from "), "{err}");
     }
 
@@ -634,28 +677,99 @@ mod tests {
         let other = sb.write("data/other", b"o");
         chmod(&other, 0o600);
         let st = || fs::symlink_metadata(target).unwrap();
-        let go = |st: &Metadata, digest: &str| {
-            let r = clone_verified(keeper, target, &tmp, st, digest);
+        let go = |st: &Metadata, digest: &str, keep: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
+            let r = clone_verified(keeper, target, &tmp, st, digest, keep);
             util::remove_temp(&tmp);
             r
         };
-        fake_xattr(&sb, "", "", 0);
+        let oth = fs::symlink_metadata(&other).unwrap();
         assert_eq!(
-            go(&fs::symlink_metadata(&other).unwrap(), &digest).unwrap(),
+            go(&oth, &digest, &keep_metadata).unwrap().as_deref(),
             Some("permissions/ownership differ")
         );
-        assert_eq!(go(&st(), "wrong").unwrap(), Some("content hash mismatch"));
+        assert_eq!(go(&st(), "wrong", &keep_metadata).unwrap().as_deref(), Some("content hash mismatch"));
         let stale = st();
         util::set_times(target, 1_000_000_000_000_000_000, 1_500_000_000_000_000_000).unwrap();
-        assert_eq!(go(&stale, &digest).unwrap(), Some("changed during dedupe"));
-        fake_xattr(&sb, "keep", "", 0);
-        assert_eq!(go(&st(), &digest).unwrap(), Some("extended attributes differ"));
-        fake_xattr(&sb, "", "", 0);
-        assert_eq!(go(&st(), &digest).unwrap(), None);
+        assert_eq!(go(&stale, &digest, &keep_metadata).unwrap().as_deref(), Some("changed during dedupe"));
+        let unset = |_: &Path, d: &Path| util::set_times(d, 0, 0);
+        assert_eq!(go(&st(), &digest, &unset).unwrap(), None, "times are set from the target after keep");
+        if set_xattr(target, &tag("keep"), b"target") {
+            let retagged = |t: &Path, d: &Path| {
+                keep_metadata(t, d)?;
+                assert!(set_xattr(d, &tag("keep"), b"keeper"));
+                Ok(())
+            };
+            let note = format!("extended attributes differ: {}", tag("keep"));
+            assert_eq!(go(&st(), &digest, &retagged).unwrap(), Some(note));
+            let extra = |t: &Path, d: &Path| {
+                keep_metadata(t, d)?;
+                assert!(set_xattr(d, &tag("extra"), b"keeper only"));
+                Ok(())
+            };
+            let note = format!("extended attributes differ: {}", tag("extra"));
+            assert_eq!(go(&st(), &digest, &extra).unwrap(), Some(note));
+        }
+        assert_eq!(go(&st(), &digest, &keep_metadata).unwrap(), None);
         assert_eq!(fs::read(target).unwrap(), fs::read(keeper).unwrap());
         assert!(!tmp.exists());
-        assert!(go(&st(), &digest).is_ok());
-        assert!(clone_verified(&sb.path("none"), target, &tmp, &st(), &digest).is_err());
+        assert!(go(&st(), &digest, &keep_metadata).is_ok());
+        fail_keep(true);
+        assert!(go(&st(), &digest, &keep_metadata).is_err());
+        fail_keep(false);
+        assert!(clone_verified(&sb.path("none"), target, &tmp, &st(), &digest, &keep_metadata).is_err());
+    }
+
+    // Check on macOS that a real clone replacing a duplicate keeps the duplicate's own attribute values, ACL, flags
+    // and times rather than the kept copy's, drops attributes only the kept copy has, and that a clone losing the ACL
+    // or a flag fails verification.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_dedupe_keeps_macos_metadata() {
+        let sb = Sandbox::new();
+        let files = dups(&sb, 2);
+        let (keeper, target) = (&files[0], &files[1]);
+        assert!(set_xattr(keeper, &tag("tag"), b"red") && set_xattr(keeper, &tag("keeper"), b"only here"));
+        assert!(set_xattr(target, &tag("tag"), b"blue"));
+        let acl = std::process::Command::new("/bin/chmod").arg("+a").arg("everyone allow read").arg(target);
+        assert!(acl.status().unwrap().success());
+        let hidden = 0x8000;
+        let file = fs::File::open(target).unwrap();
+        meta::set_flags(&file, util::flags(&file.metadata().unwrap()) | hidden).unwrap();
+        let born = 1_000_000_000_000_000_000;
+        meta::set_birth(target, born).unwrap();
+        let before = fs::symlink_metadata(target).unwrap();
+        let digest = util::sha256(keeper).unwrap();
+        let tmp = util::temp_beside(target);
+        let go = |keep: &dyn Fn(&Path, &Path) -> std::io::Result<()>| {
+            let r = clone_verified(keeper, target, &tmp, &before, &digest, keep).unwrap();
+            util::remove_temp(&tmp);
+            r
+        };
+        let unprotected = |t: &Path, d: &Path| {
+            keep_metadata(t, d)?;
+            assert!(std::process::Command::new("/bin/chmod").arg("-N").arg(d).status()?.success());
+            Ok(())
+        };
+        assert_eq!(go(&unprotected).as_deref(), Some("ACL differs"));
+        let shown = |t: &Path, d: &Path| {
+            keep_metadata(t, d)?;
+            let f = fs::File::open(d)?;
+            meta::set_flags(&f, util::flags(&f.metadata()?) & !hidden)
+        };
+        assert_eq!(go(&shown).as_deref(), Some("file flags differ"));
+        assert_eq!(go(&keep_metadata), None);
+        let md = fs::symlink_metadata(target).unwrap();
+        assert_ne!(md.ino(), before.ino());
+        assert_eq!(fs::read(target).unwrap(), fs::read(keeper).unwrap());
+        let kept = meta::xattrs(target).unwrap();
+        assert_eq!(kept.get(&tag("tag")).map(Vec::as_slice), Some(&b"blue"[..]));
+        assert!(!kept.contains_key(&tag("keeper")));
+        assert!(meta::acl_text(target).unwrap().unwrap().contains("allow"));
+        assert_ne!(util::flags(&md) & hidden, 0);
+        assert_eq!(meta::birth_ns(&md), Some(born));
+        assert!(meta::same_times(&before, &md));
+        assert_eq!((md.mode(), md.uid(), md.gid()), (before.mode(), before.uid(), before.gid()));
+        assert_eq!(meta::xattrs(keeper).unwrap().get(&tag("tag")).map(Vec::as_slice), Some(&b"red"[..]));
     }
 
     // Check swapping a duplicate reports success and both failure kinds.
@@ -665,7 +779,6 @@ mod tests {
         let sb = Sandbox::new();
         let files = dups(&sb, 2);
         fake_procs(&sb, &[]);
-        fake_xattr(&sb, "", "", 0);
         let snap = Snapshot::capture();
         let rows = vec![(files[1].to_string_lossy().into_owned(), false)];
         let target = members(rows, 6000, &opts(&sb, true), &snap).remove(0);
@@ -673,8 +786,11 @@ mod tests {
         let digest = util::sha256(&files[0]).unwrap();
         assert_eq!(clone_over(&keeper, &target, "bad"), Err("content hash mismatch".to_string()));
         assert_eq!(clone_over(&keeper, &target, &digest), Ok(()));
-        sb.tool("xattr", "exit 1");
-        assert!(clone_over(&keeper, &target, &digest).unwrap_err().contains("xattr failed"));
+        fail_keep(true);
+        assert!(clone_over(&keeper, &target, &digest)
+            .unwrap_err()
+            .contains("cannot keep extended attributes"));
+        fail_keep(false);
     }
 
     // Check group handling in a dry run, an applied run, failures, sampling and interruption.
@@ -684,7 +800,6 @@ mod tests {
         let sb = Sandbox::new();
         let files = dups(&sb, 5);
         fake_procs(&sb, &[]);
-        fake_xattr(&sb, "", "", 0);
         let snap = Snapshot::capture();
         let group = |o: &DedupeOpts| {
             let rows = files.iter().map(|p| (p.to_string_lossy().into_owned(), false)).collect();
@@ -701,11 +816,12 @@ mod tests {
         assert_eq!(tally.files, 2);
         let cloned: i64 = db.query_row("SELECT SUM(cloned) FROM files", [], |r| r.get(0)).unwrap();
         assert_eq!(cloned, 2);
-        sb.tool("xattr", "exit 1");
+        fail_keep(true);
         let apply = opts(&sb, true);
         let mut tally = Tally::default();
         assert!(!dedupe_group(&db, group(&apply), &apply, &mut tally, &mut util::Ticker::new()));
         assert_eq!((tally.failed, tally.files), (3, 0));
+        fail_keep(false);
         util::set_stop(true);
         assert!(!dedupe_group(&db, group(&dry), &dry, &mut Tally::default(), &mut util::Ticker::new()));
     }
@@ -771,7 +887,6 @@ mod tests {
         std::env::set_var("FDS_FORCE", "1");
         let files = dups(&sb, 3);
         fake_procs(&sb, &[]);
-        fake_xattr(&sb, "", "", 0);
         util::set_tty(true);
         cmd_dedupe(&opts(&sb, false));
         cmd_dedupe(&DedupeOpts { include_system: false, ..opts(&sb, false) });
@@ -781,7 +896,8 @@ mod tests {
         let db = open_db(&sb.state(), false);
         let cloned: i64 = db.query_row("SELECT SUM(cloned) FROM files", [], |r| r.get(0)).unwrap();
         assert_eq!(cloned, 2);
-        sb.tool("xattr", "exit 1");
+        fail_keep(true);
         cmd_dedupe(&DedupeOpts { sample: Some(1), ..opts(&sb, true) });
+        fail_keep(false);
     }
 }
