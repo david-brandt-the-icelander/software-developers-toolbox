@@ -1,4 +1,4 @@
-// Runs the chosen commands in order, applying each plan or, with --check, reporting it as violations.
+// Runs the chosen commands in order, applying each plan and setting up the repository or, with --check, reporting the plans as violations.
 namespace ZazzleMinifier;
 
 // Chains the commands so each one sees the files the one before it wrote.
@@ -34,6 +34,8 @@ internal static class Runner
             plan.Changes.ForEach(output.WriteLine);
             paths = [.. paths, .. plan.WrittenSources()];
         }
+        if (!args.Check)
+            RepoSetup.Run(args.Root, args.CommandSwitches()).ForEach(f => output.WriteLine($"set up {f}"));
         if (args.Check && violations > 0)
             errors.WriteLine($"{violations} files need changes: run zazzle-csharp-minifier {string.Join(" ", args.CommandSwitches())} to make them");
         return failed > 0 || violations > 0 ? 1 : 0;

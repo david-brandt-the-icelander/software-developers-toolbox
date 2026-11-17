@@ -16,6 +16,8 @@
     <PackageReference Include="Basic.Reference.Assemblies.Net80" Version="1.8.4" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The skill the tool copies into each repository it changes; one source, agents/skills in this repository. -->
+    <EmbeddedResource Include="../../../../agents/skills/zazzle-csharp-minifier/SKILL.md" LogicalName="SKILL.md" />
     <InternalsVisibleTo Include="tests" />
   </ItemGroup>
 </Project>
