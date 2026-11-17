@@ -29,9 +29,11 @@ public sealed class ViewTool(RootSet roots) : ITool
         info.Results = lines.Count;
         var total = source.Split('\n').Length - (source.EndsWith('\n') ? 1 : 0);
         var body = TerseView.Format(lines);
-        info.SourceBytes = source.Length;
-        info.ViewBytes = body.Length;
-        var saved = source.Length == 0 ? 0 : 100 - (int)(100L * body.Length / source.Length);
+        info.SourceBytes = System.Text.Encoding.UTF8.GetByteCount(source);
+        info.SourceLines = total;
+        info.Transformations = string.Join(",", steps.Select(s => $"{s.Step}={s.Count}"));
+        info.ViewBytes = System.Text.Encoding.UTF8.GetByteCount(body);
+        var saved = info.SourceBytes == 0 ? 0 : 100 - (int)(100L * info.ViewBytes / info.SourceBytes);
         if (text is null && saved < MinSavedPercent && !Args.Bool(args, "force", false))
         {
             info.Reason = "no_gain";

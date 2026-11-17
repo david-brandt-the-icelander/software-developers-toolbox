@@ -56,7 +56,7 @@
         {
           "id": "scan",
           "context": "Wants more space; the scan can take long, so it may span several sittings.",
-          "touchpoint": "free-disk-space new, resume, status, list",
+          "touchpoint": "free-disk-space scan, resume, status, list",
           "action": "Starts a scan of their home, stops it with Ctrl-C when they need the machine, and resumes it later.",
           "outcome": "`Scan complete` with the candidates and estimated saving, and the next steps: dedupe to preview cloning, list and compress --sample 5.",
           "sources": [

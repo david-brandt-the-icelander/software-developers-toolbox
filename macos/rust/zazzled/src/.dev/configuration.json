@@ -293,6 +293,37 @@
       ]
     },
     {
+      "id": "ZAZZLE_USAGE_LOG",
+      "title": "ZAZZLE_USAGE_LOG",
+      "summary": "Where privacy-preserving final response delivery metrics are appended.",
+      "key": "ZAZZLE_USAGE_LOG",
+      "type": "path",
+      "default": "$HOME/.zazzle/usage.jsonl",
+      "sensitive": false,
+      "scope": "Read when a zazzled engine starts, including the daemon and `zazzled run`.",
+      "takesEffect": "at-startup",
+      "validation": "An empty value disables the log. If its parent or file cannot be created, delivery logging is disabled without failing the command.",
+      "details": "Records contain sizes, estimated tokens, a short response hash, the command, status, session and whether dedupe changed the result; they contain no arguments or response text.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/delivery.rs",
+          "symbol": "DeliveryLog::open"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "open_engine"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzled/src/.dev/observability.json",
+          "entityId": "delivery-log"
+        }
+      ]
+    },
+    {
       "id": "ZAZZLE_MCP_ZAZZ",
       "title": "ZAZZLE_MCP_ZAZZ",
       "summary": "Whether `zazzled mcp` lists the zazzle_zazz_* tools.",

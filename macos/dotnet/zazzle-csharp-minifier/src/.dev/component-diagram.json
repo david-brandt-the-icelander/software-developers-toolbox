@@ -41,14 +41,8 @@
     },
     {
       "id": "shared",
-      "name": "Plans, source files and layout (Plan.cs, SourceFile.cs, SourceFiles.cs, Layout.cs, ProjectLanguage.cs)",
-      "responsibility": "The plan every command fills (edits, changes, notes, errors); reading UTF-8 sources with their byte-order mark; finding .cs files while skipping build output, hidden folders and generated code; where implementation halves and comment documents go in the plain and restructured layouts; and the C# version a file's project compiles with.",
-      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
-    },
-    {
-      "id": "strip",
-      "name": "Comment stripping (StripComments.cs, CommentFinder.cs, Stripper.cs, CommentDoc.cs, Declarations.cs)",
-      "responsibility": "--strip-comments: finds file and declaration comments, writes them as Markdown sections named after their declarations, cuts them from the source and proves the tokens and directives are unchanged.",
+      "name": "Plans, source files and projects (Plan.cs, SourceFile.cs, SourceFiles.cs, Layout.cs, ProjectLanguage.cs)",
+      "responsibility": "Shared edit plans, UTF-8 source reads, generated-file detection, safe source discovery, nearest-project lookup and project language settings.",
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
@@ -58,21 +52,9 @@
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
-      "id": "split-headers",
-      "name": "Header split (SplitHeaders.cs, HeaderSplitter.cs, ImplWriter.cs)",
-      "responsibility": "--split-headers: picks the members whose bodies can move under the project's C# version, writes the declaration-only header and the partial implementation file, and refuses a split that adds a syntax or compile error.",
-      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
-    },
-    {
-      "id": "restructure",
-      "name": "Restructure (Restructure.cs, ProjectFile.cs, SolutionFiles.cs)",
-      "responsibility": "--restructure: reads the solutions and projects, pairs each production project with its test project, and plans the moves into incl/, src/, doc/ and test/, the project and solution edits and the .ignore file.",
-      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
-    },
-    {
       "id": "identifiers",
       "name": "Identifiers and renames (Identifiers.cs, IdentifierTree.cs, Rename.cs, SourceWorkspace.cs, FileMoves.cs)",
-      "responsibility": "--list-identifiers prints the declared names as an indented tree; --rename parses such a tree with => directives, renames through a Roslyn workspace of one project per .csproj, refuses renames that add compiler errors, and moves the files and comment-document headings that follow the names.",
+      "responsibility": "Lists identifier trees, renames symbols with all references through Roslyn, refuses added compiler errors and collisions, and moves namespace, type and test files with their names.",
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
@@ -139,25 +121,7 @@
     },
     {
       "from": "executable",
-      "to": "strip",
-      "kind": "contains",
-      "description": "Command."
-    },
-    {
-      "from": "executable",
       "to": "split-tests",
-      "kind": "contains",
-      "description": "Command."
-    },
-    {
-      "from": "executable",
-      "to": "split-headers",
-      "kind": "contains",
-      "description": "Command."
-    },
-    {
-      "from": "executable",
-      "to": "restructure",
       "kind": "contains",
       "description": "Command."
     },
@@ -175,27 +139,9 @@
     },
     {
       "from": "cli",
-      "to": "strip",
-      "kind": "depends-on",
-      "description": "Runner.Run calls StripComments.Make."
-    },
-    {
-      "from": "cli",
       "to": "split-tests",
       "kind": "depends-on",
       "description": "Runner.Run calls SplitTests.Make."
-    },
-    {
-      "from": "cli",
-      "to": "split-headers",
-      "kind": "depends-on",
-      "description": "Runner.Run calls SplitHeaders.Make."
-    },
-    {
-      "from": "cli",
-      "to": "restructure",
-      "kind": "depends-on",
-      "description": "Runner.Run calls Restructure.Make."
     },
     {
       "from": "cli",
@@ -213,37 +159,13 @@
       "from": "cli",
       "to": "shared",
       "kind": "depends-on",
-      "description": "Plan.Apply, Plan.WrittenSources, SourceFiles.Under and Layout.IsImplementationHalf."
-    },
-    {
-      "from": "strip",
-      "to": "shared",
-      "kind": "depends-on",
-      "description": "Fills a Plan; SourceFile.Read, SourceFiles.IsGenerated, Layout.DocPath."
-    },
-    {
-      "from": "strip",
-      "to": "split-tests",
-      "kind": "depends-on",
-      "description": "CommentFinder keeps comments starting with TestMethods.MarkerPrefix."
-    },
-    {
-      "from": "strip",
-      "to": "roslyn",
-      "kind": "depends-on",
-      "description": "Parses files and compares token shapes."
+      "description": "Plan.Apply, Plan.WrittenSources and SourceFiles.Under."
     },
     {
       "from": "split-tests",
       "to": "shared",
       "kind": "depends-on",
       "description": "Fills a Plan; SourceFile.Read, SourceFiles.Under and SourceFiles.IsGenerated."
-    },
-    {
-      "from": "split-tests",
-      "to": "strip",
-      "kind": "depends-on",
-      "description": "Edits text with the Cut record struct declared in Stripper.cs."
     },
     {
       "from": "split-tests",
@@ -256,42 +178,6 @@
       "to": "reference-assemblies",
       "kind": "depends-on",
       "description": "UnderTest.Load compiles against them."
-    },
-    {
-      "from": "split-headers",
-      "to": "shared",
-      "kind": "depends-on",
-      "description": "Fills a Plan; SourceFile.Read, SourceFiles.IsGenerated, Layout.ImplPath, ProjectLanguage.For."
-    },
-    {
-      "from": "split-headers",
-      "to": "strip",
-      "kind": "depends-on",
-      "description": "ImplWriter groups members with Declarations.QualifiedName."
-    },
-    {
-      "from": "split-headers",
-      "to": "roslyn",
-      "kind": "depends-on",
-      "description": "Parses files and compiles both halves for the safety check."
-    },
-    {
-      "from": "split-headers",
-      "to": "reference-assemblies",
-      "kind": "depends-on",
-      "description": "The compile check runs against them."
-    },
-    {
-      "from": "restructure",
-      "to": "shared",
-      "kind": "depends-on",
-      "description": "Fills a Plan with Edit moves; Layout folder names and Layout.IsRestructured."
-    },
-    {
-      "from": "restructure",
-      "to": "roslyn",
-      "kind": "depends-on",
-      "description": "Parses a file to tell top-level programs apart."
     },
     {
       "from": "identifiers",
@@ -328,18 +214,6 @@
       "to": "roslyn",
       "kind": "depends-on",
       "description": "ProjectLanguage returns a Roslyn LanguageVersion."
-    },
-    {
-      "from": "repo-setup",
-      "to": "shared",
-      "kind": "depends-on",
-      "description": "Layout.IsRestructured names the restructured projects in the AGENTS.md section."
-    },
-    {
-      "from": "repo-setup",
-      "to": "restructure",
-      "kind": "depends-on",
-      "description": "SolutionFiles.Projects lists the projects under the root."
     },
     {
       "from": "repo-setup",

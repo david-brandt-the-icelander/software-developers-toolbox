@@ -295,7 +295,7 @@
         "clean docker --apply prunes, stops the containers and quits a running Docker Desktop"
       ],
       "checks": [
-        {"type": "manual", "command": "free-disk-space new --root <dir> --min-size 5M && free-disk-space compress --sample 5", "description": "On an APFS Mac, compare the files' SHA-256 before and after, and the verified saving with the free-space change."},
+        {"type": "manual", "command": "free-disk-space scan --root <dir> --min-size 5M && free-disk-space compress --sample 5", "description": "On an APFS Mac, compare the files' SHA-256 before and after, and the verified saving with the free-space change."},
         {"type": "manual", "command": "free-disk-space dedupe --sample 5 --apply", "description": "After a scan, check each cloned file's content, mode, owner, times and xattrs, and the free-space change."},
         {"type": "manual", "command": "free-disk-space clean trash docker --apply", "description": "With something in the Trash and Docker Desktop running, check both are cleaned and Docker has quit."}
       ],

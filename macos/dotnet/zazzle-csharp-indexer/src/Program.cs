@@ -34,7 +34,7 @@ if (args[0] == "hook")
     var tool = input?["tool_name"]?.GetValue<string>() ?? "";
     var decision = HookPolicy.Decide(tool, input?["tool_input"]?["command"]?.GetValue<string>(), input?["tool_input"]?["file_path"]?.GetValue<string>());
     if (decision.Program != "")
-        UsageLog.Open().Record(input?["session_id"]?.GetValue<string>() ?? "", "hook", new JsonObject { ["tool"] = tool, ["program"] = decision.Program }, new CallInfo { Path = "hook", Reason = (decision.Block ? "blocked:" : "allowed_raw:") + decision.Program.Replace("allow-raw:", "") }, 0, 0, null);
+        UsageLog.Open().Record(input?["session_id"]?.GetValue<string>() ?? "", "hook", new JsonObject { ["tool"] = tool, ["program"] = decision.Program }, new CallInfo { Path = "hook", Reason = (decision.Block ? "blocked:" : "allowed_raw:") + decision.Program.Replace("allow-raw:", "") }, 0, "", null);
     if (!decision.Block)
         return 0;
     Console.Error.WriteLine(decision.Message);

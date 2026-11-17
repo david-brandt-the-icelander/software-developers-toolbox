@@ -11,6 +11,7 @@ pub mod cmd;
 pub mod cobol;
 pub mod config;
 pub mod data;
+pub mod delivery;
 pub mod engine;
 pub mod hook;
 pub mod indexer;

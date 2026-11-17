@@ -188,20 +188,15 @@ jobs:
           dotnet-version: 8.0.x
       - run: dotnet test tests
       - run: dotnet publish src -c Release -o out
-      - name: Smoke test on copies of the indexer, which must still build and pass their tests
+      - name: Smoke test test splitting and renaming on a copy of the indexer
         run: |
           plain="$RUNNER_TEMP/indexer-plain"
           cp -R ../zazzle-csharp-indexer "$plain"
           git -C "$plain" init -q
-          ./out/zazzle-csharp-minifier --root "$plain" --strip-comments --split-tests --split-headers
-          ./out/zazzle-csharp-minifier --root "$plain" --check --strip-comments --split-tests --split-headers
+          ./out/zazzle-csharp-minifier --root "$plain" --split-tests
+          ./out/zazzle-csharp-minifier --root "$plain" --check --split-tests
           dotnet build "$plain/tests"
-          restructured="$RUNNER_TEMP/indexer-restructured"
-          cp -R ../zazzle-csharp-indexer "$restructured"
-          git -C "$restructured" init -q
-          ./out/zazzle-csharp-minifier --root "$restructured" --restructure
-          ./out/zazzle-csharp-minifier --root "$restructured" --check --restructure
-          ./out/zazzle-csharp-minifier --root "$restructured" --list-identifiers | sed 's/^    Daemon:$/    Daemon => Server:/' > "$RUNNER_TEMP/rename.txt"
-          ./out/zazzle-csharp-minifier --root "$restructured" --rename "$RUNNER_TEMP/rename.txt"
-          test -f "$restructured/src/incl/Server/Daemon.cs"
-          dotnet test "$restructured/src/test"
+          ./out/zazzle-csharp-minifier --root "$plain" --list-identifiers | sed 's/^    Daemon:$/    Daemon => Server:/' > "$RUNNER_TEMP/rename.txt"
+          ./out/zazzle-csharp-minifier --root "$plain" --rename "$RUNNER_TEMP/rename.txt"
+          test -f "$plain/src/Server/Daemon.cs"
+          dotnet test "$plain/tests"

@@ -14,7 +14,28 @@ public static class Report
         foreach (var f in new[] { Path.Combine(stateDir, "usage.jsonl.1"), Path.Combine(stateDir, "usage.jsonl") })
             if (File.Exists(f))
                 records.AddRange(File.ReadLines(f).Select(l => { try { return JsonNode.Parse(l); } catch (System.Text.Json.JsonException) { return null; } }).Where(n => n is not null)!);
-        return Build(records);
+        var report = Build(records);
+        var delivery = DeliveryPath();
+        if (delivery is null)
+            return report;
+        var delivered = Read([delivery + ".1", delivery]);
+        return delivered.Count == 0 ? report : report + "\n\n" + BuildDeliveries(delivered);
+    }
+
+    // Summarises the final responses zazzled returned after budgets and session deduplication.
+    public static string BuildDeliveries(List<JsonNode> records)
+    {
+        var before = records.Sum(r => Int(r, "pre_dedupe_est_tokens"));
+        var delivered = records.Sum(r => Int(r, "delivered_est_tokens"));
+        var deduped = records.Where(r => r["deduplicated"]?.GetValue<bool>() == true).ToList();
+        var saved = deduped.Sum(r => Math.Max(0, Int(r, "pre_dedupe_est_tokens") - Int(r, "delivered_est_tokens")));
+        var sb = new StringBuilder();
+        sb.AppendLine($"agent delivery: {records.Count} responses in {records.Select(r => Str(r, "session")).Distinct().Count()} sessions; ~{before} tokens before dedupe, ~{delivered} delivered");
+        sb.AppendLine($"deduplicated: {deduped.Count}, ~{saved} tokens avoided");
+        sb.AppendLine("by command (responses, delivered tokens, deduplicated):");
+        foreach (var g in records.GroupBy(r => Str(r, "command")).OrderByDescending(g => g.Count()))
+            sb.AppendLine($"  {g.Key}: {g.Count()}, {g.Sum(r => Int(r, "delivered_est_tokens"))}, {g.Count(r => r["deduplicated"]?.GetValue<bool>() == true)}");
+        return sb.ToString().TrimEnd();
     }
 
     // Builds the report text from parsed records.
@@ -34,17 +55,25 @@ public static class Report
         sb.AppendLine("\nhow answers were produced:");
         foreach (var g in calls.GroupBy(r => Str(r, "path")).OrderByDescending(g => g.Count()))
             sb.AppendLine($"  {g.Key}: {g.Count()} ({100 * g.Count() / calls.Count}%)");
+        var views = calls.Where(r => Int(r, "source_est_tokens") > 0 && Str(r, "reason") != "no_gain").ToList();
+        if (views.Count > 0)
+        {
+            var source = views.Sum(r => Int(r, "source_est_tokens"));
+            var served = views.Sum(r => Int(r, "est_tokens"));
+            sb.AppendLine($"\nview compaction: ~{source} source tokens to ~{served} response tokens ({Math.Max(0, source - served)} saved)");
+            Top(sb, "view transformation sets", views.Select(r => Str(r, "transformations")).Where(s => s != ""));
+        }
         Top(sb, "reasons for non-index answers", calls.Where(r => Str(r, "path") != "index" && Str(r, "reason") != "").Select(r => $"{Str(r, "path")} / {Str(r, "reason")}"));
         Top(sb, "raw commands the hook redirected", all.Where(r => Str(r, "tool") == "hook").Select(r => Str(r, "reason")));
         sb.AppendLine("\nwaste signals:");
         sb.AppendLine($"  retries (same tool within 10 s, different arguments): {Retries(calls)}");
         sb.AppendLine($"  repeated identical calls in a session: {calls.GroupBy(r => Str(r, "session") + Str(r, "tool") + r["args"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
-        var views = calls.Where(r => Str(r, "tool") == "view").ToList();
-        if (views.Count > 0)
+        var viewCalls = calls.Where(r => Str(r, "tool") == "view").ToList();
+        if (viewCalls.Count > 0)
         {
-            var sized = views.Where(r => r["source_bytes"] is not null && r["view_bytes"] is not null && Int(r, "source_bytes") > 0).ToList();
+            var sized = viewCalls.Where(r => r["view_bytes"] is not null && Int(r, "view_bytes") >= 0 && Int(r, "source_bytes") > 0).ToList();
             var saving = sized.Count == 0 ? 0 : (int)sized.Average(r => 100.0 - 100.0 * Int(r, "view_bytes") / Int(r, "source_bytes"));
-            sb.AppendLine($"  views: {views.Count}, mean saving {saving}% over {sized.Count} sized, refused for no gain {views.Count(r => Str(r, "reason") == "no_gain")}, same file viewed again in a session {views.GroupBy(r => Str(r, "session") + r["args"]?["path"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
+            sb.AppendLine($"  viewCalls: {viewCalls.Count}, mean saving {saving}% over {sized.Count} sized, refused for no gain {viewCalls.Count(r => Str(r, "reason") == "no_gain")}, same file viewed again in a session {viewCalls.GroupBy(r => Str(r, "session") + r["args"]?["path"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
         }
         Top(sb, "errors", calls.Where(r => Str(r, "error") != "").Select(r => $"{Str(r, "tool")} / {Str(r, "error")}"));
         var gaps = calls.Where(r => Str(r, "note") != "").TakeLast(20).ToList();
@@ -83,6 +112,24 @@ public static class Report
         sb.AppendLine($"\n{title}:");
         foreach (var g in top)
             sb.AppendLine($"  {g.Key}: {g.Count()}");
+    }
+
+    // Reads every valid JSON line from the named files in order.
+    private static List<JsonNode> Read(IEnumerable<string> files)
+    {
+        var records = new List<JsonNode>();
+        foreach (var file in files.Where(File.Exists))
+            records.AddRange(File.ReadLines(file).Select(line => { try { return JsonNode.Parse(line); } catch (System.Text.Json.JsonException) { return null; } }).Where(node => node is not null)!);
+        return records;
+    }
+
+    // Finds zazzled's final-response log, with an empty override disabling it.
+    private static string? DeliveryPath()
+    {
+        if (Environment.GetEnvironmentVariable("ZAZZLE_USAGE_LOG") is { } over)
+            return over.Length == 0 ? null : over;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return home.Length == 0 ? null : Path.Combine(home, ".zazzle", "usage.jsonl");
     }
 
     // Reads a string field, empty when missing or null.

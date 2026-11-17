@@ -1,4 +1,5 @@
 // Tests for the MCP dispatcher: no tools listed, internal tools called by name and logged.
+using System.Text.Json.Nodes;
 using ZazzleIndexer.Mcp;
 using Xunit;
 
@@ -19,7 +20,7 @@ public class ToolTests
     {
         using var repo = new TempRepo(Files);
         var logFile = Path.Combine(repo.Dir, "..", $"log-{Guid.NewGuid():N}.jsonl");
-        var server = new McpServer([repo.Root()], new UsageLog(logFile));
+        var server = new McpServer([repo.Root()], new UsageLog(logFile), "client-session");
         var init = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\"}")!;
         Assert.Contains("zazzle_find_symbol", init["result"]!["instructions"]!.GetValue<string>());
         var list = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}")!;
@@ -27,9 +28,12 @@ public class ToolTests
         var call = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"find_symbol\",\"arguments\":{\"name\":\"needle\"}}}")!;
         Assert.False(call["result"]!["isError"]!.GetValue<bool>());
         Assert.StartsWith("r:src/a.cs:1-3 class Needle", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
-        var record = File.ReadAllText(logFile);
-        Assert.Contains("\"tool\":\"find_symbol\"", record);
-        Assert.DoesNotContain("needle", record);
+        var record = JsonNode.Parse(File.ReadAllText(logFile))!;
+        Assert.Equal(2, record["v"]!.GetValue<int>());
+        Assert.Equal("client-session", record["session"]!.GetValue<string>());
+        Assert.Equal("find_symbol", record["tool"]!.GetValue<string>());
+        Assert.Equal(12, record["response_hash"]!.GetValue<string>().Length);
+        Assert.DoesNotContain("needle", record.ToJsonString());
         File.Delete(logFile);
     }
 

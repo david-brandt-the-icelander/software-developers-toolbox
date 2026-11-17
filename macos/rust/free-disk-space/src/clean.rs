@@ -707,7 +707,7 @@ pub fn cmd_clean(targets: &[String], apply: bool, dev_root: &str, docker_stop_ti
     if !apply {
         println!("Nothing was changed. Re-run with --apply.");
     }
-    println!("Next: consider `new` + `compress` for transparent compression of inactive files.");
+    println!("Next: consider `scan` + `compress` for transparent compression of inactive files.");
 }
 
 // Unit tests for cleanup helpers.

@@ -7,7 +7,7 @@
     {
       "id": "daemon",
       "title": "Daemon sharing, handshake and lifetime",
-      "summary": "An in-process daemon on a temporary socket is checked for sharing, the version and root checks, idle exit and refusing a second instance.",
+      "summary": "An in-process daemon on a temporary socket is checked for sharing, stable session propagation, the version and root checks, idle exit and refusing a second instance.",
       "subject": [
         {
           "path": "macos/dotnet/zazzle-csharp-indexer/src/Daemon/.dev/contracts.json",
@@ -23,7 +23,7 @@
         }
       ],
       "criteria": [
-        "Two clients share one engine and both get answers from the same index",
+        "Two clients share one engine, both get answers from the same index, and their records retain the stable hello session",
         "A client with a different version is told to restart when it is the only one connected",
         "A root that is not a git work tree is rejected in the handshake",
         "The daemon exits after the idle period with no clients",

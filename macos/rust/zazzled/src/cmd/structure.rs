@@ -90,13 +90,14 @@ struct Target {
     indexer: Indexer,
     repos: Repos,
     cwd: PathBuf,
+    session: String,
 }
 
 impl Target {
     // Finds the indexer and the repositories a command works on.
     fn locate(ctx: &Ctx, repo: Option<&str>) -> Result<Target, String> {
         let repos = repos(ctx, repo)?;
-        Ok(Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() })
+        Ok(Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone(), session: ctx.session.clone() })
     }
 
     // Finds the indexer and the work tree holding a path argument, wherever the working directory is; returns the path relative to it.
@@ -106,13 +107,15 @@ impl Target {
             work_tree(&full).ok_or_else(|| format!("{arg}: not inside a git work tree"))?.to_path_buf();
         let rel = full.strip_prefix(&root).expect("work tree holds the path").to_string_lossy().into_owned();
         let repos = Repos { roots: vec![single(&root)], found: 1, below: false };
-        Ok((Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() }, rel))
+        Ok((Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone(), session: ctx.session.clone() }, rel))
     }
 
     // Runs one indexer tool on every repository and rewrites its root:path references for the working directory.
     fn ask(&self, tool: &str, args: Map<String, Value>) -> Result<Output, String> {
-        let text =
-            self.indexer.ask(&self.repos.roots, tool, Value::Object(args)).map_err(|e| unavailable(&e))?;
+        let text = self
+            .indexer
+            .ask(&self.repos.roots, tool, Value::Object(args), &self.session)
+            .map_err(|e| unavailable(&e))?;
         let mut text = localize(&text, &self.repos.roots, &self.cwd);
         if self.repos.found > self.repos.roots.len() {
             text.push_str(&format!(
@@ -159,7 +162,8 @@ pub fn overview(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             list.join("\n")
         )));
     }
-    Target { indexer: indexer()?, repos: r, cwd: ctx.cwd.clone() }.ask("overview", Map::new())
+    Target { indexer: indexer()?, repos: r, cwd: ctx.cwd.clone(), session: ctx.session.clone() }
+        .ask("overview", Map::new())
 }
 
 // Runs find-symbol: declarations by name from the index, across every repository below a folder that is not one.
@@ -220,6 +224,12 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             t
         }
         [path] => {
+            if !crate::util::locate(path, &ctx.cwd).exists() {
+                return Err(format!(
+                    "{path}: no such file or directory{}",
+                    crate::util::similar(path, &ctx.cwd, &ctx.engine.walks)
+                ));
+            }
             let (t, rel) = Target::for_path(ctx, path)?;
             a.insert("path".into(), json!(rel));
             t
@@ -230,7 +240,15 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if let Some(g) = p.value("grep") {
         a.insert("grep".into(), json!(g));
     }
-    t.ask("git_log", a)
+    let mut out = t.ask("git_log", a)?;
+    if out.text.trim().is_empty() {
+        out.text = match (p.positional.first(), p.value("grep")) {
+            (_, Some(g)) => format!("no commits whose message matches '{g}'"),
+            (Some(path), None) => format!("no commits touch {path}"),
+            (None, None) => "no commits".to_string(),
+        };
+    }
+    Ok(out)
 }
 
 // Runs git-blame: who last changed each line of a range of a file, in whichever repository holds it.
@@ -254,7 +272,7 @@ pub fn report_gap(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     }
     crate::activity::record(json!({"src": "gap", "what": what, "session": ctx.session, "cwd": ctx.cwd}));
     let indexed = Target::locate(ctx, p.value("repo"))
-        .and_then(|t| t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what})));
+        .and_then(|t| t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what}), &t.session));
     Ok(Output::plain(match indexed {
         Ok(text) => text,
         Err(_) => "recorded in zazzle's activity log (the indexer's own log is unavailable)".into(),
@@ -314,6 +332,7 @@ mod tests {
             run(&["git-log", "src", "-n", "3", "--grep", "fix"]),
             format!("\"git_log\" {{\"path\":\"{name}:src\",\"n\":3,\"grep\":\"fix\"}}")
         );
+        assert!(run(&["git-log", "srcx/C.cs"]).starts_with("error: srcx/C.cs: no such file or directory"));
         let sub = run_cmd(&t.path().join("src"), &["git-blame", "C.cs", "--start", "2", "--end", "4"]).text;
         assert_eq!(
             sub,
@@ -441,6 +460,27 @@ mod tests {
             ),
             "{found}"
         );
+        restore(saved);
+    }
+
+    // Answers every call with no text, as git_log does when nothing matches.
+    fn silent(_hello: &Value, _req: &Value) -> (Value, Option<Value>) {
+        (
+            json!({"ok": true}),
+            Some(json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": ""}]}})),
+        )
+    }
+
+    // Checks an empty git-log answer says why it is empty instead of answering with nothing.
+    #[test]
+    fn test_git_log_empty() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(silent);
+        let (t, _name, saved) = setup(&fake);
+        let run = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert_eq!(run(&["git-log"]), "no commits");
+        assert_eq!(run(&["git-log", "src"]), "no commits touch src");
+        assert_eq!(run(&["git-log", "--grep", "fix"]), "no commits whose message matches 'fix'");
         restore(saved);
     }
 }

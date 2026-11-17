@@ -13,12 +13,13 @@ public sealed class McpServer
 
     private readonly Dictionary<string, ITool> _tools;
     private readonly UsageLog _log;
-    private readonly string _session = Guid.NewGuid().ToString("N")[..8];
+    private readonly string _session;
 
     // Builds the server with its roots and log.
-    public McpServer(IReadOnlyList<Root> roots, UsageLog log)
+    public McpServer(IReadOnlyList<Root> roots, UsageLog log, string? session = null)
     {
         _log = log;
+        _session = string.IsNullOrEmpty(session) ? Guid.NewGuid().ToString("N")[..8] : session;
         var set = new RootSet(roots);
         ITool[] tools = [new ViewTool(set), new OverviewTool(set), new FindSymbolTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new ReportGapTool()];
         _tools = tools.ToDictionary(t => t.Name);
@@ -105,8 +106,7 @@ public sealed class McpServer
                 error = e.Code;
             }
         }
-        var bytes = System.Text.Encoding.UTF8.GetByteCount(text);
-        _log.Record(_session, name, args, info, sw.ElapsedMilliseconds, bytes, error);
+        _log.Record(_session, name, args, info, sw.ElapsedMilliseconds, text, error);
         return new JsonObject
         {
             ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),

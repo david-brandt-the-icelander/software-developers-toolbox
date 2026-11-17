@@ -325,7 +325,7 @@
         {
           "atStep": "scan",
           "condition": "An unfinished scan exists in the state file.",
-          "outcome": "new refuses; the developer runs resume, or new --force to discard it.",
+          "outcome": "scan refuses; the developer runs resume, or scan --force to discard it.",
           "sources": [
             {
               "path": "macos/rust/free-disk-space/src/scan.rs",

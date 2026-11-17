@@ -103,6 +103,14 @@ pub fn find(syms: &[Symbol], query: &str, line: &dyn Fn(usize) -> String) -> Res
     if hits.is_empty() {
         hits = (0..syms.len()).filter(|&i| ends_with(&all[i], &want, loose)).collect();
     }
+    // A qualified name (Type.Method) whose outline has no enclosing type, as for C#, falls back to the last name alone.
+    if hits.is_empty() && want.len() > 1 {
+        let last = &want[want.len() - 1..];
+        hits = (0..syms.len()).filter(|&i| ends_with(&all[i], last, exact)).collect();
+        if hits.is_empty() {
+            hits = (0..syms.len()).filter(|&i| ends_with(&all[i], last, loose)).collect();
+        }
+    }
     let list =
         |ids: &[usize]| ids.iter().take(MAX_CANDIDATES).map(|&i| describe(&syms[i], &all[i], line)).collect();
     if let Some(types) = &types {
@@ -313,6 +321,21 @@ mod tests {
         let many: Vec<Symbol> = (0..20).map(|i| sym("fn", "f", i + 1, i + 1, 0)).collect();
         let Err(Miss::Many(total, list)) = find(&many, "f") else { panic!("expected many") };
         assert_eq!((total, list.len()), (20, MAX_CANDIDATES));
+    }
+
+    // Checks a qualified name falls back to its last segment when the outline has no enclosing type, as for flat C# outlines.
+    #[test]
+    fn test_find_qualified_fallback() {
+        let flat = vec![
+            sym("class", "Billing", 1, 20, 0),
+            sym("method", "Charge", 3, 8, 0),
+            sym("method", "Refund", 10, 15, 0),
+        ];
+        assert_eq!(find(&flat, "Billing.Charge"), Ok(1));
+        assert_eq!(find(&flat, "billing.refund"), Ok(2));
+        assert_eq!(find(&flat, "Billing.Missing"), Err(Miss::None(vec![])));
+        let twice = vec![sym("method", "Run", 1, 2, 0), sym("method", "Run", 3, 4, 0)];
+        assert!(matches!(find(&twice, "Job.Run"), Err(Miss::Many(2, _))));
     }
 
     // Checks whole-word matching and that attribute and comment lines never count as declarations.

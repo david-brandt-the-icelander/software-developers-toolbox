@@ -187,13 +187,22 @@ impl Indexer {
     }
 
     // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version.
-    fn call(&self, roots: &[Root], tool: &str, args: Value, timeout: Duration) -> Result<String, String> {
+    fn call(
+        &self,
+        roots: &[Root],
+        tool: &str,
+        args: Value,
+        session: &str,
+        timeout: Duration,
+    ) -> Result<String, String> {
         if let Some(msg) = self.recent_failure() {
             return Err(msg);
         }
         let name = &roots[0].0;
         let specs: Vec<String> = roots.iter().map(|(n, p)| format!("{n}={}", p.display())).collect();
-        let opened = self.version().and_then(|v| self.open(&json!({"version": v, "roots": specs}), timeout));
+        let opened = self
+            .version()
+            .and_then(|v| self.open(&json!({"version": v, "roots": specs, "session": session}), timeout));
         let mut failed = FAILED.lock().expect("failure lock");
         failed.retain(|(state, _, _)| *state != self.state);
         let (mut w, mut r) = match opened {
@@ -261,28 +270,29 @@ impl Indexer {
     }
 
     // Returns the terse view of a C# file: a header line, then `N`, `N~` and `A-B` lines from the indexer.
-    pub fn view(&self, path: &Path) -> Result<String, String> {
+    pub fn view(&self, path: &Path, session: &str) -> Result<String, String> {
         let root = work_tree(path).ok_or("not inside a git work tree")?;
         let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
         self.call(
             &[(root_name(root), root.to_path_buf())],
             "view",
             json!({"path": rel.to_string_lossy()}),
+            session,
             IO_TIMEOUT,
         )
     }
 
     // Returns the indexer's terse view of C# text that stands for a file, such as a Razor file's code blocks padded to its line numbers.
-    pub fn view_text(&self, path: &Path, text: &str) -> Result<String, String> {
+    pub fn view_text(&self, path: &Path, text: &str, session: &str) -> Result<String, String> {
         let root = work_tree(path).ok_or("not inside a git work tree")?;
         let rel = path.strip_prefix(root).map_err(|_| "not inside its work tree")?;
         let roots = [(root_name(root), root.to_path_buf())];
-        self.call(&roots, "view", json!({"path": rel.to_string_lossy(), "text": text}), IO_TIMEOUT)
+        self.call(&roots, "view", json!({"path": rel.to_string_lossy(), "text": text}), session, IO_TIMEOUT)
     }
 
     // Runs one of the indexer's structure tools on one or more git work trees; a `path` argument is relative to the first.
-    pub fn ask(&self, roots: &[Root], tool: &str, args: Value) -> Result<String, String> {
-        self.call(roots, tool, args, INDEX_TIMEOUT)
+    pub fn ask(&self, roots: &[Root], tool: &str, args: Value, session: &str) -> Result<String, String> {
+        self.call(roots, tool, args, session, INDEX_TIMEOUT)
     }
 }
 
@@ -374,7 +384,7 @@ pub mod tests {
     fn test_view_round_trip() {
         let fake = FakeIndexer::start(viewing);
         let (t, f) = repo();
-        let text = fake.indexer().view(&f).expect("view");
+        let text = fake.indexer().view(&f, "session-a").expect("view");
         let name = t.path().file_name().expect("name").to_string_lossy().into_owned();
         assert!(text.starts_with(&format!("{name}:src/C.cs 6 lines; terse: ")), "{text}");
         assert!(text.ends_with("4~\tclass C\n5\t{\n6\t}"));
@@ -396,11 +406,14 @@ pub mod tests {
         });
         let (t, _) = repo();
         let page = t.write("Pages/A.razor", b"<h1>x</h1>\n");
-        let text = fake.indexer().view_text(&page, "class C {}").expect("view");
+        let text = fake.indexer().view_text(&page, "class C {}", "session-a").expect("view");
         assert!(text.ends_with(":Pages/A.razor class C {}"), "{text}");
         let outside = TempDir::new();
         let loose = outside.write("A.razor", b"x");
-        assert_eq!(fake.indexer().view_text(&loose, "x").unwrap_err(), "not inside a git work tree");
+        assert_eq!(
+            fake.indexer().view_text(&loose, "x", "session-a").unwrap_err(),
+            "not inside a git work tree"
+        );
     }
 
     // Checks refusals, tool errors, JSON-RPC errors and a file outside any work tree.
@@ -408,9 +421,12 @@ pub mod tests {
     fn test_view_failures() {
         let refuse = FakeIndexer::start(|_, _| (json!({"ok": false, "error": "bad roots"}), None));
         let (_t, f) = repo();
-        assert_eq!(refuse.indexer().view(&f).unwrap_err(), "indexer refused: bad roots");
+        assert_eq!(refuse.indexer().view(&f, "session-a").unwrap_err(), "indexer refused: bad roots");
         let restart = FakeIndexer::start(|_, _| (json!({"ok": false, "restart": true}), None));
-        assert_eq!(restart.indexer().view(&f).unwrap_err(), "the indexer daemon kept restarting");
+        assert_eq!(
+            restart.indexer().view(&f, "session-a").unwrap_err(),
+            "the indexer daemon kept restarting"
+        );
         let tool_err = FakeIndexer::start(|_, _| {
             (
                 json!({"ok": true}),
@@ -419,16 +435,16 @@ pub mod tests {
                 ),
             )
         });
-        assert_eq!(tool_err.indexer().view(&f).unwrap_err(), "not a C# file");
+        assert_eq!(tool_err.indexer().view(&f, "session-a").unwrap_err(), "not a C# file");
         let rpc_err = FakeIndexer::start(|_, _| {
             (json!({"ok": true}), Some(json!({"id": 1, "error": {"message": "boom"}})))
         });
-        assert_eq!(rpc_err.indexer().view(&f).unwrap_err(), "indexer error: boom");
+        assert_eq!(rpc_err.indexer().view(&f, "session-a").unwrap_err(), "indexer error: boom");
         let empty = FakeIndexer::start(|_, _| (json!({"ok": true}), Some(json!({"id": 1, "result": {}}))));
-        assert_eq!(empty.indexer().view(&f).unwrap_err(), "indexer reply has no text");
+        assert_eq!(empty.indexer().view(&f, "session-a").unwrap_err(), "indexer reply has no text");
         let loose = TempDir::new();
         let outside = loose.write("x.cs", b"class X {}\n");
-        assert_eq!(empty.indexer().view(&outside).unwrap_err(), "not inside a git work tree");
+        assert_eq!(empty.indexer().view(&outside, "session-a").unwrap_err(), "not inside a git work tree");
     }
 
     // Checks the daemon is started when nothing listens, and reported when it never comes up.
@@ -443,10 +459,10 @@ pub mod tests {
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         let (_t, f) = repo();
         let ix = Indexer { exe, state: dir.path().join("state") };
-        assert_eq!(ix.view(&f).unwrap_err(), "the indexer daemon did not start");
+        assert_eq!(ix.view(&f, "session-a").unwrap_err(), "the indexer daemon did not start");
         assert!(dir.path().join("started").exists());
         let missing = Indexer { exe: dir.path().join("nope"), state: dir.path().to_path_buf() };
-        assert!(missing.view(&f).unwrap_err().starts_with("zazzle-csharp-indexer --version: "));
+        assert!(missing.view(&f, "session-a").unwrap_err().starts_with("zazzle-csharp-indexer --version: "));
     }
 
     // Checks the daemon closing early and sending non-JSON are reported.
@@ -466,8 +482,8 @@ pub mod tests {
         });
         let (_t, f) = repo();
         let ix = Indexer { exe, state: dir.path().to_path_buf() };
-        assert_eq!(ix.view(&f).unwrap_err(), "indexer closed the connection");
-        let cached = ix.view(&f).unwrap_err();
+        assert_eq!(ix.view(&f, "session-a").unwrap_err(), "indexer closed the connection");
+        let cached = ix.view(&f, "session-a").unwrap_err();
         assert!(
             cached.starts_with(
                 "indexer closed the connection (0s ago; zazzle tries the indexer again 15s after"
@@ -475,7 +491,7 @@ pub mod tests {
             "{cached}"
         );
         FAILED.lock().expect("lock").clear();
-        assert_eq!(ix.view(&f).unwrap_err(), "indexer sent something that is not JSON");
+        assert_eq!(ix.view(&f, "session-a").unwrap_err(), "indexer sent something that is not JSON");
     }
 
     // A daemon that accepts any hello and echoes the tool name and arguments it was called with.
@@ -496,8 +512,10 @@ pub mod tests {
         let name = t.path().file_name().expect("name").to_string_lossy().into_owned();
         let ix = fake.indexer();
         let roots = [(name.clone(), t.path().to_path_buf())];
-        assert_eq!(ix.ask(&roots, "overview", json!({})).expect("overview"), "\"overview\" {}");
-        let blame = ix.ask(&roots, "git_blame", json!({"path": "src/C.cs", "start_line": 2})).expect("blame");
+        assert_eq!(ix.ask(&roots, "overview", json!({}), "session-a").expect("overview"), "\"overview\" {}");
+        let blame = ix
+            .ask(&roots, "git_blame", json!({"path": "src/C.cs", "start_line": 2}), "session-a")
+            .expect("blame");
         assert_eq!(blame, format!("\"git_blame\" {{\"path\":\"{name}:src/C.cs\",\"start_line\":2}}"));
     }
 
@@ -505,7 +523,7 @@ pub mod tests {
     #[test]
     fn test_ask_sends_every_root() {
         let fake = FakeIndexer::start(|hello, _| {
-            let text = hello["roots"].to_string();
+            let text = format!("{} {}", hello["session"], hello["roots"]);
             (
                 json!({"ok": true}),
                 Some(
@@ -515,8 +533,8 @@ pub mod tests {
         });
         let roots = [("a".to_string(), PathBuf::from("/w/a")), ("g/b".to_string(), PathBuf::from("/w/g/b"))];
         assert_eq!(
-            fake.indexer().ask(&roots, "find_symbol", json!({})).expect("ask"),
-            r#"["a=/w/a","g/b=/w/g/b"]"#
+            fake.indexer().ask(&roots, "find_symbol", json!({}), "session-a").expect("ask"),
+            r#""session-a" ["a=/w/a","g/b=/w/g/b"]"#
         );
     }
 

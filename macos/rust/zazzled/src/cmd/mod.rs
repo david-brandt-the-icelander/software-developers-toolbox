@@ -20,7 +20,7 @@ pub mod refs;
 pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-const DEFAULT_BUDGET: usize = 8000;
+const DEFAULT_BUDGET: usize = 3000;
 const MAX_DESC: usize = 100;
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
@@ -186,10 +186,46 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
         return again::run(ctx, rest).unwrap_or_else(|e| Output::err(&e));
     }
     let (mut out, desc, dedupe) = produce(ctx, cmd, rest);
+    if out.status != 0 && !out.raw {
+        out.text = shorten_repeats(ctx, &out.text);
+    }
+    let pre_dedupe_bytes = out.text.len();
+    let mut deduplicated = false;
     if out.idable {
         let kept: Vec<String> = args.iter().filter(|a| *a != "--disable-session-deduping").cloned().collect();
         let replay = Replay { args: kept, cwd: ctx.cwd.clone() };
-        out.text = ctx.engine.sessions.apply_with(&ctx.session, &desc, Some(replay), out.text, dedupe);
+        let applied = ctx.engine.sessions.apply_tracked(&ctx.session, &desc, Some(replay), out.text, dedupe);
+        out.text = applied.text;
+        deduplicated = applied.deduplicated;
+    }
+    ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &out.text, out.status, deduplicated);
+    out
+}
+
+// Fixed parts of error messages, keyed by the text matched without digits (so a failure's age does not count): each is sent in full once per session, then shortened when that is shorter.
+const REPEATS: [(&str, &str); 3] = [
+    (r"usage: [^\n]*", "usage: as above"),
+    (r"; similar: [^\n]*", "; similar: as listed earlier"),
+    (
+        r"C# indexer unavailable: [^\n]*",
+        "C# indexer still unavailable, as reported earlier; other tools work without it.",
+    ),
+];
+
+// Shortens the fixed parts of an error the session was already sent: usage lines, the indexer notes and repeated `similar:` lists.
+fn shorten_repeats(ctx: &Ctx, text: &str) -> String {
+    static RES: std::sync::OnceLock<Vec<regex::Regex>> = std::sync::OnceLock::new();
+    let res =
+        RES.get_or_init(|| REPEATS.iter().map(|(r, _)| regex::Regex::new(r).expect("valid regex")).collect());
+    let mut out = text.to_string();
+    let sessions = &ctx.engine.sessions;
+    for (re, (_, short)) in res.iter().zip(REPEATS) {
+        if let Some(m) = re.find(&out).map(|m| m.as_str().to_string()).filter(|m| m.len() > short.len()) {
+            let key: String = m.chars().filter(|c| !c.is_ascii_digit()).collect();
+            if !sessions.first_note(&ctx.session, &key) {
+                out = out.replacen(&m, short, 1);
+            }
+        }
     }
     out
 }
@@ -477,5 +513,40 @@ mod tests {
         assert!(go(&["read", "a.txt"]).contains("1\tbye"));
         assert!(go(&["status"]).contains("1 sessions"));
         assert!(!run_cmd(t.path(), &["read", "a.txt"]).text.starts_with("[r:"));
+    }
+
+    // Checks an error's usage line and similar-file list are sent in full once per session, then shortened, while other sessions still get them.
+    #[test]
+    fn test_repeated_error_parts_shortened() {
+        let t = TempDir::new();
+        t.write("d1/notes.md", b"a\n");
+        t.write("d2/notes.md", b"a\n");
+        let e = Engine::new();
+        let go = |s: &str, args: &[&str]| crate::testutil::run_cmd_with(&e, t.path(), s, args).text;
+        let usage = go("s", &["outline", "--zzz"]);
+        assert!(usage.contains("usage: outline PATH.."), "{usage}");
+        assert_eq!(
+            go("s", &["outline", "--zzz"]),
+            "error: unknown flag --zzz; known: --depth --max; usage: as above"
+        );
+        assert_eq!(go("t", &["outline", "--zzz"]), usage);
+        let missing = go("s", &["read", "x/notes.md"]);
+        assert!(missing.ends_with("similar: d1/notes.md, d2/notes.md"), "{missing}");
+        assert!(go("s", &["read", "x/notes.md"]).ends_with("; similar: as listed earlier"));
+        let short = go("s", &["read", "nope.md"]);
+        assert_eq!(short, "error: nope.md: no such file or directory");
+        let note =
+            "C# indexer unavailable: it is gone (3s ago). find, read, ls, outline and refs work without it.";
+        let ctx = |s: &str| Ctx {
+            roots: Vec::new(),
+            engine: &e,
+            cwd: t.path().to_path_buf(),
+            session: s.into(),
+            stdin: RefCell::new(None),
+            caller: RefCell::new(None),
+        };
+        assert_eq!(shorten_repeats(&ctx("s"), note), note);
+        let again = shorten_repeats(&ctx("s"), &note.replace("3s", "9s"));
+        assert_eq!(again, "C# indexer still unavailable, as reported earlier; other tools work without it.");
     }
 }

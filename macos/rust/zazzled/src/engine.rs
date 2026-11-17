@@ -54,6 +54,7 @@ pub struct Engine {
     pub misses: AtomicU64,
     pub zazz: crate::zazz::Zazz,
     pub outputs: Option<PathBuf>,
+    pub deliveries: crate::delivery::DeliveryLog,
 }
 
 impl Default for Engine {
@@ -83,6 +84,7 @@ impl Engine {
             misses: AtomicU64::new(0),
             zazz: crate::zazz::Zazz::default(),
             outputs: None,
+            deliveries: crate::delivery::DeliveryLog::default(),
         }
     }
 
@@ -94,6 +96,11 @@ impl Engine {
     // Returns the engine with an output store directory for clean, run and proxy outputs.
     pub fn with_outputs(self, dir: Option<PathBuf>) -> Engine {
         Engine { outputs: dir, ..self }
+    }
+
+    // Returns the engine with a persistent final-response metrics log.
+    pub fn with_deliveries(self, deliveries: crate::delivery::DeliveryLog) -> Engine {
+        Engine { deliveries, ..self }
     }
 
     // Returns the hot cached metadata when the stat still matches and the entry is trustworthy.

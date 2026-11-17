@@ -539,6 +539,34 @@
       ]
     },
     {
+      "id": "delivery-log",
+      "title": "Final response delivery records",
+      "summary": "A delivery record is parsed to verify stable correlation, pre- and post-dedupe sizes, token estimates, hashing and absence of response text.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/observability.json",
+          "entityId": "delivery-log"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_USAGE_LOG"
+        }
+      ],
+      "criteria": [
+        "The record names the session and command, captures both token estimates and the dedupe flag, and has a short response hash.",
+        "Neither response text nor command arguments appear in the record."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/delivery.rs",
+          "symbol": "test_record_is_private_and_text_free",
+          "command": "cargo test -p zazzled delivery::tests (in macos/rust)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "outlines",
       "title": "Outlines",
       "summary": "Each outliner has a test with a sample file of its language; large files skip tree-sitter, and the kind-id table matches the grammars.",
@@ -706,7 +734,7 @@
         }
       ],
       "criteria": [
-        "A view round-trips: hello with the version and the work tree as a root, then tools/call view with the root-relative path.",
+        "A view round-trips: hello with the version, stable session and the work tree as a root, then tools/call view with the root-relative path.",
         "A file outside a git work tree, an indexer error or a refusal are reported as errors; a daemon that keeps asking to restart is given up on.",
         "When nothing listens the daemon is started, and a daemon that never starts or breaks the connection is reported.",
         "The executable and state directory are found from ZAZZLE_INDEXER and ZAZZLE_INDEXER_STATE_DIR, or their defaults, and a missing indexer is reported."

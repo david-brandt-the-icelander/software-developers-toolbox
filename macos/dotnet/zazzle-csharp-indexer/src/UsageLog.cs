@@ -14,8 +14,10 @@ public sealed class CallInfo
     public bool Truncated;
     public int Candidates = -1;
     public int TotalFiles = -1;
-    public string? Note;
     public int SourceBytes = -1;
+    public int SourceLines = -1;
+    public string? Transformations;
+    public string? Note;
     public int ViewBytes = -1;
 }
 
@@ -58,13 +60,14 @@ public sealed class UsageLog
     }
 
     // Writes one record; arguments are reduced to their shape, with free-text values hashed unless plain logging is on.
-    public void Record(string session, string tool, JsonNode? args, CallInfo info, long ms, int bytesOut, string? error)
+    public void Record(string session, string tool, JsonNode? args, CallInfo info, long ms, string response, string? error)
     {
         if (_file is null)
             return;
+        var bytesOut = Encoding.UTF8.GetByteCount(response);
         var rec = new JsonObject
         {
-            ["v"] = 1,
+            ["v"] = 2,
             ["ts"] = DateTime.UtcNow.ToString("o"),
             ["session"] = session,
             ["tool"] = tool,
@@ -73,13 +76,17 @@ public sealed class UsageLog
             ["reason"] = info.Reason,
             ["ms"] = ms,
             ["bytes_out"] = bytesOut,
-            ["est_tokens"] = bytesOut / 4,
+            ["est_tokens"] = Tokens(bytesOut),
+            ["response_hash"] = Hash(response),
+            ["source_bytes"] = info.SourceBytes,
+            ["source_lines"] = info.SourceLines,
+            ["source_est_tokens"] = info.SourceBytes < 0 ? -1 : Tokens(info.SourceBytes),
+            ["transformations"] = info.Transformations,
+            ["view_bytes"] = info.ViewBytes,
             ["results"] = info.Results,
             ["truncated"] = info.Truncated,
             ["candidates"] = info.Candidates,
             ["files"] = info.TotalFiles,
-            ["source_bytes"] = info.SourceBytes < 0 ? null : info.SourceBytes,
-            ["view_bytes"] = info.ViewBytes < 0 ? null : info.ViewBytes,
             ["note"] = info.Note is { Length: > 500 } n ? n[..500] : info.Note,
             ["error"] = error,
         };
@@ -96,6 +103,9 @@ public sealed class UsageLog
             }
         }
     }
+
+    // Estimates tokens with the same bytes-per-token ratio as zazzled.
+    private static int Tokens(int bytes) => (bytes * 2 + 6) / 7;
 
     // Copies argument names and numbers/booleans, and hashes (or keeps, if plain) strings.
     private JsonObject Shape(JsonNode? args)

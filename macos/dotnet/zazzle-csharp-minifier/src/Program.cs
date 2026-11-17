@@ -7,10 +7,7 @@ const string Usage = """
            zazzle-csharp-minifier --benchmark <prompt-file-or-folder> --model <model> --effort <level> [--root <dir>] [<commands>]
     commands (run in this order):
       --allow-reads     allow agents the read-only commands (ls, cat, head, tail, wc, grep, rg) in the repository's .claude/settings.json
-      --strip-comments  move comments on files, types and members into <root>/document/<path>.md
       --split-tests     split test files into <ClassUnderTest>/<MethodUnderTest>.cs, one file per method under test
-      --split-headers   split each .cs file into declarations (stays) and implementation (src/<name>.cs beside it)
-      --restructure     turn each project of the solution into <project>/incl, src, doc and test (implies the three above)
     --list-identifiers  print the namespaces, types and members as an indented tree
     --rename <file>     apply "name => newName" lines in such a tree, deepest first, moving files when namespaces or types are renamed
     --benchmark <p>     clone the root to ../benchmark-<name> (cp -Rc), apply the commands to the clone, then run each prompt

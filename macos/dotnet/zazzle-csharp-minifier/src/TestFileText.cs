@@ -7,6 +7,9 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace ZazzleMinifier;
 
+// One replacement in test source text.
+internal readonly record struct Cut(int Start, int End, string With);
+
 // A test on its way to another file, with the namespace and type chain it must be declared in there.
 internal sealed record MovedTest(SourceFile File, MethodDeclarationSyntax Method, string Text, string Indent, string? Namespace, bool FileScoped, List<TypeDeclarationSyntax> Chain)
 {
@@ -58,7 +61,7 @@ internal static class TestFileText
             end = lines[endLine].EndIncludingLineBreak;
         else if (prev?.Length == 0 && (next == null || next.StartsWith('}')))
             start = lines[startLine - 1].Start;
-        return new Cut(start, end, "", true);
+        return new Cut(start, end, "");
     }
 
     // The edit that adds or updates the unresolved marker as the body's first line, or null when it is already right.
@@ -67,17 +70,17 @@ internal static class TestFileText
         var marker = TestMethods.MarkerText(reason);
         var existing = TestMethods.Marker(method);
         if (existing is { } e)
-            return e.ToString() == marker ? null : new Cut(e.SpanStart, e.Span.End, marker, false);
+            return e.ToString() == marker ? null : new Cut(e.SpanStart, e.Span.End, marker);
         var methodIndent = Indent(text, method.SpanStart);
         if (method.Body == null)
-            return new Cut(ContentStart(text, method), ContentStart(text, method), methodIndent + marker + nl, false);
+            return new Cut(ContentStart(text, method), ContentStart(text, method), methodIndent + marker + nl);
         var open = method.Body.OpenBraceToken;
         var indent = method.Body.Statements.Count > 0 && Line(text, method.Body.Statements[0].SpanStart) > Line(text, open.SpanStart)
             ? Indent(text, method.Body.Statements[0].SpanStart)
             : methodIndent + "    ";
         if (open.TrailingTrivia.Any(t => t.IsKind(SyntaxKind.EndOfLineTrivia)))
-            return new Cut(open.FullSpan.End, open.FullSpan.End, indent + marker + nl, false);
-        return new Cut(open.Span.End, open.Span.End, nl + indent + marker + nl + indent, false);
+            return new Cut(open.FullSpan.End, open.FullSpan.End, indent + marker + nl);
+        return new Cut(open.Span.End, open.Span.End, nl + indent + marker + nl + indent);
     }
 
     // The cut that removes the line holding the marker.
@@ -86,7 +89,7 @@ internal static class TestFileText
         if (TestMethods.Marker(method) is not { } marker)
             return null;
         var line = text.Lines.GetLineFromPosition(marker.SpanStart);
-        return new Cut(line.Start, line.EndIncludingLineBreak, "", true);
+        return new Cut(line.Start, line.EndIncludingLineBreak, "");
     }
 
     // The method's text with its marker line removed.
@@ -99,7 +102,7 @@ internal static class TestFileText
     // The edits that add "partial" to every type in the chain that lacks it.
     public static IEnumerable<Cut> PartialEdits(IEnumerable<TypeDeclarationSyntax> types) =>
         types.Where(t => !t.Modifiers.Any(SyntaxKind.PartialKeyword))
-            .Select(t => new Cut(t.Keyword.SpanStart, t.Keyword.SpanStart, "partial ", false));
+            .Select(t => new Cut(t.Keyword.SpanStart, t.Keyword.SpanStart, "partial "));
 
     // Applies cuts to the text, joining those that overlap.
     public static string Apply(string text, IEnumerable<Cut> cuts)

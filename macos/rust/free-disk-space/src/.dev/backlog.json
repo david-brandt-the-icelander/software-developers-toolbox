@@ -10,10 +10,10 @@
       "summary": "new --root /System/Volumes/Data, which the help text offers for scanning everything, records only the files directly in that directory: every subdirectory is under /System, a skipped prefix.",
       "type": "defect",
       "status": "open",
-      "expected": "`new --root /System/Volumes/Data` scans the whole data volume (users' homes, /Applications, /Library and the rest), as the `--root` help says (\"default: your home; /System/Volumes/Data for all\").",
+      "expected": "`scan --root /System/Volumes/Data` scans the whole data volume (users' homes, /Applications, /Library and the rest), as the `--root` help says (\"default: your home; /System/Volumes/Data for all\").",
       "observed": "cmd_new queues the root itself without checking it, but scan_entry calls dir_excluded for each subdirectory, and dir_excluded excludes any path under an entry of SKIP_PREFIXES; /System/Volumes/Data/Users is under /System, so no subdirectory is queued and the scan finishes after one directory. The same happens for a root under /Volumes, /usr or any other entry of SKIP_PREFIXES.",
       "reproduction": [
-        "On a Mac: free-disk-space new --root /System/Volumes/Data --force (reasoned from the code, not run)",
+        "On a Mac: free-disk-space scan --root /System/Volumes/Data --force (reasoned from the code, not run)",
         "free-disk-space status would show one directory processed and only the files at the top of the volume",
         "In a unit test: dir_excluded(\"/System/Volumes/Data/Users\", \"Users\", &cfg) returns true"
       ],
