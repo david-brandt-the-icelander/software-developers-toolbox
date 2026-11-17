@@ -1,0 +1,41 @@
+// Runs the chosen commands in order, applying each plan or, with --check, reporting it as violations.
+namespace ZazzleMinifier;
+
+// Chains the commands so each one sees the files the one before it wrote.
+internal static class Runner
+{
+    // Returns 0 when everything went well (and, with --check, nothing would change), 1 otherwise.
+    public static int Run(ParsedArgs args, TextWriter output, TextWriter errors)
+    {
+        var steps = new List<(string Name, Func<string, IReadOnlyList<string>, Plan> Make)>();
+        if (args.Strip)
+            steps.Add(("--strip-comments", StripComments.Make));
+        if (args.SplitTests)
+            steps.Add(("--split-tests", SplitTests.Make));
+        if (args.SplitHeaders)
+            steps.Add(("--split-headers", SplitHeaders.Make));
+        var paths = args.Paths;
+        var failed = 0;
+        var violations = 0;
+        foreach (var (name, make) in steps)
+        {
+            var files = SourceFiles.Under(paths.Where(Path.Exists)).Where(f => !SourceFile.IsImplementationHalf(f)).ToList();
+            var plan = make(args.Root, files);
+            plan.Notes.ForEach(output.WriteLine);
+            plan.Errors.ForEach(errors.WriteLine);
+            failed += plan.Errors.Count;
+            if (args.Check)
+            {
+                plan.Changes.ForEach(c => output.WriteLine($"{name} would change {c}"));
+                violations += plan.Changes.Count;
+                continue;
+            }
+            plan.Apply();
+            plan.Changes.ForEach(output.WriteLine);
+            paths = [.. paths, .. plan.WrittenSources()];
+        }
+        if (args.Check && violations > 0)
+            errors.WriteLine($"{violations} files need changes: run zazzle-csharp-minifier {string.Join(" ", args.CommandSwitches())} to make them");
+        return failed > 0 || violations > 0 ? 1 : 0;
+    }
+}

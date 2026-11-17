@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>zazzle-csharp-minifier</AssemblyName>
+    <RootNamespace>ZazzleMinifier</RootNamespace>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RuntimeIdentifiers>osx-arm64;osx-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Roslyn: parses C# so comments are attributed to the declarations they describe. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <!-- .NET 8 reference assemblies: lets the test split bind calls to framework types inside a single-file binary, which has no assembly files on disk. -->
+    <PackageReference Include="Basic.Reference.Assemblies.Net80" Version="1.8.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="tests" />
+  </ItemGroup>
+</Project>
