@@ -343,7 +343,7 @@
           "symbol": "Sessions::first_note"
         }
       ],
-      "behavior": "Initialize sends about 500 characters of instructions (the full text stays in CLAUDE.md and AGENTS.md); tools/list has 13 tools unless ZAZZLE_MCP_ZAZZ=1 or a zazz script is registered; read gives each remaining path an even share of what is left of its budget and names files it did not reach; read, outline and ls add `similar: ...` with up to three files of the same name or stem; after a failed indexer connection, structure tools answer `C# indexer unavailable: WHY` at once for 15 s, and report_gap still records the gap in the activity log.",
+      "behavior": "Initialize sends about 500 characters of instructions (the full text stays in CLAUDE.md and AGENTS.md); tools/list has the 8 agent tools (the others, meant for people, still answer tools/call) unless ZAZZLE_MCP_ZAZZ=1 or a zazz script is registered; read gives each remaining path an even share of what is left of its budget and names files it did not reach; read, outline and ls add `similar: ...` with up to three files of the same name or stem; after a failed indexer connection, structure tools answer `C# indexer unavailable: WHY` at once for 15 s, and report_gap still records the gap in the activity log.",
       "outcome": "Measured on this repository: instructions 2,044 to 524 characters, catalog 14,370 to 8,939 characters, a four-file read of 2,000-line files 39,137 to 10,358 bytes, and a Java test class outline from 1 symbol to 5 (class and its four methods). Repeated errors in one MCP session: the indexer-unavailable message 148 to 86 characters, a usage line to `usage: as above` (read's is 212 characters).",
       "constraints": [
         "Clients that repeat the instructions per tool (Codex tool discovery) still pay them once per discovered tool.",
@@ -361,6 +361,40 @@
         {
           "path": "macos/rust/zazzled/src/outline.rs",
           "symbol": "method_name"
+        }
+      ]
+    },
+    {
+      "id": "agent-surface",
+      "name": "Agent surface",
+      "description": "Agents are shown only the commands meant for them; every other command stays available to people.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "AGENT"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "is_agent"
+        }
+      ],
+      "behavior": "One list (read, outline, find, refs, find-symbol, edit, ls, run, clean, read-again) decides agent help (`help --agent`, which bare `zazzle help` becomes when CLAUDECODE, CODEX_SANDBOX or CODEX_THREAD_ID is set), the MCP tools/list and the agent instructions; `help --all` lists every command, and errors suggest only agent commands.",
+      "outcome": "Agents spend no tokens on commands they should not run, and people keep every command.",
+      "constraints": [
+        "No command is removed: tools/call still answers the tools tools/list leaves out."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/help.rs",
+          "symbol": "agent_overview"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "agent_tool"
+        },
+        {
+          "path": "macos/c/zazzle/src/zazzle_core.h",
+          "symbol": "build_request"
         }
       ]
     }

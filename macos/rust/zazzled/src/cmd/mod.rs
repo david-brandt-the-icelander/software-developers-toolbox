@@ -272,13 +272,13 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "languages" => languages::run(ctx, rest),
         "help" | "--help" | "-h" => match rest {
             [] => Ok(Output::plain(help::overview())),
+            [a] if a == "--all" => Ok(Output::plain(help::overview())),
+            [a] if a == "--agent" => Ok(Output::plain(help::agent_overview())),
             [name] => help::page(name).map(Output::plain),
             _ => Err("usage: zazzle help [COMMAND]".into()),
         },
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
-        other => Err(format!(
-            "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
-        )),
+        other => Err(format!("unknown command '{other}'; try: {}", help::AGENT.join(" "))),
     }
 }
 
@@ -327,7 +327,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; run `zazzle help` for the list", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit ls run clean read-again", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit ls run clean read-again"
         );
         assert!(!o.idable);
     }

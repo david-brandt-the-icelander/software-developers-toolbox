@@ -44,6 +44,9 @@ want=$("$zazzled" version)
 
 # Help: the overview with no arguments and a page from the daemon (run --help, answered by zazzled itself, is checked below).
 case $("$zazzle") in "$out: read, search and edit code"*) ;; *) fail "help overview" ;; esac
+# An agent's bare help lists only the agent commands and points people to the full list.
+case $(CLAUDECODE=1 "$zazzle" help) in *"humans: zazzle help --all") ;; *) fail "agent help" ;; esac
+case $(CLAUDECODE=1 "$zazzle" help) in *setup*) fail "agent help names setup" ;; esac
 case $("$zazzle" find --help) in "zazzle find: "*"Usage:"*) ;; *) fail "find --help" ;; esac
 
 out=$("$zazzle" find alpha)

@@ -440,6 +440,7 @@ fn list_tools() -> Value {
     let zazz = offers_zazz();
     let tools: Vec<Value> = all_tools()
         .filter(|t| zazz || !t.name.starts_with("zazz_"))
+        .filter(|t| agent_tool(t.name))
         .map(|t| {
             let mut schema = (t.schema)();
             if PINNABLE.contains(&t.name) {
@@ -449,6 +450,12 @@ fn list_tools() -> Value {
         })
         .collect();
     json!({"tools": tools})
+}
+
+// True when tools/list shows the tool: zazz scripts and the agent commands; the others still answer tools/call.
+fn agent_tool(name: &str) -> bool {
+    name.starts_with("zazz_")
+        || name.strip_prefix("zazzle_").is_some_and(|c| crate::cmd::help::is_agent(&c.replace('_', "-")))
 }
 
 // The tools that read a repository and take `commit`.
@@ -663,6 +670,35 @@ mod tests {
         assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
         let r = ask(&b, json!({"jsonrpc":"2.0","id":3,"method":"initialize"}));
         assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
+    }
+
+    // Checks tools/list and both instruction texts name no command meant only for people.
+    #[test]
+    fn test_agent_surface_hides_human_commands() {
+        let b = fake(0, "");
+        let l = ask(&b, json!({"id":1,"method":"tools/list"}));
+        let tools = l["result"]["tools"].to_string();
+        let texts = [tools.as_str(), crate::setup::MCP_INSTRUCTIONS, crate::setup::INSTRUCTIONS];
+        for human in [
+            "overview",
+            "changed_since",
+            "git_log",
+            "git_blame",
+            "report_gap",
+            "status",
+            "languages",
+            "setup",
+            "trace",
+            "proxy",
+        ] {
+            for (i, t) in texts.iter().enumerate() {
+                assert!(
+                    !t.contains(&format!("zazzle_{human}")) && !t.contains(&format!("zazzle {human}")),
+                    "{i}: {human}"
+                );
+            }
+        }
+        assert!(tools.contains("zazzle_find_symbol") && tools.contains("zazzle_edit"));
     }
 
     // Checks ping, tools/list and unknown methods.
@@ -1068,9 +1104,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 15);
+        assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 13);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 8);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

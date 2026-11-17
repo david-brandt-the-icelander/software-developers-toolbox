@@ -71,7 +71,7 @@ pub fn confine(roots: &[PathBuf], path: &Path) -> Result<PathBuf, String> {
         return Ok(real);
     }
     Err(format!(
-        "refusing to write outside the working directory, its git work tree and your workspaces ({}); add a folder with `zazzle setup --workspace DIR --apply`",
+        "refusing to write outside the working directory, its git work tree and your workspaces ({}); the user can add a workspace folder",
         match roots.is_empty() {
             true => "none".to_string(),
             false => roots.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join(", "),
@@ -114,7 +114,7 @@ mod tests {
         let err = confine(&r, &h.join("elsewhere/z")).unwrap_err();
         assert!(
             err.starts_with("refusing to write outside the working directory")
-                && err.contains("--workspace DIR")
+                && err.contains("the user can add a workspace folder")
         );
         assert_eq!(
             confine(&r, Path::new("/nonexistent-zz/../..")).unwrap_err(),

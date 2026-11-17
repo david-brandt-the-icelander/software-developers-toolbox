@@ -138,6 +138,12 @@ static int is_zazzle_name(const char *me)
 	return str_eq(me, "zazzle") || str_eq(me, "z");
 }
 
+/* Tells whether an agent started the invoker: Claude Code or Codex left their marker in the environment. */
+static int is_agent(char **envp)
+{
+	return env_get(envp, "CLAUDECODE") || env_get(envp, "CODEX_SANDBOX") || env_get(envp, "CODEX_THREAD_ID");
+}
+
 /* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
    Run as "zazz" the arguments go to the zazz command; run under any name but "zazzle", "z" and "zazz" (an
    installed script's shim) they go to that script. */
@@ -154,6 +160,12 @@ static size_t build_request(int argc, char **argv, char **envp)
 			at = put_field(at, "exec-name");
 			at = put_field(at, me);
 		}
+	}
+	/* An agent asking for help with no command gets only the commands meant for agents. */
+	if (is_zazzle_name(me) && is_agent(envp) && (argc == 1 || (argc == 2 && str_eq(argv[1], "help")))) {
+		at = put_field(at, "help");
+		at = put_field(at, "--agent");
+		argc = 1;
 	}
 	for (int i = 1; i < argc; i++)
 		at = put_field(at, argv[i]);

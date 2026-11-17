@@ -31,7 +31,7 @@ fn jit_note(on: bool) -> &'static str {
     if on {
         "a missing module downloads the first time a file needs it"
     } else {
-        "nothing downloads until `zazzle languages fetch`; files in missing languages read as source"
+        "nothing downloads until a language is fetched; files in missing languages read as source"
     }
 }
 

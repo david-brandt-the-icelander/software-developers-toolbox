@@ -89,6 +89,33 @@ static void test_no_session_no_args(void)
 	CHECK(M.sent_len == 4 + 2 && memcmp(M.sent + 4, "\0\0", 2) == 0);
 }
 
+/* Checks an agent asking for help gets the agent list, and anything else passes through unchanged. */
+static void test_agent_help(void)
+{
+	char *claude[] = {"CLAUDECODE=1", "HOME=/h", 0};
+	char *codex[] = {"CODEX_SANDBOX=seatbelt", "HOME=/h", 0};
+	char *thread[] = {"CODEX_THREAD_ID=t", "HOME=/h", 0};
+	char *bare[] = {"zazzle", 0};
+	char *help[] = {"zazzle", "help", 0};
+	char *page[] = {"zazzle", "help", "find", 0};
+	char *find[] = {"zazzle", "find", 0};
+	reset();
+	CHECK(run(1, bare, claude) == 0);
+	CHECK(M.sent_len == 4 + 15 && memcmp(M.sent + 4, "\0\0help\0--agent\0", 15) == 0);
+	reset();
+	CHECK(run(2, help, codex) == 0);
+	CHECK(M.sent_len == 4 + 15 && memcmp(M.sent + 4, "\0\0help\0--agent\0", 15) == 0);
+	reset();
+	CHECK(run(3, page, thread) == 0);
+	CHECK(M.sent_len == 4 + 12 && memcmp(M.sent + 4, "\0\0help\0find\0", 12) == 0);
+	reset();
+	CHECK(run(2, find, claude) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0find\0", 7) == 0);
+	reset();
+	CHECK(run(2, help, env_home) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0help\0", 7) == 0);
+}
+
 /* Checks the invoker's own name: zazzle and z are zazzle, zazz prefixes the zazz command, any other name runs that
    installed script. */
 static void test_argv0_dispatch(void)
@@ -444,6 +471,7 @@ int main(void)
 {
 	test_happy_path();
 	test_no_session_no_args();
+	test_agent_help();
 	test_argv0_dispatch();
 	test_restart_resends();
 	test_zazzle_sock_override();
