@@ -707,6 +707,7 @@
       "members": [
         "const int Runs",
         "const string Marker",
+        "static readonly string[] Sides",
         "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)",
         "static List<string> PromptFiles(string path)",
         "static List<string> ClaudeArgs(BenchmarkSetup setup)"
@@ -721,12 +722,12 @@
       ],
       "members": [
         "RepoIdentity Repo",
-        "string ClonePath",
+        "string BeforePath",
+        "string AfterPath",
         "List<string> Switches",
         "string Model",
         "string Effort",
-        "string ClaudeVersion",
-        "string? TransformLog"
+        "string ClaudeVersion"
       ]
     },
     {
@@ -779,10 +780,11 @@
         "const double AgreementTolerance",
         "static string Root()",
         "static string Create(BenchmarkSetup setup, string promptPath, string promptText)",
-        "static void WriteRun(string dir, RunResult run)",
+        "static void WriteRun(string dir, RunResult run, string? edits)",
         "static string WriteSummary(string dir, List<RunResult> runs)",
         "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)",
-        "static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)"
+        "static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)",
+        "static string WriteComparison(string dir, List<RunResult> before, List<RunResult> after)"
       ]
     },
     {

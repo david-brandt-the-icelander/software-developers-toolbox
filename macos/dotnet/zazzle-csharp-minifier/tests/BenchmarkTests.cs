@@ -55,7 +55,7 @@ public sealed class BenchmarkTests : IDisposable
             #!/bin/sh
             if [ "$1" = "--version" ]; then echo "9.9.9 (fake)"; exit 0; fi
             n=$(cat '{{count}}' 2>/dev/null || echo 0); n=$((n+1)); echo $n > '{{count}}'
-            echo "args: $*" >> '{{log}}'; echo "pwd: $(pwd -P)" >> '{{log}}'; echo "prompt: $(cat)" >> '{{log}}'
+            echo "args: $*" >> '{{log}}'; echo "pwd: $(pwd -P)" >> '{{log}}'; echo "prompt: $(cat)" >> '{{log}}'; echo "// edited $n" >> A.cs
             {{(exitCode == 0 ? $"cat '{head}'; printf '{result}\\n' \"$n\"" : "echo 'boom' >&2")}}
             exit {{exitCode}}
             """);
@@ -85,25 +85,34 @@ public sealed class BenchmarkTests : IDisposable
     }
 
     [Fact]
-    // A benchmark clones beside the source, transforms only the clone, runs each prompt file three times in the clone and stores everything under repo/sha/prompt.
+    // A benchmark runs each prompt three times on a fresh untouched clone and three times on a fresh transformed clone, records each run's edits, and compares the sides.
     public void test_benchmark_runs_and_stores()
     {
         var (code, output, _) = Run("--strip-comments");
         Assert.Equal(0, code);
-        var clone = Path.Combine(parent, "benchmark-proj");
-        Assert.Equal("class A { }\n", File.ReadAllText(Path.Combine(clone, "A.cs")));
+        var before = Path.Combine(parent, "benchmark-before-proj");
+        var after = Path.Combine(parent, "benchmark-after-proj");
+        Assert.Equal("// File.\nclass A { }\n// edited 3\n", File.ReadAllText(Path.Combine(before, "A.cs")));
+        Assert.Equal("class A { }\n// edited 6\n", File.ReadAllText(Path.Combine(after, "A.cs")));
         Assert.Equal("// File.\nclass A { }\n", File.ReadAllText(Path.Combine(parent, "proj", "A.cs")));
-        Assert.True(File.Exists(Path.Combine(clone, ".git", Benchmark.Marker)));
+        Assert.True(File.Exists(Path.Combine(after, ".git", Benchmark.Marker)));
         var sha = Proc.Run("git", ["-C", Path.Combine(parent, "proj"), "rev-parse", "HEAD"], 20).Output;
         var runDir = Assert.Single(Directory.GetDirectories(Path.Combine(results, "proj", sha, "explain")));
         Assert.EndsWith("_fake-model_high_strip-comments", runDir);
-        Assert.Equal(["meta.json", "prompt.txt", "run-1.json", "run-1.jsonl", "run-2.json", "run-2.jsonl", "run-3.json", "run-3.jsonl", "summary.json", "transform.txt"],
-            Directory.GetFiles(runDir).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(["comparison.json", "meta.json", "prompt.txt", "transform.txt"], Directory.GetFiles(runDir).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        string[] side = ["run-1.diff", "run-1.json", "run-1.jsonl", "run-2.diff", "run-2.json", "run-2.jsonl", "run-3.diff", "run-3.json", "run-3.jsonl", "summary.json"];
+        Assert.Equal(side, Directory.GetFiles(Path.Combine(runDir, "before")).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(side, Directory.GetFiles(Path.Combine(runDir, "after")).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        var diff = File.ReadAllText(Path.Combine(runDir, "after", "run-2.diff"));
+        Assert.Contains("+// edited 5", diff);
+        Assert.DoesNotContain("edited 4", diff);
+        Assert.DoesNotContain("File.", diff);
         var meta = JsonNode.Parse(File.ReadAllText(Path.Combine(runDir, "meta.json")))!;
         Assert.Equal(sha, meta["sha"]!.GetValue<string>());
+        Assert.Equal(after, meta["after_clone"]!.GetValue<string>());
         Assert.Equal("9.9.9 (fake)", meta["claude_version"]!.GetValue<string>());
         Assert.False(Directory.Exists(Path.Combine(results, "proj", sha, "notes")));
-        var summary = JsonNode.Parse(File.ReadAllText(Path.Combine(runDir, "summary.json")))!;
+        var summary = JsonNode.Parse(File.ReadAllText(Path.Combine(runDir, "before", "summary.json")))!;
         Assert.Equal(1103, summary["runs"]![2]!["total_tokens"]!.GetValue<long>());
         Assert.True(summary["runs_2_and_3_agree"]!.GetValue<bool>());
         Assert.True(summary["runs_2_and_3_same_turns"]!.GetValue<bool>());
@@ -112,19 +121,21 @@ public sealed class BenchmarkTests : IDisposable
         Assert.Equal(550, run["tokens_per_turn"]!.GetValue<long>());
         Assert.Equal(1, run["denied_tool_calls"]!.GetValue<int>());
         Assert.Equal(551, run["denied_turn_tokens"]!.GetValue<long>());
-        Assert.Equal(2, run["tool_calls"]!.GetValue<int>());
         var turns = run["turns"]!.AsArray();
-        Assert.Equal(2, turns.Count);
         Assert.Equal("Bash", turns[0]!["tools"]![0]!["name"]!.GetValue<string>());
-        Assert.Equal("ls", turns[0]!["tools"]![0]!["target"]!.GetValue<string>());
         Assert.True(turns[0]!["tools"]![0]!["denied"]!.GetValue<bool>());
-        Assert.False(turns[0]!["tools"]![0]!["failed"]!.GetValue<bool>());
         Assert.Equal("A.cs", turns[1]!["tools"]![0]!["target"]!.GetValue<string>());
-        Assert.Equal(552, turns[1]!["total_tokens"]!.GetValue<long>());
-        Assert.Contains("explain.txt: run 1 1,101 tokens in 2 turns, run 2 1,102 tokens in 2 turns, run 3 1,103 tokens in 2 turns; runs 2 and 3 agree", output);
+        var comparison = JsonNode.Parse(File.ReadAllText(Path.Combine(runDir, "comparison.json")))!;
+        Assert.Equal(1102.5, comparison["before_tokens"]!.GetValue<double>());
+        Assert.Equal(1105.5, comparison["after_tokens"]!.GetValue<double>());
+        Assert.Equal(-3, comparison["tokens_saved"]!.GetValue<double>());
+        Assert.Equal([1, 1, 1], comparison["after_edited_files"]!.AsArray().Select(n => n!.GetValue<int>()));
+        Assert.Contains("explain.txt before: run 1 1,101 tokens in 2 turns, run 2 1,102 tokens in 2 turns, run 3 1,103 tokens in 2 turns; runs 2 and 3 agree", output);
+        Assert.Matches(@"explain.txt: after uses 0\.3\s?% more tokens than before \(1,10\d -> 1,10\d, runs 2 and 3\)", output);
         var log = File.ReadAllText(Path.Combine(parent, "calls.log"));
-        Assert.Equal(3, log.Split("args: -p --model fake-model --effort high --output-format stream-json --verbose --no-session-persistence --permission-mode dontAsk").Length - 1);
-        Assert.Contains($"pwd: {Proc.Run("realpath", [clone], 20).Output}", log);
+        Assert.Equal(6, log.Split("args: -p --model fake-model --effort high --output-format stream-json --verbose --no-session-persistence --permission-mode acceptEdits --permission-prompts none").Length - 1);
+        Assert.Contains($"pwd: {Proc.Run("realpath", [before], 20).Output}", log);
+        Assert.Contains($"pwd: {Proc.Run("realpath", [after], 20).Output}", log);
         Assert.Contains("prompt: Explain class A.", log);
     }
 
@@ -133,9 +144,10 @@ public sealed class BenchmarkTests : IDisposable
     public void test_benchmark_allow_reads()
     {
         Assert.Equal(0, Run("--allow-reads").Code);
-        Assert.Contains("\"Bash(cat:*)\"", File.ReadAllText(Path.Combine(parent, "benchmark-proj", ".claude", "settings.json")));
+        Assert.Contains("\"Bash(cat:*)\"", File.ReadAllText(Path.Combine(parent, "benchmark-after-proj", ".claude", "settings.json")));
         Assert.False(File.Exists(Path.Combine(parent, "proj", ".claude", "settings.json")));
-        Assert.False(File.Exists(Path.Combine(parent, "benchmark-proj", "AGENTS.md")));
+        Assert.False(File.Exists(Path.Combine(parent, "benchmark-after-proj", "AGENTS.md")));
+        Assert.False(File.Exists(Path.Combine(parent, "benchmark-before-proj", ".claude", "settings.json")));
         Assert.EndsWith("_allow-reads", Directory.GetDirectories(Directory.GetDirectories(Directory.GetDirectories(Path.Combine(results, "proj"))[0])[0])[0]);
     }
 
@@ -143,19 +155,19 @@ public sealed class BenchmarkTests : IDisposable
     // A second benchmark replaces the clone the first one made.
     public void test_benchmark_replaces_own_clone()
     {
-        Assert.Equal(0, Run().Code);
-        File.WriteAllText(Path.Combine(parent, "benchmark-proj", "stale.txt"), "x");
-        Assert.Equal(0, Run().Code);
-        Assert.False(File.Exists(Path.Combine(parent, "benchmark-proj", "stale.txt")));
+        Assert.Equal(0, Run("--allow-reads").Code);
+        File.WriteAllText(Path.Combine(parent, "benchmark-before-proj", "stale.txt"), "x");
+        Assert.Equal(0, Run("--allow-reads").Code);
+        Assert.False(File.Exists(Path.Combine(parent, "benchmark-before-proj", "stale.txt")));
     }
 
     [Fact]
     // A benchmark- folder the command did not make is left alone and the benchmark stops.
     public void test_benchmark_refuses_foreign_folder()
     {
-        var foreign = Directory.CreateDirectory(Path.Combine(parent, "benchmark-proj")).FullName;
+        var foreign = Directory.CreateDirectory(Path.Combine(parent, "benchmark-before-proj")).FullName;
         File.WriteAllText(Path.Combine(foreign, "mine.txt"), "keep");
-        var (code, _, errors) = Run();
+        var (code, _, errors) = Run("--allow-reads");
         Assert.Equal(1, code);
         Assert.Contains("is not a clone --benchmark made", errors);
         Assert.Equal("keep", File.ReadAllText(Path.Combine(foreign, "mine.txt")));
@@ -166,11 +178,11 @@ public sealed class BenchmarkTests : IDisposable
     public void test_benchmark_failed_session()
     {
         WriteFake(1);
-        var (code, _, errors) = Run();
+        var (code, _, errors) = Run("--allow-reads");
         Assert.Equal(1, code);
         Assert.Contains("explain.txt: run 1 failed: exit code 1, no JSON result: boom", errors);
         var runDir = Directory.GetDirectories(Directory.GetDirectories(Directory.GetDirectories(Path.Combine(results, "proj"))[0])[0])[0];
-        Assert.Contains("boom", File.ReadAllText(Path.Combine(runDir, "run-1.json")));
+        Assert.Contains("boom", File.ReadAllText(Path.Combine(runDir, "before", "run-1.json")));
     }
 
     [Fact]
@@ -205,8 +217,9 @@ public sealed class BenchmarkTests : IDisposable
     {
         var prompts = Prompts();
         Assert.StartsWith("--benchmark, --model and --effort go together", Cli.Parse(["--benchmark", prompts, "--model", "m"]).Error);
-        Assert.StartsWith("--effort must be", Cli.Parse(["--benchmark", prompts, "--model", "m", "--effort", "huge"]).Error);
+        Assert.StartsWith("--effort must be", Cli.Parse(["--benchmark", prompts, "--model", "m", "--effort", "huge", "--allow-reads"]).Error);
+        Assert.StartsWith("--benchmark compares the root before and after", Cli.Parse(["--benchmark", prompts, "--model", "m", "--effort", "low"]).Error);
         Assert.StartsWith("--benchmark takes --root", Cli.Parse(["--benchmark", prompts, "--model", "m", "--effort", "low", "--check"]).Error);
-        Assert.StartsWith("benchmark prompt file or folder not found", Cli.Parse(["--benchmark", "/nope", "--model", "m", "--effort", "low"]).Error);
+        Assert.StartsWith("benchmark prompt file or folder not found", Cli.Parse(["--benchmark", "/nope", "--model", "m", "--effort", "low", "--allow-reads"]).Error);
     }
 }

@@ -78,6 +78,8 @@ internal static class Cli
             return Fail("--benchmark, --model and --effort go together");
         if (other)
             return Fail("--benchmark takes --root and the transforming switches only (--allow-reads, --strip-comments, --split-tests, --split-headers, --restructure)");
+        if (!strip && !splitTests && !splitHeaders && !restructure && !allowReads)
+            return Fail("--benchmark compares the root before and after the transforming switches: give at least one of --allow-reads, --strip-comments, --split-tests, --split-headers, --restructure");
         if (effort is not ("low" or "medium" or "high" or "xhigh" or "max"))
             return Fail($"--effort must be low, medium, high, xhigh or max: {effort}");
         if (!Path.Exists(benchmark))

@@ -13,8 +13,9 @@ internal static class Proc
         return (code, output);
     }
 
-    // Runs the program with text on its standard input and returns its exit code, trimmed standard output and standard error; -1 when it cannot start or times out.
-    public static (int Code, string Output, string Error) RunWithInput(string program, IEnumerable<string> args, int timeoutSeconds, string? workingDir, string? input)
+    // Runs the program with text on its standard input and extra environment variables, and returns its exit code, trimmed standard output and standard error; -1 when it cannot start or times out.
+    public static (int Code, string Output, string Error) RunWithInput(string program, IEnumerable<string> args, int timeoutSeconds, string? workingDir, string? input,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         var info = new ProcessStartInfo(program)
         {
@@ -22,6 +23,8 @@ internal static class Proc
         };
         foreach (var arg in args)
             info.ArgumentList.Add(arg);
+        foreach (var (key, value) in environment ?? new Dictionary<string, string>())
+            info.Environment[key] = value;
         try
         {
             using var process = Process.Start(info)!;

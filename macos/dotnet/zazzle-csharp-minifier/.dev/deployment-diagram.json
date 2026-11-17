@@ -76,14 +76,14 @@
       "id": "claude",
       "name": "Claude CLI (claude -p)",
       "kind": "process",
-      "description": "One fresh, unsaved session per benchmark run, on the user's Claude account, in the benchmark- clone.",
+      "description": "One fresh, unsaved session per benchmark run, on the user's Claude account, in a clone; file edits accepted, anything else that would ask denied.",
       "condition": "Only with --benchmark"
     },
     {
       "id": "clone",
-      "name": "benchmark-<name> clone",
+      "name": "benchmark-before-<name> and benchmark-after-<name> clones",
       "kind": "database",
-      "description": "A copy-on-write copy of the root in the same parent folder, transformed by the given switches; replaced by the next benchmark.",
+      "description": "Copy-on-write copies of the root in the same parent folder, made fresh for every run; the after clone is transformed by the given switches.",
       "condition": "Only with --benchmark"
     },
     {
@@ -162,7 +162,7 @@
       "from": "claude",
       "to": "clone",
       "kind": "connects-to",
-      "description": "Reads the clone; dontAsk denies edits and commands."
+      "description": "Reads and edits the clone; other actions that need permission are denied."
     },
     {
       "from": "minifier",
