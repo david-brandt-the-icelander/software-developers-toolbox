@@ -81,7 +81,7 @@ public class SymbolTests
     }
 
     [Fact]
-    // find_symbol puts exact names before prefix and substring matches, types before members and production before tests, and returns the end line.
+    // find_symbol puts exact names before prefix and substring matches, types before members and production before tests (partly matching tests after all production), and returns the end line.
     public void test_find_symbol_ranking()
     {
         var files = new Dictionary<string, string>
@@ -95,7 +95,8 @@ public class SymbolTests
         Assert.StartsWith("r:src/A.cs:4-7 class N.Widget", lines[0]);
         Assert.StartsWith("r:tests/WidgetTests.cs:3 class N.Tests.Widget", lines[1]);
         Assert.Contains("WidgetFactory", lines[2]);
-        Assert.Contains("RunWidget", lines[^2]);
+        Assert.Contains("RunWidget", lines[3]);
+        Assert.Contains("class N.Tests.WidgetTests", lines[4]);
         var limited = Call(tool, "{\"name\":\"Widget\",\"limit\":2}");
         Assert.EndsWith("[2 of 5; next offset 2]", limited);
     }

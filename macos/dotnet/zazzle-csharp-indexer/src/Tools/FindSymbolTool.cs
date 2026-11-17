@@ -43,12 +43,14 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
     private static readonly HashSet<string> TypeKinds = ["class", "struct", "interface", "enum", "record", "delegate", "type"];
 
     // Orders hits: exact name, then prefix, then word start, then substring; types before members; production code before tests.
+    // A test symbol that only partly matches sorts after every production symbol, so test classes named after the query do not crowd out the code.
     private static int Rank(Sym s, string path, string name)
     {
         var match = s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) ? 0
             : s.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase) ? 1
             : WordStart(s.Name, name) ? 2 : 3;
-        return match * 4 + (TypeKinds.Contains(s.Kind) ? 0 : 2) + (IsTestPath(path) ? 1 : 0);
+        var test = IsTestPath(path);
+        return (test && match > 0 ? 16 : 0) + match * 4 + (TypeKinds.Contains(s.Kind) ? 0 : 2) + (test ? 1 : 0);
     }
 
     // True when the name contains the query at a camelCase or underscore word boundary.
