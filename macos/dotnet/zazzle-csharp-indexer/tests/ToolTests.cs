@@ -27,7 +27,7 @@ public class ToolTests
         Assert.Empty(list["result"]!["tools"]!.AsArray());
         var call = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"find_symbol\",\"arguments\":{\"name\":\"needle\"}}}")!;
         Assert.False(call["result"]!["isError"]!.GetValue<bool>());
-        Assert.StartsWith("r:src/a.cs:1 class Needle", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
+        Assert.StartsWith("r:src/a.cs:1-3 class Needle", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
         var record = JsonNode.Parse(File.ReadAllText(logFile))!;
         Assert.Equal(2, record["v"]!.GetValue<int>());
         Assert.Equal("client-session", record["session"]!.GetValue<string>());

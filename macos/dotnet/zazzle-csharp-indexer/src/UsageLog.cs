@@ -18,6 +18,7 @@ public sealed class CallInfo
     public int SourceLines = -1;
     public string? Transformations;
     public string? Note;
+    public int ViewBytes = -1;
 }
 
 // Thread-safe JSONL writer; a null path disables logging.
@@ -81,6 +82,7 @@ public sealed class UsageLog
             ["source_lines"] = info.SourceLines,
             ["source_est_tokens"] = info.SourceBytes < 0 ? -1 : Tokens(info.SourceBytes),
             ["transformations"] = info.Transformations,
+            ["view_bytes"] = info.ViewBytes,
             ["results"] = info.Results,
             ["truncated"] = info.Truncated,
             ["candidates"] = info.Candidates,

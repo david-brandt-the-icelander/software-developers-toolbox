@@ -55,7 +55,7 @@ public static class Report
         sb.AppendLine("\nhow answers were produced:");
         foreach (var g in calls.GroupBy(r => Str(r, "path")).OrderByDescending(g => g.Count()))
             sb.AppendLine($"  {g.Key}: {g.Count()} ({100 * g.Count() / calls.Count}%)");
-        var views = calls.Where(r => Int(r, "source_est_tokens") > 0).ToList();
+        var views = calls.Where(r => Int(r, "source_est_tokens") > 0 && Str(r, "reason") != "no_gain").ToList();
         if (views.Count > 0)
         {
             var source = views.Sum(r => Int(r, "source_est_tokens"));
@@ -68,6 +68,13 @@ public static class Report
         sb.AppendLine("\nwaste signals:");
         sb.AppendLine($"  retries (same tool within 10 s, different arguments): {Retries(calls)}");
         sb.AppendLine($"  repeated identical calls in a session: {calls.GroupBy(r => Str(r, "session") + Str(r, "tool") + r["args"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
+        var viewCalls = calls.Where(r => Str(r, "tool") == "view").ToList();
+        if (viewCalls.Count > 0)
+        {
+            var sized = viewCalls.Where(r => r["view_bytes"] is not null && Int(r, "view_bytes") >= 0 && Int(r, "source_bytes") > 0).ToList();
+            var saving = sized.Count == 0 ? 0 : (int)sized.Average(r => 100.0 - 100.0 * Int(r, "view_bytes") / Int(r, "source_bytes"));
+            sb.AppendLine($"  viewCalls: {viewCalls.Count}, mean saving {saving}% over {sized.Count} sized, refused for no gain {viewCalls.Count(r => Str(r, "reason") == "no_gain")}, same file viewed again in a session {viewCalls.GroupBy(r => Str(r, "session") + r["args"]?["path"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
+        }
         Top(sb, "errors", calls.Where(r => Str(r, "error") != "").Select(r => $"{Str(r, "tool")} / {Str(r, "error")}"));
         var gaps = calls.Where(r => Str(r, "note") != "").TakeLast(20).ToList();
         if (gaps.Count > 0)
