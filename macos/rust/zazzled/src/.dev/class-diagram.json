@@ -28,7 +28,8 @@
   ],
   "types": [
     { "id": "Request", "name": "Request", "kind": "struct", "sources": ["macos/rust/zazzled/src/proto.rs"], "members": ["cwd: String", "session: String", "args: Vec<String>"] },
-    { "id": "Cli", "name": "Cli", "kind": "enum", "sources": ["macos/rust/zazzled/src/cli.rs"], "members": ["Serve { socket: Option<PathBuf>, idle: Duration }", "Mcp", "Install", "Uninstall", "Run(Vec<String>)", "Proxy(proxy::Opts)", "Setup(setup::Opts)", "Wrap(Vec<String>)", "Hook(hook::Opts)", "Help(&str)", "Version"] },
+    { "id": "Cli", "name": "Cli", "kind": "enum", "sources": ["macos/rust/zazzled/src/cli.rs"], "members": ["Serve { socket: Option<PathBuf>, idle: Duration }", "Mcp", "Install", "Uninstall", "Restart", "Run(Vec<String>)", "Proxy(proxy::Opts)", "Setup(setup::Opts)", "Wrap(Vec<String>)", "Hook(hook::Opts)", "Help(&str)", "Version"] },
+    { "id": "restart.Mode", "name": "restart.Mode", "kind": "enum", "sources": ["macos/rust/zazzled/src/restart.rs"], "members": ["Always", "OnlyOlder"] },
     { "id": "Config", "name": "Config", "kind": "struct", "sources": ["macos/rust/zazzled/src/server.rs"], "members": ["idle: Duration"] },
     { "id": "Fds", "name": "Fds", "kind": "struct", "sources": ["macos/rust/zazzled/src/server.rs"], "members": ["stdin: Option<OwnedFd>", "stdout: Option<OwnedFd>", "stderr: Option<OwnedFd>", "cwd: Option<OwnedFd>"] },
     { "id": "Shared", "name": "Shared", "kind": "struct", "sources": ["macos/rust/zazzled/src/server.rs"], "members": ["listener: UnixListener", "engine: Arc<Engine>", "stop: AtomicBool", "active: AtomicUsize", "last_ms: AtomicU64", "origin: Instant", "uid: u32"] },
