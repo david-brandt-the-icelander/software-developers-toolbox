@@ -40,6 +40,10 @@
     {
       "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
       "symbol": "RepoSetup"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs",
+      "symbol": "Benchmark"
     }
   ],
   "types": [
@@ -63,6 +67,9 @@
         "bool Restructure",
         "bool ListIdentifiers",
         "string? RenameFile",
+        "string? Benchmark",
+        "string? Model",
+        "string? Effort",
         "List<string> CommandSwitches()"
       ]
     },
@@ -685,6 +692,90 @@
       "members": [
         "static List<string> Run(string root, IReadOnlyList<string> switches)"
       ]
+    },
+    {
+      "id": "ZazzleMinifier.Benchmark",
+      "name": "Benchmark",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "const int Runs",
+        "const string Marker",
+        "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)",
+        "static List<string> PromptFiles(string path)",
+        "static List<string> ClaudeArgs(BenchmarkSetup setup)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkSetup",
+      "name": "BenchmarkSetup",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "RepoIdentity Repo",
+        "string ClonePath",
+        "List<string> Switches",
+        "string Model",
+        "string Effort",
+        "string ClaudeVersion",
+        "string? TransformLog"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RepoIdentity",
+      "name": "RepoIdentity",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Sha",
+        "bool Dirty",
+        "string? Origin",
+        "string Path",
+        "static RepoIdentity Of(string folder)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RunResult",
+      "name": "RunResult",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "int Number",
+        "int ExitCode",
+        "string Raw",
+        "string Stderr",
+        "JsonObject? Json",
+        "string? Problem",
+        "bool Failed",
+        "long TotalTokens",
+        "long Usage(string key)",
+        "static RunResult Parse(int number, int code, string stdout, string stderr)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkStore",
+      "name": "BenchmarkStore",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStore.cs"
+      ],
+      "members": [
+        "const double AgreementTolerance",
+        "static string Root()",
+        "static string Create(BenchmarkSetup setup, string promptPath, string promptText)",
+        "static void WriteRun(string dir, RunResult run)",
+        "static string WriteSummary(string dir, List<RunResult> runs)",
+        "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)"
+      ]
     }
   ],
   "relationships": [
@@ -1257,6 +1348,66 @@
       "to": "ZazzleMinifier.Layout",
       "kind": "depends-on",
       "description": "Layout.IsRestructured."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Benchmark",
+      "kind": "depends-on",
+      "description": "Run hands a --benchmark command line to Benchmark.Run."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.Runner",
+      "kind": "depends-on",
+      "description": "Runs the transforming switches on the clone."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.BenchmarkSetup",
+      "kind": "depends-on",
+      "description": "Shares the setup across prompts."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Reads the source's repository, commit and origin."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Parses each session's JSON result."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.BenchmarkStore",
+      "kind": "depends-on",
+      "description": "Writes the results folder."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Runs cp, rm, git and the Claude CLI."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkSetup",
+      "to": "ZazzleMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Holds the source's identity."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStore",
+      "to": "ZazzleMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Summarises the runs."
+    },
+    {
+      "from": "ZazzleMinifier.RepoIdentity",
+      "to": "ZazzleMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Asks git for the commit, top, status and origin."
     }
   ]
 }

@@ -7,6 +7,8 @@ internal static class Runner
     // Returns 0 when everything went well (and, with --check, nothing would change), 1 otherwise.
     public static int Run(ParsedArgs args, TextWriter output, TextWriter errors)
     {
+        if (args.Benchmark != null)
+            return Benchmark.Run(args, output, errors);
         if (args.ListIdentifiers)
         {
             output.Write(Identifiers.List(args.Root, Sources(args.Root, args.Paths)));

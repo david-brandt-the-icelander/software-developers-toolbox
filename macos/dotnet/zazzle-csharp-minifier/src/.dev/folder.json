@@ -14,7 +14,7 @@
         "Build settings shared with the tests (target framework, version) are in macos/dotnet/zazzle-csharp-minifier/Directory.Build.props.",
         "The skill text it writes into repositories is agents/skills/zazzle-csharp-minifier/SKILL.md, embedded at build time; change it there.",
         "C# is parsed, bound and renamed with Roslyn (Microsoft.CodeAnalysis.CSharp and its Workspaces package); compile checks use the .NET 8 reference assemblies package, so nothing is loaded from the machine's .NET.",
-        "git is the only external program it starts, and only during repository setup."
+        "It starts git during repository setup, and for --benchmark also cp, rm, git and the claude CLI (Proc.RunWithInput), never through a shell."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

@@ -82,6 +82,12 @@
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
+      "id": "benchmark",
+      "name": "Benchmark (Benchmark.cs, BenchmarkStore.cs)",
+      "responsibility": "Clones the root to benchmark-<name>, transforms the clone through the runner, runs each prompt three times in fresh Claude CLI sessions and stores meta, prompt, runs and summary per repository, commit and prompt.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
       "id": "skill",
       "name": "zazzle-csharp-minifier skill",
       "responsibility": "The agent instructions embedded into the binary as the SKILL.md resource.",
@@ -108,7 +114,13 @@
     {
       "id": "git",
       "name": "git command-line tool",
-      "responsibility": "Finds the repository top (rev-parse --show-cdup, joined to the root as given so its path spelling, symlinks included, is kept) and reads and sets core.hooksPath.",
+      "responsibility": "Finds the repository top (rev-parse --show-cdup, joined to the root as given so its path spelling, symlinks included, is kept) and reads and sets core.hooksPath. For --benchmark, reads the source's commit, status and origin.",
+      "external": true
+    },
+    {
+      "id": "claude-cli",
+      "name": "Claude CLI (claude)",
+      "responsibility": "Runs one non-interactive agent session per benchmark run on the user's account and prints a JSON result with token usage.",
       "external": true
     }
   ],
@@ -340,6 +352,36 @@
       "to": "git",
       "kind": "depends-on",
       "description": "RepoTop runs rev-parse --show-cdup and joins the answer to the root's own path; HookPath reads and sets config core.hooksPath; all through Proc.Run."
+    },
+    {
+      "from": "executable",
+      "to": "benchmark",
+      "kind": "contains",
+      "description": "The --benchmark command."
+    },
+    {
+      "from": "cli",
+      "to": "benchmark",
+      "kind": "depends-on",
+      "description": "Runner.Run hands a --benchmark command line to Benchmark.Run."
+    },
+    {
+      "from": "benchmark",
+      "to": "cli",
+      "kind": "depends-on",
+      "description": "Runs the transforming switches on the clone through Runner.Run."
+    },
+    {
+      "from": "benchmark",
+      "to": "claude-cli",
+      "kind": "depends-on",
+      "description": "claude -p with the model, effort, JSON output, no saved session and dontAsk permissions; the prompt on standard input."
+    },
+    {
+      "from": "benchmark",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "rev-parse HEAD and --show-cdup, status --porcelain and the origin URL of the source."
     }
   ]
 }

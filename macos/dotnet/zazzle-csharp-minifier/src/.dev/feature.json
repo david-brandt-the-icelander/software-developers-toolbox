@@ -460,6 +460,50 @@
           "symbol": "Proc.Run"
         }
       ]
+    },
+    {
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs",
+          "symbol": "Cli.Parse"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+          "symbol": "Runner.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
+          "symbol": "Layout.DocPath"
+        }
+      ],
+      "id": "benchmark",
+      "name": "Measure agent token use on a clone (--benchmark)",
+      "description": "Clones the root beside itself, applies any transforming switches to the clone, and runs each prompt file three times in fresh Claude CLI sessions, storing the token counts per repository, commit and prompt.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs",
+          "symbol": "Benchmark.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStore.cs",
+          "symbol": "BenchmarkStore.Create"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs",
+          "symbol": "RunResult.Parse"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs",
+          "symbol": "Cli.ParseBenchmark"
+        }
+      ],
+      "behavior": "Cli.ParseBenchmark requires --benchmark (a prompt file, or a folder whose .txt and .md files are used), --model and --effort, and allows only --root and the transforming switches beside them. Benchmark.Run copies the root to benchmark-<name> in the same parent with cp -Rc (cp -R --reflink=auto on Linux), replacing only a folder that carries its marker, then runs Runner.Run on the clone with the transforming switches. Each prompt goes on standard input to claude -p with the model, the effort, --output-format json, --no-session-persistence and --permission-mode dontAsk, in the clone, three times. BenchmarkStore writes meta.json (repository, origin, commit, uncommitted changes, prompt path and SHA-256, switches, model, effort, CLI version and arguments), prompt.txt, transform.txt, run-1..3.json (the CLI's JSON) and summary.json (token counts per run and whether runs 2 and 3 are within 10% of each other).",
+      "outcome": "Token use of the same prompts can be compared across commits, models, efforts and layouts, with the first run warming caches.",
+      "constraints": [
+        "Results go to ~/.zazzle/agent-token-benchmarks unless ZAZZLE_BENCHMARK_DIR is set; ZAZZLE_BENCHMARK_CLAUDE replaces the claude program (BenchmarkStore.Root, Benchmark.ClaudeProgram).",
+        "dontAsk denies every tool that would ask for permission, so sessions read the clone but do not edit it or run commands.",
+        "Exit code 1 when any session failed or returned an error."
+      ]
     }
   ],
   "relatedViews": [

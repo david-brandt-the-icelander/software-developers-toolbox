@@ -20,6 +20,10 @@
     {
       "path": "macos/dotnet/zazzle-csharp-minifier/README.md",
       "symbol": "Build"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs",
+      "symbol": "Benchmark.ClaudeArgs"
     }
   ],
   "nodes": [
@@ -67,6 +71,27 @@
       "name": "The C# repository",
       "kind": "database",
       "description": "The source tree the tool rewrites, with its AGENTS.md, CLAUDE.md, skill file and hook."
+    },
+    {
+      "id": "claude",
+      "name": "Claude CLI (claude -p)",
+      "kind": "process",
+      "description": "One fresh, unsaved session per benchmark run, on the user's Claude account, in the benchmark- clone.",
+      "condition": "Only with --benchmark"
+    },
+    {
+      "id": "clone",
+      "name": "benchmark-<name> clone",
+      "kind": "database",
+      "description": "A copy-on-write copy of the root in the same parent folder, transformed by the given switches; replaced by the next benchmark.",
+      "condition": "Only with --benchmark"
+    },
+    {
+      "id": "results",
+      "name": "~/.zazzle/agent-token-benchmarks",
+      "kind": "database",
+      "description": "Per repository, commit, prompt and run: meta.json, prompt.txt, transform.txt, run-1..3.json and summary.json.",
+      "condition": "Only with --benchmark"
     }
   ],
   "artifacts": [
@@ -114,6 +139,36 @@
       "to": "git",
       "kind": "connects-to",
       "description": "Spawned with an argument list and a timeout, never through a shell."
+    },
+    {
+      "from": "machine",
+      "to": "claude",
+      "kind": "hosts",
+      "description": "Started by the tool, three times per prompt."
+    },
+    {
+      "from": "minifier",
+      "to": "clone",
+      "kind": "connects-to",
+      "description": "cp -Rc, then the transforming switches."
+    },
+    {
+      "from": "minifier",
+      "to": "claude",
+      "kind": "connects-to",
+      "description": "Prompt on standard input; JSON result on standard output."
+    },
+    {
+      "from": "claude",
+      "to": "clone",
+      "kind": "connects-to",
+      "description": "Reads the clone; dontAsk denies edits and commands."
+    },
+    {
+      "from": "minifier",
+      "to": "results",
+      "kind": "connects-to",
+      "description": "Writes the results of every run."
     }
   ]
 }

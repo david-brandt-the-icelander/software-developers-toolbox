@@ -53,6 +53,15 @@ MyLibrary/
 - Files follow: a renamed namespace moves its folder (the part of the namespace after the project's `RootNamespace`, or the `.csproj` name) with sub-folders and `src/` halves, in the plain layout and in `incl/` and `src/` of a restructured project; a renamed type renames the `Type.cs` files that declare it and test folders named after it; a renamed member renames `<ClassUnderTest>/<Member>.cs` test files. Comment documents (`document/`, `doc/`) move with their sources and their `##` headings get the new names.
 - Nothing is written when a path is not declared, a new name is not a valid identifier, the renames would raise the count of any compiler error, or a move would land on an existing file.
 
+## Benchmark
+```bash
+zazzle-csharp-minifier --benchmark prompts/ --model opus --effort high --root ~/src/repo --restructure
+```
+- Copies the root to `benchmark-<name>` in the same parent with `cp -Rc` (APFS copy-on-write; `cp -R --reflink=auto` on Linux), replacing only a clone it made earlier (marker in `.git/zazzle-benchmark`), and runs the given transforming switches (`--strip-comments`, `--split-tests`, `--split-headers`, `--restructure`) on the clone; none means a baseline.
+- `--benchmark` takes a prompt file or a folder of `.txt`/`.md` prompt files. Each prompt runs three times, each in a fresh session: `claude -p --model M --effort E --output-format json --no-session-persistence --permission-mode dontAsk` in the clone, prompt on standard input, on the user's own Claude login. The first run warms caches; runs 2 and 3 are expected to agree. `dontAsk` denies anything that would ask for permission, so sessions read the clone but cannot edit it or run commands.
+- Results: `~/.zazzle/agent-token-benchmarks/<repo>/<sha>/<prompt>/<UTC time>_<model>_<effort>_<switches|baseline>/` holds `meta.json` (repository, origin, commit, uncommitted changes, prompt path and SHA-256, switches, model, effort, CLI version and arguments), `prompt.txt`, `transform.txt`, `run-1.json`…`run-3.json` (the CLI's JSON) and `summary.json` (input, output, cache-creation and cache-read tokens, cost, turns and models per run, and whether runs 2 and 3 are within 10%). `ZAZZLE_BENCHMARK_DIR` moves the results; `ZAZZLE_BENCHMARK_CLAUDE` replaces the `claude` program.
+- Exit code 1 when a session failed. Agents vary: a different number of turns is enough to make runs 2 and 3 differ, which the summary reports rather than hides.
+
 ## Build (run in `macos/dotnet/zazzle-csharp-minifier/`)
 - Test: `dotnet test tests`
 - Single test: `dotnet test tests --filter test_strip_doc_comment`
