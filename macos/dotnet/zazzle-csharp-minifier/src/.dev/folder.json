@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-csharp-minifier source",
+  "folder": "macos/dotnet/zazzle-csharp-minifier/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-csharp-minifier source",
+      "summary": "The zazzle-csharp-minifier project in one flat folder (namespace ZazzleMinifier): the command line, the four rewriting commands, identifier listing and renaming, the shared plan and layout helpers, and the repository setup.",
+      "purpose": "Builds the single zazzle-csharp-minifier executable (zazzle-csharp-minifier.csproj). Program.cs parses the switches with Cli.Parse and hands them to Runner.Run, which runs each requested command (StripComments, SplitTests, SplitHeaders, Restructure, Rename) as a Plan of in-memory edits with Changes, Notes and Errors, applies or, with --check, only reports them, and then calls RepoSetup to give the repository the skill, an AGENTS.md section and a pre-commit block. Identifiers prints the identifier tree that Rename reads back.",
+      "boundaries": [
+        "The tests are in macos/dotnet/zazzle-csharp-minifier/tests/, which reaches the internal types through InternalsVisibleTo.",
+        "Build settings shared with the tests (target framework, version) are in macos/dotnet/zazzle-csharp-minifier/Directory.Build.props.",
+        "The skill text it writes into repositories is agents/skills/zazzle-csharp-minifier/SKILL.md, embedded at build time; change it there.",
+        "C# is parsed, bound and renamed with Roslyn (Microsoft.CodeAnalysis.CSharp and its Workspaces package); compile checks use the .NET 8 reference assemblies package, so nothing is loaded from the machine's .NET.",
+        "It starts git during repository setup, and for --benchmark also cp, rm, git and the claude CLI (Proc.RunWithInput), never through a shell."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+          "symbol": "AssemblyName"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Program.cs",
+          "symbol": "Usage"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+          "symbol": "Runner.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Plan.cs",
+          "symbol": "Plan"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
+          "symbol": "RepoSetup.Run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "macos/dotnet/zazzle-csharp-minifier/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

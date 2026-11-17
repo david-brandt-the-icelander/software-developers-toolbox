@@ -1,0 +1,1498 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle-csharp-minifier classes",
+  "folder": "macos/dotnet/zazzle-csharp-minifier/src",
+  "description": "The types declared in the project's files, all internal, in namespace ZazzleMinifier. Program.cs uses top-level statements and declares no type. Static classes are shown as classes; Roslyn types appear only in member signatures.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+      "symbol": "Runner"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Plan.cs",
+      "symbol": "Plan"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs",
+      "symbol": "ParsedArgs"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs",
+      "symbol": "StripComments"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitTests.cs",
+      "symbol": "SplitTests"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs",
+      "symbol": "SplitHeaders"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs",
+      "symbol": "Restructure"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Rename.cs",
+      "symbol": "Rename"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
+      "symbol": "RepoSetup"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs",
+      "symbol": "Benchmark"
+    }
+  ],
+  "types": [
+    {
+      "id": "ZazzleMinifier.ParsedArgs",
+      "name": "ParsedArgs",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs"
+      ],
+      "members": [
+        "bool Help",
+        "bool Version",
+        "bool Strip",
+        "bool SplitTests",
+        "bool SplitHeaders",
+        "bool Check",
+        "string Root",
+        "List<string> Paths",
+        "string? Error",
+        "bool Restructure",
+        "bool ListIdentifiers",
+        "string? RenameFile",
+        "string? Benchmark",
+        "string? Model",
+        "string? Effort",
+        "bool AllowReads",
+        "List<string> CommandSwitches()"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Cli",
+      "name": "Cli",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs"
+      ],
+      "members": [
+        "static ParsedArgs Parse(string[] args)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Runner",
+      "name": "Runner",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs"
+      ],
+      "members": [
+        "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ToolVersion",
+      "name": "ToolVersion",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/ToolVersion.cs"
+      ],
+      "members": [
+        "static readonly string Text"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Edit",
+      "name": "Edit",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Plan.cs"
+      ],
+      "members": [
+        "string Path",
+        "byte[]? Bytes"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Plan",
+      "name": "Plan",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Plan.cs"
+      ],
+      "members": [
+        "List<Edit> Edits",
+        "List<string> Changes",
+        "List<string> Notes",
+        "List<string> Errors",
+        "void Write(string path, string text, bool bom = false)",
+        "void Delete(string path)",
+        "void Apply()",
+        "IEnumerable<string> WrittenSources()"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SourceFile",
+      "name": "SourceFile",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SourceFile.cs"
+      ],
+      "members": [
+        "string Path",
+        "string Rel",
+        "string Text",
+        "bool Bom",
+        "static SourceFile? Read(string root, string path, out string? error)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SourceFiles",
+      "name": "SourceFiles",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SourceFiles.cs"
+      ],
+      "members": [
+        "static List<string> Under(IEnumerable<string> paths)",
+        "static bool IsGenerated(string path, string text)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Layout",
+      "name": "Layout",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs"
+      ],
+      "members": [
+        "const string Incl",
+        "const string Src",
+        "const string Doc",
+        "const string Test",
+        "const string DocFolder",
+        "static string? ProjectDir(string root, string path)",
+        "static bool IsRestructured(string projectDir)",
+        "static (string ProjectDir, string Folder, string Rel)? Restructured(string root, string path)",
+        "static string ImplPath(string root, string headerPath)",
+        "static bool IsImplementationHalf(string root, string path)",
+        "static string DocPath(string root, string sourcePath)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ProjectLanguage",
+      "name": "ProjectLanguage",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/ProjectLanguage.cs"
+      ],
+      "members": [
+        "static (LanguageVersion? Version, string? Why) For(string root, string file)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Proc",
+      "name": "Proc",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Proc.cs"
+      ],
+      "members": [
+        "static (int Code, string Output) Run(string program, IEnumerable<string> args, int timeoutSeconds, string? workingDir = null)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.StripComments",
+      "name": "StripComments",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.FoundComment",
+      "name": "FoundComment",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs"
+      ],
+      "members": [
+        "TextSpan Span",
+        "SyntaxNode? Owner",
+        "string Raw",
+        "bool IsDoc"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.CommentFinder",
+      "name": "CommentFinder",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs"
+      ],
+      "members": [
+        "static List<FoundComment> Find(SyntaxTree tree, SourceText text)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Cut",
+      "name": "Cut",
+      "kind": "struct",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs"
+      ],
+      "members": [
+        "int Start",
+        "int End",
+        "string With",
+        "bool WholeLines"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Stripper",
+      "name": "Stripper",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs"
+      ],
+      "members": [
+        "static string Strip(SourceText text, IReadOnlyList<TextSpan> spans)",
+        "static string? CodeDifference(string before, string after, CSharpParseOptions options)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.CommentDoc",
+      "name": "CommentDoc",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/CommentDoc.cs"
+      ],
+      "members": [
+        "static string Title(string relPath)",
+        "static string Sections(IReadOnlyList<FoundComment> comments, SourceText text)",
+        "static string Plain(string raw)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Declarations",
+      "name": "Declarations",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Declarations.cs"
+      ],
+      "members": [
+        "static bool IsOwner(SyntaxNode node)",
+        "static SyntaxNode? OwnerOf(SyntaxNode? node)",
+        "static string Kind(SyntaxNode node)",
+        "static string QualifiedName(SyntaxNode node)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SplitTests",
+      "name": "SplitTests",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SplitTests.Output",
+      "name": "Output",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "string Text",
+        "bool Bom"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SplitTests.Report",
+      "name": "Report",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "List<string> Targets",
+        "int Moved",
+        "int Marked",
+        "int Cleared"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Target",
+      "name": "Target",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "string Class",
+        "string Method"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Resolution",
+      "name": "Resolution",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "Target? Target",
+        "string? Reason"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.UnderTest",
+      "name": "UnderTest",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "static UnderTest Load(string root, CSharpParseOptions options)",
+        "SyntaxTree? Tree(string path)",
+        "Resolution Resolve(MethodDeclarationSyntax test)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.TestMethods",
+      "name": "TestMethods",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/TestMethods.cs"
+      ],
+      "members": [
+        "const string MarkerPrefix",
+        "static bool IsTest(MethodDeclarationSyntax method)",
+        "static List<MethodDeclarationSyntax> In(SyntaxNode root)",
+        "static TextSpan? WhenSection(SyntaxNode body)",
+        "static SyntaxTrivia? Marker(MethodDeclarationSyntax method)",
+        "static string MarkerText(string reason)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.MovedTest",
+      "name": "MovedTest",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/TestFileText.cs"
+      ],
+      "members": [
+        "SourceFile File",
+        "MethodDeclarationSyntax Method",
+        "string Text",
+        "string Indent",
+        "string? Namespace",
+        "bool FileScoped",
+        "List<TypeDeclarationSyntax> Chain",
+        "string Key"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.TestFileText",
+      "name": "TestFileText",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/TestFileText.cs"
+      ],
+      "members": [
+        "static string NewLine(string text)",
+        "static string Indent(SourceText text, int position)",
+        "static int ContentStart(SourceText text, MethodDeclarationSyntax method)",
+        "static string MethodText(SourceText text, MethodDeclarationSyntax method, string nl)",
+        "static Cut RemovalCut(SourceText text, MethodDeclarationSyntax method)",
+        "static Cut? MarkerEdit(SourceText text, MethodDeclarationSyntax method, string reason, string nl)",
+        "static Cut? MarkerRemoval(SourceText text, MethodDeclarationSyntax method)",
+        "static string WithoutMarker(string methodText)",
+        "static IEnumerable<Cut> PartialEdits(IEnumerable<TypeDeclarationSyntax> types)",
+        "static string Apply(string text, IEnumerable<Cut> cuts)",
+        "static string Reindent(MovedTest test, string newIndent)",
+        "static string TypeBlock(List<MovedTest> tests, int depth, string unit, string nl)",
+        "static IEnumerable<string> Usings(MovedTest test)",
+        "static string NewFile(List<MovedTest> tests, string unit, string nl)",
+        "static string? Extend(string existing, List<MovedTest> tests, string unit, CSharpParseOptions options)",
+        "static List<string> ChainNames(TypeDeclarationSyntax type)",
+        "static string? NamespaceOf(SyntaxNode node)",
+        "static bool IsEmpty(SyntaxNode root)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SplitHeaders",
+      "name": "SplitHeaders",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.MovedMember",
+      "name": "MovedMember",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs"
+      ],
+      "members": [
+        "MemberDeclarationSyntax Member",
+        "TextSpan Cut",
+        "string HeaderTail",
+        "string Implementation"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.HeaderSplitter",
+      "name": "HeaderSplitter",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs"
+      ],
+      "members": [
+        "static List<MovedMember>? Find(CompilationUnitSyntax root, string text, LanguageVersion version, out string? skip)",
+        "static string Header(string text, List<MovedMember> moved)",
+        "static SyntaxToken TypeKeyword(TypeDeclarationSyntax type)",
+        "static string Indent(string text, int position)",
+        "static bool InsideType(SyntaxNode root, int position)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ImplWriter",
+      "name": "ImplWriter",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs"
+      ],
+      "members": [
+        "static string New(CompilationUnitSyntax root, string text, List<MovedMember> moved)",
+        "static string? Merge(CompilationUnitSyntax root, string existing, List<MovedMember> moved, out string? missing)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ImplWriter.Scope",
+      "name": "Scope",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs"
+      ],
+      "members": [
+        "SyntaxNode? Decl",
+        "List<object> Items"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Restructure",
+      "name": "Restructure",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs"
+      ],
+      "members": [
+        "const string IgnoreText",
+        "static Plan Make(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Restructure.Move",
+      "name": "Move",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs"
+      ],
+      "members": [
+        "string From",
+        "string To",
+        "byte[] Bytes"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ProjectFile",
+      "name": "ProjectFile",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/ProjectFile.cs"
+      ],
+      "members": [
+        "string Path",
+        "string Dir",
+        "string Name",
+        "bool IsTest",
+        "List<string> References",
+        "static ProjectFile Load(string path)",
+        "static string Relocate(string text, string oldDir, string newDir)",
+        "static string Restructured(string text)",
+        "static bool HasOwnCompileItems(string text)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SolutionFiles",
+      "name": "SolutionFiles",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SolutionFiles.cs"
+      ],
+      "members": [
+        "static List<string> Find(string root)",
+        "static List<string> Projects(string root)",
+        "static IEnumerable<string> ProjectsOf(string solution)",
+        "static string? Repoint(string solution, string oldProject, string newProject)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Identifiers",
+      "name": "Identifiers",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Identifiers.cs"
+      ],
+      "members": [
+        "static string List(string root, IReadOnlyList<string> files)",
+        "static IdentifierNode Build(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.IdentifierNode",
+      "name": "IdentifierNode",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "string Name",
+        "SortedDictionary<string, IdentifierNode> Children",
+        "string? NewName",
+        "int Line",
+        "IdentifierNode Child(string name)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RenameRequest",
+      "name": "RenameRequest",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "IReadOnlyList<string> Path",
+        "string NewName",
+        "int Line",
+        "string Dotted"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.IdentifierTree",
+      "name": "IdentifierTree",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "static string Render(IdentifierNode root)",
+        "static (List<RenameRequest> Renames, List<string> Errors) Parse(string text)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RenameKind",
+      "name": "RenameKind",
+      "kind": "enum",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "Namespace",
+        "Type",
+        "Member"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ResolvedRename",
+      "name": "ResolvedRename",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "RenameRequest Request",
+        "RenameKind Kind",
+        "IReadOnlyList<string> TypeChain"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Rename",
+      "name": "Rename",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, string renameFile)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.SourceWorkspace",
+      "name": "SourceWorkspace",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/SourceWorkspace.cs"
+      ],
+      "members": [
+        "const string ImplicitUsingsName",
+        "Solution Solution",
+        "Dictionary<string, SourceFile> Files",
+        "static SourceWorkspace Load(string root)",
+        "static Task<Dictionary<string, int>> ErrorCounts(Solution solution)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.FileFacts",
+      "name": "FileFacts",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/FileMoves.cs"
+      ],
+      "members": [
+        "HashSet<string> Namespaces",
+        "HashSet<string> Types",
+        "bool HasTests"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.FileMoves",
+      "name": "FileMoves",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/FileMoves.cs"
+      ],
+      "members": [
+        "static void Plan(string root, SourceWorkspace workspace, List<ResolvedRename> renames, Dictionary<string, string> texts, Plan plan)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RepoSetup",
+      "name": "RepoSetup",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs"
+      ],
+      "members": [
+        "static List<string> Run(string root, IReadOnlyList<string> switches)",
+        "static readonly string[] ReadOnlyCommands",
+        "static string ReadOnlySettings(string text)",
+        "static Plan AllowReads(string root)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Benchmark",
+      "name": "Benchmark",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "const int Runs",
+        "const string Marker",
+        "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)",
+        "static List<string> PromptFiles(string path)",
+        "static List<string> ClaudeArgs(BenchmarkSetup setup)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkSetup",
+      "name": "BenchmarkSetup",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "RepoIdentity Repo",
+        "string ClonePath",
+        "List<string> Switches",
+        "string Model",
+        "string Effort",
+        "string ClaudeVersion",
+        "string? TransformLog"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RepoIdentity",
+      "name": "RepoIdentity",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Sha",
+        "bool Dirty",
+        "string? Origin",
+        "string Path",
+        "static RepoIdentity Of(string folder)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.RunResult",
+      "name": "RunResult",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "int Number",
+        "int ExitCode",
+        "string Raw",
+        "string Stderr",
+        "JsonObject? Json",
+        "List<Turn> Turns",
+        "string? Problem",
+        "bool Failed",
+        "long TotalTokens",
+        "int TurnCount",
+        "string Route",
+        "long Usage(string key)",
+        "static RunResult Parse(int number, int code, string stdout, string stderr)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkStore",
+      "name": "BenchmarkStore",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStore.cs"
+      ],
+      "members": [
+        "const double AgreementTolerance",
+        "static string Root()",
+        "static string Create(BenchmarkSetup setup, string promptPath, string promptText)",
+        "static void WriteRun(string dir, RunResult run)",
+        "static string WriteSummary(string dir, List<RunResult> runs)",
+        "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)",
+        "static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkStream",
+      "name": "BenchmarkStream",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "static JsonObject? Result(IEnumerable<JsonObject> events)",
+        "static List<JsonObject> Events(string stdout)",
+        "static List<Turn> Turns(List<JsonObject> events)",
+        "static long Count(JsonNode? usage, string key)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Turn",
+      "name": "Turn",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "int Number",
+        "string MessageId",
+        "long Input",
+        "long Output",
+        "long CacheCreation",
+        "long CacheRead",
+        "List<ToolCall> Tools",
+        "long Total"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ToolCall",
+      "name": "ToolCall",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "string Id",
+        "string Name",
+        "string? Target",
+        "bool Denied",
+        "bool Failed"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "ZazzleMinifier.Cli",
+      "to": "ZazzleMinifier.ParsedArgs",
+      "kind": "depends-on",
+      "description": "Parse returns the parsed command line."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.ParsedArgs",
+      "kind": "depends-on",
+      "description": "Reads the commands, paths and --check."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.StripComments",
+      "kind": "depends-on",
+      "description": "Runs StripComments.Make as one step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.SplitTests",
+      "kind": "depends-on",
+      "description": "Runs SplitTests.Make as one step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.SplitHeaders",
+      "kind": "depends-on",
+      "description": "Runs SplitHeaders.Make as one step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Restructure",
+      "kind": "depends-on",
+      "description": "Runs Restructure.Make as one step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Rename",
+      "kind": "depends-on",
+      "description": "Runs Rename.Make as one step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Identifiers",
+      "kind": "depends-on",
+      "description": "--list-identifiers prints Identifiers.List."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Prints Notes and Errors, applies or reports Changes, follows WrittenSources."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Lists the .cs files under the paths before each step."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Leaves out implementation halves."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.RepoSetup",
+      "kind": "depends-on",
+      "description": "Sets up the repository after a run without --check."
+    },
+    {
+      "from": "ZazzleMinifier.Plan",
+      "to": "ZazzleMinifier.Edit",
+      "kind": "depends-on",
+      "description": "Queues one Edit per write or deletion."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.Identifiers",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.SourceWorkspace",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.UnderTest",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "ZazzleMinifier.Identifiers",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.CommentFinder",
+      "kind": "depends-on",
+      "description": "Finds the comments to move."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.Stripper",
+      "kind": "depends-on",
+      "description": "Cuts them and checks the code is unchanged."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.CommentDoc",
+      "kind": "depends-on",
+      "description": "Renders the Markdown document."
+    },
+    {
+      "from": "ZazzleMinifier.StripComments",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.DocPath places the document."
+    },
+    {
+      "from": "ZazzleMinifier.CommentFinder",
+      "to": "ZazzleMinifier.FoundComment",
+      "kind": "depends-on",
+      "description": "Returns one per comment."
+    },
+    {
+      "from": "ZazzleMinifier.CommentFinder",
+      "to": "ZazzleMinifier.Declarations",
+      "kind": "depends-on",
+      "description": "Declarations.OwnerOf finds the declaration a comment describes."
+    },
+    {
+      "from": "ZazzleMinifier.CommentFinder",
+      "to": "ZazzleMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Keeps the unresolved-test marker (TestMethods.MarkerPrefix) in the code."
+    },
+    {
+      "from": "ZazzleMinifier.CommentDoc",
+      "to": "ZazzleMinifier.FoundComment",
+      "kind": "depends-on",
+      "description": "Groups comments into sections."
+    },
+    {
+      "from": "ZazzleMinifier.CommentDoc",
+      "to": "ZazzleMinifier.Declarations",
+      "kind": "depends-on",
+      "description": "Section headings from Declarations.Kind and Declarations.QualifiedName."
+    },
+    {
+      "from": "ZazzleMinifier.Stripper",
+      "to": "ZazzleMinifier.Cut",
+      "kind": "depends-on",
+      "description": "Merges and applies cuts."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.UnderTest",
+      "kind": "depends-on",
+      "description": "Loads the compilation and resolves each test."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Finds test methods."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.TestFileText",
+      "kind": "depends-on",
+      "description": "Cuts, marks and writes test text."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.MovedTest",
+      "kind": "depends-on",
+      "description": "Queues moving tests by destination."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.Target",
+      "kind": "depends-on",
+      "description": "Destination from the class and method under test."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.Cut",
+      "kind": "depends-on",
+      "description": "Collects the edits to each source file."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.SplitTests.Output",
+      "kind": "depends-on",
+      "description": "Final text per file."
+    },
+    {
+      "from": "ZazzleMinifier.SplitTests",
+      "to": "ZazzleMinifier.SplitTests.Report",
+      "kind": "depends-on",
+      "description": "Report line per source file."
+    },
+    {
+      "from": "ZazzleMinifier.UnderTest",
+      "to": "ZazzleMinifier.Resolution",
+      "kind": "depends-on",
+      "description": "Resolve returns it."
+    },
+    {
+      "from": "ZazzleMinifier.UnderTest",
+      "to": "ZazzleMinifier.Target",
+      "kind": "depends-on",
+      "description": "The resolved class and member."
+    },
+    {
+      "from": "ZazzleMinifier.UnderTest",
+      "to": "ZazzleMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Marks test trees and reads the // When section."
+    },
+    {
+      "from": "ZazzleMinifier.UnderTest",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Parses every .cs file under the root."
+    },
+    {
+      "from": "ZazzleMinifier.Resolution",
+      "to": "ZazzleMinifier.Target",
+      "kind": "depends-on",
+      "description": "Holds the target when found."
+    },
+    {
+      "from": "ZazzleMinifier.TestFileText",
+      "to": "ZazzleMinifier.MovedTest",
+      "kind": "depends-on",
+      "description": "Writes and extends files from moved tests."
+    },
+    {
+      "from": "ZazzleMinifier.TestFileText",
+      "to": "ZazzleMinifier.Cut",
+      "kind": "depends-on",
+      "description": "Returns removal, marker and partial edits as cuts."
+    },
+    {
+      "from": "ZazzleMinifier.TestFileText",
+      "to": "ZazzleMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Marker text and test detection."
+    },
+    {
+      "from": "ZazzleMinifier.MovedTest",
+      "to": "ZazzleMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "The file the test leaves."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.HeaderSplitter",
+      "kind": "depends-on",
+      "description": "Finds movable members and builds the header."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.ImplWriter",
+      "kind": "depends-on",
+      "description": "Builds or merges the implementation file."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.MovedMember",
+      "kind": "depends-on",
+      "description": "Passes the moved members between the two."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.ProjectLanguage",
+      "kind": "depends-on",
+      "description": "The C# version decides what can split."
+    },
+    {
+      "from": "ZazzleMinifier.SplitHeaders",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.ImplPath places the implementation half."
+    },
+    {
+      "from": "ZazzleMinifier.HeaderSplitter",
+      "to": "ZazzleMinifier.MovedMember",
+      "kind": "depends-on",
+      "description": "Find returns them."
+    },
+    {
+      "from": "ZazzleMinifier.ImplWriter",
+      "to": "ZazzleMinifier.MovedMember",
+      "kind": "depends-on",
+      "description": "Writes their implementing declarations."
+    },
+    {
+      "from": "ZazzleMinifier.ImplWriter",
+      "to": "ZazzleMinifier.HeaderSplitter",
+      "kind": "depends-on",
+      "description": "Shares Indent, TypeKeyword and InsideType."
+    },
+    {
+      "from": "ZazzleMinifier.ImplWriter",
+      "to": "ZazzleMinifier.Declarations",
+      "kind": "depends-on",
+      "description": "Groups members by Declarations.QualifiedName."
+    },
+    {
+      "from": "ZazzleMinifier.ImplWriter",
+      "to": "ZazzleMinifier.ImplWriter.Scope",
+      "kind": "depends-on",
+      "description": "Builds the namespace and type nesting."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.ProjectFile",
+      "kind": "depends-on",
+      "description": "Loads projects, rewrites and relocates project files."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.SolutionFiles",
+      "kind": "depends-on",
+      "description": "Lists projects and re-points the moved test project."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Folder names and IsRestructured."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.Restructure.Move",
+      "kind": "depends-on",
+      "description": "One per file to move."
+    },
+    {
+      "from": "ZazzleMinifier.Restructure",
+      "to": "ZazzleMinifier.Edit",
+      "kind": "depends-on",
+      "description": "Queues moves as edits with their bytes."
+    },
+    {
+      "from": "ZazzleMinifier.ProjectFile",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "The incl, src and test folder names in the restructured items."
+    },
+    {
+      "from": "ZazzleMinifier.Identifiers",
+      "to": "ZazzleMinifier.IdentifierNode",
+      "kind": "depends-on",
+      "description": "Builds the tree."
+    },
+    {
+      "from": "ZazzleMinifier.Identifiers",
+      "to": "ZazzleMinifier.IdentifierTree",
+      "kind": "depends-on",
+      "description": "Renders it."
+    },
+    {
+      "from": "ZazzleMinifier.IdentifierTree",
+      "to": "ZazzleMinifier.IdentifierNode",
+      "kind": "depends-on",
+      "description": "Renders and parses nodes."
+    },
+    {
+      "from": "ZazzleMinifier.IdentifierTree",
+      "to": "ZazzleMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "Parse returns the renames deepest first."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.IdentifierTree",
+      "kind": "depends-on",
+      "description": "Parses the rename file."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "One per rename."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.ResolvedRename",
+      "kind": "depends-on",
+      "description": "Checks each request against the code."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.RenameKind",
+      "kind": "depends-on",
+      "description": "Namespace, type or member."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.SourceWorkspace",
+      "kind": "depends-on",
+      "description": "Loads the solution and counts compiler errors."
+    },
+    {
+      "from": "ZazzleMinifier.Rename",
+      "to": "ZazzleMinifier.FileMoves",
+      "kind": "depends-on",
+      "description": "Queues file moves and document updates."
+    },
+    {
+      "from": "ZazzleMinifier.ResolvedRename",
+      "to": "ZazzleMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "Wraps the request."
+    },
+    {
+      "from": "ZazzleMinifier.ResolvedRename",
+      "to": "ZazzleMinifier.RenameKind",
+      "kind": "depends-on",
+      "description": "What it names."
+    },
+    {
+      "from": "ZazzleMinifier.SourceWorkspace",
+      "to": "ZazzleMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Finds the .cs files under the root."
+    },
+    {
+      "from": "ZazzleMinifier.SourceWorkspace",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.ProjectDir groups files into projects."
+    },
+    {
+      "from": "ZazzleMinifier.SourceWorkspace",
+      "to": "ZazzleMinifier.ProjectLanguage",
+      "kind": "depends-on",
+      "description": "Parse options per project."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.SourceWorkspace",
+      "kind": "depends-on",
+      "description": "Reads the original files."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.ResolvedRename",
+      "kind": "depends-on",
+      "description": "Moves files per rename kind."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.FileFacts",
+      "kind": "depends-on",
+      "description": "What each file declares."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Queues writes and deletions."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Restructured folders and comment-document paths."
+    },
+    {
+      "from": "ZazzleMinifier.FileMoves",
+      "to": "ZazzleMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Tells test files apart."
+    },
+    {
+      "from": "ZazzleMinifier.RepoSetup",
+      "to": "ZazzleMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Runs git."
+    },
+    {
+      "from": "ZazzleMinifier.RepoSetup",
+      "to": "ZazzleMinifier.SolutionFiles",
+      "kind": "depends-on",
+      "description": "Lists projects to name the restructured ones."
+    },
+    {
+      "from": "ZazzleMinifier.RepoSetup",
+      "to": "ZazzleMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.IsRestructured."
+    },
+    {
+      "from": "ZazzleMinifier.Runner",
+      "to": "ZazzleMinifier.Benchmark",
+      "kind": "depends-on",
+      "description": "Run hands a --benchmark command line to Benchmark.Run."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.Runner",
+      "kind": "depends-on",
+      "description": "Runs the transforming switches on the clone."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.BenchmarkSetup",
+      "kind": "depends-on",
+      "description": "Shares the setup across prompts."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Reads the source's repository, commit and origin."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Parses each session's JSON result."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.BenchmarkStore",
+      "kind": "depends-on",
+      "description": "Writes the results folder."
+    },
+    {
+      "from": "ZazzleMinifier.Benchmark",
+      "to": "ZazzleMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Runs cp, rm, git and the Claude CLI."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkSetup",
+      "to": "ZazzleMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Holds the source's identity."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStore",
+      "to": "ZazzleMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Summarises the runs."
+    },
+    {
+      "from": "ZazzleMinifier.RepoIdentity",
+      "to": "ZazzleMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Asks git for the commit, top, status and origin."
+    },
+    {
+      "from": "ZazzleMinifier.RunResult",
+      "to": "ZazzleMinifier.BenchmarkStream",
+      "kind": "depends-on",
+      "description": "Parse reads the stream's events, result and turns."
+    },
+    {
+      "from": "ZazzleMinifier.RunResult",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Holds the run's turns."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStream",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Builds one turn per assistant message id."
+    },
+    {
+      "from": "ZazzleMinifier.Turn",
+      "to": "ZazzleMinifier.ToolCall",
+      "kind": "depends-on",
+      "description": "Holds the turn's tool calls."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStore",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Writes each turn's tokens and tools to the summary."
+    }
+  ]
+}

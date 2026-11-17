@@ -1,0 +1,74 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-minifier component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-minifier",
+  "description": "zazzle-csharp-minifier as a unit: the executable's project and its tests, sharing one set of build settings, and the skill file the executable embeds.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/Directory.Build.props",
+      "symbol": "PropertyGroup"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+      "symbol": "AssemblyName"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/tests/tests.csproj",
+      "symbol": "ProjectReference"
+    }
+  ],
+  "components": [
+    {
+      "id": "tool",
+      "name": "zazzle-csharp-minifier",
+      "responsibility": "The tool: one executable, its tests and its README.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier"
+    },
+    {
+      "id": "src",
+      "name": "zazzle-csharp-minifier executable",
+      "responsibility": "Command-line parsing, the rewriting commands, identifier listing and renaming, and the repository setup.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src",
+      "diagram": "macos/dotnet/zazzle-csharp-minifier/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "tests",
+      "name": "Tests",
+      "responsibility": "The xunit suite, run on throwaway folders and git repositories.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/tests"
+    },
+    {
+      "id": "skill",
+      "name": "zazzle-csharp-minifier skill",
+      "responsibility": "The agent instructions the executable copies into each repository it changes.",
+      "folder": "agents/skills/zazzle-csharp-minifier"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "tool",
+      "to": "src",
+      "kind": "contains",
+      "description": "Published as the single-file binary."
+    },
+    {
+      "from": "tool",
+      "to": "tests",
+      "kind": "contains",
+      "description": "Run with dotnet test tests."
+    },
+    {
+      "from": "tests",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Project reference; tests call the commands in process and run the built binary from a git pre-commit hook."
+    },
+    {
+      "from": "src",
+      "to": "skill",
+      "kind": "depends-on",
+      "description": "Embedded resource SKILL.md, written into repositories by the repository setup."
+    }
+  ]
+}

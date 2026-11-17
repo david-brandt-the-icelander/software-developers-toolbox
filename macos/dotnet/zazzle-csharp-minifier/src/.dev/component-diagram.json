@@ -1,0 +1,387 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-csharp-minifier source component diagram",
+  "folder": "macos/dotnet/zazzle-csharp-minifier/src",
+  "description": "The parts of the zazzle-csharp-minifier executable. All files sit in this one folder; the components are groups of files around one command or one shared job. The command line runs each requested command as a plan of in-memory edits, applies or only reports it, and then sets up the repository.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Program.cs",
+      "symbol": "Usage"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+      "symbol": "Runner.Run"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Plan.cs",
+      "symbol": "Plan"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+      "symbol": "PackageReference"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+      "symbol": "EmbeddedResource"
+    }
+  ],
+  "components": [
+    {
+      "id": "executable",
+      "name": "zazzle-csharp-minifier executable",
+      "responsibility": "Everything zazzle-csharp-minifier does, in one short-lived process per run.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (Program.cs, Cli.cs, Runner.cs, ToolVersion.cs)",
+      "responsibility": "Parses and checks the switches and paths, prints usage and version, runs the commands in their fixed order on the files the previous one wrote, applies each plan or with --check reports it as violations, sets the exit code, and calls the repository setup.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "shared",
+      "name": "Plans, source files and layout (Plan.cs, SourceFile.cs, SourceFiles.cs, Layout.cs, ProjectLanguage.cs)",
+      "responsibility": "The plan every command fills (edits, changes, notes, errors); reading UTF-8 sources with their byte-order mark; finding .cs files while skipping build output, hidden folders and generated code; where implementation halves and comment documents go in the plain and restructured layouts; and the C# version a file's project compiles with.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "strip",
+      "name": "Comment stripping (StripComments.cs, CommentFinder.cs, Stripper.cs, CommentDoc.cs, Declarations.cs)",
+      "responsibility": "--strip-comments: finds file and declaration comments, writes them as Markdown sections named after their declarations, cuts them from the source and proves the tokens and directives are unchanged.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "split-tests",
+      "name": "Test split (SplitTests.cs, UnderTest.cs, TestMethods.cs, TestFileText.cs)",
+      "responsibility": "--split-tests: recognises test methods, resolves each test's class and method under test from its // When section by compiling the whole tree, moves it to <ClassUnderTest>/<MethodUnderTest>.cs or marks it unresolved, and verifies no test is lost or altered.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "split-headers",
+      "name": "Header split (SplitHeaders.cs, HeaderSplitter.cs, ImplWriter.cs)",
+      "responsibility": "--split-headers: picks the members whose bodies can move under the project's C# version, writes the declaration-only header and the partial implementation file, and refuses a split that adds a syntax or compile error.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "restructure",
+      "name": "Restructure (Restructure.cs, ProjectFile.cs, SolutionFiles.cs)",
+      "responsibility": "--restructure: reads the solutions and projects, pairs each production project with its test project, and plans the moves into incl/, src/, doc/ and test/, the project and solution edits and the .ignore file.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "identifiers",
+      "name": "Identifiers and renames (Identifiers.cs, IdentifierTree.cs, Rename.cs, SourceWorkspace.cs, FileMoves.cs)",
+      "responsibility": "--list-identifiers prints the declared names as an indented tree; --rename parses such a tree with => directives, renames through a Roslyn workspace of one project per .csproj, refuses renames that add compiler errors, and moves the files and comment-document headings that follow the names.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "repo-setup",
+      "name": "Repository setup (RepoSetup.cs, Proc.cs)",
+      "responsibility": "After a run that changes files, writes the embedded skill, a marked AGENTS.md section (and CLAUDE.md when missing) and a marked pre-commit block, merging the switches earlier runs recorded; runs git without a shell.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "benchmark",
+      "name": "Benchmark (Benchmark.cs, BenchmarkStream.cs, BenchmarkStore.cs)",
+      "responsibility": "Clones the root to benchmark-<name>, transforms the clone through the runner, runs each prompt three times in fresh Claude CLI sessions, reads each session's stream into turns with their tokens and tool calls, and stores meta, prompt, streams, results and summary per repository, commit and prompt.",
+      "folder": "macos/dotnet/zazzle-csharp-minifier/src"
+    },
+    {
+      "id": "skill",
+      "name": "zazzle-csharp-minifier skill",
+      "responsibility": "The agent instructions embedded into the binary as the SKILL.md resource.",
+      "folder": "agents/skills/zazzle-csharp-minifier"
+    },
+    {
+      "id": "roslyn",
+      "name": "Roslyn C# compiler (NuGet Microsoft.CodeAnalysis.CSharp)",
+      "responsibility": "Parsing, syntax trees, semantic models and compilations, in process.",
+      "external": true
+    },
+    {
+      "id": "roslyn-workspaces",
+      "name": "Roslyn Workspaces (NuGet Microsoft.CodeAnalysis.CSharp.Workspaces)",
+      "responsibility": "The ad hoc workspace and the renamer that rewrites a symbol with every reference.",
+      "external": true
+    },
+    {
+      "id": "reference-assemblies",
+      "name": ".NET 8 reference assemblies (NuGet Basic.Reference.Assemblies.Net80)",
+      "responsibility": "Framework metadata references for compilations inside a single-file binary.",
+      "external": true
+    },
+    {
+      "id": "git",
+      "name": "git command-line tool",
+      "responsibility": "Finds the repository top (rev-parse --show-cdup, joined to the root as given so its path spelling, symlinks included, is kept) and reads and sets core.hooksPath. For --benchmark, reads the source's commit, status and origin.",
+      "external": true
+    },
+    {
+      "id": "claude-cli",
+      "name": "Claude CLI (claude)",
+      "responsibility": "Runs one non-interactive agent session per benchmark run on the user's account and prints a JSON result with token usage.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "executable",
+      "to": "cli",
+      "kind": "contains",
+      "description": "Entry point."
+    },
+    {
+      "from": "executable",
+      "to": "shared",
+      "kind": "contains",
+      "description": "Shared helpers."
+    },
+    {
+      "from": "executable",
+      "to": "strip",
+      "kind": "contains",
+      "description": "Command."
+    },
+    {
+      "from": "executable",
+      "to": "split-tests",
+      "kind": "contains",
+      "description": "Command."
+    },
+    {
+      "from": "executable",
+      "to": "split-headers",
+      "kind": "contains",
+      "description": "Command."
+    },
+    {
+      "from": "executable",
+      "to": "restructure",
+      "kind": "contains",
+      "description": "Command."
+    },
+    {
+      "from": "executable",
+      "to": "identifiers",
+      "kind": "contains",
+      "description": "Commands."
+    },
+    {
+      "from": "executable",
+      "to": "repo-setup",
+      "kind": "contains",
+      "description": "Runs after the commands."
+    },
+    {
+      "from": "cli",
+      "to": "strip",
+      "kind": "depends-on",
+      "description": "Runner.Run calls StripComments.Make."
+    },
+    {
+      "from": "cli",
+      "to": "split-tests",
+      "kind": "depends-on",
+      "description": "Runner.Run calls SplitTests.Make."
+    },
+    {
+      "from": "cli",
+      "to": "split-headers",
+      "kind": "depends-on",
+      "description": "Runner.Run calls SplitHeaders.Make."
+    },
+    {
+      "from": "cli",
+      "to": "restructure",
+      "kind": "depends-on",
+      "description": "Runner.Run calls Restructure.Make."
+    },
+    {
+      "from": "cli",
+      "to": "identifiers",
+      "kind": "depends-on",
+      "description": "Runner.Run calls Identifiers.List and Rename.Make."
+    },
+    {
+      "from": "cli",
+      "to": "repo-setup",
+      "kind": "depends-on",
+      "description": "Runner.Run calls RepoSetup.Run when not checking."
+    },
+    {
+      "from": "cli",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Plan.Apply, Plan.WrittenSources, SourceFiles.Under and Layout.IsImplementationHalf."
+    },
+    {
+      "from": "strip",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Fills a Plan; SourceFile.Read, SourceFiles.IsGenerated, Layout.DocPath."
+    },
+    {
+      "from": "strip",
+      "to": "split-tests",
+      "kind": "depends-on",
+      "description": "CommentFinder keeps comments starting with TestMethods.MarkerPrefix."
+    },
+    {
+      "from": "strip",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "Parses files and compares token shapes."
+    },
+    {
+      "from": "split-tests",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Fills a Plan; SourceFile.Read, SourceFiles.Under and SourceFiles.IsGenerated."
+    },
+    {
+      "from": "split-tests",
+      "to": "strip",
+      "kind": "depends-on",
+      "description": "Edits text with the Cut record struct declared in Stripper.cs."
+    },
+    {
+      "from": "split-tests",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "UnderTest compiles the tree and binds the // When section."
+    },
+    {
+      "from": "split-tests",
+      "to": "reference-assemblies",
+      "kind": "depends-on",
+      "description": "UnderTest.Load compiles against them."
+    },
+    {
+      "from": "split-headers",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Fills a Plan; SourceFile.Read, SourceFiles.IsGenerated, Layout.ImplPath, ProjectLanguage.For."
+    },
+    {
+      "from": "split-headers",
+      "to": "strip",
+      "kind": "depends-on",
+      "description": "ImplWriter groups members with Declarations.QualifiedName."
+    },
+    {
+      "from": "split-headers",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "Parses files and compiles both halves for the safety check."
+    },
+    {
+      "from": "split-headers",
+      "to": "reference-assemblies",
+      "kind": "depends-on",
+      "description": "The compile check runs against them."
+    },
+    {
+      "from": "restructure",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Fills a Plan with Edit moves; Layout folder names and Layout.IsRestructured."
+    },
+    {
+      "from": "restructure",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "Parses a file to tell top-level programs apart."
+    },
+    {
+      "from": "identifiers",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Fills a Plan; SourceFile.Read, SourceFiles.Under, Layout paths, ProjectLanguage.For per project."
+    },
+    {
+      "from": "identifiers",
+      "to": "split-tests",
+      "kind": "depends-on",
+      "description": "FileMoves finds test files with TestMethods.In."
+    },
+    {
+      "from": "identifiers",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "Parses declarations and resolves symbols by dotted path."
+    },
+    {
+      "from": "identifiers",
+      "to": "roslyn-workspaces",
+      "kind": "depends-on",
+      "description": "SourceWorkspace builds an AdhocWorkspace; Rename calls Renamer.RenameSymbolAsync."
+    },
+    {
+      "from": "identifiers",
+      "to": "reference-assemblies",
+      "kind": "depends-on",
+      "description": "Each workspace project's metadata references."
+    },
+    {
+      "from": "shared",
+      "to": "roslyn",
+      "kind": "depends-on",
+      "description": "ProjectLanguage returns a Roslyn LanguageVersion."
+    },
+    {
+      "from": "repo-setup",
+      "to": "shared",
+      "kind": "depends-on",
+      "description": "Layout.IsRestructured names the restructured projects in the AGENTS.md section."
+    },
+    {
+      "from": "repo-setup",
+      "to": "restructure",
+      "kind": "depends-on",
+      "description": "SolutionFiles.Projects lists the projects under the root."
+    },
+    {
+      "from": "repo-setup",
+      "to": "skill",
+      "kind": "depends-on",
+      "description": "Reads the embedded SKILL.md resource and writes it into the repository."
+    },
+    {
+      "from": "repo-setup",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "RepoTop runs rev-parse --show-cdup and joins the answer to the root's own path; HookPath reads and sets config core.hooksPath; all through Proc.Run."
+    },
+    {
+      "from": "executable",
+      "to": "benchmark",
+      "kind": "contains",
+      "description": "The --benchmark command."
+    },
+    {
+      "from": "cli",
+      "to": "benchmark",
+      "kind": "depends-on",
+      "description": "Runner.Run hands a --benchmark command line to Benchmark.Run."
+    },
+    {
+      "from": "benchmark",
+      "to": "cli",
+      "kind": "depends-on",
+      "description": "Runs the transforming switches on the clone through Runner.Run."
+    },
+    {
+      "from": "benchmark",
+      "to": "claude-cli",
+      "kind": "depends-on",
+      "description": "claude -p with the model, effort, stream-json output, no saved session and dontAsk permissions; the prompt on standard input."
+    },
+    {
+      "from": "benchmark",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "rev-parse HEAD and --show-cdup, status --porcelain and the origin URL of the source."
+    }
+  ]
+}
