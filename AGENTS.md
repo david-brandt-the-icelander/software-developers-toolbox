@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Personal developer toolbox: small macOS command-line tools written in Rust, plus the C# tool `zazzle-csharp-indexer`.
+Personal developer toolbox: small macOS command-line tools written in Rust, plus the C# tools `zazzle-csharp-indexer` and `zazzle-csharp-minifier`.
 
 ## Rules
 - Rust: follow `macos/rust/style.md`. The Cargo workspace is `macos/rust/`.
-- C#: follow `macos/dotnet/style.md`. The tool is `macos/dotnet/zazzle-csharp-indexer/` (commands in its README).
+- C#: follow `macos/dotnet/style.md`. The tools are `macos/dotnet/zazzle-csharp-indexer/` and `macos/dotnet/zazzle-csharp-minifier/` (commands in their READMEs).
 - Every code file, struct, enum and function has exactly one plain-sentence `//` comment; no rustdoc except clap `///` help text.
 - Write code for low token use and easy agent comprehension.
 - Never commit `target/` or state/log files.
@@ -31,15 +31,16 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed; commit with `zazzle git commit -m`: `agents/skills/zazzle/SKILL.md`
 - Write, test and run sandboxed zazz scripts (`zazz new|test|pack|add|call`): `agents/skills/zazz/SKILL.md`
+- Keep C# in the layout `zazzle-csharp-minifier` enforces in repositories it has changed (comments in `document/`, a test file per method under test, `src/` implementation halves): `agents/skills/zazzle-csharp-minifier/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Architecture diagrams and knowledge files
 - Each maintained folder documents itself in a `.dev/` directory as JSON following the skills in `Meta/Agents/Skills/` and the catalogue in `Meta/Agents/Knowledge/` (human-assisted software development). Read a folder's `.dev` files before changing it.
 - `populate-dev` decides what a folder needs. Each tool is its own unit; there is no diagram across tools, and grouping folders (`macos`, `macos/rust`, `macos/c`, `macos/dotnet`, `agents`) get only a `folder` record.
-- `describe-component-diagram`: each tool folder (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/zazzle-csharp-indexer`), its `src`, and source folders with parts of their own (zazzled's `src/cmd`, `src/proxy`, `src/wrap`; the indexer's `src/Analysis`, `src/Daemon`, `src/Index`, `src/Tools`).
+- `describe-component-diagram`: each tool folder (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/<tool>`), its `src`, and source folders with parts of their own (zazzled's `src/cmd`, `src/proxy`, `src/wrap`; the indexer's `src/Analysis`, `src/Daemon`, `src/Index`, `src/Tools`).
 - `describe-class-diagram`: a folder that itself declares more than one struct, enum, trait or class (each `src`, zazzled's `src/cmd`, `src/proxy`, `src/wrap`, the indexer's `src/*` except `Mcp`).
 - `describe-state-diagram`: a folder that implements a state machine; one `<Identifier>.state-diagram.json` per machine, named after its type (agent-fs `TriIndex`, free-disk-space `Cand` and `ScanState`, zazzle-git `Editor`).
-- `describe-deployment-diagram`: each tool folder that builds a binary someone installs (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/zazzle-csharp-indexer`).
+- `describe-deployment-diagram`: each tool folder that builds a binary someone installs (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/<tool>`).
 - Releases are `.github/.dev` (pipelines, the release use case) and `macos/release/.dev` (delivery to the GitHub release, icelander.net/downloads and the `zazzcat/homebrew-z` tap).
 - What a folder does, offers and exposes: `describe-use-case`, `describe-user-journey`, `describe-capability`, `describe-feature`, `describe-operation`, linked with `relatedViews`.
 - Intent, promises and needs: knowledge files via `describe-knowledge`. Wanted work is a `backlog` item in the folder that will own it; a question only the owner can answer is a `decisions` record with `status: open`.

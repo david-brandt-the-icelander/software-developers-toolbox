@@ -171,3 +171,28 @@ jobs:
           grep -q '"isError":false' smoke.txt
           ./out/zazzle-csharp-indexer report
           pkill -f "zazzle-csharp-indexer daemon" || true
+
+  dotnet-minifier:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: macos/dotnet/zazzle-csharp-minifier
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test tests
+      - run: dotnet publish src -c Release -o out
+      - name: Smoke test on a copy of the indexer, which must still build afterwards
+        run: |
+          copy="$RUNNER_TEMP/indexer"
+          cp -R ../zazzle-csharp-indexer "$copy"
+          git -C "$copy" init -q
+          ./out/zazzle-csharp-minifier --root "$copy" --strip-comments --split-tests --split-headers
+          ./out/zazzle-csharp-minifier --root "$copy" --check --strip-comments --split-tests --split-headers
+          dotnet build "$copy/tests"
