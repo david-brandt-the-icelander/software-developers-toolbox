@@ -34,7 +34,7 @@ Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of
 - Run builds and tests as `zazzle run -- CMD` (for example `zazzle run -- cargo test`): the same command in the same shell with the same exit code, its output cleaned. When repository instructions name a command such as `cargo test`, run exactly that command behind `zazzle run --`.
 - Edits may go anywhere in the git work tree you started in, in folders the client names and in the user's workspaces (`~/.zazzle/workspaces`).
 - If a zazzle tool is missing or fails, say so and use the native tool; where the hook refuses a raw command, `# allow-raw` at its end lets it through (logged).
-- Say what you needed and could not get with `zazzle_report_gap`. If zazzle seems misconfigured, run `zazzle setup --check` and show the user its report.";
+- If zazzle seems misconfigured, tell the user.";
 
 // What setup was asked to do.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -588,7 +588,10 @@ mod tests {
         assert!(overview()
             .contains("\n  --disable-session-deduping\n                            Send output again"));
         assert!(!page("git").expect("git").contains("--budget"));
-        assert_eq!(page("nope").unwrap_err(), "no command 'nope'; run `zazzle help` for the list");
+        assert_eq!(
+            page("nope").unwrap_err(),
+            "no command 'nope'; known: read outline find refs find-symbol edit ls run clean read-again"
+        );
     }
 
     // Checks wrapping breaks at spaces and keeps a word longer than the width whole.

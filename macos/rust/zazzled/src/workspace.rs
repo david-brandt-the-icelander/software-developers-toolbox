@@ -114,7 +114,7 @@ mod tests {
         let err = confine(&r, &h.join("elsewhere/z")).unwrap_err();
         assert!(
             err.starts_with("refusing to write outside the working directory")
-                && err.contains("--workspace DIR")
+                && err.contains("the user can add a workspace folder")
         );
         assert_eq!(
             confine(&r, Path::new("/nonexistent-zz/../..")).unwrap_err(),
