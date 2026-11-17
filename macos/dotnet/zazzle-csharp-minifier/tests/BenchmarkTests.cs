@@ -129,6 +129,17 @@ public sealed class BenchmarkTests : IDisposable
     }
 
     [Fact]
+    // --allow-reads on a benchmark changes only the clone's settings, and labels the results with it.
+    public void test_benchmark_allow_reads()
+    {
+        Assert.Equal(0, Run("--allow-reads").Code);
+        Assert.Contains("\"Bash(cat:*)\"", File.ReadAllText(Path.Combine(parent, "benchmark-proj", ".claude", "settings.json")));
+        Assert.False(File.Exists(Path.Combine(parent, "proj", ".claude", "settings.json")));
+        Assert.False(File.Exists(Path.Combine(parent, "benchmark-proj", "AGENTS.md")));
+        Assert.EndsWith("_allow-reads", Directory.GetDirectories(Directory.GetDirectories(Directory.GetDirectories(Path.Combine(results, "proj"))[0])[0])[0]);
+    }
+
+    [Fact]
     // A second benchmark replaces the clone the first one made.
     public void test_benchmark_replaces_own_clone()
     {

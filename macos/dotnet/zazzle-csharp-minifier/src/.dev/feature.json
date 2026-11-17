@@ -20,6 +20,41 @@
   ],
   "entities": [
     {
+      "implementation": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+          "symbol": "Runner.Run"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs",
+          "symbol": "Cli.Parse"
+        }
+      ],
+      "id": "allow-reads",
+      "name": "Allow read-only commands (--allow-reads)",
+      "description": "Lets agents run read-only shell commands in the repository without asking, so unattended sessions do not lose turns to refusals.",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
+          "symbol": "RepoSetup.AllowReads"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
+          "symbol": "RepoSetup.ReadOnlySettings"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
+          "symbol": "Runner.Run"
+        }
+      ],
+      "behavior": "Runner.Run runs RepoSetup.AllowReads first, as a plan: it merges Bash allow rules for ls, cat, head, tail, wc, grep and rg into permissions.allow of the repository's .claude/settings.json, keeping other settings and rules, and changes nothing when they are all there. On its own it writes nothing else; with --check it reports the missing rules; with --benchmark it applies to the clone and names the results folder allow-reads.",
+      "outcome": "A repository, or a benchmark clone, where agents read without permission prompts.",
+      "constraints": [
+        "find is never allowed: -exec and -delete make it anything but read-only.",
+        "A settings file that is not a JSON object is left unchanged and reported."
+      ]
+    },
+    {
       "id": "strip-comments",
       "name": "Move comments into Markdown (--strip-comments)",
       "description": "Comments on the file and its non-local declarations leave the C# and go to a Markdown document that mirrors the source file.",

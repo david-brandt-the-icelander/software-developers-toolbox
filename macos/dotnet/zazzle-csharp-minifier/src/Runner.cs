@@ -17,6 +17,8 @@ internal static class Runner
         var steps = new List<(string Name, Func<string, IReadOnlyList<string>, Plan> Make)>();
         if (args.RenameFile is { } renameFile)
             steps.Add(("--rename", (root, _) => Rename.Make(root, renameFile)));
+        if (args.AllowReads)
+            steps.Add(("--allow-reads", (root, _) => RepoSetup.AllowReads(root)));
         if (args.Strip)
             steps.Add(("--strip-comments", StripComments.Make));
         if (args.SplitTests)
@@ -45,7 +47,8 @@ internal static class Runner
             plan.Changes.ForEach(output.WriteLine);
             paths = [.. paths, .. plan.WrittenSources()];
         }
-        if (!args.Check && args.CommandSwitches().Count > 0)
+        // --allow-reads alone touches only .claude/settings.json; the layout commands also bring the skill, AGENTS.md section and hook.
+        if (!args.Check && args.CommandSwitches().Any(s => s != "--allow-reads"))
             RepoSetup.Run(args.Root, args.CommandSwitches()).ForEach(f => output.WriteLine($"set up {f}"));
         if (args.Check && violations > 0)
             errors.WriteLine($"{violations} files need changes: run zazzle-csharp-minifier {string.Join(" ", args.CommandSwitches())} to make them");

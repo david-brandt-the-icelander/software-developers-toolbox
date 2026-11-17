@@ -6,6 +6,7 @@ const string Usage = """
            zazzle-csharp-minifier --list-identifiers | --rename <file> [--root <dir>]
            zazzle-csharp-minifier --benchmark <prompt-file-or-folder> --model <model> --effort <level> [--root <dir>] [<commands>]
     commands (run in this order):
+      --allow-reads     allow agents the read-only commands (ls, cat, head, tail, wc, grep, rg) in the repository's .claude/settings.json
       --strip-comments  move comments on files, types and members into <root>/document/<path>.md
       --split-tests     split test files into <ClassUnderTest>/<MethodUnderTest>.cs, one file per method under test
       --split-headers   split each .cs file into declarations (stays) and implementation (src/<name>.cs beside it)

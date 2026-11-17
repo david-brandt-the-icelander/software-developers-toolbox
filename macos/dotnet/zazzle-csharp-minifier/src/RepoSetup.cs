@@ -7,7 +7,7 @@ namespace ZazzleMinifier;
 internal static class RepoSetup
 {
     // The commands in the order they run.
-    private static readonly string[] AllSwitches = ["--strip-comments", "--split-tests", "--split-headers", "--restructure"];
+    private static readonly string[] AllSwitches = ["--allow-reads", "--strip-comments", "--split-tests", "--split-headers", "--restructure"];
 
     // Sets up the repository holding root and returns one line per file it created or changed.
     public static List<string> Run(string root, IReadOnlyList<string> switches)
@@ -62,6 +62,24 @@ internal static class RepoSetup
         using (var writer = new System.Text.Json.Utf8JsonWriter(buffer, new System.Text.Json.JsonWriterOptions { Indented = true }))
             settings.WriteTo(writer);
         return System.Text.Encoding.UTF8.GetString(buffer.ToArray()) + "\n";
+    }
+
+    // The --allow-reads command: a plan that adds the read-only rules to the repository's .claude/settings.json, with no change when they are there.
+    public static Plan AllowReads(string root)
+    {
+        var plan = new Plan();
+        var path = Path.Combine(RepoTop(root), ".claude", "settings.json");
+        var text = ReadOrEmpty(path);
+        var updated = ReadOnlySettings(text);
+        if (updated == text)
+        {
+            if (text.Trim().Length > 0 && !text.Contains("Bash(cat:*)", StringComparison.Ordinal))
+                plan.Errors.Add($"{path}: left unchanged: not a JSON object");
+            return plan;
+        }
+        plan.Write(path, updated);
+        plan.Changes.Add($"{Path.GetRelativePath(root, path).Replace('\\', '/')}: allowed the read-only commands {string.Join(", ", ReadOnlyCommands)}");
+        return plan;
     }
 
     // The git work tree holding root, or root itself outside git, spelled from root so symlinked paths (macOS /var, /tmp) still relate.

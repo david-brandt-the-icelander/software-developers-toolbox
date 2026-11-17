@@ -84,6 +84,19 @@ public sealed class RepoSetupTests : IDisposable
     }
 
     [Fact]
+    // --allow-reads alone writes only .claude/settings.json, --check flags it until then, and a second run changes nothing.
+    public void test_allow_reads_alone()
+    {
+        Assert.Contains("--allow-reads would change .claude/settings.json", Run("--allow-reads", "--check"));
+        var output = Run("--allow-reads");
+        Assert.Contains(".claude/settings.json: allowed the read-only commands ls, cat, head, tail, wc, grep, rg", output);
+        Assert.Contains("\"Bash(rg:*)\"", Read(".claude/settings.json"));
+        Assert.False(File.Exists(Path.Combine(repo, "AGENTS.md")));
+        Assert.False(File.Exists(Path.Combine(repo, ".githooks/pre-commit")));
+        Assert.Equal("", Run("--allow-reads").Trim());
+    }
+
+    [Fact]
     // A settings file that is not JSON is left as it was.
     public void test_setup_leaves_broken_settings()
     {

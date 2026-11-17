@@ -70,6 +70,7 @@
         "string? Benchmark",
         "string? Model",
         "string? Effort",
+        "bool AllowReads",
         "List<string> CommandSwitches()"
       ]
     },
@@ -692,7 +693,8 @@
       "members": [
         "static List<string> Run(string root, IReadOnlyList<string> switches)",
         "static readonly string[] ReadOnlyCommands",
-        "static string ReadOnlySettings(string text)"
+        "static string ReadOnlySettings(string text)",
+        "static Plan AllowReads(string root)"
       ]
     },
     {
