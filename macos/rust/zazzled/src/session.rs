@@ -34,6 +34,12 @@ pub struct Replay {
     pub cwd: PathBuf,
 }
 
+// The final session-layer text and whether it replaced a repeated response.
+pub struct Applied {
+    pub text: String,
+    pub deduplicated: bool,
+}
+
 // All sessions the daemon knows about.
 #[derive(Default)]
 pub struct Sessions {
@@ -128,8 +134,20 @@ impl Sessions {
         text: String,
         allow_dedupe: bool,
     ) -> String {
+        self.apply_tracked(session, desc, replay, text, allow_dedupe).text
+    }
+
+    // Tags and remembers a response while reporting whether a prior response replaced it.
+    pub fn apply_tracked(
+        &self,
+        session: &str,
+        desc: &str,
+        replay: Option<Replay>,
+        text: String,
+        allow_dedupe: bool,
+    ) -> Applied {
         if session.is_empty() {
-            return text;
+            return Applied { text, deduplicated: false };
         }
         let hash = hash_of(session, &text);
         let mut guard = self.inner.lock().expect("session lock");
@@ -145,10 +163,13 @@ impl Sessions {
         let id = unique_id(&s.entries, &hash);
         let seen = s.entries.get(&id).filter(|e| allow_dedupe && s.sent_tokens - e.sent_at < WINDOW_TOKENS);
         if let Some(e) = seen {
-            return format!(
-                "[r:{id}] already sent: {}, unchanged. If you no longer have it: read-again r:{id}",
-                e.desc
-            );
+            return Applied {
+                text: format!(
+                    "[r:{id}] already sent: {}, unchanged. If you no longer have it: read-again r:{id}",
+                    e.desc
+                ),
+                deduplicated: true,
+            };
         }
         s.sent_tokens += tokens::estimate(&text) as u64;
         if s.entries.len() >= MAX_ENTRIES {
@@ -162,7 +183,7 @@ impl Sessions {
         }
         let replay = replay.or_else(|| s.entries.get(&id).and_then(|e| e.replay.clone()));
         s.entries.insert(id.clone(), Entry { hash, desc: desc.to_string(), sent_at: s.sent_tokens, replay });
-        format!("[r:{id}]\n{text}")
+        Applied { text: format!("[r:{id}]\n{text}"), deduplicated: false }
     }
 }
 
@@ -180,6 +201,17 @@ mod tests {
         let id = &first[3..8];
         let second = s.apply("sess", "zazzle read a.rs", "content".into(), true);
         assert_eq!(second, format!("[r:{id}] already sent: zazzle read a.rs, unchanged. If you no longer have it: read-again r:{id}"));
+    }
+
+    // Checks tracked application distinguishes a full response from a deduplicated notice.
+    #[test]
+    fn test_apply_tracked_reports_deduplication() {
+        let s = Sessions::default();
+        let first = s.apply_tracked("sess", "d", None, "content".into(), true);
+        let second = s.apply_tracked("sess", "d", None, "content".into(), true);
+        assert!(!first.deduplicated);
+        assert!(second.deduplicated);
+        assert!(second.text.contains("already sent"));
     }
 
     // Checks the disable flag resends full text under the same id.

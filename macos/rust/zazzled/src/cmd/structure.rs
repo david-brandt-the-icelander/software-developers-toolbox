@@ -90,13 +90,14 @@ struct Target {
     indexer: Indexer,
     repos: Repos,
     cwd: PathBuf,
+    session: String,
 }
 
 impl Target {
     // Finds the indexer and the repositories a command works on.
     fn locate(ctx: &Ctx, repo: Option<&str>) -> Result<Target, String> {
         let repos = repos(ctx, repo)?;
-        Ok(Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() })
+        Ok(Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone(), session: ctx.session.clone() })
     }
 
     // Finds the indexer and the work tree holding a path argument, wherever the working directory is; returns the path relative to it.
@@ -106,13 +107,15 @@ impl Target {
             work_tree(&full).ok_or_else(|| format!("{arg}: not inside a git work tree"))?.to_path_buf();
         let rel = full.strip_prefix(&root).expect("work tree holds the path").to_string_lossy().into_owned();
         let repos = Repos { roots: vec![single(&root)], found: 1, below: false };
-        Ok((Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone() }, rel))
+        Ok((Target { indexer: indexer()?, repos, cwd: ctx.cwd.clone(), session: ctx.session.clone() }, rel))
     }
 
     // Runs one indexer tool on every repository and rewrites its root:path references for the working directory.
     fn ask(&self, tool: &str, args: Map<String, Value>) -> Result<Output, String> {
-        let text =
-            self.indexer.ask(&self.repos.roots, tool, Value::Object(args)).map_err(|e| unavailable(&e))?;
+        let text = self
+            .indexer
+            .ask(&self.repos.roots, tool, Value::Object(args), &self.session)
+            .map_err(|e| unavailable(&e))?;
         let mut text = localize(&text, &self.repos.roots, &self.cwd);
         if self.repos.found > self.repos.roots.len() {
             text.push_str(&format!(
@@ -159,7 +162,8 @@ pub fn overview(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             list.join("\n")
         )));
     }
-    Target { indexer: indexer()?, repos: r, cwd: ctx.cwd.clone() }.ask("overview", Map::new())
+    Target { indexer: indexer()?, repos: r, cwd: ctx.cwd.clone(), session: ctx.session.clone() }
+        .ask("overview", Map::new())
 }
 
 // Runs find-symbol: declarations by name from the index, across every repository below a folder that is not one.
@@ -254,7 +258,7 @@ pub fn report_gap(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     }
     crate::activity::record(json!({"src": "gap", "what": what, "session": ctx.session, "cwd": ctx.cwd}));
     let indexed = Target::locate(ctx, p.value("repo"))
-        .and_then(|t| t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what})));
+        .and_then(|t| t.indexer.ask(&t.repos.roots[..1], "report_gap", json!({"what": what}), &t.session));
     Ok(Output::plain(match indexed {
         Ok(text) => text,
         Err(_) => "recorded in zazzle's activity log (the indexer's own log is unavailable)".into(),

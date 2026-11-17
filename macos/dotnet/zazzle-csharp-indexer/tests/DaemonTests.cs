@@ -40,13 +40,16 @@ public class DaemonTests
         var answers = Enumerable.Range(0, 2).Select(_ => Task.Run(() =>
         {
             var socket = Proxy.TryConnect(sock)!;
-            Assert.True(Proxy.Hello(socket, ["r=" + repo.Dir])["ok"]!.GetValue<bool>());
+            Assert.True(Proxy.Hello(socket, ["r=" + repo.Dir], "client-session")["ok"]!.GetValue<bool>());
             using var s = new NetworkStream(socket, true);
             var r = Rpc(s, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"find_symbol\",\"arguments\":{\"name\":\"needle\"}}}");
             return r["result"]!["content"]![0]!["text"]!.GetValue<string>();
         })).ToArray();
         foreach (var a in answers)
             Assert.StartsWith("r:a.cs:1 class Needle", await a);
+        var records = File.ReadLines(Path.Combine(repo.Engine.StateDir, "usage.jsonl")).Select(line => JsonNode.Parse(line)).ToList();
+        Assert.Equal(2, records.Count);
+        Assert.All(records, r => Assert.Equal("client-session", r!["session"]!.GetValue<string>()));
     }
 
     [Fact]

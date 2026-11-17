@@ -82,10 +82,10 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
             using var stream = new NetworkStream(client, true);
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = false };
-            var roots = await Handshake(reader, writer);
-            if (roots is null)
+            var hello = await Handshake(reader, writer);
+            if (hello is null)
                 return;
-            await new McpServer(roots, engine.Log).RunAsync(reader, writer);
+            await new McpServer(hello.Value.Roots, engine.Log, hello.Value.Session).RunAsync(reader, writer);
         }
         catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException)
         {
@@ -99,7 +99,7 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
     }
 
     // Reads the hello line, checks the version, attaches roots and replies; returns null if the session must end. A newer client makes the daemon drain (finish its clients, refuse new ones, then exit) so the client can start its own; an older one is told to restart its zazzled, so two versions never take turns stopping each other.
-    private async Task<List<Root>?> Handshake(StreamReader reader, StreamWriter writer)
+    private async Task<(List<Root> Roots, string Session)?> Handshake(StreamReader reader, StreamWriter writer)
     {
         var hello = JsonNode.Parse(await reader.ReadLineAsync() ?? "{}");
         var theirs = hello?["version"]?.GetValue<string>() ?? "";
@@ -120,8 +120,9 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
         try
         {
             var roots = (hello?["roots"]?.AsArray() ?? []).Select(r => Root.Parse(r!.GetValue<string>(), engine)).ToList();
+            var session = hello?["session"]?.GetValue<string>() ?? "";
             await Reply(writer, new JsonObject { ["ok"] = true });
-            return roots;
+            return (roots, session);
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException)
         {

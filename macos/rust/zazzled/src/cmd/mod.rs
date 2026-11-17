@@ -189,11 +189,16 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
     if out.status != 0 && !out.raw {
         out.text = shorten_repeats(ctx, &out.text);
     }
+    let pre_dedupe_bytes = out.text.len();
+    let mut deduplicated = false;
     if out.idable {
         let kept: Vec<String> = args.iter().filter(|a| *a != "--disable-session-deduping").cloned().collect();
         let replay = Replay { args: kept, cwd: ctx.cwd.clone() };
-        out.text = ctx.engine.sessions.apply_with(&ctx.session, &desc, Some(replay), out.text, dedupe);
+        let applied = ctx.engine.sessions.apply_tracked(&ctx.session, &desc, Some(replay), out.text, dedupe);
+        out.text = applied.text;
+        deduplicated = applied.deduplicated;
     }
+    ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &out.text, out.status, deduplicated);
     out
 }
 

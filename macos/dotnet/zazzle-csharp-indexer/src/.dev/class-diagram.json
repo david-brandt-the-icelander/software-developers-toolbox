@@ -101,7 +101,7 @@
         "UsageLog(string? file)",
         "static UsageLog Open()",
         "static string DefaultDir()",
-        "void Record(string session, string tool, JsonNode? args, CallInfo info, long ms, int bytesOut, string? error)"
+        "void Record(string session, string tool, JsonNode? args, CallInfo info, long ms, string response, string? error)"
       ]
     },
     {
@@ -118,7 +118,10 @@
         "bool Truncated",
         "int Candidates",
         "int TotalFiles",
-        "string? Note"
+        "string? Note",
+        "long SourceBytes",
+        "int SourceLines",
+        "string? Transformations"
       ]
     },
     {

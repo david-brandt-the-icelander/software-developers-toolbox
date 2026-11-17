@@ -167,12 +167,12 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     let (a, b) = bounds(sel, nl, o.ctx).map_err(|e| format!("{shown}: {e}"))?;
     let mut unavailable = String::new();
     if o.terse && outline::lang_of(&path) == outline::Lang::CSharp {
-        match Indexer::locate().and_then(|ix| ix.view(&path)) {
+        match Indexer::locate().and_then(|ix| ix.view(&path, &ctx.session)) {
             Ok(view) => return Ok(render_terse(&shown, &view, (a, b), nl, o, label)),
             Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
         }
     }
-    if let Some(view) = o.terse.then(|| other_view(&path, &shown, data)).flatten() {
+    if let Some(view) = o.terse.then(|| other_view(&path, &shown, data, &ctx.session)).flatten() {
         return Ok(render_terse(&shown, &view, (a, b), nl, o, label));
     }
     let costs: Vec<usize> =
@@ -197,10 +197,10 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
 }
 
 // Returns zazzled's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake, Makefile, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
-fn other_view(path: &std::path::Path, shown: &str, data: &[u8]) -> Option<String> {
+fn other_view(path: &std::path::Path, shown: &str, data: &[u8], session: &str) -> Option<String> {
     let text = String::from_utf8_lossy(data);
     if let Some(kind) = markup::kind_of(path) {
-        let csharp = |code: &str| Indexer::locate().and_then(|ix| ix.view_text(path, code)).ok();
+        let csharp = |code: &str| Indexer::locate().and_then(|ix| ix.view_text(path, code, session)).ok();
         let minified = (kind == markup::Kind::Html && minified::is_minified(&text))
             .then(|| minified::html_view(shown, &text))
             .flatten();
