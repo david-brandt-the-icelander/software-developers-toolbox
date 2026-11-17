@@ -33,11 +33,11 @@ internal static class RepoSetup
         return changed;
     }
 
-    // The git work tree holding root, or root itself outside git.
+    // The git work tree holding root, or root itself outside git, spelled from root so symlinked paths (macOS /var, /tmp) still relate.
     private static string RepoTop(string root)
     {
-        var (code, top) = Proc.Run("git", ["-C", root, "rev-parse", "--show-toplevel"], 20);
-        return code == 0 && top.Length > 0 ? Path.GetFullPath(top) : root;
+        var (code, up) = Proc.Run("git", ["-C", root, "rev-parse", "--show-cdup"], 20);
+        return code == 0 ? Path.GetFullPath(Path.Combine(root, up)).TrimEnd(Path.DirectorySeparatorChar) : root;
     }
 
     // The pre-commit file git runs: in core.hooksPath when set, otherwise .githooks/ (versioned, and switched on here); null outside git.
