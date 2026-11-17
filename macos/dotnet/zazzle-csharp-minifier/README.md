@@ -47,6 +47,12 @@ MyLibrary/
 - Comments in code disabled by `#if` are not seen.
 - `--split-tests` binds against .NET 8 reference assemblies and the tree's own source; calls into NuGet packages do not resolve, so a `// When` that only calls a package is unresolved.
 
+## Identifiers and renames
+- `--list-identifiers`: prints every namespace, type and member declared under the root (generated code left out) as a tree, 4 spaces per level, a name with children ending in `:`, names sorted within each level. Dotted namespaces nest a level per part; overloads, partial parts and generic arities share one line; constructors, finalizers, operators and indexers have no line of their own.
+- `--rename <file>`: reads such a tree (lines that are not on a renamed path can be deleted, `#` lines are comments) where `name => newName` renames that name, also on a line with children (`Widgets => Gadgets:`). Renames run deepest first through Roslyn's renamer over a workspace of one project per `.csproj` (`ProjectReference`s, the project's C# version, implicit usings), so every reference changes; overloads are renamed together, strings and comments are not.
+- Files follow: a renamed namespace moves its folder (the part of the namespace after the project's `RootNamespace`, or the `.csproj` name) with sub-folders and `src/` halves, in the plain layout and in `incl/` and `src/` of a restructured project; a renamed type renames the `Type.cs` files that declare it and test folders named after it; a renamed member renames `<ClassUnderTest>/<Member>.cs` test files. Comment documents (`document/`, `doc/`) move with their sources and their `##` headings get the new names.
+- Nothing is written when a path is not declared, a new name is not a valid identifier, the renames would raise the count of any compiler error, or a move would land on an existing file.
+
 ## Build (run in `macos/dotnet/zazzle-csharp-minifier/`)
 - Test: `dotnet test tests`
 - Single test: `dotnet test tests --filter test_strip_doc_comment`

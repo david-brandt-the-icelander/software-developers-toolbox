@@ -27,3 +27,7 @@ Docs: `zazzle-csharp-minifier --help`; source and README in the software-develop
 ## When the check fails
 - Run the command it prints, review the diff, commit.
 - A file reported as "left unchanged" needs a manual fix (the reason follows); the tool never changes code it cannot prove unchanged.
+
+## Rename
+- Never rename a C# namespace, type or member by hand: run `zazzle-csharp-minifier --list-identifiers > names.txt`, write `=> newName` after each name to change (`Store => Shop:`), delete the other lines if you like, then `zazzle-csharp-minifier --rename names.txt`.
+- It renames every reference, moves the folders and files that carry the names (namespace folders, `Type.cs`, test folders and files) and fixes the comment documents; it refuses renames that add a compiler error.
