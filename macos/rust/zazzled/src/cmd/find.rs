@@ -24,8 +24,8 @@ pub(super) const SPEC: &[Flag] = &[
     opt("max", 'm'),
 ];
 const USAGE: &str = "usage: find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]";
-const DEFAULT_MAX: usize = 50;
-const LIST_CAP: usize = 200;
+const DEFAULT_MAX: usize = 30;
+const LIST_CAP: usize = 60;
 const MAX_FILE: u64 = 2 << 20;
 const PARALLEL_MIN: usize = 8;
 const BUF_KEEP: usize = 256 << 10;
@@ -440,7 +440,7 @@ mod tests {
             t.write(&format!("d/f{i:03}.txt"), b"needle\n");
         }
         let l = run_cmd(t.path(), &["find", "needle", "-l"]).text;
-        assert!(l.contains("+5 more files; narrow with a path or -g GLOB"));
+        assert!(l.contains("+145 more files; narrow with a path or -g GLOB"));
         assert!(l.ends_with("-- 205 matching lines in 205 files (205 searched)"));
         let c = run_cmd(t.path(), &["find", "needle", "-c"]).text;
         assert!(c.starts_with("d/f000.txt: 1\n"));
@@ -534,7 +534,7 @@ mod tests {
         let mut sorted = heads.clone();
         sorted.sort();
         assert_eq!(heads, sorted);
-        assert_eq!(heads.len(), 40);
+        assert_eq!(heads.len(), 30);
     }
 
     // Checks several matches on one line count as one matching line.

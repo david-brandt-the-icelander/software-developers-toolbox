@@ -11,7 +11,7 @@ const GROUPS: [&str; 5] = [
     "Other tools",
 ];
 const COMMON: &[(&str, &str)] = &[
-    ("--budget T", "Cap the output at about T tokens (default 8000; read, read-again and clean have their own)"),
+    ("--budget T", "Cap the output at about T tokens (default 3000; read, read-again and clean have their own)"),
     ("--disable-session-deduping", "Send output again even if this session has already seen it"),
     (
         "--commit SHA",
@@ -48,7 +48,7 @@ const PAGES: &[Page] = &[
             ("-w, --word", "Match whole words only"),
             ("-C, --context N", "Show N lines before and after each match"),
             ("-g, --glob GLOB", "Search only files matching GLOB, such as '*.rs' (repeatable)"),
-            ("-m, --max N", "Show at most N matches (default 50)"),
+            ("-m, --max N", "Show at most N matches (default 30)"),
             ("-c, --count", "Show only the number of matches in each file"),
             ("-l, --files", "Show only the names of the files that match"),
             ("-u, --no-ignore", "Also search files that .gitignore ignores"),

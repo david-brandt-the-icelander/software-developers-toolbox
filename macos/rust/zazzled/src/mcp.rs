@@ -102,7 +102,7 @@ fn find_schema() -> Value {
             "ignore_case": {"type": "boolean"}, "fixed": {"type": "boolean", "description": "Treat pattern as literal text"},
             "word": {"type": "boolean"}, "count": {"type": "boolean"}, "files_only": {"type": "boolean"},
             "no_ignore": {"type": "boolean", "description": "Also search gitignored files"},
-            "context": {"type": "integer"}, "max": {"type": "integer", "description": "Maximum matches shown (default 50)"},
+            "context": {"type": "integer"}, "max": {"type": "integer", "description": "Maximum matches shown (default 30)"},
             "disable_session_deduping": {"type": "boolean"}
         }),
         &["pattern"],
@@ -117,7 +117,7 @@ fn read_schema() -> Value {
             "source": {"type": "boolean", "description": "Exact code and its sha (edits need it); default is a terse view"},
             "symbol": {"type": "string", "description": "One symbol with its docs: Namespace.Type.Member, Type.method or a::b; overloads Name(T1, T2) or #N; without paths, found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
-            "budget": {"type": "integer", "description": "Token budget (default 3000)"},
+            "budget": {"type": "integer", "description": "Token budget (default 2000)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
             "disable_session_deduping": {"type": "boolean"}
         }),
@@ -132,7 +132,7 @@ fn read_again_schema() -> Value {
             "id": {"type": "string", "description": "The id from a response's [r:ID] tag"},
             "full": {"type": "boolean", "description": "Uncut text of a clean, run or proxy output"},
             "lines": {"type": "string", "description": "With full: a line range A-B"},
-            "budget": {"type": "integer", "description": "With full: token budget (default 3000)"}
+            "budget": {"type": "integer", "description": "With full: token budget (default 2000)"}
         }),
         &["id"],
     )

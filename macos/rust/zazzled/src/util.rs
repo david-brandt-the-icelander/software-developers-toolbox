@@ -111,15 +111,25 @@ pub fn hex8(hash: &[u8; 32]) -> String {
     hash[..4].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-// Ranks a path for display: ordinary files before tests, then shallower before deeper.
+// True for a directory name that holds tests or documentation: `tests`, `__tests__`, .NET projects such as `UnitTests.Core` or `Core.Tests`, `docs`.
+fn side_dir(dir: &str) -> bool {
+    const SIDE_DIRS: [&str; 9] = ["test", "tests", "spec", "specs", "__tests__", "testdata", "doc", "docs", "documentation"];
+    let lower = dir.to_ascii_lowercase();
+    SIDE_DIRS.contains(&lower.as_str())
+        || lower.ends_with("tests")
+        || lower.contains(".tests.")
+        || ["unittests.", "integrationtests.", "contracttests.", "tests."].iter().any(|p| lower.starts_with(p))
+}
+
+// Ranks a path for display: ordinary files before tests and documentation, then shallower before deeper.
 pub fn rank(path: &Path) -> (bool, usize) {
-    const TEST_DIRS: [&str; 6] = ["test", "tests", "spec", "specs", "__tests__", "testdata"];
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let in_test_dir =
-        path.components().any(|c| c.as_os_str().to_str().is_some_and(|s| TEST_DIRS.contains(&s)));
-    let test_name =
-        name.starts_with("test_") || ["_test.", ".test.", ".spec."].iter().any(|m| name.contains(m));
-    (in_test_dir || test_name, path.components().count())
+    let in_side_dir = path.parent().is_some_and(|p| p.components().any(|c| c.as_os_str().to_str().is_some_and(side_dir)));
+    let test_name = name.starts_with("test_")
+        || ["_test.", ".test.", ".spec."].iter().any(|m| name.contains(m))
+        || ["Tests.cs", "Test.cs", "Tests.cshtml.cs"].iter().any(|s| name.ends_with(s) && name.len() > s.len());
+    let docs_name = [".md", ".markdown", ".rst", ".txt"].iter().any(|e| name.to_ascii_lowercase().ends_with(e));
+    (in_side_dir || test_name || docs_name, path.components().count())
 }
 
 // Moves an index down to the nearest UTF-8 character boundary.
@@ -259,10 +269,17 @@ mod tests {
             "b.spec.js",
             "test_a.py",
             "x/testdata/y.txt",
+            "UnitTests.Core/Services/A.cs",
+            "Core.Tests/A.cs",
+            "src/FooTests.cs",
+            "documentation/a.html",
+            "README.md",
         ] {
             assert!(rank(Path::new(t)).0, "{t}");
         }
         assert!(!rank(Path::new("src/latest.rs")).0);
+        assert!(!rank(Path::new("src/Latest.cs")).0 && !rank(Path::new("src/Tests.cs")).0);
+        assert!(!rank(Path::new("N1.Core/Services/A.cs")).0);
         assert_eq!(rank(Path::new("/")), (false, 1));
     }
 }

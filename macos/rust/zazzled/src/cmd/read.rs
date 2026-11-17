@@ -33,7 +33,7 @@ pub(super) const SPEC: &[Flag] = &[
     flag("full", '\0'),
 ];
 const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
-const DEFAULT_BUDGET: usize = 3000;
+const DEFAULT_BUDGET: usize = 2000;
 // A multi-path read shares one budget, each file getting an even share of what is left; below this many tokens it stops and names the files it did not read.
 const MIN_SHARE: usize = 100;
 const DEFAULT_CTX: usize = 20;

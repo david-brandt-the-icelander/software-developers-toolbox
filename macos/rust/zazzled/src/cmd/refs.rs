@@ -164,7 +164,7 @@ mod tests {
         let o = run_cmd(t.path(), &["refs", "parse"]);
         assert_eq!(
             o.text,
-            "defs\nsrc/lib.rs:1-3 fn parse\nrefs\nsrc/lib.rs\n6 [other]     parse(1);\nREADME.md\n1 call parse often\nsrc/main.rs\n2 [main]     let a = parse(2);\n3 [main]     let b = parse(3);\n-- 1 defs, 4 refs in 3 files (3 searched)"
+            "defs\nsrc/lib.rs:1-3 fn parse\nrefs\nsrc/lib.rs\n6 [other]     parse(1);\nsrc/main.rs\n2 [main]     let a = parse(2);\n3 [main]     let b = parse(3);\nREADME.md\n1 call parse often\n-- 1 defs, 4 refs in 3 files (3 searched)"
         );
         assert!(o.idable);
     }
@@ -184,7 +184,7 @@ mod tests {
         let t = project();
         let o = run_cmd(t.path(), &["refs", "parse", "-m", "2"]).text;
         assert!(o.ends_with("-- 1 defs, 4 refs in 3 files (3 searched); showing 2 refs, narrow with a path or -g GLOB, or raise -m"));
-        assert!(!o.contains("src/main.rs"));
+        assert!(!o.contains("README.md"));
     }
 
     // Checks path and glob narrowing, and the no-reference message.
