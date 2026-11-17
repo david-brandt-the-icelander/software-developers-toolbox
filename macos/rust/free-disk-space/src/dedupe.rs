@@ -401,7 +401,7 @@ pub fn cmd_dedupe(o: &DedupeOpts) {
     let has_files: bool =
         db.query_row("SELECT EXISTS(SELECT 1 FROM files)", [], |r| r.get(0)).unwrap_or(false);
     if !has_files {
-        die("no file names recorded in this scan state; run `new` to rescan");
+        die("no file names recorded in this scan state; run `scan` to rescan");
     }
     if !finished(&db) {
         warn("scan is not complete; deduplicating from the file names found so far");

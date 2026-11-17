@@ -15,7 +15,7 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 5. Docker is never started; it is cleaned and shut down only if already running.
 
 ## Compression (resumable)
-1. `... new --root ~ --min-size 5M` (Ctrl-C safe); continue with `resume`; inspect with `status`, `list --top 30`.
+1. `... scan --root ~ --min-size 5M` (Ctrl-C safe; `new` is an alias). When it completes it reports compression candidates, likely duplicates and a cleanup preview (`--skip-clean` leaves that out); continue with `resume`; inspect with `status`, `list --top 30`.
 2. Verify first: `... compress --sample 5`, then compare "verified saving" with "free-space change".
 3. Go wider: `... compress --limit 20G --yes`.
 4. State: `~/.local/state/free-disk-space/scan.sqlite3` (`--state` or `$FDS_STATE`).
@@ -30,7 +30,7 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 2. Verify first: `... dedupe --sample 5 --apply`, check the files and the free-space change, then `... dedupe --apply`.
 3. Add `--include-system` only with explicit user authorization; default touches only files the user owns outside system paths.
    Likewise `--include-no-provenance`: by default files without a `com.apple.provenance` (Apple's and system files) are left alone.
-4. Scans made before version 1.1 hold no file names; rerun `new`.
+4. Scans made before version 1.1 hold no file names; rerun `scan`.
 
 ## Background daemon (launchd login item)
 1. Install only with the user's explicit authorization, since it deletes on its own: `... daemon install [--threshold 30G|10%] [--cadence 15m] [--targets caches dev]` (defaults: 30G, 15m, caches dev).

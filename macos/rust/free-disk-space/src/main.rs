@@ -27,7 +27,7 @@ fn size_arg(text: &str) -> Result<i64, String> {
 const EXAMPLES: &str = "examples:
   free-disk-space clean all                    # dry run of cache/downloads/trash/dev/docker cleanup
   free-disk-space clean caches dev --apply     # actually clean just those
-  free-disk-space new --root ~ --min-size 5M   # start a compression scan (Ctrl-C safe)
+  free-disk-space scan --root ~ --min-size 5M  # scan for compression, duplicates, cleanup (Ctrl-C safe)
   free-disk-space resume                       # continue it later
   free-disk-space status                       # progress, candidates, free space
   free-disk-space dedupe                       # dry run: same-named identical files to clone
@@ -62,10 +62,11 @@ struct StateArg {
 // Available subcommands.
 #[derive(Subcommand)]
 enum Cmd {
-    /// start a new compression scan
-    New(NewArgs),
+    /// scan for compression, duplicates and cleanup (`new` still works)
+    #[command(alias = "new")]
+    Scan(NewArgs),
     /// continue an interrupted scan
-    Resume(StateArg),
+    Resume(ResumeArgs),
     /// show scan progress, candidates and free space
     Status(StateArg),
     /// list best candidates
@@ -167,6 +168,19 @@ struct NewArgs {
     /// discard an unfinished scan
     #[arg(long)]
     force: bool,
+    /// don't preview the cleanup targets when the scan completes
+    #[arg(long)]
+    skip_clean: bool,
+}
+
+// Options for resume.
+#[derive(Args)]
+struct ResumeArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// don't preview the cleanup targets when the scan completes
+    #[arg(long)]
+    skip_clean: bool,
 }
 
 // Candidate states for list.
@@ -320,7 +334,7 @@ fn main() {
 // Dispatch a parsed command line to the chosen command.
 fn run(cli: Cli) {
     match cli.command {
-        Cmd::New(a) => scan::cmd_new(&scan::NewOpts {
+        Cmd::Scan(a) => scan::cmd_new(&scan::NewOpts {
             state: a.state.state,
             root: a.root,
             min_size: a.min_size,
@@ -329,8 +343,9 @@ fn run(cli: Cli) {
             cross_devices: a.cross_devices,
             exclude: a.exclude,
             force: a.force,
+            skip_clean: a.skip_clean,
         }),
-        Cmd::Resume(a) => scan::cmd_resume(&a.state),
+        Cmd::Resume(a) => scan::cmd_resume(&a.state.state, a.skip_clean),
         Cmd::Status(a) => scan::cmd_status(&a.state),
         Cmd::List(a) => scan::cmd_list(&a.state.state, &value_name(a.status), a.top),
         Cmd::Compress(a) => compress::cmd_compress(&compress::CompressOpts {
@@ -436,6 +451,7 @@ mod tests {
         let root = sb.dir("root");
         sb.write("root/a/f", &vec![b'a'; 1 << 20]);
         let root = root.to_str().unwrap();
+        go(&["scan", "--root", root, "--min-size", "1K", "--min-age-days", "0", "--skip-clean", "--force"]);
         go(&[
             "new",
             "--root",

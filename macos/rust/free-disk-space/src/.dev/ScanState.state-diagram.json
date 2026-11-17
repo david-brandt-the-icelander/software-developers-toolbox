@@ -58,7 +58,7 @@
     {
       "from": "none",
       "to": "running",
-      "trigger": "new",
+      "trigger": "scan",
       "guard": "--root is a directory",
       "action": "Create the database, store cfg and started, queue the root."
     },
@@ -97,12 +97,12 @@
       "from": "paused",
       "to": "paused",
       "trigger": "new without --force",
-      "action": "Refuse: an unfinished scan exists; use resume or new --force."
+      "action": "Refuse: an unfinished scan exists; use resume or scan --force."
     },
     {
       "from": "paused",
       "to": "running",
-      "trigger": "new --force",
+      "trigger": "scan --force",
       "guard": "--root is a directory",
       "action": "Delete the database and its WAL files, then start afresh."
     },
@@ -115,7 +115,7 @@
     {
       "from": "finished",
       "to": "running",
-      "trigger": "new",
+      "trigger": "scan",
       "guard": "--root is a directory",
       "action": "Delete the database and its WAL files, then start afresh."
     }
