@@ -28,9 +28,9 @@
   ],
   "entities": [
     {
-      "id": "new",
+      "id": "scan",
       "name": "Start a scan",
-      "description": "Starts a new compression scan of a directory tree and runs it until it finishes or is stopped.",
+      "description": "Starts a new scan of a directory tree for compression candidates and duplicates (by name and size) and runs it until it finishes or is stopped; when it finishes it also previews the cleanup targets (`new` is an alias).",
       "sources": [
         {
           "path": "macos/rust/free-disk-space/src/main.rs",
@@ -46,9 +46,9 @@
         "symbol": "cmd_new"
       },
       "action": "command",
-      "transport": "free-disk-space new [--root DIR] [--min-size SIZE] [--min-age-days N] [--min-savings-pct N] [--cross-devices] [--exclude PATH]... [--force] [--state FILE]",
+      "transport": "free-disk-space scan [--root DIR] [--min-size SIZE] [--min-age-days N] [--min-savings-pct N] [--cross-devices] [--exclude PATH]... [--force] [--skip-clean] [--state FILE]",
       "authorization": "None checked; it reads what the invoking user can read, and directories it cannot read are counted as errors.",
-      "result": "A new state file; progress on one line, then `Scan complete` with the candidate count and estimated saving, or `Scan paused` after Ctrl-C.",
+      "result": "A new state file; progress on one line with fixed-width numbers, then `Scan complete.` with one line each for compression (candidates, estimated saving), duplicates (copies beyond the first of same-named, same-sized files and their bytes, an upper bound) and cleanup (clean all's dry-run preview unless --skip-clean), each naming the next command; or `Scan paused` after Ctrl-C.",
       "failures": [
         "--root is not a directory: exits with an error.",
         "An unfinished scan exists and --force is not given: exits with an error naming the pending directory count.",

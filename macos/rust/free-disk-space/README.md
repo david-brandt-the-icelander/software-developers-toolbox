@@ -7,7 +7,7 @@ Build: `cargo build --release -p free-disk-space` in `macos/rust`, or download a
 ```bash
 free-disk-space clean all                 # dry run: caches, downloads, trash, dev artifacts, docker
 free-disk-space clean caches dev --apply  # really do it (also: brew, xcode targets)
-free-disk-space new --root ~ --min-size 5M  # resumable compression scan (Ctrl-C safe)
+free-disk-space scan --root ~ --min-size 5M  # resumable scan for compression, duplicates and cleanup (Ctrl-C safe; `new` is an alias)
 free-disk-space resume
 free-disk-space status
 free-disk-space list --top 30

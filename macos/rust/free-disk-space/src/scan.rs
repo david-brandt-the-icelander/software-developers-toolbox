@@ -222,7 +222,7 @@ impl Stats {
 // Open (or create) the scan state database.
 pub fn open_db(path: &str, create: bool) -> Connection {
     if !create && !Path::new(path).exists() {
-        die(&format!("no scan state at {path} - start one with: free-disk-space new"));
+        die(&format!("no scan state at {path} - start one with: free-disk-space scan"));
     }
     if let Some(parent) = Path::new(path).parent() {
         let _ = fs::create_dir_all(parent);
@@ -424,7 +424,7 @@ fn run_scan(db: &Connection, cfg: &Cfg, commit_every: f64) -> bool {
         };
         tk.tick(
             &format!(
-                "scanned {} dirs ({} queued) | {} files, {} | {} candidates, ~{} saveable | {} | {shown}",
+                "scanned {:>9} dirs ({:>8} queued) | {:>10} files, {:>10} | {:>8} candidates, ~{:>10} saveable | {:>8} | {shown}",
                 stats.dirs,
                 pending_dirs(db),
                 stats.files,
@@ -463,6 +463,7 @@ pub struct NewOpts {
     pub cross_devices: bool,
     pub exclude: Vec<String>,
     pub force: bool,
+    pub skip_clean: bool,
 }
 
 // Start a fresh scan and run it.
@@ -479,7 +480,7 @@ pub fn cmd_new(o: &NewOpts) {
         if unfinished > 0 && !o.force {
             die(&format!(
                 "an unfinished scan exists ({unfinished} dirs pending). \
-                 Use `resume`, or `new --force` to discard it."
+                 Use `resume`, or `scan --force` to discard it."
             ));
         }
         remove_state(&o.state);
@@ -504,11 +505,11 @@ pub fn cmd_new(o: &NewOpts) {
         cfg.min_pct
     );
     println!("State: {}   (Ctrl-C is safe; continue with `resume`)", o.state);
-    finish_scan(&db, &cfg);
+    finish_scan(&db, &cfg, o.skip_clean);
 }
 
-// Run the scan loop and report whether it completed or paused.
-fn finish_scan(db: &Connection, cfg: &Cfg) {
+// Run the scan loop and report whether it completed or paused, and when it completed what it found.
+fn finish_scan(db: &Connection, cfg: &Cfg, skip_clean: bool) {
     util::install_sigint();
     let done = run_scan(db, cfg, COMMIT_EVERY);
     if !done {
@@ -516,22 +517,45 @@ fn finish_scan(db: &Connection, cfg: &Cfg) {
         return;
     }
     let s = meta_get(db, "stats").map(|v| Stats::from_json(&v)).unwrap_or_default();
-    println!("{}{} candidates, ~{} estimated saveable.", c("32", "Scan complete: "), s.cands, human_i(s.est));
-    println!("Next: `dedupe` to preview duplicate cloning, `list` then `compress --sample 5` to compress.");
+    let (groups, dups, dup_bytes) = duplicate_estimate(db);
+    println!("{}", c("32", "Scan complete."));
+    let compress = format!("{:>9} files  ~{:>10} saveable", s.cands, human_i(s.est));
+    println!("{}", finding("Compression:", &compress, "list, compress --sample 5"));
+    let dupes = format!("{dups:>9} files  ~{:>10} at most, in {groups} groups", human_i(dup_bytes));
+    println!("{}", finding("Duplicates:", &dupes, "dedupe"));
+    if skip_clean {
+        println!("{}", finding("Cleanup:", "not previewed (--skip-clean)", "clean all"));
+        return;
+    }
+    println!("{}", finding("Cleanup:", "preview below", "clean all --apply"));
+    crate::clean::cmd_clean(&["all".to_string()], false, "~/dev", 30);
 }
 
-// Continue an interrupted scan.
-pub fn cmd_resume(state: &str) {
+// Formats one line of the scan's findings with the label, the finding and the next command in fixed columns.
+fn finding(label: &str, what: &str, next: &str) -> String {
+    format!("  {label:<13}{what:<48}  next: {next}")
+}
+
+// Estimate duplicates from the recorded names: groups of same-named, same-sized files, the copies beyond the first
+// in each, and their bytes (an upper bound until dedupe hashes them).
+fn duplicate_estimate(db: &Connection) -> (i64, i64, i64) {
+    let sql = "SELECT COUNT(*), COALESCE(SUM(n-1),0), COALESCE(SUM((n-1)*size),0) \
+               FROM (SELECT size, COUNT(*) AS n FROM files WHERE size > 0 GROUP BY name, size HAVING n > 1)";
+    db.query_row(sql, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap_or((0, 0, 0))
+}
+
+// Continue an interrupted scan; `skip_clean` leaves out the cleanup preview at the end.
+pub fn cmd_resume(state: &str, skip_clean: bool) {
     let db = open_db(state, false);
     let Some(cfg) = meta_get(&db, "cfg").and_then(|v| Cfg::from_json(&v)) else {
-        die("state file has no scan configuration; start with `new`");
+        die("state file has no scan configuration; start with `scan`");
     };
     if finished(&db) {
-        println!("Scan already complete. Use `new` to rescan, or `status`/`compress`.");
+        println!("Scan already complete. Use `scan` to rescan, or `status`/`compress`.");
         return;
     }
     println!("Resuming scan of {} ({} directories pending)", cfg.root, pending_dirs(&db));
-    finish_scan(&db, &cfg);
+    finish_scan(&db, &cfg, skip_clean);
 }
 
 // Show scan progress, candidate totals and free space.
@@ -611,6 +635,23 @@ mod tests {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
+    // Check the duplicate estimate counts same-named, same-sized copies beyond the first, and ignores empty files.
+    #[test]
+    fn test_duplicate_estimate() {
+        let sb = Sandbox::new();
+        let db = open_db(&sb.state(), true);
+        assert_eq!(duplicate_estimate(&db), (0, 0, 0));
+        db.execute_batch(
+            "INSERT INTO files(path,name,size) VALUES ('/a/x','x',10),('/b/x','x',10),('/c/x','x',10),
+             ('/a/y','y',5),('/b/y','y',6),('/a/e','e',0),('/b/e','e',0),('/a/z','z',7),('/b/z','z',7);",
+        )
+        .unwrap();
+        assert_eq!(duplicate_estimate(&db), (2, 3, 27));
+        let lines =
+            [finding("Duplicates:", "short", "dedupe"), finding("Cleanup:", "a longer finding", "clean all")];
+        assert_eq!(lines[0].find("next:"), lines[1].find("next:"), "the next commands line up");
+    }
+
     // Build scan settings rooted at a path that accept any small old file.
     fn cfg(root: &Path) -> Cfg {
         let dev = fs::metadata(root).map(|m| m.dev()).unwrap_or(0);
@@ -636,6 +677,7 @@ mod tests {
             cross_devices: false,
             exclude: Vec::new(),
             force: false,
+            skip_clean: true,
         }
     }
 
@@ -862,7 +904,7 @@ mod tests {
         cmd_status(&sb.state());
         cmd_list(&sb.state(), "pending", 10);
         cmd_list(&sb.state(), "done", 10);
-        cmd_resume(&sb.state());
+        cmd_resume(&sb.state(), true);
     }
 
     // Check new refuses bad roots and unfinished scans unless forced.
@@ -893,14 +935,14 @@ mod tests {
         sb.write("root/f", &vec![b'a'; 1 << 20]);
         drop(open_db(&sb.state(), true));
         let state = sb.state();
-        assert!(std::panic::catch_unwind(|| cmd_resume(&state)).is_err());
+        assert!(std::panic::catch_unwind(|| cmd_resume(&state, true)).is_err());
         util::set_stop(true);
         cmd_new(&new_opts(&sb, &root));
         cmd_status(&sb.state());
         util::set_stop(false);
-        cmd_resume(&sb.state());
+        cmd_resume(&sb.state(), true);
         assert!(finished(&open_db(&sb.state(), false)));
-        cmd_resume(&sb.state());
+        cmd_resume(&sb.state(), true);
     }
 
     // Check the scan loop commits on its interval, reports unreadable directories and shows tty progress.
