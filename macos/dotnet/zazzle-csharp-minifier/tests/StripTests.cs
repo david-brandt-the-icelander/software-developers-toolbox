@@ -184,7 +184,7 @@ public sealed class StripTests : IDisposable
     // Parameter comments, initializer comments and tool directives stay in the code.
     public void test_strip_parameters_initializers_directives_kept()
     {
-        var text = "class A\n{\n    void F(int x /* the x */) { }\n    int y = /* why */ 3;\n    // ReSharper disable once UnusedMember.Local\n    void G() { }\n}\n";
+        var text = "class A\n{\n    void F(int x /* the x */) { }\n    int y = /* why */ 3;\n    // ReSharper disable once UnusedMember.Local\n    void G() { }\n    // zazzle-csharp-minifier: unresolved method under test (no // When section)\n    void H() => G();\n}\n";
         Put("a.cs", text);
         var (_, output, _) = Run();
         Assert.Equal(text, Read("a.cs"));

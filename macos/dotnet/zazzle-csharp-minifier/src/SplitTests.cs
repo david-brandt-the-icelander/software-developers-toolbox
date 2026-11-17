@@ -95,6 +95,9 @@ internal static class SplitTests
             var chain = test.Ancestors().OfType<TypeDeclarationSyntax>().Reverse().ToList();
             if (resolution.Target == null || chain.Count == 0)
             {
+                // A declaration whose body --split-headers moved keeps its marker with the body, in the src/ half.
+                if (test.Body == null && test.ExpressionBody == null)
+                    continue;
                 var edit = TestFileText.MarkerEdit(text, test, resolution.Reason ?? "not inside a type", nl);
                 if (edit != null)
                 {

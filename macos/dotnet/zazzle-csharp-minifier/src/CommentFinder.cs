@@ -48,11 +48,12 @@ internal static class CommentFinder
         trivia.Kind() is SyntaxKind.SingleLineCommentTrivia or SyntaxKind.MultiLineCommentTrivia
             or SyntaxKind.SingleLineDocumentationCommentTrivia or SyntaxKind.MultiLineDocumentationCommentTrivia;
 
-    // True for comments that tools read as instructions (ReSharper switches, language= hints), which must stay in the code.
+    // True for comments that tools read as instructions (ReSharper switches, language= hints, this tool's unresolved-test marker), which must stay in the code.
     private static bool IsKept(SyntaxTrivia trivia)
     {
         var body = trivia.ToFullString().TrimStart('/', '*', ' ', '\t');
         return body.StartsWith("ReSharper ", StringComparison.Ordinal)
+            || trivia.ToFullString().StartsWith(TestMethods.MarkerPrefix, StringComparison.Ordinal)
             || body.StartsWith("language=", StringComparison.Ordinal)
             || body.StartsWith("lang=", StringComparison.Ordinal);
     }
