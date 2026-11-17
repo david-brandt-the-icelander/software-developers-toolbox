@@ -53,14 +53,14 @@ internal static class SplitHeaders
             plan.Notes.Add($"{file.Rel}: skipped, {skip}");
         if (moved == null || moved.Count == 0)
             return;
-        Split(file, root2, moved, options, plan);
+        Split(root, file, root2, moved, options, plan);
     }
 
     // Builds and checks the two halves, then queues the implementation before the header so no body is ever lost.
-    private static void Split(SourceFile file, CompilationUnitSyntax syntax, List<MovedMember> moved, CSharpParseOptions options, Plan plan)
+    private static void Split(string root, SourceFile file, CompilationUnitSyntax syntax, List<MovedMember> moved, CSharpParseOptions options, Plan plan)
     {
-        var implPath = Path.Combine(Path.GetDirectoryName(file.Path)!, "src", Path.GetFileName(file.Path));
-        var implRel = Path.GetDirectoryName(file.Rel) is { Length: > 0 } d ? $"{d.Replace('\\', '/')}/src/{Path.GetFileName(file.Rel)}" : $"src/{Path.GetFileName(file.Rel)}";
+        var implPath = Layout.ImplPath(root, file.Path);
+        var implRel = Path.GetRelativePath(root, implPath).Replace('\\', '/');
         var existing = File.Exists(implPath) ? SourceFile.Read("/", implPath, out _) : null;
         if (File.Exists(implPath) && existing == null)
         {

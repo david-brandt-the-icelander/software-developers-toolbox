@@ -7,9 +7,6 @@ namespace ZazzleMinifier;
 // Plans, file by file, the Markdown to write and the stripped source, the Markdown first so no comment is lost.
 internal static class StripComments
 {
-    // The folder under the root that mirrors the source tree.
-    public const string DocFolder = "document";
-
     // Parse options: the newest language version, so new syntax does not read as errors.
     private static readonly CSharpParseOptions Options = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Preview);
 
@@ -49,8 +46,8 @@ internal static class StripComments
             plan.Errors.Add($"{file.Rel}: left unchanged: stripping would change the code: {difference}");
             return;
         }
-        var docRel = $"{DocFolder}/{file.Rel}.md";
-        var docPath = Path.Combine(root, docRel);
+        var docPath = Layout.DocPath(root, file.Path);
+        var docRel = Path.GetRelativePath(root, docPath).Replace('\\', '/');
         plan.Write(docPath, DocText(docPath, file.Rel, CommentDoc.Sections(comments, source)));
         plan.Write(file.Path, stripped, file.Bom);
         plan.Changes.Add($"{file.Rel}: moved {comments.Count} comments to {docRel}");

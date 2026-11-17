@@ -7,7 +7,7 @@ namespace ZazzleMinifier;
 internal static class RepoSetup
 {
     // The commands in the order they run.
-    private static readonly string[] AllSwitches = ["--strip-comments", "--split-tests", "--split-headers"];
+    private static readonly string[] AllSwitches = ["--strip-comments", "--split-tests", "--split-headers", "--restructure"];
 
     // Sets up the repository holding root and returns one line per file it created or changed.
     public static List<string> Run(string root, IReadOnlyList<string> switches)

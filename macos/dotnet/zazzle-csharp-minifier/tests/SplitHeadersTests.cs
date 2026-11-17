@@ -29,7 +29,7 @@ public sealed class SplitHeadersTests : IDisposable
     // Plans and applies the split for the whole root.
     private Plan Run()
     {
-        var plan = SplitHeaders.Make(root, SourceFiles.Under([root]).Where(f => !SourceFile.IsImplementationHalf(f)).ToList());
+        var plan = SplitHeaders.Make(root, SourceFiles.Under([root]).Where(f => !Layout.IsImplementationHalf(root, f)).ToList());
         plan.Apply();
         return plan;
     }

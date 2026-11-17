@@ -24,13 +24,4 @@ internal sealed record SourceFile(string Path, string Rel, string Text, bool Bom
             return null;
         }
     }
-
-    // True for D/src/N.cs when D/N.cs exists: the implementation half that --split-headers wrote, which the other commands leave alone.
-    public static bool IsImplementationHalf(string path)
-    {
-        var dir = System.IO.Path.GetDirectoryName(path)!;
-        if (System.IO.Path.GetFileName(dir) != "src")
-            return false;
-        return File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(dir)!, System.IO.Path.GetFileName(path)));
-    }
 }
