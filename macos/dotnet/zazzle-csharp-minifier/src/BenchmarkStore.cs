@@ -116,6 +116,7 @@ internal static class BenchmarkStore
         ["tokens_per_turn"] = run.TurnCount == 0 ? null : run.TotalTokens / run.TurnCount,
         ["tool_calls"] = run.Turns.Sum(t => t.Tools.Count),
         ["denied_tool_calls"] = run.Turns.Sum(t => t.Tools.Count(c => c.Denied)),
+        ["denied_turn_tokens"] = run.Turns.Where(t => t.Tools.Count > 0 && t.Tools.All(c => c.Denied)).Sum(t => t.Total),
         ["turns"] = new JsonArray([.. run.Turns.Select(TurnSummary)]),
         ["duration_ms"] = run.Json?["duration_ms"]?.DeepClone(),
         ["models"] = run.Json?["modelUsage"] is JsonObject models ? new JsonArray([.. models.Select(m => (JsonNode)m.Key)]) : null,

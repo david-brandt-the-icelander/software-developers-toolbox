@@ -690,7 +690,9 @@
         "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs"
       ],
       "members": [
-        "static List<string> Run(string root, IReadOnlyList<string> switches)"
+        "static List<string> Run(string root, IReadOnlyList<string> switches)",
+        "static readonly string[] ReadOnlyCommands",
+        "static string ReadOnlySettings(string text)"
       ]
     },
     {

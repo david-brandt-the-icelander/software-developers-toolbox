@@ -1,4 +1,4 @@
-// Makes the repository the tool just changed keep that layout: the skill, an AGENTS.md section and a pre-commit check.
+// Makes the repository the tool just changed keep that layout: the skill, an AGENTS.md section, read-only command permissions and a pre-commit check.
 using System.Text.RegularExpressions;
 
 namespace ZazzleMinifier;
@@ -24,6 +24,7 @@ internal static class RepoSetup
         Ensure(repo, "AGENTS.md", Merge(ReadOrEmpty(Path.Combine(repo, "AGENTS.md")), relRoot, AgentsSection(relRoot, skillRel, all, restructured)), changed);
         if (!File.Exists(Path.Combine(repo, "CLAUDE.md")))
             Ensure(repo, "CLAUDE.md", "@AGENTS.md\n", changed);
+        Ensure(repo, ".claude/settings.json", ReadOnlySettings(ReadOrEmpty(Path.Combine(repo, ".claude", "settings.json"))), changed);
         if (hookPath == null)
             return changed;
         var hook = ReadOrEmpty(hookPath);
@@ -31,6 +32,36 @@ internal static class RepoSetup
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(hookPath, File.GetUnixFileMode(hookPath) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
         return changed;
+    }
+
+    // Read-only shell commands agents may run here without asking; find is left out because -exec and -delete make it anything but read-only.
+    public static readonly string[] ReadOnlyCommands = ["ls", "cat", "head", "tail", "wc", "grep", "rg"];
+
+    // The repository's .claude/settings.json with the read-only Bash rules added to permissions.allow, keeping everything else; unchanged text when they are all there or the file is not a JSON object.
+    public static string ReadOnlySettings(string text)
+    {
+        System.Text.Json.Nodes.JsonObject settings;
+        try
+        {
+            settings = text.Trim().Length == 0 ? [] : System.Text.Json.Nodes.JsonNode.Parse(text) as System.Text.Json.Nodes.JsonObject ?? throw new System.Text.Json.JsonException();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return text;
+        }
+        var permissions = settings["permissions"] as System.Text.Json.Nodes.JsonObject ?? [];
+        settings["permissions"] = permissions;
+        var allow = permissions["allow"] as System.Text.Json.Nodes.JsonArray ?? [];
+        permissions["allow"] = allow;
+        var have = allow.Select(a => a?.ToString()).ToHashSet();
+        var missing = ReadOnlyCommands.Select(c => $"Bash({c}:*)").Where(r => !have.Contains(r)).ToList();
+        if (missing.Count == 0 && text.Trim().Length > 0)
+            return text;
+        missing.ForEach(r => allow.Add(r));
+        using var buffer = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(buffer, new System.Text.Json.JsonWriterOptions { Indented = true }))
+            settings.WriteTo(writer);
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray()) + "\n";
     }
 
     // The git work tree holding root, or root itself outside git, spelled from root so symlinked paths (macOS /var, /tmp) still relate.
@@ -98,6 +129,7 @@ internal static class RepoSetup
             {Begin(relRoot, true)}
             ## C# layout{where}
             - Keep C#{where} in the layout of `zazzle-csharp-minifier {command}`: follow `{skillRel}`.
+            - Find files with Glob and read and search them with Read and Grep (or the allowed read-only commands in `.claude/settings.json`); no `find` or other shell pipelines, which need permission and cost a turn when refused.
             - After changing C#, run `zazzle-csharp-minifier {command}`{(relRoot == "." ? "" : $" with `--root {relRoot}`")} and commit what it changes; the pre-commit hook runs it with `--check` and refuses violations.{directive}
             {End(relRoot, true)}
 

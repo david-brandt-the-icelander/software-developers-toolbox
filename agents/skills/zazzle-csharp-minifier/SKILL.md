@@ -12,6 +12,7 @@ Docs: `zazzle-csharp-minifier --help`; source and README in the software-develop
 - Before committing, `zazzle-csharp-minifier --check <same switches>` lists every file that breaks the layout and exits 1; the pre-commit hook runs exactly this on staged `.cs` files and refuses the commit until it passes.
 - Pass files or folders to limit a run: `zazzle-csharp-minifier --split-headers src/Orders`.
 - Never hand-edit the layout back: write code normally, then rerun the tool.
+- Find files with Glob; read and search with Read and Grep, or the read-only commands `.claude/settings.json` allows (`ls`, `cat`, `head`, `tail`, `wc`, `grep`, `rg`, each on its own, without `$(...)`). Do not use `find` or shell pipelines: they need permission, and a refusal costs a whole turn.
 
 ## What each switch does
 - `--strip-comments`: comments on the file, namespaces, types, members, enum members and accessors move to `document/<path>.cs.md` (one `##` section per declaration, appended on later runs). Comments inside bodies, initializers and parameter lists stay. Read the document for intent; write new intent there or as a comment the next run moves.

@@ -111,6 +111,7 @@ public sealed class BenchmarkTests : IDisposable
         var run = summary["runs"]![0]!;
         Assert.Equal(550, run["tokens_per_turn"]!.GetValue<long>());
         Assert.Equal(1, run["denied_tool_calls"]!.GetValue<int>());
+        Assert.Equal(551, run["denied_turn_tokens"]!.GetValue<long>());
         Assert.Equal(2, run["tool_calls"]!.GetValue<int>());
         var turns = run["turns"]!.AsArray();
         Assert.Equal(2, turns.Count);

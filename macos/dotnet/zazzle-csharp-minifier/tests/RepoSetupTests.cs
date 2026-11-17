@@ -36,6 +36,8 @@ public sealed class RepoSetupTests : IDisposable
         Assert.StartsWith("---\nname: zazzle-csharp-minifier", Read("agents/skills/zazzle-csharp-minifier/SKILL.md"));
         Assert.Contains("`zazzle-csharp-minifier --strip-comments`", Read("AGENTS.md"));
         Assert.Equal("@AGENTS.md\n", Read("CLAUDE.md"));
+        Assert.Contains("\"Bash(cat:*)\"", Read(".claude/settings.json"));
+        Assert.Contains("Find files with Glob", Read("AGENTS.md"));
         var hook = Read(".githooks/pre-commit");
         Assert.StartsWith("#!/bin/sh\n\n# zazzle-csharp-minifier begin .\n", hook);
         Assert.Contains("--check --root '.' --strip-comments)", hook);
@@ -63,6 +65,29 @@ public sealed class RepoSetupTests : IDisposable
         Run("--strip-comments");
         Assert.StartsWith("# Rules\n- be nice\n\n<!-- zazzle-csharp-minifier begin . -->\n", Read("AGENTS.md"));
         Assert.StartsWith("#!/bin/sh\necho old\n\n# zazzle-csharp-minifier begin .", Read(".githooks/pre-commit"));
+    }
+
+    [Fact]
+    // The read-only commands are added to .claude/settings.json, other settings and rules kept, and a second run changes nothing.
+    public void test_setup_read_only_permissions()
+    {
+        Directory.CreateDirectory(Path.Combine(repo, ".claude"));
+        File.WriteAllText(Path.Combine(repo, ".claude/settings.json"), "{\"model\":\"x\",\"permissions\":{\"allow\":[\"Bash(ls:*)\",\"Read\"],\"deny\":[\"Bash(rm:*)\"]}}");
+        Run("--strip-comments");
+        var settings = System.Text.Json.Nodes.JsonNode.Parse(Read(".claude/settings.json"))!;
+        Assert.Equal("x", settings["model"]!.GetValue<string>());
+        Assert.Equal(["Bash(ls:*)", "Read", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)", "Bash(grep:*)", "Bash(rg:*)"],
+            settings["permissions"]!["allow"]!.AsArray().Select(a => a!.GetValue<string>()));
+        Assert.Equal("Bash(rm:*)", settings["permissions"]!["deny"]![0]!.GetValue<string>());
+        Assert.DoesNotContain("find", Read(".claude/settings.json"));
+        Assert.DoesNotContain(".claude/settings.json", Run("--strip-comments"));
+    }
+
+    [Fact]
+    // A settings file that is not JSON is left as it was.
+    public void test_setup_leaves_broken_settings()
+    {
+        Assert.Equal("not json", RepoSetup.ReadOnlySettings("not json"));
     }
 
     [Fact]
