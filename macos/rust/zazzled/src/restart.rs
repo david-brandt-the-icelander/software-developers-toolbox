@@ -93,29 +93,57 @@ pub fn restart(
     mode: Mode,
     run: &dyn Fn(&[&str]) -> Result<(), String>,
 ) -> Result<String, String> {
+    let agent = Agent { exe, sock, home, uid, run, macos: cfg!(target_os = "macos") };
+    replace(running(sock), VERSION, mode, &stop, &agent)
+}
+
+// Where the installed zazzled is and how to reach the LaunchAgent that should start it.
+struct Agent<'a> {
+    exe: &'a Path,
+    sock: &'a Path,
+    home: &'a Path,
+    uid: u32,
+    run: &'a dyn Fn(&[&str]) -> Result<(), String>,
+    macos: bool,
+}
+
+// Decides what to do with the daemon that answered (`found`) given this binary's version `current`, stops it with
+// `stop` when it should go, and refreshes the LaunchAgent on macOS; returns what it did.
+fn replace(
+    found: Option<(String, i32)>,
+    current: &str,
+    mode: Mode,
+    stop: &dyn Fn(i32) -> bool,
+    agent: &Agent,
+) -> Result<String, String> {
     let mut notes = Vec::new();
-    match running(sock) {
-        None => notes.push(format!("no daemon was running; the next request starts zazzled {VERSION}")),
-        Some((v, _)) if mode == Mode::OnlyOlder && !older(&v, VERSION) => {
+    match found {
+        None => notes.push(format!("no daemon was running; the next request starts zazzled {current}")),
+        Some((v, _)) if mode == Mode::OnlyOlder && !older(&v, current) => {
             notes.push(format!("zazzled {v} is running; nothing to replace"))
         }
         Some((v, pid)) if pid <= 1 || pid == std::process::id() as i32 => {
             notes.push(format!("zazzled {v} reported pid {pid}; left alone"))
         }
         Some((v, pid)) if stop(pid) => {
-            notes.push(format!("stopped zazzled {v} (pid {pid}); the next request starts zazzled {VERSION}"))
+            notes.push(format!("stopped zazzled {v} (pid {pid}); the next request starts zazzled {current}"))
         }
         Some((v, pid)) => return Err(format!("zazzled {v} (pid {pid}) did not stop")),
     }
-    if cfg!(target_os = "macos") {
-        notes.extend(refresh_agent(exe, sock, home, uid, mode, run));
+    if agent.macos {
+        notes.extend(refresh_agent(agent.exe, agent.sock, agent.home, agent.uid, mode, agent.run));
     }
     Ok(notes.join("\n"))
 }
 
 // Returns a note for `zazzled --version` when the daemon answering on `sock` is another version than this binary.
 pub fn version_note(sock: &Path) -> String {
-    match running(sock) {
+    mismatch_note(running(sock))
+}
+
+// Returns the mismatch note for the daemon that answered, or nothing when it is this version or none answered.
+fn mismatch_note(found: Option<(String, i32)>) -> String {
+    match found {
         Some((v, _)) if v != VERSION => {
             format!("\nthe running daemon is zazzled {v}; run `zazzled restart` so the installed one answers")
         }
@@ -151,6 +179,7 @@ mod tests {
         assert!(!older("0.0.0-dev", "1.2.24"));
         assert!(!older("1.2.16", "0.0.0-dev"));
         assert!(!older("1.2", "1.2.24"));
+        assert!(!older("1.2.16", "1.2"));
     }
 
     // Checks a stopped process is reported gone, and a process that ignores SIGTERM is killed.
@@ -192,6 +221,50 @@ mod tests {
         assert_eq!(version_note(&d.sock), "");
     }
 
+    // Checks every decision about the daemon that answered: replaced when older or asked, left alone when it is
+    // this process or not older under OnlyOlder, an error when it does not stop, and the LaunchAgent step on macOS.
+    #[test]
+    fn test_replace_decisions() {
+        let t = TempDir::new();
+        let (sock, exe) = (t.path().join("s"), t.path().join("opt/zazzled"));
+        let no_run = |_: &[&str]| Ok(());
+        let agent = |macos| Agent { exe: &exe, sock: &sock, home: t.path(), uid: 501, run: &no_run, macos };
+        let (gone, stuck) = (|_: i32| true, |_: i32| false);
+        let old = Some(("1.0.0".to_string(), 4242));
+        let r = replace(old.clone(), "1.2.24", Mode::OnlyOlder, &gone, &agent(false)).expect("stopped");
+        assert!(
+            r.starts_with("stopped zazzled 1.0.0 (pid 4242); the next request starts zazzled 1.2.24"),
+            "{r}"
+        );
+        let r = replace(old.clone(), VERSION, Mode::Always, &gone, &agent(false)).expect("stopped");
+        assert!(r.starts_with("stopped zazzled 1.0.0 (pid 4242)"), "{r}");
+        let err = replace(old.clone(), VERSION, Mode::Always, &stuck, &agent(false)).unwrap_err();
+        assert_eq!(err, "zazzled 1.0.0 (pid 4242) did not stop");
+        let newer = Some(("999.0.0".to_string(), 4242));
+        let r = replace(newer.clone(), "1.2.24", Mode::OnlyOlder, &stuck, &agent(false)).expect("kept");
+        assert_eq!(r, "zazzled 999.0.0 is running; nothing to replace");
+        assert!(replace(newer, VERSION, Mode::Always, &gone, &agent(false))
+            .expect("stopped")
+            .starts_with("stopped"));
+        let r =
+            replace(Some(("1.0.0".into(), 1)), VERSION, Mode::Always, &gone, &agent(false)).expect("kept");
+        assert!(r.ends_with("left alone"), "{r}");
+        let plist = launchd::plist_path(t.path());
+        std::fs::create_dir_all(plist.parent().expect("parent")).expect("dir");
+        std::fs::write(&plist, launchd::plist(&t.path().join("gone/zazzled"), &sock)).expect("plist");
+        let r = replace(None, VERSION, Mode::Always, &gone, &agent(true)).expect("refreshed");
+        assert!(r.starts_with("no daemon was running") && r.contains("\nthe LaunchAgent now starts"), "{r}");
+    }
+
+    // Checks the version note appears only for a daemon of another version.
+    #[test]
+    fn test_mismatch_note() {
+        assert_eq!(mismatch_note(None), "");
+        assert_eq!(mismatch_note(Some((VERSION.into(), 7))), "");
+        let note = mismatch_note(Some(("1.2.16".into(), 7)));
+        assert!(note.contains("zazzled 1.2.16") && note.contains("zazzled restart"), "{note}");
+    }
+
     // Checks the LaunchAgent is rewritten when it names another program, and under OnlyOlder only when that program
     // is gone.
     #[test]
@@ -207,6 +280,12 @@ mod tests {
         assert_eq!(refresh_agent(&exe, &sock, t.path(), 501, Mode::Always, &record), None, "no plist");
         let plist = launchd::plist_path(t.path());
         std::fs::create_dir_all(plist.parent().expect("parent")).expect("dir");
+        std::fs::write(&plist, "<plist><dict></dict></plist>").expect("plist");
+        assert_eq!(
+            refresh_agent(&exe, &sock, t.path(), 501, Mode::Always, &record),
+            None,
+            "names no program"
+        );
         std::fs::write(&plist, launchd::plist(&exe, &sock)).expect("plist");
         assert_eq!(refresh_agent(&exe, &sock, t.path(), 501, Mode::Always, &record), None, "already current");
         let present = t.path().join("Cellar/zazzled");
