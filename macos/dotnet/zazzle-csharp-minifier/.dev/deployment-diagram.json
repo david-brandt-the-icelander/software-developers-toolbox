@@ -90,7 +90,7 @@
       "id": "results",
       "name": "~/.zazzle/agent-token-benchmarks",
       "kind": "database",
-      "description": "Per repository, commit, prompt and run: meta.json, prompt.txt, transform.txt, run-1..3.json and summary.json.",
+      "description": "Per repository, commit, prompt and run: meta.json, prompt.txt, transform.txt, run-1..3.jsonl and .json, and summary.json with tokens per run and per turn and the tools each turn called.",
       "condition": "Only with --benchmark"
     }
   ],
@@ -156,7 +156,7 @@
       "from": "minifier",
       "to": "claude",
       "kind": "connects-to",
-      "description": "Prompt on standard input; JSON result on standard output."
+      "description": "Prompt on standard input; a stream-json transcript of every turn and tool call on standard output."
     },
     {
       "from": "claude",

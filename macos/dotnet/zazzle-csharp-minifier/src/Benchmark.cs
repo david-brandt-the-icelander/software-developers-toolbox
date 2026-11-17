@@ -105,13 +105,13 @@ internal static class Benchmark
                 errors.WriteLine($"{Path.GetFileName(prompt)}: run {i} failed: {run.Problem}");
         }
         var summary = BenchmarkStore.WriteSummary(dir, runs);
-        output.WriteLine($"{Path.GetFileName(prompt)}: {string.Join(", ", runs.Select(r => $"run {r.Number} {r.TotalTokens:N0} tokens"))}; {summary} -> {dir}");
+        output.WriteLine($"{Path.GetFileName(prompt)}: {string.Join(", ", runs.Select(r => $"run {r.Number} {r.TotalTokens:N0} tokens in {r.TurnCount} turns"))}; {summary} -> {dir}");
         return runs.All(r => !r.Failed);
     }
 
-    // The arguments of one clean, non-interactive session: no saved session, JSON result, and every tool that would ask for permission denied.
+    // The arguments of one clean, non-interactive session: no saved session, a stream of every turn and tool call, and every tool that would ask for permission denied.
     public static List<string> ClaudeArgs(BenchmarkSetup setup) =>
-        ["-p", "--model", setup.Model, "--effort", setup.Effort, "--output-format", "json", "--no-session-persistence", "--permission-mode", "dontAsk"];
+        ["-p", "--model", setup.Model, "--effort", setup.Effort, "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--permission-mode", "dontAsk"];
 
     // The Claude CLI to run: ZAZZLE_BENCHMARK_CLAUDE when set (tests use a stand-in), otherwise claude on PATH.
     private static string ClaudeProgram() => Environment.GetEnvironmentVariable("ZAZZLE_BENCHMARK_CLAUDE") is { Length: > 0 } p ? p : "claude";
@@ -137,35 +137,35 @@ internal sealed record RepoIdentity(string Name, string Sha, bool Dirty, string?
     }
 }
 
-// One session's outcome: the raw CLI output and the token counts read from its JSON result.
-internal sealed record RunResult(int Number, int ExitCode, string Raw, string Stderr, JsonObject? Json, string? Problem)
+// One session's outcome: the raw stream, its result event, its turns, and why it failed if it did.
+internal sealed record RunResult(int Number, int ExitCode, string Raw, string Stderr, JsonObject? Json, List<Turn> Turns, string? Problem)
 {
     // True when the CLI failed or reported an error.
     public bool Failed => Problem != null;
 
-    // Input, output, cache-creation and cache-read tokens together.
+    // Input, output, cache-creation and cache-read tokens together, from the result event.
     public long TotalTokens => Usage("input_tokens") + Usage("output_tokens") + Usage("cache_creation_input_tokens") + Usage("cache_read_input_tokens");
 
-    // One usage count from the result, 0 when missing.
-    public long Usage(string key) => Json?["usage"]?[key]?.GetValue<long>() ?? 0;
+    // The number of model responses: the result's num_turns, else the turns seen in the stream.
+    public int TurnCount => Json?["num_turns"]?.GetValue<int>() ?? Turns.Count;
 
-    // Reads the CLI's JSON result and notes why the run failed, if it did.
+    // One usage count from the result, 0 when missing.
+    public long Usage(string key) => BenchmarkStream.Count(Json?["usage"], key);
+
+    // The tool names per turn, which two runs share when they took the same route.
+    public string Route => string.Join(" | ", Turns.Select(t => string.Join(",", t.Tools.Select(c => c.Name))));
+
+    // Reads the CLI's stream-json output (or a single JSON result) and notes why the run failed, if it did.
     public static RunResult Parse(int number, int code, string stdout, string stderr)
     {
-        JsonObject? json = null;
-        try
-        {
-            json = JsonNode.Parse(stdout) as JsonObject;
-        }
-        catch (System.Text.Json.JsonException)
-        {
-        }
+        var events = BenchmarkStream.Events(stdout);
+        var json = BenchmarkStream.Result(events) ?? (events.Count == 1 ? events[0] : null);
         string? problem = null;
         if (json == null)
             problem = $"exit code {code}, no JSON result: {First(stderr.Length > 0 ? stderr : stdout)}";
         else if (code != 0 || json["is_error"]?.GetValue<bool>() == true)
             problem = $"exit code {code}: {First(json["result"]?.ToString() ?? stderr)}";
-        return new RunResult(number, code, stdout, stderr, json, problem);
+        return new RunResult(number, code, stdout, stderr, json, BenchmarkStream.Turns(events), problem);
     }
 
     // The first line of a message, at most 200 characters.

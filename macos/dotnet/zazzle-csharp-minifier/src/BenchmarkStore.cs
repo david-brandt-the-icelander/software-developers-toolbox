@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace ZazzleMinifier;
 
-// Writes meta.json, prompt.txt, transform.txt, run-N.json and summary.json for one prompt.
+// Writes meta.json, prompt.txt, transform.txt, run-N.jsonl, run-N.json and summary.json for one prompt.
 internal static class BenchmarkStore
 {
     // Runs 2 and 3 agree when their token totals differ by at most this share of the larger.
@@ -31,9 +31,10 @@ internal static class BenchmarkStore
         return dir;
     }
 
-    // Writes one run's raw CLI result, or the failure when there was no JSON.
+    // Writes one run's stream as run-N.jsonl and its result event (or the failure) as run-N.json.
     public static void WriteRun(string dir, RunResult run)
     {
+        File.WriteAllText(Path.Combine(dir, $"run-{run.Number}.jsonl"), run.Raw + (run.Raw.EndsWith('\n') ? "" : "\n"));
         var text = run.Json != null
             ? run.Json.ToJsonString(Indented)
             : new JsonObject { ["exit_code"] = run.ExitCode, ["stdout"] = run.Raw, ["stderr"] = run.Stderr }.ToJsonString(Indented);
@@ -44,16 +45,29 @@ internal static class BenchmarkStore
     public static string WriteSummary(string dir, List<RunResult> runs)
     {
         var (agree, spread) = Agreement(runs);
-        var sentence = agree == null ? "runs 2 and 3 could not be compared" : $"runs 2 and 3 {(agree.Value ? "agree" : "differ")} ({spread:P1} apart)";
+        var (sameTurns, sameRoute) = SameRoute(runs);
+        var sentence = agree == null
+            ? "runs 2 and 3 could not be compared"
+            : $"runs 2 and 3 {(agree.Value ? "agree" : "differ")} ({spread:P1} apart{(sameTurns == true ? "" : $"; {runs[1].TurnCount} vs {runs[2].TurnCount} turns")}{(sameTurns == true && sameRoute == false ? "; different tools" : "")})";
         var summary = new JsonObject
         {
             ["runs"] = new JsonArray([.. runs.Select(RunSummary)]),
             ["runs_2_and_3_spread"] = spread,
             ["runs_2_and_3_agree"] = agree,
+            ["runs_2_and_3_same_turns"] = sameTurns,
+            ["runs_2_and_3_same_tools"] = sameRoute,
             ["agreement_tolerance"] = AgreementTolerance,
         };
         File.WriteAllText(Path.Combine(dir, "summary.json"), summary.ToJsonString(Indented) + "\n");
         return sentence;
+    }
+
+    // Whether runs 2 and 3 took the same number of turns and called the same tools in each; nulls when either failed.
+    public static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)
+    {
+        if (runs.Count < 3 || runs[1].Failed || runs[2].Failed)
+            return (null, null);
+        return (runs[1].TurnCount == runs[2].TurnCount, runs[1].Route == runs[2].Route);
     }
 
     // How far apart runs 2 and 3 are, as a share of the larger total, and whether that is within the tolerance; null when either failed.
@@ -98,9 +112,28 @@ internal static class BenchmarkStore
         ["cache_creation_input_tokens"] = run.Usage("cache_creation_input_tokens"),
         ["cache_read_input_tokens"] = run.Usage("cache_read_input_tokens"),
         ["total_cost_usd"] = run.Json?["total_cost_usd"]?.DeepClone(),
-        ["num_turns"] = run.Json?["num_turns"]?.DeepClone(),
+        ["num_turns"] = run.TurnCount,
+        ["tokens_per_turn"] = run.TurnCount == 0 ? null : run.TotalTokens / run.TurnCount,
+        ["tool_calls"] = run.Turns.Sum(t => t.Tools.Count),
+        ["denied_tool_calls"] = run.Turns.Sum(t => t.Tools.Count(c => c.Denied)),
+        ["turns"] = new JsonArray([.. run.Turns.Select(TurnSummary)]),
         ["duration_ms"] = run.Json?["duration_ms"]?.DeepClone(),
         ["models"] = run.Json?["modelUsage"] is JsonObject models ? new JsonArray([.. models.Select(m => (JsonNode)m.Key)]) : null,
+    };
+
+    // One turn in the summary: its tokens and the tools it called, with what each was pointed at.
+    private static JsonNode TurnSummary(Turn turn) => new JsonObject
+    {
+        ["turn"] = turn.Number,
+        ["total_tokens"] = turn.Total,
+        ["input_tokens"] = turn.Input,
+        ["output_tokens"] = turn.Output,
+        ["cache_creation_input_tokens"] = turn.CacheCreation,
+        ["cache_read_input_tokens"] = turn.CacheRead,
+        ["tools"] = new JsonArray([.. turn.Tools.Select(c => (JsonNode)new JsonObject
+        {
+            ["name"] = c.Name, ["target"] = c.Target, ["denied"] = c.Denied, ["failed"] = c.Failed,
+        })]),
     };
 
     // A name safe as one folder name.

@@ -754,9 +754,12 @@
         "string Raw",
         "string Stderr",
         "JsonObject? Json",
+        "List<Turn> Turns",
         "string? Problem",
         "bool Failed",
         "long TotalTokens",
+        "int TurnCount",
+        "string Route",
         "long Usage(string key)",
         "static RunResult Parse(int number, int code, string stdout, string stderr)"
       ]
@@ -774,7 +777,55 @@
         "static string Create(BenchmarkSetup setup, string promptPath, string promptText)",
         "static void WriteRun(string dir, RunResult run)",
         "static string WriteSummary(string dir, List<RunResult> runs)",
-        "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)"
+        "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)",
+        "static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.BenchmarkStream",
+      "name": "BenchmarkStream",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "static JsonObject? Result(IEnumerable<JsonObject> events)",
+        "static List<JsonObject> Events(string stdout)",
+        "static List<Turn> Turns(List<JsonObject> events)",
+        "static long Count(JsonNode? usage, string key)"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.Turn",
+      "name": "Turn",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "int Number",
+        "string MessageId",
+        "long Input",
+        "long Output",
+        "long CacheCreation",
+        "long CacheRead",
+        "List<ToolCall> Tools",
+        "long Total"
+      ]
+    },
+    {
+      "id": "ZazzleMinifier.ToolCall",
+      "name": "ToolCall",
+      "kind": "record",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "string Id",
+        "string Name",
+        "string? Target",
+        "bool Denied",
+        "bool Failed"
       ]
     }
   ],
@@ -1408,6 +1459,36 @@
       "to": "ZazzleMinifier.Proc",
       "kind": "depends-on",
       "description": "Asks git for the commit, top, status and origin."
+    },
+    {
+      "from": "ZazzleMinifier.RunResult",
+      "to": "ZazzleMinifier.BenchmarkStream",
+      "kind": "depends-on",
+      "description": "Parse reads the stream's events, result and turns."
+    },
+    {
+      "from": "ZazzleMinifier.RunResult",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Holds the run's turns."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStream",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Builds one turn per assistant message id."
+    },
+    {
+      "from": "ZazzleMinifier.Turn",
+      "to": "ZazzleMinifier.ToolCall",
+      "kind": "depends-on",
+      "description": "Holds the turn's tool calls."
+    },
+    {
+      "from": "ZazzleMinifier.BenchmarkStore",
+      "to": "ZazzleMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Writes each turn's tokens and tools to the summary."
     }
   ]
 }

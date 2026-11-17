@@ -83,8 +83,8 @@
     },
     {
       "id": "benchmark",
-      "name": "Benchmark (Benchmark.cs, BenchmarkStore.cs)",
-      "responsibility": "Clones the root to benchmark-<name>, transforms the clone through the runner, runs each prompt three times in fresh Claude CLI sessions and stores meta, prompt, runs and summary per repository, commit and prompt.",
+      "name": "Benchmark (Benchmark.cs, BenchmarkStream.cs, BenchmarkStore.cs)",
+      "responsibility": "Clones the root to benchmark-<name>, transforms the clone through the runner, runs each prompt three times in fresh Claude CLI sessions, reads each session's stream into turns with their tokens and tool calls, and stores meta, prompt, streams, results and summary per repository, commit and prompt.",
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
@@ -375,7 +375,7 @@
       "from": "benchmark",
       "to": "claude-cli",
       "kind": "depends-on",
-      "description": "claude -p with the model, effort, JSON output, no saved session and dontAsk permissions; the prompt on standard input."
+      "description": "claude -p with the model, effort, stream-json output, no saved session and dontAsk permissions; the prompt on standard input."
     },
     {
       "from": "benchmark",
