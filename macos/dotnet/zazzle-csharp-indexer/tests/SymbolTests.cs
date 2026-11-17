@@ -45,12 +45,12 @@ public class SymbolTests
     {
         using var repo = new TempRepo(Files);
         var tool = new FindSymbolTool(new RootSet([repo.Root()]));
-        Assert.Contains("r:Widget.cs:9 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"spin\",\"exact\":true}"));
+        Assert.Contains("r:Widget.cs:9-12 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"spin\",\"exact\":true}"));
         Assert.Contains("r:engine.rs:", Call(tool, "{\"name\":\"engin\"}"));
         Assert.DoesNotContain("Widget.cs", Call(tool, "{\"name\":\"engin\"}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Widget\",\"kind\":\"method\"}"));
-        Assert.Contains("r:Widget.cs:9 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"Demo.Widget.Spin\",\"exact\":true}"));
-        Assert.Contains("r:Widget.cs:9 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"widget::spin\",\"exact\":true}"));
+        Assert.Contains("r:Widget.cs:9-12 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"Demo.Widget.Spin\",\"exact\":true}"));
+        Assert.Contains("r:Widget.cs:9-12 method Demo.Widget.Spin |", Call(tool, "{\"name\":\"widget::spin\",\"exact\":true}"));
         Assert.Contains("Demo.Widget.Spin", Call(tool, "{\"name\":\"Widget.sp\"}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Other.Widget.Spin\",\"exact\":true}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"emo.Widget.Spin\",\"exact\":true}"));
@@ -63,7 +63,7 @@ public class SymbolTests
         using var repo = new TempRepo(Files);
         var text = Call(new OverviewTool(new RootSet([repo.Root()])), "{}");
         Assert.Contains("csharp 1 files/18 lines", text);
-        Assert.Contains("entry/project files: README.md", text);
+        Assert.Contains("entry files: README.md", text);
     }
 
     [Fact]
@@ -78,5 +78,63 @@ public class SymbolTests
         var text = Call(tool, $"{{\"cursor\":\"{cursor}\"}}");
         Assert.Contains("M r:README.md", text);
         Assert.Contains("A r:new.txt", text);
+    }
+
+    [Fact]
+    // find_symbol puts exact names before prefix and substring matches, types before members and production before tests, and returns the end line.
+    public void test_find_symbol_ranking()
+    {
+        var files = new Dictionary<string, string>
+        {
+            ["src/A.cs"] = "namespace N;\npublic class Other { public void RunWidget() { } }\npublic class WidgetFactory { }\npublic class Widget\n{\n    public void Make() { }\n}\n",
+            ["tests/WidgetTests.cs"] = "namespace N.Tests;\npublic class WidgetTests { }\npublic class Widget { }\n",
+        };
+        using var repo = new TempRepo(files);
+        var tool = new FindSymbolTool(new RootSet([repo.Root()]));
+        var lines = Call(tool, "{\"name\":\"Widget\"}").Split('\n');
+        Assert.StartsWith("r:src/A.cs:4-7 class N.Widget", lines[0]);
+        Assert.StartsWith("r:tests/WidgetTests.cs:3 class N.Tests.Widget", lines[1]);
+        Assert.Contains("WidgetFactory", lines[2]);
+        Assert.Contains("RunWidget", lines[^2]);
+        var limited = Call(tool, "{\"name\":\"Widget\",\"limit\":2}");
+        Assert.EndsWith("[2 of 5; next offset 2]", limited);
+    }
+
+    [Fact]
+    // find_symbol shortens long signatures to one line.
+    public void test_find_symbol_clips_signature()
+    {
+        var args = string.Join(", ", Enumerable.Range(1, 30).Select(i => $"int argument{i}"));
+        using var repo = new TempRepo(new Dictionary<string, string> { ["B.cs"] = $"class B\n{{\n    void Long({args}) {{ }}\n}}\n" });
+        var text = Call(new FindSymbolTool(new RootSet([repo.Root()])), "{\"name\":\"Long\",\"exact\":true}");
+        Assert.Contains("…", text);
+        Assert.True(text.Split('\n')[0].Length < 160);
+    }
+
+    [Fact]
+    // overview honours .ignore and splits projects into production and test.
+    public void test_overview_ignore_and_projects()
+    {
+        var files = new Dictionary<string, string>
+        {
+            [".ignore"] = "CHANGELOG/\n/docs/archive/\n*.g.cs\n",
+            ["CHANGELOG/a.md"] = "# a\n",
+            ["CHANGELOG/b.md"] = "# b\n",
+            ["docs/archive/old.md"] = "# old\n",
+            ["docs/keep.md"] = "# keep\n",
+            ["Api/Gen.g.cs"] = "class G { }\n",
+            ["Api/Api.csproj"] = "<Project/>\n",
+            ["UnitTests.Api/UnitTests.Api.csproj"] = "<Project/>\n",
+            ["Worker/Worker.csproj"] = "<Project/>\n",
+            ["Api/Program.cs"] = "class P { }\n",
+        };
+        using var repo = new TempRepo(files);
+        var text = Call(new OverviewTool(new RootSet([repo.Root()])), "{}");
+        Assert.DoesNotContain("CHANGELOG", text);
+        Assert.DoesNotContain("Gen.g.cs", text);
+        Assert.Contains("hidden by .ignore", text);
+        Assert.Contains("projects: 2 production: Api, Worker", text);
+        Assert.Contains("test projects: 1: UnitTests.* 1", text);
+        Assert.Contains("Api/Program.cs", text);
     }
 }

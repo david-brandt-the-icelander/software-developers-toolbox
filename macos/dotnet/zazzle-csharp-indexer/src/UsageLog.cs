@@ -15,6 +15,8 @@ public sealed class CallInfo
     public int Candidates = -1;
     public int TotalFiles = -1;
     public string? Note;
+    public int SourceBytes = -1;
+    public int ViewBytes = -1;
 }
 
 // Thread-safe JSONL writer; a null path disables logging.
@@ -76,6 +78,8 @@ public sealed class UsageLog
             ["truncated"] = info.Truncated,
             ["candidates"] = info.Candidates,
             ["files"] = info.TotalFiles,
+            ["source_bytes"] = info.SourceBytes < 0 ? null : info.SourceBytes,
+            ["view_bytes"] = info.ViewBytes < 0 ? null : info.ViewBytes,
             ["note"] = info.Note is { Length: > 500 } n ? n[..500] : info.Note,
             ["error"] = error,
         };

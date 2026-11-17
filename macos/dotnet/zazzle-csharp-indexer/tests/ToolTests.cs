@@ -26,7 +26,7 @@ public class ToolTests
         Assert.Empty(list["result"]!["tools"]!.AsArray());
         var call = server.Handle("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"find_symbol\",\"arguments\":{\"name\":\"needle\"}}}")!;
         Assert.False(call["result"]!["isError"]!.GetValue<bool>());
-        Assert.StartsWith("r:src/a.cs:1 class Needle", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
+        Assert.StartsWith("r:src/a.cs:1-3 class Needle", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
         var record = File.ReadAllText(logFile);
         Assert.Contains("\"tool\":\"find_symbol\"", record);
         Assert.DoesNotContain("needle", record);

@@ -39,6 +39,13 @@ public static class Report
         sb.AppendLine("\nwaste signals:");
         sb.AppendLine($"  retries (same tool within 10 s, different arguments): {Retries(calls)}");
         sb.AppendLine($"  repeated identical calls in a session: {calls.GroupBy(r => Str(r, "session") + Str(r, "tool") + r["args"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
+        var views = calls.Where(r => Str(r, "tool") == "view").ToList();
+        if (views.Count > 0)
+        {
+            var sized = views.Where(r => r["source_bytes"] is not null && r["view_bytes"] is not null && Int(r, "source_bytes") > 0).ToList();
+            var saving = sized.Count == 0 ? 0 : (int)sized.Average(r => 100.0 - 100.0 * Int(r, "view_bytes") / Int(r, "source_bytes"));
+            sb.AppendLine($"  views: {views.Count}, mean saving {saving}% over {sized.Count} sized, refused for no gain {views.Count(r => Str(r, "reason") == "no_gain")}, same file viewed again in a session {views.GroupBy(r => Str(r, "session") + r["args"]?["path"]?.ToJsonString()).Sum(g => g.Count() - 1)}");
+        }
         Top(sb, "errors", calls.Where(r => Str(r, "error") != "").Select(r => $"{Str(r, "tool")} / {Str(r, "error")}"));
         var gaps = calls.Where(r => Str(r, "note") != "").TakeLast(20).ToList();
         if (gaps.Count > 0)
