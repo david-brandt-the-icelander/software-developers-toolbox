@@ -27,7 +27,7 @@ internal sealed class Plan
     // Queues a file deletion.
     public void Delete(string path) => Edits.Add(new Edit(path, null));
 
-    // Performs the edits in order, creating folders as needed and removing folders a deletion leaves empty.
+    // Performs the edits in order, creating folders as needed and removing the folders, and their parents, a deletion leaves empty.
     public void Apply()
     {
         foreach (var edit in Edits)
@@ -35,8 +35,7 @@ internal sealed class Plan
             if (edit.Bytes == null)
             {
                 File.Delete(edit.Path);
-                var dir = Path.GetDirectoryName(edit.Path)!;
-                if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                for (var dir = Path.GetDirectoryName(edit.Path); dir != null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any(); dir = Path.GetDirectoryName(dir))
                     Directory.Delete(dir);
                 continue;
             }

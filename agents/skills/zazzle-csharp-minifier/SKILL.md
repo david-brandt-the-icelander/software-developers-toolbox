@@ -19,6 +19,11 @@ Docs: `zazzle-csharp-minifier --help`; source and README in the software-develop
 - A test the tool cannot place keeps `// zazzle-csharp-minifier: unresolved method under test (<reason>)` as its first line: `grep -rn "zazzle-csharp-minifier: unresolved"` finds them; fix the `// When` section and rerun.
 - `--split-headers`: each `.cs` keeps the declarations (types, fields, `partial` member signatures) and `src/<same name>.cs` beside it holds the bodies. What can split follows the project's target framework: methods (C# 9+), properties and indexers (C# 13, .NET 9), constructors and events (C# 14, .NET 10). Add new members to the header file with their bodies and rerun; edit existing bodies in `src/`.
 
+## Restructured projects (`--restructure`)
+- Each production project becomes `<project>/incl/` (declarations: what to read), `src/` (bodies, top-level programs), `doc/` (moved comments, `doc/test/` for tests) and `test/` (its test project, tests in `<ClassUnderTest>/<MethodUnderTest>.cs`); the `.csproj` compiles only `incl/**` and `src/**`.
+- Read `incl/` first and always. Open a file in `src/`, `doc/` or `test/` only by its exact path, when you need that file's bodies, comments or tests; never list or search those folders wholesale. Each project's `.ignore` keeps them out of broad ripgrep searches (Grep, Glob); an explicit path still works.
+- Add new code as a plain `.cs` anywhere in the project (or in `incl/` with bodies) and rerun `--restructure`; it splits and places it.
+
 ## When the check fails
 - Run the command it prints, review the diff, commit.
 - A file reported as "left unchanged" needs a manual fix (the reason follows); the tool never changes code it cannot prove unchanged.

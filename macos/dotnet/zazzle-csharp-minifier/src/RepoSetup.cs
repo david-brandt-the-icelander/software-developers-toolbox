@@ -20,7 +20,8 @@ internal static class RepoSetup
         var changed = new List<string>();
         var skillRel = SkillRel(repo);
         Ensure(repo, skillRel, SkillText(), changed);
-        Ensure(repo, "AGENTS.md", Merge(ReadOrEmpty(Path.Combine(repo, "AGENTS.md")), relRoot, AgentsSection(relRoot, skillRel, all)), changed);
+        var restructured = RestructuredProjects(root).Select(d => Path.GetRelativePath(repo, d).Replace('\\', '/')).ToList();
+        Ensure(repo, "AGENTS.md", Merge(ReadOrEmpty(Path.Combine(repo, "AGENTS.md")), relRoot, AgentsSection(relRoot, skillRel, all, restructured)), changed);
         if (!File.Exists(Path.Combine(repo, "CLAUDE.md")))
             Ensure(repo, "CLAUDE.md", "@AGENTS.md\n", changed);
         if (hookPath == null)
@@ -59,6 +60,10 @@ internal static class RepoSetup
         return target;
     }
 
+    // The folders of the restructured projects under root, sorted.
+    private static List<string> RestructuredProjects(string root) =>
+        Solution.Projects(root).Select(p => Path.GetDirectoryName(p)!).Where(Layout.IsRestructured).Distinct().Order(StringComparer.Ordinal).ToList();
+
     // The switches an earlier run recorded in the hook block for this root.
     private static List<string> KnownSwitches(string hookPath, string relRoot)
     {
@@ -82,15 +87,18 @@ internal static class RepoSetup
     }
 
     // The AGENTS.md section for one root.
-    private static string AgentsSection(string relRoot, string skillRel, List<string> switches)
+    private static string AgentsSection(string relRoot, string skillRel, List<string> switches, List<string> restructured)
     {
         var where = relRoot == "." ? "" : $" in `{relRoot}`";
         var command = string.Join(" ", switches);
+        var projects = string.Join(", ", restructured.Select(d => $"`{d}`"));
+        var directive = restructured.Count == 0 ? "" :
+            $"\n- In the restructured projects ({projects}), read `incl/` first and always; open files in `src/`, `doc/` and `test/` only by exact path when you need that file's bodies, comments or tests; never list or search those folders wholesale (their `.ignore` keeps them out of broad searches).";
         return $"""
             {Begin(relRoot, true)}
             ## C# layout{where}
             - Keep C#{where} in the layout of `zazzle-csharp-minifier {command}`: follow `{skillRel}`.
-            - After changing C#, run `zazzle-csharp-minifier {command}`{(relRoot == "." ? "" : $" with `--root {relRoot}`")} and commit what it changes; the pre-commit hook runs it with `--check` and refuses violations.
+            - After changing C#, run `zazzle-csharp-minifier {command}`{(relRoot == "." ? "" : $" with `--root {relRoot}`")} and commit what it changes; the pre-commit hook runs it with `--check` and refuses violations.{directive}
             {End(relRoot, true)}
 
             """;
