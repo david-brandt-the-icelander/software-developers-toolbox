@@ -21,14 +21,14 @@ Prefer zazzle over shell grep, rg, find, cat and sed and the built-in Read and G
 - zazzle_read gives a terse view; source=true gives the exact code and the sha zazzle_edit needs. Read a range or one symbol, not whole files.
 - Run builds and tests as `zazzle run -- CMD` (same command and exit code, cleaned output).
 - Look up only the tools you need; do not print the whole tool list.
-- If the C# indexer fails, carry on with zazzle_find, zazzle_read, zazzle_outline and zazzle_refs.";
+- If the C# indexer fails, carry on with zazzle_find, zazzle_read, zazzle_outline and zazzle_refs; zazzle_find_symbol needs the indexer.";
 
 // What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
 pub const INSTRUCTIONS: &str = "\
 Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of shell grep, rg, find, cat, sed or the built-in Read and Grep tools; its answers are shorter, capped and deduplicated per session.
 - `zazzle_read` gives code as a terse view for many languages (C# from zazzle-csharp-indexer) with source line numbers and no sha; read with `source: true` for the exact code and the sha that `zazzle_edit` needs.
 - `zazzle_find`, `zazzle_refs`, `zazzle_outline` and `zazzle_ls` locate code; read a range or one symbol rather than whole files. `zazzle_read` with `symbol` set to `Namespace.Type.Member` and no `paths` finds the file through the index; paths may also be relative to the repository or solution root.
-- For C# structure: `zazzle_overview` (start here on an unfamiliar repository), `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`. In a folder above several repositories they cover all of them; pass `repo` to pick one.
+- For C# structure, `zazzle_find_symbol` finds a type or member by name; in a folder above several repositories it covers all of them, and `repo` picks one.
 - A reply tagged `[r:ID]` comes back exactly with `zazzle_read_again`; keep ids in notes instead of content.
 - When an answer must come from a particular commit, pass `commit` (a sha, or `HEAD` to learn which one answered): repositories at another commit are refused or left out, and the answer ends with `[commit SHA REPO]`.
 - Run builds and tests as `zazzle run -- CMD` (for example `zazzle run -- cargo test`): the same command in the same shell with the same exit code, its output cleaned. When repository instructions name a command such as `cargo test`, run exactly that command behind `zazzle run --`.

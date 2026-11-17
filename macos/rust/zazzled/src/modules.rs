@@ -160,7 +160,7 @@ impl Store {
         let e = self.entry(name).ok_or_else(|| format!("no {name} module in this build's manifest"))?;
         if !self.installed(e) {
             if !self.jit() {
-                return Err(format!("the {name} module is not installed; run `zazzle languages fetch`"));
+                return Err(format!("the {name} module is not installed"));
             }
             self.fetch(e)?;
         }

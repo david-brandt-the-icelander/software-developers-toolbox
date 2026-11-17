@@ -272,13 +272,13 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "languages" => languages::run(ctx, rest),
         "help" | "--help" | "-h" => match rest {
             [] => Ok(Output::plain(help::overview())),
+            [a] if a == "--all" => Ok(Output::plain(help::overview())),
+            [a] if a == "--agent" => Ok(Output::plain(help::agent_overview())),
             [name] => help::page(name).map(Output::plain),
             _ => Err("usage: zazzle help [COMMAND]".into()),
         },
         "version" | "--version" => Ok(Output::plain(format!("zazzle {VERSION}"))),
-        other => Err(format!(
-            "unknown command '{other}'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
-        )),
+        other => Err(format!("unknown command '{other}'; try: {}", help::AGENT.join(" "))),
     }
 }
 
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: find read read-again ls outline refs edit clean overview find-symbol changed-since git-log git-blame report-gap status languages help"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit ls run clean read-again"
         );
         assert!(!o.idable);
     }

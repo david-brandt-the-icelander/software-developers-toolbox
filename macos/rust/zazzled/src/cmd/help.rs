@@ -10,6 +10,15 @@ const GROUPS: [&str; 5] = [
     "Setup and the daemon",
     "Other tools",
 ];
+// The commands agents see, the one list behind agent help, the MCP tool list and the agent instructions; every other command is for people and shows only in `help --all`.
+pub const AGENT: &[&str] =
+    &["read", "outline", "find", "refs", "find-symbol", "edit", "ls", "run", "clean", "read-again"];
+
+// True when agents are shown the command.
+pub fn is_agent(cmd: &str) -> bool {
+    AGENT.contains(&cmd)
+}
+
 const COMMON: &[(&str, &str)] = &[
     ("--budget T", "Cap the output at about T tokens (default 3000; read, read-again and clean have their own)"),
     ("--disable-session-deduping", "Send output again even if this session has already seen it"),
@@ -365,7 +374,7 @@ const PAGES: &[Page] = &[
         group: 3,
         brief: "help [COMMAND]",
         summary: "Show this overview, or one command's options",
-        usage: &["zazzle help [COMMAND]", "zazzle COMMAND --help"],
+        usage: &["zazzle help [COMMAND]", "zazzle help --all", "zazzle COMMAND --help"],
         about: &[],
         options: &[],
         examples: &["zazzle help find", "zazzle read --help"],
@@ -476,10 +485,21 @@ pub fn overview() -> String {
     out
 }
 
+// Returns the overview agents get: only the agent commands, and a pointer to the full list for people.
+pub fn agent_overview() -> String {
+    let mut out = format!("zazzle {VERSION}: read, search and edit code with short, focused output\n\n");
+    for name in AGENT {
+        let p = PAGES.iter().find(|p| p.name == *name).expect("every agent command has a page");
+        row(&mut out, p.brief, p.summary);
+    }
+    out.push_str("\nzazzle help COMMAND shows a command's options.\nhumans: zazzle help --all");
+    out
+}
+
 // Returns the help page of one command, or an error naming the unknown command.
 pub fn page(name: &str) -> Result<String, String> {
     let Some(p) = PAGES.iter().find(|p| p.name == name) else {
-        return Err(format!("no command '{name}'; run `zazzle help` for the list"));
+        return Err(format!("no command '{name}'; known: {}", AGENT.join(" ")));
     };
     let mut out = String::new();
     paragraph(&mut out, 0, &format!("zazzle {}: {}", p.name, p.summary));
@@ -514,6 +534,18 @@ pub fn page(name: &str) -> Result<String, String> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+
+    // Checks agent help names every agent command and no command for people.
+    #[test]
+    fn test_agent_overview_has_only_agent_commands() {
+        let text = agent_overview();
+        for p in PAGES {
+            let listed = text.lines().any(|l| l.trim_start().starts_with(p.brief));
+            assert_eq!(listed, is_agent(p.name), "{}", p.name);
+        }
+        assert!(text.ends_with("humans: zazzle help --all"));
+        assert!(page("nope").unwrap_err().split("known: ").nth(1).expect("list").split(' ').all(is_agent));
+    }
 
     // Checks no line of any help text is wider than the page.
     #[test]
