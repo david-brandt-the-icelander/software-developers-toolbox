@@ -107,6 +107,7 @@ indexer = inst.libexec / "indexer"
 raise "indexer files #{indexer.installed}" unless indexer.installed == %w[zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz]
 # The placeholder brew links at pour time, then the one post-install step run for real against a fake keg and uname.
 raise "legacy post_install" if Zazzle.method_defined?(:post_install)
+raise "caveats #{inst.caveats}" unless inst.caveats.include?("zazzled restart")
 indexer_bin = "#{prefix}/bin/zazzle-csharp-indexer"
 raise "placeholder" unless File.read(indexer_bin) == ENV.fetch("PLACEHOLDER") && File.stat(indexer_bin).mode & 0o777 == 0o755
 steps = Formula::Steps.new.tap { |s| s.instance_eval(&f.post_install_steps) }.list

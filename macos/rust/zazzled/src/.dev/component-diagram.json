@@ -82,6 +82,12 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "restart",
+      "name": "Daemon replacement (restart.rs)",
+      "responsibility": "Asks the running daemon for its version and pid, stops it (SIGTERM, then SIGKILL) so the next request starts the installed zazzled, and points a LaunchAgent that names another program at it: always for zazzled restart, only for a daemon older than this binary when zazzled mcp starts; adds the mismatch note to zazzled --version.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
       "id": "engine",
       "name": "Engine (engine.rs, meta.rs)",
       "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock, the counters and the zazz state (script store, worker binary and warm workers).",
@@ -1049,6 +1055,24 @@
       "to": "activity",
       "kind": "depends-on",
       "description": "--check, --verify and --report read it."
+    },
+    {
+      "from": "src",
+      "to": "restart",
+      "kind": "contains",
+      "description": "Daemon replacement."
+    },
+    {
+      "from": "cli",
+      "to": "restart",
+      "kind": "depends-on",
+      "description": "zazzled restart, the check at zazzled mcp's start, and the note on zazzled --version."
+    },
+    {
+      "from": "restart",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "Rewrites a LaunchAgent that names another program."
     }
   ]
 }

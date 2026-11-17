@@ -5,6 +5,7 @@ use crate::engine::Engine;
 use crate::launchd;
 use crate::mcp::{self, DaemonBackend};
 use crate::proxy::{self, Upstream};
+use crate::restart;
 use crate::server::{self, Config};
 use crate::setup;
 use crate::store::{self, Store};
@@ -17,7 +18,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | install | uninstall | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | install | uninstall | restart | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -27,6 +28,7 @@ pub enum Cli {
     Mcp,
     Install,
     Uninstall,
+    Restart,
     Run(Vec<String>),
     Proxy(proxy::Opts),
     Setup(setup::Opts),
@@ -84,6 +86,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "mcp" => Ok(Cli::Mcp),
         "install" => Ok(Cli::Install),
         "uninstall" => Ok(Cli::Uninstall),
+        "restart" => Ok(Cli::Restart),
         "run" => Ok(Cli::Run(rest.to_vec())),
         "proxy" => proxy::parse(rest).map(Cli::Proxy),
         "setup" => setup::parse(rest).map(Cli::Setup),
@@ -170,6 +173,7 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
 
 // Serves MCP on standard input and output.
 fn mcp_main() -> Result<(), String> {
+    replace_older_daemon(&|| restart_main(restart::Mode::OnlyOlder), &mut std::io::stderr());
     let sock = client::socket_path().map_err(|e| e.to_string())?;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
     let session =
@@ -211,6 +215,32 @@ fn agent_main(install: bool) -> Result<String, String> {
     agent_cmd(install, cfg!(target_os = "macos"), &exe, &sock, &home, uid, &launchd::launchctl)
 }
 
+// Restarts the running daemon (with OnlyOlder, only one older than this binary) using the real environment.
+fn restart_main(mode: restart::Mode) -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::setup::stable_exe(&exe.canonicalize().unwrap_or(exe));
+    let sock = client::socket_path().map_err(|e| e.to_string())?;
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+    // SAFETY: getuid has no preconditions.
+    let uid = unsafe { libc::getuid() };
+    restart::restart(&sock, &exe, &home, uid, mode, &launchd::launchctl)
+}
+
+// Replaces a daemon older than this binary, such as one from before an upgrade, which would answer every call, with
+// `restart`; tells `err` when it stopped one or changed the LaunchAgent.
+fn replace_older_daemon(restart: &dyn Fn() -> Result<String, String>, err: &mut dyn Write) {
+    if let Ok(note) = restart() {
+        if note.starts_with("stopped") || note.contains("LaunchAgent") {
+            let _ = writeln!(err, "zazzled: {note}");
+        }
+    }
+}
+
+// Returns the note `zazzled --version` adds when the running daemon is another version, or nothing.
+fn version_note() -> String {
+    client::socket_path().map(|sock| restart::version_note(&sock)).unwrap_or_default()
+}
+
 // Reports a result on the right stream and picks the exit code.
 fn finish(r: Result<String, String>) -> ExitCode {
     match r {
@@ -238,7 +268,8 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Mcp => finish(mcp_main().map(|()| String::new())),
         Cli::Install => finish(agent_main(true)),
         Cli::Uninstall => finish(agent_main(false)),
-        Cli::Version => finish(Ok(format!("zazzled {}", cmd::VERSION))),
+        Cli::Version => finish(Ok(format!("zazzled {}{}", cmd::VERSION, version_note()))),
+        Cli::Restart => finish(restart_main(restart::Mode::Always)),
         Cli::Help(page) => finish(cmd::help::page(page)),
         Cli::Hook(o) => {
             let mut payload = String::new();
@@ -299,6 +330,7 @@ mod tests {
         );
         assert!(parse(&v(&["setup", "--bad"])).is_err());
         assert_eq!(parse(&v(&["uninstall"])), Ok(Cli::Uninstall));
+        assert_eq!(parse(&v(&["restart"])), Ok(Cli::Restart));
         assert_eq!(parse(&v(&["version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));
@@ -332,6 +364,40 @@ mod tests {
         std::env::set_var("ZAZZLE_IDLE_SECS", "soon");
         assert_eq!(parse(&v(&["serve"])), Ok(Cli::Serve { socket: None, idle: Duration::from_secs(1800) }));
         std::env::remove_var("ZAZZLE_IDLE_SECS");
+    }
+
+    // Checks restart, the check at zazzled mcp's start and the version note against a socket no daemon answers.
+    #[test]
+    fn test_restart_entry_points() {
+        let _g = crate::testutil::env_lock();
+        let t = crate::testutil::TempDir::new();
+        let (home, sock) = (std::env::var_os("HOME"), std::env::var_os("ZAZZLE_SOCK"));
+        std::env::set_var("HOME", t.path());
+        std::env::set_var("ZAZZLE_SOCK", t.path().join("none.sock"));
+        let r = restart_main(restart::Mode::Always).expect("restart");
+        assert!(r.starts_with("no daemon was running"), "{r}");
+        let said = |r: Result<String, String>| {
+            let mut out = Vec::new();
+            replace_older_daemon(&|| r.clone(), &mut out);
+            String::from_utf8(out).expect("utf8")
+        };
+        assert_eq!(
+            said(Ok("stopped zazzled 1.2.16 (pid 7)".into())),
+            "zazzled: stopped zazzled 1.2.16 (pid 7)\n"
+        );
+        assert_eq!(
+            said(Ok("x\nthe LaunchAgent now starts y".into())),
+            "zazzled: x\nthe LaunchAgent now starts y\n"
+        );
+        assert_eq!(said(Ok("no daemon was running".into())), "");
+        assert_eq!(said(Err("HOME is not set".into())), "");
+        assert_eq!(version_note(), "");
+        for (name, value) in [("HOME", home), ("ZAZZLE_SOCK", sock)] {
+            match value {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
     }
 
     // Checks --help after run (wrap), proxy and setup asks for their help page, but not after a run's command.

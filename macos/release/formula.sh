@@ -67,6 +67,14 @@ class Zazzle < Formula
         writable_base:  :bin
   end
 
+  # A daemon started by an older version keeps answering until it is replaced; say how after every install.
+  def caveats
+    <<~EOS
+      zazzle --version reports the running daemon's version. If it is older than ${tag#v}, replace it with:
+        zazzled restart
+    EOS
+  end
+
   test do
     assert_match "zazzle", shell_output("#{bin}/zazzle version")
     assert_match "zazzle", shell_output("#{bin}/z version")
