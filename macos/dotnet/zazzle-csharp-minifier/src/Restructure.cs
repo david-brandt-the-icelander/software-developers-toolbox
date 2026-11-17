@@ -20,7 +20,7 @@ internal static class Restructure
     public static Plan Make(string root, IReadOnlyList<string> files)
     {
         var plan = new Plan();
-        var projects = Solution.Projects(root).Select(ProjectFile.Load).ToList();
+        var projects = SolutionFiles.Projects(root).Select(ProjectFile.Load).ToList();
         var production = projects.Where(p => !p.IsTest).ToList();
         var testsOf = AssignTests(production, projects.Where(p => p.IsTest), plan);
         foreach (var project in production)
@@ -160,7 +160,7 @@ internal static class Restructure
 
     // The solution files that list the test project, with its entry re-pointed.
     private static List<(string Path, string Text)> SolutionEdits(string root, ProjectFile test, string newPath) =>
-        Solution.Find(root).Select(s => (s, Solution.Repoint(s, test.Path, newPath))).Where(e => e.Item2 != null).Select(e => (e.s, e.Item2!)).ToList();
+        SolutionFiles.Find(root).Select(s => (s, SolutionFiles.Repoint(s, test.Path, newPath))).Where(e => e.Item2 != null).Select(e => (e.s, e.Item2!)).ToList();
 
     // Why the moves cannot be made safely: two files to one place, or a file in the way; null when they can.
     private static string? Problem(List<Move> moves)

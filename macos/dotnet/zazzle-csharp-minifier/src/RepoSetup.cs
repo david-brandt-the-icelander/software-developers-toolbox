@@ -62,7 +62,7 @@ internal static class RepoSetup
 
     // The folders of the restructured projects under root, sorted.
     private static List<string> RestructuredProjects(string root) =>
-        Solution.Projects(root).Select(p => Path.GetDirectoryName(p)!).Where(Layout.IsRestructured).Distinct().Order(StringComparer.Ordinal).ToList();
+        SolutionFiles.Projects(root).Select(p => Path.GetDirectoryName(p)!).Where(Layout.IsRestructured).Distinct().Order(StringComparer.Ordinal).ToList();
 
     // The switches an earlier run recorded in the hook block for this root.
     private static List<string> KnownSwitches(string hookPath, string relRoot)

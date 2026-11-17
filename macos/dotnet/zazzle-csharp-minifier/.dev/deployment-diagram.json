@@ -1,0 +1,119 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle-csharp-minifier deployment diagram",
+  "folder": "macos/dotnet/zazzle-csharp-minifier",
+  "description": "How zazzle-csharp-minifier runs on a developer's machine: one self-contained executable started from a terminal, by a coding agent, or by the git pre-commit hook it installs in the repositories it changes. Nothing runs anywhere else.",
+  "sources": [
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+      "symbol": "PublishSingleFile"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/Program.cs",
+      "symbol": "Usage"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/src/RepoSetup.cs",
+      "symbol": "RepoSetup.HookBlock"
+    },
+    {
+      "path": "macos/dotnet/zazzle-csharp-minifier/README.md",
+      "symbol": "Build"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "macOS (arm64 or x64), or Linux; everything below runs here as the same user."
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs the tool's commands by hand.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent",
+      "kind": "client",
+      "description": "Runs the tool as the installed skill tells it to, after changing C#.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "minifier",
+      "name": "zazzle-csharp-minifier",
+      "kind": "process",
+      "description": "One short-lived process per run: plans every change in memory, verifies it, then writes, or with --check only reports."
+    },
+    {
+      "id": "hook",
+      "name": "git pre-commit hook",
+      "kind": "process",
+      "description": "The block the tool writes into the repository's pre-commit file; runs the tool with --check on the staged .cs files.",
+      "condition": "In repositories the tool has changed"
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "kind": "process",
+      "description": "Child process for finding the work tree and reading and setting core.hooksPath; must be on PATH."
+    },
+    {
+      "id": "repository",
+      "name": "The C# repository",
+      "kind": "database",
+      "description": "The source tree the tool rewrites, with its AGENTS.md, CLAUDE.md, skill file and hook."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "zazzle-csharp-minifier (single-file executable)",
+      "source": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+      "deployedTo": "machine",
+      "description": "dotnet publish src -c Release -r <rid>: self-contained, single file, ReadyToRun, not signed; put on PATH by hand. Not part of the v* release."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "minifier",
+      "kind": "hosts",
+      "description": "Started from the terminal, by an agent or by the hook."
+    },
+    {
+      "from": "terminal",
+      "to": "minifier",
+      "kind": "connects-to",
+      "description": "Command line."
+    },
+    {
+      "from": "agent",
+      "to": "minifier",
+      "kind": "connects-to",
+      "description": "Command line, as the skill says."
+    },
+    {
+      "from": "hook",
+      "to": "minifier",
+      "kind": "connects-to",
+      "description": "xargs passes the staged .cs paths with --check and the recorded switches; a non-zero exit refuses the commit."
+    },
+    {
+      "from": "minifier",
+      "to": "repository",
+      "kind": "connects-to",
+      "description": "Reads and rewrites source files; writes the skill, AGENTS.md section and hook block."
+    },
+    {
+      "from": "minifier",
+      "to": "git",
+      "kind": "connects-to",
+      "description": "Spawned with an argument list and a timeout, never through a shell."
+    }
+  ]
+}

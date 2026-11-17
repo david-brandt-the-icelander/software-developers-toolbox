@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace ZazzleMinifier;
 
 // Reads .sln and .slnx files.
-internal static class Solution
+internal static class SolutionFiles
 {
     // Folder names never walked into while looking for solutions and projects.
     private static readonly HashSet<string> SkippedDirs = ["bin", "obj", "node_modules", "packages"];

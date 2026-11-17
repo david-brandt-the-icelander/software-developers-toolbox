@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-csharp-minifier",
+  "folder": "macos/dotnet/zazzle-csharp-minifier",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-csharp-minifier",
+      "summary": "A single-file C# command-line tool that rewrites a C# source tree into a lean layout (comments moved to Markdown, one test file per method under test, declarations split from implementations, projects restructured into incl/src/doc/test), lists and renames its identifiers, and sets up the repository it changes to keep that layout.",
+      "purpose": "Holds the whole tool: the project in src/, the xunit tests in tests/, the build settings both share (Directory.Build.props, version 0.0.0-dev) and the README. It has its own build (dotnet) and its own CI job; it is not part of the v* release.",
+      "boundaries": [
+        "The skill it copies into repositories is agents/skills/zazzle-csharp-minifier/SKILL.md in this repository, embedded into the binary at build time.",
+        "The pipeline that tests it is recorded in .github/.dev.",
+        "Code rules for this folder are in macos/dotnet/style.md."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/Directory.Build.props",
+          "symbol": "TargetFramework"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/README.md",
+          "symbol": "zazzle-csharp-minifier"
+        },
+        {
+          "path": "macos/dotnet/zazzle-csharp-minifier/src/zazzle-csharp-minifier.csproj",
+          "symbol": "EmbeddedResource"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "dotnet-minifier"
+        }
+      ]
+    }
+  ]
+}

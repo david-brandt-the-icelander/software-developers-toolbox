@@ -126,7 +126,7 @@ public sealed class RestructureTests : IDisposable
     public void test_solution_repoint_slnx()
     {
         Put("All.slnx", "<Solution>\n  <Project Path=\"Lib.Tests/Lib.Tests.csproj\" />\n</Solution>\n");
-        var text = Solution.Repoint(Path.Combine(root, "All.slnx"), Path.Combine(root, "Lib.Tests/Lib.Tests.csproj"), Path.Combine(root, "Lib/test/Lib.Tests.csproj"));
+        var text = SolutionFiles.Repoint(Path.Combine(root, "All.slnx"), Path.Combine(root, "Lib.Tests/Lib.Tests.csproj"), Path.Combine(root, "Lib/test/Lib.Tests.csproj"));
         Assert.Equal("<Solution>\n  <Project Path=\"Lib/test/Lib.Tests.csproj\" />\n</Solution>\n", text);
     }
 }
