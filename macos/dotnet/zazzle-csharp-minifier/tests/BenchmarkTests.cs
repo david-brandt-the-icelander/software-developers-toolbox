@@ -88,15 +88,16 @@ public sealed class BenchmarkTests : IDisposable
     // A benchmark clones beside the source, transforms only the clone, runs each prompt file three times in the clone and stores everything under repo/sha/prompt.
     public void test_benchmark_runs_and_stores()
     {
-        var (code, output, _) = Run("--strip-comments");
+        var (code, output, _) = Run("--allow-reads");
         Assert.Equal(0, code);
         var clone = Path.Combine(parent, "benchmark-proj");
-        Assert.Equal("class A { }\n", File.ReadAllText(Path.Combine(clone, "A.cs")));
+        Assert.Equal("// File.\nclass A { }\n", File.ReadAllText(Path.Combine(clone, "A.cs")));
+        Assert.Contains("\"Bash(cat:*)\"", File.ReadAllText(Path.Combine(clone, ".claude", "settings.json")));
         Assert.Equal("// File.\nclass A { }\n", File.ReadAllText(Path.Combine(parent, "proj", "A.cs")));
         Assert.True(File.Exists(Path.Combine(clone, ".git", Benchmark.Marker)));
         var sha = Proc.Run("git", ["-C", Path.Combine(parent, "proj"), "rev-parse", "HEAD"], 20).Output;
         var runDir = Assert.Single(Directory.GetDirectories(Path.Combine(results, "proj", sha, "explain")));
-        Assert.EndsWith("_fake-model_high_strip-comments", runDir);
+        Assert.EndsWith("_fake-model_high_allow-reads", runDir);
         Assert.Equal(["meta.json", "prompt.txt", "run-1.json", "run-1.jsonl", "run-2.json", "run-2.jsonl", "run-3.json", "run-3.jsonl", "summary.json", "transform.txt"],
             Directory.GetFiles(runDir).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         var meta = JsonNode.Parse(File.ReadAllText(Path.Combine(runDir, "meta.json")))!;

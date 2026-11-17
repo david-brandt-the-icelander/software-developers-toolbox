@@ -7,7 +7,7 @@ namespace ZazzleMinifier;
 internal static class RepoSetup
 {
     // The commands in the order they run.
-    private static readonly string[] AllSwitches = ["--allow-reads", "--strip-comments", "--split-tests", "--split-headers", "--restructure"];
+    private static readonly string[] AllSwitches = ["--allow-reads", "--split-tests"];
 
     // Sets up the repository holding root and returns one line per file it created or changed.
     public static List<string> Run(string root, IReadOnlyList<string> switches)
@@ -20,8 +20,7 @@ internal static class RepoSetup
         var changed = new List<string>();
         var skillRel = SkillRel(repo);
         Ensure(repo, skillRel, SkillText(), changed);
-        var restructured = RestructuredProjects(root).Select(d => Path.GetRelativePath(repo, d).Replace('\\', '/')).ToList();
-        Ensure(repo, "AGENTS.md", Merge(ReadOrEmpty(Path.Combine(repo, "AGENTS.md")), relRoot, AgentsSection(relRoot, skillRel, all, restructured)), changed);
+        Ensure(repo, "AGENTS.md", Merge(ReadOrEmpty(Path.Combine(repo, "AGENTS.md")), relRoot, AgentsSection(relRoot, skillRel, all)), changed);
         if (!File.Exists(Path.Combine(repo, "CLAUDE.md")))
             Ensure(repo, "CLAUDE.md", "@AGENTS.md\n", changed);
         Ensure(repo, ".claude/settings.json", ReadOnlySettings(ReadOrEmpty(Path.Combine(repo, ".claude", "settings.json"))), changed);
@@ -109,10 +108,6 @@ internal static class RepoSetup
         return target;
     }
 
-    // The folders of the restructured projects under root, sorted.
-    private static List<string> RestructuredProjects(string root) =>
-        SolutionFiles.Projects(root).Select(p => Path.GetDirectoryName(p)!).Where(Layout.IsRestructured).Distinct().Order(StringComparer.Ordinal).ToList();
-
     // The switches an earlier run recorded in the hook block for this root.
     private static List<string> KnownSwitches(string hookPath, string relRoot)
     {
@@ -136,19 +131,16 @@ internal static class RepoSetup
     }
 
     // The AGENTS.md section for one root.
-    private static string AgentsSection(string relRoot, string skillRel, List<string> switches, List<string> restructured)
+    private static string AgentsSection(string relRoot, string skillRel, List<string> switches)
     {
         var where = relRoot == "." ? "" : $" in `{relRoot}`";
         var command = string.Join(" ", switches);
-        var projects = string.Join(", ", restructured.Select(d => $"`{d}`"));
-        var directive = restructured.Count == 0 ? "" :
-            $"\n- In the restructured projects ({projects}), read `incl/` first and always; open files in `src/`, `doc/` and `test/` only by exact path when you need that file's bodies, comments or tests; never list or search those folders wholesale (their `.ignore` keeps them out of broad searches).";
         return $"""
             {Begin(relRoot, true)}
             ## C# layout{where}
-            - Keep C#{where} in the layout of `zazzle-csharp-minifier {command}`: follow `{skillRel}`.
-            - Find files with Glob and read and search them with Read and Grep (or the allowed read-only commands in `.claude/settings.json`); no `find` or other shell pipelines, which need permission and cost a turn when refused.
-            - After changing C#, run `zazzle-csharp-minifier {command}`{(relRoot == "." ? "" : $" with `--root {relRoot}`")} and commit what it changes; the pre-commit hook runs it with `--check` and refuses violations.{directive}
+            - For C# edits{where}, follow `{skillRel}` and keep the `zazzle-csharp-minifier {command}` layout.
+            - Use available read/search tools and discover only the tool names needed. Request symbols or bounded ranges; avoid whole-file reads and `full:true` unless the task requires them. With zazzle, `glob` is a list of strings and `max` caps matches.
+            - After changing C#, run `zazzle-csharp-minifier {command}`{(relRoot == "." ? "" : $" with `--root {relRoot}`")} and commit what it changes; the pre-commit hook runs it with `--check` and refuses violations.
             {End(relRoot, true)}
 
             """;

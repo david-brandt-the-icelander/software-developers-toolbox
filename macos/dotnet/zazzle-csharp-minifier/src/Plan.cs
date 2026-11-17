@@ -11,7 +11,7 @@ internal sealed class Plan
 {
     public List<Edit> Edits { get; } = [];
 
-    // One line per source file the command changes, such as "foo/bar.cs: moved 3 comments to document/foo/bar.cs.md".
+    // One line per source file the command changes, such as "tests/StoreTests.cs: moved 3 tests".
     public List<string> Changes { get; } = [];
 
     // Files passed over on purpose, such as generated code.

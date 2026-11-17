@@ -11,7 +11,7 @@ internal static class Runner
             return Benchmark.Run(args, output, errors);
         if (args.ListIdentifiers)
         {
-            output.Write(Identifiers.List(args.Root, Sources(args.Root, args.Paths)));
+            output.Write(Identifiers.List(args.Root, Sources(args.Paths)));
             return 0;
         }
         var steps = new List<(string Name, Func<string, IReadOnlyList<string>, Plan> Make)>();
@@ -19,20 +19,14 @@ internal static class Runner
             steps.Add(("--rename", (root, _) => Rename.Make(root, renameFile)));
         if (args.AllowReads)
             steps.Add(("--allow-reads", (root, _) => RepoSetup.AllowReads(root)));
-        if (args.Strip)
-            steps.Add(("--strip-comments", StripComments.Make));
         if (args.SplitTests)
             steps.Add(("--split-tests", SplitTests.Make));
-        if (args.SplitHeaders)
-            steps.Add(("--split-headers", SplitHeaders.Make));
-        if (args.Restructure)
-            steps.Add(("--restructure", Restructure.Make));
         var paths = args.Paths;
         var failed = 0;
         var violations = 0;
         foreach (var (name, make) in steps)
         {
-            var files = Sources(args.Root, paths);
+            var files = Sources(paths);
             var plan = make(args.Root, files);
             plan.Notes.ForEach(output.WriteLine);
             plan.Errors.ForEach(errors.WriteLine);
@@ -55,7 +49,7 @@ internal static class Runner
         return failed > 0 || violations > 0 ? 1 : 0;
     }
 
-    // The source files under the paths that still exist, without the implementation halves of split files.
-    private static List<string> Sources(string root, IEnumerable<string> paths) =>
-        SourceFiles.Under(paths.Where(Path.Exists)).Where(f => !Layout.IsImplementationHalf(root, f)).ToList();
+    // The source files under the paths that still exist.
+    private static List<string> Sources(IEnumerable<string> paths) =>
+        SourceFiles.Under(paths.Where(Path.Exists));
 }

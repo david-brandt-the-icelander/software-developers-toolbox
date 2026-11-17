@@ -3,14 +3,14 @@ namespace ZazzleMinifier;
 
 // The parsed command line; Error is set when it cannot be run.
 internal sealed record ParsedArgs(
-    bool Help, bool Version, bool Strip, bool SplitTests, bool SplitHeaders, bool Check,
+    bool Help, bool Version, bool SplitTests, bool Check,
     string Root, List<string> Paths, string? Error,
-    bool Restructure = false, bool ListIdentifiers = false, string? RenameFile = null,
+    bool ListIdentifiers = false, string? RenameFile = null,
     string? Benchmark = null, string? Model = null, string? Effort = null, bool AllowReads = false)
 {
     // The command switches given, in the order they run, as typed on the command line.
     public List<string> CommandSwitches() =>
-        [.. new[] { (AllowReads, "--allow-reads"), (Strip, "--strip-comments"), (SplitTests, "--split-tests"), (SplitHeaders, "--split-headers"), (Restructure, "--restructure") }.Where(s => s.Item1).Select(s => s.Item2)];
+        [.. new[] { (AllowReads, "--allow-reads"), (SplitTests, "--split-tests") }.Where(s => s.Item1).Select(s => s.Item2)];
 }
 
 // Turns args into ParsedArgs and checks that the paths exist inside the root.
@@ -19,7 +19,7 @@ internal static class Cli
     // Parses args relative to the current directory.
     public static ParsedArgs Parse(string[] args)
     {
-        bool help = false, version = false, strip = false, splitTests = false, splitHeaders = false, check = false, restructure = false, list = false, allowReads = false;
+        bool help = false, version = false, splitTests = false, check = false, list = false, allowReads = false;
         string? root = null, rename = null, benchmark = null, model = null, effort = null;
         var paths = new List<string>();
         for (var i = 0; i < args.Length; i++)
@@ -28,11 +28,8 @@ internal static class Cli
             {
                 case "--help" or "-h": help = true; break;
                 case "--version": version = true; break;
-                case "--strip-comments": strip = true; break;
                 case "--split-tests": splitTests = true; break;
-                case "--split-headers": splitHeaders = true; break;
                 case "--check": check = true; break;
-                case "--restructure": restructure = true; break;
                 case "--allow-reads": allowReads = true; break;
                 case "--list-identifiers": list = true; break;
                 case "--rename" when i + 1 < args.Length: rename = args[++i]; break;
@@ -44,16 +41,13 @@ internal static class Cli
                 default: paths.Add(args[i]); break;
             }
         }
-        // The restructured layout is built from the three other commands' output.
-        if (restructure)
-            strip = splitTests = splitHeaders = true;
         if (help || version)
-            return new ParsedArgs(help, version, false, false, false, false, "", paths, null);
+            return new ParsedArgs(help, version, false, false, "", paths, null);
         if (benchmark != null || model != null || effort != null)
-            return ParseBenchmark(strip, splitTests, splitHeaders, restructure, allowReads, list || rename != null || check || paths.Count > 0, root, benchmark, model, effort);
-        if (!strip && !splitTests && !splitHeaders && !restructure && !allowReads && !list && rename == null)
-            return Fail("nothing to do: give --strip-comments, --split-tests, --split-headers, --restructure, --allow-reads, --list-identifiers or --rename");
-        if (list && (strip || splitTests || splitHeaders || restructure || allowReads || rename != null || check))
+            return ParseBenchmark(splitTests, allowReads, list || rename != null || check || paths.Count > 0, root, benchmark, model, effort);
+        if (!splitTests && !allowReads && !list && rename == null)
+            return Fail("nothing to do: give --split-tests, --allow-reads, --list-identifiers or --rename");
+        if (list && (splitTests || allowReads || rename != null || check))
             return Fail("--list-identifiers runs on its own");
         if (rename != null && check)
             return Fail("--rename cannot be checked");
@@ -66,18 +60,18 @@ internal static class Cli
         var bad = fullPaths.FirstOrDefault(p => !Inside(fullRoot, p) || !Path.Exists(p));
         if (bad != null)
             return Fail($"path is missing or outside the root: {bad}");
-        return new ParsedArgs(false, false, strip, splitTests, splitHeaders, check, fullRoot, fullPaths, null,
-            restructure, list, rename == null ? null : Path.GetFullPath(rename), AllowReads: allowReads);
+        return new ParsedArgs(false, false, splitTests, check, fullRoot, fullPaths, null,
+            list, rename == null ? null : Path.GetFullPath(rename), AllowReads: allowReads);
     }
 
     // Checks a --benchmark command line: a prompt file or folder, a model and an effort, and only the switches that transform the clone.
-    private static ParsedArgs ParseBenchmark(bool strip, bool splitTests, bool splitHeaders, bool restructure, bool allowReads, bool other,
+    private static ParsedArgs ParseBenchmark(bool splitTests, bool allowReads, bool other,
         string? root, string? benchmark, string? model, string? effort)
     {
         if (benchmark == null || model == null || effort == null)
             return Fail("--benchmark, --model and --effort go together");
         if (other)
-            return Fail("--benchmark takes --root and the transforming switches only (--allow-reads, --strip-comments, --split-tests, --split-headers, --restructure)");
+            return Fail("--benchmark takes --root and the transforming switches only (--allow-reads, --split-tests)");
         if (effort is not ("low" or "medium" or "high" or "xhigh" or "max"))
             return Fail($"--effort must be low, medium, high, xhigh or max: {effort}");
         if (!Path.Exists(benchmark))
@@ -85,8 +79,8 @@ internal static class Cli
         var fullRoot = Path.GetFullPath(root ?? Directory.GetCurrentDirectory()).TrimEnd(Path.DirectorySeparatorChar);
         if (!Directory.Exists(fullRoot) || Path.GetDirectoryName(fullRoot) == null)
             return Fail($"root is not a folder with a parent: {fullRoot}");
-        return new ParsedArgs(false, false, strip, splitTests, splitHeaders, false, fullRoot, [fullRoot], null,
-            restructure, false, null, Path.GetFullPath(benchmark), model, effort, allowReads);
+        return new ParsedArgs(false, false, splitTests, false, fullRoot, [fullRoot], null,
+            false, null, Path.GetFullPath(benchmark), model, effort, allowReads);
     }
 
     // True when path is the root or below it.
@@ -97,5 +91,5 @@ internal static class Cli
     }
 
     // A ParsedArgs that carries only an error.
-    private static ParsedArgs Fail(string error) => new(false, false, false, false, false, false, "", [], error);
+    private static ParsedArgs Fail(string error) => new(false, false, false, false, "", [], error);
 }

@@ -1,4 +1,4 @@
-// Tests for --rename: references follow, files and documents move, and unsafe renames are refused.
+// Tests for --rename: references follow and source files move, and unsafe renames are refused.
 using Xunit;
 
 namespace ZazzleMinifier.Tests;
@@ -49,19 +49,16 @@ public sealed class RenameTests : IDisposable
     }
 
     [Fact]
-    // A type rename renames Type.cs, its src/ half, its comment document and its test folder, and fixes the document headings.
+    // A type rename moves its source and test folder while preserving comments.
     public void test_rename_type_moves_files()
     {
-        Put("Foo.cs", "namespace App;\npublic partial class Foo\n{\n    public partial int Get();\n}\n");
-        Put("src/Foo.cs", "namespace App;\npublic partial class Foo\n{\n    public partial int Get() => 1;\n}\n");
-        Put("document/Foo.cs.md", "# Foo.cs\n\n## class `App.Foo`\n\nA foo.\n\n## method `App.Foo.Get()`\n\nGets.\n");
+        Put("Foo.cs", "// A foo.\nnamespace App;\npublic class Foo\n{\n    public int Get() => 1;\n}\n");
         Put("tests/Foo/Get.cs", "namespace App.Tests;\npublic class FooTests\n{\n    [Fact]\n    public void test_get() { var f = new App.Foo(); _ = f.Get(); }\n}\n");
         var plan = Run("App:\n    Foo => Bar\n");
         Assert.Empty(plan.Errors);
         Assert.Null(Read("Foo.cs"));
-        Assert.Contains("public partial class Bar", Read("Bar.cs"));
-        Assert.Contains("public partial class Bar", Read("src/Bar.cs"));
-        Assert.Equal("# Foo.cs\n\n## class `App.Bar`\n\nA foo.\n\n## method `App.Bar.Get()`\n\nGets.\n", Read("document/Bar.cs.md"));
+        Assert.Contains("public class Bar", Read("Bar.cs"));
+        Assert.StartsWith("// A foo.", Read("Bar.cs"));
         Assert.Contains("new App.Bar()", Read("tests/Bar/Get.cs"));
         Assert.False(Directory.Exists(Path.Combine(root, "tests/Foo")));
     }
@@ -79,38 +76,18 @@ public sealed class RenameTests : IDisposable
     }
 
     [Fact]
-    // A namespace rename moves its folder (with split src/ halves and sub-folders) and updates usings elsewhere.
+    // A namespace rename moves its folder and sub-folders and updates usings elsewhere.
     public void test_rename_namespace_moves_folder()
     {
-        Put("Widgets/Knob.cs", "namespace App.Widgets;\npublic partial class Knob { public partial int Turn(); }\n");
-        Put("Widgets/src/Knob.cs", "namespace App.Widgets;\npublic partial class Knob { public partial int Turn() => 1; }\n");
+        Put("Widgets/Knob.cs", "namespace App.Widgets;\npublic class Knob { public int Turn() => 1; }\n");
         Put("Widgets/Small/Dot.cs", "namespace App.Widgets.Small;\npublic class Dot { }\n");
-        Put("document/Widgets/Knob.cs.md", "# Widgets/Knob.cs\n\n## class `App.Widgets.Knob`\n\nA knob.\n");
         Put("Use.cs", "using App.Widgets;\nusing App.Widgets.Small;\nnamespace App;\npublic class Use { public int Go(Knob k, Dot d) => k.Turn(); }\n");
         var plan = Run("App:\n    Widgets => Gadgets\n");
         Assert.Empty(plan.Errors);
         Assert.StartsWith("namespace App.Gadgets;", Read("Gadgets/Knob.cs"));
-        Assert.StartsWith("namespace App.Gadgets;", Read("Gadgets/src/Knob.cs"));
         Assert.StartsWith("namespace App.Gadgets.Small;", Read("Gadgets/Small/Dot.cs"));
-        Assert.Contains("## class `App.Gadgets.Knob`", Read("document/Gadgets/Knob.cs.md"));
         Assert.StartsWith("using App.Gadgets;\nusing App.Gadgets.Small;", Read("Use.cs"));
         Assert.False(Directory.Exists(Path.Combine(root, "Widgets")));
-    }
-
-    [Fact]
-    // In a restructured project a namespace rename moves the folder in incl/ and src/ and its document in doc/.
-    public void test_rename_namespace_restructured()
-    {
-        Put("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net8.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include=\"incl/**/*.cs\" /><Compile Include=\"src/**/*.cs\" /></ItemGroup></Project>\n");
-        Put("incl/Widgets/Knob.cs", "namespace App.Widgets;\npublic partial class Knob { public partial int Turn(); }\n");
-        Put("src/Widgets/Knob.cs", "namespace App.Widgets;\npublic partial class Knob { public partial int Turn() => 1; }\n");
-        Put("doc/Widgets/Knob.cs.md", "# incl/Widgets/Knob.cs\n\n## class `App.Widgets.Knob`\n\nA knob.\n");
-        var plan = Run("App:\n    Widgets => Gadgets\n");
-        Assert.Empty(plan.Errors);
-        Assert.StartsWith("namespace App.Gadgets;", Read("incl/Gadgets/Knob.cs"));
-        Assert.StartsWith("namespace App.Gadgets;", Read("src/Gadgets/Knob.cs"));
-        Assert.Contains("## class `App.Gadgets.Knob`", Read("doc/Gadgets/Knob.cs.md"));
-        Assert.Null(Read("doc/Widgets/Knob.cs.md"));
     }
 
     [Fact]

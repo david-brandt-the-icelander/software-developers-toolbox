@@ -17,8 +17,21 @@ public class CliTests
     // An unknown switch, or --root without a value, is an error.
     public void test_parse_bad_switches()
     {
-        Assert.StartsWith("unknown or incomplete switch: --nope", Cli.Parse(["--strip-comments", "--nope"]).Error);
-        Assert.StartsWith("unknown or incomplete switch: --root", Cli.Parse(["--strip-comments", "--root"]).Error);
+        Assert.StartsWith("unknown or incomplete switch: --nope", Cli.Parse(["--split-tests", "--nope"]).Error);
+        Assert.StartsWith("unknown or incomplete switch: --root", Cli.Parse(["--split-tests", "--root"]).Error);
+    }
+
+    // Removed transformations are rejected alone, with surviving commands and in benchmark mode.
+    [Theory]
+    [InlineData("--strip-comments")]
+    [InlineData("--split-headers")]
+    [InlineData("--restructure")]
+    public void test_parse_removed_commands(string command)
+    {
+        Assert.Equal($"unknown or incomplete switch: {command}", Cli.Parse([command]).Error);
+        Assert.Equal($"unknown or incomplete switch: {command}", Cli.Parse(["--split-tests", command]).Error);
+        Assert.Equal($"unknown or incomplete switch: {command}",
+            Cli.Parse(["--benchmark", ".", "--model", "fake-model", "--effort", "low", command]).Error);
     }
 
     [Fact]
@@ -26,7 +39,7 @@ public class CliTests
     public void test_parse_root_default_paths()
     {
         var dir = Directory.CreateTempSubdirectory("zazzle-csharp-minifier").FullName;
-        var parsed = Cli.Parse(["--strip-comments", "--root", dir]);
+        var parsed = Cli.Parse(["--split-tests", "--root", dir]);
         Assert.Null(parsed.Error);
         Assert.Equal(dir, parsed.Root);
         Assert.Equal([dir], parsed.Paths);
@@ -39,9 +52,9 @@ public class CliTests
     {
         var dir = Directory.CreateTempSubdirectory("zazzle-csharp-minifier").FullName;
         var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
-        Assert.StartsWith("path is missing or outside the root", Cli.Parse(["--strip-comments", "--root", sub, dir]).Error);
-        Assert.StartsWith("path is missing or outside the root", Cli.Parse(["--strip-comments", "--root", dir, Path.Combine(dir, "nope.cs")]).Error);
-        Assert.Null(Cli.Parse(["--strip-comments", "--root", dir, sub]).Error);
+        Assert.StartsWith("path is missing or outside the root", Cli.Parse(["--split-tests", "--root", sub, dir]).Error);
+        Assert.StartsWith("path is missing or outside the root", Cli.Parse(["--split-tests", "--root", dir, Path.Combine(dir, "nope.cs")]).Error);
+        Assert.Null(Cli.Parse(["--split-tests", "--root", dir, sub]).Error);
         Directory.Delete(dir, true);
     }
 
