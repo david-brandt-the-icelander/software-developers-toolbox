@@ -1,5 +1,5 @@
 // MCP tools for the structure commands answered by zazzle-csharp-indexer: descriptions, schemas and argument mapping.
-use crate::mcp::{get_str, need_str, object, push_flag, push_num, Tool};
+use crate::mcp::{get_str, need_str, object, push_capped, push_flag, push_num, Tool, FIND_SYMBOL_LIMIT};
 use serde_json::{json, Value};
 
 pub(crate) const TOOLS: &[Tool] = &[
@@ -58,7 +58,7 @@ fn find_symbol_schema() -> Value {
             "name": {"type": "string", "description": "Name or part; Namespace.Type.Member narrows"},
             "exact": {"type": "boolean", "description": "Whole-name match only"},
             "kind": {"type": "string", "description": "Filter by kind: class, method, property, field, fn, def ..."},
-            "limit": {"type": "integer", "description": "Max results (default 30)"},
+            "limit": {"type": "integer", "description": "Max results (default 10, at most 20)"},
             "offset": {"type": "integer", "description": "Skip this many results (default 0)"},
             "repo": repo_prop()
         }),
@@ -129,7 +129,7 @@ fn find_symbol_args(v: &Value) -> Result<Vec<String>, String> {
     if let Some(kind) = get_str(v, "kind")? {
         a.extend(["--kind".to_string(), kind]);
     }
-    push_num(&mut a, v, "limit", "--limit")?;
+    push_capped(&mut a, v, "limit", "--limit", FIND_SYMBOL_LIMIT)?;
     push_num(&mut a, v, "offset", "--offset")?;
     push_repo(&mut a, v)?;
     a.extend(["--".to_string(), need_str(v, "name")?]);

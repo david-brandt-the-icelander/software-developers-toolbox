@@ -19,13 +19,16 @@ pub(super) const SPEC: &[Flag] = &[
     flag("count", 'c'),
     flag("files", 'l'),
     flag("no-ignore", 'u'),
+    flag("code-only", '\0'),
     opt("context", 'C'),
     opt("glob", 'g'),
     opt("max", 'm'),
 ];
-const USAGE: &str = "usage: find PATTERN [PATH..] [-i -F -w -c -l -u] [-C N] [-g GLOB] [-m N]";
-const DEFAULT_MAX: usize = 50;
-const LIST_CAP: usize = 200;
+const USAGE: &str = "usage: find PATTERN [PATH..] [-i -F -w -c -l -u] [--code-only] [-C N] [-g GLOB] [-m N]";
+const DEFAULT_MAX: usize = 30;
+// How to get a smaller answer, for footers of cut results.
+pub(super) const NARROW: &str = "narrow with a path, -g GLOB or --code-only";
+const LIST_CAP: usize = 60;
 const MAX_FILE: u64 = 2 << 20;
 const PARALLEL_MIN: usize = 8;
 const BUF_KEEP: usize = 256 << 10;
@@ -271,20 +274,37 @@ pub(super) fn skipped_note(results: &[FileResult]) -> String {
     }
 }
 
-// Lists matching files, optionally with counts, capped.
+// Lists matching files, optionally with counts, capped; files sharing a directory sit under it, in rank order of each directory's first file.
 fn render_list(results: &[FileResult], files: &[PathBuf], cwd: &Path, counts: bool) -> String {
     let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
-    let mut out = String::new();
+    let mut groups: Vec<(String, Vec<(String, usize)>)> = Vec::new();
     for r in matched.iter().take(LIST_CAP) {
         let name = display(&files[r.idx], cwd);
-        if counts {
-            out.push_str(&format!("{name}: {}\n", r.total));
+        let (dir, base) = name
+            .rsplit_once('/')
+            .map_or((String::new(), name.clone()), |(d, b)| (d.to_string(), b.to_string()));
+        match groups.iter_mut().find(|g| g.0 == dir) {
+            Some(g) => g.1.push((base, r.total)),
+            None => groups.push((dir, vec![(base, r.total)])),
+        }
+    }
+    let entry = |name: &str, n: usize| if counts { format!("{name}: {n}") } else { name.to_string() };
+    let mut out = String::new();
+    for (dir, items) in &groups {
+        if dir.is_empty() || items.len() == 1 {
+            for (base, n) in items {
+                let full = if dir.is_empty() { base.clone() } else { format!("{dir}/{base}") };
+                out.push_str(&format!("{}\n", entry(&full, *n)));
+            }
         } else {
-            out.push_str(&format!("{name}\n"));
+            out.push_str(&format!("{dir}/\n"));
+            for (base, n) in items {
+                out.push_str(&format!("  {}\n", entry(base, *n)));
+            }
         }
     }
     if matched.len() > LIST_CAP {
-        out.push_str(&format!("+{} more files; narrow with a path or -g GLOB\n", matched.len() - LIST_CAP));
+        out.push_str(&format!("+{} more files; {NARROW}\n", matched.len() - LIST_CAP));
     }
     let total: usize = matched.iter().map(|r| r.total).sum();
     out.push_str(&format!(
@@ -317,9 +337,22 @@ fn render_matches(results: &[FileResult], files: &[PathBuf], cwd: &Path, plan: &
         skipped_note(results)
     ));
     if shown < total {
-        out.push_str(&format!("; showing {shown}, narrow with a path or -g GLOB, or raise -m"));
+        out.push_str(&format!("; showing {shown}, {NARROW}"));
     }
     out
+}
+
+// Ranks a path by its place under the working directory, so a checkout inside a folder named like a test or docs directory still ranks normally.
+pub(super) fn rank_in(path: &Path, cwd: &Path) -> (bool, usize) {
+    crate::util::rank(path.strip_prefix(cwd).unwrap_or(path))
+}
+
+// Drops tests and documentation when asked to.
+pub(super) fn code_only(mut files: Vec<PathBuf>, cwd: &Path, on: bool) -> Vec<PathBuf> {
+    if on {
+        files.retain(|f| !rank_in(f, cwd).0);
+    }
+    files
 }
 
 // Runs the find command.
@@ -338,11 +371,11 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         no_ignore: p.has("no-ignore"),
         globs: p.values("glob").iter().map(|s| s.to_string()).collect(),
     };
-    let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
+    let files = code_only(walk::collect(&roots, &opts, &ctx.engine.walks)?, &ctx.cwd, p.has("code-only"));
     let list_mode = p.has("files") || p.has("count");
     let plan = Plan { engine: ctx.engine, re, max, context, files_only: p.has("files") };
     let mut results = search_all(&files, &plan, crate::pool::cpus());
-    results.sort_by_key(|r| crate::util::rank(&files[r.idx]));
+    results.sort_by_key(|r| rank_in(&files[r.idx], &ctx.cwd));
     if !results.iter().any(|r| r.total > 0) {
         return Ok(Output::ok(format!("no matches in {} files{}", files.len(), skipped_note(&results))));
     }
@@ -427,9 +460,27 @@ mod tests {
         t.write("b.txt", "x\n".repeat(10).as_bytes());
         let o = run_cmd(t.path(), &["find", "x", "-m", "12"]);
         assert!(o.text.ends_with(
-            "-- 20 matches in 2 files (2 searched); showing 12, narrow with a path or -g GLOB, or raise -m"
+            "-- 20 matches in 2 files (2 searched); showing 12, narrow with a path, -g GLOB or --code-only"
         ));
         assert_eq!(o.text.lines().filter(|l| l.contains(": x")).count(), 12);
+    }
+
+    // Checks file lists group files by directory and --code-only drops tests and docs.
+    #[test]
+    fn test_find_list_groups_and_code_only() {
+        let t = TempDir::new();
+        t.write("top.rs", b"needle\n");
+        t.write("src/a.rs", b"needle\n");
+        t.write("src/b.rs", b"needle\n");
+        t.write("lib/one.rs", b"needle\n");
+        t.write("tests/a_test.rs", b"needle\n");
+        t.write("README.md", b"needle\n");
+        let l = run_cmd(t.path(), &["find", "needle", "-l"]).text;
+        assert!(l.starts_with("top.rs\nREADME.md\n") || l.starts_with("top.rs\n"), "{l}");
+        assert!(l.contains("src/\n  a.rs\n  b.rs\n") && l.contains("lib/one.rs\n"), "{l}");
+        let code = run_cmd(t.path(), &["find", "needle", "-l", "--code-only"]).text;
+        assert!(!code.contains("a_test.rs") && !code.contains("README.md"), "{code}");
+        assert!(code.ends_with("-- 4 matching lines in 4 files (4 searched)"), "{code}");
     }
 
     // Checks the files and count list modes and their cap.
@@ -440,10 +491,10 @@ mod tests {
             t.write(&format!("d/f{i:03}.txt"), b"needle\n");
         }
         let l = run_cmd(t.path(), &["find", "needle", "-l"]).text;
-        assert!(l.contains("+5 more files; narrow with a path or -g GLOB"));
+        assert!(l.contains("+145 more files; narrow with a path, -g GLOB or --code-only"));
         assert!(l.ends_with("-- 205 matching lines in 205 files (205 searched)"));
         let c = run_cmd(t.path(), &["find", "needle", "-c"]).text;
-        assert!(c.starts_with("d/f000.txt: 1\n"));
+        assert!(c.starts_with("d/\n  f000.txt: 1\n"));
     }
 
     // Checks that long lines are clipped around the match.
@@ -534,7 +585,7 @@ mod tests {
         let mut sorted = heads.clone();
         sorted.sort();
         assert_eq!(heads, sorted);
-        assert_eq!(heads.len(), 40);
+        assert_eq!(heads.len(), 30);
     }
 
     // Checks several matches on one line count as one matching line.
@@ -661,7 +712,7 @@ mod tests {
         let out = render_matches(&results, &[t.path().join("gone")], t.path(), &plan);
         assert_eq!(
             out,
-            "-- 1 matches in 1 files (1 searched); showing 0, narrow with a path or -g GLOB, or raise -m"
+            "-- 1 matches in 1 files (1 searched); showing 0, narrow with a path, -g GLOB or --code-only"
         );
     }
 

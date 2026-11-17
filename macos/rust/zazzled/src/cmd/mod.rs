@@ -20,7 +20,7 @@ pub mod refs;
 pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-const DEFAULT_BUDGET: usize = 8000;
+const DEFAULT_BUDGET: usize = 3000;
 const MAX_DESC: usize = 100;
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.

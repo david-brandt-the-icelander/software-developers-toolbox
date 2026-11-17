@@ -81,8 +81,9 @@ pub fn run(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
     match ctx.engine.outputs.as_deref().and_then(|d| outputs::load(d, id).ok()) {
         Some(s) if full => render_full(id, &s.full, p.value("lines"), budget),
         Some(s) => Ok(Output::plain(format!("[r:{id}]\n{}", s.shown))),
+        // Nothing was cut, so the whole response is the response itself.
         None if full && ctx.engine.sessions.replay(&ctx.session, id).is_some() => {
-            Err(format!("r:{id} was not cut; read-again r:{id} gives it whole"))
+            rerun(ctx, id).ok_or_else(|| format!("r:{id} was not cut; read-again r:{id} gives it whole"))
         }
         None => Err(format!(
             "no response r:{id} in this session or the output store (stored outputs are kept for an hour); run the command again"
@@ -119,10 +120,7 @@ mod tests {
         );
         let found = go(&["find", "one"]);
         assert_eq!(go(&["read-again", &found[3..8]]), found);
-        assert_eq!(
-            go(&["read-again", &id, "--full"]),
-            format!("error: r:{id} was not cut; read-again r:{id} gives it whole")
-        );
+        assert_eq!(go(&["read-again", &id, "--full"]), go(&["read-again", &id]));
     }
 
     // Checks misses and usage errors.

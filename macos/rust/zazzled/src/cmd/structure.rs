@@ -224,6 +224,12 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             t
         }
         [path] => {
+            if !crate::util::locate(path, &ctx.cwd).exists() {
+                return Err(format!(
+                    "{path}: no such file or directory{}",
+                    crate::util::similar(path, &ctx.cwd, &ctx.engine.walks)
+                ));
+            }
             let (t, rel) = Target::for_path(ctx, path)?;
             a.insert("path".into(), json!(rel));
             t
@@ -234,7 +240,15 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if let Some(g) = p.value("grep") {
         a.insert("grep".into(), json!(g));
     }
-    t.ask("git_log", a)
+    let mut out = t.ask("git_log", a)?;
+    if out.text.trim().is_empty() {
+        out.text = match (p.positional.first(), p.value("grep")) {
+            (_, Some(g)) => format!("no commits whose message matches '{g}'"),
+            (Some(path), None) => format!("no commits touch {path}"),
+            (None, None) => "no commits".to_string(),
+        };
+    }
+    Ok(out)
 }
 
 // Runs git-blame: who last changed each line of a range of a file, in whichever repository holds it.
@@ -318,6 +332,7 @@ mod tests {
             run(&["git-log", "src", "-n", "3", "--grep", "fix"]),
             format!("\"git_log\" {{\"path\":\"{name}:src\",\"n\":3,\"grep\":\"fix\"}}")
         );
+        assert!(run(&["git-log", "srcx/C.cs"]).starts_with("error: srcx/C.cs: no such file or directory"));
         let sub = run_cmd(&t.path().join("src"), &["git-blame", "C.cs", "--start", "2", "--end", "4"]).text;
         assert_eq!(
             sub,
@@ -445,6 +460,27 @@ mod tests {
             ),
             "{found}"
         );
+        restore(saved);
+    }
+
+    // Answers every call with no text, as git_log does when nothing matches.
+    fn silent(_hello: &Value, _req: &Value) -> (Value, Option<Value>) {
+        (
+            json!({"ok": true}),
+            Some(json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": ""}]}})),
+        )
+    }
+
+    // Checks an empty git-log answer says why it is empty instead of answering with nothing.
+    #[test]
+    fn test_git_log_empty() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(silent);
+        let (t, _name, saved) = setup(&fake);
+        let run = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert_eq!(run(&["git-log"]), "no commits");
+        assert_eq!(run(&["git-log", "src"]), "no commits touch src");
+        assert_eq!(run(&["git-log", "--grep", "fix"]), "no commits whose message matches 'fix'");
         restore(saved);
     }
 }
