@@ -21,19 +21,20 @@ internal static class BenchmarkStore
     public static string Create(BenchmarkSetup setup, string promptPath, string promptText)
     {
         var label = string.Join("_", DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'"), Safe(setup.Model), setup.Effort,
-            setup.Switches.Count == 0 ? "baseline" : string.Join("+", setup.Switches.Select(s => s.TrimStart('-'))));
+            string.Join("+", setup.Switches.Select(s => s.TrimStart('-'))));
         var dir = Path.Combine(Root(), Safe(setup.Repo.Name), Safe(setup.Repo.Sha), Safe(Path.GetFileNameWithoutExtension(promptPath)), label);
-        Directory.CreateDirectory(dir);
+        foreach (var side in Benchmark.Sides)
+            Directory.CreateDirectory(Path.Combine(dir, side));
         File.WriteAllText(Path.Combine(dir, "prompt.txt"), promptText);
-        if (setup.TransformLog != null)
-            File.WriteAllText(Path.Combine(dir, "transform.txt"), setup.TransformLog);
         File.WriteAllText(Path.Combine(dir, "meta.json"), Meta(setup, promptPath, promptText).ToJsonString(Indented) + "\n");
         return dir;
     }
 
-    // Writes one run's stream as run-N.jsonl and its result event (or the failure) as run-N.json.
-    public static void WriteRun(string dir, RunResult run)
+    // Writes one run's stream as run-N.jsonl, its result event (or the failure) as run-N.json, and the edits it made as run-N.diff.
+    public static void WriteRun(string dir, RunResult run, string? edits)
     {
+        if (edits != null)
+            File.WriteAllText(Path.Combine(dir, $"run-{run.Number}.diff"), edits.Length == 0 ? "" : edits + "\n");
         File.WriteAllText(Path.Combine(dir, $"run-{run.Number}.jsonl"), run.Raw + (run.Raw.EndsWith('\n') ? "" : "\n"));
         var text = run.Json != null
             ? run.Json.ToJsonString(Indented)
@@ -70,6 +71,38 @@ internal static class BenchmarkStore
         return (runs[1].TurnCount == runs[2].TurnCount, runs[1].Route == runs[2].Route);
     }
 
+    // Writes comparison.json (runs 2 and 3 of each side averaged, and what the switches saved) and returns the sentence for the console.
+    public static string WriteComparison(string dir, List<RunResult> before, List<RunResult> after)
+    {
+        var b = Settled(before);
+        var a = Settled(after);
+        var saved = b == null || a == null ? (double?)null : b.Value.Tokens - a.Value.Tokens;
+        var share = saved == null || b!.Value.Tokens == 0 ? (double?)null : saved / b.Value.Tokens;
+        var comparison = new JsonObject
+        {
+            ["before_tokens"] = b?.Tokens, ["after_tokens"] = a?.Tokens,
+            ["before_turns"] = b?.Turns, ["after_turns"] = a?.Turns,
+            ["tokens_saved"] = saved, ["share_saved"] = share,
+            ["before_edited_files"] = EditedFiles(dir, "before"), ["after_edited_files"] = EditedFiles(dir, "after"),
+            ["based_on"] = "the mean of runs 2 and 3 on each side; run 1 warms caches",
+        };
+        File.WriteAllText(Path.Combine(dir, "comparison.json"), comparison.ToJsonString(Indented) + "\n");
+        return share == null ? "before and after could not be compared" : $"after uses {Math.Abs(share.Value):P1} {(share >= 0 ? "fewer" : "more")} tokens than before ({b!.Value.Tokens:N0} -> {a!.Value.Tokens:N0}, runs 2 and 3)";
+    }
+
+    // The mean tokens and turns of runs 2 and 3, or null when either failed.
+    private static (double Tokens, double Turns)? Settled(List<RunResult> runs)
+    {
+        if (runs.Count < 3 || runs[1].Failed || runs[2].Failed)
+            return null;
+        return ((runs[1].TotalTokens + runs[2].TotalTokens) / 2.0, (runs[1].TurnCount + runs[2].TurnCount) / 2.0);
+    }
+
+    // How many files each run on a side changed, from its diff, or nulls outside git.
+    private static JsonArray EditedFiles(string dir, string side) =>
+        new([.. Enumerable.Range(1, Benchmark.Runs).Select(i => Path.Combine(dir, side, $"run-{i}.diff"))
+            .Select(p => (JsonNode?)(File.Exists(p) ? File.ReadLines(p).Count(l => l.StartsWith("diff --git ", StringComparison.Ordinal)) : null))]);
+
     // How far apart runs 2 and 3 are, as a share of the larger total, and whether that is within the tolerance; null when either failed.
     public static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)
     {
@@ -88,7 +121,8 @@ internal static class BenchmarkStore
         ["origin"] = setup.Repo.Origin,
         ["sha"] = setup.Repo.Sha,
         ["dirty"] = setup.Repo.Dirty,
-        ["clone"] = setup.ClonePath,
+        ["before_clone"] = setup.BeforePath,
+        ["after_clone"] = setup.AfterPath,
         ["prompt_file"] = Path.GetFullPath(promptPath),
         ["prompt_sha256"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(promptText))).ToLowerInvariant(),
         ["switches"] = new JsonArray([.. setup.Switches.Select(s => (JsonNode)s)]),

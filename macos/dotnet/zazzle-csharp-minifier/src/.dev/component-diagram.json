@@ -84,7 +84,7 @@
     {
       "id": "benchmark",
       "name": "Benchmark (Benchmark.cs, BenchmarkStream.cs, BenchmarkStore.cs)",
-      "responsibility": "Clones the root to benchmark-<name>, transforms the clone through the runner, runs each prompt three times in fresh Claude CLI sessions, reads each session's stream into turns with their tokens and tool calls, and stores meta, prompt, streams, results and summary per repository, commit and prompt.",
+      "responsibility": "Runs each prompt three times on a fresh clone of the root as it is and three times on a fresh clone transformed through the runner, records each session's stream, turns, tool calls and edits, and stores both sides and their comparison per repository, commit and prompt.",
       "folder": "macos/dotnet/zazzle-csharp-minifier/src"
     },
     {
@@ -375,13 +375,13 @@
       "from": "benchmark",
       "to": "claude-cli",
       "kind": "depends-on",
-      "description": "claude -p with the model, effort, stream-json output, no saved session and dontAsk permissions; the prompt on standard input."
+      "description": "claude -p with the model, effort, stream-json output, no saved session, acceptEdits and no permission prompts; the prompt on standard input."
     },
     {
       "from": "benchmark",
       "to": "git",
       "kind": "depends-on",
-      "description": "rev-parse HEAD and --show-cdup, status --porcelain and the origin URL of the source."
+      "description": "rev-parse HEAD and --show-cdup, status --porcelain and the origin URL of the source. Before and after each session, add -A and write-tree through a private index (GIT_INDEX_FILE) and diff --cached against the snapshot."
     }
   ]
 }
