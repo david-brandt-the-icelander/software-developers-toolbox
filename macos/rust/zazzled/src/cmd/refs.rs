@@ -9,7 +9,8 @@ use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use std::path::{Path, PathBuf};
 
-pub(super) const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u'), flag("code-only", '\0')];
+pub(super) const SPEC: &[Flag] =
+    &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u'), flag("code-only", '\0')];
 const USAGE: &str = "usage: refs SYMBOL|Type.Member [PATH..] [-g GLOB] [-m N] [-u] [--code-only]";
 const DEFAULT_MAX: usize = 50;
 const PER_FILE: usize = 1000;
@@ -72,7 +73,14 @@ fn split_qualified(query: &str) -> (&str, Option<&str>) {
 }
 
 // Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read, does not name the qualifying type, or has none left.
-fn file_refs(engine: &Engine, path: &Path, file: &FileResult, name: &str, qual: Option<&str>, cwd: &Path) -> Option<FileRefs> {
+fn file_refs(
+    engine: &Engine,
+    path: &Path,
+    file: &FileResult,
+    name: &str,
+    qual: Option<&str>,
+    cwd: &Path,
+) -> Option<FileRefs> {
     let loaded = engine.load(path).ok()?;
     if let Some(q) = qual {
         if !loaded.data.windows(q.len()).any(|w| w == q.as_bytes()) {

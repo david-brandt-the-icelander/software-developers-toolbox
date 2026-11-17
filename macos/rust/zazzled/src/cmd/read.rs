@@ -620,7 +620,13 @@ mod tests {
     // Checks the shared indent of shown code lines is removed, ignoring blank lines and fold markers.
     #[test]
     fn test_terse_dedent() {
-        let lines = ["10\t        if (x) {", "11~\t            y();", "12\t", "13-15\t⋯ 3 log statement(s)", "16\t        }"];
+        let lines = [
+            "10\t        if (x) {",
+            "11~\t            y();",
+            "12\t",
+            "13-15\t⋯ 3 log statement(s)",
+            "16\t        }",
+        ];
         let n = common_indent(lines.iter().copied());
         assert_eq!(n, 8);
         let out: Vec<String> = lines.iter().map(|l| dedent(l, n).into_owned()).collect();
@@ -635,6 +641,8 @@ mod tests {
         assert_eq!(split_target("src/a.cs:10-20"), ("src/a.cs", Some((10, Some(20)))));
         assert_eq!(split_target("a:b.cs:5"), ("a:b.cs", parse_range("5")));
         assert_eq!(split_target(":1:2").0, ":1");
+        assert_eq!(split_target("a.cs:1:x").0, "a.cs:1:x");
+        assert_eq!(split_target("a.cs::5").0, "a.cs:");
     }
 
     // Checks the budget fitting maths directly.
@@ -819,9 +827,7 @@ mod tests {
                 && json.contains("\n3-13\t⋯ 11 item(s)\n"),
             "{json}"
         );
-        assert!(run_cmd(t.path(), &["read", "b.md"])
-            .text
-            .ends_with("terse view: 1 comments\n2\t# B"));
+        assert!(run_cmd(t.path(), &["read", "b.md"]).text.ends_with("terse view: 1 comments\n2\t# B"));
         assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
         assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
         assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
@@ -992,6 +998,8 @@ mod tests {
         let read = |q: &str| run_cmd(t.path(), &["read", "--source", "--symbol", q]).text;
         assert!(read("Acme.Shop.Orders.OrderService.Submit(string)").contains("[6-6 method Submit]"));
         assert!(read("Submit#1").contains("[5-5 method Submit]"));
+        let fell_back = read("Wrong.Ns.OrderService.Submit(string)");
+        assert!(fell_back.contains("[6-6 method Submit]"), "{fell_back}");
         let several = read("Run");
         assert!(several.starts_with("error: 'Run' is declared in 2 files; give the file too, or qualify the name:\nA.cs:3 method A.Run"), "{several}");
         assert_eq!(

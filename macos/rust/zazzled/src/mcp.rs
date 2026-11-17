@@ -232,7 +232,13 @@ pub(crate) fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str)
 }
 
 // Pushes a numeric option when the argument is present, lowered to the ceiling an agent may ask for.
-pub(crate) fn push_capped(out: &mut Vec<String>, v: &Value, key: &str, flag: &str, cap: u64) -> Result<(), String> {
+pub(crate) fn push_capped(
+    out: &mut Vec<String>,
+    v: &Value,
+    key: &str,
+    flag: &str,
+    cap: u64,
+) -> Result<(), String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(()),
         Some(n) => {
@@ -302,12 +308,7 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
     ] {
         push_flag(&mut a, v, k, f)?;
     }
-    for (k, f) in [
-        ("around", "--around"),
-        ("ctx", "--ctx"),
-        ("head", "--head"),
-        ("tail", "--tail"),
-    ] {
+    for (k, f) in [("around", "--around"), ("ctx", "--ctx"), ("head", "--head"), ("tail", "--tail")] {
         push_num(&mut a, v, k, f)?;
     }
     push_capped(&mut a, v, "budget", "--budget", READ_BUDGET)?;

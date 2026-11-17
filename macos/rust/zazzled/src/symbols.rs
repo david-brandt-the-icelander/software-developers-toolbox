@@ -326,7 +326,11 @@ mod tests {
     // Checks a qualified name falls back to its last segment when the outline has no enclosing type, as for flat C# outlines.
     #[test]
     fn test_find_qualified_fallback() {
-        let flat = vec![sym("class", "Billing", 1, 20, 0), sym("method", "Charge", 3, 8, 0), sym("method", "Refund", 10, 15, 0)];
+        let flat = vec![
+            sym("class", "Billing", 1, 20, 0),
+            sym("method", "Charge", 3, 8, 0),
+            sym("method", "Refund", 10, 15, 0),
+        ];
         assert_eq!(find(&flat, "Billing.Charge"), Ok(1));
         assert_eq!(find(&flat, "billing.refund"), Ok(2));
         assert_eq!(find(&flat, "Billing.Missing"), Err(Miss::None(vec![])));

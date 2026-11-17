@@ -280,7 +280,9 @@ fn render_list(results: &[FileResult], files: &[PathBuf], cwd: &Path, counts: bo
     let mut groups: Vec<(String, Vec<(String, usize)>)> = Vec::new();
     for r in matched.iter().take(LIST_CAP) {
         let name = display(&files[r.idx], cwd);
-        let (dir, base) = name.rsplit_once('/').map_or((String::new(), name.clone()), |(d, b)| (d.to_string(), b.to_string()));
+        let (dir, base) = name
+            .rsplit_once('/')
+            .map_or((String::new(), name.clone()), |(d, b)| (d.to_string(), b.to_string()));
         match groups.iter_mut().find(|g| g.0 == dir) {
             Some(g) => g.1.push((base, r.total)),
             None => groups.push((dir, vec![(base, r.total)])),

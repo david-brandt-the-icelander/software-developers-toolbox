@@ -458,4 +458,25 @@ mod tests {
         );
         restore(saved);
     }
+
+    // Answers every call with no text, as git_log does when nothing matches.
+    fn silent(_hello: &Value, _req: &Value) -> (Value, Option<Value>) {
+        (
+            json!({"ok": true}),
+            Some(json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": ""}]}})),
+        )
+    }
+
+    // Checks an empty git-log answer says why it is empty instead of answering with nothing.
+    #[test]
+    fn test_git_log_empty() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(silent);
+        let (t, _name, saved) = setup(&fake);
+        let run = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert_eq!(run(&["git-log"]), "no commits");
+        assert_eq!(run(&["git-log", "src"]), "no commits touch src");
+        assert_eq!(run(&["git-log", "--grep", "fix"]), "no commits whose message matches 'fix'");
+        restore(saved);
+    }
 }
