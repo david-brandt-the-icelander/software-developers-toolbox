@@ -131,15 +131,35 @@ public class CliTests
             """{"v":1,"ts":"2026-11-12T10:00:06Z","session":"s1","tool":"run","args":{"argv":["awk","-F","aa"]},"path":"run:awk","reason":"passthrough","ms":5,"bytes_out":40,"est_tokens":10,"results":0,"truncated":false,"candidates":-1,"files":-1,"error":null}""",
             """{"v":1,"ts":"2026-11-12T10:00:07Z","session":"s1","tool":"report_gap","args":{"what":"x"},"path":"index","reason":"gap_report","ms":1,"bytes_out":8,"est_tokens":2,"results":0,"truncated":false,"note":"need call graph","error":null}""",
             """{"v":1,"ts":"2026-11-12T10:00:08Z","session":"s1","tool":"hook","args":{"tool":"Bash","program":"grep"},"path":"hook","reason":"blocked:grep","ms":0,"bytes_out":0,"est_tokens":0,"results":0,"truncated":false,"error":null}""",
+            """{"v":2,"ts":"2026-11-12T10:00:09Z","session":"s1","tool":"view","args":{"path":"p"},"path":"view","reason":null,"ms":4,"bytes_out":350,"est_tokens":100,"source_est_tokens":300,"transformations":"usings=2,logging=3","results":10,"truncated":false,"error":null}""",
         };
         var text = Report.Build(lines.Select(l => JsonNode.Parse(l)!).ToList());
-        Assert.Contains("4 calls in 1 sessions", text);
+        Assert.Contains("5 calls in 1 sessions", text);
         Assert.Contains("search: 2, 30, 50", text);
-        Assert.Contains("fallback:rg: 1 (25%)", text);
+        Assert.Contains("fallback:rg: 1 (20%)", text);
         Assert.DoesNotContain("run passthrough", text);
         Assert.Contains("blocked:grep: 1", text);
         Assert.Contains("retries (same tool within 10 s, different arguments): 1", text);
         Assert.Contains("need call graph", text);
+        Assert.Contains("view compaction: ~300 source tokens to ~100 response tokens (200 saved)", text);
+        Assert.Contains("usings=2,logging=3: 1", text);
         Assert.DoesNotContain("search selectivity", text);
+    }
+
+    [Fact]
+    // The delivery report totals final responses and the savings from deduplicated notices.
+    public void test_delivery_report()
+    {
+        var records = new[]
+        {
+            """{"session":"s1","command":"read","pre_dedupe_est_tokens":100,"delivered_est_tokens":103,"deduplicated":false}""",
+            """{"session":"s1","command":"read","pre_dedupe_est_tokens":100,"delivered_est_tokens":20,"deduplicated":true}""",
+            """{"session":"s2","command":"overview","pre_dedupe_est_tokens":30,"delivered_est_tokens":33,"deduplicated":false}""",
+        }.Select(line => JsonNode.Parse(line)!).ToList();
+        var text = Report.BuildDeliveries(records);
+        Assert.Contains("3 responses in 2 sessions", text);
+        Assert.Contains("~230 tokens before dedupe, ~156 delivered", text);
+        Assert.Contains("deduplicated: 1, ~80 tokens avoided", text);
+        Assert.Contains("read: 2, 123, 1", text);
     }
 }

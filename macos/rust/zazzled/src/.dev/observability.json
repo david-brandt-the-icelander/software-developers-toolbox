@@ -56,6 +56,56 @@
           "entityId": "savings-log"
         }
       ]
+    },
+    {
+      "id": "delivery-log",
+      "title": "Final response delivery log",
+      "summary": "One privacy-preserving JSON line per zazzle command response after budgeting and session dedupe, correlated by the caller's stable session.",
+      "signalType": "event",
+      "name": "usage.jsonl",
+      "meaning": "Measures what zazzled produced and what it finally returned, so token savings from session dedupe and command mix can be compared with the C# indexer's source-to-view metrics.",
+      "unit": "one record per command response",
+      "dimensions": [
+        "v: record version (1)",
+        "ts_ms: Unix timestamp in milliseconds",
+        "session: the caller's stable session",
+        "command: zazzle command name",
+        "pre_dedupe_bytes and delivered_bytes",
+        "pre_dedupe_est_tokens and delivered_est_tokens (about 3.5 UTF-8 bytes per token)",
+        "response_hash: 12-hex BLAKE3 prefix of the delivered response",
+        "deduplicated: whether the session layer replaced repeated content",
+        "status: command exit status"
+      ],
+      "access": "The user who owns ~/.zazzle; the directory is mode 0700 and a new log is mode 0600.",
+      "retention": "At 20 MiB the log is renamed to usage.jsonl.1, replacing the prior rotated file.",
+      "cadence": "Per command response.",
+      "excludes": [
+        "Arguments, paths, source text and response text are never written."
+      ],
+      "details": "ZAZZLE_USAGE_LOG moves the file; an empty value disables it. Write failures do not fail the command.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/delivery.rs",
+          "symbol": "DeliveryLog::record"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "verified-by",
+          "path": "macos/rust/zazzled/src/.dev/verification.json",
+          "entityId": "delivery-log"
+        },
+        {
+          "relation": "configured-by",
+          "path": "macos/rust/zazzled/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_USAGE_LOG"
+        }
+      ]
     }
   ]
 }

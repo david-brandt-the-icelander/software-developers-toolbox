@@ -84,9 +84,9 @@ public static class Proxy
     }
 
     // Sends the hello line and reads the daemon's reply line.
-    public static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs)
+    public static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs, string? session = null)
     {
-        var hello = new JsonObject { ["version"] = ToolVersion.Text, ["roots"] = new JsonArray(rootSpecs.Select(r => (JsonNode)r).ToArray()) };
+        var hello = new JsonObject { ["version"] = ToolVersion.Text, ["roots"] = new JsonArray(rootSpecs.Select(r => (JsonNode)r).ToArray()), ["session"] = session };
         var stream = new NetworkStream(socket, false);
         var bytes = Encoding.UTF8.GetBytes(hello.ToJsonString() + "\n");
         stream.Write(bytes, 0, bytes.Length);

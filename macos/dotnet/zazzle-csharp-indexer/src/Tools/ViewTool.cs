@@ -24,6 +24,9 @@ public sealed class ViewTool(RootSet roots) : ITool
         var (lines, steps) = TerseView.Build(source);
         info.Results = lines.Count;
         var total = source.Split('\n').Length - (source.EndsWith('\n') ? 1 : 0);
+        info.SourceBytes = System.Text.Encoding.UTF8.GetByteCount(source);
+        info.SourceLines = total;
+        info.Transformations = string.Join(",", steps.Select(s => $"{s.Step}={s.Count}"));
         var summary = steps.Count == 0 ? "nothing to shorten" : string.Join(", ", steps.Select(s => $"{s.Count} {s.Step}"));
         return $"{root.Name}:{rel} {total} lines; terse: {summary}\n{TerseView.Format(lines)}";
     }

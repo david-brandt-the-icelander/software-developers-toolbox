@@ -134,7 +134,7 @@ fn open_engine() -> Engine {
             Engine::new()
         }
     };
-    engine.with_outputs(crate::outputs::dir())
+    engine.with_outputs(crate::outputs::dir()).with_deliveries(crate::delivery::DeliveryLog::open())
 }
 
 // Watches the binary that will start the next daemon: the one launchd's plist names when launchd owns the socket (so

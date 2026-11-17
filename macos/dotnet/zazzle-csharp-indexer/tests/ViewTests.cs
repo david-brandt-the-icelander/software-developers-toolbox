@@ -186,9 +186,13 @@ public class ViewTests
     {
         using var repo = new TempRepo(new Dictionary<string, string> { ["src/S.cs"] = Service, ["notes.txt"] = "x\n" });
         var tool = new ViewTool(new RootSet([repo.Root()]));
-        var text = tool.Run(JsonNode.Parse("""{"path":"r:src/S.cs"}"""), new CallInfo());
+        var info = new CallInfo();
+        var text = tool.Run(JsonNode.Parse("""{"path":"r:src/S.cs"}"""), info);
         Assert.Matches(@"^r:src/S.cs \d+ lines; terse: 1 usings, 1 constructors, 1 log-and-rethrow catches, ", text);
         Assert.Contains("\n1-2\t⋯ 2 using(s)\n", text);
+        Assert.True(info.SourceBytes > text.Length);
+        Assert.True(info.SourceLines > 0);
+        Assert.Contains("usings=1", info.Transformations);
         Assert.Equal("not a C# file: r:notes.txt", Assert.Throws<ToolException>(() => tool.Run(JsonNode.Parse("""{"path":"r:notes.txt"}"""), new CallInfo())).Message);
         Assert.Equal("no such file: r:gone.cs", Assert.Throws<ToolException>(() => tool.Run(JsonNode.Parse("""{"path":"r:gone.cs"}"""), new CallInfo())).Message);
     }
