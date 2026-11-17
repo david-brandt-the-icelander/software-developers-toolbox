@@ -304,9 +304,9 @@
         "symbol": "cmd_run"
       },
       "action": "command",
-      "transport": "free-disk-space daemon run [--threshold SIZE|PCT%] [--cadence 90s|15m|2h] [--targets TARGET...] [--dev-root DIR]; started by launchd at login once installed",
+      "transport": "free-disk-space daemon run [--threshold SIZE|PCT%] [--clean-only] [--cadence 90s|15m|2h] [--targets TARGET...] [--dev-root DIR]; started by launchd at login once installed",
       "authorization": "None checked; it deletes with the invoking user's permissions, as clean --apply does.",
-      "result": "Timestamped log lines: started, then per check ok, below threshold (followed by clean's output) or skipped; stopped on Ctrl-C.",
+      "result": "Timestamped log lines: started, then per check ok, below threshold (followed by clean's output) or skipped; stopped on Ctrl-C; when still below the threshold after cleaning (unless --clean-only), it runs scan or resume, dedupe --apply and compress --yes --limit with the amount still missing, as child processes, and logs each.",
       "failures": [
         "The threshold is not a positive size or a percentage between 0 and 100, or the cadence is not a positive number of s, m or h: exits with an error.",
         "The display is asleep or the volume cannot be read: the check is logged as skipped and the next one waits a full cadence."

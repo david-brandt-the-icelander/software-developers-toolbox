@@ -245,7 +245,7 @@ pub fn meta_get(db: &Connection, key: &str) -> Option<Value> {
 }
 
 // Write a JSON value to the meta table.
-fn meta_set(db: &Connection, key: &str, value: &Value) {
+pub fn meta_set(db: &Connection, key: &str, value: &Value) {
     let _ = db.execute("INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)", params![key, value.to_string()]);
 }
 
