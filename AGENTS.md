@@ -31,7 +31,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Read/search files with cached JSON replies instead of cat/grep (`afs`): `agents/skills/agent-fs/SKILL.md`
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed; commit with `zazzle git commit -m`: `agents/skills/zazzle/SKILL.md`
 - Write, test and run sandboxed zazz scripts (`zazz new|test|pack|add|call`): `agents/skills/zazz/SKILL.md`
-- Keep C# in the layout `zazzle-csharp-minifier` enforces in repositories it has changed (comments in `document/`, a test file per method under test, `src/` implementation halves): `agents/skills/zazzle-csharp-minifier/SKILL.md`
+- Keep one test file per method under test in repositories using `zazzle-csharp-minifier --split-tests`: `agents/skills/zazzle-csharp-minifier/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Architecture diagrams and knowledge files

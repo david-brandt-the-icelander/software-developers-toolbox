@@ -1,70 +1,51 @@
 # zazzle-csharp-minifier
 
-Rewrites a C# source tree into a lean layout, one command switch per rewrite, and keeps it that way: a run that changes a repository also gives it the `zazzle-csharp-minifier` skill, an `AGENTS.md` section naming the switches, and a pre-commit hook that runs `--check` on staged C#.
+Organizes C# tests into one file per method under test, lists and renames identifiers, and keeps the test layout consistent: a run that changes a repository also gives it the `zazzle-csharp-minifier` skill, an `AGENTS.md` section naming the switches, and a pre-commit hook that runs `--check` on staged C#.
 
 ## Quick start
 ```bash
-zazzle-csharp-minifier --strip-comments --split-tests --split-headers   # in the repository root
-zazzle-csharp-minifier --check --strip-comments --split-tests --split-headers   # what would change; exit 1 if anything
+zazzle-csharp-minifier --split-tests   # in the repository root
+zazzle-csharp-minifier --check --split-tests   # what would change; exit 1 if anything
 ```
 
 ## Switches
 - `--allow-reads`: adds `Bash(ls:*)`, `Bash(cat:*)`, `Bash(head:*)`, `Bash(tail:*)`, `Bash(wc:*)`, `Bash(grep:*)` and `Bash(rg:*)` to `permissions.allow` in the repository's `.claude/settings.json`, keeping the rest, and nothing else; `--check --allow-reads` reports a repository without them. The layout commands' repository setup adds the same rules. With `--benchmark`, it changes only the clone, so `--benchmark … --allow-reads` measures the permissions alone against a baseline.
-- `--strip-comments`: comments on the file, namespaces, types, members, enum members and accessors move to `<root>/document/<path>.cs.md`, one `##` section per declaration (`## method \`App.Store.Add(int)\``), XML doc comments in an `xml` block; later runs append. Comments inside bodies, initializers, parameter lists and top-level statements stay, as do `ReSharper` and `language=` comments. A top comment separated from the first declaration by a blank line, or above a `using`, belongs to the file.
 - `--split-tests`: each test (`[Fact]`, `[Theory]`, `[Test]`, `[TestMethod]`, `[TestCase]` …) moves to `<ClassUnderTest>/<MethodUnderTest>.cs` beside its test file, as a `partial` test class; shared fields and helpers stay in the original file. The method under test is the one member of non-test code that the test's `// When` section calls (`// When` until `// Then`; `// Act` until `// Assert`), found by binding the whole tree with Roslyn. A test that cannot be placed stays and gets `// zazzle-csharp-minifier: unresolved method under test (<reason>)` as its first line.
-- `--split-headers`: each `.cs` file keeps its declarations and `src/<same name>.cs` beside it gets the bodies, through `partial` members, without changing namespaces. What splits follows the nearest project's target framework or `LangVersion`: methods (C# 9+), properties and indexers (C# 13, .NET 9), constructors and events (C# 14, .NET 10); the rest stays whole in the header.
 - `--check`: change nothing; print `<switch> would change <file>…` lines and exit 1 when anything would change.
 - `--root <dir>`: the tree to work on (default: current directory). Files or folders after the switches limit the run; they must be inside the root.
 - Commands run in the order above, each on the files the one before wrote. Exit codes: 0 done, 1 a file was left unchanged (reason on stderr) or `--check` found work, 2 bad usage.
 
-## Restructure
-`--restructure` (which turns on the three commands above and runs after them) turns each production project of the solutions under the root (`*.sln`, `*.slnx`; every `*.csproj` when there is none) into:
-```
-MyLibrary/
-├── MyLibrary.csproj   EnableDefaultCompileItems false; compiles incl/**/*.cs and src/**/*.cs; test/** left out of default items
-├── .ignore            /src/ /doc/ /test/: broad ripgrep searches (Claude Code's Grep and Glob) see incl/ only
-├── incl/              declarations: header halves and files with nothing to split
-├── src/               implementation halves and top-level programs
-├── doc/               the comment documents (doc/test/ for the test project's)
-└── test/              the test project that references it (one per project), with its .csproj re-pointed and the solutions updated
-```
-- A test project is one with `IsTestProject` or a test framework package; it moves into the project it references (the one it is named after when it references several).
-- Rerunning is a fixpoint; a new plain `.cs` in a restructured project is a `--check` violation until the next run places it.
-- The repository's `AGENTS.md` section tells agents to read `incl/` always and open `src/`, `doc/` and `test/` files only by exact path.
-- Hidden folders (such as `.dev/`) and non-C# files outside the test project stay where they are; a project's own `Compile` items are left as written, with a note.
-
 ## Safety
-- Every rewrite is planned in memory and verified before anything is written: comment stripping must leave the same tokens, directives and disabled code; the splits re-parse their output. A file that fails is reported as `left unchanged` and not touched.
-- Skipped: `bin/`, `obj/`, `node_modules/`, `packages/`, hidden folders, symlinked folders, generated files (`*.g.cs`, `*.designer.cs`, `<auto-generated>`), and the `src/` halves `--split-headers` wrote. Files must be UTF-8; a byte-order mark and CRLF endings are kept.
+- Every rewrite is planned in memory and verified before anything is written: test splitting preserves each test's tokens and refuses invalid C#; renaming refuses added compiler errors and file collisions. A file that fails is reported as `left unchanged` and not touched.
+- Skipped: `bin/`, `obj/`, `node_modules/`, `packages/`, hidden folders, symlinked folders, generated files (`*.g.cs`, `*.designer.cs`, `<auto-generated>`). Files must be UTF-8; a byte-order mark and CRLF endings are kept.
 
-## Repository setup (on every run without `--check`)
+## Repository setup (after `--split-tests`, without `--check`)
 - `agents/skills/zazzle-csharp-minifier/SKILL.md` (or `.claude/skills/…` when only that exists), copied from this repository's `agents/skills/zazzle-csharp-minifier/SKILL.md`, which is built into the binary.
 - A marked section in `AGENTS.md` (created if missing; `CLAUDE.md` with `@AGENTS.md` too) naming the switches used so far for that root.
 - A marked block in the pre-commit hook: in `core.hooksPath` when set, otherwise `.githooks/pre-commit`, which is versioned, and `core.hooksPath` is set to `.githooks` (an existing `.git/hooks/pre-commit` is copied in first). The block checks staged `.cs` files and refuses the commit, also when the tool is not on `PATH`. Each new clone runs `git config core.hooksPath .githooks` once.
-- `.claude/settings.json` (merged with what is there): `permissions.allow` gets `Bash(ls:*)`, `Bash(cat:*)`, `Bash(head:*)`, `Bash(tail:*)`, `Bash(wc:*)`, `Bash(grep:*)` and `Bash(rg:*)`, so agents read without asking and an unattended session does not lose a turn to a refusal. `find` is left out (`-exec`, `-delete`). The `AGENTS.md` section also tells agents to use Glob, Read and Grep rather than shell pipelines.
+- `.claude/settings.json` (merged with what is there): `permissions.allow` gets `Bash(ls:*)`, `Bash(cat:*)`, `Bash(head:*)`, `Bash(tail:*)`, `Bash(wc:*)`, `Bash(grep:*)` and `Bash(rg:*)`, so agents read without asking and an unattended session does not lose a turn to a refusal. `find` is left out (`-exec`, `-delete`). The `AGENTS.md` section requests focused tool discovery and bounded code reads.
 - Switches accumulate: a later run with another switch extends the section and the hook block; rerunning changes nothing.
 
 ## Known limits
 - The pre-commit check reads the working tree, not the staged copy, of each staged file.
-- Comments in code disabled by `#if` are not seen.
 - `--split-tests` binds against .NET 8 reference assemblies and the tree's own source; calls into NuGet packages do not resolve, so a `// When` that only calls a package is unresolved.
 
 ## Identifiers and renames
 - `--list-identifiers`: prints every namespace, type and member declared under the root (generated code left out) as a tree, 4 spaces per level, a name with children ending in `:`, names sorted within each level. Dotted namespaces nest a level per part; overloads, partial parts and generic arities share one line; constructors, finalizers, operators and indexers have no line of their own.
 - `--rename <file>`: reads such a tree (lines that are not on a renamed path can be deleted, `#` lines are comments) where `name => newName` renames that name, also on a line with children (`Widgets => Gadgets:`). Renames run deepest first through Roslyn's renamer over a workspace of one project per `.csproj` (`ProjectReference`s, the project's C# version, implicit usings), so every reference changes; overloads are renamed together, strings and comments are not.
-- Files follow: a renamed namespace moves its folder (the part of the namespace after the project's `RootNamespace`, or the `.csproj` name) with sub-folders and `src/` halves, in the plain layout and in `incl/` and `src/` of a restructured project; a renamed type renames the `Type.cs` files that declare it and test folders named after it; a renamed member renames `<ClassUnderTest>/<Member>.cs` test files. Comment documents (`document/`, `doc/`) move with their sources and their `##` headings get the new names.
+- Files follow: a renamed namespace moves its folder (the part after the project's `RootNamespace`, or the `.csproj` name) with sub-folders; a renamed type renames its `Type.cs` files and test folders; a renamed member renames `<ClassUnderTest>/<Member>.cs` test files. Source comments remain in place.
 - Nothing is written when a path is not declared, a new name is not a valid identifier, the renames would raise the count of any compiler error, or a move would land on an existing file.
 
 ## Benchmark
 ```bash
-zazzle-csharp-minifier --benchmark prompts/ --model opus --effort high --root ~/src/repo --restructure
+zazzle-csharp-minifier --benchmark prompts/ --model opus --effort high --root ~/src/repo --split-tests
 ```
-- Copies the root to `benchmark-<name>` in the same parent with `cp -Rc` (APFS copy-on-write; `cp -R --reflink=auto` on Linux), replacing only a clone it made earlier (marker in `.git/zazzle-benchmark`), and runs the given transforming switches (`--strip-comments`, `--split-tests`, `--split-headers`, `--restructure`) on the clone; none means a baseline.
+- Copies the root to `benchmark-<name>` in the same parent with `cp -Rc` (APFS copy-on-write; `cp -R --reflink=auto` on Linux), replacing only a clone it made earlier (marker in `.git/zazzle-benchmark`), and runs the given transforming switches (`--allow-reads`, `--split-tests`) on the clone; none means a baseline.
 - `--benchmark` takes a prompt file or a folder of `.txt`/`.md` prompt files. Each prompt runs three times, each in a fresh session: `claude -p --model M --effort E --output-format stream-json --verbose --no-session-persistence --permission-mode dontAsk` in the clone, prompt on standard input, on the user's own Claude login. The first run warms caches; runs 2 and 3 are expected to agree. `dontAsk` denies anything that would ask for permission, so sessions read the clone but cannot edit it or run commands.
 - Results: `~/.zazzle/agent-token-benchmarks/<repo>/<sha>/<prompt>/<UTC time>_<model>_<effort>_<switches|baseline>/` holds `meta.json` (repository, origin, commit, uncommitted changes, prompt path and SHA-256, switches, model, effort, CLI version and arguments), `prompt.txt`, `transform.txt`, `run-1.jsonl`…`run-3.jsonl` (the CLI's stream of every turn), `run-1.json`…`run-3.json` (its result event) and `summary.json`: per run the input, output, cache-creation and cache-read tokens, cost, turns, tokens per turn, tool calls, denied tool calls, tokens spent on turns whose every tool call was denied (`denied_turn_tokens`) and models; per turn its tokens and the tools it called with their file, pattern or command, each marked denied or failed; and whether runs 2 and 3 are within 10%, took the same number of turns, and called the same tools. `ZAZZLE_BENCHMARK_DIR` moves the results; `ZAZZLE_BENCHMARK_CLAUDE` replaces the `claude` program.
 - Exit code 1 when a session failed. Agents vary: every turn re-sends the whole context, so one extra turn (often a tool call `dontAsk` denied, such as a Bash `find`) is enough to make runs 2 and 3 differ; the summary's turn and tool fields show where they parted.
 
 ## Build (run in `macos/dotnet/zazzle-csharp-minifier/`)
 - Test: `dotnet test tests`
-- Single test: `dotnet test tests --filter test_strip_doc_comment`
+- Single test: `dotnet test tests --filter test_split_resolved_into_folders`
 - Publish a self-contained single-file binary (no .NET needed to run it): `dotnet publish src -c Release -r osx-arm64 -o out` (also `osx-x64`, `linux-x64`, `linux-arm64`), then put `out/zazzle-csharp-minifier` on `PATH`.

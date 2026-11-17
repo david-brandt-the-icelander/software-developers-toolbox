@@ -18,20 +18,8 @@
       "symbol": "ParsedArgs"
     },
     {
-      "path": "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs",
-      "symbol": "StripComments"
-    },
-    {
       "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitTests.cs",
       "symbol": "SplitTests"
-    },
-    {
-      "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs",
-      "symbol": "SplitHeaders"
-    },
-    {
-      "path": "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs",
-      "symbol": "Restructure"
     },
     {
       "path": "macos/dotnet/zazzle-csharp-minifier/src/Rename.cs",
@@ -57,14 +45,11 @@
       "members": [
         "bool Help",
         "bool Version",
-        "bool Strip",
         "bool SplitTests",
-        "bool SplitHeaders",
         "bool Check",
         "string Root",
         "List<string> Paths",
         "string? Error",
-        "bool Restructure",
         "bool ListIdentifiers",
         "string? RenameFile",
         "string? Benchmark",
@@ -172,17 +157,7 @@
         "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs"
       ],
       "members": [
-        "const string Incl",
-        "const string Src",
-        "const string Doc",
-        "const string Test",
-        "const string DocFolder",
-        "static string? ProjectDir(string root, string path)",
-        "static bool IsRestructured(string projectDir)",
-        "static (string ProjectDir, string Folder, string Rel)? Restructured(string root, string path)",
-        "static string ImplPath(string root, string headerPath)",
-        "static bool IsImplementationHalf(string root, string path)",
-        "static string DocPath(string root, string sourcePath)"
+        "static string? ProjectDir(string root, string path)"
       ]
     },
     {
@@ -208,92 +183,16 @@
       ]
     },
     {
-      "id": "ZazzleMinifier.StripComments",
-      "name": "StripComments",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs"
-      ],
-      "members": [
-        "static Plan Make(string root, IReadOnlyList<string> files)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.FoundComment",
-      "name": "FoundComment",
-      "kind": "record",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs"
-      ],
-      "members": [
-        "TextSpan Span",
-        "SyntaxNode? Owner",
-        "string Raw",
-        "bool IsDoc"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.CommentFinder",
-      "name": "CommentFinder",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs"
-      ],
-      "members": [
-        "static List<FoundComment> Find(SyntaxTree tree, SourceText text)"
-      ]
-    },
-    {
       "id": "ZazzleMinifier.Cut",
       "name": "Cut",
       "kind": "struct",
       "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs"
+        "macos/dotnet/zazzle-csharp-minifier/src/TestFileText.cs"
       ],
       "members": [
         "int Start",
         "int End",
-        "string With",
-        "bool WholeLines"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.Stripper",
-      "name": "Stripper",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs"
-      ],
-      "members": [
-        "static string Strip(SourceText text, IReadOnlyList<TextSpan> spans)",
-        "static string? CodeDifference(string before, string after, CSharpParseOptions options)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.CommentDoc",
-      "name": "CommentDoc",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/CommentDoc.cs"
-      ],
-      "members": [
-        "static string Title(string relPath)",
-        "static string Sections(IReadOnlyList<FoundComment> comments, SourceText text)",
-        "static string Plain(string raw)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.Declarations",
-      "name": "Declarations",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/Declarations.cs"
-      ],
-      "members": [
-        "static bool IsOwner(SyntaxNode node)",
-        "static SyntaxNode? OwnerOf(SyntaxNode? node)",
-        "static string Kind(SyntaxNode node)",
-        "static string QualifiedName(SyntaxNode node)"
+        "string With"
       ]
     },
     {
@@ -430,128 +329,6 @@
         "static List<string> ChainNames(TypeDeclarationSyntax type)",
         "static string? NamespaceOf(SyntaxNode node)",
         "static bool IsEmpty(SyntaxNode root)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.SplitHeaders",
-      "name": "SplitHeaders",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs"
-      ],
-      "members": [
-        "static Plan Make(string root, IReadOnlyList<string> files)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.MovedMember",
-      "name": "MovedMember",
-      "kind": "record",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs"
-      ],
-      "members": [
-        "MemberDeclarationSyntax Member",
-        "TextSpan Cut",
-        "string HeaderTail",
-        "string Implementation"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.HeaderSplitter",
-      "name": "HeaderSplitter",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs"
-      ],
-      "members": [
-        "static List<MovedMember>? Find(CompilationUnitSyntax root, string text, LanguageVersion version, out string? skip)",
-        "static string Header(string text, List<MovedMember> moved)",
-        "static SyntaxToken TypeKeyword(TypeDeclarationSyntax type)",
-        "static string Indent(string text, int position)",
-        "static bool InsideType(SyntaxNode root, int position)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.ImplWriter",
-      "name": "ImplWriter",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs"
-      ],
-      "members": [
-        "static string New(CompilationUnitSyntax root, string text, List<MovedMember> moved)",
-        "static string? Merge(CompilationUnitSyntax root, string existing, List<MovedMember> moved, out string? missing)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.ImplWriter.Scope",
-      "name": "Scope",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs"
-      ],
-      "members": [
-        "SyntaxNode? Decl",
-        "List<object> Items"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.Restructure",
-      "name": "Restructure",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs"
-      ],
-      "members": [
-        "const string IgnoreText",
-        "static Plan Make(string root, IReadOnlyList<string> files)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.Restructure.Move",
-      "name": "Move",
-      "kind": "record",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs"
-      ],
-      "members": [
-        "string From",
-        "string To",
-        "byte[] Bytes"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.ProjectFile",
-      "name": "ProjectFile",
-      "kind": "record",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/ProjectFile.cs"
-      ],
-      "members": [
-        "string Path",
-        "string Dir",
-        "string Name",
-        "bool IsTest",
-        "List<string> References",
-        "static ProjectFile Load(string path)",
-        "static string Relocate(string text, string oldDir, string newDir)",
-        "static string Restructured(string text)",
-        "static bool HasOwnCompileItems(string text)"
-      ]
-    },
-    {
-      "id": "ZazzleMinifier.SolutionFiles",
-      "name": "SolutionFiles",
-      "kind": "class",
-      "sources": [
-        "macos/dotnet/zazzle-csharp-minifier/src/SolutionFiles.cs"
-      ],
-      "members": [
-        "static List<string> Find(string root)",
-        "static List<string> Projects(string root)",
-        "static IEnumerable<string> ProjectsOf(string solution)",
-        "static string? Repoint(string solution, string oldProject, string newProject)"
       ]
     },
     {
@@ -848,27 +625,9 @@
     },
     {
       "from": "ZazzleMinifier.Runner",
-      "to": "ZazzleMinifier.StripComments",
-      "kind": "depends-on",
-      "description": "Runs StripComments.Make as one step."
-    },
-    {
-      "from": "ZazzleMinifier.Runner",
       "to": "ZazzleMinifier.SplitTests",
       "kind": "depends-on",
       "description": "Runs SplitTests.Make as one step."
-    },
-    {
-      "from": "ZazzleMinifier.Runner",
-      "to": "ZazzleMinifier.SplitHeaders",
-      "kind": "depends-on",
-      "description": "Runs SplitHeaders.Make as one step."
-    },
-    {
-      "from": "ZazzleMinifier.Runner",
-      "to": "ZazzleMinifier.Restructure",
-      "kind": "depends-on",
-      "description": "Runs Restructure.Make as one step."
     },
     {
       "from": "ZazzleMinifier.Runner",
@@ -896,12 +655,6 @@
     },
     {
       "from": "ZazzleMinifier.Runner",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "Leaves out implementation halves."
-    },
-    {
-      "from": "ZazzleMinifier.Runner",
       "to": "ZazzleMinifier.RepoSetup",
       "kind": "depends-on",
       "description": "Sets up the repository after a run without --check."
@@ -913,25 +666,7 @@
       "description": "Queues one Edit per write or deletion."
     },
     {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.Plan",
-      "kind": "depends-on",
-      "description": "Make returns a Plan."
-    },
-    {
       "from": "ZazzleMinifier.SplitTests",
-      "to": "ZazzleMinifier.Plan",
-      "kind": "depends-on",
-      "description": "Make returns a Plan."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.Plan",
-      "kind": "depends-on",
-      "description": "Make returns a Plan."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
       "to": "ZazzleMinifier.Plan",
       "kind": "depends-on",
       "description": "Make returns a Plan."
@@ -943,19 +678,7 @@
       "description": "Make returns a Plan."
     },
     {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.SourceFile",
-      "kind": "depends-on",
-      "description": "Reads sources with SourceFile.Read."
-    },
-    {
       "from": "ZazzleMinifier.SplitTests",
-      "to": "ZazzleMinifier.SourceFile",
-      "kind": "depends-on",
-      "description": "Reads sources with SourceFile.Read."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
       "to": "ZazzleMinifier.SourceFile",
       "kind": "depends-on",
       "description": "Reads sources with SourceFile.Read."
@@ -979,19 +702,7 @@
       "description": "Reads sources with SourceFile.Read."
     },
     {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.SourceFiles",
-      "kind": "depends-on",
-      "description": "Skips generated code with SourceFiles.IsGenerated."
-    },
-    {
       "from": "ZazzleMinifier.SplitTests",
-      "to": "ZazzleMinifier.SourceFiles",
-      "kind": "depends-on",
-      "description": "Skips generated code with SourceFiles.IsGenerated."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
       "to": "ZazzleMinifier.SourceFiles",
       "kind": "depends-on",
       "description": "Skips generated code with SourceFiles.IsGenerated."
@@ -1001,66 +712,6 @@
       "to": "ZazzleMinifier.SourceFiles",
       "kind": "depends-on",
       "description": "Skips generated code with SourceFiles.IsGenerated."
-    },
-    {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.CommentFinder",
-      "kind": "depends-on",
-      "description": "Finds the comments to move."
-    },
-    {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.Stripper",
-      "kind": "depends-on",
-      "description": "Cuts them and checks the code is unchanged."
-    },
-    {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.CommentDoc",
-      "kind": "depends-on",
-      "description": "Renders the Markdown document."
-    },
-    {
-      "from": "ZazzleMinifier.StripComments",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "Layout.DocPath places the document."
-    },
-    {
-      "from": "ZazzleMinifier.CommentFinder",
-      "to": "ZazzleMinifier.FoundComment",
-      "kind": "depends-on",
-      "description": "Returns one per comment."
-    },
-    {
-      "from": "ZazzleMinifier.CommentFinder",
-      "to": "ZazzleMinifier.Declarations",
-      "kind": "depends-on",
-      "description": "Declarations.OwnerOf finds the declaration a comment describes."
-    },
-    {
-      "from": "ZazzleMinifier.CommentFinder",
-      "to": "ZazzleMinifier.TestMethods",
-      "kind": "depends-on",
-      "description": "Keeps the unresolved-test marker (TestMethods.MarkerPrefix) in the code."
-    },
-    {
-      "from": "ZazzleMinifier.CommentDoc",
-      "to": "ZazzleMinifier.FoundComment",
-      "kind": "depends-on",
-      "description": "Groups comments into sections."
-    },
-    {
-      "from": "ZazzleMinifier.CommentDoc",
-      "to": "ZazzleMinifier.Declarations",
-      "kind": "depends-on",
-      "description": "Section headings from Declarations.Kind and Declarations.QualifiedName."
-    },
-    {
-      "from": "ZazzleMinifier.Stripper",
-      "to": "ZazzleMinifier.Cut",
-      "kind": "depends-on",
-      "description": "Merges and applies cuts."
     },
     {
       "from": "ZazzleMinifier.SplitTests",
@@ -1163,102 +814,6 @@
       "to": "ZazzleMinifier.SourceFile",
       "kind": "depends-on",
       "description": "The file the test leaves."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.HeaderSplitter",
-      "kind": "depends-on",
-      "description": "Finds movable members and builds the header."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.ImplWriter",
-      "kind": "depends-on",
-      "description": "Builds or merges the implementation file."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.MovedMember",
-      "kind": "depends-on",
-      "description": "Passes the moved members between the two."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.ProjectLanguage",
-      "kind": "depends-on",
-      "description": "The C# version decides what can split."
-    },
-    {
-      "from": "ZazzleMinifier.SplitHeaders",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "Layout.ImplPath places the implementation half."
-    },
-    {
-      "from": "ZazzleMinifier.HeaderSplitter",
-      "to": "ZazzleMinifier.MovedMember",
-      "kind": "depends-on",
-      "description": "Find returns them."
-    },
-    {
-      "from": "ZazzleMinifier.ImplWriter",
-      "to": "ZazzleMinifier.MovedMember",
-      "kind": "depends-on",
-      "description": "Writes their implementing declarations."
-    },
-    {
-      "from": "ZazzleMinifier.ImplWriter",
-      "to": "ZazzleMinifier.HeaderSplitter",
-      "kind": "depends-on",
-      "description": "Shares Indent, TypeKeyword and InsideType."
-    },
-    {
-      "from": "ZazzleMinifier.ImplWriter",
-      "to": "ZazzleMinifier.Declarations",
-      "kind": "depends-on",
-      "description": "Groups members by Declarations.QualifiedName."
-    },
-    {
-      "from": "ZazzleMinifier.ImplWriter",
-      "to": "ZazzleMinifier.ImplWriter.Scope",
-      "kind": "depends-on",
-      "description": "Builds the namespace and type nesting."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
-      "to": "ZazzleMinifier.ProjectFile",
-      "kind": "depends-on",
-      "description": "Loads projects, rewrites and relocates project files."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
-      "to": "ZazzleMinifier.SolutionFiles",
-      "kind": "depends-on",
-      "description": "Lists projects and re-points the moved test project."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "Folder names and IsRestructured."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
-      "to": "ZazzleMinifier.Restructure.Move",
-      "kind": "depends-on",
-      "description": "One per file to move."
-    },
-    {
-      "from": "ZazzleMinifier.Restructure",
-      "to": "ZazzleMinifier.Edit",
-      "kind": "depends-on",
-      "description": "Queues moves as edits with their bytes."
-    },
-    {
-      "from": "ZazzleMinifier.ProjectFile",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "The incl, src and test folder names in the restructured items."
     },
     {
       "from": "ZazzleMinifier.Identifiers",
@@ -1378,7 +933,7 @@
       "from": "ZazzleMinifier.FileMoves",
       "to": "ZazzleMinifier.Layout",
       "kind": "depends-on",
-      "description": "Restructured folders and comment-document paths."
+      "description": "Layout.ProjectDir locates the namespace's project folder."
     },
     {
       "from": "ZazzleMinifier.FileMoves",
@@ -1391,18 +946,6 @@
       "to": "ZazzleMinifier.Proc",
       "kind": "depends-on",
       "description": "Runs git."
-    },
-    {
-      "from": "ZazzleMinifier.RepoSetup",
-      "to": "ZazzleMinifier.SolutionFiles",
-      "kind": "depends-on",
-      "description": "Lists projects to name the restructured ones."
-    },
-    {
-      "from": "ZazzleMinifier.RepoSetup",
-      "to": "ZazzleMinifier.Layout",
-      "kind": "depends-on",
-      "description": "Layout.IsRestructured."
     },
     {
       "from": "ZazzleMinifier.Runner",

@@ -55,68 +55,6 @@
       ]
     },
     {
-      "id": "strip-comments",
-      "name": "Move comments into Markdown (--strip-comments)",
-      "description": "Comments on the file and its non-local declarations leave the C# and go to a Markdown document that mirrors the source file.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs",
-          "symbol": "StripComments.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs",
-          "symbol": "CommentFinder.Find"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs",
-          "symbol": "Stripper.CodeDifference"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/CommentDoc.cs",
-          "symbol": "CommentDoc.Sections"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
-          "symbol": "Layout.DocPath"
-        }
-      ],
-      "behavior": "StripComments.Make reads each file; CommentFinder.Find collects the file-header comments and the //, /* */, /// and /** */ comments owned by namespaces, types, members, enum members and accessors (Declarations.OwnerOf); CommentDoc.Sections renders one ## section per owner, headed by its kind and qualified name (Declarations.Kind, Declarations.QualifiedName), with doc comments in an xml block; Stripper.Strip cuts the comments and tidies the lines they leave; the document is queued before the stripped source, at Layout.DocPath (document/<path>.md under the root, or doc/ in a restructured project), appending to a document that already exists.",
-      "outcome": "The C# carries only code, and every moved comment is kept, findable by the declaration it described.",
-      "constraints": [
-        "Comments inside bodies, initializers, parameter lists, constructor initializers and top-level statements stay (CommentFinder.IsLocal).",
-        "ReSharper, language= and lang= comments and the unresolved-test marker stay in the code (CommentFinder.IsKept).",
-        "A file is left unchanged, with an error, when stripping would change its tokens, preprocessor directives or disabled code (Stripper.CodeDifference), or when it is not UTF-8.",
-        "Generated files are skipped with a note (SourceFiles.IsGenerated); comments in code disabled by #if are not comment trivia and are not found.",
-        "A byte-order mark is kept (SourceFile.Bom)."
-      ],
-      "implementation": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
-          "symbol": "Runner.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/StripComments.cs",
-          "symbol": "StripComments.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/CommentFinder.cs",
-          "symbol": "CommentFinder.Find"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Stripper.cs",
-          "symbol": "Stripper.Strip"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/CommentDoc.cs",
-          "symbol": "CommentDoc.Sections"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Declarations.cs",
-          "symbol": "Declarations.QualifiedName"
-        }
-      ]
-    },
-    {
       "id": "split-tests",
       "name": "One test file per method under test (--split-tests)",
       "description": "Each test moves to <ClassUnderTest>/<MethodUnderTest>.cs, decided by what its // When section calls.",
@@ -170,120 +108,6 @@
         {
           "path": "macos/dotnet/zazzle-csharp-minifier/src/TestFileText.cs",
           "symbol": "TestFileText.MarkerEdit"
-        }
-      ]
-    },
-    {
-      "id": "split-headers",
-      "name": "Declarations apart from implementations (--split-headers)",
-      "description": "Each .cs file keeps its declarations, and the bodies move to a partial implementation file beside it.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs",
-          "symbol": "SplitHeaders.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ProjectLanguage.cs",
-          "symbol": "ProjectLanguage.For"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs",
-          "symbol": "HeaderSplitter.Find"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs",
-          "symbol": "ImplWriter.New"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
-          "symbol": "Layout.ImplPath"
-        }
-      ],
-      "behavior": "SplitHeaders.Make reads the C# version the file's project compiles with (ProjectLanguage.For: LangVersion, else the TargetFramework default, from the nearest .csproj and Directory.Build.props); HeaderSplitter.Find picks members of classes, structs and records whose bodies can move under that version (methods from C# 9, properties and indexers from C# 13, constructors and events from C# 14); HeaderSplitter.Header replaces each body with a bodiless partial declaration and makes the surrounding types partial; ImplWriter.New writes the implementation with the same usings and namespaces, or ImplWriter.Merge adds to the one an earlier split wrote; the implementation is queued before the header at Layout.ImplPath (src/<name>.cs beside the file, or src/ of a restructured project).",
-      "outcome": "A reader or agent can see a file's whole surface in its header without reading the bodies.",
-      "constraints": [
-        "Skipped with a note: no .csproj or a version below C# 9, top-level statements, a file that does not parse, generated code, and a preprocessor directive inside a type or one other than #nullable or #pragma warning outside it (HeaderSplitter.BlockingDirective).",
-        "Abstract, extern and partial members, interface members, explicit interface implementations, properties with initializers and static constructors stay whole (HeaderSplitter.Splittable).",
-        "A file is left unchanged when either half would have a syntax error, or the halves compiled alone against the .NET 8 reference assemblies add a compile error (SplitHeaders.Problem).",
-        "An existing implementation file without the partial type to add to leaves the file unchanged (ImplWriter.Merge)."
-      ],
-      "implementation": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
-          "symbol": "Runner.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/SplitHeaders.cs",
-          "symbol": "SplitHeaders.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/HeaderSplitter.cs",
-          "symbol": "HeaderSplitter.Header"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ImplWriter.cs",
-          "symbol": "ImplWriter.Merge"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ProjectLanguage.cs",
-          "symbol": "ProjectLanguage.For"
-        }
-      ]
-    },
-    {
-      "id": "restructure",
-      "name": "Projects in incl/, src/, doc/ and test/ (--restructure)",
-      "description": "Each production project becomes declarations in incl/, implementations and programs in src/, comment documents in doc/ and its test project in test/.",
-      "sources": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Cli.cs",
-          "symbol": "Cli.Parse"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs",
-          "symbol": "Restructure.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ProjectFile.cs",
-          "symbol": "ProjectFile.Restructured"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/SolutionFiles.cs",
-          "symbol": "SolutionFiles.Projects"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
-          "symbol": "Layout.IsRestructured"
-        }
-      ],
-      "behavior": "Cli.Parse turns on --strip-comments, --split-tests and --split-headers with it, and Runner.Run runs it last. Restructure.Make loads the projects the solutions list (every .csproj when there is no .sln or .slnx), gives each production project the one test project that references it (the one named after it when it references several), and for each project a named file touches: moves implementation halves and top-level programs to src/, other sources to incl/, the document/ comment documents to doc/ (doc/test/ for the test project's), and the test project into test/ with its project file re-pointed (ProjectFile.Relocate) and the solutions updated (SolutionFiles.Repoint); rewrites the .csproj to compile only incl/ and src/ (ProjectFile.Restructured); and writes the .ignore file (Restructure.IgnoreText).",
-      "outcome": "Broad searches by agents see only declarations in incl/, while bodies, comments and tests stay reachable by exact path; rerunning changes nothing.",
-      "constraints": [
-        "A project is left unchanged when two files would move to one place or a file is in the way (Restructure.Problem).",
-        "Writes are queued before deletions, so an interrupted run does not lose a file (Restructure.Queue).",
-        "A test project with no single production project, or a second one for the same project, is left in place with a note.",
-        "A project's own Compile items are left as written, with a note (ProjectFile.HasOwnCompileItems); hidden folders and nested projects are not moved."
-      ],
-      "implementation": [
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
-          "symbol": "Runner.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Restructure.cs",
-          "symbol": "Restructure.Make"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ProjectFile.cs",
-          "symbol": "ProjectFile.Load"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/ProjectFile.cs",
-          "symbol": "ProjectFile.Relocate"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/SolutionFiles.cs",
-          "symbol": "SolutionFiles.Repoint"
         }
       ]
     },
@@ -379,7 +203,7 @@
           "symbol": "FileMoves.Plan"
         }
       ],
-      "behavior": "IdentifierTree.Parse reads the tree (blank and # lines ignored) into RenameRequest paths, deepest first; Rename.Make checks each path is declared in source, loads a Roslyn workspace of one project per .csproj with its project references, C# version and implicit usings (SourceWorkspace.Load), renames every symbol at each path with the Roslyn renamer, overloads together and strings and comments untouched, and then FileMoves.Plan moves namespace folders, Type.cs files, test folders and <ClassUnderTest>/<Member>.cs test files with their src/ halves and comment documents, and updates the comment-document headings. Runner.Run runs it before any other command given with it.",
+      "behavior": "IdentifierTree.Parse reads requested names deepest first. Rename.Make loads the Roslyn workspace, renames each symbol and its references, preserves strings and comments, rejects added compiler errors, and asks FileMoves.Plan to move namespace, type and test files. Runner.Run performs renames before other requested commands.",
       "outcome": "Names change across the whole tree in one step, and the file layout the other commands keep follows them.",
       "constraints": [
         "Nothing is written when a line does not parse, a new name is not a valid C# identifier, a path is not declared, the renamer changes nothing, the renames raise the count of any compiler error, or a move would land on an existing file.",
@@ -427,7 +251,7 @@
           "symbol": "SourceFiles.Under"
         }
       ],
-      "behavior": "Cli.Parse takes --root (default: the current directory) and any file or folder arguments, and refuses a root that is not a folder or a path that is missing or outside it. Runner.Run lists the .cs files under those paths before each command (SourceFiles.Under, leaving out bin, obj, node_modules, packages, hidden and symlinked folders and implementation halves) and adds the files each command wrote for the next. Document paths, the test-split compilation, the rename workspace, the projects --restructure considers and the repository setup's AGENTS.md section and hook block are all taken relative to the root.",
+      "behavior": "Cli.Parse validates the root and requested paths. Runner.Run discovers sources under those paths, skips generated and build output, and includes each plan's written sources for subsequent steps. Test binding and rename workspaces read the root; repository guidance and hooks record the selected root.",
       "outcome": "One repository can hold several trees, each set up and checked with its own switches.",
       "constraints": [
         "Paths must lie inside the root (Cli.Parse); bad usage exits 2 with the usage text (Program.cs).",
@@ -441,10 +265,6 @@
         {
           "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
           "symbol": "Runner.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
-          "symbol": "Layout.DocPath"
         }
       ]
     },
@@ -466,12 +286,12 @@
           "symbol": "RepoSetup.HookBlock"
         }
       ],
-      "behavior": "Runner.Run calls RepoSetup.Run after a run without --check that had a command switch. RepoSetup finds the repository top with git (RepoSetup.RepoTop, keeping the root's own path spelling), writes the embedded SKILL.md to agents/skills/zazzle-csharp-minifier/ (or .claude/skills/ when only that exists), replaces or appends a marked section for the root in AGENTS.md naming the switches and the restructured projects, creates CLAUDE.md with @AGENTS.md when missing, and in a git repository replaces or appends a marked block in the pre-commit hook (core.hooksPath when set, otherwise .githooks/pre-commit, with an existing .git/hooks/pre-commit copied in and core.hooksPath set) that runs --check on the staged .cs files and refuses the commit when it fails or the tool is not on PATH; the hook is made executable. Switches recorded by earlier runs are merged in, and only files whose text differs are written. It also merges permissions.allow in the repository's .claude/settings.json with Bash rules for the read-only commands ls, cat, head, tail, wc, grep and rg (RepoSetup.ReadOnlySettings; find is left out because -exec and -delete can change files), and the AGENTS.md section tells agents to find files with Glob and read with Read and Grep instead of shell pipelines.",
+      "behavior": "After test-layout commands without --check, RepoSetup.Run writes the embedded skill, refreshes the selected root's marked AGENTS.md and hook blocks, creates CLAUDE.md when missing, and merges read-only permissions. It retains only supported switches from earlier hook blocks. The guidance requests complete relevant symbols or bounded ranges and resolving referenced constants, fields and attributes. Existing search ignore files are untouched.",
       "outcome": "Agents and people working in the repository later are told the layout and cannot commit C# that breaks it.",
       "constraints": [
-        "Not run with --check, or for --list-identifiers or --rename alone.",
-        "Outside a git repository only the skill, AGENTS.md and CLAUDE.md are written.",
-        "The hook checks the working-tree copy of each staged file, not the staged one."
+        "Not run with --check, or for --list-identifiers, --rename or --allow-reads alone.",
+        "Outside git, guidance and settings update without installing a hook.",
+        "The hook checks the working-tree copy of each staged source path."
       ],
       "implementation": [
         {
@@ -505,10 +325,6 @@
         {
           "path": "macos/dotnet/zazzle-csharp-minifier/src/Runner.cs",
           "symbol": "Runner.Run"
-        },
-        {
-          "path": "macos/dotnet/zazzle-csharp-minifier/src/Layout.cs",
-          "symbol": "Layout.DocPath"
         }
       ],
       "id": "benchmark",
