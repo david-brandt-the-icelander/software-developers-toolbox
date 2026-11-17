@@ -16,7 +16,7 @@
         "zazzle-c (macOS and Linux): build zazzled, then make, make unit and test/smoke.sh for the C invoker",
         "coverage (Linux, nightly with the wasm32-wasip1 target): agent-fs, fix-network and zazzle-git (with its pseudo-terminal tests) fail below 95% of lines and of branches; zazzled/coverage.sh 95 for zazzled, then for zazz-format, zazz-sdk and zazz-worker; make coverage for the C invoker",
         "dotnet (macOS and Linux): dotnet test tests, dotnet publish, and a smoke run of zazzle-csharp-indexer serve (initialize, an empty tools/list and the overview tool called by name) and zazzle-csharp-indexer report",
-        "dotnet-minifier (macOS and Linux): dotnet test tests, dotnet publish, then zazzle-csharp-minifier with all three command switches on a copy of zazzle-csharp-indexer, a --check of that copy that must find nothing, and a dotnet build of the copy's tests"
+        "dotnet-minifier (macOS and Linux): dotnet test tests, dotnet publish, then zazzle-csharp-minifier on two copies of zazzle-csharp-indexer: the three splitting switches, a --check that must find nothing and a dotnet build of the copy's tests; and --restructure, its --check, a --list-identifiers and --rename of the Daemon namespace, and a dotnet test of the moved test project"
       ],
       "blocks": "Nothing on its own: whether main waits for it is set in the repository's rules on GitHub, outside this repository.",
       "notChecked": [
