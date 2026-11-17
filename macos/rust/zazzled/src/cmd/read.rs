@@ -64,6 +64,17 @@ pub(super) fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
 
 // Splits PATH:A-B into the path and an optional range.
 pub(super) fn split_target(arg: &str) -> (&str, Option<(usize, Option<usize>)>) {
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    // PATH:A:B, a common slip for PATH:A-B.
+    if let Some((rest, b)) = arg.rsplit_once(':') {
+        if let Some((path, a)) = rest.rsplit_once(':') {
+            if !path.is_empty() && digits(a) && digits(b) {
+                if let Some(range) = parse_range(&format!("{a}-{b}")) {
+                    return (path, Some(range));
+                }
+            }
+        }
+    }
     if let Some(i) = arg.rfind(':') {
         if i > 0 {
             if let Some(range) = parse_range(&arg[i + 1..]) {
@@ -318,14 +329,28 @@ fn dedent(line: &str, n: usize) -> std::borrow::Cow<'_, str> {
 // Finds the one file that declares a symbol named without a path, through the C# indexer's index; several files are listed for the caller to pick from.
 fn declared_in(ctx: &Ctx, query: &str) -> Result<Vec<String>, String> {
     let name = query.split(['(', '#']).next().unwrap_or(query).trim();
-    let found = crate::cmd::structure::declarations(ctx, name)
-        .map_err(|e| format!("--symbol without a path looks it up in the index: {e}"))?;
-    let mut files: Vec<&str> =
-        found.iter().filter_map(|l| l.split_once(' ')?.0.rsplit_once(':').map(|(p, _)| p)).collect();
+    let file_of = |l: &String| l.split_once(' ')?.0.rsplit_once(':').map(|(p, _)| p.to_string());
+    // A namespace-qualified or misremembered Type.Member falls back to Type.Member, then Member alone.
+    let segs: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
+    let mut tries = vec![name.to_string()];
+    for keep in [2, 1] {
+        if segs.len() > keep {
+            tries.push(segs[segs.len() - keep..].join("."));
+        }
+    }
+    let mut found = Vec::new();
+    for t in &tries {
+        found = crate::cmd::structure::declarations(ctx, t)
+            .map_err(|e| format!("--symbol without a path looks it up in the index: {e}"))?;
+        if found.iter().any(|l| file_of(l).is_some()) {
+            break;
+        }
+    }
+    let mut files: Vec<String> = found.iter().filter_map(file_of).collect();
     files.dedup();
     match files.as_slice() {
         [] => Err(format!("no declaration of '{name}' in the index; search with zazzle find")),
-        [one] => Ok(vec![one.to_string()]),
+        [one] => Ok(vec![one.clone()]),
         _ => Err(format!(
             "'{name}' is declared in {} files; give the file too, or qualify the name:\n{}",
             files.len(),
@@ -601,6 +626,15 @@ mod tests {
         let out: Vec<String> = lines.iter().map(|l| dedent(l, n).into_owned()).collect();
         assert_eq!(out, ["10\tif (x) {", "11~\t    y();", "12\t", "13-15\t⋯ 3 log statement(s)", "16\t}"]);
         assert_eq!(common_indent(["1\tclass C", "2\t    int x;"].into_iter()), 0);
+    }
+
+    // Checks PATH:A:B reads as the range A-B, and a colon in the path itself still works.
+    #[test]
+    fn test_colon_range() {
+        assert_eq!(split_target("src/a.cs:10:20"), ("src/a.cs", Some((10, Some(20)))));
+        assert_eq!(split_target("src/a.cs:10-20"), ("src/a.cs", Some((10, Some(20)))));
+        assert_eq!(split_target("a:b.cs:5"), ("a:b.cs", parse_range("5")));
+        assert_eq!(split_target(":1:2").0, ":1");
     }
 
     // Checks the budget fitting maths directly.

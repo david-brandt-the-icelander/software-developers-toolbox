@@ -220,6 +220,12 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             t
         }
         [path] => {
+            if !crate::util::locate(path, &ctx.cwd).exists() {
+                return Err(format!(
+                    "{path}: no such file or directory{}",
+                    crate::util::similar(path, &ctx.cwd, &ctx.engine.walks)
+                ));
+            }
             let (t, rel) = Target::for_path(ctx, path)?;
             a.insert("path".into(), json!(rel));
             t
@@ -230,7 +236,15 @@ pub fn git_log(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if let Some(g) = p.value("grep") {
         a.insert("grep".into(), json!(g));
     }
-    t.ask("git_log", a)
+    let mut out = t.ask("git_log", a)?;
+    if out.text.trim().is_empty() {
+        out.text = match (p.positional.first(), p.value("grep")) {
+            (_, Some(g)) => format!("no commits whose message matches '{g}'"),
+            (Some(path), None) => format!("no commits touch {path}"),
+            (None, None) => "no commits".to_string(),
+        };
+    }
+    Ok(out)
 }
 
 // Runs git-blame: who last changed each line of a range of a file, in whichever repository holds it.
@@ -314,6 +328,7 @@ mod tests {
             run(&["git-log", "src", "-n", "3", "--grep", "fix"]),
             format!("\"git_log\" {{\"path\":\"{name}:src\",\"n\":3,\"grep\":\"fix\"}}")
         );
+        assert!(run(&["git-log", "srcx/C.cs"]).starts_with("error: srcx/C.cs: no such file or directory"));
         let sub = run_cmd(&t.path().join("src"), &["git-blame", "C.cs", "--start", "2", "--end", "4"]).text;
         assert_eq!(
             sub,
