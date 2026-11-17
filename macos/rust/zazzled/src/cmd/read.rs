@@ -268,10 +268,11 @@ fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &
     let costs: Vec<usize> = lines.iter().map(|(_, _, l)| tokens::from_bytes(l.len() + 1)).collect();
     let (keep, tail_start) = fit(&costs, o.budget);
     let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
-    let mut out =
-        format!("{shown} {nl} lines, terse view{partial}: {steps}; read --source for the code and its sha\n");
+    let mut out = format!("{shown} {nl} lines, terse view{partial}: {steps}\n");
+    let shown_lines = lines[..keep].iter().chain(&lines[tail_start.max(keep)..]);
+    let indent = common_indent(shown_lines.map(|(_, _, l)| *l));
     for (_, _, l) in &lines[..keep] {
-        out.push_str(l);
+        out.push_str(&dedent(l, indent));
         out.push('\n');
     }
     if tail_start > keep {
@@ -286,11 +287,32 @@ fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &
         }
     }
     for (_, _, l) in &lines[tail_start.max(keep)..] {
-        out.push_str(l);
+        out.push_str(&dedent(l, indent));
         out.push('\n');
     }
     out.pop();
     out
+}
+
+// The leading spaces every shown code line shares, ignoring blank lines and fold markers, which are written unindented.
+fn common_indent<'a>(lines: impl Iterator<Item = &'a str>) -> usize {
+    lines
+        .filter_map(|l| l.split_once('\t').map(|(_, code)| code))
+        .filter(|code| !code.trim().is_empty() && !code.trim_start().starts_with('⋯'))
+        .map(|code| code.bytes().take_while(|b| *b == b' ').count())
+        .min()
+        .unwrap_or(0)
+}
+
+// Removes up to n leading spaces from a view line's code, keeping its key.
+fn dedent(line: &str, n: usize) -> std::borrow::Cow<'_, str> {
+    match line.split_once('\t') {
+        Some((key, code)) if n > 0 => {
+            let cut = code.bytes().take(n).take_while(|b| *b == b' ').count();
+            format!("{key}\t{}", &code[cut..]).into()
+        }
+        _ => line.into(),
+    }
 }
 
 // Finds the one file that declares a symbol named without a path, through the C# indexer's index; several files are listed for the caller to pick from.
@@ -570,6 +592,17 @@ mod tests {
         assert_eq!(parse_range("3-x"), None);
     }
 
+    // Checks the shared indent of shown code lines is removed, ignoring blank lines and fold markers.
+    #[test]
+    fn test_terse_dedent() {
+        let lines = ["10\t        if (x) {", "11~\t            y();", "12\t", "13-15\t⋯ 3 log statement(s)", "16\t        }"];
+        let n = common_indent(lines.iter().copied());
+        assert_eq!(n, 8);
+        let out: Vec<String> = lines.iter().map(|l| dedent(l, n).into_owned()).collect();
+        assert_eq!(out, ["10\tif (x) {", "11~\t    y();", "12\t", "13-15\t⋯ 3 log statement(s)", "16\t}"]);
+        assert_eq!(common_indent(["1\tclass C", "2\t    int x;"].into_iter()), 0);
+    }
+
     // Checks the budget fitting maths directly.
     #[test]
     fn test_fit_cases() {
@@ -688,11 +721,11 @@ mod tests {
         std::fs::write(t.path().join("c.htm"), "<p>plain</p>\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.html"]).text,
-            "a.html 5 lines, terse view: 1 comments; read --source for the code and its sha\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
+            "a.html 5 lines, terse view: 1 comments\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
         );
         let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3"]).text;
         assert!(
-            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes;")
+            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes\n")
                 && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
             "{razor}"
         );
@@ -710,11 +743,11 @@ mod tests {
         std::fs::write(t.path().join("c.dart"), "int f() => 1;\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.py"]).text,
-            "a.py 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\tx = 1"
+            "a.py 3 lines, terse view: 1 imports\n1-2\t⋯ 2 import(s)\n3\tx = 1"
         );
         let ts = run_cmd(t.path(), &["read", "b.ts", "--symbol", "f"]).text;
         assert!(
-            ts.starts_with("b.ts 4 lines, terse view: 1 log statements;")
+            ts.starts_with("b.ts 4 lines, terse view: 1 log statements\n")
                 && ts.ends_with("\n1\tfunction f() {\n3\t  return 1;\n4\t}"),
             "{ts}"
         );
@@ -731,7 +764,7 @@ mod tests {
         std::fs::write(t.path().join("b.scss"), "a { color: red; }\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.css"]).text,
-            "a.css 3 lines, terse view: 1 imports; read --source for the code and its sha\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
+            "a.css 3 lines, terse view: 1 imports\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
         );
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
@@ -748,13 +781,13 @@ mod tests {
         std::fs::write(t.path().join("e.toml"), "a = 1\n").expect("write");
         let json = run_cmd(t.path(), &["read", "a.json"]).text;
         assert!(
-            json.starts_with("a.json 15 lines, terse view: 1 list items; ")
+            json.starts_with("a.json 15 lines, terse view: 1 list items\n")
                 && json.contains("\n3-13\t⋯ 11 item(s)\n"),
             "{json}"
         );
         assert!(run_cmd(t.path(), &["read", "b.md"])
             .text
-            .ends_with("terse view: 1 comments; read --source for the code and its sha\n2\t# B"));
+            .ends_with("terse view: 1 comments\n2\t# B"));
         assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
         assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
         assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
@@ -823,7 +856,7 @@ mod tests {
         let whole = run_cmd(t.path(), &["read", "C.cs"]).text;
         assert_eq!(
             whole,
-            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers; read --source for the code and its sha\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
+            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
         );
         let part = run_cmd(t.path(), &["read", "C.cs:4-5"]).text;
         assert!(
@@ -871,7 +904,7 @@ mod tests {
                 &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true },
                 ""
             ),
-            "f.cs 1 lines, terse view: nothing to shorten; read --source for the code and its sha"
+            "f.cs 1 lines, terse view: nothing to shorten"
         );
     }
 

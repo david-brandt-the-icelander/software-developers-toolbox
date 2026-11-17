@@ -102,7 +102,8 @@ fn find_schema() -> Value {
             "ignore_case": {"type": "boolean"}, "fixed": {"type": "boolean", "description": "Treat pattern as literal text"},
             "word": {"type": "boolean"}, "count": {"type": "boolean"}, "files_only": {"type": "boolean"},
             "no_ignore": {"type": "boolean", "description": "Also search gitignored files"},
-            "context": {"type": "integer"}, "max": {"type": "integer", "description": "Maximum matches shown (default 30)"},
+            "code_only": {"type": "boolean", "description": "Skip tests and docs"},
+            "context": {"type": "integer"}, "max": {"type": "integer", "description": "Matches shown (default 30, at most 40)"},
             "disable_session_deduping": {"type": "boolean"}
         }),
         &["pattern"],
@@ -117,7 +118,7 @@ fn read_schema() -> Value {
             "source": {"type": "boolean", "description": "Exact code and its sha (edits need it); default is a terse view"},
             "symbol": {"type": "string", "description": "One symbol with its docs: Namespace.Type.Member, Type.method or a::b; overloads Name(T1, T2) or #N; without paths, found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
-            "budget": {"type": "integer", "description": "Token budget (default 2000)"},
+            "budget": {"type": "integer", "description": "Token budget (default 2000, at most 2500)"},
             "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
             "disable_session_deduping": {"type": "boolean"}
         }),
@@ -132,7 +133,7 @@ fn read_again_schema() -> Value {
             "id": {"type": "string", "description": "The id from a response's [r:ID] tag"},
             "full": {"type": "boolean", "description": "Uncut text of a clean, run or proxy output"},
             "lines": {"type": "string", "description": "With full: a line range A-B"},
-            "budget": {"type": "integer", "description": "With full: token budget (default 2000)"}
+            "budget": {"type": "integer", "description": "With full: token budget (default 2000, at most 2500)"}
         }),
         &["id"],
     )
@@ -142,7 +143,7 @@ fn read_again_schema() -> Value {
 fn ls_schema() -> Value {
     object(
         json!({
-            "path": {"type": "string"}, "depth": {"type": "integer"}, "max": {"type": "integer"},
+            "path": {"type": "string"}, "depth": {"type": "integer"}, "max": {"type": "integer", "description": "At most 60"},
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
         }),
         &[],
@@ -165,7 +166,8 @@ fn refs_schema() -> Value {
     object(
         json!({
             "symbol": {"type": "string"}, "paths": {"type": "array", "items": {"type": "string"}},
-            "glob": {"type": "array", "items": {"type": "string"}}, "max": {"type": "integer"},
+            "glob": {"type": "array", "items": {"type": "string"}}, "max": {"type": "integer", "description": "At most 40"},
+            "code_only": {"type": "boolean", "description": "Skip tests and docs"},
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
         }),
         &["symbol"],
@@ -229,6 +231,26 @@ pub(crate) fn push_flag(out: &mut Vec<String>, v: &Value, key: &str, flag: &str)
     }
 }
 
+// Pushes a numeric option when the argument is present, lowered to the ceiling an agent may ask for.
+pub(crate) fn push_capped(out: &mut Vec<String>, v: &Value, key: &str, flag: &str, cap: u64) -> Result<(), String> {
+    match v.get(key) {
+        None | Some(Value::Null) => Ok(()),
+        Some(n) => {
+            let n = n.as_u64().ok_or_else(|| format!("'{key}' must be a non-negative integer"))?;
+            out.push(flag.into());
+            out.push(n.min(cap).to_string());
+            Ok(())
+        }
+    }
+}
+
+// Ceilings on what an agent may ask for: larger answers cost more than the extra call they save.
+pub(crate) const FIND_MAX: u64 = 40;
+pub(crate) const REFS_MAX: u64 = 40;
+pub(crate) const LS_MAX: u64 = 60;
+pub(crate) const READ_BUDGET: u64 = 2500;
+pub(crate) const FIND_SYMBOL_LIMIT: u64 = 20;
+
 // Pushes a numeric option when the argument is present.
 pub(crate) fn push_num(out: &mut Vec<String>, v: &Value, key: &str, flag: &str) -> Result<(), String> {
     match v.get(key) {
@@ -252,12 +274,13 @@ fn find_args(v: &Value) -> Result<Vec<String>, String> {
         ("count", "-c"),
         ("files_only", "-l"),
         ("no_ignore", "-u"),
+        ("code_only", "--code-only"),
         ("disable_session_deduping", "--disable-session-deduping"),
     ] {
         push_flag(&mut a, v, k, f)?;
     }
     push_num(&mut a, v, "context", "-C")?;
-    push_num(&mut a, v, "max", "-m")?;
+    push_capped(&mut a, v, "max", "-m", FIND_MAX)?;
     for g in get_list(v, "glob")? {
         a.push("-g".into());
         a.push(g);
@@ -284,10 +307,10 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
         ("ctx", "--ctx"),
         ("head", "--head"),
         ("tail", "--tail"),
-        ("budget", "--budget"),
     ] {
         push_num(&mut a, v, k, f)?;
     }
+    push_capped(&mut a, v, "budget", "--budget", READ_BUDGET)?;
     if let Some(sym) = get_str(v, "symbol")? {
         a.push("--symbol".into());
         a.push(sym);
@@ -307,7 +330,7 @@ fn ls_args(v: &Value) -> Result<Vec<String>, String> {
     push_flag(&mut a, v, "no_ignore", "-u")?;
     push_flag(&mut a, v, "disable_session_deduping", "--disable-session-deduping")?;
     push_num(&mut a, v, "depth", "-d")?;
-    push_num(&mut a, v, "max", "-m")?;
+    push_capped(&mut a, v, "max", "-m", LS_MAX)?;
     if let Some(p) = get_str(v, "path")? {
         a.push("--".into());
         a.push(p);
@@ -334,7 +357,7 @@ fn outline_args(v: &Value) -> Result<Vec<String>, String> {
 fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["read-again".to_string(), need_str(v, "id")?];
     push_flag(&mut a, v, "full", "--full")?;
-    push_num(&mut a, v, "budget", "--budget")?;
+    push_capped(&mut a, v, "budget", "--budget", READ_BUDGET)?;
     if let Some(lines) = get_str(v, "lines")? {
         a.extend(["--lines".to_string(), lines]);
     }
@@ -345,8 +368,9 @@ fn read_again_args(v: &Value) -> Result<Vec<String>, String> {
 fn refs_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["refs".to_string()];
     push_flag(&mut a, v, "no_ignore", "-u")?;
+    push_flag(&mut a, v, "code_only", "--code-only")?;
     push_flag(&mut a, v, "disable_session_deduping", "--disable-session-deduping")?;
-    push_num(&mut a, v, "max", "-m")?;
+    push_capped(&mut a, v, "max", "-m", REFS_MAX)?;
     for g in get_list(v, "glob")? {
         a.push("-g".into());
         a.push(g);
@@ -989,6 +1013,31 @@ mod tests {
                 "1-2", "--at", "1#a-2#b", "--expect", "abcd"
             ]
         );
+    }
+
+    // Checks an agent's max, budget and limit are lowered to the ceilings, smaller ones pass through, and code_only maps to its flag.
+    #[test]
+    fn test_ceilings_and_code_only() {
+        let b = fake(0, "ok");
+        for (name, args) in [
+            ("zazzle_find", json!({"pattern": "x", "max": 100, "code_only": true})),
+            ("zazzle_refs", json!({"symbol": "x", "max": 100, "code_only": true})),
+            ("zazzle_ls", json!({"max": 500})),
+            ("zazzle_read", json!({"paths": ["a"], "budget": 9000})),
+            ("zazzle_read_again", json!({"id": "r", "full": true, "budget": 9000})),
+            ("zazzle_find_symbol", json!({"name": "x", "limit": 50})),
+            ("zazzle_find", json!({"pattern": "x", "max": 5})),
+        ] {
+            ask(&b, json!({"id":1,"method":"tools/call","params":{"name":name,"arguments":args}}));
+        }
+        let calls = b.calls.borrow();
+        assert_eq!(calls[0], ["find", "--code-only", "-m", "40", "--", "x"]);
+        assert_eq!(calls[1], ["refs", "--code-only", "-m", "40", "--", "x"]);
+        assert_eq!(calls[2], ["ls", "-m", "60"]);
+        assert_eq!(calls[3], ["read", "--budget", "2500", "--", "a"]);
+        assert_eq!(calls[4], ["read-again", "r", "--full", "--budget", "2500"]);
+        assert_eq!(calls[5], ["find-symbol", "--limit", "20", "--", "x"]);
+        assert_eq!(calls[6], ["find", "-m", "5", "--", "x"]);
     }
 
     // Checks argument validation for the new tools.

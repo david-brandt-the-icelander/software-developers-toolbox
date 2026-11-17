@@ -1,5 +1,5 @@
 // The refs command: where a symbol is defined and used, definitions first, with the enclosing symbol of each use; C# hits in comments and strings are dropped.
-use super::find::{build_regex, search_all, FileResult, Hit, Plan};
+use super::find::{build_regex, code_only, rank_in, search_all, FileResult, Hit, Plan, NARROW};
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
@@ -9,8 +9,8 @@ use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
 use std::path::{Path, PathBuf};
 
-pub(super) const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u')];
-const USAGE: &str = "usage: refs SYMBOL [PATH..] [-g GLOB] [-m N] [-u]";
+pub(super) const SPEC: &[Flag] = &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u'), flag("code-only", '\0')];
+const USAGE: &str = "usage: refs SYMBOL|Type.Member [PATH..] [-g GLOB] [-m N] [-u] [--code-only]";
 const DEFAULT_MAX: usize = 50;
 const PER_FILE: usize = 1000;
 const DEF_CAP: usize = 20;
@@ -62,22 +62,37 @@ fn code_hits<'a>(path: &Path, data: &[u8], name: &str, file: &'a FileResult) -> 
     file.hits.iter().filter(|h| lines.as_ref().is_none_or(|l| l.binary_search(&h.line).is_ok())).collect()
 }
 
-// Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read or has none left.
-fn file_refs(engine: &Engine, path: &Path, file: &FileResult, name: &str, cwd: &Path) -> Option<FileRefs> {
+// Splits a qualified name, Type.Member or a::b, into the member searched for and the type a file must name.
+fn split_qualified(query: &str) -> (&str, Option<&str>) {
+    let segs: Vec<&str> = query.split(['.', ':']).filter(|s| !s.is_empty()).collect();
+    match segs.as_slice() {
+        [.., ty, member] => (member, Some(ty)),
+        _ => (query, None),
+    }
+}
+
+// Loads and outlines one matching file and splits its hits into definitions and uses; None if it can no longer be read, does not name the qualifying type, or has none left.
+fn file_refs(engine: &Engine, path: &Path, file: &FileResult, name: &str, qual: Option<&str>, cwd: &Path) -> Option<FileRefs> {
     let loaded = engine.load(path).ok()?;
+    if let Some(q) = qual {
+        if !loaded.data.windows(q.len()).any(|w| w == q.as_bytes()) {
+            return None;
+        }
+    }
     let hits = code_hits(path, &loaded.data, name, file);
     if hits.is_empty() {
         return None;
     }
     let syms = engine.outline(path, &loaded);
     let (defs, uses) = classify(&hits, &loaded.data, &loaded.meta.starts, &syms, name);
-    Some(FileRefs { path: display(path, cwd), rank: crate::util::rank(path), defs, uses })
+    Some(FileRefs { path: display(path, cwd), rank: rank_in(path, cwd), defs, uses })
 }
 
 // Runs the refs command.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
-    let Some(name) = p.positional.first() else { return Err(USAGE.into()) };
+    let Some(query) = p.positional.first() else { return Err(USAGE.into()) };
+    let (name, qual) = split_qualified(query);
     let max = p.number("max")?.unwrap_or(DEFAULT_MAX).max(1);
     let re = build_regex(name, false, true, true)?;
     let roots: Vec<PathBuf> = if p.positional.len() > 1 {
@@ -89,13 +104,13 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         no_ignore: p.has("no-ignore"),
         globs: p.values("glob").iter().map(|s| s.to_string()).collect(),
     };
-    let files = walk::collect(&roots, &opts, &ctx.engine.walks)?;
+    let files = code_only(walk::collect(&roots, &opts, &ctx.engine.walks)?, &ctx.cwd, p.has("code-only"));
     let plan = Plan { engine: ctx.engine, re, max: PER_FILE, context: 0, files_only: false };
     let results = search_all(&files, &plan, cpus());
     let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
     let (engine, cwd) = (ctx.engine, &ctx.cwd);
     let mut found: Vec<FileRefs> =
-        par_map(&matched, cpus(), |_, r| file_refs(engine, &files[r.idx], r, name, cwd))
+        par_map(&matched, cpus(), |_, r| file_refs(engine, &files[r.idx], r, name, qual, cwd))
             .into_iter()
             .flatten()
             .collect();
@@ -121,7 +136,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         }
     }
     if n_defs + n_uses == 0 {
-        return Ok(Output::ok(format!("no references to {name} in {} files", files.len())));
+        return Ok(Output::ok(match qual {
+            Some(q) => format!("no references to {name} in the files naming {q} ({} searched)", files.len()),
+            None => format!("no references to {name} in {} files", files.len()),
+        }));
     }
     let mut out = String::new();
     if !def_lines.is_empty() {
@@ -134,11 +152,12 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         out.extend(use_blocks);
     }
     out.push_str(&format!(
-        "-- {n_defs} defs, {n_uses} refs in {matched_files} files ({} searched)",
-        files.len()
+        "-- {n_defs} defs, {n_uses} refs in {matched_files} files ({} searched{})",
+        files.len(),
+        qual.map_or(String::new(), |q| format!(", {name} in files naming {q}"))
     ));
     if shown < n_uses {
-        out.push_str(&format!("; showing {shown} refs, narrow with a path or -g GLOB, or raise -m"));
+        out.push_str(&format!("; showing {shown} refs, {NARROW}"));
     }
     Ok(Output::ok(out))
 }
@@ -169,6 +188,25 @@ mod tests {
         assert!(o.idable);
     }
 
+    // Checks Type.Member finds the member's uses through instances, in files that name the type, and --code-only drops docs.
+    #[test]
+    fn test_refs_qualified_and_code_only() {
+        let t = TempDir::new();
+        t.write("src/svc.rs", b"struct Billing;\nimpl Billing {\n    fn charge(&self) {}\n}\n");
+        t.write("src/use.rs", b"fn x(b: &Billing) {\n    b.charge();\n}\n");
+        t.write("src/other.rs", b"fn y() {\n    charge();\n}\n");
+        let o = run_cmd(t.path(), &["refs", "Billing.charge"]).text;
+        assert!(o.contains("src/svc.rs:3-3 fn charge") && o.contains("src/use.rs\n2 [x]"), "{o}");
+        assert!(!o.contains("other.rs") && o.contains(", charge in files naming Billing)"), "{o}");
+        assert_eq!(
+            run_cmd(t.path(), &["refs", "Nobody.charge"]).text,
+            "no references to charge in the files naming Nobody (3 searched)"
+        );
+        let p = project();
+        let code = run_cmd(p.path(), &["refs", "parse", "--code-only"]).text;
+        assert!(!code.contains("README.md") && code.ends_with("(2 searched)"), "{code}");
+    }
+
     // Checks impl blocks count as definitions of their type.
     #[test]
     fn test_refs_impl_for_trait() {
@@ -183,7 +221,7 @@ mod tests {
     fn test_refs_cap() {
         let t = project();
         let o = run_cmd(t.path(), &["refs", "parse", "-m", "2"]).text;
-        assert!(o.ends_with("-- 1 defs, 4 refs in 3 files (3 searched); showing 2 refs, narrow with a path or -g GLOB, or raise -m"));
+        assert!(o.ends_with("-- 1 defs, 4 refs in 3 files (3 searched); showing 2 refs, narrow with a path, -g GLOB or --code-only"));
         assert!(!o.contains("README.md"));
     }
 
