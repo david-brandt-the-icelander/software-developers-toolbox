@@ -86,6 +86,7 @@ jobs:
           ./target/release/zazzle-git help commit
           ./target/release/zazzle-agent --version
           ./target/release/zazzle-agent get-rules . --name-only
+          ./target/release/qwen-chat --help
 
   msrv:
     runs-on: ubuntu-24.04

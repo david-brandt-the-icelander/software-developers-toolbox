@@ -7,10 +7,10 @@
     {
       "id": "folder",
       "title": "Rust workspace",
-      "summary": "The Cargo workspace of the five Rust tools (zazzled, agent-fs, fix-network, free-disk-space and zazzle-git) and the three zazz crates zazzled uses for scripts: zazz-format, zazz-sdk and zazz-worker.",
+      "summary": "The Cargo workspace of the six Rust tools (zazzled, agent-fs, fix-network, free-disk-space, zazzle-git and qwen-chat) and the three zazz crates zazzled uses for scripts: zazz-format, zazz-sdk and zazz-worker.",
       "purpose": "Holds one crate per tool, the zazz crates, and what they share: the workspace's edition, minimum Rust version and license, the release profile (link-time optimization, stripped symbols, one codegen unit), one Cargo.lock, the formatting rules and style.md, the Rust rules for agents.",
       "boundaries": [
-        "The tools share settings, not code; only the zazz crates are shared: zazzled depends on zazz-format (the .zazz archive, manifest and script id) and zazz-sdk (the script protocol), and zazz-worker, a separate binary zazzled starts, depends on zazz-sdk. agent-fs, fix-network, free-disk-space and zazzle-git depend on no other crate here.",
+        "The tools share settings, not code; only the zazz crates are shared: zazzled depends on zazz-format (the .zazz archive, manifest and script id) and zazz-sdk (the script protocol), and zazz-worker, a separate binary zazzled starts, depends on zazz-sdk. agent-fs, fix-network, free-disk-space, zazzle-git and qwen-chat depend on no other crate here.",
         "zazz-worker embeds wasmtime and sets its own minimum Rust version (1.97); the rest of the workspace keeps the shared one (1.85).",
         "Build output in target/ is never committed."
       ],

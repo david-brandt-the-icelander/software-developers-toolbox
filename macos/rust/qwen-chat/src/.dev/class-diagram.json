@@ -1,0 +1,226 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "qwen-chat types",
+  "folder": "macos/rust/qwen-chat/src",
+  "description": "The structs and enums the modules declare: the command line and conversation, the prompt history and reply splitter, the engine and its settings, and download failures.",
+  "sources": [
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "Args"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "Chat"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/prompt.rs",
+      "symbol": "Splitter"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/engine.rs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "Fail"
+    }
+  ],
+  "types": [
+    {
+      "id": "main.Args",
+      "name": "Args",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/main.rs"
+      ],
+      "members": [
+        "prompt: Option<String>",
+        "think: bool",
+        "system: String",
+        "model: Option<PathBuf>",
+        "ctx: u32",
+        "max_tokens: usize",
+        "threads: Option<i32>",
+        "gpu_layers: u32",
+        "seed: u32",
+        "download: bool",
+        "verbose: bool"
+      ]
+    },
+    {
+      "id": "main.Chat",
+      "name": "Chat",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/main.rs"
+      ],
+      "members": [
+        "engine: Engine",
+        "history: Vec<Turn>",
+        "system: String",
+        "think: bool",
+        "seed: u32",
+        "max_tokens: usize",
+        "load_message(user: &str) -> Result<(), String>",
+        "send(user: &str, out: &Out) -> Result<Stop, String>",
+        "reset()",
+        "toggle_think()"
+      ]
+    },
+    {
+      "id": "main.Out",
+      "name": "Out",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/main.rs"
+      ],
+      "members": [
+        "color: bool",
+        "reasoning_to_stderr: bool"
+      ]
+    },
+    {
+      "id": "prompt.Turn",
+      "name": "Turn",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/prompt.rs"
+      ],
+      "members": [
+        "user: String",
+        "answer: String"
+      ]
+    },
+    {
+      "id": "prompt.Segment",
+      "name": "Segment",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/qwen-chat/src/prompt.rs"
+      ],
+      "members": [
+        "Reasoning(String)",
+        "Answer(String)"
+      ]
+    },
+    {
+      "id": "prompt.Splitter",
+      "name": "Splitter",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/prompt.rs"
+      ],
+      "members": [
+        "thinking: bool",
+        "held: String",
+        "answer: String",
+        "push(piece: &str) -> Vec<Segment>",
+        "answer() -> String"
+      ]
+    },
+    {
+      "id": "engine.Engine",
+      "name": "Engine",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/engine.rs"
+      ],
+      "members": [
+        "model: &LlamaModel",
+        "ctx: LlamaContext",
+        "sampler: LlamaSampler",
+        "n_past: i32",
+        "batch_size: usize",
+        "feed(tokens: &[LlamaToken]) -> Result<(), String>",
+        "generate(max: usize, cancel: &AtomicBool, on_text: FnMut(&str)) -> Result<Stop, String>",
+        "clear()",
+        "set_sampling(s: Sampling, seed: u32)"
+      ]
+    },
+    {
+      "id": "engine.Sampling",
+      "name": "Sampling",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/qwen-chat/src/engine.rs"
+      ],
+      "members": [
+        "temp: f32",
+        "top_p: f32",
+        "top_k: i32",
+        "presence: f32"
+      ]
+    },
+    {
+      "id": "engine.Stop",
+      "name": "Stop",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/qwen-chat/src/engine.rs"
+      ],
+      "members": [
+        "Done",
+        "Cancelled",
+        "Limit",
+        "ContextFull"
+      ]
+    },
+    {
+      "id": "download.Fail",
+      "name": "Fail",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/qwen-chat/src/download.rs"
+      ],
+      "members": [
+        "Retry(String)",
+        "Fatal(String)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "main.Chat",
+      "to": "engine.Engine",
+      "kind": "depends-on",
+      "description": "One engine per conversation."
+    },
+    {
+      "from": "main.Chat",
+      "to": "prompt.Turn",
+      "kind": "depends-on",
+      "description": "The history used to rebuild the context."
+    },
+    {
+      "from": "main.Chat",
+      "to": "prompt.Splitter",
+      "kind": "depends-on",
+      "description": "One per reply."
+    },
+    {
+      "from": "main.Chat",
+      "to": "main.Out",
+      "kind": "depends-on",
+      "description": "Where reply text is printed."
+    },
+    {
+      "from": "prompt.Splitter",
+      "to": "prompt.Segment",
+      "kind": "depends-on",
+      "description": "What push returns."
+    },
+    {
+      "from": "engine.Engine",
+      "to": "engine.Sampling",
+      "kind": "depends-on",
+      "description": "Builds the sampler from it."
+    },
+    {
+      "from": "engine.Engine",
+      "to": "engine.Stop",
+      "kind": "depends-on",
+      "description": "Why generate returned."
+    }
+  ]
+}

@@ -1,0 +1,255 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "qwen-chat use cases",
+  "folder": "macos/rust/qwen-chat/src",
+  "description": "What a developer does with qwen-chat, step by step.",
+  "sources": [
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "repl"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "Chat.send"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "ensure"
+    }
+  ],
+  "entities": [
+    {
+      "id": "chat-locally",
+      "name": "Chat with Qwen3.5-9B in the terminal",
+      "description": "A developer starts qwen-chat and holds a conversation with the model running on their own machine.",
+      "sources": [
+        {
+          "path": "macos/rust/qwen-chat/src/main.rs",
+          "symbol": "repl"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Get answers from a capable language model without sending anything to a hosted service.",
+      "preconditions": [
+        "qwen-chat is built.",
+        "The machine has about 7 GB of free memory, and the weights are cached or Hugging Face is reachable."
+      ],
+      "postconditions": [
+        "Nothing of the conversation is kept after the program exits."
+      ],
+      "flow": [
+        {
+          "id": "start",
+          "actor": "Developer",
+          "action": "Runs `qwen-chat`, optionally with `--think` or `-s`.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "Args"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "weights",
+          "actor": "qwen-chat",
+          "action": "Finds the weights in the cache folder, or downloads them with resume and retries and checks their SHA-256.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/download.rs",
+              "symbol": "ensure"
+            },
+            {
+              "path": "macos/rust/qwen-chat/src/download.rs",
+              "symbol": "fetch_with_retries"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "load",
+          "actor": "qwen-chat",
+          "action": "Loads the model through llama.cpp and creates a context of --ctx tokens.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/engine.rs",
+              "symbol": "load_model"
+            },
+            {
+              "path": "macos/rust/qwen-chat/src/engine.rs",
+              "symbol": "Engine.new"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "ask",
+          "actor": "Developer",
+          "action": "Types a message and presses Enter.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "read_line"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "answer",
+          "actor": "qwen-chat",
+          "action": "Appends the message to the context in Qwen's ChatML format and streams the reply, reasoning dimmed when thinking is on.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "Chat.send"
+            },
+            {
+              "path": "macos/rust/qwen-chat/src/prompt.rs",
+              "symbol": "user_turn"
+            },
+            {
+              "path": "macos/rust/qwen-chat/src/engine.rs",
+              "symbol": "Engine.generate"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "quit",
+          "actor": "Developer",
+          "action": "Types /exit or presses Ctrl-D.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "repl"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "weights",
+          "condition": "The download keeps failing or the checksum does not match.",
+          "outcome": "An error on stderr and exit status 1; a partial file is kept to resume, a corrupt one is deleted.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/download.rs",
+              "symbol": "ensure"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The developer presses Ctrl-C.",
+          "outcome": "The reply stops with [stopped] and the chat continues.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "install_ctrlc"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The message does not fit beside the conversation.",
+          "outcome": "The context is rebuilt from the system message and the most recent exchanges that fit.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "Chat.load_message"
+            }
+          ]
+        },
+        {
+          "atStep": "ask",
+          "condition": "The developer types /reset or /think.",
+          "outcome": "A new conversation starts, or reasoning is turned on or off.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "Chat.reset"
+            },
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "Chat.toggle_think"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "ask-once",
+      "name": "Ask one question from a script",
+      "description": "A developer passes one question with -p or on stdin and uses the answer.",
+      "sources": [
+        {
+          "path": "macos/rust/qwen-chat/src/main.rs",
+          "symbol": "one_shot"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Use the model in a pipeline, with only the answer on stdout.",
+      "preconditions": [
+        "qwen-chat is built and the weights are cached or reachable."
+      ],
+      "postconditions": [
+        "The answer is on stdout; reasoning, if on, went to stderr."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `qwen-chat -p QUESTION` or pipes text into qwen-chat.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "one_shot"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "reply",
+          "actor": "qwen-chat",
+          "action": "Answers once and exits 0.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "run"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "reply",
+          "condition": "The reply hit --max-tokens or the context size.",
+          "outcome": "The partial answer is printed, a note goes to stderr and the exit status is 1.",
+          "sources": [
+            {
+              "path": "macos/rust/qwen-chat/src/main.rs",
+              "symbol": "stop_note"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "component",
+      "folder": "macos/rust/qwen-chat/src",
+      "path": "macos/rust/qwen-chat/src/.dev/component-diagram.json",
+      "relationship": "The modules the steps run in."
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "qwen-chat deployment diagram",
+  "folder": "macos/rust/qwen-chat",
+  "description": "How qwen-chat runs: a binary built with cargo and started from a terminal, which keeps the model weights in a cache folder on the same machine and fetches them once from Hugging Face.",
+  "sources": [
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "cache_dir"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "fetch"
+    },
+    {
+      "path": "macos/rust/qwen-chat/README.md",
+      "symbol": "Build"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Types messages and reads the streamed replies, or pipes a question in.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "machine",
+      "name": "The developer's computer",
+      "kind": "host",
+      "description": "A Mac (Metal) or a Linux machine (CPU) with about 7 GB of free memory for the 9B model."
+    },
+    {
+      "id": "tool",
+      "name": "qwen-chat",
+      "kind": "process",
+      "description": "One chat session or one-shot question; the model runs inside this process."
+    },
+    {
+      "id": "cache",
+      "name": "Weights cache",
+      "kind": "database",
+      "description": "Qwen3.5-9B-Q4_K_M.gguf (5.7 GB) in $QWEN_CHAT_HOME, ~/Library/Caches/qwen-chat on macOS, or $XDG_CACHE_HOME/qwen-chat (~/.cache/qwen-chat) elsewhere."
+    },
+    {
+      "id": "hf",
+      "name": "huggingface.co",
+      "kind": "external-service",
+      "description": "unsloth/Qwen3.5-9B-GGUF at a pinned revision.",
+      "condition": "Only while the weights are missing and --model is not given."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "qwen-chat",
+      "source": "macos/rust/qwen-chat/Cargo.toml",
+      "deployedTo": "machine",
+      "description": "Built with cargo build --release -p qwen-chat; not yet in the release tarball or the Homebrew formula."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "tool",
+      "kind": "hosts",
+      "description": "Runs the binary as the calling user."
+    },
+    {
+      "from": "machine",
+      "to": "cache",
+      "kind": "hosts",
+      "description": "A folder in the user's home or the one QWEN_CHAT_HOME names."
+    },
+    {
+      "from": "terminal",
+      "to": "tool",
+      "kind": "connects-to",
+      "description": "Messages on stdin, answers on stdout, progress, reasoning in one-shot mode and errors on stderr."
+    },
+    {
+      "from": "tool",
+      "to": "cache",
+      "kind": "connects-to",
+      "description": "Writes the .part file while downloading, then memory-maps the weights."
+    },
+    {
+      "from": "tool",
+      "to": "hf",
+      "kind": "connects-to",
+      "description": "HTTPS GET with a Range header to resume; checks SHA-256 before use."
+    }
+  ]
+}

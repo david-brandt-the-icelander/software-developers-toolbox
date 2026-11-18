@@ -1,0 +1,125 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "qwen-chat module diagram",
+  "folder": "macos/rust/qwen-chat/src",
+  "description": "The tool's modules and how they depend on each other.",
+  "sources": [
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "Chat"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/prompt.rs",
+      "symbol": "Splitter"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/engine.rs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "fetch"
+    }
+  ],
+  "components": [
+    {
+      "id": "tool",
+      "name": "qwen-chat sources",
+      "responsibility": "The whole tool, compiled into one binary.",
+      "folder": "macos/rust/qwen-chat/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line and chat (main.rs)",
+      "responsibility": "Parses options, picks the weights, runs the chat loop or one question, keeps the history and fits each message into the context, prints replies and stops them on Ctrl-C.",
+      "folder": "macos/rust/qwen-chat/src"
+    },
+    {
+      "id": "prompt",
+      "name": "Prompt format (prompt.rs)",
+      "responsibility": "Qwen3.5 ChatML text for the system message, each user turn and a rebuilt conversation, with thinking on or off; splits streamed text into reasoning and answer.",
+      "folder": "macos/rust/qwen-chat/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine (engine.rs)",
+      "responsibility": "Loads the model, owns the llama.cpp context and sampler, feeds tokens in batches and streams sampled text as valid UTF-8.",
+      "folder": "macos/rust/qwen-chat/src"
+    },
+    {
+      "id": "download",
+      "name": "Weights (download.rs)",
+      "responsibility": "Chooses the cache folder, downloads the pinned file with resume and retries, and checks its SHA-256.",
+      "folder": "macos/rust/qwen-chat/src"
+    },
+    {
+      "id": "llama",
+      "name": "llama.cpp",
+      "responsibility": "Model loading and inference, through the llama-cpp-2 crate.",
+      "external": true
+    },
+    {
+      "id": "hf",
+      "name": "Hugging Face",
+      "responsibility": "Serves the weights file.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "tool",
+      "to": "cli",
+      "kind": "contains",
+      "description": "Entry point."
+    },
+    {
+      "from": "tool",
+      "to": "prompt",
+      "kind": "contains",
+      "description": "Module."
+    },
+    {
+      "from": "tool",
+      "to": "engine",
+      "kind": "contains",
+      "description": "Module."
+    },
+    {
+      "from": "tool",
+      "to": "download",
+      "kind": "contains",
+      "description": "Module."
+    },
+    {
+      "from": "cli",
+      "to": "prompt",
+      "kind": "depends-on",
+      "description": "Builds the text it feeds and splits each reply."
+    },
+    {
+      "from": "cli",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Feeds messages and streams replies."
+    },
+    {
+      "from": "cli",
+      "to": "download",
+      "kind": "depends-on",
+      "description": "Gets the weights path."
+    },
+    {
+      "from": "engine",
+      "to": "llama",
+      "kind": "depends-on",
+      "description": "Every model call."
+    },
+    {
+      "from": "download",
+      "to": "hf",
+      "kind": "depends-on",
+      "description": "HTTPS download."
+    }
+  ]
+}

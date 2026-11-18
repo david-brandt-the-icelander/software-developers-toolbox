@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "qwen-chat",
+  "folder": "macos/rust/qwen-chat",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "qwen-chat",
+      "summary": "A command-line chat with the Qwen3.5-9B language model, run locally by llama.cpp compiled into the binary.",
+      "purpose": "The crate of the qwen-chat binary: Cargo.toml, the user README, and the sources in src/. It is one member of the Cargo workspace in macos/rust and builds one binary.",
+      "boundaries": [
+        "It stands alone: it uses no other tool in the repository, and nothing in the repository calls it.",
+        "The model weights are not in the repository or the binary; the binary downloads them once into a cache folder.",
+        "CI builds and tests it on macOS and Linux; the release workflow does not ship it yet (see src/.dev/backlog.json)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/qwen-chat/Cargo.toml",
+          "symbol": "package"
+        },
+        {
+          "path": "macos/rust/qwen-chat/README.md",
+          "symbol": "qwen-chat"
+        },
+        {
+          "path": "macos/rust/qwen-chat/src/main.rs",
+          "symbol": "main"
+        }
+      ],
+      "links": [
+        {
+          "label": "Backlog",
+          "path": "macos/rust/qwen-chat/src/.dev/backlog.json"
+        }
+      ]
+    }
+  ]
+}
