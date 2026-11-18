@@ -11,7 +11,7 @@
       "purpose": "Builds `zazzle` with make, without libc on Linux and with only what libSystem must provide on macOS, so that each zazzle command costs little more than starting a process. Holds the Makefile, the README (what it does, build and test), the source in src/, the tests in test/ and the latency benchmarks in bench/.",
       "boundaries": [
         "The daemon, its commands and the wire protocol live in macos/rust/zazzled; zazzled must be built before the smoke test or the benchmarks can run.",
-        "`zazzle free-disk-space`, `zazzle fix-network`, `zazzle git` and `zazzle agent` run the binaries free-disk-space, fix-network, zazzle-git and zazzle-agent of macos/rust/free-disk-space, macos/rust/fix-network, macos/rust/zazzle-git and macos/rust/zazzle-agent-rules/list, found beside the invoker; this folder only execs them.",
+        "`zazzle free-disk-space`, `zazzle fix-network` and `zazzle git` run the binaries free-disk-space, fix-network and zazzle-git of macos/rust/free-disk-space, macos/rust/fix-network and macos/rust/zazzle-git, found beside the invoker; this folder only execs them. `zazzle agent get-rules` goes to the daemon; `zazzle agent llm|prompt` execs `zazzled llm`, which runs zazzle-llm (macos/rust/zazzle-llm).",
         "The release ships the same build twice, as zazzle and as zazz, and `zazz install` links script commands to it; what zazz requests do is zazzled's (macos/rust/zazzled/src/zazz).",
         "build/ is build output and is ignored by git."
       ],

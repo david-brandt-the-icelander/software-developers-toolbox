@@ -45,6 +45,7 @@ pub mod styles;
 pub mod symbols;
 pub mod terse;
 pub mod tokens;
+pub mod tools;
 pub mod util;
 pub mod walk;
 pub mod workspace;

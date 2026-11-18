@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzled component diagram",
   "folder": "macos/rust/zazzled",
-  "description": "The zazzled crate and what crosses its boundary: the C invoker (as zazzle, zazz or an installed script's shim) and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. For zazz scripts it reads archives with zazz-format, speaks the script protocol from zazz-sdk (whose sources it also compiles for scripts with the user's rustc), and starts zazz-worker to compile, test and run them; on macOS the Keychain takes part in trusting a script's signer. The crate's parts are in the src/ diagram.",
+  "description": "The zazzled crate and what crosses its boundary: the C invoker (as zazzle, zazz or an installed script's shim) and MCP clients call it; it drives launchd on macOS, asks zazzle-csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. For `zazzle agent llm|prompt` it downloads zazzle-llm on first use (a JIT tool) and execs it. For zazz scripts it reads archives with zazz-format, speaks the script protocol from zazz-sdk (whose sources it also compiles for scripts with the user's rustc), and starts zazz-worker to compile, test and run them; on macOS the Keychain takes part in trusting a script's signer. The crate's parts are in the src/ diagram.",
   "sources": [
     {
       "path": "macos/rust/zazzled/Cargo.toml",
@@ -48,6 +48,10 @@
     {
       "path": "macos/rust/zazzled/src/zazz/trust.rs",
       "symbol": "evaluate"
+    },
+    {
+      "path": "macos/rust/zazzled/src/tools.rs",
+      "symbol": "exec"
     }
   ],
   "components": [
@@ -67,7 +71,7 @@
     {
       "id": "zazzle",
       "name": "zazzle invoker",
-      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzled proxy` and `zazzled wrap`; run as `zazz` it sends zazz commands, and under any other name (an installed script's shim) it runs that script.",
+      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzled proxy`, `zazzled setup`, `zazzled wrap` and (for `agent llm|prompt`) `zazzled llm`; run as `zazz` it sends zazz commands, and under any other name (an installed script's shim) it runs that script.",
       "folder": "macos/c/zazzle",
       "diagram": "macos/c/zazzle/.dev/component-diagram.json"
     },
@@ -98,6 +102,13 @@
       "responsibility": "The WebAssembly host: AOT-compiles a module, runs a script's tests, and serves calls to a script in a fresh instance each.",
       "folder": "macos/rust/zazz-worker",
       "diagram": "macos/rust/zazz-worker/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle-llm",
+      "name": "zazzle-llm",
+      "responsibility": "Runs open models locally for `zazzle agent llm|prompt`; a JIT tool zazzled finds beside itself or downloads, verifies and execs.",
+      "folder": "macos/rust/zazzle-llm",
+      "diagram": "macos/rust/zazzle-llm/.dev/component-diagram.json"
     },
     {
       "id": "rustc",
@@ -142,7 +153,7 @@
       "from": "zazzle",
       "to": "src",
       "kind": "depends-on",
-      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzled serve` when nothing listens, and execs `zazzled proxy` and `zazzled wrap`; as `zazz` or a shim the request is a zazz command."
+      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzled serve` when nothing listens, and execs `zazzled proxy`, `zazzled setup`, `zazzled wrap` and `zazzled llm`; as `zazz` or a shim the request is a zazz command."
     },
     {
       "from": "mcp-client",
@@ -197,6 +208,12 @@
       "to": "keychain",
       "kind": "depends-on",
       "description": "On macOS, evaluates a signer's chain with SecTrust and sets an authority's trust settings for `zazz trust add`."
+    },
+    {
+      "from": "src",
+      "to": "zazzle-llm",
+      "kind": "depends-on",
+      "description": "`zazzled llm` downloads zazzle-llm from icelander.net when it is not beside zazzled, checks its SHA-256 against the embedded tool manifest and execs it."
     },
     {
       "from": "zazz-worker",

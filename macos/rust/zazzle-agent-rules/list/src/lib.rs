@@ -8,7 +8,7 @@ mod imports;
 pub mod purpose;
 
 // Usage text printed for help and for wrong arguments.
-const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]\nprints each applying file as `==> rule FILE <==` then its text, each file it imports as `==> import FILE <==`, and each skill as `==> skill FILE <==` then its description, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE`, `import FILE` or `skill FILE` lines; --skill-bodies prints whole skill files\n";
+const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]\nprints each applying file as `==> rule FILE <==` then its text, each file it imports as `==> import FILE <==`, and each skill as `==> skill FILE <==` then its description, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE`, `import FILE` or `skill FILE` lines; --skill-bodies prints whole skill files\nzazzle agent llm and zazzle agent prompt run open models locally: see zazzle agent llm --help\n";
 // Rule files looked for in each folder, relative to it; a later one in the same folder wins over an earlier one.
 const RULE_FILES: [&str; 7] = [
     "AGENTS.md",

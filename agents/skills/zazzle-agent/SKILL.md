@@ -1,6 +1,6 @@
 ---
 name: zazzle-agent
-description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`. Use before editing in a folder you have not worked in, or when starting work somewhere other than the repository root.
+description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`, and ask a local open model (Qwen, Gemma, gpt-oss) with `zazzle agent prompt`. Use before editing in a folder you have not worked in, when starting work somewhere other than the repository root, or when the user asks for a local model's answer, a second opinion or a summary that must not leave the machine.
 ---
 
 # zazzle agent
@@ -14,3 +14,10 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .clau
 - Order is farthest first, closest last; the closest file wins, and the user's chat overrides all files. A `CLAUDE.md` that only imports `@AGENTS.md` is not repeated.
 - Read a skill's file only when its description fits the task.
 - `--purpose NAME` (repeatable) keeps only files and segments marked for NAME with a marker on its own line or after a comment opener (`<!-- #zazzle-purpose:NAME -->`, or a `-begin:NAME` / `-end:NAME` pair); unmarked files stay. A segment prints as `FILE:A-B` and only those lines.
+
+## Local models: llm and prompt
+- `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] TEXT..` prints a local model's answer; `-` in TEXT (or no TEXT) reads standard input: `git diff | zazzle agent prompt "Review this diff:" -`.
+- `zazzle agent llm` lists the models (size, downloaded or not, default); `--model NAME [--effort E]` downloads one and makes it the default; `--remove NAME` deletes it. Docs: `macos/rust/zazzle-llm/README.md`.
+- The first use downloads `zazzle-llm` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
+- Use `--effort low` for quick factual or formatting tasks; thinking is hidden unless `--show-thinking`.
+- Exit 3 means the token limit cut the answer short: raise `--max-tokens` or lower `--effort`.

@@ -246,6 +246,12 @@ static void exec_tool(char **argv, char **envp, const char *tool)
 	die_errno("cannot run the tool", -r, 69);
 }
 
+/* Returns true for `agent llm ..` and `agent prompt ..`, which zazzled runs as its own process (it fetches zazzle-llm and execs it). */
+static int is_llm(int argc, char **argv)
+{
+	return argc > 2 && str_eq(argv[1], "agent") && (str_eq(argv[2], "llm") || str_eq(argv[2], "prompt"));
+}
+
 /* Replaces this process with `zazzled SUB ARGS`, for commands that need the caller's environment (the MCP proxy, setup, run), so they are not daemon requests. */
 static void exec_daemon(char **argv, char **envp, const char *sub)
 {
@@ -355,7 +361,7 @@ static int is_restart(int fd)
 	return 1;
 }
 
-/* Runs a tool, the MCP proxy, setup or run as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
+/* Runs a tool, the MCP proxy, setup, run or agent llm/prompt as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && is_zazzle_name(own_name(argc, argv))) {
@@ -366,6 +372,8 @@ static int zazzle_run(int argc, char **argv, char **envp)
 			exec_daemon(argv, envp, argv[1]);
 		if (str_eq(argv[1], "run"))
 			exec_daemon(argv, envp, "wrap");
+		if (is_llm(argc, argv))
+			exec_daemon(argv, envp, "llm");
 	}
 	size_t total = build_request(argc, argv, envp);
 	size_t pathlen = build_path(envp);

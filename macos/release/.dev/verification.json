@@ -5,6 +5,44 @@
   "folder": "macos/release",
   "entities": [
     {
+      "id": "jit-tools",
+      "title": "JIT tools build and manifest",
+      "summary": "tools.test.sh builds zazzle-llm for the host with tools.sh (dev profile) and checks the manifest line tools.sh --manifest writes.",
+      "subject": [
+        {
+          "path": "macos/release/.dev/delivery.json",
+          "entityId": "jit-tools"
+        }
+      ],
+      "criteria": [
+        "The built zazzle-llm runs and reports its version.",
+        "The manifest has exactly one line, `zazzle-llm SHA256 zazzle-llm`, whose SHA-256 matches the file.",
+        "A manifest for a tool that was not built, and a call with no arguments, fail."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/release/tools.test.sh",
+          "symbol": "tools.test.sh",
+          "command": "bash macos/release/tools.test.sh"
+        }
+      ],
+      "notChecked": [
+        "The universal (lipo) build with Metal and its signing: only the release on macOS runs them."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/release/tools.test.sh",
+          "symbol": "tools.test.sh"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "lint"
+        }
+      ]
+    },
+    {
       "id": "version-numbers",
       "title": "Version numbers",
       "summary": "version.test.sh runs version.sh in a throwaway repository with release tags.",

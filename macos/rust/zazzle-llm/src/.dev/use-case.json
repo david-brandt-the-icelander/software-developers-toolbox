@@ -1,0 +1,225 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "zazzle-llm use cases",
+  "folder": "macos/rust/zazzle-llm/src",
+  "description": "Asking a local open model from the shell, and choosing which one answers. The steps before zazzle-llm starts (the invoker's exec of `zazzled llm`, and zazzled downloading zazzle-llm on first use) are in the invoker's and zazzled's views.",
+  "sources": [
+    { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
+    { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" },
+    { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" }
+  ],
+  "entities": [
+    {
+      "id": "ask-a-local-model",
+      "name": "Ask a local model",
+      "description": "A coding agent asks an open model on the developer's machine for a second opinion, a review or a summary, without an API key and without the text leaving the machine.",
+      "sources": [
+        { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
+        { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" }
+      ],
+      "actor": "Coding agent",
+      "actorDocument": "Actors/coding-agent.md",
+      "goal": "Get a local model's answer to a prompt on standard output.",
+      "preconditions": [
+        "zazzle-llm is beside zazzled or can be downloaded for this release (see the zazzled views).",
+        "The chosen model is downloaded, or huggingface.co is reachable and there is room for it."
+      ],
+      "postconditions": [
+        "The answer was written to standard output, ending with a newline; thinking went nowhere, or to standard error with --show-thinking.",
+        "The exit status is 0 for a full answer and 3 when the token limit cut it short.",
+        "A model that was missing is installed in the model store, verified."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md",
+          "action": "Runs `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] [--show-thinking] TEXT..`, with `-` (or no TEXT) for piped standard input.",
+          "sources": [
+            { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" },
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "Cmd::Prompt" }
+          ]
+        },
+        {
+          "id": "pick",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "Picks the model (--model, else the saved default, else qwen3.5-4b), by exact name or unique prefix, and the effort (--effort, else the saved one, else medium).",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/catalog.rs", "symbol": "find" },
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "defaults" },
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "effort" }
+          ]
+        },
+        {
+          "id": "text",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "Joins the words with spaces, putting standard input where a word is `-`, or reads only standard input when there are no words.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt_text" }
+          ]
+        },
+        {
+          "id": "fetch",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "When the model is not installed, says so on standard error and downloads it from huggingface.co at the pinned commit, with progress when standard error is a terminal, resuming a partial download and installing it only when size and SHA-256 match.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "ensure" },
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "fetch" }
+          ]
+        },
+        {
+          "id": "generate",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "Loads the model, renders its chat template with the messages and the effort, decodes the prompt and samples up to the token limit (4096, 8192 or 32768 by effort, or --max-tokens).",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/engine.rs", "symbol": "generate" },
+            { "path": "macos/rust/zazzle-llm/src/template.rs", "symbol": "render" },
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "max_tokens" }
+          ]
+        },
+        {
+          "id": "stream",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "Splits each piece of text into answer and thinking, writes the answer to standard output as it comes, and the thinking to standard error only with --show-thinking; exits 0.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/think.rs", "symbol": "Filter::push" },
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "pick",
+          "condition": "The model name matches no model or several, or the effort is not low, medium or high.",
+          "outcome": "`error: no model 'NAME'; known: ..`, `error: 'NAME' could be ..` or `error: no effort ..` on standard error, exit 2.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/catalog.rs", "symbol": "find" },
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "main" }
+          ]
+        },
+        {
+          "atStep": "text",
+          "condition": "The prompt is empty or only blank.",
+          "outcome": "`error: nothing to ask: give TEXT, or pipe it in`, exit 2, before any download.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" }
+          ]
+        },
+        {
+          "atStep": "fetch",
+          "condition": "The download fails, or the file's size or SHA-256 differs from the catalogue's.",
+          "outcome": "The error on standard error, exit 2; a mismatching partial file is deleted, an interrupted one is kept for the next try.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "fetch" }
+          ]
+        },
+        {
+          "atStep": "generate",
+          "condition": "The model cannot be loaded, has no chat template, its template fails, or the prompt is as long as the model's training context or longer.",
+          "outcome": "The error on standard error, exit 2.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/engine.rs", "symbol": "generate" }
+          ]
+        },
+        {
+          "atStep": "stream",
+          "condition": "Generation stopped at the token limit or the context's end.",
+          "outcome": "`[stopped after N tokens, the answer is cut short ..]` (or `still thinking, no answer yet`) on standard error, exit 3.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "choose-a-model",
+      "name": "Choose the default model and effort",
+      "description": "The developer looks at the catalogue and picks the model and effort `prompt` uses when none is named, or deletes a model they no longer want.",
+      "sources": [
+        { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" },
+        { "path": "macos/rust/zazzle-llm/README.md", "symbol": "Models" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Have the model and effort they want ready on their machine as the default.",
+      "preconditions": [
+        "zazzle is installed with a zazzled that can run zazzle-llm."
+      ],
+      "postconditions": [
+        "The defaults file names the chosen model and effort, and the model is installed."
+      ],
+      "flow": [
+        {
+          "id": "list",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle agent llm` and reads the catalogue: each model's size, whether it is downloaded, what it is for and the Mac it fits, with the default marked.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "list" }
+          ]
+        },
+        {
+          "id": "choose",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle agent llm --model NAME [--effort low|medium|high]`.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "Cmd::Llm" }
+          ]
+        },
+        {
+          "id": "save",
+          "actor": "zazzle-llm",
+          "participantKind": "system",
+          "action": "Downloads the model unless it is installed, then writes the model and effort to the defaults file and prints them.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" },
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "save_defaults" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "choose",
+          "condition": "Only --effort is given.",
+          "outcome": "The effort is saved and the default model kept, without a download.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" }
+          ]
+        },
+        {
+          "atStep": "choose",
+          "condition": "`--remove NAME` is given instead.",
+          "outcome": "The model's file and any partial download are deleted: `removed NAME`, or `NAME was not downloaded`.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "remove" }
+          ]
+        },
+        {
+          "atStep": "save",
+          "condition": "The name or effort is unknown, or the download fails.",
+          "outcome": "The error on standard error, exit 2; the defaults are not changed.",
+          "sources": [
+            { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" }
+          ]
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "operation", "folder": "macos/rust/zazzle-llm/src", "path": "macos/rust/zazzle-llm/src/.dev/operation.json", "relationship": "The `llm` and `prompt` commands these use cases call." },
+    { "kind": "use-case", "folder": "macos/c/zazzle/src", "path": "macos/c/zazzle/src/.dev/use-case.json", "relationship": "How `zazzle agent llm|prompt` reaches `zazzled llm` before these steps." },
+    { "kind": "operation", "folder": "macos/rust/zazzled/src", "path": "macos/rust/zazzled/src/.dev/operation.json", "relationship": "`zazzled llm`, which fetches and execs zazzle-llm." },
+    { "kind": "state", "folder": "macos/rust/zazzle-llm/src", "path": "macos/rust/zazzle-llm/src/.dev/Filter.state-diagram.json", "relationship": "How the stream step tells thinking from answer." },
+    { "kind": "deployment", "folder": "macos/rust/zazzle-llm", "path": "macos/rust/zazzle-llm/.dev/deployment-diagram.json", "relationship": "Where the downloads come from and where they go." }
+  ]
+}

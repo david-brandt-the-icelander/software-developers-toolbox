@@ -1,0 +1,111 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle-llm deployment diagram",
+  "folder": "macos/rust/zazzle-llm",
+  "description": "How zazzle-llm gets to a developer's machine and runs there. It is not installed with zazzle: the first `zazzle agent llm` or `zazzle agent prompt` makes the invoker exec `zazzled llm`, which downloads the binary for its own release from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ into ~/.zazzle/v1/tools, checks its SHA-256 against the manifest compiled into zazzled and execs it. zazzle-llm then downloads the chosen model from huggingface.co into ~/.zazzle/v1/llm/models, runs it in its own process with llama.cpp (on the GPU through Metal on Apple Silicon) and exits. Nothing stays resident.",
+  "sources": [
+    { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "is_llm" },
+    { "path": "macos/rust/zazzled/src/tools.rs", "symbol": "store" },
+    { "path": "macos/rust/zazzled/src/tools.rs", "symbol": "path" },
+    { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "root" },
+    { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "fetch" },
+    { "path": "macos/rust/zazzle-llm/src/catalog.rs", "symbol": "url" },
+    { "path": "macos/rust/zazzle-llm/src/engine.rs", "symbol": "generate" },
+    { "path": "macos/release/tools.sh", "symbol": "features" },
+    { "path": ".github/workflows/release.yml", "symbol": "Build, sign and list the JIT tools" }
+  ],
+  "nodes": [
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs `zazzle agent llm ..` to choose a model and `zazzle agent prompt ..` to ask it.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle agent prompt ..`, often with standard input piped in, as agents/skills/zazzle-agent/SKILL.md says.",
+      "actor": "Actors/coding-agent.md",
+      "condition": "When a coding agent follows the zazzle-agent skill."
+    },
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac (universal binary; Metal on Apple Silicon, the CPU on Intel) or a Linux machine (x86_64 or aarch64, the CPU)."
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "kind": "process",
+      "description": "Replaces itself with `zazzled llm llm|prompt ARGS` for `zazzle agent llm|prompt`, without contacting the daemon.",
+      "condition": "When run as zazzle (or z) with `agent llm` or `agent prompt`."
+    },
+    {
+      "id": "zazzled",
+      "name": "zazzled llm",
+      "kind": "process",
+      "description": "The same process after exec: finds zazzle-llm beside zazzled or in the tool store, downloading it first, and replaces itself with it."
+    },
+    {
+      "id": "llm",
+      "name": "zazzle-llm",
+      "kind": "process",
+      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; exits 0, 2 on errors, 3 when the token limit cut the answer."
+    },
+    {
+      "id": "tools",
+      "name": "Tool store (~/.zazzle/v1/tools)",
+      "kind": "database",
+      "description": "Downloaded JIT tools, made executable after their hash matched; ZAZZLE_TOOLS_DIR moves it."
+    },
+    {
+      "id": "models",
+      "name": "Model store (~/.zazzle/v1/llm)",
+      "kind": "database",
+      "description": "models/ with the installed GGUF files, partial downloads and lock files, and the `defaults` file with the chosen model and effort (0700 directories); ZAZZLE_LLM_DIR moves it."
+    },
+    {
+      "id": "downloads",
+      "name": "icelander.net downloads",
+      "kind": "external-service",
+      "description": "The R2 bucket behind icelander.net/downloads/zazzle, holding each release's tools under vX.Y.Z/tools/{macos-universal,linux-x86_64,linux-aarch64}/ with their manifest; ZAZZLE_TOOLS_URL replaces it."
+    },
+    {
+      "id": "huggingface",
+      "name": "huggingface.co",
+      "kind": "external-service",
+      "description": "Serves each model file at the repository, commit and file name the catalogue pins (`/REPO/resolve/COMMIT/FILE`)."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "zazzle-llm",
+      "source": "macos/rust/zazzle-llm/Cargo.toml",
+      "deployedTo": "downloads",
+      "description": "Built by macos/release/tools.sh: universal with lipo on macOS (Metal on the aarch64 half), signed and notarized when configured, one per Linux architecture; listed with its SHA-256 in the tool manifest the release compiles into zazzled. Also built with cargo build --release -p zazzle-llm and put beside zazzled."
+    },
+    {
+      "id": "model",
+      "name": "Model file (GGUF)",
+      "source": "macos/rust/zazzle-llm/src/catalog.rs",
+      "deployedTo": "huggingface",
+      "description": "One of the ten catalogue entries, a 4-bit (or MXFP4) quantization from 1.3 to 63 GB, accepted only with the size and SHA-256 the catalogue pins."
+    }
+  ],
+  "relationships": [
+    { "from": "terminal", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent llm|prompt ARGS`." },
+    { "from": "agent", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent prompt ARGS`." },
+    { "from": "invoker", "to": "zazzled", "kind": "connects-to", "description": "exec, keeping the caller's environment, streams and exit status." },
+    { "from": "zazzled", "to": "downloads", "kind": "connects-to", "description": "HTTPS GET of the tool, once, when it is neither beside zazzled nor in the store." },
+    { "from": "zazzled", "to": "tools", "kind": "connects-to", "description": "Stores the verified tool and sets it executable." },
+    { "from": "zazzled", "to": "llm", "kind": "connects-to", "description": "exec with the arguments after `llm`." },
+    { "from": "machine", "to": "llm", "kind": "hosts", "description": "Runs as the calling user, one process per command." },
+    { "from": "llm", "to": "huggingface", "kind": "connects-to", "description": "HTTPS GET with the platform's trust store, resuming a partial download with a Range request, on first use of a model." },
+    { "from": "llm", "to": "models", "kind": "connects-to", "description": "Reads and writes the defaults; downloads under a flock and renames a model into place when its hash matches; memory-maps it to run." }
+  ]
+}

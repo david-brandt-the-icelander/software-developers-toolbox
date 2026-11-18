@@ -457,12 +457,23 @@ const PAGES: &[Page] = &[
     Page {
         name: "agent",
         group: 4,
-        brief: "agent get-rules PATH",
-        summary: "Print the rule and skill files that apply to a path",
-        usage: &["zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]"],
-        about: &["zazzle agent has its own help: run zazzle agent --help."],
+        brief: "agent CMD ...",
+        summary: "Rule files for a path; local open models",
+        usage: &[
+            "zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]",
+            "zazzle agent llm [--model NAME] [--effort low|medium|high] [--remove NAME]",
+            "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [TEXT.. | -]",
+        ],
+        about: &[
+            "get-rules prints the rule and skill files that apply to a path: see zazzle help get-rules.",
+            "llm lists the open models, or downloads one and makes it and an effort the default; prompt asks a model and prints its answer. Both run zazzle-llm, which zazzled downloads on first use, and which downloads each model on first use; run zazzle agent llm --help.",
+        ],
         options: &[],
-        examples: &["zazzle agent get-rules src/main.rs --name-only"],
+        examples: &[
+            "zazzle agent get-rules src/main.rs --name-only",
+            "zazzle agent llm --model qwen3.5-9b --effort high",
+            "git diff | zazzle agent prompt 'Review this diff:' -",
+        ],
     },
     Page {
         name: "free-disk-space",

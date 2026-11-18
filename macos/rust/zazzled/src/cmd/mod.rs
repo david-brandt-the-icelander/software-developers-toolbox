@@ -318,6 +318,9 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
             Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
                 get_rules(ctx, r)
             }
+            Some((c, _)) if c == "llm" || c == "prompt" => Err(format!(
+                "agent {c} runs as its own process: start it with `zazzle agent {c} ..` (or `zazzled llm {c} ..`)"
+            )),
             _ => {
                 let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
                 let (text, code) =

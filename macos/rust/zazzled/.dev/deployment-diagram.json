@@ -3,7 +3,7 @@
   "kind": "deployment",
   "title": "zazzle / zazzled deployment diagram",
   "folder": "macos/rust/zazzled",
-  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the zazzle-csharp-indexer daemon. For zazz scripts the daemon runs the user's rustc and `zazz-worker compile` and `zazz-worker test` to build and test a script once, keeps the results in the script store, and runs calls in warm `zazz-worker serve` processes (or a natively trusted script's own binary), each under the OS sandbox (sandbox-exec on macOS, Landlock and seccomp on Linux); the invoker run as `zazz`, or under an installed script's name, sends those requests. The release tarballs ship zazzle, zazz (the same invoker), zazzled and zazz-worker side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
+  "description": "zazzle and zazzled run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzled serve` over a private unix socket; an MCP client's `zazzled mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzled mcp` when nothing listens, or by launchd once `zazzled install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzled wrap` and `zazzled proxy` processes of their own, and `zazzle agent llm|prompt` becomes `zazzled llm`, which execs zazzle-llm (downloaded on first use into the tool store), which start the caller's command or MCP server as children. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the zazzle-csharp-indexer daemon. For zazz scripts the daemon runs the user's rustc and `zazz-worker compile` and `zazz-worker test` to build and test a script once, keeps the results in the script store, and runs calls in warm `zazz-worker serve` processes (or a natively trusted script's own binary), each under the OS sandbox (sandbox-exec on macOS, Landlock and seccomp on Linux); the invoker run as `zazz`, or under an installed script's name, sends those requests. The release tarballs ship zazzle, zazz (the same invoker), zazzled and zazz-worker side by side, with the indexer; their delivery is recorded in macos/release/.dev.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cli.rs",
@@ -88,6 +88,10 @@
     {
       "path": "macos/rust/zazzled/src/zazz/install.rs",
       "symbol": "install"
+    },
+    {
+      "path": "macos/rust/zazzled/src/tools.rs",
+      "symbol": "path"
     }
   ],
   "nodes": [
@@ -227,6 +231,19 @@
       "name": "Language modules (~/.zazzle/v1/languages)",
       "kind": "database",
       "description": "Grammar shared libraries downloaded from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/ and checked against the SHA-256s compiled into zazzled; zazzled loads them with dlopen (macos/rust/zazzle-lang/.dev)."
+    },
+    {
+      "id": "llm",
+      "name": "zazzled llm process",
+      "kind": "process",
+      "description": "One per `zazzle agent llm|prompt`: finds zazzle-llm beside zazzled or in the tool store, downloading it first, and replaces itself with it (macos/rust/zazzle-llm/.dev/deployment-diagram.json).",
+      "condition": "Only for `zazzle agent llm` and `zazzle agent prompt`."
+    },
+    {
+      "id": "tools",
+      "name": "JIT tools (~/.zazzle/v1/tools)",
+      "kind": "database",
+      "description": "Programs not in the release tarball (zazzle-llm), downloaded from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ and accepted only with the SHA-256 compiled into zazzled; ZAZZLE_TOOLS_DIR moves it."
     }
   ],
   "artifacts": [
@@ -235,7 +252,7 @@
       "name": "zazzled",
       "source": "macos/rust/zazzled/Cargo.toml",
       "deployedTo": "daemon",
-      "description": "The Rust binary; the same file also runs as `zazzled mcp`, `zazzled proxy`, `zazzled wrap`, `zazzled run`, `zazzled install` and `zazzled uninstall`."
+      "description": "The Rust binary; the same file also runs as `zazzled mcp`, `zazzled proxy`, `zazzled wrap`, `zazzled llm`, `zazzled run`, `zazzled install` and `zazzled uninstall`."
     },
     {
       "id": "zazzle-bin",
@@ -483,6 +500,24 @@
       "to": "languages",
       "kind": "connects-to",
       "description": "Downloads a module on first use (JIT) or `zazzle languages fetch`, verifies it and loads it."
+    },
+    {
+      "from": "machine",
+      "to": "llm",
+      "kind": "hosts",
+      "description": "One per `zazzle agent llm|prompt`, until it execs zazzle-llm."
+    },
+    {
+      "from": "zazzle",
+      "to": "llm",
+      "kind": "connects-to",
+      "description": "`zazzle agent llm|prompt` replaces itself (exec) with `zazzled llm llm|prompt ARGS`."
+    },
+    {
+      "from": "llm",
+      "to": "tools",
+      "kind": "connects-to",
+      "description": "Downloads zazzle-llm on first use, verifies it, stores it executable, then execs it."
     }
   ]
 }

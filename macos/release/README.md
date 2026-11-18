@@ -110,6 +110,15 @@ All 34 tree-sitter grammars ship as language modules (zazzled links none) (`maco
 - `pgo.sh` needs the modules: zazzled has no grammars, so the release builds them first and points `PGO_LANGUAGES` at them; training loads them while it profiles the tree-sitter runtime in zazzled (the modules themselves are not profiled).
 - `language-modules.test.sh` builds the Lua module and checks its manifest line; CI runs it with shellcheck.
 
+## JIT tools (`tools.sh`)
+
+Programs zazzle runs that are too large or too rarely wanted for the tarball are JIT tools: zazzled downloads them on first use and checks them against a manifest compiled into it, like the language modules. The only one is `zazzle-llm` (`macos/rust/zazzle-llm`, llama.cpp), behind `zazzle agent llm` and `zazzle agent prompt`; it is not in the tarball, the bottle or the formula.
+
+- `tools.sh OUT [TARGET...]` builds every tool into `OUT/NAME`: universal with `lipo` when given both Apple targets (with Metal for Apple Silicon), else for the host. `TOOLS="zazzle-llm"` limits it; `PROFILE=dev` builds unoptimized.
+- `tools.sh --manifest OUT` writes `OUT/manifest`, one `NAME SHA256 FILE` line per tool.
+- The release builds the tools in the same jobs as the language modules, signs them on macOS, writes the manifest, then builds zazzled with `ZAZZLED_TOOLS_MANIFEST` pointing at it (workspace builds pass `--exclude zazzle-llm`, so llama.cpp is built once). It uploads them with the manifest to `icelander-downloads/zazzle/vX.Y.Z/tools/{macos-universal,linux-x86_64,linux-aarch64}/`, under the tag only.
+- `tools.test.sh` builds zazzle-llm (dev profile) and checks its manifest line; CI runs it with shellcheck.
+
 ## Uploads to icelander.net (`r2-put.sh`)
 
 `r2-put.sh KEY FILE CONTENT_TYPE` uploads one file to the `icelander-downloads` R2 bucket with `wrangler`. Cloudflare's API sometimes times out (HTTP 524), so it tries up to five times, waiting 15, 30, 60 and 120 seconds in between. If a release still fails while publishing, use "Re-run failed jobs": the `macos` job uploads to the GitHub release when it already exists instead of creating it, and every upload overwrites. `r2-put.test.sh` checks the retries against a stand-in `npx`.

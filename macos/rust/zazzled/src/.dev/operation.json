@@ -184,9 +184,43 @@
       "authorization": "None.",
       "result": "`zazzled VERSION`: the crate's version, `0.0.0-dev` in the repository; release builds write the tag's version into it first (macos/release/set-version.sh). `zazzle version` is answered by the daemon as `zazzle VERSION`, with the same version.",
       "failures": []
+    },
+    {
+      "id": "llm",
+      "name": "zazzled llm",
+      "description": "Runs zazzle-llm for `zazzle agent llm|prompt`, downloading it first when it is neither beside zazzled nor in the tool store.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "macos/rust/zazzled/src/tools.rs",
+          "symbol": "path"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/tools.rs",
+        "symbol": "exec"
+      },
+      "action": "command",
+      "transport": "zazzled llm llm|prompt ARGS, which the invoker execs for `zazzle agent llm|prompt ARGS`; through the daemon (MCP, `zazzled run`) `agent llm|prompt` answers that it runs as its own process",
+      "authorization": "The caller's own permissions; a downloaded tool is accepted only with the SHA-256 of the manifest compiled into zazzled.",
+      "result": "The process becomes zazzle-llm with the arguments, so its output and exit status are zazzle-llm's; on the first use `fetching zazzle-llm for this zazzle (once)` on standard error, and the verified binary is stored with mode 755.",
+      "failures": [
+        "No zazzle-llm beside zazzled and no entry in the embedded manifest (a development build): `zazzle-llm is not part of this build: ..`.",
+        "The download fails or its SHA-256 does not match the manifest.",
+        "The tool cannot be made executable or run: `running PATH: ..`."
+      ]
     }
   ],
   "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "macos/rust/zazzle-llm/src",
+      "path": "macos/rust/zazzle-llm/src/.dev/operation.json",
+      "relationship": "What zazzle-llm does once `zazzled llm` has exec'd it."
+    },
     {
       "kind": "use-case",
       "folder": "macos/rust/zazzled/src",

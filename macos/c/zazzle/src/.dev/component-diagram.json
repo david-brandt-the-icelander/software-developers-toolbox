@@ -34,7 +34,7 @@
     {
       "id": "core",
       "name": "Invoker logic (zazzle_core.h)",
-      "responsibility": "Execs a standalone tool (only when run as zazzle or its short name z), `zazzled wrap` or `zazzled proxy` when argv[1] names one; otherwise builds the request and socket path from argv and the environment, prefixing the arguments with `zazz` when run as zazz and with `zazz exec-name NAME` under any other name, connects to the daemon or starts it, checks its uid, sends the request with descriptors and returns its status byte, spinning briefly before blocking; one-line errors with fixed exit codes.",
+      "responsibility": "Execs a standalone tool (only when run as zazzle or its short name z), `zazzled wrap`, `zazzled proxy`, `zazzled setup`, or `zazzled llm` for `agent llm` and `agent prompt`, when argv[1] (and argv[2] for agent) names one; otherwise builds the request and socket path from argv and the environment, prefixing the arguments with `zazz` when run as zazz and with `zazz exec-name NAME` under any other name, connects to the daemon or starts it, checks its uid, sends the request with descriptors and returns its status byte, spinning briefly before blocking; one-line errors with fixed exit codes.",
       "folder": "macos/c/zazzle/src"
     },
     {
@@ -96,6 +96,6 @@
     { "from": "linux", "to": "arm64-clock", "kind": "depends-on", "description": "sys_linux_aarch64.h includes it." },
     { "from": "darwin", "to": "arm64-clock", "kind": "depends-on", "description": "sys_darwin_arm64.h includes it." },
     { "from": "darwin", "to": "libsystem", "kind": "depends-on", "description": "Entry, executable path, nanosleep and posix_spawn." },
-    { "from": "core", "to": "zazzled", "kind": "depends-on", "description": "Unix socket, descriptor mode; starts `zazzled serve` when nothing listens; execs `zazzled wrap` and `zazzled proxy`." }
+    { "from": "core", "to": "zazzled", "kind": "depends-on", "description": "Unix socket, descriptor mode; starts `zazzled serve` when nothing listens; execs `zazzled wrap`, `zazzled proxy`, `zazzled setup` and `zazzled llm`." }
   ]
 }
