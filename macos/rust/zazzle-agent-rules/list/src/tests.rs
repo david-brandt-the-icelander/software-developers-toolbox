@@ -249,3 +249,35 @@ fn test_body_uses_text_already_read() {
     };
     assert_eq!(body(&f, false), "==> rule /nonexistent/x.md <==\nkept\n\n");
 }
+
+// Folders and non-markdown files in the rules folder, and files that are not text, are handled without failing.
+#[test]
+fn test_list_rules_odd_files() {
+    let root = temp("odd");
+    fs::create_dir_all(root.join(".claude/rules/dir.md")).expect("folder");
+    fs::write(root.join("AGENTS.md"), [0xff, 0xfe, 0x00]).expect("writable");
+    let got = list_rules(&root, None, &[]).expect("lists");
+    assert_eq!(got.len(), 1);
+    let kept = list_rules(&root, None, &strs(&["a"])).expect("lists");
+    assert_eq!(kept.len(), 1);
+    assert!(kept[0].text.is_none());
+}
+
+// An import of the file itself, or of an existing file that is not listed, does not make a file redundant.
+#[test]
+fn test_list_rules_import_of_self_or_unlisted() {
+    let root = temp("selfimp");
+    fs::write(root.join("CLAUDE.md"), "@CLAUDE.md\n").expect("writable");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 1);
+    fs::write(root.join("CLAUDE.md"), "@notes.txt\n").expect("writable");
+    fs::write(root.join("notes.txt"), "n").expect("writable");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 1);
+}
+
+// Every spelling of help prints the usage and exits 0.
+#[test]
+fn test_run_help_spellings() {
+    for h in ["help", "--help", "-h"] {
+        assert_eq!(run(&strs(&[h]), None).1, 0);
+    }
+}
