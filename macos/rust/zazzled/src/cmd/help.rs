@@ -357,7 +357,7 @@ const PAGES: &[Page] = &[
         group: 3,
         brief: "setup",
         summary: "Set up Claude Code, Claude desktop and Codex",
-        usage: &["zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [OPTIONS]"],
+        usage: &["zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report | --explain] [OPTIONS]"],
         about: &[
             "Without an action it changes nothing and prints the plan. It edits only your user-level settings, backs up every file it changes, and a second --apply changes nothing.",
         ],
@@ -375,6 +375,8 @@ const PAGES: &[Page] = &[
             ("--workspace DIR", "Let edits reach every repository below DIR (repeatable)"),
             ("--no-hook", "Leave out the hook that sends shell searches, reads and builds to zazzle"),
             ("--hook-edits", "Also send the client's own edits through zazzle"),
+            ("--explain", "Describe what ~/.zazzle/policy.toml controls and what it holds now"),
+            ("--set KEY=VALUE", "Change a policy key (with --apply, write it and apply; alone, preview)"),
             ("--no-wrap", "Leave the client's other MCP servers alone"),
         ],
         examples: &["zazzle setup --workspace ~/dev", "zazzle setup --apply --workspace ~/dev", "zazzle setup --check"],

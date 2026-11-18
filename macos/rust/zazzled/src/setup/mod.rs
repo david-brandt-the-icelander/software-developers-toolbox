@@ -1,13 +1,15 @@
 // `zazzle setup`: plans, applies, undoes and checks the user-level configuration that makes Claude Code, the Claude desktop app and Codex use zazzle, and sends their other MCP servers through the zazzle proxy.
 pub mod check;
 pub mod clients;
+pub mod compaction;
+pub mod policy;
 pub mod verify;
 
 use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--no-wrap] [--probe]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--explain] [--set KEY=VALUE].. [--brief] [--no-wrap] [--probe]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -49,6 +51,7 @@ pub enum Action {
     Off,
     On,
     Uninstall,
+    Explain,
 }
 
 // The parsed `zazzle setup` command line.
@@ -62,6 +65,8 @@ pub struct Opts {
     pub hook_edits: bool,
     pub wrap: bool,
     pub probe: bool,
+    pub sets: Vec<String>,
+    pub brief: bool,
 }
 
 // Parses the arguments after `zazzled setup`.
@@ -75,6 +80,8 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         hook_edits: false,
         wrap: true,
         probe: false,
+        sets: Vec::new(),
+        brief: false,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -94,9 +101,12 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--off" => action(Action::Off)?,
             "--on" => action(Action::On)?,
             "--uninstall" => action(Action::Uninstall)?,
+            "--explain" => action(Action::Explain)?,
+            "--set" => o.sets.push(it.next().ok_or("--set needs KEY=VALUE")?.clone()),
             "--hook" => o.hook = true,
             "--no-hook" => o.hook = false,
             "--probe" => o.probe = true,
+            "--brief" => o.brief = true,
             "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
             "--workspace" => {
                 o.workspaces.push(PathBuf::from(it.next().ok_or("--workspace needs a directory")?))
@@ -332,6 +342,8 @@ fn load_applied(env: &Env, action: Action) -> Option<Opts> {
         hook_edits: a["hook_edits"].as_bool().unwrap_or(false),
         wrap: a["wrap"].as_bool().unwrap_or(true),
         probe: false,
+        sets: Vec::new(),
+        brief: false,
     })
 }
 
@@ -707,7 +719,30 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
     let applied = |action| {
         load_applied(env, action).ok_or("setup has no record of an --apply to turn off or on: run `zazzle setup --apply` with your options first")
     };
+    let mut set_note = String::new();
+    if !opts.sets.is_empty() {
+        let p = policy::path(&env.home);
+        let text = std::fs::read_to_string(&p).unwrap_or_else(|_| policy::TEMPLATE.to_string());
+        let new = policy::set(&text, &opts.sets)?;
+        match opts.action {
+            Action::Apply => {
+                write_file(&p, &new)?;
+                set_note = format!("policy: set {} in {}\n", opts.sets.join(", "), env.short(&p));
+            }
+            Action::Plan => {
+                return Ok(format!(
+                "zazzle setup --set: {} would become:\n{new}\nAdd --apply to write it and apply the setup.",
+                env.short(&p)
+            ))
+            }
+            _ => return Err("--set goes with --apply (or alone, to preview the policy)".into()),
+        }
+    }
     match opts.action {
+        Action::Explain => {
+            Ok(policy::explain(&policy::load(&env.home)?, &env.short(&policy::path(&env.home))))
+        }
+        Action::Check if opts.brief => Ok(drift(env)),
         Action::Check => check::run(opts, env),
         Action::Verify => verify::run(opts, env),
         Action::Report => check::report(env),
@@ -733,6 +768,8 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                     hook_edits: false,
                     wrap: true,
                     probe: false,
+                    sets: Vec::new(),
+                    brief: false,
                 })
             };
             let mut out = change(&undo, env)?;
@@ -747,7 +784,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
             ));
             Ok(out)
         }
-        _ => change(opts, env),
+        _ => Ok(format!("{set_note}{}", change(opts, env)?)),
     }
 }
 
@@ -759,7 +796,14 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         }
     }
     let repo = opts.repo.as_ref().map(|r| r.canonicalize().unwrap_or_else(|_| r.clone()));
-    let opts = Opts { repo, clients: opts.clients.clone(), workspaces: opts.workspaces.clone(), ..*opts };
+    let opts = Opts {
+        repo,
+        clients: opts.clients.clone(),
+        workspaces: opts.workspaces.clone(),
+        sets: Vec::new(),
+        brief: false,
+        ..*opts
+    };
     let (mut routes, mut added) = load_state(env);
     let chosen: Vec<Client> = if opts.clients.is_empty() {
         Client::ALL.into_iter().filter(|c| env.installed(*c)).collect()
@@ -783,6 +827,14 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         None => out.push_str("no --repo: the Claude desktop app starts servers in /, so pass --repo DIR to give its zazzle a folder\n"),
     }
     let mut backups = Vec::new();
+    let policy = policy::load(&env.home)?;
+    let block = block_text(&policy.extra);
+    if apply && opts.action == Action::Apply && policy::ensure(&env.home)? {
+        out.push_str(&format!(
+            "policy: wrote {} (nothing in it is owned until you name a key)\n",
+            env.short(&policy::path(&env.home))
+        ));
+    }
     out.push_str(&format!("\nworkspaces ({}):\n", env.short(&crate::workspace::file(&env.home))));
     workspaces(env, &opts, &mut added, &mut backups, &mut out)?;
     for c in Client::ALL.into_iter().filter(|c| !chosen.contains(c)) {
@@ -797,14 +849,20 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         report_ops(env, &plan, apply, &mut out);
         let (instr, hook) = (plan.instructions.clone(), plan.hook.clone());
         if let Some(p) = &instr {
-            let has = std::fs::read_to_string(p).unwrap_or_default().contains(BLOCK_BEGIN);
-            match (opts.action, has) {
-                (Action::Undo, true) => {
+            let text = std::fs::read_to_string(p).unwrap_or_default();
+            let now = current_block(&text).map(|(a, b)| &text[a..b]);
+            match (opts.action, now) {
+                (Action::Undo, Some(_)) => {
                     out.push_str(&format!("  - remove zazzle's instructions from {}\n", env.short(p)))
                 }
-                (Action::Plan | Action::Apply, false) => out.push_str(&format!(
+                (Action::Plan | Action::Apply, None) => out.push_str(&format!(
                     "  + {} zazzle's instructions to {}\n",
                     if apply { "added" } else { "add" },
+                    env.short(p)
+                )),
+                (Action::Plan | Action::Apply, Some(b)) if b != block => out.push_str(&format!(
+                    "  ~ {} zazzle's instructions in {}\n",
+                    if apply { "updated" } else { "update" },
                     env.short(p)
                 )),
                 _ => {}
@@ -822,11 +880,26 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         if apply {
             apply_plan(env, &mut plan, &mut backups)?;
             if let Some(p) = instr {
-                edit_block(p.as_path(), opts.action == Action::Undo, &mut backups)?;
+                edit_block(
+                    p.as_path(),
+                    (opts.action != Action::Undo).then_some(block.as_str()),
+                    &mut backups,
+                )?;
             }
             if let Some(h) = &hook {
                 edit_hook(&h.path, (opts.action != Action::Undo).then_some(h), &mut backups)?;
+                if c == Client::ClaudeCode {
+                    let cmd = format!("{} setup --check --brief", env.zazzled.display());
+                    edit_session_start(
+                        &h.path,
+                        (opts.action != Action::Undo).then_some(cmd.as_str()),
+                        &mut backups,
+                    )?;
+                }
             }
+        }
+        if c == Client::ClaudeCode {
+            session_keys(env, &policy, opts.action, apply, &mut backups, &mut out)?;
         }
     }
     let direct = unmanaged(env, &opts);
@@ -845,6 +918,10 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         }
         save_state(env, &used, &added)?;
         save_applied(env, (opts.action == Action::Apply).then_some(&opts))?;
+        update_state(
+            env,
+            &[("applied_version", (opts.action == Action::Apply).then(|| json!(crate::cmd::VERSION)))],
+        )?;
         if !backups.is_empty() {
             out.push_str("\nbackups:\n");
             backups.iter().for_each(|b: &PathBuf| out.push_str(&format!("  {}\n", env.short(b))));
@@ -854,6 +931,123 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
     Ok(out)
+}
+
+// Re-applies the last --apply when this zazzled is a different release from the one that applied it, so an upgrade keeps the managed setup current; development builds never do.
+pub fn reapply_after_upgrade(env: &Env, version: &str) -> Result<Option<String>, String> {
+    let state: Value = serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap_or_default())
+        .unwrap_or(json!({}));
+    let Some(applied) = load_applied(env, Action::Apply) else { return Ok(None) };
+    if version.contains("-dev") || state["applied_version"].as_str() == Some(version) {
+        return Ok(None);
+    }
+    let out = change(&applied, env)?;
+    update_state(env, &[("applied_version", Some(json!(version)))])?;
+    Ok(Some(out))
+}
+
+// Says in one line how the clients differ from the last --apply (instructions block, hooks, session keys), or nothing when they match; the SessionStart hook prints it into the agent's context.
+fn drift(env: &Env) -> String {
+    let Some(applied) = load_applied(env, Action::Apply) else { return String::new() };
+    let Ok(policy) = policy::load(&env.home) else {
+        return "zazzle setup drift: ~/.zazzle/policy.toml does not parse. Tell the user.".into();
+    };
+    let block = block_text(&policy.extra);
+    let mut found = Vec::new();
+    let clients: Vec<Client> = match applied.clients.is_empty() {
+        true => Client::ALL.into_iter().filter(|c| env.installed(*c)).collect(),
+        false => applied.clients.clone(),
+    };
+    for c in clients {
+        if let Some(p) = env.instructions_path(c) {
+            let text = std::fs::read_to_string(&p).unwrap_or_default();
+            match current_block(&text).map(|(a, b)| &text[a..b]) {
+                None => found.push(format!("no zazzle instructions in {}", env.short(&p))),
+                Some(b) if b != block => {
+                    found.push(format!("zazzle's instructions in {} are out of date", env.short(&p)))
+                }
+                _ => {}
+            }
+        }
+        if let Some(h) = hook_spec(env, c, applied.hook_edits).filter(|_| applied.hook) {
+            if hook_command(&h.path).as_deref() != Some(h.command.as_str()) {
+                found.push(format!("the {} hook in {} is missing or changed", c.name(), env.short(&h.path)));
+            }
+        }
+        if c == Client::ClaudeCode {
+            let settings: Value = serde_json::from_str(
+                &std::fs::read_to_string(env.home.join(".claude/settings.json")).unwrap_or_default(),
+            )
+            .unwrap_or(json!({}));
+            for (k, v) in &policy.claude {
+                if policy::get(&settings, k).as_ref() != Some(v) {
+                    found.push(format!("{k} is not {v}"));
+                }
+            }
+        }
+    }
+    match found.is_empty() {
+        true => String::new(),
+        false => format!(
+            "zazzle setup drift: {}. Tell the user; their zazzle setup no longer matches what they applied.",
+            found.join("; ")
+        ),
+    }
+}
+
+// Sets the Claude Code session keys the policy names (or, on undo, restores them) and reports each change.
+fn session_keys(
+    env: &Env,
+    policy: &policy::Policy,
+    action: Action,
+    apply: bool,
+    backups: &mut Vec<PathBuf>,
+    out: &mut String,
+) -> Result<(), String> {
+    let path = env.home.join(".claude/settings.json");
+    let state: Value = serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap_or_default())
+        .unwrap_or(json!({}));
+    let owned = state["session_keys"].as_object().cloned().unwrap_or_default();
+    let want = if action == Action::Undo { serde_json::Map::new() } else { policy.claude.clone() };
+    if want.is_empty() && owned.is_empty() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut v: Value = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&text).map_err(|e| format!("{}: not valid JSON: {e}", path.display()))?
+    };
+    let before = v.clone();
+    let (lines, record) = policy::apply_keys(&mut v, &want, &owned);
+    out.push_str(&format!(
+        "  session keys in {} (from {}):\n",
+        env.short(&path),
+        env.short(&policy::path(&env.home))
+    ));
+    lines.iter().for_each(|l| out.push_str(&format!("    {l}\n")));
+    if apply {
+        if v != before {
+            backup(&path, backups)?;
+            write_or_remove(&path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))?;
+        }
+        update_state(env, &[("session_keys", (!record.is_empty()).then(|| Value::Object(record)))])?;
+    }
+    Ok(())
+}
+
+// Returns the managed block's text: zazzle's instructions and the policy's extra text, between the markers.
+fn block_text(extra: &str) -> String {
+    let extra = if extra.trim().is_empty() { String::new() } else { format!("\n{}", extra.trim()) };
+    format!("{BLOCK_BEGIN}\n## zazzle\n{INSTRUCTIONS}{extra}\n{BLOCK_END}")
+}
+
+// Returns the managed block a file holds now, if any.
+fn current_block(text: &str) -> Option<(usize, usize)> {
+    text.find(BLOCK_BEGIN)
+        .zip(text.find(BLOCK_END))
+        .filter(|(a, b)| a < b)
+        .map(|(a, b)| (a, b + BLOCK_END.len()))
 }
 
 // Writes a file, creating its folder.
@@ -901,17 +1095,18 @@ fn apply_plan(env: &Env, plan: &mut ClientPlan, backups: &mut Vec<PathBuf>) -> R
     Ok(())
 }
 
-// Adds zazzle's instructions to a markdown file between markers, or removes them.
-fn edit_block(path: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(), String> {
+// Puts zazzle's managed block (`want`) into a markdown file between markers, replacing an older one, or removes it when `want` is None; text outside the markers is kept as it is.
+fn edit_block(path: &Path, want: Option<&str>, backups: &mut Vec<PathBuf>) -> Result<(), String> {
     let text = std::fs::read_to_string(path).unwrap_or_default();
-    let found = text.find(BLOCK_BEGIN).zip(text.find(BLOCK_END)).filter(|(a, b)| a < b);
-    let new = match (found, remove) {
-        (Some((a, b)), true) => {
-            let end = b + BLOCK_END.len();
+    let new = match (current_block(&text), want) {
+        (Some((a, end)), None) => {
             let end = if text[end..].starts_with('\n') { end + 1 } else { end };
             format!("{}{}", &text[..a], &text[end..])
         }
-        (None, false) => {
+        (Some((a, end)), Some(block)) if text[a..end] != *block => {
+            format!("{}{block}{}", &text[..a], &text[end..])
+        }
+        (None, Some(block)) => {
             let sep = if text.is_empty() || text.ends_with("\n\n") {
                 ""
             } else if text.ends_with('\n') {
@@ -919,7 +1114,7 @@ fn edit_block(path: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(
             } else {
                 "\n\n"
             };
-            format!("{text}{sep}{BLOCK_BEGIN}\n## zazzle\n{INSTRUCTIONS}\n{BLOCK_END}\n")
+            format!("{text}{sep}{block}\n")
         }
         _ => return Ok(()),
     };
@@ -967,6 +1162,51 @@ fn edit_hook(path: &Path, want: Option<&HookSpec>, backups: &mut Vec<PathBuf>) -
         if v["hooks"].as_object().is_some_and(|h| h.is_empty()) {
             v.as_object_mut().expect("an object").remove("hooks");
         }
+    }
+    backup(path, backups)?;
+    write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
+}
+
+// True for the SessionStart entry setup wrote: `zazzled setup --check --brief`.
+fn our_session_start(e: &Value) -> bool {
+    e["hooks"].as_array().is_some_and(|hs| {
+        hs.iter().any(|h| {
+            h["command"]
+                .as_str()
+                .is_some_and(|c| c.contains("zazzled") && c.ends_with(" setup --check --brief"))
+        })
+    })
+}
+
+// Puts the SessionStart hook that reports setup drift into Claude Code's settings, or removes it when `want` is None.
+fn edit_session_start(path: &Path, want: Option<&str>, backups: &mut Vec<PathBuf>) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let mut v: Value = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&text).map_err(|e| format!("{}: not valid JSON: {e}", path.display()))?
+    };
+    if !v.is_object() {
+        v = json!({});
+    }
+    let entry = want.map(|c| json!({"hooks": [{"type": "command", "command": c, "timeout": 10}]}));
+    let list: Vec<Value> = v["hooks"]["SessionStart"].as_array().cloned().unwrap_or_default();
+    let ours: Vec<Value> = list.iter().filter(|e| our_session_start(e)).cloned().collect();
+    if ours == entry.iter().cloned().collect::<Vec<_>>() {
+        return Ok(());
+    }
+    let mut list: Vec<Value> = list.into_iter().filter(|e| !our_session_start(e)).collect();
+    list.extend(entry);
+    if !v["hooks"].is_object() {
+        v["hooks"] = json!({});
+    }
+    let hooks = v["hooks"].as_object_mut().expect("an object");
+    match list.is_empty() {
+        true => hooks.remove("SessionStart"),
+        false => hooks.insert("SessionStart".into(), Value::Array(list)),
+    };
+    if hooks.is_empty() {
+        v.as_object_mut().expect("an object").remove("hooks");
     }
     backup(path, backups)?;
     write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))

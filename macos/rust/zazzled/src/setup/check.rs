@@ -291,6 +291,12 @@ pub fn report(env: &Env) -> Result<String, String> {
         out.push_str("  nothing recorded: no agent has used zazzle, its hook or its proxy since then (or they run another zazzled)\n");
     }
     summary(&entries).1.iter().for_each(|l| out.push_str(&format!("  {l}\n")));
+    let usage = std::env::var_os("ZAZZLE_USAGE_LOG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| env.home.join(".zazzle/usage.jsonl"));
+    let policy = super::policy::load(&env.home).unwrap_or_default();
+    let since_ms = u128::from(now().saturating_sub(DAY_SECS)) * 1000;
+    out.push_str(&super::compaction::section(&usage, since_ms, policy.claude.get("autoCompactWindow")));
     out.push_str("\nNot visible in this log, so not counted as coverage:\n  - native tool calls the hook lets through (Claude Code's Read of small files or short ranges, Codex's own tools other than shell and apply_patch, web search)\n  - MCP servers that stay direct (OAuth, SSE, plugins, project files): their calls never reach zazzle\n  - the Claude desktop app's chat, which has no hooks\n  - clients whose hook is not installed or not yet trusted (Codex)\n");
     Ok(out)
 }
