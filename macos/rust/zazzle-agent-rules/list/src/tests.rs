@@ -28,7 +28,7 @@ fn test_list_rules_parents_in_order() {
     put(&root.join("agents/skills/a/SKILL.md"));
     put(&root.join("sub/CLAUDE.md"));
     put(&root.join("sub/deep/file.rs"));
-    let got = list_rules(&root.join("sub/deep/file.rs"), None).expect("lists");
+    let got = list_rules(&root.join("sub/deep/file.rs"), None, &[]).expect("lists");
     let paths: Vec<_> = got.iter().map(|f| (f.kind, f.path.clone())).collect();
     assert_eq!(
         paths,
@@ -47,7 +47,7 @@ fn test_list_rules_ignores_siblings_and_children() {
     put(&root.join("other/AGENTS.md"));
     put(&root.join("here/inner/AGENTS.md"));
     fs::create_dir_all(root.join("here")).expect("folder");
-    assert!(list_rules(&root.join("here"), None)
+    assert!(list_rules(&root.join("here"), None, &[])
         .expect("lists")
         .iter()
         .all(|f| !f.path.starts_with(root.join("other")) && !f.path.starts_with(root.join("here/inner"))));
@@ -62,7 +62,7 @@ fn test_list_rules_rule_dirs_and_hidden_skills() {
     put(&root.join(".claude/rules/skip.txt"));
     put(&root.join(".claude/skills/s/SKILL.md"));
     put(&root.join(".claude/skills/empty/readme.md"));
-    let got = list_rules(&root, None).expect("lists");
+    let got = list_rules(&root, None, &[]).expect("lists");
     let names: Vec<_> = got
         .iter()
         .map(|f| f.path.strip_prefix(&root).expect("under root").to_string_lossy().into_owned())
@@ -78,14 +78,14 @@ fn test_list_rules_home_first_without_duplicates() {
     put(&home.join(".claude/CLAUDE.md"));
     put(&home.join(".codex/AGENTS.md"));
     put(&home.join("proj/AGENTS.md"));
-    let under = list_rules(&home.join("proj"), Some(&home)).expect("lists");
+    let under = list_rules(&home.join("proj"), Some(&home), &[]).expect("lists");
     let kinds: Vec<_> = under
         .iter()
         .map(|f| f.path.strip_prefix(&home).expect("under home").to_string_lossy().into_owned())
         .collect();
     assert_eq!(kinds, vec![".claude/CLAUDE.md", ".codex/AGENTS.md", "proj/AGENTS.md"]);
     put(&root.join("elsewhere/x"));
-    let outside = list_rules(&root.join("elsewhere"), Some(&home)).expect("lists");
+    let outside = list_rules(&root.join("elsewhere"), Some(&home), &[]).expect("lists");
     assert_eq!(outside.len(), 2);
 }
 
@@ -93,8 +93,8 @@ fn test_list_rules_home_first_without_duplicates() {
 #[test]
 fn test_list_rules_missing_inputs() {
     let root = temp("missing");
-    assert!(list_rules(&root, Some(&root.join("nohome"))).is_ok());
-    assert!(list_rules(&root.join("nope"), None).is_err());
+    assert!(list_rules(&root, Some(&root.join("nohome")), &[]).is_ok());
+    assert!(list_rules(&root.join("nope"), None, &[]).is_err());
 }
 
 // An unreadable or absent folder has no children.
@@ -117,4 +117,34 @@ fn test_run_outputs_and_codes() {
     let (text, code) = run(&strs(&["list-rules", root.join("nope").to_str().expect("utf8")]), None);
     assert_eq!(code, 66);
     assert!(text.contains("nope"));
+}
+
+// With purposes, unmarked files stay, other-purpose files go, and partly marked files give line ranges.
+#[test]
+fn test_list_rules_purposes_filter() {
+    let root = temp("purpose");
+    put(&root.join("AGENTS.md"));
+    fs::write(root.join("CLAUDE.md"), "head\n#zazzle-purpose-begin:commit\nc1\n#zazzle-purpose-end:commit\n")
+        .expect("writable");
+    put(&root.join(".claude/rules/t.md"));
+    fs::write(root.join(".claude/rules/t.md"), "#zazzle-purpose:test\n").expect("writable");
+    let wanted = strs(&["commit"]);
+    let got = list_rules(&root, None, &wanted).expect("lists");
+    assert_eq!(got.len(), 2);
+    assert_eq!(got[1].lines, vec![(3, 3)]);
+    assert_eq!(list_rules(&root, None, &strs(&["test"])).expect("lists").len(), 2);
+}
+
+// The command line takes --purpose repeatedly, in both spellings, and prints line ranges.
+#[test]
+fn test_run_purpose_arguments() {
+    let root = temp("runp");
+    fs::write(root.join("AGENTS.md"), "#zazzle-purpose-begin:a\n1\n#zazzle-purpose-end:a\n#zazzle-purpose-begin:b\n2\n#zazzle-purpose-end:b\n").expect("writable");
+    let dir = root.to_str().expect("utf8");
+    let (text, code) = run(&strs(&["list-rules", dir, "--purpose", "a", "--purpose=b"]), None);
+    let file = root.join("AGENTS.md");
+    assert_eq!((text, code), (format!("rule {0}:2-2\nrule {0}:5-5\n", file.display()), 0));
+    assert_eq!(run(&strs(&["list-rules", dir, "--purpose"]), None).1, 2);
+    assert_eq!(run(&strs(&["list-rules", dir, dir]), None).1, 2);
+    assert_eq!(run(&strs(&["list-rules"]), None).1, 2);
 }

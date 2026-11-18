@@ -8,6 +8,7 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, .claude/rules) and ski
 Binary: `zazzle-agent`, or `zazzle agent ...` (same program, started from the `zazzle` binary's directory). Docs: `macos/rust/zazzle-agent-rules/list/README.md`.
 
 ## list-rules
-- `zazzle agent list-rules PATH` prints one `rule FILE` or `skill FILE` per line for the home folder and every folder from `/` down to PATH (a file or folder that exists; else exit 66).
+- `zazzle agent list-rules PATH [--purpose NAME]...` prints one `rule FILE` or `skill FILE` per line for the home folder and every folder from `/` down to PATH (a file or folder that exists; else exit 66).
 - Order is farthest first, closest last; the closest file wins, and the user's chat overrides all files.
 - It lists paths only: read the rule files, and read a skill file only when its name fits the task.
+- `--purpose NAME` (repeatable) keeps only files and segments marked `#zazzle-purpose:NAME` or between `#zazzle-purpose-begin:NAME` and `#zazzle-purpose-end:NAME`; unmarked files stay. A segment prints as `FILE:A-B`: read just those lines with `zazzle read FILE:A-B`.
