@@ -1,6 +1,7 @@
 // `zazzle setup`: plans, applies, undoes and checks the user-level configuration that makes Claude Code, the Claude desktop app and Codex use zazzle, and sends their other MCP servers through the zazzle proxy.
 pub mod check;
 pub mod clients;
+pub mod policy;
 pub mod verify;
 
 use clients::{Client, ConfigFile, Kind, Server};
@@ -782,6 +783,14 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         None => out.push_str("no --repo: the Claude desktop app starts servers in /, so pass --repo DIR to give its zazzle a folder\n"),
     }
     let mut backups = Vec::new();
+    let policy = policy::load(&env.home)?;
+    let block = block_text(&policy.extra);
+    if apply && opts.action == Action::Apply && policy::ensure(&env.home)? {
+        out.push_str(&format!(
+            "policy: wrote {} (nothing in it is owned until you name a key)\n",
+            env.short(&policy::path(&env.home))
+        ));
+    }
     out.push_str(&format!("\nworkspaces ({}):\n", env.short(&crate::workspace::file(&env.home))));
     workspaces(env, &opts, &mut added, &mut backups, &mut out)?;
     for c in Client::ALL.into_iter().filter(|c| !chosen.contains(c)) {
@@ -796,14 +805,20 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         report_ops(env, &plan, apply, &mut out);
         let (instr, hook) = (plan.instructions.clone(), plan.hook.clone());
         if let Some(p) = &instr {
-            let has = std::fs::read_to_string(p).unwrap_or_default().contains(BLOCK_BEGIN);
-            match (opts.action, has) {
-                (Action::Undo, true) => {
+            let text = std::fs::read_to_string(p).unwrap_or_default();
+            let now = current_block(&text).map(|(a, b)| &text[a..b]);
+            match (opts.action, now) {
+                (Action::Undo, Some(_)) => {
                     out.push_str(&format!("  - remove zazzle's instructions from {}\n", env.short(p)))
                 }
-                (Action::Plan | Action::Apply, false) => out.push_str(&format!(
+                (Action::Plan | Action::Apply, None) => out.push_str(&format!(
                     "  + {} zazzle's instructions to {}\n",
                     if apply { "added" } else { "add" },
+                    env.short(p)
+                )),
+                (Action::Plan | Action::Apply, Some(b)) if b != block => out.push_str(&format!(
+                    "  ~ {} zazzle's instructions in {}\n",
+                    if apply { "updated" } else { "update" },
                     env.short(p)
                 )),
                 _ => {}
@@ -821,7 +836,11 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         if apply {
             apply_plan(env, &mut plan, &mut backups)?;
             if let Some(p) = instr {
-                edit_block(p.as_path(), opts.action == Action::Undo, &mut backups)?;
+                edit_block(
+                    p.as_path(),
+                    (opts.action != Action::Undo).then_some(block.as_str()),
+                    &mut backups,
+                )?;
             }
             if let Some(h) = &hook {
                 edit_hook(&h.path, (opts.action != Action::Undo).then_some(h), &mut backups)?;
@@ -853,6 +872,20 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
     Ok(out)
+}
+
+// Returns the managed block's text: zazzle's instructions and the policy's extra text, between the markers.
+fn block_text(extra: &str) -> String {
+    let extra = if extra.trim().is_empty() { String::new() } else { format!("\n{}", extra.trim()) };
+    format!("{BLOCK_BEGIN}\n## zazzle\n{INSTRUCTIONS}{extra}\n{BLOCK_END}")
+}
+
+// Returns the managed block a file holds now, if any.
+fn current_block(text: &str) -> Option<(usize, usize)> {
+    text.find(BLOCK_BEGIN)
+        .zip(text.find(BLOCK_END))
+        .filter(|(a, b)| a < b)
+        .map(|(a, b)| (a, b + BLOCK_END.len()))
 }
 
 // Writes a file, creating its folder.
@@ -900,17 +933,18 @@ fn apply_plan(env: &Env, plan: &mut ClientPlan, backups: &mut Vec<PathBuf>) -> R
     Ok(())
 }
 
-// Adds zazzle's instructions to a markdown file between markers, or removes them.
-fn edit_block(path: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(), String> {
+// Puts zazzle's managed block (`want`) into a markdown file between markers, replacing an older one, or removes it when `want` is None; text outside the markers is kept as it is.
+fn edit_block(path: &Path, want: Option<&str>, backups: &mut Vec<PathBuf>) -> Result<(), String> {
     let text = std::fs::read_to_string(path).unwrap_or_default();
-    let found = text.find(BLOCK_BEGIN).zip(text.find(BLOCK_END)).filter(|(a, b)| a < b);
-    let new = match (found, remove) {
-        (Some((a, b)), true) => {
-            let end = b + BLOCK_END.len();
+    let new = match (current_block(&text), want) {
+        (Some((a, end)), None) => {
             let end = if text[end..].starts_with('\n') { end + 1 } else { end };
             format!("{}{}", &text[..a], &text[end..])
         }
-        (None, false) => {
+        (Some((a, end)), Some(block)) if text[a..end] != *block => {
+            format!("{}{block}{}", &text[..a], &text[end..])
+        }
+        (None, Some(block)) => {
             let sep = if text.is_empty() || text.ends_with("\n\n") {
                 ""
             } else if text.ends_with('\n') {
@@ -918,7 +952,7 @@ fn edit_block(path: &Path, remove: bool, backups: &mut Vec<PathBuf>) -> Result<(
             } else {
                 "\n\n"
             };
-            format!("{text}{sep}{BLOCK_BEGIN}\n## zazzle\n{INSTRUCTIONS}\n{BLOCK_END}\n")
+            format!("{text}{sep}{block}\n")
         }
         _ => return Ok(()),
     };

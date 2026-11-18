@@ -214,6 +214,23 @@ fn test_apply_and_undo() {
         "{again}"
     );
     assert!(!again.contains("+ added zazzle") && !again.contains("backups:"), "{again}");
+    let md = env.home.join(".claude/CLAUDE.md");
+    let mine = std::fs::read_to_string(&md)
+        .expect("md")
+        .replace("<!-- zazzle setup: begin -->", "my own rule\n\n<!-- zazzle setup: begin -->");
+    std::fs::write(&md, format!("{mine}\nmore of mine\n")).expect("write");
+    std::fs::write(policy::path(&env.home), "[instructions]\nextra = \"Answer briefly.\"\n").expect("policy");
+    let refreshed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("refresh");
+    assert!(refreshed.contains("~ updated zazzle's instructions in ~/.claude/CLAUDE.md"), "{refreshed}");
+    let text = std::fs::read_to_string(&md).expect("md");
+    assert!(
+        text.contains("my own rule\n\n<!-- zazzle setup: begin -->")
+            && text.ends_with("<!-- zazzle setup: end -->\n\nmore of mine\n"),
+        "{text}"
+    );
+    assert!(text.contains("Answer briefly.\n<!-- zazzle setup: end -->"), "{text}");
+    let same = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("same");
+    assert!(!same.contains("~ updated zazzle's instructions") && !same.contains("backups:"), "{same}");
 
     let undo = run(&opts(&["--undo"]), &env).expect("undo");
     assert!(
@@ -232,7 +249,11 @@ fn test_apply_and_undo() {
     assert_eq!(code["mcpServers"]["gh"], json!({"type": "stdio", "command": "npx", "args": ["-y", "gh"]}));
     assert_eq!(code["mcpServers"]["api"]["url"], json!("https://api/mcp"));
     assert!(code["mcpServers"].get("zazzle").is_none());
-    assert_eq!(std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md"), "# Mine\n\n");
+    assert_eq!(
+        std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md"),
+        "# Mine\n\nmy own rule\n\n\nmore of mine\n",
+        "undo keeps what is outside the markers"
+    );
     assert!(!env.home.join(".claude/settings.json").exists(), "only zazzle's hooks were in it");
     assert!(!env.codex_home.join("hooks.json").exists() && !env.codex_home.join("AGENTS.md").exists());
     assert_eq!(std::fs::read_to_string(crate::workspace::file(&env.home)).expect("ws"), "/mine\n");
@@ -299,15 +320,17 @@ fn test_block_and_hook() {
     let t = TempDir::new();
     let md = t.path().join("A.md");
     let mut backups = Vec::new();
-    edit_block(&md, true, &mut backups).expect("remove from nothing");
-    edit_block(&md, false, &mut backups).expect("add");
-    edit_block(&md, false, &mut backups).expect("again");
+    let b = block_text("");
+    let b = Some(b.as_str());
+    edit_block(&md, None, &mut backups).expect("remove from nothing");
+    edit_block(&md, b, &mut backups).expect("add");
+    edit_block(&md, b, &mut backups).expect("again");
     assert_eq!(std::fs::read_to_string(&md).expect("md").matches(BLOCK_BEGIN).count(), 1);
     std::fs::write(&md, format!("x{BLOCK_BEGIN}y{BLOCK_END}z")).expect("write");
-    edit_block(&md, true, &mut backups).expect("remove");
+    edit_block(&md, None, &mut backups).expect("remove");
     assert_eq!(std::fs::read_to_string(&md).expect("md"), "xz");
     std::fs::write(&md, "no newline").expect("write");
-    edit_block(&md, false, &mut backups).expect("add");
+    edit_block(&md, b, &mut backups).expect("add");
     assert!(std::fs::read_to_string(&md).expect("md").starts_with("no newline\n\n<!--"));
     let s = t.path().join("settings.json");
     std::fs::write(&s, r#"{"hooks": {"PreToolUse": 3}, "other": 1}"#).expect("write");
@@ -460,7 +483,7 @@ fn test_edges() {
     let mut backups = Vec::new();
     let md = t.path().join("B.md");
     std::fs::write(&md, "a\n\n").expect("write");
-    edit_block(&md, false, &mut backups).expect("add");
+    edit_block(&md, Some(&block_text("")), &mut backups).expect("add");
     assert!(std::fs::read_to_string(&md).expect("md").starts_with("a\n\n<!--"));
     let s = t.path().join("s.json");
     let other = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]}]}}"#;
