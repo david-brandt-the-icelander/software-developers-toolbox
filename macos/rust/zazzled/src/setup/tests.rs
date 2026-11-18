@@ -65,7 +65,8 @@ fn test_parse() {
             hook_edits: false,
             wrap: false,
             probe: false,
-            sets: vec![]
+            sets: vec![],
+            brief: false
         }
     );
     let o = opts(&["--hook-edits", "--workspace", "/a", "--workspace", "/b", "--verify"]);
@@ -246,8 +247,28 @@ fn test_apply_and_undo() {
         serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
             .expect("json");
     assert_eq!(settings["effortLevel"], "low");
+    let settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
+            .expect("json");
+    assert_eq!(
+        settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "/opt/z/zazzled setup --check --brief"
+    );
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("brief"), "");
+    edit_block(&env.home.join(".claude/CLAUDE.md"), None, &mut Vec::new()).expect("drift");
+    let d = run(&opts(&["--check", "--brief"]), &env).expect("brief");
+    assert!(
+        d.starts_with("zazzle setup drift: no zazzle instructions in ~/.claude/CLAUDE.md")
+            && d.ends_with("Tell the user; their zazzle setup no longer matches what they applied."),
+        "{d}"
+    );
+    assert!(!d.contains("--apply"), "no human-only command for the agent: {d}");
     let keyed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("keys again");
-    assert!(keyed.contains("    = effortLevel = \"low\"\n") && !keyed.contains("backups:"), "{keyed}");
+    assert!(
+        keyed.contains("    = effortLevel = \"low\"\n") && keyed.contains("+ added zazzle's instructions"),
+        "{keyed}"
+    );
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("repaired"), "");
 
     let undo = run(&opts(&["--undo"]), &env).expect("undo");
     assert!(
@@ -266,10 +287,12 @@ fn test_apply_and_undo() {
     assert_eq!(code["mcpServers"]["gh"], json!({"type": "stdio", "command": "npx", "args": ["-y", "gh"]}));
     assert_eq!(code["mcpServers"]["api"]["url"], json!("https://api/mcp"));
     assert!(code["mcpServers"].get("zazzle").is_none());
-    assert_eq!(
-        std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md"),
-        "# Mine\n\nmy own rule\n\n\nmore of mine\n",
-        "undo keeps what is outside the markers"
+    let left = std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md");
+    assert!(
+        left.starts_with("# Mine\n\nmy own rule\n")
+            && left.contains("more of mine\n")
+            && !left.contains(BLOCK_BEGIN),
+        "undo keeps what is outside the markers: {left}"
     );
     assert!(!env.home.join(".claude/settings.json").exists(), "only zazzle's hooks were in it");
     assert!(!env.codex_home.join("hooks.json").exists() && !env.codex_home.join("AGENTS.md").exists());

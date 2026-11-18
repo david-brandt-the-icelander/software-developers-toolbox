@@ -8,7 +8,7 @@ use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--explain] [--set KEY=VALUE].. [--no-wrap] [--probe]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--explain] [--set KEY=VALUE].. [--brief] [--no-wrap] [--probe]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -64,6 +64,7 @@ pub struct Opts {
     pub wrap: bool,
     pub probe: bool,
     pub sets: Vec<String>,
+    pub brief: bool,
 }
 
 // Parses the arguments after `zazzled setup`.
@@ -78,6 +79,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         wrap: true,
         probe: false,
         sets: Vec::new(),
+        brief: false,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -102,6 +104,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--hook" => o.hook = true,
             "--no-hook" => o.hook = false,
             "--probe" => o.probe = true,
+            "--brief" => o.brief = true,
             "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
             "--workspace" => {
                 o.workspaces.push(PathBuf::from(it.next().ok_or("--workspace needs a directory")?))
@@ -338,6 +341,7 @@ fn load_applied(env: &Env, action: Action) -> Option<Opts> {
         wrap: a["wrap"].as_bool().unwrap_or(true),
         probe: false,
         sets: Vec::new(),
+        brief: false,
     })
 }
 
@@ -736,6 +740,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         Action::Explain => {
             Ok(policy::explain(&policy::load(&env.home)?, &env.short(&policy::path(&env.home))))
         }
+        Action::Check if opts.brief => Ok(drift(env)),
         Action::Check => check::run(opts, env),
         Action::Verify => verify::run(opts, env),
         Action::Report => check::report(env),
@@ -762,6 +767,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                     wrap: true,
                     probe: false,
                     sets: Vec::new(),
+                    brief: false,
                 })
             };
             let mut out = change(&undo, env)?;
@@ -793,6 +799,7 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         clients: opts.clients.clone(),
         workspaces: opts.workspaces.clone(),
         sets: Vec::new(),
+        brief: false,
         ..*opts
     };
     let (mut routes, mut added) = load_state(env);
@@ -879,6 +886,14 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
             }
             if let Some(h) = &hook {
                 edit_hook(&h.path, (opts.action != Action::Undo).then_some(h), &mut backups)?;
+                if c == Client::ClaudeCode {
+                    let cmd = format!("{} setup --check --brief", env.zazzled.display());
+                    edit_session_start(
+                        &h.path,
+                        (opts.action != Action::Undo).then_some(cmd.as_str()),
+                        &mut backups,
+                    )?;
+                }
             }
         }
         if c == Client::ClaudeCode {
@@ -910,6 +925,55 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
     Ok(out)
+}
+
+// Says in one line how the clients differ from the last --apply (instructions block, hooks, session keys), or nothing when they match; the SessionStart hook prints it into the agent's context.
+fn drift(env: &Env) -> String {
+    let Some(applied) = load_applied(env, Action::Apply) else { return String::new() };
+    let Ok(policy) = policy::load(&env.home) else {
+        return "zazzle setup drift: ~/.zazzle/policy.toml does not parse. Tell the user.".into();
+    };
+    let block = block_text(&policy.extra);
+    let mut found = Vec::new();
+    let clients: Vec<Client> = match applied.clients.is_empty() {
+        true => Client::ALL.into_iter().filter(|c| env.installed(*c)).collect(),
+        false => applied.clients.clone(),
+    };
+    for c in clients {
+        if let Some(p) = env.instructions_path(c) {
+            let text = std::fs::read_to_string(&p).unwrap_or_default();
+            match current_block(&text).map(|(a, b)| &text[a..b]) {
+                None => found.push(format!("no zazzle instructions in {}", env.short(&p))),
+                Some(b) if b != block => {
+                    found.push(format!("zazzle's instructions in {} are out of date", env.short(&p)))
+                }
+                _ => {}
+            }
+        }
+        if let Some(h) = hook_spec(env, c, applied.hook_edits).filter(|_| applied.hook) {
+            if hook_command(&h.path).as_deref() != Some(h.command.as_str()) {
+                found.push(format!("the {} hook in {} is missing or changed", c.name(), env.short(&h.path)));
+            }
+        }
+        if c == Client::ClaudeCode {
+            let settings: Value = serde_json::from_str(
+                &std::fs::read_to_string(env.home.join(".claude/settings.json")).unwrap_or_default(),
+            )
+            .unwrap_or(json!({}));
+            for (k, v) in &policy.claude {
+                if policy::get(&settings, k).as_ref() != Some(v) {
+                    found.push(format!("{k} is not {v}"));
+                }
+            }
+        }
+    }
+    match found.is_empty() {
+        true => String::new(),
+        false => format!(
+            "zazzle setup drift: {}. Tell the user; their zazzle setup no longer matches what they applied.",
+            found.join("; ")
+        ),
+    }
 }
 
 // Sets the Claude Code session keys the policy names (or, on undo, restores them) and reports each change.
@@ -1079,6 +1143,51 @@ fn edit_hook(path: &Path, want: Option<&HookSpec>, backups: &mut Vec<PathBuf>) -
         if v["hooks"].as_object().is_some_and(|h| h.is_empty()) {
             v.as_object_mut().expect("an object").remove("hooks");
         }
+    }
+    backup(path, backups)?;
+    write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
+}
+
+// True for the SessionStart entry setup wrote: `zazzled setup --check --brief`.
+fn our_session_start(e: &Value) -> bool {
+    e["hooks"].as_array().is_some_and(|hs| {
+        hs.iter().any(|h| {
+            h["command"]
+                .as_str()
+                .is_some_and(|c| c.contains("zazzled") && c.ends_with(" setup --check --brief"))
+        })
+    })
+}
+
+// Puts the SessionStart hook that reports setup drift into Claude Code's settings, or removes it when `want` is None.
+fn edit_session_start(path: &Path, want: Option<&str>, backups: &mut Vec<PathBuf>) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    let mut v: Value = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&text).map_err(|e| format!("{}: not valid JSON: {e}", path.display()))?
+    };
+    if !v.is_object() {
+        v = json!({});
+    }
+    let entry = want.map(|c| json!({"hooks": [{"type": "command", "command": c, "timeout": 10}]}));
+    let list: Vec<Value> = v["hooks"]["SessionStart"].as_array().cloned().unwrap_or_default();
+    let ours: Vec<Value> = list.iter().filter(|e| our_session_start(e)).cloned().collect();
+    if ours == entry.iter().cloned().collect::<Vec<_>>() {
+        return Ok(());
+    }
+    let mut list: Vec<Value> = list.into_iter().filter(|e| !our_session_start(e)).collect();
+    list.extend(entry);
+    if !v["hooks"].is_object() {
+        v["hooks"] = json!({});
+    }
+    let hooks = v["hooks"].as_object_mut().expect("an object");
+    match list.is_empty() {
+        true => hooks.remove("SessionStart"),
+        false => hooks.insert("SessionStart".into(), Value::Array(list)),
+    };
+    if hooks.is_empty() {
+        v.as_object_mut().expect("an object").remove("hooks");
     }
     backup(path, backups)?;
     write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
