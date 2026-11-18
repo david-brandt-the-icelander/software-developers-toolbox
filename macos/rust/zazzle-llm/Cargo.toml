@@ -23,7 +23,7 @@ minijinja-contrib = { version = "2", features = ["pycompat"] }
 # Messages handed to the chat template, and `tojson`.
 serde_json = "1"
 # Checks each downloaded model file against the SHA-256 the catalogue pins.
-sha2 = "0.10"
+sha2 = "0.11"
 # Model downloads over HTTPS with the OS trust store, as zazzled downloads language modules.
 ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
 # flock, so two prompts never download the same model at once.
