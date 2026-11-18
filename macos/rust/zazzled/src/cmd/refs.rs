@@ -450,6 +450,11 @@ mod tests {
         let o = run_cmd(t.path(), &["refs", "alpha", "--also", "beta", "."]).text;
         let (a, b) = (o.find("== alpha\n").expect("alpha"), o.find("== beta\n").expect("beta"));
         assert!(a < b && o[b..].contains("3 [main]"), "{o}");
+        let eq = run_cmd(t.path(), &["refs", "alpha", "--also=beta"]).text;
+        assert!(eq.contains("== beta\n"), "{eq}");
+        let worse = run_cmd(t.path(), &["refs", "alpha", "--also", "b|c"]);
+        assert!(worse.status != 0 && worse.text.contains("literal name"), "{}", worse.text);
+        assert!(run_cmd(t.path(), &["refs", "--also", "beta"]).status != 0);
         let bad = run_cmd(t.path(), &["refs", "alpha|beta"]);
         assert!(bad.status != 0 && bad.text.contains("literal name"), "{}", bad.text);
     }

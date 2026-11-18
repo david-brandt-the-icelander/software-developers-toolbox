@@ -1078,6 +1078,10 @@ mod tests {
             "{text}"
         );
         assert!(lines[2].contains("\"id\":9") && lines[2].contains("zazzle_get_rules"), "{text}");
+        let mut out = Vec::new();
+        let note = json!({"method": "notifications/initialized"}).to_string();
+        serve_resumed(&mut "".as_bytes(), &mut out, &fake(0, ""), Some((note, false))).expect("resume");
+        assert_eq!(String::from_utf8(out).expect("utf8").lines().count(), 1);
         let plain = fake(0, "");
         let mut out = Vec::new();
         let input = "{\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"method\":\"notifications/initialized\"}\n";

@@ -80,6 +80,9 @@ mod tests {
         assert!(!changed(&s));
         assert!(stamp(&t.path().join("none")).is_none());
         reexec_if_changed("{}", false, "s");
+        remember();
+        reexec_if_changed("{}", false, "s");
+        assert!(STARTED.get().is_some_and(|s| !changed(s)));
     }
 
     // Checks the handed-over request is read once.

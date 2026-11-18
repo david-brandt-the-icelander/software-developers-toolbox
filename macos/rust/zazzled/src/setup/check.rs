@@ -692,13 +692,24 @@ mod tests {
         std::fs::create_dir_all(home.join(".codex")).expect("mkdir");
         let codex = "[mcp_servers.api]\nurl = \"http://127.0.0.1:1/mcp\"\nbearer_token_env_var = \"ZAZZLE_TEST_UNSET_TOKEN\"\n";
         std::fs::write(env.config_path(Client::Codex), codex).expect("write");
+        std::fs::write(
+            home.join(".claude/CLAUDE.md"),
+            format!("{}\nold\n{}\n", super::super::BLOCK_BEGIN, super::super::BLOCK_END),
+        )
+        .expect("write");
         let local = run(&super::super::parse(&["--check".to_string()]).expect("parse"), &env).expect("run");
+        assert!(
+            local.contains("OUTDATED instructions in ~/.claude/CLAUDE.md")
+                && local.contains("update every client together"),
+            "{local}"
+        );
         assert!(
             local.contains("--   gone [direct: not wrapped yet")
                 && local.contains("not started or contacted (--probe does)")
                 && local.contains("ok   zazzle [zazzle]"),
             "{local}"
         );
+        std::fs::remove_file(home.join(".claude/CLAUDE.md")).expect("rm");
         let opts = super::super::parse(&["--check".to_string(), "--probe".to_string()]).expect("parse");
         let r = run(&opts, &env).expect("run");
         assert!(r.contains("claude-code: ~/.claude.json\n  routing: enforced by the hook in ~/.claude/settings.json (self-test passed; native edits allowed and logged); no instructions in ~/.claude/CLAUDE.md"), "{r}");

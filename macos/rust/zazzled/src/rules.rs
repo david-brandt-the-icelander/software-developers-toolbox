@@ -316,4 +316,32 @@ mod tests {
         assert_eq!(args(&v).expect("args"), ["get-rules", "a", "b", "--purpose", "review", "--again"]);
         assert_eq!(schema()["required"][0], "paths");
     }
+
+    // Checks the union merges ranges and whole files of one file, and a range already sent is not sent again.
+    #[test]
+    fn test_union_and_ranges() {
+        let f = |lines: Vec<(usize, usize)>| Found {
+            kind: zazzle_agent_rules_list::Kind::Rule,
+            path: PathBuf::from("/nonexistent/R.md"),
+            lines,
+            text: Some("a\nb\nc\nd\n".into()),
+        };
+        let seen = RefCell::new(Vec::new());
+        let (has, mark) = ledger(&seen);
+        let l = Ledger { has: &has, mark: &mark };
+        let (first, _) = deliver(&[f(vec![(1, 2)])], false, Some(&l));
+        assert!(first.contains(":1-2 <=="), "{first}");
+        let (again, skipped) = deliver(&[f(vec![(1, 2)])], false, Some(&l));
+        assert!(again.is_empty() && skipped.len() == 1);
+        let (more, _) = deliver(&[f(vec![(1, 2), (3, 4)])], false, Some(&l));
+        assert!(more.contains(":3-4 <==") && !more.contains(":1-2"), "{more}");
+        let (_t, root) = repo();
+        let u = union(&[root.join("web/b.ts"), root.join("web")], &["review".into()], None).expect("u");
+        assert_eq!(u.iter().filter(|g| g.path.ends_with("web/AGENTS.md")).count(), 1);
+        let empty = TempDir::new();
+        let none = get_rules(&["x".to_string()], &empty.path().canonicalize().expect("c"), None, None);
+        assert!(none.map_or(true, |o| o.contains("apply") || o.contains("==>")));
+        let w = union(&[root.join("web/b.ts")], &["build".into(), "review".into()], None).expect("w");
+        assert!(w.iter().any(|g| g.lines.len() == 2), "{w:?}");
+    }
 }

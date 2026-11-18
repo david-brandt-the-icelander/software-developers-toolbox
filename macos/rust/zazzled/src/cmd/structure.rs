@@ -513,6 +513,36 @@ mod tests {
         )
     }
 
+    // Answers refs the way Roslyn does, with definitions and references in two files of the root.
+    fn exact(hello: &Value, _req: &Value) -> (Value, Option<Value>) {
+        let n = hello["roots"][0].as_str().and_then(|r| r.split('=').next()).unwrap_or("r").to_string();
+        let text = format!("defs\n{n}:src/C.cs:1 class C\n{n}:sim/S.cs:1 class C\nrefs\n{n}:src/U.cs\n2 new C();\n{n}:sim/T.cs\n3 new C();\n-- exact (Roslyn): 2 defs, 2 refs in 2 files");
+        (
+            json!({"ok": true}),
+            Some(json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}})),
+        )
+    }
+
+    // Checks refs asks the exact answer first under a path scope and keeps only the scoped files, with the non-C# text matches counted.
+    #[test]
+    fn test_refs_exact_under_scope() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(exact);
+        let (t, _name, saved) = setup(&fake);
+        t.write("src/U.cs", b"var c = new C();\n");
+        t.write("sim/S.cs", b"class C {}\n");
+        t.write("src/notes.md", b"C here\n");
+        let o = run_cmd(t.path(), &["refs", "C", "src"]).text;
+        assert!(o.contains("src/C.cs:1 class C") && !o.contains("sim/"), "{o}");
+        assert!(o.contains("within the paths and globs given: 1 defs, 1 refs in 1 files"), "{o}");
+        assert!(o.ends_with("-- text matches in 1 other files: zazzle refs C -g '!*.cs'"), "{o}");
+        let only = run_cmd(t.path(), &["refs", "C", "src/U.cs"]).text;
+        assert!(!only.contains("text matches in"), "{only}");
+        let all = run_cmd(t.path(), &["refs", "C"]).text;
+        assert!(all.contains("sim/T.cs"), "{all}");
+        restore(saved);
+    }
+
     // Checks a folder holding several repositories: overview lists them, find-symbol and changed-since search them all, --repo and paths pick one, and git-log asks which.
     #[test]
     fn test_folder_of_repos() {
