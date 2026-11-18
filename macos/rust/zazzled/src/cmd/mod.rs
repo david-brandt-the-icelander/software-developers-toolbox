@@ -292,6 +292,12 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
                 .into(),
         ),
         "zazz" => crate::zazz::run(ctx, rest),
+        "forget-sessions" => match rest {
+            [prefix] if !prefix.is_empty() => {
+                Ok(Output::plain(format!("forgot {} sessions", ctx.engine.sessions.forget_prefix(prefix))))
+            }
+            _ => Err("usage: zazzle forget-sessions PREFIX".into()),
+        },
         "status" => Ok(Output::plain(status(ctx))),
         "trace" => crate::proxy::trace::command(rest, &ctx.cwd).map(Output::plain),
         "languages" => languages::run(ctx, rest),
@@ -331,6 +337,29 @@ mod tests {
     use super::*;
     use crate::testutil::run_cmd;
     use crate::testutil::TempDir;
+
+    // Checks help --all lists every command and help --agent only the agent commands.
+    #[test]
+    fn test_help_all_and_agent() {
+        let t = crate::testutil::TempDir::new();
+        assert!(run_cmd(t.path(), &["help", "--all"]).text.contains("setup"));
+        assert!(run_cmd(t.path(), &["help", "--agent"]).text.ends_with("humans: zazzle help --all"));
+        assert!(run_cmd(t.path(), &["forget-sessions", ""]).text.contains("usage: zazzle forget-sessions"));
+    }
+
+    // Checks forget-sessions drops the sessions under a prefix and needs one.
+    #[test]
+    fn test_forget_sessions() {
+        let t = crate::testutil::TempDir::new();
+        t.write("a.txt", b"x\n");
+        let e = crate::engine::Engine::new();
+        crate::testutil::run_cmd_with(&e, t.path(), "S/main", &["read", "a.txt"]);
+        let o = crate::testutil::run_cmd_with(&e, t.path(), "", &["forget-sessions", "S/"]);
+        assert_eq!(o.text, "forgot 1 sessions");
+        assert!(run_cmd(t.path(), &["forget-sessions"])
+            .text
+            .contains("usage: zazzle forget-sessions PREFIX"));
+    }
 
     // Checks help appears with no arguments and for the help words.
     #[test]

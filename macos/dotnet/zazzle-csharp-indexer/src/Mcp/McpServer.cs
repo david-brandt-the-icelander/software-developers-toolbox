@@ -21,7 +21,7 @@ public sealed class McpServer
         _log = log;
         _session = string.IsNullOrEmpty(session) ? Guid.NewGuid().ToString("N")[..8] : session;
         var set = new RootSet(roots);
-        ITool[] tools = [new ViewTool(set), new OverviewTool(set), new FindSymbolTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new ReportGapTool()];
+        ITool[] tools = [new ViewTool(set), new OverviewTool(set), new FindSymbolTool(set), new RefsTool(set), new ChangedSinceTool(set), new GitLogTool(set), new GitBlameTool(set), new ReportGapTool()];
         _tools = tools.ToDictionary(t => t.Name);
     }
 

@@ -325,11 +325,18 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
 }
 
 // Runs the hook on one PreToolUse payload: returns what to print on stdout (nothing to allow) and logs every decision but a plain allow; `reachable` says whether zazzle answers, else denials become logged bypasses.
-pub fn run(o: &Opts, payload: &str, reachable: &dyn Fn() -> bool) -> String {
+pub fn run(o: &Opts, payload: &str, reachable: &dyn Fn() -> bool, forget: &dyn Fn(&str)) -> String {
     if std::env::var("ZAZZLE_HOOK").is_ok_and(|v| v == "off") {
         return String::new();
     }
     let Ok(v) = serde_json::from_str::<Value>(payload) else { return String::new() };
+    let sid = v["session_id"].as_str().unwrap_or("");
+    if v["hook_event_name"] == "PostCompact" {
+        if !sid.is_empty() {
+            forget(&format!("{sid}/"));
+        }
+        return String::new();
+    }
     let tool = v["tool_name"].as_str().unwrap_or("");
     let mut decision = decide(o, tool, &v["tool_input"]);
     if let Decision::Deny { program, .. } = &decision {
@@ -349,7 +356,7 @@ pub fn run(o: &Opts, payload: &str, reachable: &dyn Fn() -> bool) -> String {
         }))
     };
     match decision {
-        Decision::Allow => String::new(),
+        Decision::Allow => tag_session(o, tool, &v["tool_input"], sid, v["agent_id"].as_str()),
         Decision::Bypass { program, why } => {
             log(why, &program);
             String::new()
@@ -364,6 +371,39 @@ pub fn run(o: &Opts, payload: &str, reachable: &dyn Fn() -> bool) -> String {
             .to_string()
         }
     }
+}
+
+// Gives an allowed zazzle call in Claude Code the session key of its conversation and agent, so a subagent's dedupe state is its own and a compaction can reset it: an argument for the MCP tools, ZAZZLE_SESSION for a shell command.
+fn tag_session(o: &Opts, tool: &str, input: &Value, sid: &str, agent: Option<&str>) -> String {
+    if o.client != "claude-code" || sid.is_empty() || !input.is_object() {
+        return String::new();
+    }
+    let key = format!("{sid}/{}", agent.unwrap_or("main"));
+    let mut updated = input.clone();
+    if tool.starts_with("mcp__zazzle__") {
+        updated[crate::mcp::SESSION_ARG] = json!(key);
+    } else if tool == "Bash" {
+        let cmd = input["command"].as_str().unwrap_or("");
+        let first = segments(cmd).first().and_then(|s| program(s).map(|(p, _)| p.to_string()));
+        if !matches!(first.as_deref(), Some("zazzle" | "z")) || cmd.contains("ZAZZLE_SESSION=") {
+            return String::new();
+        }
+        updated["command"] = json!(format!("ZAZZLE_SESSION={} {cmd}", sh_quote(&key)));
+    } else {
+        return String::new();
+    }
+    json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}).to_string()
+}
+
+// Asks the daemon to forget the sessions under a prefix, if it is running.
+pub fn forget_sessions(prefix: &str) {
+    let Ok(sock) = crate::client::socket_path() else { return };
+    let req = crate::proto::Request {
+        cwd: "/".into(),
+        session: String::new(),
+        args: vec!["forget-sessions".into(), prefix.into()],
+    };
+    let _ = crate::client::call(&sock, &req);
 }
 
 // True when the zazzle daemon answers, starting it if needed.
@@ -518,6 +558,55 @@ mod tests {
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
     }
 
+    // Checks allowed zazzle calls get the conversation and agent's session key, and PostCompact forgets the conversation's sessions.
+    #[test]
+    fn test_session_tagging_and_compaction() {
+        let _g = env_lock();
+        let o = parse(&[]).expect("opts");
+        let call = |tool: &str, input: Value, agent: Option<&str>| {
+            let mut v = json!({"session_id": "S", "tool_name": tool, "tool_input": input});
+            if let Some(a) = agent {
+                v["agent_id"] = json!(a);
+            }
+            run(&o, &v.to_string(), &|| true, &|_| {})
+        };
+        let mcp: Value =
+            serde_json::from_str(&call("mcp__zazzle__zazzle_read", json!({"paths": ["a"]}), Some("A1")))
+                .expect("json");
+        assert_eq!(
+            mcp["hookSpecificOutput"]["updatedInput"],
+            json!({"paths": ["a"], "zazzle_session": "S/A1"})
+        );
+        let sh: Value =
+            serde_json::from_str(&call("Bash", json!({"command": "zazzle read a"}), None)).expect("json");
+        assert_eq!(
+            sh["hookSpecificOutput"]["updatedInput"]["command"],
+            "ZAZZLE_SESSION=S/main zazzle read a"
+        );
+        assert_eq!(call("Bash", json!({"command": "ZAZZLE_SESSION=x zazzle read a"}), None), "");
+        assert_eq!(call("Bash", json!({"command": "ls"}), None), "");
+        let codex = Opts { client: "codex".into(), edits: false };
+        assert_eq!(
+            run(
+                &codex,
+                &json!({"session_id": "S", "tool_name": "Bash", "tool_input": {"command": "zazzle ls"}})
+                    .to_string(),
+                &|| true,
+                &|_| {}
+            ),
+            ""
+        );
+        let nosid = json!({"tool_name": "Bash", "tool_input": {"command": "zazzle ls"}}).to_string();
+        assert_eq!(run(&o, &nosid, &|| true, &|_| {}), "");
+        assert_eq!(call("mcp__zazzle__zazzle_ls", json!("x"), None), "");
+        let forgot = std::cell::RefCell::new(Vec::new());
+        let compact = json!({"session_id": "S", "hook_event_name": "PostCompact"}).to_string();
+        assert_eq!(run(&o, &compact, &|| true, &|p| forgot.borrow_mut().push(p.to_string())), "");
+        let nosid = json!({"hook_event_name": "PostCompact"}).to_string();
+        assert_eq!(run(&o, &nosid, &|| true, &|p| forgot.borrow_mut().push(p.to_string())), "");
+        assert_eq!(*forgot.borrow(), vec!["S/".to_string()]);
+    }
+
     // Checks shell commands: searches, listings, reads and builds are redirected; other commands, zazzle itself and harmless forms pass.
     #[test]
     fn test_shell_commands() {
@@ -617,18 +706,18 @@ mod tests {
             json!({"session_id": "s1", "cwd": "/w", "tool_name": "Bash", "tool_input": {"command": cmd}})
                 .to_string()
         };
-        let out: Value = serde_json::from_str(&run(&o, &p("rg x"), &|| true)).expect("json");
+        let out: Value = serde_json::from_str(&run(&o, &p("rg x"), &|| true, &|_| {})).expect("json");
         assert_eq!(out["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(out["hookSpecificOutput"]["permissionDecisionReason"]
             .as_str()
             .expect("reason")
             .starts_with("Use: zazzle find x\nSearch with zazzle"));
-        assert_eq!(run(&o, &p("rg x"), &|| false), "");
-        assert_eq!(run(&o, &p("ls"), &|| true), "");
-        assert_eq!(run(&o, &p("rg x # allow-raw"), &|| true), "");
-        assert_eq!(run(&o, "not json", &|| true), "");
+        assert_eq!(run(&o, &p("rg x"), &|| false, &|_| {}), "");
+        assert_eq!(run(&o, &p("ls"), &|| true, &|_| {}), "");
+        assert_eq!(run(&o, &p("rg x # allow-raw"), &|| true, &|_| {}), "");
+        assert_eq!(run(&o, "not json", &|| true, &|_| {}), "");
         std::env::set_var("ZAZZLE_HOOK", "off");
-        assert_eq!(run(&o, &p("rg x"), &|| true), "");
+        assert_eq!(run(&o, &p("rg x"), &|| true, &|_| {}), "");
         std::env::remove_var("ZAZZLE_HOOK");
         let got = crate::activity::read(&log, 0);
         let outcomes: Vec<&str> = got.iter().map(|e| e["outcome"].as_str().unwrap_or("")).collect();

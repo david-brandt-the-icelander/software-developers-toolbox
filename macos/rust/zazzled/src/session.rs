@@ -76,6 +76,14 @@ fn hash_of(session: &str, text: &str) -> [u8; 32] {
 }
 
 impl Sessions {
+    // Forgets every session whose key starts with the prefix (one Claude Code session and its subagents after a compaction); returns how many.
+    pub fn forget_prefix(&self, prefix: &str) -> usize {
+        let mut guard = self.inner.lock().expect("session lock");
+        let before = guard.0.len();
+        guard.0.retain(|k, _| !k.starts_with(prefix));
+        before - guard.0.len()
+    }
+
     // Returns the number of tracked sessions.
     pub fn count(&self) -> usize {
         self.inner.lock().expect("session lock").0.len()
@@ -193,6 +201,16 @@ mod tests {
     use super::*;
 
     // Checks a first response is tagged and a repeat becomes a notice naming it.
+    // Checks forgetting a prefix drops only the sessions under it.
+    #[test]
+    fn test_forget_prefix() {
+        let s = Sessions::default();
+        for k in ["S/main", "S/a1", "T/main"] {
+            s.apply(k, "d", "text".into(), true);
+        }
+        assert_eq!((s.forget_prefix("S/"), s.count()), (2, 1));
+    }
+
     #[test]
     fn test_repeat_becomes_notice() {
         let s = Sessions::default();

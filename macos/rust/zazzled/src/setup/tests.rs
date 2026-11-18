@@ -107,7 +107,7 @@ fn test_plan() {
         "{r}"
     );
     assert!(r.contains("  ~ route api (http) through http://127.0.0.1:"), "{r}");
-    assert!(r.contains("  + add zazzle's instructions to ~/.claude/CLAUDE.md\n  + add the hook in ~/.claude/settings.json (Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit): /opt/z/zazzled hook --client claude-code\n"), "{r}");
+    assert!(r.contains("  + add zazzle's instructions to ~/.claude/CLAUDE.md\n  + add the hook in ~/.claude/settings.json (Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit|mcp__zazzle__.*): /opt/z/zazzled hook --client claude-code\n"), "{r}");
     assert!(r.contains("+ add the hook in ~/.codex/hooks.json (Bash|apply_patch): /opt/z/zazzled hook --client codex\n    Codex runs a new or changed hook only once you trust it"), "{r}");
     assert!(r.contains("= no hook: the desktop app's chat has none"), "{r}");
     assert!(r.contains("  + add workspace ~/repo: zazzle may edit files below it"), "{r}");

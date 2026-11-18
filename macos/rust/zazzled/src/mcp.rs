@@ -9,8 +9,8 @@ const VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 // Anything that can run a command line and return its status and text.
 pub trait Backend {
-    // Runs the arguments as one zazzle command.
-    fn call(&self, args: Vec<String>) -> Result<(u8, String), String>;
+    // Runs the arguments as one zazzle command, under the given session when the hook named one.
+    fn call(&self, args: Vec<String>, session: Option<&str>) -> Result<(u8, String), String>;
 
     // Records the workspace folders the client named, which later commands may write in.
     fn set_roots(&self, _roots: Vec<String>) {}
@@ -26,8 +26,8 @@ pub struct DaemonBackend {
 
 impl Backend for DaemonBackend {
     // Sends the command to zazzled in relay mode.
-    fn call(&self, args: Vec<String>) -> Result<(u8, String), String> {
-        let session = crate::proto::join_session(&self.session, &self.roots.borrow());
+    fn call(&self, args: Vec<String>, session: Option<&str>) -> Result<(u8, String), String> {
+        let session = crate::proto::join_session(session.unwrap_or(&self.session), &self.roots.borrow());
         let req = Request { cwd: self.cwd.clone(), session, args };
         client::call_autostart(&self.sock, &req, &client::spawn_daemon)
             .map_err(|e| format!("cannot reach zazzled: {e}"))
@@ -555,6 +555,9 @@ fn pin_args(tool: &str, mut argv: Vec<String>, args: &Value) -> Result<Vec<Strin
     Ok(argv)
 }
 
+// The argument zazzle's hook adds to each tool call so a Claude Code session and each of its subagents keep their own dedupe state.
+pub const SESSION_ARG: &str = "zazzle_session";
+
 // Runs a tool call and returns its result, or a protocol error for an unknown tool.
 fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     let name = params.get("name").and_then(Value::as_str).unwrap_or("");
@@ -567,7 +570,8 @@ fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
         Ok(a) => a,
         Err(e) => return Ok(tool_result(&format!("error: {e}"), true)),
     };
-    Ok(match backend.call(argv) {
+    let session = args.get(SESSION_ARG).and_then(Value::as_str);
+    Ok(match backend.call(argv, session) {
         Ok((status, text)) => tool_result(&text, status != 0),
         Err(e) => tool_result(&format!("error: {e}"), true),
     })
@@ -697,12 +701,14 @@ mod tests {
         calls: RefCell<Vec<Vec<String>>>,
         answer: Result<(u8, String), String>,
         roots: RefCell<Vec<String>>,
+        sessions: RefCell<Vec<Option<String>>>,
     }
 
     impl Backend for Fake {
         // Records the call and replies.
-        fn call(&self, args: Vec<String>) -> Result<(u8, String), String> {
+        fn call(&self, args: Vec<String>, session: Option<&str>) -> Result<(u8, String), String> {
             self.calls.borrow_mut().push(args);
+            self.sessions.borrow_mut().push(session.map(String::from));
             self.answer.clone()
         }
 
@@ -714,7 +720,12 @@ mod tests {
 
     // Builds a fake that answers with text.
     fn fake(status: u8, text: &str) -> Fake {
-        Fake { calls: RefCell::new(vec![]), roots: RefCell::new(vec![]), answer: Ok((status, text.into())) }
+        Fake {
+            calls: RefCell::new(vec![]),
+            roots: RefCell::new(vec![]),
+            sessions: RefCell::new(vec![]),
+            answer: Ok((status, text.into())),
+        }
     }
 
     // Sends one request line and returns the response.
@@ -793,6 +804,19 @@ mod tests {
             vec!["edit", "f", "--expect", "s", "--old", "a", "--new", "b", "--old", "c", "--new", "d"]
         );
         assert!(edit_args(&json!({"path": "f", "edits": [{"old": "a"}]})).is_err());
+    }
+
+    // Checks the hook's session argument reaches the backend and is not passed to the command.
+    #[test]
+    fn test_session_argument() {
+        let b = fake(0, "ok");
+        ask(
+            &b,
+            json!({"id":1,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{"zazzle_session":"s1/a2"}}}),
+        );
+        ask(&b, json!({"id":2,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{}}}));
+        assert_eq!(*b.sessions.borrow(), vec![Some("s1/a2".to_string()), None]);
+        assert!(!b.calls.borrow()[0].iter().any(|a| a.contains("s1/a2")));
     }
 
     // Checks ping, tools/list and unknown methods.
@@ -961,6 +985,7 @@ mod tests {
         let down = Fake {
             calls: RefCell::new(vec![]),
             roots: RefCell::new(vec![]),
+            sessions: RefCell::new(vec![]),
             answer: Err("cannot reach zazzled: boom".into()),
         };
         let r =
@@ -1082,7 +1107,7 @@ mod tests {
         let file = dir.write("f", b"x");
         let be =
             DaemonBackend { sock: file, cwd: "/".into(), session: "s".into(), roots: Default::default() };
-        assert!(be.call(vec!["version".into()]).unwrap_err().starts_with("cannot reach zazzled: "));
+        assert!(be.call(vec!["version".into()], None).unwrap_err().starts_with("cannot reach zazzled: "));
     }
 
     // Checks the daemon backend talks to a live server.
@@ -1095,7 +1120,7 @@ mod tests {
             session: "s".into(),
             roots: Default::default(),
         };
-        let (status, text) = be.call(vec!["version".into()]).expect("call");
+        let (status, text) = be.call(vec!["version".into()], None).expect("call");
         assert_eq!(status, 0);
         assert!(text.starts_with("zazzle "));
         srv.finish().expect("finish");

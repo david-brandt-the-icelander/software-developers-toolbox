@@ -310,7 +310,7 @@ fn view_key(key: &str) -> Option<(usize, usize)> {
     }
 }
 
-// Renders the indexer's terse view of a C# file for a line range under the budget; it has no sha, so edits need --source.
+// Renders a terse view for a line range under the budget; it has no sha, and its header says --source gives one.
 fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &Opts, label: &str) -> String {
     let (head, body) = view.split_once('\n').unwrap_or((view, ""));
     let steps = head.split_once("terse: ").map_or("nothing to shorten", |(_, s)| s);
@@ -322,7 +322,7 @@ fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &
     let costs: Vec<usize> = lines.iter().map(|(_, _, l)| tokens::from_bytes(l.len() + 1)).collect();
     let (keep, tail_start) = fit(&costs, o.budget);
     let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
-    let mut out = format!("{shown} {nl} lines, terse view{partial}: {steps}\n");
+    let mut out = format!("{shown} {nl} lines, terse view{partial}: {steps}; sha: --source\n");
     let shown_lines = lines[..keep].iter().chain(&lines[tail_start.max(keep)..]);
     let indent = common_indent(shown_lines.map(|(_, _, l)| *l));
     for (_, _, l) in &lines[..keep] {
@@ -835,12 +835,13 @@ mod tests {
         std::fs::write(t.path().join("c.htm"), "<p>plain</p>\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.html"]).text,
-            "a.html 5 lines, terse view: 1 comments\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
+            "a.html 5 lines, terse view: 1 comments; sha: --source\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
         );
         let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3"]).text;
         assert!(
-            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes\n")
-                && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
+            razor.starts_with(
+                "b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes; sha: --source\n"
+            ) && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
             "{razor}"
         );
         assert!(run_cmd(t.path(), &["read", "c.htm"]).text.starts_with("c.htm 1 lines, sha "));
@@ -857,11 +858,11 @@ mod tests {
         std::fs::write(t.path().join("c.dart"), "int f() => 1;\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.py"]).text,
-            "a.py 3 lines, terse view: 1 imports\n1-2\t⋯ 2 import(s)\n3\tx = 1"
+            "a.py 3 lines, terse view: 1 imports; sha: --source\n1-2\t⋯ 2 import(s)\n3\tx = 1"
         );
         let ts = run_cmd(t.path(), &["read", "b.ts", "--symbol", "f"]).text;
         assert!(
-            ts.starts_with("b.ts 4 lines, terse view: 1 log statements\n")
+            ts.starts_with("b.ts 4 lines, terse view: 1 log statements; sha: --source\n")
                 && ts.ends_with("\n1\tfunction f() {\n3\t  return 1;\n4\t}"),
             "{ts}"
         );
@@ -878,7 +879,7 @@ mod tests {
         std::fs::write(t.path().join("b.scss"), "a { color: red; }\n").expect("write");
         assert_eq!(
             run_cmd(t.path(), &["read", "a.css"]).text,
-            "a.css 3 lines, terse view: 1 imports\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
+            "a.css 3 lines, terse view: 1 imports; sha: --source\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
         );
         assert!(run_cmd(t.path(), &["read", "b.scss"]).text.starts_with("b.scss 1 lines, sha "));
     }
@@ -895,11 +896,13 @@ mod tests {
         std::fs::write(t.path().join("e.toml"), "a = 1\n").expect("write");
         let json = run_cmd(t.path(), &["read", "a.json"]).text;
         assert!(
-            json.starts_with("a.json 15 lines, terse view: 1 list items\n")
+            json.starts_with("a.json 15 lines, terse view: 1 list items; sha: --source\n")
                 && json.contains("\n3-13\t⋯ 11 item(s)\n"),
             "{json}"
         );
-        assert!(run_cmd(t.path(), &["read", "b.md"]).text.ends_with("terse view: 1 comments\n2\t# B"));
+        assert!(run_cmd(t.path(), &["read", "b.md"])
+            .text
+            .ends_with("terse view: 1 comments; sha: --source\n2\t# B"));
         assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
         assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
         assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
@@ -968,7 +971,7 @@ mod tests {
         let whole = run_cmd(t.path(), &["read", "C.cs"]).text;
         assert_eq!(
             whole,
-            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
+            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers; sha: --source\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
         );
         let part = run_cmd(t.path(), &["read", "C.cs:4-5"]).text;
         assert!(
@@ -1016,7 +1019,7 @@ mod tests {
                 &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true, rev: None },
                 ""
             ),
-            "f.cs 1 lines, terse view: nothing to shorten"
+            "f.cs 1 lines, terse view: nothing to shorten; sha: --source"
         );
     }
 
