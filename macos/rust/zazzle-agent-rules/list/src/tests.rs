@@ -1,4 +1,4 @@
-// Tests for list-rules, run against throwaway folder trees.
+// Tests for get-rules, run against throwaway folder trees.
 use super::*;
 
 // Makes a unique empty folder under the system temp folder.
@@ -108,13 +108,13 @@ fn test_children_missing_folder_is_empty() {
 fn test_run_outputs_and_codes() {
     let root = temp("run");
     put(&root.join("AGENTS.md"));
-    let (text, code) = run(&strs(&["list-rules", root.to_str().expect("utf8")]), None);
+    let (text, code) = run(&strs(&["get-rules", root.to_str().expect("utf8"), "--name-only"]), None);
     assert_eq!((text, code), (format!("rule {}\n", root.join("AGENTS.md").display()), 0));
     assert_eq!(run(&strs(&["--help"]), None).1, 0);
     assert!(run(&strs(&["--version"]), None).0.starts_with("zazzle-agent "));
     assert_eq!(run(&strs(&[]), None).1, 2);
     assert_eq!(run(&strs(&["other", "x"]), None).1, 2);
-    let (text, code) = run(&strs(&["list-rules", root.join("nope").to_str().expect("utf8")]), None);
+    let (text, code) = run(&strs(&["get-rules", root.join("nope").to_str().expect("utf8")]), None);
     assert_eq!(code, 66);
     assert!(text.contains("nope"));
 }
@@ -141,10 +141,31 @@ fn test_run_purpose_arguments() {
     let root = temp("runp");
     fs::write(root.join("AGENTS.md"), "#zazzle-purpose-begin:a\n1\n#zazzle-purpose-end:a\n#zazzle-purpose-begin:b\n2\n#zazzle-purpose-end:b\n").expect("writable");
     let dir = root.to_str().expect("utf8");
-    let (text, code) = run(&strs(&["list-rules", dir, "--purpose", "a", "--purpose=b"]), None);
+    let (text, code) = run(&strs(&["get-rules", dir, "--purpose", "a", "--purpose=b", "--name-only"]), None);
     let file = root.join("AGENTS.md");
     assert_eq!((text, code), (format!("rule {0}:2-2\nrule {0}:5-5\n", file.display()), 0));
-    assert_eq!(run(&strs(&["list-rules", dir, "--purpose"]), None).1, 2);
-    assert_eq!(run(&strs(&["list-rules", dir, dir]), None).1, 2);
-    assert_eq!(run(&strs(&["list-rules"]), None).1, 2);
+    assert_eq!(run(&strs(&["get-rules", dir, "--purpose"]), None).1, 2);
+    assert_eq!(run(&strs(&["get-rules", dir, dir]), None).1, 2);
+    assert_eq!(run(&strs(&["get-rules"]), None).1, 2);
+}
+
+// By default the file text follows a header, whole for plain files and only the marked lines for ranges.
+#[test]
+fn test_run_prints_bodies() {
+    let root = temp("body");
+    fs::write(root.join("AGENTS.md"), "one\ntwo\n").expect("writable");
+    fs::write(root.join("CLAUDE.md"), "x\n#zazzle-purpose-begin:a\nkeep\n#zazzle-purpose-end:a\n")
+        .expect("writable");
+    let dir = root.to_str().expect("utf8");
+    let (text, _) = run(&strs(&["get-rules", dir]), None);
+    assert!(text.starts_with(&format!("==> rule {} <==\none\ntwo\n\n", root.join("AGENTS.md").display())));
+    let (text, _) = run(&strs(&["get-rules", dir, "--purpose", "a"]), None);
+    assert!(text.contains(&format!("==> rule {}:3-3 <==\nkeep\n\n", root.join("CLAUDE.md").display())));
+}
+
+// A file that cannot be read as text shows an error in its block.
+#[test]
+fn test_body_unreadable_file() {
+    let f = Found { kind: "rule", path: temp("bad").join("none.md"), lines: Vec::new() };
+    assert!(body(&f).contains("error:"));
 }

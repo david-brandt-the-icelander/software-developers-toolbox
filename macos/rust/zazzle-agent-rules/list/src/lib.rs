@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 mod purpose;
 
 // Usage text printed for help and for wrong arguments.
-const USAGE: &str = "usage: zazzle agent list-rules PATH [--purpose NAME]...\nprints `rule FILE` or `skill FILE` per line, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` line ranges\n";
+const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only]\nprints each applying file as `==> rule FILE <==` (or `skill`) then its text, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE` or `skill FILE` lines\n";
 // Rule files looked for in each folder, relative to it.
 const RULE_FILES: [&str; 4] = ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md", ".codex/AGENTS.md"];
 // Folders of extra rule files (every .md inside), relative to a folder.
@@ -104,13 +104,16 @@ pub fn list_rules(path: &Path, home: Option<&Path>, wanted: &[String]) -> Result
     Ok(all.into_iter().filter_map(|f| narrow(f, wanted)).collect())
 }
 
-// Splits the arguments after the command into the path and the repeated --purpose values.
-fn parse(args: &[String]) -> Option<(&String, Vec<String>)> {
+// Splits the arguments after the command into the path, the repeated --purpose values and whether --name-only was given.
+fn parse(args: &[String]) -> Option<(&String, Vec<String>, bool)> {
     let mut path = None;
     let mut wanted = Vec::new();
+    let mut name_only = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if a == "--purpose" {
+        if a == "--name-only" {
+            name_only = true;
+        } else if a == "--purpose" {
             wanted.push(it.next()?.clone());
         } else if let Some(v) = a.strip_prefix("--purpose=") {
             wanted.push(v.to_string());
@@ -118,7 +121,7 @@ fn parse(args: &[String]) -> Option<(&String, Vec<String>)> {
             return None;
         }
     }
-    Some((path?, wanted))
+    Some((path?, wanted, name_only))
 }
 
 // Formats one found file as one line, or one line per line range.
@@ -127,6 +130,28 @@ fn show(f: &Found) -> String {
         return format!("{} {}\n", f.kind, f.path.display());
     }
     f.lines.iter().map(|(a, b)| format!("{} {}:{a}-{b}\n", f.kind, f.path.display())).collect()
+}
+
+// Formats one found file (or each of its line ranges) as a `==> kind path <==` header followed by its text.
+fn body(f: &Found) -> String {
+    let text = match fs::read_to_string(&f.path) {
+        Ok(t) => t,
+        Err(e) => return format!("==> {} {} <==\nerror: {e}\n\n", f.kind, f.path.display()),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let whole = [(1, lines.len())];
+    let ranges = if f.lines.is_empty() { &whole[..] } else { &f.lines[..] };
+    let mut out = String::new();
+    for &(a, b) in ranges {
+        let tag = if f.lines.is_empty() { String::new() } else { format!(":{a}-{b}") };
+        out.push_str(&format!("==> {} {}{tag} <==\n", f.kind, f.path.display()));
+        for line in lines.iter().take(b).skip(a.saturating_sub(1)) {
+            out.push_str(line);
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    out
 }
 
 // Runs the command line (after the program name) and returns the text to print and the exit code.
@@ -138,14 +163,15 @@ pub fn run(args: &[String], home: Option<&Path>) -> (String, i32) {
         return (USAGE.to_string(), 0);
     }
     let parsed = match args.split_first() {
-        Some((cmd, rest)) if cmd == "list-rules" => parse(rest),
+        Some((cmd, rest)) if cmd == "get-rules" => parse(rest),
         _ => None,
     };
-    let Some((path, wanted)) = parsed else {
+    let Some((path, wanted, name_only)) = parsed else {
         return (USAGE.to_string(), 2);
     };
     match list_rules(Path::new(path), home, &wanted) {
-        Ok(found) => (found.iter().map(show).collect(), 0),
+        Ok(found) if name_only => (found.iter().map(show).collect(), 0),
+        Ok(found) => (found.iter().map(body).collect(), 0),
         Err(e) => (format!("{e}\n"), 66),
     }
 }

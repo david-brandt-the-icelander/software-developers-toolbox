@@ -1,4 +1,4 @@
-// The `zazzle-agent` program behind `zazzle agent`: runs list-rules and exits with its status.
+// The `zazzle-agent` program behind `zazzle agent`: runs get-rules and exits with its status.
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
