@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 pub mod profile;
 
 pub const USAGE: &str =
-    "usage: zazzle run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS..";
+    "usage: zazzle run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--llm INSTRUCTION] [--] CMD ARGS..";
 const DEFAULT_BUDGET: usize = 8000;
 const DEFAULT_TIMEOUT: u64 = 3600;
 const MAX_OUTPUT: usize = 64 << 20;
@@ -27,6 +27,7 @@ pub struct Opts {
     pub budget: usize,
     pub timeout: Duration,
     pub profile: Option<String>,
+    pub llm: Option<String>,
     pub argv: Vec<String>,
 }
 
@@ -55,6 +56,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         budget: DEFAULT_BUDGET,
         timeout: Duration::from_secs(DEFAULT_TIMEOUT),
         profile: None,
+        llm: None,
         argv: Vec::new(),
     };
     let mut it = args.iter();
@@ -64,6 +66,10 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--lossless" => o.lossy = false,
             "--budget" => o.budget = number(it.next(), a)? as usize,
             "--timeout" => o.timeout = Duration::from_secs(number(it.next(), a)?),
+            "--llm" => {
+                let i = it.next().filter(|i| !i.trim().is_empty());
+                o.llm = Some(i.ok_or("--llm needs an instruction for the local model")?.clone());
+            }
             "--profile" => {
                 let name = it.next().ok_or("--profile needs a name")?;
                 if name != "none" && profile::named(name).is_none() {
@@ -211,8 +217,18 @@ pub fn main(args: &[String], out: &mut dyn io::Write) -> Result<i32, String> {
     crate::activity::record(
         serde_json::json!({"src": "run", "cmd": cmd, "cwd": cwd, "status": ran.code, "session": session}),
     );
-    writeln!(out, "{}", deliver(&o, &ran, crate::outputs::dir().as_deref())).map_err(|e| e.to_string())?;
+    let text = deliver(&o, &ran, crate::outputs::dir().as_deref());
+    writeln!(out, "{}", post(&text, o.llm.as_deref(), &crate::llm::post)).map_err(|e| e.to_string())?;
     Ok(ran.code)
+}
+
+// Hands the delivered output to the local model when --llm asks; when the model fails, says why and keeps the output, since the command already ran.
+fn post(text: &str, llm: Option<&str>, ask: &dyn Fn(&str, &str) -> Result<String, String>) -> String {
+    match llm.map(|i| ask(text, i)) {
+        None => text.to_string(),
+        Some(Ok(answer)) => answer,
+        Some(Err(e)) => format!("error: {e}; the output as it is:\n{text}"),
+    }
 }
 
 #[cfg(test)]
@@ -264,6 +280,7 @@ mod tests {
                 budget: 50,
                 timeout: Duration::from_secs(9),
                 profile: Some("go".into()),
+                llm: None,
                 argv: v(&["go", "test"])
             }
         );
@@ -273,6 +290,14 @@ mod tests {
             (true, DEFAULT_BUDGET, None, v(&["cargo", "test", "--", "--nocapture"]))
         );
         assert_eq!(opts(&["--profile", "none", "make"]).profile.as_deref(), Some("none"));
+        assert_eq!(opts(&["--llm", "Just the ids", "curl", "x"]).llm.as_deref(), Some("Just the ids"));
+        assert!(parse(&v(&["--llm"])).expect_err("no instruction").contains("needs an instruction"));
+        assert_eq!(post("raw", None, &|_, _| Err("unused".into())), "raw");
+        assert_eq!(post("raw", Some("x"), &|t, i| Ok(format!("{i}:{t}"))), "x:raw");
+        assert_eq!(
+            post("raw", Some("x"), &|_, _| Err("down".into())),
+            "error: down; the output as it is:\nraw"
+        );
     }
 
     // Checks the one-line errors for bad options and a missing command.

@@ -8,7 +8,7 @@
       "id": "folder",
       "title": "zazzle-llm source",
       "summary": "The zazzle-llm binary: the command line (`llm`, `prompt`), the pinned model catalogue, the model store with its resumable, hash-checked downloads, the chat template renderer, the thinking/answer splitter and the llama.cpp engine, each in one file with its unit tests.",
-      "purpose": "main.rs parses the command line and runs `llm` and `prompt`; catalog.rs is the list of models (Model, MODELS, DEFAULT) and their URLs; store.rs is the directory, the defaults file and fetch; template.rs renders a model's own Jinja chat template with minijinja; think.rs splits streamed text into thinking and answer (Filter); engine.rs runs one prompt through llama-cpp-2 and streams the text.",
+      "purpose": "main.rs parses the command line and runs `llm` and `prompt`; catalog.rs is the list of models (Model, MODELS, DEFAULT) and their URLs; store.rs is the directory, the defaults file and fetch; template.rs renders a model's own Jinja chat template with minijinja; think.rs splits streamed text into thinking and answer (Filter); engine.rs runs one prompt through llama-cpp-2, optionally held to a GBNF grammar and greedy at temperature 0, and streams the text.",
       "boundaries": [
         "No other crate in the repository is used; zazzled only execs the built binary.",
         "The engine is the one part without a unit test of its own run: it needs a real model file. Everything else is tested without one (a local HTTP server stands in for Hugging Face).",

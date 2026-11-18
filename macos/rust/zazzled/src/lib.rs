@@ -4,6 +4,7 @@
 pub mod activity;
 pub mod arena;
 pub mod args;
+pub mod brief;
 pub mod buildfile;
 pub mod cli;
 pub mod client;
@@ -16,6 +17,7 @@ pub mod engine;
 pub mod hook;
 pub mod indexer;
 pub mod launchd;
+pub mod llm;
 pub mod locals;
 pub mod markup;
 pub mod mcp;

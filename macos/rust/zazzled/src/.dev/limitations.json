@@ -170,6 +170,23 @@
           "symbol": "report"
         }
       ]
+    },
+    {
+      "id": "local-model-answers",
+      "title": "Local model answers are approximate and need a downloaded model",
+      "summary": "--llm, brief and prompt run the user's local model with --no-download, one call at a time, on at most 400,000 bytes of input and for at most ZAZZLE_LLM_TIMEOUT seconds; brief's choice and a post-processed answer are only as good as the model.",
+      "impact": "Without a downloaded model these fail with the command to download one; a post-processed answer may drop or misstate detail, and a brief may leave out a section the task needs, so get-rules and the command without --llm remain the exact answers.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "ask_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "run"
+        }
+      ]
     }
   ]
 }

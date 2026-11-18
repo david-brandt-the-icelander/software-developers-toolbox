@@ -79,7 +79,9 @@
       ],
       "members": [
         "dedupe: bool",
-        "budget: Option<usize>"
+        "budget: Option<usize>",
+        "commit: Option<String>",
+        "llm: Option<String>"
       ]
     },
     {

@@ -3,7 +3,7 @@
   "kind": "feature",
   "title": "zazzled features",
   "folder": "macos/rust/zazzled/src",
-  "description": "Behavior the daemon adds to the commands' answers: session ids and dedupe, read-again, and stored outputs.",
+  "description": "Behavior the daemon adds to the commands' answers: session ids and dedupe, read-again, stored outputs, and handing work to the local model.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/session.rs",
@@ -380,7 +380,7 @@
           "symbol": "is_agent"
         }
       ],
-      "behavior": "One list (read, outline, find, refs, find-symbol, edit, ls, run, clean, read-again) decides agent help (`help --agent`, which bare `zazzle help` becomes when CLAUDECODE, CODEX_SANDBOX or CODEX_THREAD_ID is set), the MCP tools/list and the agent instructions; `help --all` lists every command, and errors suggest only agent commands.",
+      "behavior": "One list (read, outline, find, refs, find-symbol, edit, replace, ls, diff, run, clean, read-again, get-rules, brief and prompt) decides agent help (`help --agent`, which bare `zazzle help` becomes when CLAUDECODE, CODEX_SANDBOX or CODEX_THREAD_ID is set), the MCP tools/list and the agent instructions; `help --all` lists every command, and errors suggest only agent commands.",
       "outcome": "Agents spend no tokens on commands they should not run, and people keep every command.",
       "constraints": [
         "No command is removed: tools/call still answers the tools tools/list leaves out."
@@ -473,6 +473,136 @@
         {
           "path": "macos/rust/zazzled/src/session.rs",
           "symbol": "has_note"
+        }
+      ]
+    },
+    {
+      "id": "llm-post-processing",
+      "name": "Output post-processed by the local model",
+      "description": "Any daemon command (and every MCP tool that only reads) takes `--llm INSTRUCTION`: its output goes to the user's local model with the instruction, and the agent reads only the model's answer.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "llm_args"
+        },
+        {
+          "path": "macos/rust/zazzled/README.md",
+          "symbol": "Agents asking the local model"
+        }
+      ],
+      "behavior": "split_globals takes `--llm INSTRUCTION` (or `--llm=INSTRUCTION`) out of the command line, the command runs as usual, and when it succeeded produce hands its output to llm::post: zazzle-llm runs as `prompt --no-download --effort low --temp 0` with a system message asking for the result only, the instruction and then the output on standard input. The answer comes back followed by `[post-processed by the local model: ~N → ~M tokens; run without --llm for the exact output]`, noting when the token limit cut it short, and is then cut to the budget like any output. Empty output passes through untouched. Over MCP, the `llm` argument of a reading tool becomes `--llm` right after the command name; zazzle_edit, zazzle_replace, zazzle_prompt and zazzle_brief do not take it.",
+      "outcome": "An agent that needs only part of a large output (an API response, a log, a long listing) spends fewer tokens, and the marker tells it the text is not exact.",
+      "constraints": [
+        "Needs a model the user already downloaded: a missing model is the command's error, never a download.",
+        "Input over 400,000 bytes is refused; narrow the command first.",
+        "One local model call at a time per daemon, for at most ZAZZLE_LLM_TIMEOUT seconds (default 300).",
+        "A model failure replaces the output with `error: local model: REASON`; a failed command is not post-processed.",
+        "The answer may lose or invent detail; drop --llm when exact text matters."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "ask_with"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "mark"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "takes_llm"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "llm_args"
+        }
+      ]
+    },
+    {
+      "id": "brief",
+      "name": "Brief: the rules and skills a task needs",
+      "description": "`brief INTENT [--path PATH]..` (also `agent brief`, MCP zazzle_brief) prints, verbatim, only the rule sections and skills the local model judges the intended task needs, from everything get-rules would send for the paths.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "brief"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        }
+      ],
+      "behavior": "The rule and skill files that apply to each path (default: the working directory) are listed with zazzle-agent-rules-list's list_rules, without duplicates. Rule and import files are split at their Markdown headings outside code fences; each skill stays whole and is offered by its description; rules come first. The numbered sections, each shortened to 2,500 characters, go to the local model at low effort and temperature 0 with a GBNF grammar that forces a `N:y` or `N:n` verdict for every section in turn. The chosen sections print verbatim with their path and line range (skills whole), then `left out:` names the rest in one line. A brief's default budget is 8000 tokens instead of 3000.",
+      "outcome": "Before a task an agent reads the rules and skills that matter for it, not every rule file that applies to the folder.",
+      "constraints": [
+        "Needs a downloaded model; on failure the error says that `zazzle get-rules PATH` sends the rules without the local model.",
+        "The choice depends on the model: a small model can miss a section, so get-rules remains the complete answer.",
+        "It does not record what it sent in the session's rule ledger."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "sections"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "split"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "menu"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "verdicts"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "chosen"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "ask_local"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
         }
       ]
     }

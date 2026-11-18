@@ -3,7 +3,7 @@
   "kind": "operation",
   "title": "zazzle command operations",
   "folder": "macos/rust/zazzled/src/cmd",
-  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzled mcp` (except clean and status; the structure commands' tools are named with underscores, zazzle_find_symbol for find-symbol), or in-process as `zazzled run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2.",
+  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzled mcp` (except clean and status; the structure commands' tools are named with underscores, zazzle_find_symbol for find-symbol), or in-process as `zazzled run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2. Every command but read-again also takes `--llm INSTRUCTION`, which hands a successful output to the local model (feature llm-post-processing in src/.dev/feature.json).",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/cmd/mod.rs",
@@ -504,6 +504,71 @@
         "A download that fails or whose SHA-256 does not match the manifest: listed per module, and the command fails.",
         "A name the manifest does not have: `no such language module in this build's manifest`.",
         "Bad words: the usage line."
+      ]
+    },
+    {
+      "id": "brief",
+      "name": "brief",
+      "description": "Prints the rule sections and skills the local model judges a task needs, verbatim, from everything get-rules would send for the paths.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "brief"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "TOOLS"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/mod.rs",
+        "symbol": "brief"
+      },
+      "action": "query",
+      "transport": "zazzle brief INTENT.. [--path PATH].. | zazzle agent brief INTENT.. [--path PATH]..; MCP tool zazzle_brief {intent, paths?}",
+      "authorization": "Callers of the daemon's own uid; it reads the rule and skill files that apply to the paths and runs the user's zazzle-llm. Nothing else is checked.",
+      "result": "`brief for: INTENT`, how many of how many sections were chosen, each chosen section as `==> KIND PATH:A-B <==` (a skill without a range) and its text verbatim, then `left out: ...` naming the rest; cut to 8000 tokens unless --budget says otherwise.",
+      "failures": [
+        "No intent: the usage line.",
+        "--path without a path: `--path needs a path`.",
+        "No rule or skill file applies: a one-line answer saying so, not an error.",
+        "The local model fails (no model downloaded, timeout, zazzle-llm missing): `error: local model: REASON; zazzle get-rules PATH sends the rules without the local model`."
+      ]
+    },
+    {
+      "id": "prompt",
+      "name": "prompt",
+      "description": "Asks the user's default local model a question and returns its whole answer, for agents; never downloads a model.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "prompt"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "prompt_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/cmd/mod.rs",
+        "symbol": "prompt"
+      },
+      "action": "query",
+      "transport": "zazzle prompt [--effort low|medium|high] TEXT.. | `agent prompt` when it reaches the daemon (the invoker execs `zazzled llm` for `zazzle agent prompt`, which streams and may download); MCP tool zazzle_prompt {text, effort?}",
+      "authorization": "Callers of the daemon's own uid; it runs the user's zazzle-llm with --no-download. Nothing else is checked.",
+      "result": "The model's answer, followed by `[the token limit cut this answer short]` when zazzle-llm exited 3.",
+      "failures": [
+        "No text: `usage: agent prompt [--effort low|medium|high] TEXT..`.",
+        "--effort without a value: `--effort needs low, medium or high`.",
+        "The local model fails (no model downloaded, timeout, zazzle-llm missing or exiting with an error): `error: local model: REASON`."
       ]
     }
   ],

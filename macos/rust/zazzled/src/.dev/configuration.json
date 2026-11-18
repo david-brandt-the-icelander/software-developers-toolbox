@@ -455,6 +455,71 @@
           "symbol": "embed"
         }
       ]
+    },
+    {
+      "id": "ZAZZLE_LLM",
+      "title": "ZAZZLE_LLM",
+      "summary": "The zazzle-llm program the daemon runs for --llm, brief and prompt.",
+      "key": "ZAZZLE_LLM",
+      "type": "path",
+      "default": "zazzle-llm beside zazzled, else from the tool store (downloading the program, never a model)",
+      "sensitive": false,
+      "scope": "Read by the daemon (and `zazzle run`) each time it asks the local model.",
+      "takesEffect": "per-use",
+      "details": "Not used by `zazzled llm`, which execs zazzle-llm through the tools module.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "program"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_LLM_TIMEOUT",
+      "title": "ZAZZLE_LLM_TIMEOUT",
+      "summary": "How many seconds one local model call for --llm, brief or prompt may take before zazzle-llm is killed.",
+      "key": "ZAZZLE_LLM_TIMEOUT",
+      "type": "integer (seconds)",
+      "default": 300,
+      "sensitive": false,
+      "scope": "Read by the daemon (and `zazzle run`) each time it asks the local model.",
+      "takesEffect": "per-use",
+      "validation": "A positive whole number; anything else means the default.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "timeout"
+        }
+      ]
+    },
+    {
+      "id": "llm-option",
+      "title": "--llm INSTRUCTION",
+      "summary": "A global option of every daemon command and of `zazzle run`: hand the output to the local model with this instruction and print its answer.",
+      "key": "--llm",
+      "type": "string",
+      "default": "none (the output as it is)",
+      "sensitive": false,
+      "scope": "One command line; over MCP, the `llm` argument of a tool that only reads.",
+      "takesEffect": "per-use",
+      "validation": "Must not be blank: `--llm needs an instruction for the local model`.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "llm_args"
+        }
+      ]
     }
   ]
 }

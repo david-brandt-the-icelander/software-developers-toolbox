@@ -3,11 +3,12 @@
   "kind": "deployment",
   "title": "zazzle-llm deployment diagram",
   "folder": "macos/rust/zazzle-llm",
-  "description": "How zazzle-llm gets to a developer's machine and runs there. It is not installed with zazzle: the first `zazzle agent llm` or `zazzle agent prompt` makes the invoker exec `zazzled llm`, which downloads the binary for its own release from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ into ~/.zazzle/v1/tools, checks its SHA-256 against the manifest compiled into zazzled and execs it. zazzle-llm then downloads the chosen model from huggingface.co into ~/.zazzle/v1/llm/models, runs it in its own process with llama.cpp (on the GPU through Metal on Apple Silicon) and exits. Nothing stays resident.",
+  "description": "How zazzle-llm gets to a developer's machine and runs there. It is not installed with zazzle: the first `zazzle agent llm` or `zazzle agent prompt` makes the invoker exec `zazzled llm`, which downloads the binary for its own release from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ into ~/.zazzle/v1/tools, checks its SHA-256 against the manifest compiled into zazzled and execs it. zazzle-llm then downloads the chosen model from huggingface.co into ~/.zazzle/v1/llm/models, runs it in its own process with llama.cpp (on the GPU through Metal on Apple Silicon) and exits. Nothing stays resident. For an agent's `--llm`, `brief` and `prompt` the zazzled daemon (or `zazzled wrap`) runs `zazzle-llm prompt --no-download` as a child instead, which fails with exit 4 rather than download a missing model.",
   "sources": [
     { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "is_llm" },
     { "path": "macos/rust/zazzled/src/tools.rs", "symbol": "store" },
     { "path": "macos/rust/zazzled/src/tools.rs", "symbol": "path" },
+    { "path": "macos/rust/zazzled/src/llm.rs", "symbol": "run" },
     { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "root" },
     { "path": "macos/rust/zazzle-llm/src/store.rs", "symbol": "fetch" },
     { "path": "macos/rust/zazzle-llm/src/catalog.rs", "symbol": "url" },
@@ -51,10 +52,17 @@
       "description": "The same process after exec: finds zazzle-llm beside zazzled or in the tool store, downloading it first, and replaces itself with it."
     },
     {
+      "id": "daemon",
+      "name": "zazzled serve (or zazzled wrap)",
+      "kind": "process",
+      "description": "The zazzle daemon, or `zazzled wrap` for `zazzle run --llm`: runs zazzle-llm as a child for an agent's `--llm`, `brief` and `prompt`, one at a time, killing it after ZAZZLE_LLM_TIMEOUT (macos/rust/zazzled/.dev/deployment-diagram.json).",
+      "condition": "When an agent uses `--llm`, `brief` or `prompt` (or their MCP tools)."
+    },
+    {
       "id": "llm",
       "name": "zazzle-llm",
       "kind": "process",
-      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; exits 0, 2 on errors, 3 when the token limit cut the answer."
+      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; exits 0, 2 on errors, 3 when the token limit cut the answer, 4 when --no-download finds the model missing."
     },
     {
       "id": "tools",
@@ -104,6 +112,8 @@
     { "from": "zazzled", "to": "downloads", "kind": "connects-to", "description": "HTTPS GET of the tool, once, when it is neither beside zazzled nor in the store." },
     { "from": "zazzled", "to": "tools", "kind": "connects-to", "description": "Stores the verified tool and sets it executable." },
     { "from": "zazzled", "to": "llm", "kind": "connects-to", "description": "exec with the arguments after `llm`." },
+    { "from": "agent", "to": "daemon", "kind": "connects-to", "description": "`zazzle CMD --llm ..`, `zazzle brief ..`, `zazzle prompt ..` or their MCP tools, through the zazzle socket or `zazzled mcp`." },
+    { "from": "daemon", "to": "llm", "kind": "connects-to", "description": "Spawns `zazzle-llm prompt --no-download ..` with pipes: the input on standard input, the answer on standard output, the reason on standard error, and the exit code." },
     { "from": "machine", "to": "llm", "kind": "hosts", "description": "Runs as the calling user, one process per command." },
     { "from": "llm", "to": "huggingface", "kind": "connects-to", "description": "HTTPS GET with the platform's trust store, resuming a partial download with a Range request, on first use of a model." },
     { "from": "llm", "to": "models", "kind": "connects-to", "description": "Reads and writes the defaults; downloads under a flock and renames a model into place when its hash matches; memory-maps it to run." }

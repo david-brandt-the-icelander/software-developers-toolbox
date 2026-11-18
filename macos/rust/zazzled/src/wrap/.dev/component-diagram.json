@@ -28,7 +28,7 @@
     {
       "id": "runner",
       "name": "Runner (mod.rs)",
-      "responsibility": "Parses the options, runs the command with one merged output pipe (at most 64 MiB kept) and a timeout, and renders the output with a footer; tags it with an output id when it is stored.",
+      "responsibility": "Parses the options, runs the command with one merged output pipe (at most 64 MiB kept) and a timeout, and renders the output with a footer; tags it with an output id when it is stored; with --llm, hands the delivered text to the local model and prints its answer, or the reason and the text when the model fails.",
       "folder": "macos/rust/zazzled/src/wrap"
     },
     {
@@ -52,6 +52,13 @@
       "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
     },
     {
+      "id": "llm",
+      "name": "Local model calls",
+      "responsibility": "llm.rs in the parent folder: runs zazzle-llm on the output with the instruction and marks the answer with the tokens saved.",
+      "folder": "macos/rust/zazzled/src",
+      "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
+    },
+    {
       "id": "command",
       "name": "The wrapped command",
       "responsibility": "Any program the caller names, such as cargo test or dotnet build, run as a child with the caller's environment and standard input.",
@@ -64,6 +71,7 @@
     { "from": "runner", "to": "command", "kind": "depends-on", "description": "Spawns it with stdout and stderr on one pipe; kills it after the timeout." },
     { "from": "runner", "to": "profiles", "kind": "depends-on", "description": "detect or named, then Profile::apply." },
     { "from": "runner", "to": "clean", "kind": "depends-on", "description": "clean::tidy_lines before the profile, clean::shrink_steps and cuts after it, and clean::store for the stored output." },
-    { "from": "runner", "to": "outputs", "kind": "depends-on", "description": "outputs::dir: the store directory, from the caller's environment." }
+    { "from": "runner", "to": "outputs", "kind": "depends-on", "description": "outputs::dir: the store directory, from the caller's environment." },
+    { "from": "runner", "to": "llm", "kind": "depends-on", "description": "post hands the delivered output to llm::post when --llm is given." }
   ]
 }

@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzle run class diagram",
   "folder": "macos/rust/zazzled/src/wrap",
-  "description": "The runner's options and result (mod.rs), and the profiles with their rules and drop counts (profile.rs).",
+  "description": "The runner's options (llm is the --llm instruction for the local model) and result (mod.rs), and the profiles with their rules and drop counts (profile.rs).",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/wrap/mod.rs",
@@ -24,7 +24,7 @@
       "name": "Opts (run)",
       "kind": "struct",
       "sources": ["macos/rust/zazzled/src/wrap/mod.rs"],
-      "members": ["lossy: bool", "budget: usize", "timeout: Duration", "profile: Option<String>", "argv: Vec<String>"]
+      "members": ["lossy: bool", "budget: usize", "timeout: Duration", "profile: Option<String>", "llm: Option<String>", "argv: Vec<String>"]
     },
     {
       "id": "Ran",

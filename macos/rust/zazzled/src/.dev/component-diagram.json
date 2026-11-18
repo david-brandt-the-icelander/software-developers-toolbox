@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "zazzled source component diagram",
   "folder": "macos/rust/zazzled/src",
-  "description": "The parts of the zazzled crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. The `zazz` command line goes to the zazz scripts module, which builds, tests and runs scripts in zazz-worker processes and adds its tools to the MCP server. `zazzled llm` hands `zazzle agent llm|prompt` to zazzle-llm, a JIT tool the tools module fetches like a language module. All of it is one binary.",
+  "description": "The parts of the zazzled crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. The `zazz` command line goes to the zazz scripts module, which builds, tests and runs scripts in zazz-worker processes and adds its tools to the MCP server. `zazzled llm` hands `zazzle agent llm|prompt` to zazzle-llm, a JIT tool the tools module fetches like a language module; inside the daemon, the llm module runs zazzle-llm as a subprocess so agents can post-process any command's output (`--llm`), ask it (`prompt`) and have it choose the rule sections and skills a task needs (`brief`). All of it is one binary.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/lib.rs",
@@ -40,6 +40,14 @@
     {
       "path": "macos/rust/zazzled/src/tools.rs",
       "symbol": "exec"
+    },
+    {
+      "path": "macos/rust/zazzled/src/llm.rs",
+      "symbol": "ask_with"
+    },
+    {
+      "path": "macos/rust/zazzled/src/brief.rs",
+      "symbol": "run"
     }
   ],
   "components": [
@@ -76,7 +84,7 @@
     {
       "id": "mcp",
       "name": "MCP server (mcp.rs, mcp_structure.rs, mcp_upgrade.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1), with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed zazzled on the same connection and announces tools/list_changed.",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the zazzle file tools (zazzle_prompt among them), zazzle_get_rules and zazzle_brief, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1); every tool that only reads takes an `llm` instruction, passed on as `--llm` after the command, with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed zazzled on the same connection and announces tools/list_changed.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -220,13 +228,32 @@
     {
       "id": "tools",
       "name": "JIT tools (tools.rs)",
-      "responsibility": "Finds a program that is not in the release tarball (zazzle-llm): beside zazzled when there, else in ZAZZLE_TOOLS_DIR or ~/.zazzle/v1/tools, downloading it first from ZAZZLE_TOOLS_URL or this release's icelander.net tools directory and accepting it only with the SHA-256 of the manifest compiled in from ZAZZLED_TOOLS_MANIFEST; makes it executable and execs it.",
+      "responsibility": "Finds a program that is not in the release tarball (zazzle-llm): beside zazzled when there, else in ZAZZLE_TOOLS_DIR or ~/.zazzle/v1/tools, downloading it first from ZAZZLE_TOOLS_URL or this release's icelander.net tools directory and accepting it only with the SHA-256 of the manifest compiled in from ZAZZLED_TOOLS_MANIFEST; makes it executable and execs it, or returns its path for the llm module.",
       "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "llm",
+      "name": "Local model calls (llm.rs)",
+      "responsibility": "Runs `zazzle-llm prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "brief",
+      "name": "Brief (brief.rs)",
+      "responsibility": "Answers `brief INTENT [--path PATH]..` and the zazzle_brief MCP tool: splits the rule files that apply to the paths at their Markdown headings and keeps skills whole, numbers them rules first, has the local model give a y/n verdict per section under a GBNF grammar, and prints the chosen sections verbatim with line ranges, naming the rest in one line.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "zazzle-agent-rules-list",
+      "name": "zazzle-agent-rules-list",
+      "responsibility": "The library in this repository that finds the rule and skill files for a path, used by rule delivery and brief.",
+      "folder": "macos/rust/zazzle-agent-rules/list",
+      "diagram": "macos/rust/zazzle-agent-rules/list/.dev/component-diagram.json"
     },
     {
       "id": "zazzle-llm",
       "name": "zazzle-llm",
-      "responsibility": "The program in this repository that runs open models locally for `zazzle agent llm|prompt`, exec'd by the tools module.",
+      "responsibility": "The program in this repository that runs open models locally: exec'd by the tools module for `zazzle agent llm|prompt`, and run by the llm module as `zazzle-llm prompt --no-download` for the agent features.",
       "folder": "macos/rust/zazzle-llm",
       "diagram": "macos/rust/zazzle-llm/.dev/component-diagram.json"
     },
@@ -269,7 +296,7 @@
     {
       "id": "cmd",
       "name": "zazzle commands",
-      "responsibility": "find, read, ls, outline, refs, edit, clean, read-again and status.",
+      "responsibility": "find, read, ls, outline, refs, edit, clean, read-again and status; the dispatcher also routes get-rules, brief and prompt, and applies the global `--llm` option.",
       "folder": "macos/rust/zazzled/src/cmd",
       "diagram": "macos/rust/zazzled/src/cmd/.dev/component-diagram.json"
     },
@@ -1120,6 +1147,78 @@
       "to": "zazzle-llm",
       "kind": "depends-on",
       "description": "Replaces the process with the zazzle-llm executable, keeping the caller's streams and exit status."
+    },
+    {
+      "from": "src",
+      "to": "llm",
+      "kind": "contains",
+      "description": "Local model calls."
+    },
+    {
+      "from": "src",
+      "to": "brief",
+      "kind": "contains",
+      "description": "The brief command."
+    },
+    {
+      "from": "cmd",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "produce runs a successful output through llm::post when `--llm` is given; `prompt` answers with llm::ask."
+    },
+    {
+      "from": "cmd",
+      "to": "brief",
+      "kind": "depends-on",
+      "description": "The dispatcher runs `brief` and `agent brief` with brief::run and brief::ask_local."
+    },
+    {
+      "from": "wrap",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "`zazzle run --llm` hands the delivered output to llm::post."
+    },
+    {
+      "from": "mcp",
+      "to": "brief",
+      "kind": "depends-on",
+      "description": "Lists and maps zazzle_brief (brief::TOOLS)."
+    },
+    {
+      "from": "brief",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "Defines zazzle_brief with mcp's Tool and argument helpers."
+    },
+    {
+      "from": "brief",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Asks the model for the verdicts with --grammar at low effort and temperature 0."
+    },
+    {
+      "from": "brief",
+      "to": "zazzle-agent-rules-list",
+      "kind": "depends-on",
+      "description": "list_rules and body for the files that apply to each path."
+    },
+    {
+      "from": "rules",
+      "to": "zazzle-agent-rules-list",
+      "kind": "depends-on",
+      "description": "list_rules, body, purpose and show for get-rules and folder instructions."
+    },
+    {
+      "from": "llm",
+      "to": "tools",
+      "kind": "depends-on",
+      "description": "tools::path finds zazzle-llm beside zazzled or in the tool store, downloading the program (never a model)."
+    },
+    {
+      "from": "llm",
+      "to": "zazzle-llm",
+      "kind": "depends-on",
+      "description": "Runs `zazzle-llm prompt --no-download` with flags, reading its answer and exit code (3 cut short, 4 model missing)."
     }
   ]
 }
