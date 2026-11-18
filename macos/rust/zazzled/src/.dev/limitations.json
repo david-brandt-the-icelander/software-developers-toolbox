@@ -157,7 +157,7 @@
     {
       "id": "routing-coverage",
       "title": "Routing is enforced only where a client has hooks",
-      "summary": "Claude Code and Codex hooks refuse raw shell searches, reads, listings and builds and Claude Code's Grep, Glob and C# Read; Claude Code's other Reads, native edits (unless --hook-edits), web and hosted tools, MCP servers left direct (OAuth, SSE, plugins, project files), the Claude desktop chat and Codex sessions that have not trusted the hook rely on instructions alone.",
+      "summary": "Claude Code and Codex hooks refuse raw shell searches, reads, listings and builds , in-place writes, and Claude Code's Grep, Glob, C# Read and Read of a file over 24 KB read whole; Claude Code's other Reads, native edits (unless --hook-edits), web and hosted tools, MCP servers left direct (OAuth, SSE, plugins, project files), the Claude desktop chat and Codex sessions that have not trusted the hook rely on instructions alone.",
       "impact": "Agents can still bypass zazzle there; the activity log records the native edits, # allow-raw passes and unavailable-zazzle passes the hook sees, but not calls that never reach it.",
       "evidenceStatus": "source-verified",
       "sources": [

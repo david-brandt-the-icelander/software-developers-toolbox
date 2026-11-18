@@ -23,7 +23,7 @@
         "The plan changes nothing, never prints secrets, and leaves OAuth, SSE and shared project servers alone with reasons.",
         "--apply writes backups, routes one proxy per upstream and is idempotent; --undo restores the servers, instructions and hook.",
         "--check stays local and starts no other server; --check --probe reports working servers, sign-in requests, start failures and timeouts, summarizing HTML error pages by size.",
-        "--hook installs zazzled hook for Claude Code and Codex and replaces the indexer's older hook; --workspace adds folders and --undo removes only the lines it added.",
+        "The hook is installed by default (--no-hook leaves it out): zazzled hook for Claude Code and Codex and replaces the indexer's older hook; --workspace adds folders and --undo removes only the lines it added.",
         "--check marks servers zazzle, proxied or direct and routing enforced or instructed, self-testing hooks; --report separates traffic through zazzle from bypasses.",
         "--verify passes search, exact read, a reversible edit and the overview from inside a repository and from the home folder, keeps a command's exit code, calls wrapped servers, and fails when nothing reached zazzle's log.",
         "--off returns every file to its state before --apply and --on returns it to the applied state; --uninstall also forgets the setup and unloads zazzled's agent."

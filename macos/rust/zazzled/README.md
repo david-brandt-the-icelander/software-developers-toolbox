@@ -11,8 +11,8 @@ A file tool for agents: `zazzle` replaces `grep`, `cat`, `sed -n`, `find`, `ls` 
 ```bash
 brew install zazzcat/z/zazzle         # or build: cd macos/rust && cargo build --release -p zazzled && cd ../c/zazzle && make
 zazzled install                       # macOS: launchd starts the daemon on demand (elsewhere zazzle starts it itself); writes the Homebrew opt path, so upgrades keep working
-zazzle setup --workspace ~/dev --hook  # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
-zazzle setup --apply --workspace ~/dev --hook
+zazzle setup --workspace ~/dev  # the plan for Claude Code, the Claude desktop app and Codex; nothing changes yet
+zazzle setup --apply --workspace ~/dev
 zazzle setup --check                   # after restarting the apps (and trusting the hook in Codex)
 zazzle setup --verify --repo ~/dev/api # uses zazzle like an agent would, from inside a repository and from elsewhere
 zazzle setup --report                  # what agents actually sent through zazzle in the last day, and the bypasses
@@ -28,9 +28,9 @@ Tell an agent "run `zazzle setup` and follow it": the report says what it found,
 
 | client | file | zazzle entry |
 |---|---|---|
-| Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; with `--hook`, `zazzled hook --client claude-code` in `~/.claude/settings.json` (Bash, Grep, Glob, Read and the edit tools) |
+| Claude Code (terminal, VS Code, desktop app's Code tab) | `~/.claude.json` | `zazzled mcp` in user scope, so every project gets it, started in the project's folder; instructions in `~/.claude/CLAUDE.md`; unless `--no-hook`, `zazzled hook --client claude-code` in `~/.claude/settings.json` (Bash, Grep, Glob, Read and the edit tools) |
 | Claude desktop app (chat) | `~/Library/Application Support/Claude/claude_desktop_config.json` | the app starts servers in `/`, so with `--repo DIR` the entry is `/bin/sh -c "cd DIR && exec zazzled mcp"`; DIR may be a folder above several repositories (see C# structure) |
-| Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md`; with `--hook`, `zazzled hook --client codex` in `~/.codex/hooks.json` (shell commands and `apply_patch`), which Codex runs once you trust it (`/hooks` in the CLI, Settings > Hooks in the app) |
+| Codex (CLI, VS Code extension, desktop app) | `$CODEX_HOME/config.toml` (`~/.codex`) | `[mcp_servers.zazzle]`, comments and layout kept; instructions in `~/.codex/AGENTS.md`; unless `--no-hook`, `zazzled hook --client codex` in `~/.codex/hooks.json` (shell commands and `apply_patch`), which Codex runs once you trust it (`/hooks` in the CLI, Settings > Hooks in the app) |
 
 - Other servers: a stdio server becomes `zazzled proxy --log -- ORIGINAL COMMAND` (its env and other settings kept). A Streamable HTTP server whose entry carries headers or a bearer-token variable is routed through `http://127.0.0.1:PORT/mcp` (from 8809, one port per upstream URL), where a LaunchAgent (`com.zazzle.proxy.PORT`, macOS) keeps `zazzled proxy --upstream URL` running; headers pass through. HTTP servers without headers sign in with OAuth, which the proxy cannot carry, and SSE servers use a transport it does not speak, so both are left alone with the reason in the report. `--no-wrap` leaves every other server alone.
 - Without `--apply`, `--undo` or `--check` it changes nothing and prints the plan. Clients that look installed are chosen; `--client NAME` (repeatable) chooses instead. `--apply` backs up each file it changes (`FILE.zazzle-backup-SECONDS`), and a second run changes nothing. Quit the apps first: they rewrite their settings files. Routes are recorded in `~/.zazzle/setup.json`.
@@ -45,7 +45,7 @@ Tell an agent "run `zazzle setup` and follow it": the report says what it found,
 
 ## Benchmarking with and without zazzle
 
-1. With zazzle set up (`zazzle setup --apply --workspace ~/dev --hook`), quit Claude Code, the Claude desktop app and Codex.
+1. With zazzle set up (`zazzle setup --apply --workspace ~/dev`), quit Claude Code, the Claude desktop app and Codex.
 2. `zazzle setup --off`, then start the apps: they run as if zazzle was never installed (the binaries stay, unused).
 3. Run the benchmark task and note each client's own token and time figures (from its usage or cost view).
 4. Quit the apps, `zazzle setup --on`, start them again (trust the hook again in Codex if it asks), and run the same task from the same commit.
