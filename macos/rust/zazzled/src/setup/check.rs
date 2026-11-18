@@ -59,12 +59,16 @@ fn enforcement(env: &Env, c: Client) -> String {
             } else {
                 "native edits allowed and logged"
             };
-            let trust = if c == Client::Codex { "; Codex runs it once trusted (/hooks)" } else { "" };
+            let trust = if c == Client::Codex {
+                "\n  trust step: Codex runs the hook only once you trust it: /hooks in the CLI, or Settings > Hooks in the app"
+            } else {
+                ""
+            };
             let test = match hook_selftest(&cmd) {
                 Ok(()) => "self-test passed".to_string(),
                 Err(e) => format!("SELF-TEST FAILED: {e}"),
             };
-            format!("enforced by the hook in {} ({test}; {edits}{trust}); {instr}", env.short(&h.path))
+            format!("enforced by the hook in {} ({test}; {edits}); {instr}{trust}", env.short(&h.path))
         }
         None if c == Client::ClaudeDesktop => {
             format!("instructions only (the desktop chat has no hooks); {instr}")
@@ -287,7 +291,7 @@ pub fn report(env: &Env) -> Result<String, String> {
         out.push_str("  nothing recorded: no agent has used zazzle, its hook or its proxy since then (or they run another zazzled)\n");
     }
     summary(&entries).1.iter().for_each(|l| out.push_str(&format!("  {l}\n")));
-    out.push_str("\nNot visible in this log, so not counted as coverage:\n  - native tool calls the hook lets through (Claude Code's Read of non-C# files, Codex's own tools other than shell and apply_patch, web search)\n  - MCP servers that stay direct (OAuth, SSE, plugins, project files): their calls never reach zazzle\n  - the Claude desktop app's chat, which has no hooks\n  - clients whose hook is not installed or not yet trusted (Codex)\n");
+    out.push_str("\nNot visible in this log, so not counted as coverage:\n  - native tool calls the hook lets through (Claude Code's Read of small files or short ranges, Codex's own tools other than shell and apply_patch, web search)\n  - MCP servers that stay direct (OAuth, SSE, plugins, project files): their calls never reach zazzle\n  - the Claude desktop app's chat, which has no hooks\n  - clients whose hook is not installed or not yet trusted (Codex)\n");
     Ok(out)
 }
 
@@ -717,7 +721,11 @@ mod tests {
             .expect("write");
         std::env::set_var("ZAZZLE_ACTIVITY_LOG", "");
         let r = run(&opts, &env).expect("run");
-        assert!(r.contains("native edits refused; Codex runs it once trusted (/hooks)"), "{r}");
+        assert!(r.contains("native edits refused); "), "{r}");
+        assert!(
+            r.contains("\n  trust step: Codex runs the hook only once you trust it: /hooks in the CLI"),
+            "{r}"
+        );
         assert!(r.contains("routing: instructions only (the desktop chat has no hooks)"), "{r}");
         assert!(
             r.contains("FAIL mute [direct: not wrapped yet")
