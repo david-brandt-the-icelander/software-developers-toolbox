@@ -4,6 +4,8 @@ use std::path::Path;
 
 pub const USAGE: &str =
     "usage: zazzled hook [--client claude-code|codex] [--edits]  (reads the PreToolUse JSON on stdin)";
+const READ_LIMIT: u64 = 24 * 1024;
+const RANGE_LINES: u64 = 400;
 const ALLOW_MARKER: &str = "# allow-raw";
 const WRAPPERS: &[&str] = &["sudo", "command", "exec", "nohup", "time", "env", "xargs", "builtin", "timeout"];
 const SEARCHERS: &[&str] = &["grep", "egrep", "fgrep", "rg", "ag", "ack", "zgrep"];
@@ -190,6 +192,12 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     python.then(|| ("pytest".into(), RUN_MSG))
 }
 
+// True when the built-in Read would load a large file whole: over READ_LIMIT bytes with no limit of at most RANGE_LINES lines.
+fn too_big(path: &str, input: &Value) -> bool {
+    let ranged = input["limit"].as_u64().is_some_and(|n| n <= RANGE_LINES);
+    !ranged && std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > READ_LIMIT)
+}
+
 // True when a command runs Python from a heredoc or -c that writes files.
 fn writes_with_python(cmd: &str) -> bool {
     let python = segments(cmd).iter().any(|s| program(s).is_some_and(|(p, _)| p.starts_with("python")));
@@ -261,8 +269,8 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
         "Glob" => deny("Glob", format!("{FIND_MSG}{ESCAPE}")),
         "Read" => {
             let path = input["file_path"].as_str().unwrap_or("");
-            if path.to_ascii_lowercase().ends_with(".cs") || o.edits {
-                deny("Read", READ_MSG.into())
+            if path.to_ascii_lowercase().ends_with(".cs") || o.edits || too_big(path, input) {
+                deny("Read", format!("Use: zazzle read {}\n{READ_MSG}", sh_quote(path)))
             } else {
                 Decision::Allow
             }
@@ -368,6 +376,28 @@ mod tests {
             Decision::Deny { message, .. } => message.strip_prefix("Use: ")?.lines().next().map(String::from),
             _ => None,
         }
+    }
+
+    // Checks the built-in Read is refused for a large file read whole, and allowed for a small file or a short range.
+    #[test]
+    fn test_read_size() {
+        let t = TempDir::new();
+        let big = t.write("big.txt", &vec![b'x'; 30_000]);
+        let small = t.write("small.txt", b"x");
+        let read = |p: &std::path::Path, extra: Value| {
+            let mut input = json!({"file_path": p});
+            if let Some(l) = extra.get("limit") {
+                input["limit"] = l.clone();
+            }
+            decide(&Opts::default(), "Read", &input)
+        };
+        assert!(
+            matches!(read(&big, json!({})), Decision::Deny { message, .. } if message.starts_with("Use: zazzle read "))
+        );
+        assert!(matches!(read(&big, json!({"limit": 5000})), Decision::Deny { .. }));
+        assert_eq!(read(&big, json!({"limit": 100})), Decision::Allow);
+        assert_eq!(read(&small, json!({})), Decision::Allow);
+        assert_eq!(read(&t.path().join("missing"), json!({})), Decision::Allow);
     }
 
     // Checks in-place shell writes go to zazzle edit, while reading sed and Python that only reads pass.
