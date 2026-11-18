@@ -59,7 +59,7 @@ tree-sitter-c = "0.24"
 # tree-sitter-c-sharp grammar for outlines and terse views in tests (release builds load it as a language module).
 tree-sitter-c-sharp = "0.23"
 # tree-sitter-javascript grammar for outlines and terse views in tests (release builds load it as a language module).
-tree-sitter-javascript = "0.23"
+tree-sitter-javascript = "0.25"
 # tree-sitter-python grammar for outlines and terse views in tests (release builds load it as a language module).
 tree-sitter-python = "0.23"
 # tree-sitter-rust grammar for outlines and terse views in tests (release builds load it as a language module).
