@@ -197,3 +197,13 @@ pub fn age(path: &Path) {
     let f = std::fs::File::open(path).expect("open for age");
     f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600)).expect("set mtime");
 }
+
+// Commits every file in a folder, making it a git repository first if needed.
+pub fn git_commit(dir: &Path, message: &str) {
+    let g = |a: &[&str]| std::process::Command::new("git").arg("-C").arg(dir).args(a).output().expect("git");
+    if !dir.join(".git").exists() {
+        g(&["init", "-q"]);
+    }
+    g(&["add", "-A"]);
+    g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message]);
+}

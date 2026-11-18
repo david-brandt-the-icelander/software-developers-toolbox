@@ -76,6 +76,7 @@ const PAGES: &[Page] = &[
             "Code files are shown as a terse view: declarations and behaviour, without the sha. Use --source for the code itself and the sha that edit needs.",
         ],
         options: &[
+            ("-r, --rev REV", "Read the files as they are at a git revision (also REV:PATH)"),
             ("--source", "Show the code itself and its sha"),
             ("-s, --symbol NAME[#N]", "Show one symbol (the Nth of that name) with its comments and attributes"),
             ("-a, --around N", "Show the lines around line N"),
