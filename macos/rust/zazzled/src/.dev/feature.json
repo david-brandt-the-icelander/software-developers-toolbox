@@ -35,7 +35,9 @@
         "No session, no ids and no dedupe.",
         "Edits, errors, status, help and version are never given an id or deduplicated; clean, `zazzle run` and proxied outputs get no session id either, but an output id of their own (stored-outputs).",
         "Sessions live in daemon memory only; a restart forgets them.",
-        "At most 64 sessions (the least recently used is dropped) and 512 answers per session (the oldest is dropped)."
+        "At most 64 sessions (the least recently used is dropped) and 512 answers per session (the oldest is dropped).",
+        "Through Claude Code's hook, each conversation and each of its subagents has its own session (`SESSION_ID/AGENT_ID`, `main` for the conversation), and a PostCompact hook forgets the conversation's sessions, since its context no longer holds what was sent.",
+        "changed-since answers are never deduplicated: the same answer later is news."
       ],
       "implementation": [
         {
