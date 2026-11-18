@@ -54,6 +54,24 @@ public class SymbolTests
         Assert.Contains("Demo.Widget.Spin", Call(tool, "{\"name\":\"Widget.sp\"}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"Other.Widget.Spin\",\"exact\":true}"));
         Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"emo.Widget.Spin\",\"exact\":true}"));
+        Assert.Contains("Widget.cs", Call(tool, "{\"name\":\"spin\",\"paths\":[\"*.cs\"]}"));
+        Assert.Contains("Widget.cs", Call(tool, "{\"name\":\"spin\",\"paths\":\"Widget.cs\"}"));
+        Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"spin\",\"paths\":[\"**/*.rs\"]}"));
+        Assert.EndsWith("[0 symbols]", Call(tool, "{\"name\":\"spin\",\"paths\":[\"src/\"]}"));
+    }
+
+    [Fact]
+    // A path scope keeps files under a folder or matching a glob, and an empty one keeps all.
+    public void test_path_scope()
+    {
+        var s = new PathScope(["src/Api", "**/Endpoints/*.cs", "./tools/"]);
+        Assert.True(s.Matches("src/Api/OrdersController.cs"));
+        Assert.True(s.Matches("x/y/Endpoints/Orders.cs"));
+        Assert.True(s.Matches("Endpoints/Orders.cs"));
+        Assert.True(s.Matches("tools/a/b.cs"));
+        Assert.False(s.Matches("src/ApiSimulator/Fake.cs"));
+        Assert.False(s.Matches("x/Endpoints/sub/Orders.cs"));
+        Assert.True(new PathScope([]).Matches("anything"));
     }
 
     [Fact]

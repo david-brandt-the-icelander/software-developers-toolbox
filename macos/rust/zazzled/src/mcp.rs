@@ -14,6 +14,9 @@ pub trait Backend {
 
     // Records the workspace folders the client named, which later commands may write in.
     fn set_roots(&self, _roots: Vec<String>) {}
+
+    // Hands the connection to an upgraded program before answering a request, when there is one; returns when there is none.
+    fn upgrade(&self, _pending: &str, _offers_roots: bool) {}
 }
 
 // The real backend: a unix-socket client that starts the daemon on demand.
@@ -36,6 +39,11 @@ impl Backend for DaemonBackend {
     // Keeps the client's roots for the following calls.
     fn set_roots(&self, roots: Vec<String>) {
         *self.roots.borrow_mut() = roots;
+    }
+
+    // Re-executes the upgraded zazzled on this connection, so the client is served the installed version's tools.
+    fn upgrade(&self, pending: &str, offers_roots: bool) {
+        crate::mcp_upgrade::reexec_if_changed(pending, offers_roots, &self.session);
     }
 }
 
@@ -227,7 +235,7 @@ fn outline_schema() -> Value {
 fn refs_schema() -> Value {
     object(
         json!({
-            "symbol": {"type": "string"}, "paths": {"type": "array", "items": {"type": "string"}},
+            "symbol": {"type": "string", "description": "One literal name; Type.Member narrows"}, "also": {"type": "array", "items": {"type": "string"}, "description": "More literal names, answered together"}, "paths": {"type": "array", "items": {"type": "string"}},
             "glob": {"type": "array", "items": {"type": "string"}}, "max": {"type": "integer", "description": "At most 40"},
             "code_only": {"type": "boolean", "description": "Skip tests and docs"},
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
@@ -269,7 +277,7 @@ pub(crate) fn need_str(v: &Value, key: &str) -> Result<String, String> {
 }
 
 // Reads an optional list of strings.
-fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
+pub(crate) fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(vec![]),
         Some(Value::Array(a)) => a
@@ -440,6 +448,9 @@ fn refs_args(v: &Value) -> Result<Vec<String>, String> {
         a.push("-g".into());
         a.push(g);
     }
+    for n in get_list(v, "also")? {
+        a.extend(["--also".to_string(), n]);
+    }
     a.push("--".into());
     a.push(need_str(v, "symbol")?);
     a.extend(get_list(v, "paths")?);
@@ -483,7 +494,7 @@ fn initialize(params: &Value) -> Value {
     let version = VERSIONS.iter().find(|v| **v == asked).unwrap_or(&VERSIONS[0]);
     json!({
         "protocolVersion": version,
-        "capabilities": {"tools": {}},
+        "capabilities": {"tools": {"listChanged": true}},
         "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION},
         "instructions": crate::setup::MCP_INSTRUCTIONS
     })
@@ -491,7 +502,11 @@ fn initialize(params: &Value) -> Value {
 
 // Every exposed tool: the file tools here, the structure tools answered by zazzle-csharp-indexer, then the zazz script tools.
 fn all_tools() -> impl Iterator<Item = &'static Tool> {
-    TOOLS.iter().chain(crate::mcp_structure::TOOLS).chain(crate::zazz::mcptools::TOOLS.iter())
+    TOOLS
+        .iter()
+        .chain(crate::mcp_structure::TOOLS)
+        .chain(crate::rules::TOOLS)
+        .chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
 // True when the zazz tools are worth their place in every request: ZAZZLE_MCP_ZAZZ=1, or at least one script is registered; the zazz CLI works either way.
@@ -635,13 +650,37 @@ fn root_paths(result: &Value) -> Vec<String> {
 
 // Serves newline-delimited JSON-RPC from the input until it closes; asks a client that offers roots for them, and again when they change.
 pub fn serve(input: &mut dyn BufRead, output: &mut dyn Write, backend: &dyn Backend) -> io::Result<()> {
+    serve_resumed(input, output, backend, None)
+}
+
+// Serves like serve, first answering a request an earlier program handed over and telling the client the tool list changed.
+pub fn serve_resumed(
+    input: &mut dyn BufRead,
+    output: &mut dyn Write,
+    backend: &dyn Backend,
+    resumed: Option<(String, bool)>,
+) -> io::Result<()> {
     let mut offers_roots = false;
+    if let Some((line, roots)) = resumed {
+        offers_roots = roots;
+        writeln!(output, "{}", json!({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}))?;
+        if roots {
+            writeln!(output, "{}", json!({"jsonrpc": "2.0", "id": ROOTS_ID, "method": "roots/list"}))?;
+        }
+        if let Some(resp) = handle_line(&line, backend) {
+            writeln!(output, "{resp}")?;
+        }
+        output.flush()?;
+    }
     for line in input.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
         let msg: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+        if msg["method"].is_string() && !msg["id"].is_null() && msg["method"] != "initialize" {
+            backend.upgrade(&line, offers_roots);
+        }
         match msg["method"].as_str() {
             Some("initialize") => offers_roots = msg.pointer("/params/capabilities/roots").is_some(),
             None if msg["id"] == ROOTS_ID => {
@@ -1029,6 +1068,20 @@ mod tests {
         let text = String::from_utf8(out).expect("utf8");
         assert_eq!(text.matches("\"method\":\"roots/list\"").count(), 2, "{text}");
         assert_eq!(*b.roots.borrow(), ["/w/my app", "/w/%zz"]);
+        let mut out = Vec::new();
+        let pending = json!({"id": 9, "method": "tools/list"}).to_string();
+        serve_resumed(&mut "".as_bytes(), &mut out, &fake(0, ""), Some((pending, true))).expect("resume");
+        let text = String::from_utf8(out).expect("utf8");
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(
+            lines[0].contains("notifications/tools/list_changed") && lines[1].contains("roots/list"),
+            "{text}"
+        );
+        assert!(lines[2].contains("\"id\":9") && lines[2].contains("zazzle_get_rules"), "{text}");
+        let mut out = Vec::new();
+        let note = json!({"method": "notifications/initialized"}).to_string();
+        serve_resumed(&mut "".as_bytes(), &mut out, &fake(0, ""), Some((note, false))).expect("resume");
+        assert_eq!(String::from_utf8(out).expect("utf8").lines().count(), 1);
         let plain = fake(0, "");
         let mut out = Vec::new();
         let input = "{\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"method\":\"notifications/initialized\"}\n";
@@ -1224,10 +1277,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 17);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 18);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 10);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 11);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

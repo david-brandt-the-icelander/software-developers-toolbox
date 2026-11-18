@@ -19,18 +19,18 @@ const CODEX_MATCHER: &str = "Bash|apply_patch";
 
 // What agents are told in the MCP handshake: short, since some clients repeat it with every tool they list.
 pub const MCP_INSTRUCTIONS: &str = "\
-Find code precisely, then read it literally: zazzle_find_symbol or zazzle_refs for declarations and uses, zazzle_find for text.
+Find code precisely, then read it literally: zazzle_read with symbol when you know the name, zazzle_find_symbol (several names, paths to scope) or zazzle_refs for declarations and uses, zazzle_find for text.
 - zazzle_read returns the literal source of a range (PATH:A-B) or one symbol with its comments and attributes, with line numbers and the sha zazzle_edit needs. If it says INCOMPLETE, read the range it names.
 - Put independent lookups in one call (several paths, or parallel calls); finish reading a command's output before starting another.
-- For a task's rules, `zazzle agent get-rules PATH --purpose NAME` gives the instructions that apply to that path and purpose.
+- For a task's rules, zazzle_get_rules with the paths (and a purpose) gives the instructions that apply, once per session; rules already sent stay in force. Check a plan against them, e.g. frozen published contracts.
 - If the C# indexer fails, use zazzle_find, zazzle_read and zazzle_refs; zazzle_find_symbol needs the indexer.";
 
 // What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
 pub const INSTRUCTIONS: &str = "\
 zazzle (MCP server `zazzle`, or the `zazzle` command) reads, searches and edits files with line numbers, exact references and safe edits.
-- Locate precisely: `zazzle_find_symbol` (C#, by name or `Namespace.Type.Member`) and `zazzle_refs` (definitions and uses, exact for C#) before broad text search with `zazzle_find`.
+- Locate precisely: when you know the symbol, `zazzle_read` with `symbol` returns its source in one step; otherwise `zazzle_find_symbol` (literal names, several at once, `paths` to scope) and `zazzle_refs` (definitions and uses, exact for C#, `also` for more names) before broad text search with `zazzle_find`.
 - Read literally: `zazzle_read` returns the source of a range (`PATH:A-B`, `REV:PATH`) or one `symbol` with its comments, attributes and documentation, with the sha `zazzle_edit` needs. A complete method or range comes back whole when it fits the budget; otherwise the reply says INCOMPLETE and names the exact range to read next. `terse: true` is an opt-in lossy summary, never needed for correctness.
-- Rules for the work at hand: `zazzle agent get-rules PATH --purpose NAME` returns the instructions and constraints that apply to that path, including repository-wide ones, so you need not search for them.
+- Rules for the work at hand: `zazzle_get_rules` (or `zazzle get-rules PATH... --purpose NAME`) returns the instructions and constraints that apply to those paths, including repository-wide ones, and leaves out what this session already received; those rules still apply. Check a plan against them before acting, especially constraints such as frozen published contracts.
 - Batch independent lookups: several paths in one `zazzle_read`, several edits in one `zazzle_edit` (`edits`), and independent tool calls together.
 - Builds and tests: `zazzle run -- CMD` runs the command in the same shell with the same exit code and cleaned output. Collect a command's output before issuing the next command.
 - `zazzle_diff` shows what changed with stats first; `zazzle_replace` changes a pattern across files (`dry_run` first).
@@ -941,9 +941,26 @@ pub fn reapply_after_upgrade(env: &Env, version: &str) -> Result<Option<String>,
     if version.contains("-dev") || state["applied_version"].as_str() == Some(version) {
         return Ok(None);
     }
-    let out = change(&applied, env)?;
+    let mut out = change(&applied, env)?;
+    let block = block_text(&policy::load(&env.home)?.extra);
+    for p in stale_blocks(env, &block) {
+        edit_block(&p, Some(&block), &mut Vec::new())?;
+        out.push_str(&format!("~ updated zazzle's instructions in {}\n", env.short(&p)));
+    }
     update_state(env, &[("applied_version", Some(json!(version)))])?;
     Ok(Some(out))
+}
+
+// Returns the instruction files of every client, applied or not, that hold a zazzle block other than this one, so one version's guidance is never left beside another's.
+fn stale_blocks(env: &Env, block: &str) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in Client::ALL.into_iter().filter_map(|c| env.instructions_path(c)) {
+        let text = std::fs::read_to_string(&p).unwrap_or_default();
+        if current_block(&text).is_some_and(|(a, b)| &text[a..b] != block) && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
 }
 
 // Says in one line how the clients differ from the last --apply (instructions block, hooks, session keys), or nothing when they match; the SessionStart hook prints it into the agent's context.
@@ -984,6 +1001,12 @@ fn drift(env: &Env) -> String {
                     found.push(format!("{k} is not {v}"));
                 }
             }
+        }
+    }
+    for p in stale_blocks(env, &block) {
+        let note = format!("zazzle's instructions in {} are out of date", env.short(&p));
+        if !found.contains(&note) {
+            found.push(note);
         }
     }
     match found.is_empty() {

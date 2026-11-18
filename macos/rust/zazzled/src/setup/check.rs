@@ -42,14 +42,36 @@ pub fn routing(s: &Server, routes: &[(u16, String)]) -> String {
     }
 }
 
+// Whether a client's instruction file holds the block this version writes.
+#[derive(Debug, PartialEq)]
+pub(super) enum Block {
+    Current,
+    Outdated,
+    Missing,
+}
+
+// Compares the managed block in a file's text with the one this version and the policy would write.
+pub(super) fn block_state(text: &str, home: &std::path::Path) -> Block {
+    let Some((a, b)) = super::current_block(text) else { return Block::Missing };
+    let extra = super::policy::load(home).map(|p| p.extra).unwrap_or_default();
+    if text[a..b] == super::block_text(&extra) {
+        Block::Current
+    } else {
+        Block::Outdated
+    }
+}
+
 // Says whether a client's routing is enforced by zazzle's hook or only asked for by instructions.
 fn enforcement(env: &Env, c: Client) -> String {
-    let instr = env
-        .instructions_path(c)
-        .map(|p| (std::fs::read_to_string(&p).unwrap_or_default().contains(super::BLOCK_BEGIN), p));
-    let instr = match instr {
-        Some((true, p)) => format!("instructions in {}", env.short(&p)),
-        Some((false, p)) => format!("no instructions in {} (run setup --apply)", env.short(&p)),
+    let instr = match env.instructions_path(c) {
+        Some(p) => match block_state(&std::fs::read_to_string(&p).unwrap_or_default(), &env.home) {
+            Block::Current => format!("instructions in {}", env.short(&p)),
+            Block::Outdated => format!(
+                "OUTDATED instructions in {} (written by another zazzle version; `zazzle setup --apply` updates them)",
+                env.short(&p)
+            ),
+            Block::Missing => format!("no instructions in {} (run setup --apply)", env.short(&p)),
+        },
         None => "MCP instructions only".into(),
     };
     match super::hook_spec(env, c, false).and_then(|h| hook_command(&h.path).map(|cmd| (h, cmd))) {
@@ -138,6 +160,9 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         let file = ConfigFile::load(c, &env.config_path(c))?;
         out.push_str(&format!("\n{}: {}\n", c.name(), env.short(&file.path)));
         out.push_str(&format!("  routing: {}\n", enforcement(env, c)));
+        if out.contains("OUTDATED instructions") && !hints.iter().any(|h| h.contains("instruction blocks")) {
+            hints.push("Some instruction blocks differ from this version's (old read budgets or tool names): run `zazzle setup --apply` to update every client together.");
+        }
         if out.contains("SELF-TEST FAILED") {
             hints.push("A hook did not answer as expected: run `zazzle setup --apply` again, then restart the client.");
         }
@@ -667,13 +692,24 @@ mod tests {
         std::fs::create_dir_all(home.join(".codex")).expect("mkdir");
         let codex = "[mcp_servers.api]\nurl = \"http://127.0.0.1:1/mcp\"\nbearer_token_env_var = \"ZAZZLE_TEST_UNSET_TOKEN\"\n";
         std::fs::write(env.config_path(Client::Codex), codex).expect("write");
+        std::fs::write(
+            home.join(".claude/CLAUDE.md"),
+            format!("{}\nold\n{}\n", super::super::BLOCK_BEGIN, super::super::BLOCK_END),
+        )
+        .expect("write");
         let local = run(&super::super::parse(&["--check".to_string()]).expect("parse"), &env).expect("run");
+        assert!(
+            local.contains("OUTDATED instructions in ~/.claude/CLAUDE.md")
+                && local.contains("update every client together"),
+            "{local}"
+        );
         assert!(
             local.contains("--   gone [direct: not wrapped yet")
                 && local.contains("not started or contacted (--probe does)")
                 && local.contains("ok   zazzle [zazzle]"),
             "{local}"
         );
+        std::fs::remove_file(home.join(".claude/CLAUDE.md")).expect("rm");
         let opts = super::super::parse(&["--check".to_string(), "--probe".to_string()]).expect("parse");
         let r = run(&opts, &env).expect("run");
         assert!(r.contains("claude-code: ~/.claude.json\n  routing: enforced by the hook in ~/.claude/settings.json (self-test passed; native edits allowed and logged); no instructions in ~/.claude/CLAUDE.md"), "{r}");

@@ -56,13 +56,15 @@ fn find_symbol_schema() -> Value {
     object(
         json!({
             "name": {"type": "string", "description": "Name or part; Namespace.Type.Member narrows"},
+            "names": {"type": "array", "items": {"type": "string"}, "description": "Several literal names, answered together (instead of name)"},
+            "paths": {"type": "array", "items": {"type": "string"}, "description": "Only declarations under these folders, files or globs"},
             "exact": {"type": "boolean", "description": "Whole-name match only"},
             "kind": {"type": "string", "description": "Filter by kind: class, method, property, field, fn, def ..."},
             "limit": {"type": "integer", "description": "Max results (default 10, at most 20)"},
             "offset": {"type": "integer", "description": "Skip this many results (default 0)"},
             "repo": repo_prop()
         }),
-        &["name"],
+        &[],
     )
 }
 
@@ -132,7 +134,15 @@ fn find_symbol_args(v: &Value) -> Result<Vec<String>, String> {
     push_capped(&mut a, v, "limit", "--limit", FIND_SYMBOL_LIMIT)?;
     push_num(&mut a, v, "offset", "--offset")?;
     push_repo(&mut a, v)?;
-    a.extend(["--".to_string(), need_str(v, "name")?]);
+    for p in crate::mcp::get_list(v, "paths")? {
+        a.extend(["--path".to_string(), p]);
+    }
+    a.push("--".to_string());
+    a.extend(get_str(v, "name")?);
+    a.extend(crate::mcp::get_list(v, "names")?);
+    if a.last().is_some_and(|l| l == "--") {
+        return Err("name or names is required".into());
+    }
     Ok(a)
 }
 
@@ -241,7 +251,11 @@ mod tests {
     #[test]
     fn test_structure_tool_errors_and_schemas() {
         let text = |name: &str, args: Value| format!("error: {}", map(name, args).unwrap_err());
-        assert_eq!(text("zazzle_find_symbol", json!({})), "error: 'name' is required");
+        assert_eq!(text("zazzle_find_symbol", json!({})), "error: name or names is required");
+        assert_eq!(
+            map("zazzle_find_symbol", json!({"names": ["A", "B"], "paths": ["src/Api"]})).expect("args"),
+            ["find-symbol", "--path", "src/Api", "--", "A", "B"]
+        );
         assert_eq!(
             text("zazzle_find_symbol", json!({"name": "a", "kind": 1})),
             "error: 'kind' must be a string"

@@ -9,7 +9,7 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
 {
     public string Name => "find_symbol";
 
-    // Finds matching declarations in every selected root; a dotted name (Namespace.Type.Member, or with ::) also needs its leading parts to end the declaration's container.
+    // Finds matching declarations in every selected root, in files the optional `paths` folders or globs select; a dotted name (Namespace.Type.Member, or with ::) also needs its leading parts to end the declaration's container.
     public string Run(JsonNode? args, CallInfo info)
     {
         var query = Args.Str(args, "name").Replace("::", ".");
@@ -20,6 +20,7 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
         var kind = Args.OptStr(args, "kind");
         var limit = Args.Int(args, "limit", 10);
         var offset = Args.Int(args, "offset", 0);
+        var scope = new PathScope(Args.List(args, "paths"));
         info.Path = "index";
         var hits = new List<(int rank, string label, string text)>();
         foreach (var root in roots.Select(Args.OptStr(args, "root")))
@@ -27,7 +28,7 @@ public sealed class FindSymbolTool(RootSet roots) : ITool
             if (!root.Index.WaitReady(Engine.ReadyTimeoutMs))
                 throw new ToolException("index_cold", "index is still building; search with zazzle_find");
             var blobs = root.Index.Engine.BlobsDeclaring(name, exact);
-            foreach (var f in root.Index.Files().Where(f => blobs.Contains(f.BlobId)))
+            foreach (var f in root.Index.Files().Where(f => blobs.Contains(f.BlobId) && scope.Matches(f.Path)))
                 foreach (var s in Sym.FromJson(root.Index.Engine.Store.Symbols(f.BlobId)))
                     if ((exact ? s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) : s.Name.Contains(name, StringComparison.OrdinalIgnoreCase)) && (kind is null || s.Kind == kind) && InContainer(s.Container, qualifier))
                         hits.Add((Rank(s, f.Path, name), $"{root.Name}:{f.Path}:{s.Line}{(s.EndLine > s.Line ? "-" + s.EndLine : "")}", $"{s.Kind} {ShortContainer(s.Container)}{s.Name} | {Clip(s.Sig)}"));

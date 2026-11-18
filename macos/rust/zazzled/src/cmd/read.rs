@@ -500,24 +500,41 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if symbol.is_some() && opts.sel != Select::Whole {
         return Err("--symbol picks the lines itself; drop --around, --head and --tail".into());
     }
-    let mut parts = Vec::new();
-    let (mut opts, mut left) = (opts, budget);
-    for (i, arg) in paths.iter().enumerate() {
-        opts.budget = (left / (paths.len() - i)).max(MIN_SHARE.min(left));
-        if i > 0 && left < MIN_SHARE {
-            let rest = paths[i..].join(" ");
-            parts.push(format!(
-                "not read, the {budget}-token budget is spent: {rest} (read them next, or pass --budget)"
-            ));
-            break;
+    let one = |arg: &str, o: &Opts| match symbol {
+        Some(q) => render_symbol(ctx, arg, q, o),
+        None => render(ctx, arg, o, ""),
+    };
+    let mut parts: Vec<Option<String>> =
+        paths.iter().map(|a| one(a, &opts).map(Some)).collect::<Result<_, _>>()?;
+    let costs: Vec<usize> = parts.iter().map(|p| tokens::estimate(p.as_deref().unwrap_or(""))).collect();
+    if paths.len() > 1 && costs.iter().sum::<usize>() > budget {
+        let mut order: Vec<usize> = (0..paths.len()).collect();
+        order.sort_by_key(|&i| costs[i]);
+        let (mut opts, mut left, mut skipped) = (opts, budget, Vec::new());
+        for (n, &i) in order.iter().enumerate() {
+            let share = (left / (order.len() - n)).max(MIN_SHARE.min(left));
+            if costs[i] <= share {
+                left -= costs[i];
+                continue;
+            }
+            if n > 0 && left < MIN_SHARE {
+                parts[i] = None;
+                skipped.push(paths[i].clone());
+                continue;
+            }
+            opts.budget = share;
+            let part = one(&paths[i], &opts)?;
+            left = left.saturating_sub(tokens::estimate(&part));
+            parts[i] = Some(part);
         }
-        let part = match symbol {
-            Some(q) => render_symbol(ctx, arg, q, &opts)?,
-            None => render(ctx, arg, &opts, "")?,
-        };
-        left = left.saturating_sub(tokens::estimate(&part));
-        parts.push(part);
+        if !skipped.is_empty() {
+            parts.push(Some(format!(
+                "not read, the {budget}-token budget is spent: {} (read them next, or pass --budget)",
+                skipped.join(" ")
+            )));
+        }
     }
+    let parts: Vec<String> = parts.into_iter().flatten().collect();
     Ok(Output::ok(parts.join("\n\n")))
 }
 

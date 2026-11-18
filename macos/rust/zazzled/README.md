@@ -80,7 +80,7 @@ Keep everything else equal: the same model and settings, the same repository sta
 | `read [REV:]PATH[:A-B].. [--symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full --terse]` | the literal source: header with line count and sha, then `N<TAB>text`; past the budget (default 6000 tokens, at most 16000, also for MCP and `--full`) it shows the selection's leading lines, marks the header INCOMPLETE and ends with the omitted range and the read that continues it; several paths share that budget evenly, and files past a spent budget are named instead of read; a missing path is answered with up to three similar files from the work tree (also for `outline` and `ls`); `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)); `--terse` gives the lossy terse views below instead (opt-in; `--source` is accepted and changes nothing) |
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else, which in C#, Java, C++, Dart, Groovy, Kotlin and Scala also finds methods and constructors (test methods under `[Fact]` or `@Test` included) when no grammar is installed |
-| `refs SYMBOL [PATH..]` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
+| `refs SYMBOL [PATH..] [--also SYMBOL]..` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory, its git work tree, the client's roots and your workspaces |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
 | `proxy ...` | runs the MCP proxy as its own process: see [MCP proxy](#mcp-proxy) |
@@ -218,7 +218,7 @@ A session opened in a folder above several repositories works too. When the work
 | MCP tool | command | output |
 |---|---|---|
 | `zazzle_overview` | `overview [--repo DIR]` | file and line counts by language, top directories, entry points and project files, largest files; start here on an unfamiliar repository |
-| `zazzle_find_symbol` | `find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
+| `zazzle_find_symbol` | `find-symbol NAME.. [--path DIR|GLOB].. [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]` | `path:line kind container.name \| signature`, exact matches first; C# parsed with Roslyn, other languages by a regex extractor |
 | `zazzle_changed_since` | `changed-since [CURSOR] [--repo DIR]` | `A`/`M`/`D path` since a cursor from an earlier call, then a new cursor; cursors expire when the indexer's daemon restarts |
 | `zazzle_git_log` | `git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]` | `hash date author subject` |
 | `zazzle_git_blame` | `git-blame PATH [--start N] [--end N]` | `git blame -w` for a range (default 40 lines) |

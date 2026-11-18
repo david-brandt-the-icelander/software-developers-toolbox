@@ -56,7 +56,7 @@
         {
           "id": "dispatch",
           "actor": "zazzle",
-          "action": "Looks at the name it was started under and at CMD: free-disk-space, fix-network, git, agent, proxy and run (each only as zazzle) are not daemon requests; anything else is, so `zazz run NAME` and a script's own `run` argument reach the daemon.",
+          "action": "Looks at the name it was started under and at CMD: free-disk-space, fix-network, git, proxy and run (each only as zazzle) are not daemon requests; anything else is, so `zazz run NAME` and a script's own `run` argument reach the daemon.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -142,7 +142,7 @@
         {
           "atStep": "dispatch",
           "condition": "CMD is free-disk-space, fix-network, git or agent.",
-          "outcome": "zazzle replaces itself with the binary of that name (zazzle-git for git, zazzle-agent for agent) in its own directory, with the remaining arguments; no daemon is contacted, and the tool's streams and exit status are the caller's. If it cannot be run: `cannot run the tool (error N)`, exit 69.",
+          "outcome": "zazzle replaces itself with the binary of that name (zazzle-git for git) in its own directory, with the remaining arguments; no daemon is contacted, and the tool's streams and exit status are the caller's. If it cannot be run: `cannot run the tool (error N)`, exit 69.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",

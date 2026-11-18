@@ -191,6 +191,17 @@
         "static (List<ViewLine> Lines, List<(string Step, int Count)> Steps) Build(string source)",
         "static string Format(IEnumerable<ViewLine> lines)"
       ]
+    },
+    {
+      "id": "Tools.PathScope",
+      "name": "PathScope",
+      "kind": "class",
+      "sources": [
+        "macos/dotnet/zazzle-csharp-indexer/src/Tools/PathScope.cs"
+      ],
+      "members": [
+        "Matches(path): bool"
+      ]
     }
   ],
   "relationships": [
@@ -271,6 +282,12 @@
       "to": "Tools.Args",
       "kind": "depends-on",
       "description": "Arguments; every tool uses Args."
+    },
+    {
+      "from": "Tools.FindSymbolTool",
+      "to": "Tools.PathScope",
+      "kind": "depends-on",
+      "description": "Limits declarations to the paths argument's folders, files and globs."
     }
   ]
 }

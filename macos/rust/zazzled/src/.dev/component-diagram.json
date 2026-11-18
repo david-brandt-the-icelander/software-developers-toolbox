@@ -71,8 +71,14 @@
     },
     {
       "id": "mcp",
-      "name": "MCP server (mcp.rs, mcp_structure.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1), with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection.",
+      "name": "MCP server (mcp.rs, mcp_structure.rs, mcp_upgrade.rs)",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for twenty tools (seven zazzle file tools, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1), with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed zazzled on the same connection and announces tools/list_changed.",
+      "folder": "macos/rust/zazzled/src"
+    },
+    {
+      "id": "rules",
+      "name": "Rule delivery (rules.rs, nested.rs)",
+      "responsibility": "Answers get-rules for several paths and appends folder instructions to reads and edits, both through one per-session ledger keyed by canonical path, content hash and line ranges, so each rule reaches a session once until it changes or the session is reset.",
       "folder": "macos/rust/zazzled/src"
     },
     {

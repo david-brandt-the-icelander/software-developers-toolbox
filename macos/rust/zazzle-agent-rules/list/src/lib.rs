@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 mod front;
 mod glob;
 mod imports;
-mod purpose;
+pub mod purpose;
 
 // Usage text printed for help and for wrong arguments.
 const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]\nprints each applying file as `==> rule FILE <==` then its text, each file it imports as `==> import FILE <==`, and each skill as `==> skill FILE <==` then its description, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE`, `import FILE` or `skill FILE` lines; --skill-bodies prints whole skill files\n";
@@ -309,7 +309,7 @@ fn wants_help(args: &[String]) -> bool {
 }
 
 // Formats one found file as one line, or one line per line range.
-fn show(f: &Found) -> String {
+pub fn show(f: &Found) -> String {
     let kind = f.kind.name();
     if f.lines.is_empty() {
         return format!("{kind} {}\n", f.path.display());
@@ -318,7 +318,7 @@ fn show(f: &Found) -> String {
 }
 
 // Formats one found file (or each of its line ranges) as a `==> kind path <==` header followed by its text; a whole skill gets only its description unless skill bodies are wanted.
-fn body(f: &Found, skill_bodies: bool) -> String {
+pub fn body(f: &Found, skill_bodies: bool) -> String {
     let head = format!("==> {} {}", f.kind.name(), f.path.display());
     let Some(text) = f.text.as_deref() else {
         let e = fs::read_to_string(&f.path).err().map_or("not text".to_string(), |e| e.to_string());

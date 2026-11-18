@@ -194,7 +194,9 @@ fn mcp_main() -> Result<(), String> {
     let session =
         std::env::var("ZAZZLE_SESSION").ok().filter(|s| !s.is_empty()).unwrap_or_else(mcp::new_session_id);
     let backend = DaemonBackend { sock, cwd, session, roots: Default::default() };
-    mcp::serve(&mut std::io::stdin().lock(), &mut std::io::stdout().lock(), &backend)
+    crate::mcp_upgrade::remember();
+    let resumed = crate::mcp_upgrade::resumed();
+    mcp::serve_resumed(&mut std::io::stdin().lock(), &mut std::io::stdout().lock(), &backend, resumed)
         .map_err(|e| e.to_string())
 }
 
