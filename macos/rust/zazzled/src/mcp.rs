@@ -56,7 +56,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_read",
-        description: "Read files, line ranges (PATH or PATH:A-B) or one named symbol with its docs, as numbered lines; long output is elided to a token budget.",
+        description: "Read the literal source of files, line ranges (PATH or PATH:A-B, REV:PATH) or one named symbol with its docs and attributes, as numbered lines with the sha edits need; past the budget it says what is missing and how to continue.",
         schema: read_schema,
         map: read_args,
     },
@@ -93,7 +93,7 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "zazzle_edit",
-        description: "Edit one file: replace unique text or lines, or insert after a line (expect = sha from zazzle_read source=true), or create a file. Writes stay in the repository, client roots and workspaces.",
+        description: "Edit one file: replace unique text or lines, or insert after a line (expect = the sha zazzle_read showed), or create a file. Writes stay in the repository, client roots and workspaces.",
         schema: edit_schema,
         map: edit_args,
     },
@@ -177,11 +177,11 @@ fn read_schema() -> Value {
     object(
         json!({
             "paths": {"type": "array", "items": {"type": "string"}, "description": "PATH or PATH:A-B; optional with symbol"},
-            "source": {"type": "boolean", "description": "Exact code and its sha (edits need it); default is a terse view"},
+            "terse": {"type": "boolean", "description": "Opt-in lossy summary (folds imports, comments, logging; no sha); the default is the literal source"},
             "symbol": {"type": "string", "description": "One symbol with its docs: Namespace.Type.Member, Type.method or a::b; overloads Name(T1, T2) or #N; without paths, found in the index"},
             "around": {"type": "integer"}, "ctx": {"type": "integer"}, "head": {"type": "integer"}, "tail": {"type": "integer"},
-            "budget": {"type": "integer", "description": "Token budget (default 2000, at most 2500)"},
-            "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "No budget"},
+            "budget": {"type": "integer", "description": "Token budget (default 6000, at most 16000)"},
+            "anchors": {"type": "boolean"}, "full": {"type": "boolean", "description": "The largest budget, 16000"},
             "disable_session_deduping": {"type": "boolean"}
         }),
         &[],
@@ -247,7 +247,7 @@ fn edit_schema() -> Value {
             "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
             "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from zazzle_read with anchors"},
             "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
-            "expect": {"type": "string", "description": "Sha from zazzle_read source=true; every edit but create needs it"},
+            "expect": {"type": "string", "description": "The sha zazzle_read showed; every edit but create needs it"},
             "edits": {"type": "array", "description": "Several {old, new} pairs, applied in order in one write; none is written if one fails", "items": {"type": "object", "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}
         }),
         &["path"],
@@ -366,6 +366,7 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
     for (k, f) in [
         ("anchors", "--anchors"),
         ("source", "--source"),
+        ("terse", "--terse"),
         ("full", "--full"),
         ("disable_session_deduping", "--disable-session-deduping"),
     ] {
@@ -374,7 +375,7 @@ fn read_args(v: &Value) -> Result<Vec<String>, String> {
     for (k, f) in [("around", "--around"), ("ctx", "--ctx"), ("head", "--head"), ("tail", "--tail")] {
         push_num(&mut a, v, k, f)?;
     }
-    push_capped(&mut a, v, "budget", "--budget", READ_BUDGET)?;
+    push_capped(&mut a, v, "budget", "--budget", crate::cmd::read::MAX_BUDGET as u64)?;
     if let Some(sym) = get_str(v, "symbol")? {
         a.push("--symbol".into());
         a.push(sym);
@@ -1190,7 +1191,7 @@ mod tests {
         assert_eq!(calls[0], ["find", "--code-only", "-m", "40", "--", "x"]);
         assert_eq!(calls[1], ["refs", "--code-only", "-m", "40", "--", "x"]);
         assert_eq!(calls[2], ["ls", "-m", "60"]);
-        assert_eq!(calls[3], ["read", "--budget", "2500", "--", "a"]);
+        assert_eq!(calls[3], ["read", "--budget", "9000", "--", "a"]);
         assert_eq!(calls[4], ["read-again", "r", "--full", "--budget", "2500"]);
         assert_eq!(calls[5], ["find-symbol", "--limit", "20", "--", "x"]);
         assert_eq!(calls[6], ["find", "-m", "5", "--", "x"]);

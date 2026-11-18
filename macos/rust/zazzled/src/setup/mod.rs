@@ -19,22 +19,22 @@ const CODEX_MATCHER: &str = "Bash|apply_patch";
 
 // What agents are told in the MCP handshake: short, since some clients repeat it with every tool they list.
 pub const MCP_INSTRUCTIONS: &str = "\
-Prefer zazzle over shell grep, rg, find, cat and sed and the built-in Read and Grep: answers are capped and deduplicated.
-- zazzle_read gives a terse view; source=true gives the exact code and the sha zazzle_edit needs. Read a range or one symbol, not whole files.
-- Run builds and tests as `zazzle run -- CMD` (same command and exit code, cleaned output).
-- Look up only the tools you need; do not print the whole tool list.
-- If the C# indexer fails, carry on with zazzle_find, zazzle_read, zazzle_outline and zazzle_refs; zazzle_find_symbol needs the indexer.";
+Find code precisely, then read it literally: zazzle_find_symbol or zazzle_refs for declarations and uses, zazzle_find for text.
+- zazzle_read returns the literal source of a range (PATH:A-B) or one symbol with its comments and attributes, with line numbers and the sha zazzle_edit needs. If it says INCOMPLETE, read the range it names.
+- Put independent lookups in one call (several paths, or parallel calls); finish reading a command's output before starting another.
+- For a task's rules, `zazzle agent get-rules PATH --purpose NAME` gives the instructions that apply to that path and purpose.
+- If the C# indexer fails, use zazzle_find, zazzle_read and zazzle_refs; zazzle_find_symbol needs the indexer.";
 
 // What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
 pub const INSTRUCTIONS: &str = "\
-Use zazzle (MCP server `zazzle`) to read, search, list and edit files instead of shell grep, rg, find, cat, sed or the built-in Read and Grep tools; its answers are shorter, capped and deduplicated per session.
-- `zazzle_read` gives code as a terse view for many languages (C# from zazzle-csharp-indexer) with source line numbers and no sha; read with `source: true` for the exact code and the sha that `zazzle_edit` needs.
-- `zazzle_find`, `zazzle_refs`, `zazzle_outline` and `zazzle_ls` locate code; read a range or one symbol rather than whole files. `zazzle_read` with `symbol` set to `Namespace.Type.Member` and no `paths` finds the file through the index; paths may also be relative to the repository or solution root.
-- For C# structure, `zazzle_find_symbol` finds a type or member by name; in a folder above several repositories it covers all of them, and `repo` picks one.
-- `zazzle_diff` shows what changed (stats first, hunks by symbol) instead of git diff; `zazzle_read` takes `REV:PATH` instead of git show; `zazzle_edit` takes several `edits` in one call and `zazzle_replace` changes a pattern across files (`dry_run` first).
-- A reply tagged `[r:ID]` comes back exactly with `zazzle_read_again`; keep ids in notes instead of content.
-- When an answer must come from a particular commit, pass `commit` (a sha, or `HEAD` to learn which one answered): repositories at another commit are refused or left out, and the answer ends with `[commit SHA REPO]`.
-- Run builds and tests as `zazzle run -- CMD` (for example `zazzle run -- cargo test`): the same command in the same shell with the same exit code, its output cleaned. When repository instructions name a command such as `cargo test`, run exactly that command behind `zazzle run --`.
+zazzle (MCP server `zazzle`, or the `zazzle` command) reads, searches and edits files with line numbers, exact references and safe edits.
+- Locate precisely: `zazzle_find_symbol` (C#, by name or `Namespace.Type.Member`) and `zazzle_refs` (definitions and uses, exact for C#) before broad text search with `zazzle_find`.
+- Read literally: `zazzle_read` returns the source of a range (`PATH:A-B`, `REV:PATH`) or one `symbol` with its comments, attributes and documentation, with the sha `zazzle_edit` needs. A complete method or range comes back whole when it fits the budget; otherwise the reply says INCOMPLETE and names the exact range to read next. `terse: true` is an opt-in lossy summary, never needed for correctness.
+- Rules for the work at hand: `zazzle agent get-rules PATH --purpose NAME` returns the instructions and constraints that apply to that path, including repository-wide ones, so you need not search for them.
+- Batch independent lookups: several paths in one `zazzle_read`, several edits in one `zazzle_edit` (`edits`), and independent tool calls together.
+- Builds and tests: `zazzle run -- CMD` runs the command in the same shell with the same exit code and cleaned output. Collect a command's output before issuing the next command.
+- `zazzle_diff` shows what changed with stats first; `zazzle_replace` changes a pattern across files (`dry_run` first).
+- When an answer must come from a particular commit, pass `commit` (a sha, or `HEAD`); the answer ends with `[commit SHA REPO]`.
 - Edits may go anywhere in the git work tree you started in, in folders the client names and in the user's workspaces (`~/.zazzle/workspaces`).
 - If a zazzle tool is missing or fails, say so and use the native tool; where the hook refuses a raw command, `# allow-raw` at its end lets it through (logged).
 - If zazzle seems misconfigured, tell the user.";

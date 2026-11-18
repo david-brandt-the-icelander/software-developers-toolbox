@@ -39,9 +39,13 @@
         {
           "path": "macos/rust/zazzled/src/util.rs",
           "symbol": "rank"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "prefix"
         }
       ],
-      "behavior": "find shows at most 50 matching lines (-m), grouped by file, ordinary files before tests and shallower before deeper, each line clipped to 240 bytes around the match; -l and -c list at most 200 files. ls shows at most 150 entries to depth 2, outline 200 symbols to depth 3, refs 50 uses and 20 definitions. read keeps the head and tail of each file (or terse view) within about 3000 tokens and names the elided range to read next; --full lifts that. clean keeps the head and tail within its own budget (default 8000) and says how much was cut. Any other successful answer is cut at a line boundary at about 8000 tokens (--budget). Each cap ends in a footer that says how to narrow or continue.",
+      "behavior": "find shows at most 50 matching lines (-m), grouped by file, ordinary files before tests and shallower before deeper, each line clipped to 240 bytes around the match; -l and -c list at most 200 files. ls shows at most 150 entries to depth 2, outline 200 symbols to depth 3, refs 50 uses and 20 definitions. read keeps the head and tail of each file (or terse view) within about 3000 tokens and names the elided range to read next; --full lifts that. clean keeps the head and tail within its own budget (default 8000) and says how much was cut. Any other successful answer is cut at a line boundary at about 8000 tokens (--budget). Each cap ends in a footer that says how to narrow or continue. read is the exception to eliding: past its budget (default 6000 tokens, at most 16000, the same ceiling for MCP and --full) it shows the selection's leading lines, marks the header INCOMPLETE and ends with the omitted range and the read that continues it.",
       "outcome": "An agent gets a bounded answer and the next command to run, instead of a flood that fills its context.",
       "constraints": [
         "Tokens are estimated from bytes, about 3.5 bytes per token (tokens.rs from_bytes).",
@@ -226,7 +230,7 @@
     {
       "id": "csharp-terse-view",
       "name": "Terse C# view",
-      "description": "`read FILE.cs` returns zazzle-csharp-indexer's terse behavioural view of the file instead of its code, with source line numbers and no sha.",
+      "description": "`read --terse FILE.cs` returns zazzle-csharp-indexer's terse behavioural view of the file (opt-in; the default is the code), with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/cmd/read.rs",
@@ -274,7 +278,7 @@
     {
       "id": "markup-terse-view",
       "name": "Terse HTML and Razor view",
-      "description": "`read` on an .html, .htm, .xhtml, .cshtml or .razor file returns a terse view built in zazzled instead of the markup, with source line numbers and no sha.",
+      "description": "`read --terse` on an .html, .htm, .xhtml, .cshtml or .razor file returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the markup, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/markup.rs",
@@ -326,7 +330,7 @@
     {
       "id": "style-terse-view",
       "name": "Terse CSS, SCSS, Sass and Less view",
-      "description": "`read` on a .css, .scss, .sass or .less file returns a terse view built in zazzled instead of the stylesheet, with source line numbers and no sha.",
+      "description": "`read --terse` on a .css, .scss, .sass or .less file returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the stylesheet, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/styles.rs",
@@ -378,7 +382,7 @@
     {
       "id": "data-terse-view",
       "name": "Terse JSON, YAML and TOML view",
-      "description": "`read` on a .json, .jsonc, .json5, .yaml, .yml or .toml file, or a known lock file (Cargo.lock, poetry.lock, uv.lock, pdm.lock, composer.lock, Pipfile.lock), returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on a .json, .jsonc, .json5, .yaml, .yml or .toml file, or a known lock file (Cargo.lock, poetry.lock, uv.lock, pdm.lock, composer.lock, Pipfile.lock), returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/data.rs",
@@ -422,7 +426,7 @@
     {
       "id": "markdown-terse-view",
       "name": "Terse Markdown view",
-      "description": "`read` on a .md, .markdown or .mdx file returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on a .md, .markdown or .mdx file returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/md.rs",
@@ -461,7 +465,7 @@
     {
       "id": "xml-terse-view",
       "name": "Terse XML view",
-      "description": "`read` on an XML file (.xml, project and MSBuild files, XAML, plists, resources, schemas, .nuspec, .manifest, .svg) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on an XML file (.xml, project and MSBuild files, XAML, plists, resources, schemas, .nuspec, .manifest, .svg) returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/xml.rs",
@@ -500,7 +504,7 @@
     {
       "id": "config-terse-view",
       "name": "Terse INI and Dockerfile view",
-      "description": "`read` on an INI-style file (.ini, .cfg, .properties, .editorconfig) or a Dockerfile (Dockerfile, Dockerfile.*, *.dockerfile, Containerfile) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on an INI-style file (.ini, .cfg, .properties, .editorconfig) or a Dockerfile (Dockerfile, Dockerfile.*, *.dockerfile, Containerfile) returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/config.rs",
@@ -539,7 +543,7 @@
     {
       "id": "schema-terse-view",
       "name": "Terse HCL/Terraform, Protobuf and GraphQL view",
-      "description": "`read` on an HCL file (.tf, .tfvars, .hcl, including .terraform.lock.hcl), a Protobuf file (.proto) or a GraphQL file (.graphql, .graphqls, .gql) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on an HCL file (.tf, .tfvars, .hcl, including .terraform.lock.hcl), a Protobuf file (.proto) or a GraphQL file (.graphql, .graphqls, .gql) returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/schema.rs",
@@ -579,7 +583,7 @@
     {
       "id": "buildfile-terse-view",
       "name": "Terse CMake and Makefile view",
-      "description": "`read` on a CMake file (CMakeLists.txt, .cmake) or a Makefile (Makefile, makefile, GNUmakefile, Makefile.*, .mk, .mak) returns a terse view built in zazzled instead of the file, with source line numbers and no sha.",
+      "description": "`read --terse` on a CMake file (CMakeLists.txt, .cmake) or a Makefile (Makefile, makefile, GNUmakefile, Makefile.*, .mk, .mak) returns a terse view built in zazzled (opt-in; the default is the literal source) instead of the file, with source line numbers and no sha.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/buildfile.rs",
@@ -619,7 +623,7 @@
     {
       "id": "minified-terse-view",
       "name": "Terse view of minified JSON and XML",
-      "description": "`read` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, with at most 10 other lines (a licence banner, a source map comment) or fewer other lines than long ones, returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
+      "description": "`read --terse` on a JSON, XML, SVG, HTML or CSS file whose text sits mostly on lines of 500+ characters, with at most 10 other lines (a licence banner, a source map comment) or fewer other lines than long ones, returns the matching terse view of the file reformatted one value, element or declaration per line, with every line keyed to its source line, instead of a few huge lines.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/minified.rs",
@@ -667,7 +671,7 @@
     {
       "id": "code-terse-view",
       "name": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
-      "description": "`read` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .hs, .ml, .fs, .fsx, .clj, .cljs, .cljc, .erl, .hrl, .r, .jl, .zig, .m, .groovy, .gvy, .gradle, .ps1, .psm1, .sql, .vb, .f, .f90 (and other Fortran extensions), .pas, .dpr, .lpr, .dpk, .cbl, .cob, .cpy, .nim, .nims, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter instead of the code, with source line numbers and no sha. Nim, SQL and COBOL files get line-based views from nim.rs, sql.rs and cobol.rs.",
+      "description": "`read --terse` on a .py, .pyi, .js, .jsx, .mjs, .cjs, .ts, .mts, .cts, .tsx, .dart, .rs, .go, .java, .kt, .kts, .swift, .c, .h, .cpp, .cc, .cxx, .hpp, .hh, .hxx, .rb, .rake, .php, .scala, .sc, .pl, .pm, .lua, .ex, .exs, .hs, .ml, .fs, .fsx, .clj, .cljs, .cljc, .erl, .hrl, .r, .jl, .zig, .m, .groovy, .gvy, .gradle, .ps1, .psm1, .sql, .vb, .f, .f90 (and other Fortran extensions), .pas, .dpr, .lpr, .dpk, .cbl, .cob, .cpy, .nim, .nims, .sh, .bash, .zsh or .ksh file returns a terse view built in zazzled with tree-sitter (opt-in; the default is the literal source) instead of the code, with source line numbers and no sha. Nim, SQL and COBOL files get line-based views from nim.rs, sql.rs and cobol.rs.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/terse.rs",

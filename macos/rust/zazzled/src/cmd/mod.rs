@@ -17,6 +17,9 @@ pub mod ls;
 pub mod outline;
 mod pin;
 pub mod read;
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod read_regression;
 pub mod refs;
 pub mod replace;
 pub mod structure;

@@ -84,22 +84,24 @@ const PAGES: &[Page] = &[
         summary: "Show files or line ranges, with line numbers",
         usage: &["zazzle read PATH[:A-B]... [OPTIONS]", "zazzle read --symbol Namespace.Type.Member"],
         about: &[
-            "Shows each file with a header (line count and sha), then numbered lines. Beyond about 3000 tokens the middle is left out, and the output says which range to read next. PATH:A-B reads lines A to B.",
-            "Code files are shown as a terse view: declarations and behaviour, without the sha. Use --source for the code itself and the sha that edit needs.",
+            "Shows the literal source: a header (line count and sha, which edit needs), then numbered lines. PATH:A-B reads lines A to B; --symbol reads one declaration whole, with its comments and attributes.",
+            "Past the budget (default 6000 tokens, at most 16000) it shows the lines from the start of the selection that fit, marks the header INCOMPLETE and ends with the omitted range and the read that continues it; nothing in the middle is dropped.",
+            "--terse is an opt-in lossy summary: it folds imports, comments, logging, long strings and lists, and has no sha. Do not use it to answer questions about exact behaviour.",
         ],
         options: &[
             ("-r, --rev REV", "Read the files as they are at a git revision (also REV:PATH)"),
-            ("--source", "Show the code itself and its sha"),
+            ("--terse", "Show the lossy terse summary instead of the source"),
+            ("--source", "The source (the default; kept for compatibility)"),
             ("-s, --symbol NAME[#N]", "Show one symbol (the Nth of that name) with its comments and attributes"),
             ("-a, --around N", "Show the lines around line N"),
             ("--ctx N", "How many lines --around shows on each side (default 20)"),
             ("-n, --head N", "Show the first N lines"),
             ("-t, --tail N", "Show the last N lines"),
             ("--anchors", "Show the code with line anchors that edit --at accepts"),
-            ("-b, --budget T", "Cap the output at about T tokens (default 3000)"),
-            ("--full", "Show everything, with no token cap"),
+            ("-b, --budget T", "Cap the output at about T tokens (default 6000, at most 16000)"),
+            ("--full", "Use the largest budget, 16000 tokens"),
         ],
-        examples: &["zazzle read src/main.rs", "zazzle read src/main.rs:40-80 --source", "zazzle read lib.rs --symbol parse"],
+        examples: &["zazzle read src/main.rs:40-80", "zazzle read lib.rs --symbol parse", "zazzle read a.rs b.rs:10-30"],
     },
     Page {
         name: "ls",
@@ -184,7 +186,7 @@ const PAGES: &[Page] = &[
             "zazzle edit PATH --create --new TEXT",
         ],
         about: &[
-            "Every edit except --create needs proof that you read the current file: the sha from read --source, or anchors from read --source --anchors. The write is atomic, keeps CRLF line endings, and stays within the working directory, its git work tree and your workspaces. It prints the new sha.",
+            "Every edit except --create needs proof that you read the current file: the sha that read shows, or anchors from read --anchors. The write is atomic, keeps CRLF line endings, and stays within the working directory, its git work tree and your workspaces. It prints the new sha.",
             "TEXT '-' reads the text from standard input.",
         ],
         options: &[
@@ -194,8 +196,8 @@ const PAGES: &[Page] = &[
             ("--all", "Replace every occurrence of --old"),
             ("--lines A-B", "Replace lines A to B"),
             ("--after N", "Insert after line N (0 inserts at the top)"),
-            ("--expect SHA", "The sha that read --source showed"),
-            ("--at A#xyz-B#xyz", "The anchors that read --source --anchors showed"),
+            ("--expect SHA", "The sha that read showed"),
+            ("--at A#xyz-B#xyz", "The anchors that read --anchors showed"),
             ("--create", "Create a new file"),
         ],
         examples: &["zazzle edit src/a.rs --old 'let x = 1;' --new 'let x = 2;' --expect 3f2a9c1"],
@@ -534,7 +536,7 @@ pub fn overview() -> String {
     paragraph(
         &mut out,
         0,
-        "Code files are read as a terse view of declarations and behaviour; read --source shows the code and the sha that edit needs.",
+        "read shows the literal source with the sha that edit needs; --terse is an opt-in lossy summary.",
     );
     out.push_str("\nRun `zazzle help COMMAND` for a command's options and examples.");
     out

@@ -42,11 +42,11 @@ const EDITORS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_
 
 const SEARCH_MSG: &str = "Search with zazzle (MCP tool zazzle_find, or `zazzle find PATTERN [PATH..]`): matches grouped by file, capped and deduplicated. For C# declarations zazzle_find_symbol answers from the index; zazzle_refs lists uses.";
 const FIND_MSG: &str = "List files with zazzle (MCP tool zazzle_ls, or `zazzle ls [DIR]`; `zazzle find -l PATTERN` for files containing text).";
-const READ_MSG: &str = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`): a terse view with source line numbers; add source=true (`--source`) for the exact code and the sha every edit needs.";
+const READ_MSG: &str = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`): the literal source of a range or symbol, with line numbers and the sha every edit needs.";
 const DIFF_MSG: &str = "Diff with zazzle (MCP tool zazzle_diff, or `zazzle diff [BASE[...HEAD]] [PATH..]`): file stats first, hunks labelled with their symbol, generated files skipped, under a budget.";
 const RUN_MSG: &str = "Run builds and tests through zazzle: put `zazzle run --` in front of the same command (for example `zazzle run -- cargo test`). It runs unchanged in this shell, keeps the exit code, and cleans the output; `zazzle read-again r:ID --full` gives all of it.";
-const EDIT_MSG: &str = "Edit with zazzle (MCP tool zazzle_edit, or `zazzle edit`): read the file with source=true first for its sha, then edit with expect=SHA.";
-const WRITE_MSG: &str = "Change files with zazzle edit (MCP tool zazzle_edit, or `zazzle edit FILE --old TEXT --new TEXT --expect SHA`; the sha comes from `zazzle read FILE --source`): it checks the file did not change since you read it and shows the result.";
+const EDIT_MSG: &str = "Edit with zazzle (MCP tool zazzle_edit, or `zazzle edit`): read the file first for its sha, then edit with expect=SHA.";
+const WRITE_MSG: &str = "Change files with zazzle edit (MCP tool zazzle_edit, or `zazzle edit FILE --old TEXT --new TEXT --expect SHA`; the sha comes from `zazzle read FILE`): it checks the file did not change since you read it and shows the result.";
 const ESCAPE: &str =
     " If zazzle cannot do what you need, add the comment `# allow-raw` to the command (it is logged).";
 

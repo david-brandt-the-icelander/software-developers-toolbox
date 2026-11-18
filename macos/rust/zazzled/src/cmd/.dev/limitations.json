@@ -216,6 +216,23 @@
           "symbol": "Sign the language modules"
         }
       ]
+    },
+    {
+      "id": "terse-view-lossy",
+      "title": "The terse views are lossy and opt-in",
+      "summary": "read --terse folds imports, comments, logging, long lists, strings and repeated markup, shortens long C# locals and has no sha, so it can hide the SQL, attributes, documentation or branch an answer needs; read returns the literal source unless --terse is given.",
+      "impact": "An agent answering from the terse view can miss a predicate, attribute or branch and need another read; the default literal read has no such gap.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render_terse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "run"
+        }
+      ]
     }
   ]
 }
