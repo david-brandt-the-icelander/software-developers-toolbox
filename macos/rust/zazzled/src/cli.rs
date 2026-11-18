@@ -152,6 +152,7 @@ fn exe_watch(own_socket: bool) -> Option<server::ExeWatch> {
 
 // Binds the socket, serves until idle or replaced by an upgrade, and removes the socket afterwards.
 pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String> {
+    let socket_given = socket.clone();
     let io = |e: std::io::Error| e.to_string();
     let (listener, bound) = match socket {
         Some(p) => (server::bind(&p).map_err(io)?, Some(p)),
@@ -163,12 +164,26 @@ pub fn serve_main(socket: Option<PathBuf>, idle: Duration) -> Result<(), String>
             }
         },
     };
+    if socket_given.is_none() {
+        reapply_setup();
+    }
     let cfg = Config { idle, watch: exe_watch(bound.is_some()), socket: bound.clone() };
     let result = server::serve(listener, Arc::new(open_engine()), &cfg, &AtomicBool::new(false));
     bound.iter().for_each(|p| {
         let _ = std::fs::remove_file(p);
     });
     result.map_err(io)
+}
+
+// Re-applies the user's zazzle setup after an upgrade and logs that it did; a failure is logged, never fatal.
+fn reapply_setup() {
+    let Ok(env) = crate::setup::Env::detect() else { return };
+    let outcome = match crate::setup::reapply_after_upgrade(&env, cmd::VERSION) {
+        Ok(None) => return,
+        Ok(Some(_)) => "reapplied".to_string(),
+        Err(e) => format!("reapply failed: {e}"),
+    };
+    crate::activity::record(serde_json::json!({"src": "setup", "outcome": outcome, "version": cmd::VERSION}));
 }
 
 // Serves MCP on standard input and output.

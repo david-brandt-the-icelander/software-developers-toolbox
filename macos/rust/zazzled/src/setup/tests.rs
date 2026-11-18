@@ -64,7 +64,9 @@ fn test_parse() {
             hook: true,
             hook_edits: false,
             wrap: false,
-            probe: false
+            probe: false,
+            sets: vec![],
+            brief: false
         }
     );
     let o = opts(&["--hook-edits", "--workspace", "/a", "--workspace", "/b", "--verify"]);
@@ -214,7 +216,70 @@ fn test_apply_and_undo() {
         "{again}"
     );
     assert!(!again.contains("+ added zazzle") && !again.contains("backups:"), "{again}");
+    let md = env.home.join(".claude/CLAUDE.md");
+    let mine = std::fs::read_to_string(&md)
+        .expect("md")
+        .replace("<!-- zazzle setup: begin -->", "my own rule\n\n<!-- zazzle setup: begin -->");
+    std::fs::write(&md, format!("{mine}\nmore of mine\n")).expect("write");
+    std::fs::write(policy::path(&env.home), "[instructions]\nextra = \"Answer briefly.\"\n").expect("policy");
+    let refreshed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("refresh");
+    assert!(refreshed.contains("~ updated zazzle's instructions in ~/.claude/CLAUDE.md"), "{refreshed}");
+    let text = std::fs::read_to_string(&md).expect("md");
+    assert!(
+        text.contains("my own rule\n\n<!-- zazzle setup: begin -->")
+            && text.ends_with("<!-- zazzle setup: end -->\n\nmore of mine\n"),
+        "{text}"
+    );
+    assert!(text.contains("Answer briefly.\n<!-- zazzle setup: end -->"), "{text}");
+    let same = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("same");
+    assert!(!same.contains("~ updated zazzle's instructions") && !same.contains("backups:"), "{same}");
+    let preview = run(&opts(&["--set", "effortLevel=low"]), &env).expect("preview");
+    assert!(preview.contains("would become") && preview.contains("Add --apply"), "{preview}");
+    assert!(run(&opts(&["--set", "effortLevel=low", "--check"]), &env)
+        .unwrap_err()
+        .contains("goes with --apply"));
+    let set = run(&opts(&["--apply", "--workspace", &ws, "--set", "effortLevel=low"]), &env).expect("set");
+    assert!(set.starts_with("policy: set effortLevel=low in ~/.zazzle/policy.toml\n"), "{set}");
+    assert!(run(&opts(&["--explain"]), &env).expect("explain").contains("Now: effortLevel = \"low\""));
 
+    assert!(set.contains("    ~ effortLevel = \"low\"\n"), "{set}");
+    let settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
+            .expect("json");
+    assert_eq!(settings["effortLevel"], "low");
+    let settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
+            .expect("json");
+    assert_eq!(
+        settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "/opt/z/zazzled setup --check --brief"
+    );
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("brief"), "");
+    edit_block(&env.home.join(".claude/CLAUDE.md"), None, &mut Vec::new()).expect("drift");
+    let d = run(&opts(&["--check", "--brief"]), &env).expect("brief");
+    assert!(
+        d.starts_with("zazzle setup drift: no zazzle instructions in ~/.claude/CLAUDE.md")
+            && d.ends_with("Tell the user; their zazzle setup no longer matches what they applied."),
+        "{d}"
+    );
+    assert!(!d.contains("--apply"), "no human-only command for the agent: {d}");
+    let keyed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("keys again");
+    assert!(
+        keyed.contains("    = effortLevel = \"low\"\n") && keyed.contains("+ added zazzle's instructions"),
+        "{keyed}"
+    );
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("repaired"), "");
+
+    assert_eq!(reapply_after_upgrade(&env, "0.0.0-dev").expect("dev"), None);
+    let state = env.state_path();
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&state).expect("state")).expect("json");
+    v["applied_version"] = json!("1.0.0");
+    std::fs::write(&state, v.to_string()).expect("write");
+    edit_block(&env.home.join(".claude/CLAUDE.md"), None, &mut Vec::new()).expect("drift");
+    let re = reapply_after_upgrade(&env, "1.0.1").expect("reapply").expect("ran");
+    assert!(re.contains("+ added zazzle's instructions"), "{re}");
+    assert_eq!(reapply_after_upgrade(&env, "1.0.1").expect("again"), None);
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("repaired"), "");
     let undo = run(&opts(&["--undo"]), &env).expect("undo");
     assert!(
         undo.contains("- removed zazzle") && undo.contains("~ unwrapped gh (stdio): back to npx"),
@@ -232,7 +297,13 @@ fn test_apply_and_undo() {
     assert_eq!(code["mcpServers"]["gh"], json!({"type": "stdio", "command": "npx", "args": ["-y", "gh"]}));
     assert_eq!(code["mcpServers"]["api"]["url"], json!("https://api/mcp"));
     assert!(code["mcpServers"].get("zazzle").is_none());
-    assert_eq!(std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md"), "# Mine\n\n");
+    let left = std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("md");
+    assert!(
+        left.starts_with("# Mine\n\nmy own rule\n")
+            && left.contains("more of mine\n")
+            && !left.contains(BLOCK_BEGIN),
+        "undo keeps what is outside the markers: {left}"
+    );
     assert!(!env.home.join(".claude/settings.json").exists(), "only zazzle's hooks were in it");
     assert!(!env.codex_home.join("hooks.json").exists() && !env.codex_home.join("AGENTS.md").exists());
     assert_eq!(std::fs::read_to_string(crate::workspace::file(&env.home)).expect("ws"), "/mine\n");
@@ -299,15 +370,17 @@ fn test_block_and_hook() {
     let t = TempDir::new();
     let md = t.path().join("A.md");
     let mut backups = Vec::new();
-    edit_block(&md, true, &mut backups).expect("remove from nothing");
-    edit_block(&md, false, &mut backups).expect("add");
-    edit_block(&md, false, &mut backups).expect("again");
+    let b = block_text("");
+    let b = Some(b.as_str());
+    edit_block(&md, None, &mut backups).expect("remove from nothing");
+    edit_block(&md, b, &mut backups).expect("add");
+    edit_block(&md, b, &mut backups).expect("again");
     assert_eq!(std::fs::read_to_string(&md).expect("md").matches(BLOCK_BEGIN).count(), 1);
     std::fs::write(&md, format!("x{BLOCK_BEGIN}y{BLOCK_END}z")).expect("write");
-    edit_block(&md, true, &mut backups).expect("remove");
+    edit_block(&md, None, &mut backups).expect("remove");
     assert_eq!(std::fs::read_to_string(&md).expect("md"), "xz");
     std::fs::write(&md, "no newline").expect("write");
-    edit_block(&md, false, &mut backups).expect("add");
+    edit_block(&md, b, &mut backups).expect("add");
     assert!(std::fs::read_to_string(&md).expect("md").starts_with("no newline\n\n<!--"));
     let s = t.path().join("settings.json");
     std::fs::write(&s, r#"{"hooks": {"PreToolUse": 3}, "other": 1}"#).expect("write");
@@ -460,7 +533,7 @@ fn test_edges() {
     let mut backups = Vec::new();
     let md = t.path().join("B.md");
     std::fs::write(&md, "a\n\n").expect("write");
-    edit_block(&md, false, &mut backups).expect("add");
+    edit_block(&md, Some(&block_text("")), &mut backups).expect("add");
     assert!(std::fs::read_to_string(&md).expect("md").starts_with("a\n\n<!--"));
     let s = t.path().join("s.json");
     let other = r#"{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]}]}}"#;
@@ -529,4 +602,50 @@ fn test_off_on_uninstall() {
     assert!(!run(&opts(&["--uninstall", "--client", "codex"]), &linux)
         .expect("uninstall")
         .contains("LaunchAgent"));
+}
+
+// Checks each kind of drift is named, a plan previews a block update and session keys without writing, and the SessionStart edit copes with odd files.
+#[test]
+fn test_drift_kinds() {
+    let t = TempDir::new();
+    let env = env(&t, false);
+    seed(&env);
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("none applied"), "");
+    run(&opts(&["--apply", "--client", "claude-code"]), &env).expect("apply");
+    let p = policy::path(&env.home);
+    std::fs::write(&p, "[claude]\neffortLevel = \"low\"\n[instructions]\nextra = \"x\"\n").expect("policy");
+    let plan = run(&opts(&["--client", "claude-code"]), &env).expect("plan");
+    assert!(
+        plan.contains("~ update zazzle's instructions") && plan.contains("    ~ effortLevel = \"low\""),
+        "{plan}"
+    );
+    let s = env.home.join(".claude/settings.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
+    v["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = json!("/old/zazzled hook --client claude-code");
+    std::fs::write(&s, v.to_string()).expect("write");
+    let d = run(&opts(&["--check", "--brief"]), &env).expect("drift");
+    assert!(
+        d.contains("are out of date")
+            && d.contains("hook in ~/.claude/settings.json is missing or changed")
+            && d.contains("effortLevel is not \"low\""),
+        "{d}"
+    );
+    std::fs::write(&p, "[x").expect("bad");
+    assert!(run(&opts(&["--check", "--brief"]), &env).expect("bad").contains("does not parse"));
+    let f = t.path().join("odd.json");
+    std::fs::write(&f, "[1]").expect("odd");
+    edit_session_start(&f, Some("/z/zazzled setup --check --brief"), &mut Vec::new()).expect("array");
+    std::fs::write(&f, r#"{"hooks": 1}"#).expect("odd");
+    edit_session_start(&f, Some("/z/zazzled setup --check --brief"), &mut Vec::new())
+        .expect("hooks not an object");
+    std::fs::write(&f, r#"{"hooks": {"SessionStart": [{"hooks": [{"command": "other"}]}]}}"#).expect("other");
+    edit_session_start(&f, None, &mut Vec::new()).expect("keep other");
+    assert!(std::fs::read_to_string(&f).expect("f").contains("other"));
+    let mut odd = json!({"modelSettings": 1});
+    policy::apply_keys(
+        &mut odd,
+        &serde_json::from_value(json!({"modelSettings.m.autoCompactWindow": 1})).expect("map"),
+        &serde_json::Map::new(),
+    );
+    assert_eq!(odd["modelSettings"]["m"]["autoCompactWindow"], 1);
 }
