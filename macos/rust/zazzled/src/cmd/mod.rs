@@ -313,6 +313,20 @@ mod tests {
     use crate::testutil::run_cmd;
     use crate::testutil::TempDir;
 
+    // Checks forget-sessions drops the sessions under a prefix and needs one.
+    #[test]
+    fn test_forget_sessions() {
+        let t = crate::testutil::TempDir::new();
+        t.write("a.txt", b"x\n");
+        let e = crate::engine::Engine::new();
+        crate::testutil::run_cmd_with(&e, t.path(), "S/main", &["read", "a.txt"]);
+        let o = crate::testutil::run_cmd_with(&e, t.path(), "", &["forget-sessions", "S/"]);
+        assert_eq!(o.text, "forgot 1 sessions");
+        assert!(run_cmd(t.path(), &["forget-sessions"])
+            .text
+            .contains("usage: zazzle forget-sessions PREFIX"));
+    }
+
     // Checks help appears with no arguments and for the help words.
     #[test]
     fn test_help_variants() {

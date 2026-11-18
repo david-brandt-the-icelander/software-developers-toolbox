@@ -767,8 +767,9 @@ mod tests {
         );
         let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3"]).text;
         assert!(
-            razor.starts_with("b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes; sha: --source\n")
-                && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
+            razor.starts_with(
+                "b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes; sha: --source\n"
+            ) && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
             "{razor}"
         );
         assert!(run_cmd(t.path(), &["read", "c.htm"]).text.starts_with("c.htm 1 lines, sha "));
@@ -827,7 +828,9 @@ mod tests {
                 && json.contains("\n3-13\t⋯ 11 item(s)\n"),
             "{json}"
         );
-        assert!(run_cmd(t.path(), &["read", "b.md"]).text.ends_with("terse view: 1 comments; sha: --source\n2\t# B"));
+        assert!(run_cmd(t.path(), &["read", "b.md"])
+            .text
+            .ends_with("terse view: 1 comments; sha: --source\n2\t# B"));
         assert!(run_cmd(t.path(), &["read", "c.nim"]).text.ends_with("\n2\techo 1"));
         assert!(run_cmd(t.path(), &["read", "d.sql"]).text.ends_with("\n2\tSELECT 1;"));
         assert!(run_cmd(t.path(), &["read", "e.toml"]).text.starts_with("e.toml 1 lines, sha "));
