@@ -205,3 +205,30 @@ fn test_read_cli_and_mcp_agree() {
     let capped = mcp_read(t.path(), json!({"paths": ["IdempotencyFilter.cs"], "budget": 100000}));
     assert!(!capped.contains("INCOMPLETE") && capped.contains("return new OkResult();"), "{capped}");
 }
+
+// Checks two uneven ranges (about 8,800 and 1,400 tokens) come back whole under a 16,000 budget in either order, and a selection over the budget still returns a prefix with its continuation.
+#[test]
+fn test_read_uneven_ranges_share_budget() {
+    let t = TempDir::new();
+    let big: String =
+        (1..=540).map(|i| format!("        var value{i} = Compute(input, {i}, \"field-{i}\");\n")).collect();
+    let small: String =
+        (1..=90).map(|i| format!("        var other{i} = Compute(input, {i}, \"x-{i}\");\n")).collect();
+    t.write("Big.cs", big.as_bytes());
+    t.write("Small.cs", small.as_bytes());
+    let est = |a: &[&str]| crate::tokens::estimate(&run_cmd(t.path(), a).text);
+    let (b, s) = (est(&["read", "Big.cs:1-540", "--budget", "16000"]), est(&["read", "Small.cs:1-90"]));
+    assert!(b > 7000 && b < 12000 && s > 1000 && s < 3000, "{b} {s}");
+    for order in [["Big.cs:1-540", "Small.cs:1-90"], ["Small.cs:1-90", "Big.cs:1-540"]] {
+        let o = run_cmd(t.path(), &["read", order[0], order[1], "--budget", "16000"]).text;
+        assert!(!o.contains("INCOMPLETE") && o.contains("value540") && o.contains("other90"), "{o}");
+        assert!(o.find(&order[0][..3]) < o.find(&order[1][..3]), "kept in the asked order");
+    }
+    let o = run_cmd(t.path(), &["read", "Big.cs:1-540", "Small.cs:1-90", "--budget", "6000"]).text;
+    assert!(
+        o.contains("other90")
+            && o.contains("INCOMPLETE")
+            && o.contains("continue with: zazzle read Big.cs:"),
+        "{o}"
+    );
+}
