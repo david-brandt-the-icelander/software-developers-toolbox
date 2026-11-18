@@ -274,6 +274,28 @@
           "path": "macos/rust/zazzled/src/.dev/feature.json"
         }
       ]
+    },
+    {
+      "id": "literal-read-default",
+      "title": "read returns literal source; terse is opt-in",
+      "summary": "read shows the literal source of a range or symbol with its sha by default, cuts only at the end of a selection with an explicit continuation, and offers the terse views behind --terse.",
+      "status": "accepted",
+      "context": "Benchmark sessions showed the lossy default views (folded SQL strings, dropped attributes and comments, renamed locals, a head and tail with the middle elided) removed information a task needed, so agents made recovery reads; answer correctness and model rounds matter more than characters removed.",
+      "decision": "Default to the literal source; keep the terse views behind --terse (MCP terse), with --source accepted as a no-op; a read past its budget shows the selection's leading lines, says INCOMPLETE and names the continuation; one ceiling of 16000 tokens for the CLI, --full and MCP (default 6000).",
+      "rationale": "A complete method or range in one read avoids the follow-up reads the lossy views caused; the regression tests in src/cmd/read_regression.rs pin what one read must show.",
+      "origin": "A user request to make repository reading pass-through after benchmark sessions showed recovery reads.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/read.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/read_regression.rs",
+          "symbol": "test_read_symbol_keeps_middle_branches"
+        }
+      ],
+      "relationships": []
     }
   ]
 }

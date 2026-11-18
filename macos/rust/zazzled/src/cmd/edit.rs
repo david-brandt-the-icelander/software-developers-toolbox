@@ -19,7 +19,7 @@ pub(super) const SPEC: &[Flag] = &[
     opt("expect", '\0'),
     opt("at", '\0'),
 ];
-const USAGE: &str = "usage: edit PATH --old TEXT --new TEXT [--all] --expect SHA | PATH --lines A-B --new TEXT (--expect SHA | --at A#xyz-B#xyz) | PATH --after N --new TEXT --expect SHA | PATH --create --new TEXT; SHA and anchors come from read --source; TEXT '-' reads stdin";
+const USAGE: &str = "usage: edit PATH --old TEXT --new TEXT [--all] --expect SHA | PATH --lines A-B --new TEXT (--expect SHA | --at A#xyz-B#xyz) | PATH --after N --new TEXT --expect SHA | PATH --create --new TEXT; SHA and anchors come from read; TEXT '-' reads stdin";
 const MAX_LISTED: usize = 5;
 
 // One end of a line range: the line number and its optional anchor.
@@ -196,7 +196,7 @@ fn parse_span(spec: &str) -> Result<(SpanEnd, SpanEnd), String> {
     Ok((end(a)?, end(b)?))
 }
 
-// Checks the caller read this version of the file, by whole-file hash or line anchors from read --source; refusals never reveal the current values.
+// Checks the caller read this version of the file, by whole-file hash or line anchors from read; refusals never reveal the current values.
 fn check_precondition(
     t: &Target,
     expect: Option<&str>,
@@ -204,24 +204,18 @@ fn check_precondition(
 ) -> Result<(), String> {
     let anchored = anchors.iter().any(|(_, a)| a.is_some());
     if expect.is_none() && !anchored {
-        return Err(
-            "edits need --expect SHA (from read --source) or --at A#xyz-B#xyz (from read --source --anchors)"
-                .into(),
-        );
+        return Err("edits need --expect SHA (from read) or --at A#xyz-B#xyz (from read --anchors)".into());
     }
     if let Some(want) = expect {
         let now = hex8(&t.meta.hash);
         if want.len() < 4 || !now.starts_with(want) {
-            return Err(format!(
-                "{}: the file is not the version you read; read it again with --source",
-                t.shown
-            ));
+            return Err(format!("{}: the file is not the version you read; read it again", t.shown));
         }
     }
     for (n, want) in anchors {
         let now = anchor_str(line_anchor(&t.data, &t.meta.starts, *n));
         if want.as_deref().is_some_and(|w| w != now) {
-            return Err(format!("{}: line {n} is not what you read; read it again with --source", t.shown));
+            return Err(format!("{}: line {n} is not what you read; read it again", t.shown));
         }
     }
     Ok(())
@@ -527,7 +521,7 @@ mod tests {
         let span = format!("2#{a2}-3#{a3}");
         let bad = format!("2#zzz-3#{a3}");
         let err = edit(&t, &["a.txt", "--at", &bad, "--new", "X"]);
-        assert_eq!(err, "error: a.txt: line 2 is not what you read; read it again with --source");
+        assert_eq!(err, "error: a.txt: line 2 is not what you read; read it again");
         assert!(!err.contains(&a2));
         assert!(edit(&t, &["a.txt", "--at", &span, "--new", "X"])
             .starts_with("ok a.txt: lines 2-3 replaced by 1 (now 2-2)"));
@@ -556,7 +550,7 @@ mod tests {
         t.write("a.txt", b"one\ntwo\n");
         let s = sha(&t, "a.txt");
         assert!(edit(&t, &["a.txt", "--lines", "1-1", "--new", "x"])
-            .starts_with("error: edits need --expect SHA (from read --source)"));
+            .starts_with("error: edits need --expect SHA (from read)"));
         assert_eq!(
             edit(&t, &["a.txt", "--lines", "1-9", "--new", "x", "--expect", &s]),
             "error: a.txt: lines 1-9 are outside the file (2 lines)"
@@ -570,7 +564,7 @@ mod tests {
             "error: a.txt: lines 2-1 are outside the file (2 lines)"
         );
         let stale = edit(&t, &["a.txt", "--lines", "1-1", "--new", "x", "--expect", "deadbeef"]);
-        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again with --source");
+        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again");
         assert!(!stale.contains(&s));
         assert!(edit(&t, &["a.txt", "--lines", "1-1", "--new", "x", "--expect", "de"])
             .contains("not the version you read"));
@@ -834,10 +828,10 @@ mod tests {
         t.write("a.txt", b"one\ntwo\n");
         let now = sha(&t, "a.txt");
         let bare = run_cmd(t.path(), &["edit", "a.txt", "--old", "two", "--new", "2"]).text;
-        assert!(bare.starts_with("error: edits need --expect SHA (from read --source)"), "{bare}");
+        assert!(bare.starts_with("error: edits need --expect SHA (from read)"), "{bare}");
         let stale =
             run_cmd(t.path(), &["edit", "a.txt", "--old", "two", "--new", "2", "--expect", "0000"]).text;
-        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again with --source");
+        assert_eq!(stale, "error: a.txt: the file is not the version you read; read it again");
         assert!(!stale.contains(&now));
         assert_eq!(cat(&t, "a.txt"), "one\ntwo\n");
     }
