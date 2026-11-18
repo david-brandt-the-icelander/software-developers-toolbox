@@ -1,0 +1,11 @@
+[package]
+name = "zazzle-agent-rules-list"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The zazzle-agent program behind `zazzle agent`; its only command so far is get-rules.
+[[bin]]
+name = "zazzle-agent"
+path = "src/main.rs"
