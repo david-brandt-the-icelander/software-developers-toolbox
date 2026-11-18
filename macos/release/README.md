@@ -9,6 +9,13 @@
 - `set-version.sh X.Y.Z` writes the version into every crate's manifest and its `Cargo.lock` entry (no network, so `--locked` still holds); the indexer gets `-p:Version=X.Y.Z`. Every binary's `--version` then reports the release.
 - `version.test.sh` checks the arithmetic (v1.10.0 sorts after v1.2.9) and the refusals; CI runs it with shellcheck.
 
+## Alpha channel
+
+- Every release run first publishes an alpha of the same commit, `vX.Y.Z-alpha.N` (N one past the version's alpha tags), from one quick macOS job: no tests and no PGO profile, otherwise the same binaries, language modules, indexer and signing.
+- It goes to a GitHub pre-release, to icelander.net under `zazzle/vX.Y.Z-alpha.N/` and `zazzle/alpha/`, and to the tap as `Formula/zazzle-alpha.rb` (class `ZazzleAlpha`, which `conflicts_with "zazzle"`), with its own bottle. Install it with `brew install zazzcat/z/zazzle-alpha`; `brew upgrade` follows later alphas.
+- The release jobs start once the alpha is published, so it is there to try while they run; a failed alpha stops the release.
+- `channel: alpha` publishes only the alpha. With `version`, it may name a version that is already released (`version: 1.2.28`, `channel: alpha` gives `v1.2.28-alpha.N`).
+
 ## Homebrew formula (`formula.sh`, `bottle.sh`)
 
 The `homebrew` job writes `Formula/zazzle.rb` into the tap repository `zazzcat/homebrew-z` and pushes it to that repo's default branch.

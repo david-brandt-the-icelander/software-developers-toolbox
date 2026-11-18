@@ -26,4 +26,13 @@ if run branch main patch 1.2 2>/dev/null; then fail "bad exact version accepted"
 if run branch main patch 1.10.0 2>/dev/null; then fail "existing tag accepted as exact version"; fi
 if run tag release-1 none 2>/dev/null; then fail "bad tag accepted"; fi
 if run branch main huge 2>/dev/null; then fail "bad bump accepted"; fi
+# The alpha channel: the next alpha number for the version, the stable release on or off, and alpha tags ignored by bumps.
+[ "$(run branch main patch "" both)" = $'tag=v1.10.1\nversion=1.10.1\npublish=true\nalpha_tag=v1.10.1-alpha.1\nalpha_version=1.10.1-alpha.1\nstable=true' ] || fail "both channels"
+git -C "$tmp" tag v1.10.0-alpha.1
+git -C "$tmp" tag v1.10.0-alpha.2
+[ "$(run branch main none 1.10.0 alpha)" = $'tag=v1.10.0\nversion=1.10.0\npublish=false\nalpha_tag=v1.10.0-alpha.3\nalpha_version=1.10.0-alpha.3\nstable=false' ] || fail "alpha of a released version"
+git -C "$tmp" tag v1.10.1-alpha.1
+[ "$(run branch main patch)" = $'tag=v1.10.1\nversion=1.10.1\npublish=true' ] || fail "alpha tags are not the latest release"
+[ "$(run branch main none "" both)" = $'tag=\nversion=0.0.0-dev\npublish=false\nalpha_tag=\nalpha_version=\nstable=true' ] || fail "build only with channel"
+if run branch main patch "" beta 2>/dev/null; then fail "bad channel accepted"; fi
 echo "version ok"

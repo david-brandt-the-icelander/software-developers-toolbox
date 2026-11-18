@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Write the zazzle Homebrew formula for a release: formula.sh TAG SHA256 DIR [BOTTLE_DIR]
+# Write the zazzle Homebrew formula for a release: [FORMULA=zazzle-alpha] formula.sh TAG SHA256 DIR [BOTTLE_DIR]
+# FORMULA names the formula (default zazzle); zazzle-alpha is the alpha channel, which conflicts with zazzle.
 #
 # The formula installs the prebuilt universal binaries from the release tarball of TAG on GitHub, and the
 # compressed C# indexer for both CPU types; post_install_steps expands the one that matches this Mac over a
@@ -14,7 +15,15 @@ tag=${1:-}
 sha=${2:-}
 dir=${3:-}
 bottles=${4:-}
-if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]] || ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || [ -z "$dir" ]; then
+name=${FORMULA:-zazzle}
+[[ "$name" =~ ^zazzle(-alpha)?$ ]] || { echo "unknown formula '$name'; use zazzle or zazzle-alpha" >&2; exit 2; }
+class=Zazzle
+conflicts=""
+if [ "$name" = zazzle-alpha ]; then
+  class=ZazzleAlpha
+  conflicts=$'\n  conflicts_with "zazzle", because: "both install the zazzle commands"'
+fi
+if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*(-alpha\.[0-9]+)?$ ]] || ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || [ -z "$dir" ]; then
   echo "usage: $0 vX.Y.Z SHA256 DIR [BOTTLE_DIR]   (tag like v2.0.0, lowercase 64-hex sha256)" >&2
   exit 2
 fi
@@ -27,16 +36,16 @@ mkdir -p "$dir"
 # Print the bottle block, or nothing without bottles; fails if the bottle is missing.
 bottle_block() {
   [ -n "$bottles" ] || return 0
-  local file="$bottles/zazzle-${tag#v}.all.bottle.tar.gz"
+  local file="$bottles/$name-${tag#v}.all.bottle.tar.gz"
   [ -f "$file" ] || { echo "missing bottle: $file" >&2; return 1; }
   printf '\n\n  bottle do\n    root_url "https://github.com/%s/releases/download/%s"\n' "$repo" "$tag"
   printf '    sha256 cellar: :any_skip_relocation, all: "%s"\n  end\n' "$(sha256sum "$file" | cut -d' ' -f1)"
 }
 
 block=$(bottle_block)
-cat >"$dir/zazzle.rb" <<RUBY
+cat >"$dir/$name.rb" <<RUBY
 # Homebrew formula for zazzle; written by macos/release/formula.sh on each release.
-class Zazzle < Formula
+class $class < Formula
   desc "Agent tools: zazzle, zazzled, a C# indexer, cyberspace-generator and macOS fixers"
   homepage "https://github.com/$repo"
   url "https://github.com/$repo/releases/download/$tag/zazzle-macos-universal.tar.gz"
@@ -44,7 +53,7 @@ class Zazzle < Formula
   sha256 "$sha"
   license "Unlicense"$block
 
-  depends_on :macos
+  depends_on :macos$conflicts
 
   def install
     bin.install "zazzle", "zazz", "zazzled", "zazz-worker", "afs", "fix-network", "free-disk-space", "zazzle-git", "zazzle-git-commit", "zazzle-agent", "zazzle-git-commit-message-editor", "cyberspace-generator"
@@ -52,7 +61,7 @@ class Zazzle < Formula
     (libexec/"indexer").install "zazzle-csharp-indexer-arm64.gz", "zazzle-csharp-indexer-x64.gz"
     (bin/"zazzle-csharp-indexer").write <<~SH
       #!/bin/sh
-      echo "zazzle-csharp-indexer is not set up yet; run: brew postinstall zazzle" >&2
+      echo "zazzle-csharp-indexer is not set up yet; run: brew postinstall $name" >&2
       exit 1
     SH
     chmod 0755, bin/"zazzle-csharp-indexer"
@@ -91,4 +100,4 @@ class Zazzle < Formula
   end
 end
 RUBY
-echo "wrote $dir/zazzle.rb for $tag"
+echo "wrote $dir/$name.rb for $tag"

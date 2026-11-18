@@ -15,6 +15,12 @@ Install with Homebrew (no Gatekeeper prompt, `brew upgrade` for updates):
 brew install zazzcat/z/zazzle   # zazzle (also as z), zazzled, zazzle-csharp-indexer, afs, free-disk-space, fix-network, cyberspace-generator
 ```
 
+To test what is about to be released, install the alpha channel instead; each release publishes it first, before its full build and tests finish (the two conflict, so unlink one before installing the other):
+
+```bash
+brew install zazzcat/z/zazzle-alpha   # or: curl -fLO https://icelander.net/downloads/zazzle/alpha/zazzle-macos-universal.tar.gz
+```
+
 The formula lives in the [`zazzcat/homebrew-z`](https://github.com/zazzcat/homebrew-z) tap; brew adds it on first use. If you tapped the old `toolbox` tap, run `brew untap david-brandt-the-icelander/toolbox`.
 
 Or download the universal binaries:
