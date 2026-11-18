@@ -166,6 +166,86 @@ fn test_run_prints_bodies() {
 // A file that cannot be read as text shows an error in its block.
 #[test]
 fn test_body_unreadable_file() {
-    let f = Found { kind: "rule", path: temp("bad").join("none.md"), lines: Vec::new() };
-    assert!(body(&f).contains("error:"));
+    let f = Found { kind: "rule", path: temp("bad").join("none.md"), lines: Vec::new(), text: None };
+    assert!(body(&f, false).contains("error:"));
+}
+
+// A skill prints only its description by default and its whole text with skill bodies; a marked segment prints without marker lines.
+#[test]
+fn test_body_skill_description_and_segment_markers() {
+    let root = temp("skill");
+    let skill = root.join("agents/skills/s/SKILL.md");
+    put(&skill);
+    fs::write(&skill, "---\nname: s\ndescription: Does s things.\n---\n\n# s\nlong text\n")
+        .expect("writable");
+    let dir = root.to_str().expect("utf8");
+    let (short, _) = run(&strs(&["get-rules", dir]), None);
+    assert_eq!(short, format!("==> skill {} <==\ndescription: Does s things.\n\n", skill.display()));
+    let (full, _) = run(&strs(&["get-rules", dir, "--skill-bodies"]), None);
+    assert!(full.contains("long text"));
+    let rule = root.join("AGENTS.md");
+    fs::write(&rule, "#zazzle-purpose-begin:a\nkeep\n#zazzle-purpose-begin:b\nboth\n#zazzle-purpose-end:b\n#zazzle-purpose-end:a\n").expect("writable");
+    let (text, _) = run(&strs(&["get-rules", dir, "--purpose", "a", "--purpose", "b"]), None);
+    assert!(text.contains("keep\nboth\n"));
+    assert!(!text.contains("#zazzle-purpose"));
+    let nodesc =
+        Found { kind: "skill", path: rule, lines: Vec::new(), text: Some("no front matter".to_string()) };
+    assert_eq!(body(&nodesc, false).lines().nth(1), Some(""));
+}
+
+// A file that only imports listed files, or is a symlink to one, is not printed again.
+#[test]
+fn test_list_rules_dedupes_imports_and_symlinks() {
+    let root = temp("dedupe");
+    fs::write(root.join("AGENTS.md"), "rules\n").expect("writable");
+    fs::write(root.join("CLAUDE.md"), "@AGENTS.md\n").expect("writable");
+    let got = list_rules(&root, None, &[]).expect("lists");
+    assert_eq!(got.len(), 1);
+    fs::write(root.join("CLAUDE.md"), "@AGENTS.md\nextra\n").expect("writable");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 2);
+    fs::write(root.join("CLAUDE.md"), "@missing.md\n").expect("writable");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 2);
+    fs::write(root.join("CLAUDE.md"), "\n").expect("writable");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 2);
+    fs::remove_file(root.join("CLAUDE.md")).expect("removable");
+    std::os::unix::fs::symlink(root.join("AGENTS.md"), root.join("CLAUDE.md")).expect("symlink");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 1);
+    fs::remove_file(root.join("CLAUDE.md")).expect("removable");
+    std::os::unix::fs::symlink(root.join("CLAUDE.md"), root.join("CLAUDE.md")).expect("symlink");
+    assert_eq!(list_rules(&root, None, &[]).expect("lists").len(), 1);
+}
+
+// Bad --purpose values and unknown flags are usage errors.
+#[test]
+fn test_run_rejects_bad_options() {
+    let root = temp("badopt");
+    let dir = root.to_str().expect("utf8");
+    assert_eq!(run(&strs(&["get-rules", dir, "--purpose", "--name-only"]), None).1, 2);
+    assert_eq!(run(&strs(&["get-rules", dir, "--purpose="]), None).1, 2);
+    assert_eq!(run(&strs(&["get-rules", dir, "--bogus"]), None).1, 2);
+}
+
+// When the path is under the home folder, home keeps its place in the folder order instead of coming first.
+#[test]
+fn test_chain_home_inside_ancestors() {
+    let root = temp("order-home");
+    let home = root.join("h");
+    let start = home.join("p");
+    fs::create_dir_all(&start).expect("folders");
+    assert_eq!(chain(&start, Some(&home)), chain(&start, None));
+    let other = root.join("o");
+    fs::create_dir_all(&other).expect("folder");
+    assert_eq!(chain(&other, Some(&home))[0], home);
+}
+
+// The text read for purpose filtering is reused when printing.
+#[test]
+fn test_body_uses_text_already_read() {
+    let f = Found {
+        kind: "rule",
+        path: PathBuf::from("/nonexistent/x.md"),
+        lines: Vec::new(),
+        text: Some("kept\n".to_string()),
+    };
+    assert_eq!(body(&f, false), "==> rule /nonexistent/x.md <==\nkept\n\n");
 }

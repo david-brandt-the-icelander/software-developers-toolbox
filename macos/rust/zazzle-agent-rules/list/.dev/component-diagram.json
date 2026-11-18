@@ -1,0 +1,78 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle-agent component diagram",
+  "folder": "macos/rust/zazzle-agent-rules/list",
+  "description": "The zazzle-agent crate: a library that finds the rule and skill files for a path and filters them by purpose markers, a thin binary, and the zazzle invoker that execs it for `zazzle agent`.",
+  "sources": [
+    {
+      "path": "macos/rust/zazzle-agent-rules/list/Cargo.toml",
+      "symbol": "bin"
+    },
+    {
+      "path": "macos/rust/zazzle-agent-rules/list/src/lib.rs",
+      "symbol": "list_rules"
+    },
+    {
+      "path": "macos/rust/zazzle-agent-rules/list/src/purpose.rs",
+      "symbol": "part"
+    },
+    {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "tool_binary"
+    }
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "zazzle-agent-rules-list",
+      "responsibility": "The package and its binary zazzle-agent.",
+      "folder": "macos/rust/zazzle-agent-rules/list"
+    },
+    {
+      "id": "finder",
+      "name": "Rule finder",
+      "responsibility": "Walks the home folder and every folder down to the path for AGENTS.md, CLAUDE.md, .claude/rules and SKILL.md files, drops repeats, and prints names or text.",
+      "folder": "macos/rust/zazzle-agent-rules/list/src"
+    },
+    {
+      "id": "purpose",
+      "name": "Purpose markers",
+      "responsibility": "Reads #zazzle-purpose markers and decides which whole files or line ranges match the wanted purposes.",
+      "folder": "macos/rust/zazzle-agent-rules/list/src"
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "responsibility": "Execs the zazzle-agent beside itself for `zazzle agent ARGS`.",
+      "folder": "macos/c/zazzle",
+      "diagram": "macos/c/zazzle/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "crate",
+      "to": "finder",
+      "kind": "contains",
+      "description": "lib.rs and main.rs."
+    },
+    {
+      "from": "crate",
+      "to": "purpose",
+      "kind": "contains",
+      "description": "purpose.rs."
+    },
+    {
+      "from": "finder",
+      "to": "purpose",
+      "kind": "depends-on",
+      "description": "Asks which part of each file applies when --purpose is given."
+    },
+    {
+      "from": "invoker",
+      "to": "crate",
+      "kind": "depends-on",
+      "description": "Execs the zazzle-agent binary from its own directory."
+    }
+  ]
+}

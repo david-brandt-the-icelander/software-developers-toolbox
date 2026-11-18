@@ -25,9 +25,17 @@ struct Marker<'a> {
     purpose: &'a str,
 }
 
-// Parses the marker on a line, if any; the purpose ends at whitespace, `-->` or `*/`.
+// Text allowed before a marker on its line, besides whitespace: the opener of a comment.
+const OPENERS: [&str; 7] = ["<!--", "//", "/*", "--", "#", ";", "%"];
+
+// Parses the marker on a line, if any; it must start the line or follow a comment opener, and the purpose is its run of letters, digits, `_`, `.` and `-`.
 fn marker(line: &str) -> Option<Marker<'_>> {
-    let rest = &line[line.find(MARK)? + MARK.len()..];
+    let at = line.find(MARK)?;
+    let before = line[..at].trim();
+    if !before.is_empty() && !OPENERS.contains(&before) {
+        return None;
+    }
+    let rest = &line[at + MARK.len()..];
     let (kind, rest) = if let Some(r) = rest.strip_prefix("-begin:") {
         (Kind::Begin, r)
     } else if let Some(r) = rest.strip_prefix("-end:") {
@@ -35,8 +43,14 @@ fn marker(line: &str) -> Option<Marker<'_>> {
     } else {
         (Kind::File, rest.strip_prefix(':')?)
     };
-    let purpose = rest.split_whitespace().next()?.trim_end_matches("-->").trim_end_matches("*/");
+    let end = rest.find(|c: char| !(c.is_alphanumeric() || "_.-".contains(c))).unwrap_or(rest.len());
+    let purpose = rest[..end].trim_end_matches('-');
     (!purpose.is_empty()).then_some(Marker { kind, purpose })
+}
+
+// Tells whether a line is a purpose marker, so segment output can leave it out.
+pub fn is_marker(line: &str) -> bool {
+    marker(line).is_some()
 }
 
 // Sorts line ranges and joins those that overlap or touch.
@@ -153,5 +167,17 @@ mod tests {
         assert!(marker("#zazzle-purpose:").is_none());
         assert!(marker("#zazzle-purposeX:a").is_none());
         assert_eq!(marker("/* #zazzle-purpose:a*/").map(|m| m.purpose), Some("a"));
+        assert_eq!(marker("<!-- #zazzle-purpose:a-b-->").map(|m| m.purpose), Some("a-b"));
+        assert_eq!(marker("  #zazzle-purpose-end:a.b_c").map(|m| m.purpose), Some("a.b_c"));
+    }
+
+    // Marker text quoted in prose or code spans is not a marker, and is_marker agrees.
+    #[test]
+    fn test_marker_ignores_prose() {
+        assert!(
+            marker("- keep marked `#zazzle-purpose:NAME` or between `#zazzle-purpose-begin:NAME`").is_none()
+        );
+        assert!(!is_marker("see #zazzle-purpose:a here"));
+        assert!(is_marker("#zazzle-purpose:a"));
     }
 }
