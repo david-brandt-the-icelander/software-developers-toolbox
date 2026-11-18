@@ -128,6 +128,13 @@ impl Target {
     }
 }
 
+// Asks the indexer for exact C# references to a name (Roslyn's SymbolFinder over the repository under the working directory).
+pub fn exact_refs(ctx: &Ctx, query: &str) -> Result<Output, String> {
+    let mut a = Map::new();
+    a.insert("name".into(), json!(query));
+    Target::locate(ctx, None)?.ask("refs", a)
+}
+
 // What a structure command says when the indexer cannot answer: why, in one line, and what still works.
 fn unavailable(why: &str) -> String {
     format!("C# indexer unavailable: {why}. find, read, ls, outline and refs work without it.")
@@ -310,6 +317,34 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    // Checks refs answers from the indexer's Roslyn tool when a C# file matches, counts other text matches, and falls back to text when the name has no C# declaration.
+    #[test]
+    fn test_refs_asks_roslyn_first() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(echoing);
+        let (t, _name, saved) = setup(&fake);
+        t.write("notes.md", b"C is a class\n");
+        let o = run_cmd(t.path(), &["refs", "C"]).text;
+        assert_eq!(
+            o,
+            "\"refs\" {\"name\":\"C\"}\n-- text matches in 1 other files: zazzle refs C -g '!*.cs'"
+        );
+        let missing = FakeIndexer::start(|_, _| {
+            (
+                json!({"ok": true}),
+                Some(
+                    json!({"id": 1, "result": {"content": [{"type": "text", "text": "no C# declaration of C"}], "isError": true}}),
+                ),
+            )
+        });
+        std::env::set_var("ZAZZLE_INDEXER", &missing.exe);
+        std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", missing.dir.path());
+        let text = run_cmd(t.path(), &["refs", "C"]).text;
+        assert!(text.contains("defs\nsrc/C.cs:1-1 class C") && !text.contains("unavailable"), "{text}");
+        assert!(run_cmd(t.path(), &["refs", "C", "src"]).text.contains("defs\nsrc/C.cs"));
+        restore(saved);
     }
 
     // Checks each command calls its indexer tool with the arguments it was given, paths relative to the work tree.

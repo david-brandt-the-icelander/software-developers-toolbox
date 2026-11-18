@@ -53,4 +53,29 @@ public class ToolTests
         Assert.True(call["result"]!["isError"]!.GetValue<bool>());
         Assert.Equal($"unknown tool: {name}", call["result"]!["content"]![0]!["text"]!.GetValue<string>());
     }
+
+    [Fact]
+    // refs answers from Roslyn: calls through an interface, every overload and both halves of a partial class, but no comment or string.
+    public void test_refs_exact()
+    {
+        using var repo = new TempRepo(new()
+        {
+            ["src/I.cs"] = "interface IShape { int Area(); }\n",
+            ["src/Sq.cs"] = "partial class Sq : IShape { public int Area() => 1; }\n",
+            ["src/Sq2.cs"] = "partial class Sq { int Area(int k) => k; }\n",
+            ["src/Use.cs"] = "class Use {\n  // Area in a comment\n  string s = \"Area\";\n  int M(IShape x, Sq q) => x.Area() + q.Area() + q.Area(2);\n}\n",
+        });
+        var server = new McpServer([repo.Root()], new UsageLog(null));
+        string Call(string args) => server.Handle($"{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{{\"name\":\"refs\",\"arguments\":{args}}}}}")!["result"]!["content"]![0]!["text"]!.GetValue<string>();
+        var area = Call("{\"name\":\"Area\"}");
+        Assert.Contains("4 int M(IShape x, Sq q) => x.Area() + q.Area() + q.Area(2);", area);
+        Assert.DoesNotContain("comment", area);
+        Assert.DoesNotContain("\"Area\"", area);
+        Assert.Contains("-- exact (Roslyn): 3 defs, 1 refs in 1 files", area);
+        var sq = Call("{\"name\":\"Sq\"}");
+        Assert.Contains("r:src/Sq.cs:1 class Sq", sq);
+        Assert.Contains("r:src/Sq2.cs:1 class Sq", sq);
+        Assert.Contains("Sq.Area(int)", Call("{\"name\":\"Sq.Area\"}"));
+        Assert.Contains("no C# declaration of Nope", Call("{\"name\":\"Nope\"}"));
+    }
 }

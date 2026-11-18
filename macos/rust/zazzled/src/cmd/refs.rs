@@ -128,6 +128,26 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let plan = Plan { engine: ctx.engine, re, max: PER_FILE, context: 0, files_only: false };
     let results = search_all(&files, &plan, cpus());
     let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
+    let is_cs = |r: &&FileResult| files[r.idx].extension().is_some_and(|e| e.eq_ignore_ascii_case("cs"));
+    let mut note = String::new();
+    if p.positional.len() == 1 && opts.globs.is_empty() && matched.iter().any(is_cs) {
+        match super::structure::exact_refs(ctx, query) {
+            Ok(mut o) => {
+                let others = matched.iter().filter(|r| !is_cs(r)).count();
+                if others > 0 {
+                    o.text.push_str(&format!(
+                        "\n-- text matches in {others} other files: zazzle refs {query} -g '!*.cs'"
+                    ));
+                }
+                return Ok(o);
+            }
+            Err(e) if e.contains("no C# declaration") => {}
+            Err(e) => {
+                note =
+                    format!("\n-- text match; exact C# refs unavailable: {}", e.lines().next().unwrap_or(""))
+            }
+        }
+    }
     let (engine, cwd) = (ctx.engine, &ctx.cwd);
     let mut found: Vec<FileRefs> =
         par_map(&matched, cpus(), |_, r| file_refs(engine, &files[r.idx], r, name, qual, cwd))
@@ -157,8 +177,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     }
     if n_defs + n_uses == 0 {
         return Ok(Output::ok(match qual {
-            Some(q) => format!("no references to {name} in the files naming {q} ({} searched)", files.len()),
-            None => format!("no references to {name} in {} files", files.len()),
+            Some(q) => {
+                format!("no references to {name} in the files naming {q} ({} searched){note}", files.len())
+            }
+            None => format!("no references to {name} in {} files{note}", files.len()),
         }));
     }
     let mut out = String::new();
@@ -179,6 +201,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if shown < n_uses {
         out.push_str(&format!("; showing {shown} refs, {NARROW}"));
     }
+    out.push_str(&note);
     Ok(Output::ok(out))
 }
 
@@ -296,7 +319,7 @@ mod tests {
         let o = run_cmd(t.path(), &["refs", "Widget"]).text;
         assert_eq!(
             o,
-            "defs\nW.cs:2-6 class Widget\nrefs\nW.cs\n5 [Use]     void Use(Widget w) { }\nnotes.txt\n1 Widget\n-- 1 defs, 2 refs in 2 files (3 searched)"
+            "defs\nW.cs:2-6 class Widget\nrefs\nW.cs\n5 [Use]     void Use(Widget w) { }\nnotes.txt\n1 Widget\n-- 1 defs, 2 refs in 2 files (3 searched)\n-- text match; exact C# refs unavailable: not inside a git work tree, and no git repositories below this folder"
         );
     }
 
