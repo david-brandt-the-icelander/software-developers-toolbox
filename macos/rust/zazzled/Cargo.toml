@@ -20,7 +20,7 @@ blake3 = "1"
 # gitignore-aware directory walking.
 ignore = "0.4"
 # P-256 keys and ECDSA signatures for signed zazz scripts.
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8", "pem"] }
 # Randomness for generating signing keys.
 rand_core = { version = "0.6", features = ["getrandom"] }
 # The SHA-256 algorithm identifier that ECDSA certificates name (only the "oid" feature is needed).
