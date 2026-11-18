@@ -59,17 +59,21 @@ fn enforcement(env: &Env, c: Client) -> String {
             } else {
                 "native edits allowed and logged"
             };
-            let trust = if c == Client::Codex { "; Codex runs it once trusted (/hooks)" } else { "" };
+            let trust = if c == Client::Codex {
+                "\n  trust step: Codex runs the hook only once you trust it: /hooks in the CLI, or Settings > Hooks in the app"
+            } else {
+                ""
+            };
             let test = match hook_selftest(&cmd) {
                 Ok(()) => "self-test passed".to_string(),
                 Err(e) => format!("SELF-TEST FAILED: {e}"),
             };
-            format!("enforced by the hook in {} ({test}; {edits}{trust}); {instr}", env.short(&h.path))
+            format!("enforced by the hook in {} ({test}; {edits}); {instr}{trust}", env.short(&h.path))
         }
         None if c == Client::ClaudeDesktop => {
             format!("instructions only (the desktop chat has no hooks); {instr}")
         }
-        None => format!("instructions only, nothing enforced (add --hook); {instr}"),
+        None => format!("instructions only, nothing enforced (apply without --no-hook); {instr}"),
     }
 }
 
@@ -135,7 +139,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str(&format!("\n{}: {}\n", c.name(), env.short(&file.path)));
         out.push_str(&format!("  routing: {}\n", enforcement(env, c)));
         if out.contains("SELF-TEST FAILED") {
-            hints.push("A hook did not answer as expected: run `zazzle setup --hook --apply` again, then restart the client.");
+            hints.push("A hook did not answer as expected: run `zazzle setup --apply` again, then restart the client.");
         }
         let servers = file.servers();
         if !servers.iter().any(is_zazzle) {
@@ -264,9 +268,18 @@ pub fn summary(entries: &[Value]) -> (String, Vec<String>) {
         format!("raw commands the hook redirected to zazzle: {} ({})", redirected.len(), tally(redirected.iter().map(String::as_str))),
         format!("bypasses, which went around zazzle: native edits {} ({}), `# allow-raw` {} ({}), zazzle unavailable {} ({})",
             native.len(), tally(native.iter().map(String::as_str)), raw.len(), tally(raw.iter().map(String::as_str)), down.len(), tally(down.iter().map(String::as_str))),
+        bypass_rate(redirected.len(), raw.len()),
     ];
     lines.retain(|l| !l.contains(": 0 (") || l.starts_with("bypasses"));
     (line, lines)
+}
+
+// Says how often agents escaped the hook with `# allow-raw`, of all the raw commands it caught.
+fn bypass_rate(redirected: usize, raw: usize) -> String {
+    match redirected + raw {
+        0 => "allow-raw rate: no raw commands caught".into(),
+        n => format!("allow-raw rate: {raw} of {n} caught raw commands ({}%)", raw * 100 / n),
+    }
 }
 
 // Runs `zazzle setup --report`: what the activity log shows for the last day, and what it cannot show.
@@ -278,7 +291,7 @@ pub fn report(env: &Env) -> Result<String, String> {
         out.push_str("  nothing recorded: no agent has used zazzle, its hook or its proxy since then (or they run another zazzled)\n");
     }
     summary(&entries).1.iter().for_each(|l| out.push_str(&format!("  {l}\n")));
-    out.push_str("\nNot visible in this log, so not counted as coverage:\n  - native tool calls the hook lets through (Claude Code's Read of non-C# files, Codex's own tools other than shell and apply_patch, web search)\n  - MCP servers that stay direct (OAuth, SSE, plugins, project files): their calls never reach zazzle\n  - the Claude desktop app's chat, which has no hooks\n  - clients whose hook is not installed or not yet trusted (Codex)\n");
+    out.push_str("\nNot visible in this log, so not counted as coverage:\n  - native tool calls the hook lets through (Claude Code's Read of small files or short ranges, Codex's own tools other than shell and apply_patch, web search)\n  - MCP servers that stay direct (OAuth, SSE, plugins, project files): their calls never reach zazzle\n  - the Claude desktop app's chat, which has no hooks\n  - clients whose hook is not installed or not yet trusted (Codex)\n");
     Ok(out)
 }
 
@@ -666,7 +679,7 @@ mod tests {
         );
         assert!(
             r.contains(
-                "codex: ~/.codex/config.toml\n  routing: instructions only, nothing enforced (add --hook)"
+                "codex: ~/.codex/config.toml\n  routing: instructions only, nothing enforced (apply without --no-hook)"
             ),
             "{r}"
         );
@@ -675,8 +688,10 @@ mod tests {
         assert!(!r.contains("claude-desktop"), "{r}");
         assert!(r.contains("2 working, 3 failed."), "{r}");
         assert!(r.contains("absolute path") && r.contains("added after setup"), "{r}");
+        assert_eq!(bypass_rate(3, 1), "allow-raw rate: 1 of 4 caught raw commands (25%)");
         assert!(r.contains("last 24 hours: 1 zazzle commands, 0 runs, 0 proxied MCP calls; the hook redirected 0 raw commands; 1 bypasses (1 native edits"), "{r}");
         let rep = report(&env).expect("report");
+        assert!(rep.contains("allow-raw rate: no raw commands caught"), "{rep}");
         assert!(
             rep.contains("through zazzle: 1 commands in 1 sessions (read 1)")
                 && rep.contains("bypasses, which went around zazzle: native edits 1 (apply_patch 1)"),
@@ -706,7 +721,11 @@ mod tests {
             .expect("write");
         std::env::set_var("ZAZZLE_ACTIVITY_LOG", "");
         let r = run(&opts, &env).expect("run");
-        assert!(r.contains("native edits refused; Codex runs it once trusted (/hooks)"), "{r}");
+        assert!(r.contains("native edits refused); "), "{r}");
+        assert!(
+            r.contains("\n  trust step: Codex runs the hook only once you trust it: /hooks in the CLI"),
+            "{r}"
+        );
         assert!(r.contains("routing: instructions only (the desktop chat has no hooks)"), "{r}");
         assert!(
             r.contains("FAIL mute [direct: not wrapped yet")

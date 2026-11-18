@@ -252,7 +252,7 @@ fn test_other_cases() {
     env.indexer = None;
     seed(&env);
     std::fs::remove_dir_all(env.codex_home.clone()).expect("rm codex");
-    let r = run(&opts(&["--hook"]), &env).expect("plan");
+    let r = run(&opts(&[]), &env).expect("plan");
     assert!(
         r.contains("C# indexer: not found")
             && r.contains("no --repo: the Claude desktop app starts servers in /"),
@@ -283,10 +283,10 @@ fn test_other_cases() {
     assert!(run(&opts(&["--workspace", &file.to_string_lossy()]), &env)
         .expect_err("file")
         .contains("not a directory"));
-    let r = run(&opts(&["--client", "claude-code"]), &env).expect("plan");
+    let r = run(&opts(&["--client", "claude-code", "--no-hook"]), &env).expect("plan");
     assert!(
         r.contains("none: edits stay inside the folder a chat starts in")
-            && r.contains("= no hook (add --hook"),
+            && r.contains("= no hook (--no-hook"),
         "{r}"
     );
     std::fs::write(env.config_path(Client::ClaudeDesktop), "{broken").expect("write");
