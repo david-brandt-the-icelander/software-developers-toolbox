@@ -264,9 +264,18 @@ pub fn summary(entries: &[Value]) -> (String, Vec<String>) {
         format!("raw commands the hook redirected to zazzle: {} ({})", redirected.len(), tally(redirected.iter().map(String::as_str))),
         format!("bypasses, which went around zazzle: native edits {} ({}), `# allow-raw` {} ({}), zazzle unavailable {} ({})",
             native.len(), tally(native.iter().map(String::as_str)), raw.len(), tally(raw.iter().map(String::as_str)), down.len(), tally(down.iter().map(String::as_str))),
+        bypass_rate(redirected.len(), raw.len()),
     ];
     lines.retain(|l| !l.contains(": 0 (") || l.starts_with("bypasses"));
     (line, lines)
+}
+
+// Says how often agents escaped the hook with `# allow-raw`, of all the raw commands it caught.
+fn bypass_rate(redirected: usize, raw: usize) -> String {
+    match redirected + raw {
+        0 => "allow-raw rate: no raw commands caught".into(),
+        n => format!("allow-raw rate: {raw} of {n} caught raw commands ({}%)", raw * 100 / n),
+    }
 }
 
 // Runs `zazzle setup --report`: what the activity log shows for the last day, and what it cannot show.
@@ -675,8 +684,10 @@ mod tests {
         assert!(!r.contains("claude-desktop"), "{r}");
         assert!(r.contains("2 working, 3 failed."), "{r}");
         assert!(r.contains("absolute path") && r.contains("added after setup"), "{r}");
+        assert_eq!(bypass_rate(3, 1), "allow-raw rate: 1 of 4 caught raw commands (25%)");
         assert!(r.contains("last 24 hours: 1 zazzle commands, 0 runs, 0 proxied MCP calls; the hook redirected 0 raw commands; 1 bypasses (1 native edits"), "{r}");
         let rep = report(&env).expect("report");
+        assert!(rep.contains("allow-raw rate: no raw commands caught"), "{rep}");
         assert!(
             rep.contains("through zazzle: 1 commands in 1 sessions (read 1)")
                 && rep.contains("bypasses, which went around zazzle: native edits 1 (apply_patch 1)"),
