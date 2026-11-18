@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the zazzle Homebrew bottle from the release files: bottle.sh TAG BIN_DIR OUT_DIR
+# Build the zazzle Homebrew bottle from the release files: [FORMULA=zazzle-alpha] bottle.sh TAG BIN_DIR OUT_DIR
 #
 # A bottle lets `brew install` pour the binaries without Homebrew's build-from-source checks (such as
 # up-to-date Command Line Tools). The binaries are universal and the formula macOS-only, so the bottle is
@@ -13,7 +13,9 @@ set -euo pipefail
 tag=${1:-}
 bin_dir=${2:-}
 out=${3:-}
-if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]] || [ ! -d "$bin_dir" ] || [ -z "$out" ]; then
+name=${FORMULA:-zazzle}
+[[ "$name" =~ ^zazzle(-alpha)?$ ]] || { echo "unknown formula '$name'; use zazzle or zazzle-alpha" >&2; exit 2; }
+if ! [[ "$tag" =~ ^v[0-9]+(\.[0-9]+)*(-alpha\.[0-9]+)?$ ]] || [ ! -d "$bin_dir" ] || [ -z "$out" ]; then
   echo "usage: $0 vX.Y.Z BIN_DIR OUT_DIR" >&2
   exit 2
 fi
@@ -22,7 +24,7 @@ mkdir -p "$out"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-root="$work/zazzle/$version"
+root="$work/$name/$version"
 mkdir -p "$root/bin" "$root/libexec/indexer"
 for binary in zazzle zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor cyberspace-generator; do
   [ -f "$bin_dir/$binary" ] || { echo "missing binary: $bin_dir/$binary" >&2; exit 1; }
@@ -35,9 +37,9 @@ for arch in arm64 x64; do
   [ -f "$bin_dir/$file" ] || { echo "missing indexer: $bin_dir/$file" >&2; exit 1; }
   install -m 0644 "$bin_dir/$file" "$root/libexec/indexer/$file"
 done
-printf '#!/bin/sh\necho "zazzle-csharp-indexer is not set up yet; run: brew postinstall zazzle" >&2\nexit 1\n' \
+printf '#!/bin/sh\necho "zazzle-csharp-indexer is not set up yet; run: brew postinstall %s" >&2\nexit 1\n' "$name" \
   >"$root/bin/zazzle-csharp-indexer"
 chmod 0755 "$root/bin/zazzle-csharp-indexer"
-file="$out/zazzle-$version.all.bottle.tar.gz"
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$work" -cf - zazzle | gzip -n -9 >"$file"
+file="$out/$name-$version.all.bottle.tar.gz"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$work" -cf - "$name" | gzip -n -9 >"$file"
 echo "$(sha256sum "$file" | cut -d' ' -f1)  $(basename "$file")"

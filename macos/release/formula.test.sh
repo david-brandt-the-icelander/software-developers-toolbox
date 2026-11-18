@@ -200,6 +200,17 @@ mv "$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz" "$tmp/zazzle.bottle"
 if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F2" "$tmp/bottles" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle"; fi
 if bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/F3" "$tmp/no-such-dir" >/dev/null 2>&1; then fail "formula.sh accepted a missing bottle dir"; fi
 
+# 6. The alpha channel: its own formula and class that conflicts with zazzle, an alpha tag, and a bottle named after it.
+FORMULA=zazzle-alpha bash "$here/formula.sh" v2.1.0-alpha.3 "$sha" "$tmp/FA" >/dev/null || fail "alpha formula"
+ruby -c "$tmp/FA/zazzle-alpha.rb" >/dev/null || fail "zazzle-alpha.rb is not valid Ruby"
+grep -q '^class ZazzleAlpha < Formula$' "$tmp/FA/zazzle-alpha.rb" || fail "alpha class name"
+grep -q 'conflicts_with "zazzle"' "$tmp/FA/zazzle-alpha.rb" || fail "alpha conflicts with zazzle"
+grep -q 'version "2.1.0-alpha.3"' "$tmp/FA/zazzle-alpha.rb" || fail "alpha version"
+if grep -q conflicts_with "$tmp/Formula/zazzle.rb"; then fail "the stable formula names a conflict"; fi
+FORMULA=zazzle-alpha bash "$here/bottle.sh" v2.1.0-alpha.3 "$tmp/bins" "$tmp/ab" >/dev/null || fail "alpha bottle"
+tar -tzf "$tmp/ab/zazzle-alpha-2.1.0-alpha.3.all.bottle.tar.gz" | grep -q '^zazzle-alpha/2.1.0-alpha.3/bin/zazzle$' || fail "alpha bottle layout"
+if FORMULA=other bash "$here/formula.sh" v2.1.0 "$sha" "$tmp/FB" >/dev/null 2>&1; then fail "unknown formula accepted"; fi
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed"
   exit 1
