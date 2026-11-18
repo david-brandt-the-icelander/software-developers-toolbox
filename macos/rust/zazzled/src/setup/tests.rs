@@ -270,6 +270,16 @@ fn test_apply_and_undo() {
     );
     assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("repaired"), "");
 
+    assert_eq!(reapply_after_upgrade(&env, "0.0.0-dev").expect("dev"), None);
+    let state = env.state_path();
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&state).expect("state")).expect("json");
+    v["applied_version"] = json!("1.0.0");
+    std::fs::write(&state, v.to_string()).expect("write");
+    edit_block(&env.home.join(".claude/CLAUDE.md"), None, &mut Vec::new()).expect("drift");
+    let re = reapply_after_upgrade(&env, "1.0.1").expect("reapply").expect("ran");
+    assert!(re.contains("+ added zazzle's instructions"), "{re}");
+    assert_eq!(reapply_after_upgrade(&env, "1.0.1").expect("again"), None);
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("repaired"), "");
     let undo = run(&opts(&["--undo"]), &env).expect("undo");
     assert!(
         undo.contains("- removed zazzle") && undo.contains("~ unwrapped gh (stdio): back to npx"),

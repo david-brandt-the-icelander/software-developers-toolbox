@@ -916,6 +916,10 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         }
         save_state(env, &used, &added)?;
         save_applied(env, (opts.action == Action::Apply).then_some(&opts))?;
+        update_state(
+            env,
+            &[("applied_version", (opts.action == Action::Apply).then(|| json!(crate::cmd::VERSION)))],
+        )?;
         if !backups.is_empty() {
             out.push_str("\nbackups:\n");
             backups.iter().for_each(|b: &PathBuf| out.push_str(&format!("  {}\n", env.short(b))));
@@ -925,6 +929,19 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
     Ok(out)
+}
+
+// Re-applies the last --apply when this zazzled is a different release from the one that applied it, so an upgrade keeps the managed setup current; development builds never do.
+pub fn reapply_after_upgrade(env: &Env, version: &str) -> Result<Option<String>, String> {
+    let state: Value = serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap_or_default())
+        .unwrap_or(json!({}));
+    let Some(applied) = load_applied(env, Action::Apply) else { return Ok(None) };
+    if version.contains("-dev") || state["applied_version"].as_str() == Some(version) {
+        return Ok(None);
+    }
+    let out = change(&applied, env)?;
+    update_state(env, &[("applied_version", Some(json!(version)))])?;
+    Ok(Some(out))
 }
 
 // Says in one line how the clients differ from the last --apply (instructions block, hooks, session keys), or nothing when they match; the SessionStart hook prints it into the agent's context.
