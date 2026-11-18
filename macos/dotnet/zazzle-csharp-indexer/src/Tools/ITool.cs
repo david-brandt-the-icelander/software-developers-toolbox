@@ -33,4 +33,12 @@ public static class Args
 
     // Reads an optional boolean argument with a default.
     public static bool Bool(JsonNode? a, string key, bool fallback) => a?[key]?.GetValue<bool>() ?? fallback;
+
+    // Reads an optional list of strings, or one string, as a list.
+    public static List<string> List(JsonNode? a, string key) => a?[key] switch
+    {
+        JsonArray arr => arr.Select(n => n!.GetValue<string>()).ToList(),
+        JsonValue v => [v.GetValue<string>()],
+        _ => [],
+    };
 }

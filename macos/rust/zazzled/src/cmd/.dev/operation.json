@@ -160,7 +160,7 @@
         "symbol": "run"
       },
       "action": "query",
-      "transport": "zazzle refs SYMBOL [PATH..] [-g GLOB] [-m N] [-u]; MCP tool zazzle_refs",
+      "transport": "zazzle refs SYMBOL [PATH..] [--also SYMBOL].. [-g GLOB] [-m N] [-u]; MCP tool zazzle_refs (also: more names); when C# files are in scope the indexer's Roslyn answer is asked first and filtered to the paths and globs, before any text scan",
       "authorization": "Callers of the daemon's own uid; reads any file the user can read.",
       "result": "`defs` (up to 20, with their ranges and kinds) then `refs` grouped by file, each use with its line, its enclosing symbol and the clipped line, at most 50 uses unless -m, with a footer; `no references to NAME in N files` when there are none. In a .cs file, a line whose only mentions are in comments or strings is left out, and a file left with none is not listed.",
       "failures": [
@@ -252,7 +252,7 @@
         "symbol": "find_symbol"
       },
       "action": "query",
-      "transport": "zazzle find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]; MCP tool zazzle_find_symbol {name, exact?, kind?, limit?, offset?, repo?}",
+      "transport": "zazzle find-symbol NAME.. [--path DIR|GLOB].. [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]; MCP tool zazzle_find_symbol {name | names, paths?, exact?, kind?, limit?, offset?, repo?}; names are literal, several are answered under `== NAME` lines",
       "authorization": "Callers of the daemon's own uid; the indexer's daemon socket is the user's own (mode 0600).",
       "result": "`path:line kind container.name | signature` per declaration, paths relative to the working directory, exact matches first, 30 by default, then a footer with the count or the next offset.",
       "failures": [

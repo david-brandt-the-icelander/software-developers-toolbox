@@ -8,12 +8,12 @@ use std::path::{Path, PathBuf};
 
 const REPO: Flag = opt("repo", 'r');
 pub(super) const SYMBOL_SPEC: &[Flag] =
-    &[flag("exact", 'x'), opt("kind", 'k'), opt("limit", 'm'), opt("offset", 'o'), REPO];
+    &[flag("exact", 'x'), opt("kind", 'k'), opt("limit", 'm'), opt("offset", 'o'), opt("path", 'p'), REPO];
 pub(super) const LOG_SPEC: &[Flag] = &[opt("n", 'n'), opt("grep", '\0'), REPO];
 pub(super) const BLAME_SPEC: &[Flag] = &[opt("start", '\0'), opt("end", '\0')];
 const OVERVIEW_USAGE: &str = "usage: overview [--repo DIR]";
 const SYMBOL_USAGE: &str =
-    "usage: find-symbol NAME [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]";
+    "usage: find-symbol NAME.. [--path DIR|GLOB].. [--exact] [--kind K] [--limit N] [--offset N] [--repo DIR]";
 const CHANGED_USAGE: &str = "usage: changed-since [CURSOR] [--repo DIR]";
 const LOG_USAGE: &str = "usage: git-log [PATH] [-n N] [--grep TEXT] [--repo DIR]";
 const BLAME_USAGE: &str = "usage: git-blame PATH [--start N] [--end N]";
@@ -176,18 +176,52 @@ pub fn overview(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
 // Runs find-symbol: declarations by name from the index, across every repository below a folder that is not one.
 pub fn find_symbol(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let p = args::parse(SYMBOL_SPEC, argv).map_err(|e| format!("{e}; {SYMBOL_USAGE}"))?;
-    let [name] = p.positional.as_slice() else { return Err(SYMBOL_USAGE.into()) };
-    let mut a = Map::new();
-    a.insert("name".into(), json!(name));
-    if p.has("exact") {
-        a.insert("exact".into(), json!(true));
+    let names = &p.positional;
+    if names.is_empty() {
+        return Err(SYMBOL_USAGE.into());
     }
-    if let Some(k) = p.value("kind") {
-        a.insert("kind".into(), json!(k));
+    if let Some(n) = names.iter().find(|n| n.contains(['|', '(', '[', '^', '$', '\\'])) {
+        return Err(format!(
+            "find-symbol takes literal names, not patterns: `{n}`; pass several names as separate arguments"
+        ));
     }
-    put_number(&p, "limit", "limit", &mut a)?;
-    put_number(&p, "offset", "offset", &mut a)?;
-    Target::locate(ctx, p.value("repo"))?.ask("find_symbol", a)
+    let target = Target::locate(ctx, p.value("repo"))?;
+    let scope: Vec<String> =
+        p.values("path").iter().map(|v| scoped(&target.repos.roots, &ctx.cwd, v)).collect();
+    let mut parts = Vec::new();
+    for name in names {
+        let mut a = Map::new();
+        a.insert("name".into(), json!(name));
+        if p.has("exact") {
+            a.insert("exact".into(), json!(true));
+        }
+        if let Some(k) = p.value("kind") {
+            a.insert("kind".into(), json!(k));
+        }
+        if !scope.is_empty() {
+            a.insert("paths".into(), json!(scope));
+        }
+        put_number(&p, "limit", "limit", &mut a)?;
+        put_number(&p, "offset", "offset", &mut a)?;
+        let out = target.ask("find_symbol", a)?;
+        if names.len() == 1 {
+            return Ok(out);
+        }
+        parts.push(format!("== {name}\n{}", out.text));
+    }
+    Ok(Output::ok(parts.join("\n")))
+}
+
+// Turns a --path folder, file or glob given from the working directory into one relative to the repository root that holds it; a glob starting with ** or a path outside every root is passed as written.
+fn scoped(roots: &[crate::indexer::Root], cwd: &std::path::Path, v: &str) -> String {
+    if v.starts_with("**") {
+        return v.to_string();
+    }
+    let full = cwd.join(v);
+    roots
+        .iter()
+        .find_map(|(_, r)| full.strip_prefix(r).ok().map(|rel| rel.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| v.to_string())
 }
 
 // Finds where a symbol is declared through the index: the `path:line kind name | signature` lines, paths relative to the working directory.
@@ -331,6 +365,27 @@ mod tests {
         let first = crate::testutil::run_cmd_with(&e, t.path(), "s", &["changed-since"]).text;
         let second = crate::testutil::run_cmd_with(&e, t.path(), "s", &["changed-since"]).text;
         assert_eq!((first.as_str(), second.as_str()), ("\"changed_since\" {}", "\"changed_since\" {}"));
+        restore(saved);
+    }
+
+    // Checks find-symbol answers several literal names in one call, scopes them to paths relative to the repository root, and refuses patterns.
+    #[test]
+    fn test_find_symbol_batch_and_scope() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(echoing);
+        let (t, _name, saved) = setup(&fake);
+        let o = run_cmd(
+            &t.path().join("src"),
+            &["find-symbol", "A", "B", "--path", "Api", "--path", "**/E/*.cs"],
+        )
+        .text;
+        assert!(o.starts_with("== A\n") && o.contains("\n== B\n"), "{o}");
+        assert!(o.contains("\"paths\":[\"src/Api\",\"**/E/*.cs\"]"), "{o}");
+        let one = run_cmd(t.path(), &["find-symbol", "A"]).text;
+        assert!(!one.starts_with("=="), "{one}");
+        let bad = run_cmd(t.path(), &["find-symbol", "A|B"]);
+        assert!(bad.status != 0 && bad.text.contains("literal names"), "{}", bad.text);
+        assert!(run_cmd(t.path(), &["find-symbol"]).text.contains("usage"));
         restore(saved);
     }
 

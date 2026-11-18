@@ -226,9 +226,7 @@ fn test_read_uneven_ranges_share_budget() {
     }
     let o = run_cmd(t.path(), &["read", "Big.cs:1-540", "Small.cs:1-90", "--budget", "6000"]).text;
     assert!(
-        o.contains("other90")
-            && o.contains("INCOMPLETE")
-            && o.contains("continue with: zazzle read Big.cs:"),
+        o.contains("other90") && o.contains("INCOMPLETE") && o.contains("continue with: zazzle read Big.cs:"),
         "{o}"
     );
 }

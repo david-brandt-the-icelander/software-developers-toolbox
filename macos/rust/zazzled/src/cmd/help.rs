@@ -137,8 +137,9 @@ const PAGES: &[Page] = &[
         brief: "refs SYMBOL [PATH...]",
         summary: "Find where a symbol is defined and used",
         usage: &["zazzle refs SYMBOL|Type.Member [PATH...] [OPTIONS]"],
-        about: &["Shows the definitions first, then each use with the symbol that encloses it. A mention in a comment or a string is not counted as a use; in C#, the indexer's Roslyn answer is exact when it is available."],
+        about: &["Shows the definitions first, then each use with the symbol that encloses it. A mention in a comment or a string is not counted as a use; in C#, the indexer's Roslyn answer comes first and stays exact within the paths and globs given. SYMBOL is a literal name; --also adds more, each answered under its own `== NAME` line. To read a known symbol's source, use read --symbol instead."],
         options: &[
+            ("--also NAME", "Also answer for NAME (repeatable)"),
             ("-g, --glob GLOB", "Look only in files matching GLOB (repeatable)"),
             ("-m, --max N", "Show at most N results (default 50)"),
             ("-u, --no-ignore", "Also look in files that .gitignore ignores"),
@@ -245,11 +246,12 @@ const PAGES: &[Page] = &[
     Page {
         name: "find-symbol",
         group: 1,
-        brief: "find-symbol NAME",
+        brief: "find-symbol NAME...",
         summary: "Find declarations by name",
-        usage: &["zazzle find-symbol NAME [OPTIONS]"],
-        about: &["Finds types, methods and other declarations whose name matches NAME."],
+        usage: &["zazzle find-symbol NAME... [OPTIONS]"],
+        about: &["Finds types, methods and other declarations whose name matches NAME, a literal name (not a pattern); several names are answered together, each under its own `== NAME` line. When you already know the symbol, read --symbol returns its source in one step."],
         options: &[
+            ("-p, --path DIR|GLOB", "Only declarations in files under DIR or matching GLOB (repeatable)"),
             ("-x, --exact", "Match the name exactly"),
             ("-k, --kind K", "Only declarations of kind K, such as class or method"),
             ("-m, --limit N", "Show at most N results"),

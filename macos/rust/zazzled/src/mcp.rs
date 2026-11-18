@@ -227,7 +227,7 @@ fn outline_schema() -> Value {
 fn refs_schema() -> Value {
     object(
         json!({
-            "symbol": {"type": "string"}, "paths": {"type": "array", "items": {"type": "string"}},
+            "symbol": {"type": "string", "description": "One literal name; Type.Member narrows"}, "also": {"type": "array", "items": {"type": "string"}, "description": "More literal names, answered together"}, "paths": {"type": "array", "items": {"type": "string"}},
             "glob": {"type": "array", "items": {"type": "string"}}, "max": {"type": "integer", "description": "At most 40"},
             "code_only": {"type": "boolean", "description": "Skip tests and docs"},
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
@@ -439,6 +439,9 @@ fn refs_args(v: &Value) -> Result<Vec<String>, String> {
     for g in get_list(v, "glob")? {
         a.push("-g".into());
         a.push(g);
+    }
+    for n in get_list(v, "also")? {
+        a.extend(["--also".to_string(), n]);
     }
     a.push("--".into());
     a.push(need_str(v, "symbol")?);

@@ -61,7 +61,7 @@
         "symbol": "FindSymbolTool.Run"
       },
       "action": "query",
-      "transport": "MCP tools/call find_symbol {name, exact?, kind?, root?, limit?, offset?}",
+      "transport": "MCP tools/call find_symbol {name, exact?, kind?, root?, paths? (root-relative folders, files or globs), limit?, offset?}",
       "authorization": "None checked beyond being a client of the daemon or the stdio server.",
       "result": "root:path:line kind container.name | signature, exact matches first, then by path; paged, 30 by default.",
       "failures": [

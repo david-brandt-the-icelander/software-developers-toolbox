@@ -10,8 +10,9 @@ use crate::walk::{self, WalkOpts};
 use std::path::{Path, PathBuf};
 
 pub(super) const SPEC: &[Flag] =
-    &[opt("glob", 'g'), opt("max", 'm'), flag("no-ignore", 'u'), flag("code-only", '\0')];
-const USAGE: &str = "usage: refs SYMBOL|Type.Member [PATH..] [-g GLOB] [-m N] [-u] [--code-only]";
+    &[opt("glob", 'g'), opt("max", 'm'), opt("also", '\0'), flag("no-ignore", 'u'), flag("code-only", '\0')];
+const USAGE: &str =
+    "usage: refs SYMBOL|Type.Member [PATH..] [--also SYMBOL].. [-g GLOB] [-m N] [-u] [--code-only]";
 const DEFAULT_MAX: usize = 50;
 const PER_FILE: usize = 1000;
 const DEF_CAP: usize = 20;
@@ -108,10 +109,74 @@ fn file_refs(
     Some(FileRefs { path: display(path, cwd), rank: rank_in(path, cwd), defs, uses })
 }
 
-// Runs the refs command.
+// Keeps the exact answer's definitions and reference groups whose file the scope keeps, and restates the totals for what is left.
+fn in_scope(text: &str, keep: impl Fn(&str) -> bool) -> String {
+    let (mut out, mut in_refs, mut take) = (Vec::new(), false, true);
+    let (mut defs, mut refs, mut files) = (0, 0, 0);
+    for line in text.lines() {
+        if line == "defs" || line == "refs" {
+            in_refs = line == "refs";
+            out.push(line.to_string());
+        } else if line.starts_with("-- exact") {
+            out.push(format!("-- exact (Roslyn), within the paths and globs given: {defs} defs, {refs} refs in {files} files"));
+        } else if !in_refs {
+            if keep(line.split(':').next().unwrap_or("")) {
+                defs += 1;
+                out.push(line.to_string());
+            }
+        } else if line.split(' ').next().is_some_and(|w| w.parse::<usize>().is_ok()) {
+            if take {
+                refs += 1;
+                out.push(line.to_string());
+            }
+        } else {
+            take = keep(line);
+            files += usize::from(take);
+            if take {
+                out.push(line.to_string());
+            }
+        }
+    }
+    out.join("\n")
+}
+
+// Runs the refs command; each --also name gets its own answer under a `== NAME` line, with the same paths and options.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
+    let Some(first) = p.positional.first() else { return Err(USAGE.into()) };
+    let also = p.values("also");
+    if also.is_empty() {
+        return run_one(ctx, argv);
+    }
+    let mut rest: Vec<String> = Vec::new();
+    let mut it = argv.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--also" => {
+                it.next();
+            }
+            s if s.starts_with("--also=") => {}
+            s if s == first => {}
+            _ => rest.push(a.clone()),
+        }
+    }
+    let mut parts = Vec::new();
+    for name in std::iter::once(first.as_str()).chain(also) {
+        let line: Vec<String> = std::iter::once(name.to_string()).chain(rest.iter().cloned()).collect();
+        parts.push(format!("== {name}\n{}", run_one(ctx, &line)?.text));
+    }
+    Ok(Output::ok(parts.join("\n")))
+}
+
+// Answers refs for one name.
+fn run_one(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
+    let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
     let Some(query) = p.positional.first() else { return Err(USAGE.into()) };
+    if query.contains(['|', '(', '[', '^', '$', '\\']) {
+        return Err(format!(
+            "refs takes a literal name, not a pattern: `{query}`; pass more names with --also"
+        ));
+    }
     let (name, qual) = split_qualified(query);
     let max = p.number("max")?.unwrap_or(DEFAULT_MAX).max(1);
     let re = build_regex(name, false, true, true)?;
@@ -125,18 +190,23 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         globs: p.values("glob").iter().map(|s| s.to_string()).collect(),
     };
     let files = code_only(walk::collect(&roots, &opts, &ctx.engine.walks)?, &ctx.cwd, p.has("code-only"));
+    let is_cs = |f: &PathBuf| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("cs"));
     let plan = Plan { engine: ctx.engine, re, max: PER_FILE, context: 0, files_only: false };
-    let results = search_all(&files, &plan, cpus());
-    let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
-    let is_cs = |r: &&FileResult| files[r.idx].extension().is_some_and(|e| e.eq_ignore_ascii_case("cs"));
     let mut note = String::new();
-    if p.positional.len() == 1 && opts.globs.is_empty() && matched.iter().any(is_cs) {
+    if files.iter().any(is_cs) {
         match super::structure::exact_refs(ctx, query) {
             Ok(mut o) => {
-                let others = matched.iter().filter(|r| !is_cs(r)).count();
-                if others > 0 {
+                let scoped = p.positional.len() > 1 || !opts.globs.is_empty();
+                if scoped {
+                    let keep: std::collections::HashSet<String> =
+                        files.iter().map(|f| display(f, &ctx.cwd)).collect();
+                    o.text = in_scope(&o.text, |path| keep.contains(path));
+                }
+                let others: Vec<PathBuf> = files.iter().filter(|f| !is_cs(f)).cloned().collect();
+                let n = search_all(&others, &plan, cpus()).iter().filter(|r| r.total > 0).count();
+                if n > 0 {
                     o.text.push_str(&format!(
-                        "\n-- text matches in {others} other files: zazzle refs {query} -g '!*.cs'"
+                        "\n-- text matches in {n} other files: zazzle refs {query} -g '!*.cs'"
                     ));
                 }
                 return Ok(o);
@@ -148,6 +218,8 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
             }
         }
     }
+    let results = search_all(&files, &plan, cpus());
+    let matched: Vec<&FileResult> = results.iter().filter(|r| r.total > 0).collect();
     let (engine, cwd) = (ctx.engine, &ctx.cwd);
     let mut found: Vec<FileRefs> =
         par_map(&matched, cpus(), |_, r| file_refs(engine, &files[r.idx], r, name, qual, cwd))
@@ -208,6 +280,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use super::in_scope;
     use crate::testutil::{run_cmd, TempDir};
 
     // Builds a small Rust project using one function from several places.
@@ -349,13 +422,36 @@ mod tests {
 
     // Checks a glob or a path keeps refs on text, without asking the indexer.
     #[test]
-    fn test_refs_csharp_narrowed_stays_text() {
+    fn test_refs_csharp_narrowed_asks_exact_first() {
         let t = TempDir::new();
         t.write("W.cs", b"class Widget { }\n");
         let o = run_cmd(t.path(), &["refs", "Widget", "-g", "*.cs"]).text;
-        assert!(o.ends_with("-- 1 defs, 0 refs in 1 files (1 searched)"), "{o}");
+        assert!(
+            o.contains("-- 1 defs, 0 refs in 1 files (1 searched)\n-- text match; exact C# refs unavailable"),
+            "{o}"
+        );
         let p = run_cmd(t.path(), &["refs", "Widget", "."]).text;
-        assert!(!p.contains("exact C# refs unavailable"), "{p}");
+        assert!(p.contains("exact C# refs unavailable"), "{p}");
+    }
+
+    // Checks a scope keeps only the exact answer's definitions and reference groups in its files, and restates the totals.
+    #[test]
+    fn test_in_scope() {
+        let text = "defs\napi/E.cs:3 method Api.E.Run\nsim/S.cs:9 method Sim.S.Run\nrefs\napi/C.cs\n4 e.Run();\n5 e.Run();\nsim/T.cs\n7 s.Run();\n-- exact (Roslyn): 2 defs, 3 refs in 2 files";
+        let o = in_scope(text, |p| p.starts_with("api/"));
+        assert_eq!(o, "defs\napi/E.cs:3 method Api.E.Run\nrefs\napi/C.cs\n4 e.Run();\n5 e.Run();\n-- exact (Roslyn), within the paths and globs given: 1 defs, 2 refs in 1 files");
+    }
+
+    // Checks several names are answered together under their own headings, and a pattern is refused.
+    #[test]
+    fn test_refs_batch_and_literal_names() {
+        let t = TempDir::new();
+        t.write("a.rs", b"fn alpha() {}\nfn beta() { alpha(); }\nfn main() { beta(); }\n");
+        let o = run_cmd(t.path(), &["refs", "alpha", "--also", "beta", "."]).text;
+        let (a, b) = (o.find("== alpha\n").expect("alpha"), o.find("== beta\n").expect("beta"));
+        assert!(a < b && o[b..].contains("3 [main]"), "{o}");
+        let bad = run_cmd(t.path(), &["refs", "alpha|beta"]);
+        assert!(bad.status != 0 && bad.text.contains("literal name"), "{}", bad.text);
     }
 
     // Checks symbols that are only used, never defined, list just references.
