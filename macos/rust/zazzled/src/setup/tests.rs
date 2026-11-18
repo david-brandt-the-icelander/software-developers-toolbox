@@ -649,3 +649,34 @@ fn test_drift_kinds() {
     );
     assert_eq!(odd["modelSettings"]["m"]["autoCompactWindow"], 1);
 }
+
+// Checks a client left out of the last --apply but holding an older block is reported by the drift check and --check, and updated by the post-upgrade reapply.
+#[test]
+fn test_stale_block_of_other_client() {
+    let t = TempDir::new();
+    let env = env(&t, false);
+    seed(&env);
+    run(&opts(&["--apply", "--client", "claude-code"]), &env).expect("apply");
+    let codex = env.instructions_path(Client::Codex).expect("codex instructions");
+    std::fs::create_dir_all(codex.parent().expect("dir")).expect("mkdir");
+    std::fs::write(&codex, format!("{BLOCK_BEGIN}\n## zazzle\nold terse reads, budget 3000\n{BLOCK_END}\n"))
+        .expect("w");
+    assert_eq!(
+        check::block_state(&std::fs::read_to_string(&codex).expect("r"), &env.home),
+        check::Block::Outdated
+    );
+    assert_eq!(check::block_state("nothing", &env.home), check::Block::Missing);
+    let d = run(&opts(&["--check", "--brief"]), &env).expect("drift");
+    assert!(d.contains(&format!("{} are out of date", env.short(&codex))), "{d}");
+    let state = env.state_path();
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&state).expect("state")).expect("json");
+    v["applied_version"] = json!("1.0.0");
+    std::fs::write(&state, v.to_string()).expect("write");
+    let re = reapply_after_upgrade(&env, "1.0.1").expect("reapply").expect("ran");
+    assert!(re.contains(&format!("~ updated zazzle's instructions in {}", env.short(&codex))), "{re}");
+    assert_eq!(
+        check::block_state(&std::fs::read_to_string(&codex).expect("r"), &env.home),
+        check::Block::Current
+    );
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("clean"), "");
+}

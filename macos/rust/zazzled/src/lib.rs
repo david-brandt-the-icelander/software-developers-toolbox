@@ -20,6 +20,7 @@ pub mod locals;
 pub mod markup;
 pub mod mcp;
 pub mod mcp_structure;
+pub mod mcp_upgrade;
 pub mod md;
 pub mod meta;
 pub mod minified;

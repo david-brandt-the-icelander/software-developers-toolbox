@@ -14,6 +14,9 @@ pub trait Backend {
 
     // Records the workspace folders the client named, which later commands may write in.
     fn set_roots(&self, _roots: Vec<String>) {}
+
+    // Hands the connection to an upgraded program before answering a request, when there is one; returns when there is none.
+    fn upgrade(&self, _pending: &str, _offers_roots: bool) {}
 }
 
 // The real backend: a unix-socket client that starts the daemon on demand.
@@ -36,6 +39,11 @@ impl Backend for DaemonBackend {
     // Keeps the client's roots for the following calls.
     fn set_roots(&self, roots: Vec<String>) {
         *self.roots.borrow_mut() = roots;
+    }
+
+    // Re-executes the upgraded zazzled on this connection, so the client is served the installed version's tools.
+    fn upgrade(&self, pending: &str, offers_roots: bool) {
+        crate::mcp_upgrade::reexec_if_changed(pending, offers_roots, &self.session);
     }
 }
 
@@ -486,7 +494,7 @@ fn initialize(params: &Value) -> Value {
     let version = VERSIONS.iter().find(|v| **v == asked).unwrap_or(&VERSIONS[0]);
     json!({
         "protocolVersion": version,
-        "capabilities": {"tools": {}},
+        "capabilities": {"tools": {"listChanged": true}},
         "serverInfo": {"name": "zazzle", "version": crate::cmd::VERSION},
         "instructions": crate::setup::MCP_INSTRUCTIONS
     })
@@ -642,13 +650,37 @@ fn root_paths(result: &Value) -> Vec<String> {
 
 // Serves newline-delimited JSON-RPC from the input until it closes; asks a client that offers roots for them, and again when they change.
 pub fn serve(input: &mut dyn BufRead, output: &mut dyn Write, backend: &dyn Backend) -> io::Result<()> {
+    serve_resumed(input, output, backend, None)
+}
+
+// Serves like serve, first answering a request an earlier program handed over and telling the client the tool list changed.
+pub fn serve_resumed(
+    input: &mut dyn BufRead,
+    output: &mut dyn Write,
+    backend: &dyn Backend,
+    resumed: Option<(String, bool)>,
+) -> io::Result<()> {
     let mut offers_roots = false;
+    if let Some((line, roots)) = resumed {
+        offers_roots = roots;
+        writeln!(output, "{}", json!({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}))?;
+        if roots {
+            writeln!(output, "{}", json!({"jsonrpc": "2.0", "id": ROOTS_ID, "method": "roots/list"}))?;
+        }
+        if let Some(resp) = handle_line(&line, backend) {
+            writeln!(output, "{resp}")?;
+        }
+        output.flush()?;
+    }
     for line in input.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
         let msg: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
+        if msg["method"].is_string() && !msg["id"].is_null() && msg["method"] != "initialize" {
+            backend.upgrade(&line, offers_roots);
+        }
         match msg["method"].as_str() {
             Some("initialize") => offers_roots = msg.pointer("/params/capabilities/roots").is_some(),
             None if msg["id"] == ROOTS_ID => {
@@ -1036,6 +1068,16 @@ mod tests {
         let text = String::from_utf8(out).expect("utf8");
         assert_eq!(text.matches("\"method\":\"roots/list\"").count(), 2, "{text}");
         assert_eq!(*b.roots.borrow(), ["/w/my app", "/w/%zz"]);
+        let mut out = Vec::new();
+        let pending = json!({"id": 9, "method": "tools/list"}).to_string();
+        serve_resumed(&mut "".as_bytes(), &mut out, &fake(0, ""), Some((pending, true))).expect("resume");
+        let text = String::from_utf8(out).expect("utf8");
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(
+            lines[0].contains("notifications/tools/list_changed") && lines[1].contains("roots/list"),
+            "{text}"
+        );
+        assert!(lines[2].contains("\"id\":9") && lines[2].contains("zazzle_get_rules"), "{text}");
         let plain = fake(0, "");
         let mut out = Vec::new();
         let input = "{\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"method\":\"notifications/initialized\"}\n";

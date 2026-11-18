@@ -428,6 +428,28 @@
       ]
     },
     {
+      "id": "mcp-upgrade-handover",
+      "name": "MCP upgrade handover",
+      "description": "A long-lived `zazzled mcp` connection serves the installed version's tools after an upgrade.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/mcp_upgrade.rs",
+          "symbol": "reexec_if_changed"
+        }
+      ],
+      "behavior": "Before answering a request, the stdio server checks whether the zazzled it was started as was replaced; if so it re-executes the new program on the same connection, handing over the request, the session and whether the client offers roots. The new program sends notifications/tools/list_changed (initialize advertises tools.listChanged), asks for roots again and answers the request.",
+      "outcome": "Clients no longer see an old version's tool descriptions and read budgets after `brew upgrade`.",
+      "constraints": [
+        "Only the stdio MCP server re-executes; the daemon is replaced by its own restart."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "serve_resumed"
+        }
+      ]
+    },
+    {
       "id": "session-rule-delivery",
       "name": "Session rule delivery",
       "description": "`get-rules` (also `agent get-rules` and MCP `zazzle_get_rules`) and the instructions appended to reads and edits deliver each rule, import and skill text once per session.",
