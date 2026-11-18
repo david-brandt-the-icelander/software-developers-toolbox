@@ -164,6 +164,43 @@
           "symbol": "read"
         }
       ]
+    },
+    {
+      "id": "managed-policy",
+      "name": "Managed agent configuration",
+      "description": "A user policy file decides the managed instruction block and the Claude Code session keys setup owns, and setup keeps them applied.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/setup/policy.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "drift"
+        }
+      ],
+      "behavior": "`--apply` writes ~/.zazzle/policy.toml once as a commented template that owns nothing; its instructions.extra joins zazzle's marked block in ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, refreshed when it differs, and the session keys it names (autoCompactWindow, also per model under modelSettings; promptSuggestionEnabled, idleCompaction, effortLevel) go into ~/.claude/settings.json with their earlier values recorded. `--explain` describes the policy, `--set KEY=VALUE --apply` edits it, a SessionStart hook runs `setup --check --brief` to report drift in one line, an upgraded daemon re-applies the last --apply once per version, and `--report` recommends an autoCompactWindow from the cost model.",
+      "outcome": "Agent settings stay as the user chose without anyone editing ~/.claude or ~/.codex by hand.",
+      "constraints": [
+        "Only keys the policy names are written; dropping one or --undo restores its earlier value.",
+        "Text outside the markers is never changed.",
+        "A second --apply changes nothing.",
+        "Development builds and daemons started with --socket never re-apply."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/setup/policy.rs",
+          "symbol": "apply_keys"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "reapply_after_upgrade"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/compaction.rs",
+          "symbol": "section"
+        }
+      ]
     }
   ],
   "relatedViews": [
