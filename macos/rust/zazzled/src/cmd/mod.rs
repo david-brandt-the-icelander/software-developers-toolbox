@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 pub mod again;
 pub mod clean;
+pub mod diff;
 pub mod edit;
 pub mod find;
 pub mod help;
@@ -17,6 +18,7 @@ pub mod outline;
 mod pin;
 pub mod read;
 pub mod refs;
+pub mod replace;
 pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -100,7 +102,7 @@ struct Globals {
 
 // Pulls the global options out of a command's arguments; read keeps its own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
-    let takes_budget = !matches!(cmd, "read" | "cat" | "clean");
+    let takes_budget = !matches!(cmd, "read" | "cat" | "clean" | "diff");
     let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None, commit: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -167,7 +169,7 @@ pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String,
         Ok(o) => o,
         Err(msg) => Output::err(&msg),
     };
-    if out.idable && !matches!(cmd, "read" | "cat" | "clean") {
+    if out.idable && !matches!(cmd, "read" | "cat" | "clean" | "diff") {
         out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
     }
     if !pinned.is_empty() {
@@ -272,6 +274,8 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "ls" => ls::run(ctx, rest),
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
+        "diff" => diff::run(ctx, rest),
+        "replace" => replace::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
         "clean" => clean::run(ctx, rest),
         "overview" => structure::overview(ctx, rest),
@@ -360,7 +364,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit ls run clean read-again", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -385,7 +389,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit ls run clean read-again"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again"
         );
         assert!(!o.idable);
     }
