@@ -111,6 +111,7 @@ fn test_run_outputs_and_codes() {
     let (text, code) = run(&strs(&["list-rules", root.to_str().expect("utf8")]), None);
     assert_eq!((text, code), (format!("rule {}\n", root.join("AGENTS.md").display()), 0));
     assert_eq!(run(&strs(&["--help"]), None).1, 0);
+    assert!(run(&strs(&["--version"]), None).0.starts_with("zazzle-agent "));
     assert_eq!(run(&strs(&[]), None).1, 2);
     assert_eq!(run(&strs(&["other", "x"]), None).1, 2);
     let (text, code) = run(&strs(&["list-rules", root.join("nope").to_str().expect("utf8")]), None);

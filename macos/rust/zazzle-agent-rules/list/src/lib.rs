@@ -84,6 +84,9 @@ pub fn list_rules(path: &Path, home: Option<&Path>) -> Result<Vec<Found>, String
 
 // Runs the command line (after the program name) and returns the text to print and the exit code.
 pub fn run(args: &[String], home: Option<&Path>) -> (String, i32) {
+    if matches!(args, [c] if c == "--version") {
+        return (format!("zazzle-agent {}\n", env!("CARGO_PKG_VERSION")), 0);
+    }
     let [cmd, path] = args else {
         let help = matches!(args, [c] if c == "help" || c == "--help" || c == "-h");
         return (USAGE.to_string(), if help { 0 } else { 2 });

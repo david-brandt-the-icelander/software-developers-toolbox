@@ -32,6 +32,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed; commit with `zazzle git commit -m`: `agents/skills/zazzle/SKILL.md`
 - Write, test and run sandboxed zazz scripts (`zazz new|test|pack|add|call`): `agents/skills/zazz/SKILL.md`
 - Keep one test file per method under test in repositories using `zazzle-csharp-minifier --split-tests`: `agents/skills/zazzle-csharp-minifier/SKILL.md`
+- Find the rule and skill files that apply to a path with `zazzle agent list-rules PATH`: `agents/skills/zazzle-agent/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Architecture diagrams and knowledge files
