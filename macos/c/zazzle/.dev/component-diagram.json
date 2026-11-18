@@ -79,6 +79,13 @@
       "responsibility": "The git front end and commit message editor `zazzle git` runs.",
       "folder": "macos/rust/zazzle-git",
       "diagram": "macos/rust/zazzle-git/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle-agent",
+      "name": "zazzle-agent",
+      "responsibility": "The rule and skill finder `zazzle agent` runs.",
+      "folder": "macos/rust/zazzle-agent-rules/list",
+      "diagram": "macos/rust/zazzle-agent-rules/list/.dev/component-diagram.json"
     }
   ],
   "relationships": [
@@ -89,6 +96,7 @@
     { "from": "src", "to": "free-disk-space", "kind": "depends-on", "description": "Execs the free-disk-space binary beside itself." },
     { "from": "src", "to": "fix-network", "kind": "depends-on", "description": "Execs the fix-network binary beside itself." },
     { "from": "src", "to": "zazzle-git", "kind": "depends-on", "description": "Execs the zazzle-git binary beside itself for `zazzle git`." },
+    { "from": "src", "to": "zazzle-agent", "kind": "depends-on", "description": "Execs the zazzle-agent binary beside itself for `zazzle agent`." },
     { "from": "test", "to": "src", "kind": "depends-on", "description": "unit.c includes zazzle_core.h with the mock; smoke.sh runs build/zazzle." },
     { "from": "test", "to": "zazzled", "kind": "depends-on", "description": "smoke.sh runs the release zazzled (ZAZZLED)." },
     { "from": "bench", "to": "src", "kind": "depends-on", "description": "exit0.c reuses entry.h; run.sh and refs.sh time build/zazzle." },

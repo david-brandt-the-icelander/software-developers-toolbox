@@ -3473,6 +3473,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zazzle-agent-rules-list"
+version = "0.0.0-dev"
+
+[[package]]
 name = "zazzle-git"
 version = "0.0.0-dev"
 dependencies = [
