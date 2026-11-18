@@ -267,6 +267,12 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
                 .into(),
         ),
         "zazz" => crate::zazz::run(ctx, rest),
+        "forget-sessions" => match rest {
+            [prefix] if !prefix.is_empty() => {
+                Ok(Output::plain(format!("forgot {} sessions", ctx.engine.sessions.forget_prefix(prefix))))
+            }
+            _ => Err("usage: zazzle forget-sessions PREFIX".into()),
+        },
         "status" => Ok(Output::plain(status(ctx))),
         "trace" => crate::proxy::trace::command(rest, &ctx.cwd).map(Output::plain),
         "languages" => languages::run(ctx, rest),

@@ -274,7 +274,10 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Hook(o) => {
             let mut payload = String::new();
             let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload);
-            print!("{}", crate::hook::run(&o, &payload, &crate::hook::zazzle_reachable));
+            print!(
+                "{}",
+                crate::hook::run(&o, &payload, &crate::hook::zazzle_reachable, &crate::hook::forget_sessions)
+            );
             ExitCode::SUCCESS
         }
         Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),

@@ -12,7 +12,7 @@ const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
 // The tools each client's hook sees: shell commands and search, read and edit tools (edits are logged, or refused with --hook-edits).
-const CLAUDE_MATCHER: &str = "Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit";
+const CLAUDE_MATCHER: &str = "Bash|Grep|Glob|Read|Edit|Write|MultiEdit|NotebookEdit|mcp__zazzle__.*";
 const CODEX_MATCHER: &str = "Bash|apply_patch";
 
 // What agents are told in the MCP handshake: short, since some clients repeat it with every tool they list.
@@ -962,9 +962,23 @@ fn edit_hook(path: &Path, want: Option<&HookSpec>, backups: &mut Vec<PathBuf>) -
     list.extend(entry);
     if list.is_empty() {
         v["hooks"].as_object_mut().expect("an object").remove("PreToolUse");
-        if v["hooks"].as_object().is_some_and(|h| h.is_empty()) {
-            v.as_object_mut().expect("an object").remove("hooks");
+    }
+    if want.is_none_or(|h| h.matcher == CLAUDE_MATCHER) {
+        let compact = &mut v["hooks"]["PostCompact"];
+        let mut kept: Vec<Value> =
+            compact.as_array().cloned().unwrap_or_default().into_iter().filter(|e| !our_hook(e)).collect();
+        kept.extend(
+            want.map(|h| json!({"hooks": [{"type": "command", "command": h.command, "timeout": 10}]})),
+        );
+        match kept.is_empty() {
+            true => {
+                v["hooks"].as_object_mut().expect("an object").remove("PostCompact");
+            }
+            false => *compact = Value::Array(kept),
         }
+    }
+    if v["hooks"].as_object().is_some_and(|h| h.is_empty()) {
+        v.as_object_mut().expect("an object").remove("hooks");
     }
     backup(path, backups)?;
     write_or_remove(path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))
