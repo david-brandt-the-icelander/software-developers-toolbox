@@ -68,6 +68,18 @@ const TOOLS: &[Tool] = &[
     },
     Tool { name: "zazzle_ls", description: "Compact directory tree with file counts and line counts.", schema: ls_schema, map: ls_args },
     Tool {
+        name: "zazzle_diff",
+        description: "What changed: per-file stats, then hunks labelled with their symbol; generated files skipped. Prefer over git diff.",
+        schema: diff_schema,
+        map: diff_args,
+    },
+    Tool {
+        name: "zazzle_replace",
+        description: "Regex replacement across files ($1 for groups); dry_run previews. Prefer over sed -i.",
+        schema: replace_schema,
+        map: replace_args,
+    },
+    Tool {
         name: "zazzle_outline",
         description: "Symbols (functions, types, headings) with line ranges for files or directories; read big files in pieces with zazzle_read.",
         schema: outline_schema,
@@ -90,6 +102,56 @@ const TOOLS: &[Tool] = &[
 // Builds a JSON schema object from properties and required names.
 pub(crate) fn object(props: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": props, "required": required})
+}
+
+// Schema for zazzle_diff.
+fn diff_schema() -> Value {
+    object(
+        json!({
+            "range": {"type": "string", "description": "BASE, BASE..HEAD or BASE...HEAD; default the working tree against HEAD"},
+            "paths": {"type": "array", "items": {"type": "string"}},
+            "names": {"type": "boolean", "description": "Only the file stats"},
+            "budget": {"type": "integer"}
+        }),
+        &[],
+    )
+}
+
+// Turns zazzle_diff arguments into a command line.
+fn diff_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["diff".to_string()];
+    a.extend(get_str(v, "range")?);
+    a.extend(get_list(v, "paths")?);
+    push_flag(&mut a, v, "names", "--names")?;
+    push_num(&mut a, v, "budget", "--budget")?;
+    Ok(a)
+}
+
+// Schema for zazzle_replace.
+fn replace_schema() -> Value {
+    object(
+        json!({
+            "pattern": {"type": "string"},
+            "replacement": {"type": "string"},
+            "paths": {"type": "array", "items": {"type": "string"}},
+            "glob": {"type": "array", "items": {"type": "string"}},
+            "dry_run": {"type": "boolean"},
+            "fixed": {"type": "boolean", "description": "Pattern and replacement are plain text"}
+        }),
+        &["pattern", "replacement"],
+    )
+}
+
+// Turns zazzle_replace arguments into a command line.
+fn replace_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["replace".to_string(), need_str(v, "pattern")?, need_str(v, "replacement")?];
+    a.extend(get_list(v, "paths")?);
+    for g in get_list(v, "glob")? {
+        a.extend(["-g".to_string(), g]);
+    }
+    push_flag(&mut a, v, "dry_run", "--dry-run")?;
+    push_flag(&mut a, v, "fixed", "--fixed")?;
+    Ok(a)
 }
 
 // Schema for zazzle_find.
@@ -708,6 +770,20 @@ mod tests {
         assert!(tools.contains("zazzle_find_symbol") && tools.contains("zazzle_edit"));
     }
 
+    // Checks diff and replace arguments become their command lines.
+    #[test]
+    fn test_diff_and_replace_args() {
+        assert_eq!(
+            diff_args(&json!({"range": "main...HEAD", "paths": ["src"], "names": true, "budget": 9}))
+                .expect("diff"),
+            vec!["diff", "main...HEAD", "src", "--names", "--budget", "9"]
+        );
+        assert_eq!(diff_args(&json!({})).expect("bare"), vec!["diff"]);
+        let r = replace_args(&json!({"pattern": "a", "replacement": "b", "paths": ["p"], "glob": ["*.rs"], "dry_run": true, "fixed": true})).expect("replace");
+        assert_eq!(r, vec!["replace", "a", "b", "p", "-g", "*.rs", "--dry-run", "--fixed"]);
+        assert!(replace_args(&json!({"pattern": "a"})).is_err());
+    }
+
     // Checks edit pairs become repeated --old/--new options.
     #[test]
     fn test_edit_pairs() {
@@ -1122,10 +1198,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 15);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 17);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 8);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 10);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

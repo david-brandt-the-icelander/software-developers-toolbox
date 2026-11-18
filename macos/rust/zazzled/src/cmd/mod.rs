@@ -18,6 +18,7 @@ pub mod outline;
 mod pin;
 pub mod read;
 pub mod refs;
+pub mod replace;
 pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -274,6 +275,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
         "diff" => diff::run(ctx, rest),
+        "replace" => replace::run(ctx, rest),
         "edit" => edit::run(ctx, rest),
         "clean" => clean::run(ctx, rest),
         "overview" => structure::overview(ctx, rest),
@@ -362,7 +364,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit ls diff run clean read-again", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -387,7 +389,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit ls diff run clean read-again"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again"
         );
         assert!(!o.idable);
     }

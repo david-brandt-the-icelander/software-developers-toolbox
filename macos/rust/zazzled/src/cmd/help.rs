@@ -11,8 +11,20 @@ const GROUPS: [&str; 5] = [
     "Other tools",
 ];
 // The commands agents see, the one list behind agent help, the MCP tool list and the agent instructions; every other command is for people and shows only in `help --all`.
-pub const AGENT: &[&str] =
-    &["read", "outline", "find", "refs", "find-symbol", "edit", "ls", "diff", "run", "clean", "read-again"];
+pub const AGENT: &[&str] = &[
+    "read",
+    "outline",
+    "find",
+    "refs",
+    "find-symbol",
+    "edit",
+    "replace",
+    "ls",
+    "diff",
+    "run",
+    "clean",
+    "read-again",
+];
 
 // True when agents are shown the command.
 pub fn is_agent(cmd: &str) -> bool {
@@ -130,6 +142,22 @@ const PAGES: &[Page] = &[
             ("--code-only", "Skip tests and documentation"),
         ],
         examples: &["zazzle refs parse_args", "zazzle refs Engine src -g '*.rs'"],
+    },
+    Page {
+        name: "replace",
+        group: 0,
+        brief: "replace PATTERN TEXT",
+        summary: "Replace a regular expression across files",
+        usage: &["zazzle replace PATTERN REPLACEMENT [PATH...] [OPTIONS]"],
+        about: &["Replaces every match in the files below PATH (default: the current folder) that .gitignore does not ignore; $1 in REPLACEMENT is the first group. Each file is written only if it did not change since it was read, and only inside the folders edit may write."],
+        options: &[
+            ("-g, --glob GLOB", "Only files matching GLOB (repeatable)"),
+            ("-n, --dry-run", "Show the changed lines and write nothing"),
+            ("-i, --ignore-case", "Ignore case"),
+            ("-F, --fixed", "PATTERN and REPLACEMENT are plain text"),
+            ("-u, --no-ignore", "Also files that .gitignore ignores"),
+        ],
+        examples: &["zazzle replace 'old_(\\w+)' 'new_$1' -g '*.rs' --dry-run", "zazzle replace -F 'a.b' 'a::b' src"],
     },
     Page {
         name: "diff",
@@ -605,7 +633,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit ls diff run clean read-again"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again"
         );
     }
 

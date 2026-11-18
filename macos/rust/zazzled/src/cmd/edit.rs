@@ -78,15 +78,15 @@ fn value_of(ctx: &Ctx, v: &str) -> Result<String, String> {
 }
 
 // A file loaded for editing, with everything needed to rewrite and verify it.
-struct Target {
+pub(super) struct Target {
     path: PathBuf,
-    shown: String,
-    data: Vec<u8>,
-    meta: std::sync::Arc<Meta>,
+    pub(super) shown: String,
+    pub(super) data: Vec<u8>,
+    pub(super) meta: std::sync::Arc<Meta>,
 }
 
 // Loads the file to edit, refusing binary files.
-fn open_target(ctx: &Ctx, arg: &str) -> Result<Target, String> {
+pub(super) fn open_target(ctx: &Ctx, arg: &str) -> Result<Target, String> {
     let wanted = locate(arg, &ctx.cwd);
     let shown = display(&wanted, &ctx.cwd);
     let path = confine(ctx, &wanted)?;
@@ -98,7 +98,7 @@ fn open_target(ctx: &Ctx, arg: &str) -> Result<Target, String> {
 }
 
 // Writes new content for a target after checking it was not changed since it was loaded.
-fn commit(ctx: &Ctx, t: &Target, data: Vec<u8>) -> Result<String, String> {
+pub(super) fn commit(ctx: &Ctx, t: &Target, data: Vec<u8>) -> Result<String, String> {
     let now = std::fs::read(&t.path).map_err(|e| format!("{}: {}", t.shown, crate::walk::reason(&e)))?;
     if *blake3::hash(&now).as_bytes() != t.meta.hash {
         return Err(format!("{}: file changed while editing; read it again", t.shown));
