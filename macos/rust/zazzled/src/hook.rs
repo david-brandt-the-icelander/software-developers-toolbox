@@ -184,6 +184,60 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     python.then(|| ("pytest".into(), RUN_MSG))
 }
 
+// Quotes a word for the shell when it needs it.
+fn sh_quote(w: &str) -> String {
+    match w.chars().all(|c| c.is_alphanumeric() || "-_./:=@%+,".contains(c)) {
+        true => w.to_string(),
+        false => format!("'{}'", w.replace('\'', "'\\''")),
+    }
+}
+
+// Returns the zazzle command that replaces one redirected segment, when it can be spelled out exactly.
+fn exact(tokens: &[String], cmd: &str) -> Option<String> {
+    let (prog, args) = program(tokens)?;
+    let plain: Vec<&str> = args.iter().map(String::as_str).filter(|a| !a.starts_with('-')).collect();
+    let num = |flag: &str| {
+        args.windows(2)
+            .find(|w| w[0] == flag)
+            .and_then(|w| w[1].parse::<u64>().ok())
+            .or_else(|| args.iter().find_map(|a| a.strip_prefix('-').and_then(|n| n.parse::<u64>().ok())))
+    };
+    let file = |p: &[&str]| p.iter().rev().find(|a| a.parse::<u64>().is_err()).map(|f| sh_quote(f));
+    match prog {
+        "cat" | "bat" | "nl" | "less" | "more" if plain.len() == 1 => {
+            Some(format!("zazzle read {}", sh_quote(plain[0])))
+        }
+        "head" => Some(format!("zazzle read {}:1-{}", file(&plain)?, num("-n").unwrap_or(10))),
+        "sed" => {
+            let range = plain.iter().find_map(|a| {
+                let (x, y) = a.strip_suffix('p')?.split_once(',')?;
+                Some(format!("{}-{}", x.parse::<u64>().ok()?, y.parse::<u64>().ok()?))
+            })?;
+            Some(format!("zazzle read {}:{range}", file(&plain[1..])?))
+        }
+        "rg" | "grep" | "egrep" | "fgrep" | "ag" | "ack" if !plain.is_empty() => {
+            let paths: Vec<String> = plain[1..].iter().map(|p| sh_quote(p)).collect();
+            let i = if args
+                .iter()
+                .any(|a| a == "-i" || (a.starts_with('-') && !a.starts_with("--") && a.contains('i')))
+            {
+                " -i"
+            } else {
+                ""
+            };
+            Some(format!(
+                "zazzle find {}{i}{}",
+                sh_quote(plain[0]),
+                paths.iter().map(|p| format!(" {p}")).collect::<String>()
+            ))
+        }
+        _ if BUILDERS.iter().any(|(p, _)| *p == prog) || prog == "pytest" || prog.starts_with("python") => {
+            Some(format!("zazzle run -- {}", cmd.trim()))
+        }
+        _ => None,
+    }
+}
+
 // Decides one tool call from its client's tool name and input.
 pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
     let deny = |program: &str, message: String| Decision::Deny { program: program.into(), message };
@@ -207,13 +261,19 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
                 Value::Array(a) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "),
                 v => v.as_str().unwrap_or("").to_string(),
             };
-            let Some((program, message)) = segments(&cmd).iter().find_map(|s| classify(s)) else {
+            let segs = segments(&cmd);
+            let Some((seg, (program, message))) = segs.iter().find_map(|s| classify(s).map(|c| (s, c)))
+            else {
                 return Decision::Allow;
             };
             if cmd.contains(ALLOW_MARKER) {
                 return Decision::Bypass { program, why: "allow-raw" };
             }
-            deny(&program, format!("{message}{ESCAPE}"))
+            let single = segs.len() == 1;
+            match exact(seg, &cmd).filter(|_| single || message != RUN_MSG) {
+                Some(e) => deny(&program, format!("Use: {e}\n{message}{ESCAPE}")),
+                None => deny(&program, format!("{message}{ESCAPE}")),
+            }
         }
         _ => Decision::Allow,
     }
@@ -281,7 +341,37 @@ mod tests {
 
     // True when the command is redirected with the given advice.
     fn denied(cmd: &str, msg: &str) -> bool {
-        matches!(bash(cmd), Decision::Deny { message, .. } if message.starts_with(msg))
+        matches!(bash(cmd), Decision::Deny { message, .. } if message.contains(msg))
+    }
+
+    // Returns the exact replacement a redirect names, if any.
+    fn use_line(cmd: &str) -> Option<String> {
+        match bash(cmd) {
+            Decision::Deny { message, .. } => message.strip_prefix("Use: ")?.lines().next().map(String::from),
+            _ => None,
+        }
+    }
+
+    // Checks redirects spell out the zazzle command that replaces a read, search or build.
+    #[test]
+    fn test_exact_replacements() {
+        for (cmd, want) in [
+            ("cat src/a.rs", "zazzle read src/a.rs"),
+            ("head -n 40 src/a.rs", "zazzle read src/a.rs:1-40"),
+            ("head -5 a.rs", "zazzle read a.rs:1-5"),
+            ("head a.rs", "zazzle read a.rs:1-10"),
+            ("sed -n '10,20p' a.rs", "zazzle read a.rs:10-20"),
+            ("rg -i 'fn main' src", "zazzle find 'fn main' -i src"),
+            ("grep -rn foo .", "zazzle find foo ."),
+            ("cargo test -p x", "zazzle run -- cargo test -p x"),
+            ("cat 'a b.rs'", "zazzle read 'a b.rs'"),
+        ] {
+            assert_eq!(use_line(cmd).as_deref(), Some(want), "{cmd}");
+        }
+        for cmd in ["cat a b", "sed -n /x/p a.rs", "cargo test | tail", "tail -n 5 a.rs", "find . -name x"] {
+            assert_eq!(use_line(cmd), None, "{cmd}");
+        }
+        assert_eq!(sh_quote("it's"), "'it'\\''s'");
     }
 
     // Checks shell commands: searches, listings, reads and builds are redirected; other commands, zazzle itself and harmless forms pass.
@@ -387,7 +477,7 @@ mod tests {
         assert!(out["hookSpecificOutput"]["permissionDecisionReason"]
             .as_str()
             .expect("reason")
-            .starts_with(SEARCH_MSG));
+            .starts_with("Use: zazzle find x\nSearch with zazzle"));
         assert_eq!(run(&o, &p("rg x"), &|| false), "");
         assert_eq!(run(&o, &p("ls"), &|| true), "");
         assert_eq!(run(&o, &p("rg x # allow-raw"), &|| true), "");
