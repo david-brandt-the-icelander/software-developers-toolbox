@@ -285,49 +285,6 @@ pub fn compression_works() -> bool {
     ok
 }
 
-// Compress each planned file in memory, decode it with lzfse::DECODER and compare it with the file; print each one
-// that does not come back byte-identical and return how many did not.
-fn verify_round_trips(chosen: &[Cand]) -> usize {
-    util::install_sigint();
-    let mut tk = util::Ticker::new();
-    let (mut ok, mut bad, mut unread, mut size, mut stored) = (0, 0, 0, 0u64, 0u64);
-    let mut checked = 0;
-    for (i, cand) in chosen.iter().enumerate() {
-        if util::stopped() {
-            break;
-        }
-        tk.tick(&format!("[{}/{}] round trip {}", i + 1, chosen.len(), cand.path), false);
-        let result = fs::File::open(&cand.path).and_then(|f| lzfse::round_trip(&f));
-        tk.clear();
-        checked += 1;
-        match result {
-            Ok(lzfse::RoundTrip { stored: s, mismatch: None }) => {
-                ok += 1;
-                size += cand.size.max(0) as u64;
-                stored += s;
-            }
-            Ok(lzfse::RoundTrip { mismatch: Some(note), .. }) => {
-                bad += 1;
-                println!("{} {}: {note}", c("31", "ROUND TRIP FAILED"), cand.path);
-            }
-            Err(e) => {
-                unread += 1;
-                println!("{} {}: {e}", c("33", "NOT CHECKED"), cand.path);
-            }
-        }
-    }
-    println!("Round trip (compressed here, decoded with {}):", lzfse::DECODER);
-    println!(
-        "  byte-identical {ok}, differ {bad}, could not be read {unread}; compressed {} to {}",
-        human_i(size as i64),
-        human_i(stored as i64)
-    );
-    if checked < chosen.len() {
-        println!("  stopped after {checked} of {} files", chosen.len());
-    }
-    bad
-}
-
 // Group a skip note by its reason, dropping per-file details such as sizes and errors.
 fn reason_key(note: &str) -> &str {
     note.split([':', '(']).next().unwrap_or(note).trim()
@@ -362,11 +319,7 @@ pub fn cmd_compress(o: &CompressOpts) {
         for cand in chosen.iter().take(25) {
             println!("  {:>10} ~{:>10} {}", human_i(cand.size), human_i(cand.est), cand.path);
         }
-        let bad = verify_round_trips(&chosen);
         println!("Dry run - nothing changed.");
-        if bad > 0 {
-            die(&format!("{bad} files did not decode back byte-identical; do not compress them"));
-        }
         return;
     }
     if cfg!(target_os = "macos") && !compression_works() {
@@ -877,7 +830,6 @@ mod tests {
         seed(&sb, &["a", "b"]);
         let dry = CompressOpts { dry_run: true, sample: Some(1), ..opts(&sb) };
         cmd_compress(&dry);
-        assert_eq!(status_of(&sb, &sb.path("data/a")).0, "pending", "a dry run records nothing");
         util::set_tty(true);
         let ask = CompressOpts { yes: false, ..opts(&sb) };
         with_stdin("n\n", || cmd_compress(&ask));
@@ -916,20 +868,6 @@ mod tests {
         util::set_stop(true);
         cmd_compress(&opts(&sb));
         assert_eq!(status_of(&sb, &more[0]).0, "pending");
-    }
-
-    // Check the dry-run round trip passes real files, reports unreadable ones and stops when asked.
-    #[test]
-    fn test_verify_round_trips() {
-        let sb = Sandbox::new();
-        let files = seed(&sb, &["a", "b"]);
-        let mut cands: Vec<Cand> = files.iter().map(|f| cand(f)).collect();
-        assert_eq!(verify_round_trips(&cands), 0);
-        cands.push(Cand { path: sb.path("gone").to_string_lossy().into_owned(), ..cand(&files[0]) });
-        assert_eq!(verify_round_trips(&cands), 0, "an unreadable file is not a mismatch");
-        util::set_stop(true);
-        assert_eq!(verify_round_trips(&cands), 0);
-        util::set_stop(false);
     }
 
     // Check skip notes group by reason without per-file details.

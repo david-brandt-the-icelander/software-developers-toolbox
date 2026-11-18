@@ -330,18 +330,6 @@
       ]
     },
     {
-      "id": "lzfse::RoundTrip",
-      "name": "RoundTrip",
-      "kind": "struct",
-      "sources": [
-        "macos/rust/free-disk-space/src/lzfse.rs"
-      ],
-      "members": [
-        "pub stored: u64",
-        "pub mismatch: Option<String>"
-      ]
-    },
-    {
       "id": "repair::RepairOpts",
       "name": "RepairOpts",
       "kind": "struct",

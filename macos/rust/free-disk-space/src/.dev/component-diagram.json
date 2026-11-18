@@ -114,7 +114,7 @@
     {
       "id": "lzfse",
       "name": "LZFSE library wrapper (lzfse.rs)",
-      "responsibility": "Maps a file read-only and calls the lzfse-zazzcat library to compress it into decmpfs attributes and apply them to an open copy, naming the failed step on error; off macOS the copy stays plain. For compress --dry-run it compresses a file in memory and decodes every chunk with Apple's libcompression (compression_decode_buffer, LZFSE; the vendored decoder off macOS) to check it comes back byte-identical.",
+      "responsibility": "Maps a file read-only and calls the lzfse-zazzcat library to compress it into decmpfs attributes and apply them to an open copy, naming the failed step on error; off macOS the copy stays plain.",
       "folder": "macos/rust/free-disk-space/src"
     },
     {

@@ -97,7 +97,7 @@
         "A file without a com.apple.provenance (missing or empty: Apple's and system files) is skipped with the note 'no provenance' unless --include-no-provenance; a copy may carry this tool's provenance instead of the original's, which verification accepts, while every other attribute must match.",
         "Files that failed only because of the provenance go back in the queue on the next run; --retry-failed puts every earlier failure back.",
         "A file that fails verification is recorded as failed and the run carries on.",
-        "--dry-run lists up to 25 planned files, then compresses every planned file in memory with the library and decodes it with Apple's libcompression (the vendored decoder off macOS), printing ROUND TRIP FAILED for each that does not come back byte-identical and NOT CHECKED for each it cannot read, and a summary with the real compressed size; it changes nothing and exits with an error when any file differs.",
+        "--dry-run lists up to 25 planned files and changes nothing.",
         "A non-terminal run does not ask for confirmation."
       ],
       "implementation": [

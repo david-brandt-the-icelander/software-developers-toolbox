@@ -229,7 +229,6 @@ struct CompressArgs {
     /// extra free space to keep beyond the temp copy
     #[arg(long, value_parser = size_arg, default_value = "2G")]
     reserve: i64,
-    /// change nothing: list the plan and check each planned file compresses and decodes back byte-identical with Apple's decoder
     #[arg(long)]
     dry_run: bool,
     /// don't ask for confirmation
