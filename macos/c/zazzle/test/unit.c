@@ -395,6 +395,9 @@ static void test_tool_exec(void)
 	CHECK(run(3, argv7, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
 	CHECK(strcmp(M.exec_arg0, "/opt/bin/zazzle-git") == 0 && strcmp(M.exec_arg1, "status") == 0);
 	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv10[] = {"zazzle", "agent", "list-rules", ".", 0};
+	reset();
+	CHECK(run(4, argv10, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-agent") == 0);
 	char *argv9[] = {"/usr/bin/z", "git", 0};
 	reset();
 	CHECK(run(2, argv9, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);
