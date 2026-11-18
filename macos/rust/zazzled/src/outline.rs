@@ -481,34 +481,91 @@ pub fn outline(path: &Path, data: &[u8], starts: &[u32]) -> Vec<Symbol> {
     }
 }
 
-// Returns the lines where a C# file uses a name as an identifier, so not in comments or strings; None if it cannot be parsed.
-pub fn csharp_identifier_lines(data: &[u8], name: &str) -> Option<Vec<usize>> {
-    if data.len() > MAX_PARSE_BYTES {
-        return None;
+// Returns the byte ranges of a file's comments and string literals: from its parse tree when its grammar is available, else from a lexical scan by comment style.
+pub fn noncode_ranges(path: &Path, data: &[u8]) -> Vec<(usize, usize)> {
+    match grammar(lang_of(path)).filter(|_| data.len() <= MAX_PARSE_BYTES) {
+        Some((language, _)) => tree_ranges(&language, data).unwrap_or_else(|| lexical_ranges(path, data)),
+        None => lexical_ranges(path, data),
     }
-    let (language, _) = grammar(Lang::CSharp)?;
+}
+
+// Collects comment and string nodes from a parse tree without descending into them.
+fn tree_ranges(language: &Language, data: &[u8]) -> Option<Vec<(usize, usize)>> {
     crate::arena::scope(|| {
         let mut parser = Parser::new();
-        parser.set_language(&language).ok()?;
+        parser.set_language(language).ok()?;
         let tree = parser.parse(data, None)?;
         let mut cursor = tree.walk();
-        let mut lines = Vec::new();
+        let mut out = Vec::new();
         loop {
             let node = cursor.node();
-            if node.kind() == "identifier" && data.get(node.byte_range()) == Some(name.as_bytes()) {
-                lines.push(node.start_position().row + 1);
+            let kind = node.kind();
+            let skip = kind.contains("comment") || kind.contains("string") || kind == "char_literal";
+            if skip {
+                out.push((node.start_byte(), node.end_byte()));
             }
-            if cursor.goto_first_child() || cursor.goto_next_sibling() {
+            if (!skip && cursor.goto_first_child()) || cursor.goto_next_sibling() {
                 continue;
             }
             while !cursor.goto_next_sibling() {
                 if !cursor.goto_parent() {
-                    lines.dedup();
-                    return Some(lines);
+                    return Some(out);
                 }
             }
         }
     })
+}
+
+// Finds comments and strings by scanning: `//` and `/* */` for C-like files, `#` for scripts and configs, `--` for Lua and SQL; quotes with backslash escapes, and `'` only as a short character literal in C-like files.
+pub fn lexical_ranges(path: &Path, data: &[u8]) -> Vec<(usize, usize)> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    const C_LIKE: &[&str] = &[
+        "rs", "c", "h", "cs", "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "go", "java", "kt",
+        "kts", "swift", "cpp", "cc", "cxx", "hpp", "scala", "php", "dart", "gd", "zig", "m",
+    ];
+    const HASH: &[&str] = &[
+        "py", "pyi", "rb", "sh", "bash", "zsh", "toml", "yaml", "yml", "pl", "r", "nim", "ex", "exs",
+        "cmake", "mk",
+    ];
+    const DASH: &[&str] = &["lua", "sql", "hs"];
+    let (slash, hash, dash) =
+        (C_LIKE.contains(&ext.as_str()), HASH.contains(&ext.as_str()), DASH.contains(&ext.as_str()));
+    if !(slash || hash || dash) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    let at = |i: usize, s: &[u8]| data.get(i..i + s.len()) == Some(s);
+    let line_end = |i: usize| data[i..].iter().position(|&b| b == b'\n').map_or(data.len(), |n| i + n);
+    while i < data.len() {
+        let start = i;
+        let b = data[i];
+        if (slash && at(i, b"//")) || (hash && b == b'#') || (dash && at(i, b"--")) {
+            i = line_end(i);
+        } else if slash && at(i, b"/*") {
+            i = data[i + 2..].windows(2).position(|w| w == b"*/").map_or(data.len(), |n| i + n + 4);
+        } else if b == b'"' || (b == b'\'' && (hash || dash)) {
+            i += 1;
+            while i < data.len() && data[i] != b && data[i] != b'\n' {
+                i += if data[i] == b'\\' { 2 } else { 1 };
+            }
+            i = (i + 1).min(data.len());
+        } else if b == b'\'' && slash {
+            let close = data[i + 1..data.len().min(i + 5)].iter().position(|&c| c == b'\'');
+            match close {
+                Some(n) if n > 0 => i += n + 2,
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
+        } else {
+            i += 1;
+            continue;
+        }
+        out.push((start, i));
+    }
+    out
 }
 
 // Returns the innermost symbol that contains a line.
@@ -522,18 +579,25 @@ mod tests {
     use super::*;
     use crate::meta::line_starts;
 
+    // Checks the lexical scan's comment and quote rules, including unterminated ones and files it has no rules for.
+    #[test]
+    fn test_lexical_ranges() {
+        let r = |p: &str, d: &[u8]| lexical_ranges(Path::new(p), d);
+        assert_eq!(r("a.go", b"x // c\ny"), vec![(2, 6)]);
+        assert_eq!(r("a.go", b"/* open"), vec![(0, 7)]);
+        assert_eq!(r("a.go", b"'a' 'long text' x"), vec![(0, 3)]);
+        assert_eq!(r("a.go", b"\"open"), vec![(0, 5)]);
+        assert_eq!(r("a.go", b"a'"), Vec::<(usize, usize)>::new());
+        assert_eq!(r("a.py", b"'s' # c"), vec![(0, 3), (4, 7)]);
+        assert_eq!(r("a.sql", b"x -- c"), vec![(2, 6)]);
+        assert!(r("a.txt", b"// not code").is_empty());
+        assert!(noncode_ranges(Path::new("a.rs"), b"// c\nfn f() {}").contains(&(0, 4)));
+        assert_eq!(noncode_ranges(Path::new("a.go"), b"// c"), vec![(0, 4)]);
+    }
+
     // Builds an outline from source text for a file name.
     fn out(name: &str, src: &str) -> Vec<Symbol> {
         outline(Path::new(name), src.as_bytes(), &line_starts(src.as_bytes()))
-    }
-
-    // Checks C# identifier lines skip comments, strings and other names but keep interpolations and declarations.
-    #[test]
-    fn test_csharp_identifier_lines() {
-        let src = "// Widget here\nclass Widget {\n  string s = \"Widget\";\n  void M(Widget w) { var t = $\"{Widget.X}\"; }\n  /* Widget */ int Widgets;\n}\n";
-        assert_eq!(csharp_identifier_lines(src.as_bytes(), "Widget"), Some(vec![2, 4]));
-        assert_eq!(csharp_identifier_lines(b"", "Widget"), Some(vec![]));
-        assert_eq!(csharp_identifier_lines(&vec![b' '; MAX_PARSE_BYTES + 1], "Widget"), None);
     }
 
     // Summarises symbols as "kind name start-end/depth" strings.

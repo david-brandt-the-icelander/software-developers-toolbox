@@ -1,9 +1,9 @@
-// The refs command: where a symbol is defined and used, definitions first, with the enclosing symbol of each use; C# hits in comments and strings are dropped.
+// The refs command: where a symbol is defined and used, definitions first, with the enclosing symbol of each use; hits in comments and strings are dropped.
 use super::find::{build_regex, code_only, rank_in, search_all, FileResult, Hit, Plan, NARROW};
 use super::{Ctx, Output};
 use crate::args::{self, flag, opt, Flag};
 use crate::engine::Engine;
-use crate::outline::{csharp_identifier_lines, enclosing, lang_of, Lang, Symbol};
+use crate::outline::{enclosing, noncode_ranges, Symbol};
 use crate::pool::{cpus, par_map};
 use crate::util::{clip, display, locate, MAX_LINE};
 use crate::walk::{self, WalkOpts};
@@ -57,10 +57,22 @@ fn classify(
     (defs, uses)
 }
 
-// Drops the hits of a C# file that are only in comments or strings, keeping lines that use the name as an identifier.
-fn code_hits<'a>(path: &Path, data: &[u8], name: &str, file: &'a FileResult) -> Vec<&'a Hit> {
-    let lines = (lang_of(path) == Lang::CSharp).then(|| csharp_identifier_lines(data, name)).flatten();
-    file.hits.iter().filter(|h| lines.as_ref().is_none_or(|l| l.binary_search(&h.line).is_ok())).collect()
+// Drops the hits whose line names the symbol only inside comments or string literals.
+fn code_hits<'a>(path: &Path, data: &[u8], starts: &[u32], name: &str, file: &'a FileResult) -> Vec<&'a Hit> {
+    let skip = noncode_ranges(path, data);
+    let inside = |off: usize| {
+        let i = skip.partition_point(|r| r.1 <= off);
+        skip.get(i).is_some_and(|r| r.0 <= off)
+    };
+    let code_on = |h: &Hit| {
+        let Some(&start) = starts.get(h.line - 1) else { return true };
+        let start = start as usize;
+        let end = starts.get(h.line).map_or(data.len(), |e| *e as usize);
+        let line = &data[start..end];
+        let hits = (0..line.len()).filter(|i| line[*i..].starts_with(name.as_bytes()));
+        hits.map(|i| start + i).chain(std::iter::once(start + h.col)).any(|off| !inside(off))
+    };
+    file.hits.iter().filter(|h| code_on(h)).collect()
 }
 
 // Splits a qualified name, Type.Member or a::b, into the member searched for and the type a file must name.
@@ -87,7 +99,7 @@ fn file_refs(
             return None;
         }
     }
-    let hits = code_hits(path, &loaded.data, name, file);
+    let hits = code_hits(path, &loaded.data, &loaded.meta.starts, name, file);
     if hits.is_empty() {
         return None;
     }
@@ -285,6 +297,30 @@ mod tests {
         assert_eq!(
             o,
             "defs\nW.cs:2-6 class Widget\nrefs\nW.cs\n5 [Use]     void Use(Widget w) { }\nnotes.txt\n1 Widget\n-- 1 defs, 2 refs in 2 files (3 searched)"
+        );
+    }
+
+    // Checks comments and strings are dropped in every language: from the parse tree for Rust, by a lexical scan for Go, shell and Lua.
+    #[test]
+    fn test_refs_skip_comments_and_strings_everywhere() {
+        let t = TempDir::new();
+        t.write("a.rs", b"// widget here\nfn widget() {}\nfn m() { let s = \"widget\"; widget(); }\n");
+        t.write(
+            "b.go",
+            b"// widget\n/* widget\n widget */\nfunc m() { s := \"a \\\" widget\"; c := 'w'; widget() }\n",
+        );
+        t.write("c.sh", b"# widget\necho 'widget' \"widget\"\nwidget\n");
+        t.write("d.lua", b"-- widget\nwidget()\n");
+        let o = run_cmd(t.path(), &["refs", "widget"]).text;
+        for gone in ["1 // widget", "2 /*", "3  widget */", "1 # widget", "2 echo", "1 -- widget"] {
+            assert!(!o.contains(gone), "{gone}: {o}");
+        }
+        assert!(
+            o.contains("3 [m] fn m()")
+                && o.contains("4 ")
+                && o.contains("c.sh\n3 widget")
+                && o.contains("d.lua\n2 widget()"),
+            "{o}"
         );
     }
 
