@@ -362,6 +362,9 @@ mod tests {
             ),
             ""
         );
+        let nosid = json!({"tool_name": "Bash", "tool_input": {"command": "zazzle ls"}}).to_string();
+        assert_eq!(run(&o, &nosid, &|| true, &|_| {}), "");
+        assert_eq!(call("mcp__zazzle__zazzle_ls", json!("x"), None), "");
         let forgot = std::cell::RefCell::new(Vec::new());
         let compact = json!({"session_id": "S", "hook_event_name": "PostCompact"}).to_string();
         assert_eq!(run(&o, &compact, &|| true, &|p| forgot.borrow_mut().push(p.to_string())), "");

@@ -313,6 +313,15 @@ mod tests {
     use crate::testutil::run_cmd;
     use crate::testutil::TempDir;
 
+    // Checks help --all lists every command and help --agent only the agent commands.
+    #[test]
+    fn test_help_all_and_agent() {
+        let t = crate::testutil::TempDir::new();
+        assert!(run_cmd(t.path(), &["help", "--all"]).text.contains("setup"));
+        assert!(run_cmd(t.path(), &["help", "--agent"]).text.ends_with("humans: zazzle help --all"));
+        assert!(run_cmd(t.path(), &["forget-sessions", ""]).text.contains("usage: zazzle forget-sessions"));
+    }
+
     // Checks forget-sessions drops the sessions under a prefix and needs one.
     #[test]
     fn test_forget_sessions() {

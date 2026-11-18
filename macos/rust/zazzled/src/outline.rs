@@ -590,6 +590,10 @@ mod tests {
         assert_eq!(r("a.go", b"a'"), Vec::<(usize, usize)>::new());
         assert_eq!(r("a.py", b"'s' # c"), vec![(0, 3), (4, 7)]);
         assert_eq!(r("a.sql", b"x -- c"), vec![(2, 6)]);
+        assert_eq!(r("a.sql", b"'s' x"), vec![(0, 3)]);
+        assert_eq!(r("a.go", b"\"a\\\"b\" x"), vec![(0, 6)]);
+        assert_eq!(r("a.go", b"\"ab\ncd\""), vec![(0, 4), (6, 7)]);
+        assert_eq!(r("a.go", b"'' x"), Vec::<(usize, usize)>::new());
         assert!(r("a.txt", b"// not code").is_empty());
         assert!(noncode_ranges(Path::new("a.rs"), b"// c\nfn f() {}").contains(&(0, 4)));
         assert_eq!(noncode_ranges(Path::new("a.go"), b"// c"), vec![(0, 4)]);

@@ -347,6 +347,17 @@ mod tests {
         );
     }
 
+    // Checks a glob or a path keeps refs on text, without asking the indexer.
+    #[test]
+    fn test_refs_csharp_narrowed_stays_text() {
+        let t = TempDir::new();
+        t.write("W.cs", b"class Widget { }\n");
+        let o = run_cmd(t.path(), &["refs", "Widget", "-g", "*.cs"]).text;
+        assert!(o.ends_with("-- 1 defs, 0 refs in 1 files (1 searched)"), "{o}");
+        let p = run_cmd(t.path(), &["refs", "Widget", "."]).text;
+        assert!(!p.contains("exact C# refs unavailable"), "{p}");
+    }
+
     // Checks symbols that are only used, never defined, list just references.
     #[test]
     fn test_refs_without_definitions() {
