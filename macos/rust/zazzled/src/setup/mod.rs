@@ -1,6 +1,7 @@
 // `zazzle setup`: plans, applies, undoes and checks the user-level configuration that makes Claude Code, the Claude desktop app and Codex use zazzle, and sends their other MCP servers through the zazzle proxy.
 pub mod check;
 pub mod clients;
+pub mod compaction;
 pub mod policy;
 pub mod verify;
 
