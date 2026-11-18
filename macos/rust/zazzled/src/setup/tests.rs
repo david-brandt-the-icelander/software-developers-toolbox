@@ -603,3 +603,49 @@ fn test_off_on_uninstall() {
         .expect("uninstall")
         .contains("LaunchAgent"));
 }
+
+// Checks each kind of drift is named, a plan previews a block update and session keys without writing, and the SessionStart edit copes with odd files.
+#[test]
+fn test_drift_kinds() {
+    let t = TempDir::new();
+    let env = env(&t, false);
+    seed(&env);
+    assert_eq!(run(&opts(&["--check", "--brief"]), &env).expect("none applied"), "");
+    run(&opts(&["--apply", "--client", "claude-code"]), &env).expect("apply");
+    let p = policy::path(&env.home);
+    std::fs::write(&p, "[claude]\neffortLevel = \"low\"\n[instructions]\nextra = \"x\"\n").expect("policy");
+    let plan = run(&opts(&["--client", "claude-code"]), &env).expect("plan");
+    assert!(
+        plan.contains("~ update zazzle's instructions") && plan.contains("    ~ effortLevel = \"low\""),
+        "{plan}"
+    );
+    let s = env.home.join(".claude/settings.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&s).expect("s")).expect("json");
+    v["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = json!("/old/zazzled hook --client claude-code");
+    std::fs::write(&s, v.to_string()).expect("write");
+    let d = run(&opts(&["--check", "--brief"]), &env).expect("drift");
+    assert!(
+        d.contains("are out of date")
+            && d.contains("hook in ~/.claude/settings.json is missing or changed")
+            && d.contains("effortLevel is not \"low\""),
+        "{d}"
+    );
+    std::fs::write(&p, "[x").expect("bad");
+    assert!(run(&opts(&["--check", "--brief"]), &env).expect("bad").contains("does not parse"));
+    let f = t.path().join("odd.json");
+    std::fs::write(&f, "[1]").expect("odd");
+    edit_session_start(&f, Some("/z/zazzled setup --check --brief"), &mut Vec::new()).expect("array");
+    std::fs::write(&f, r#"{"hooks": 1}"#).expect("odd");
+    edit_session_start(&f, Some("/z/zazzled setup --check --brief"), &mut Vec::new())
+        .expect("hooks not an object");
+    std::fs::write(&f, r#"{"hooks": {"SessionStart": [{"hooks": [{"command": "other"}]}]}}"#).expect("other");
+    edit_session_start(&f, None, &mut Vec::new()).expect("keep other");
+    assert!(std::fs::read_to_string(&f).expect("f").contains("other"));
+    let mut odd = json!({"modelSettings": 1});
+    policy::apply_keys(
+        &mut odd,
+        &serde_json::from_value(json!({"modelSettings.m.autoCompactWindow": 1})).expect("map"),
+        &serde_json::Map::new(),
+    );
+    assert_eq!(odd["modelSettings"]["m"]["autoCompactWindow"], 1);
+}
