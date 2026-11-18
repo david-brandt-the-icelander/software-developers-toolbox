@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "qwen-chat sources",
+  "folder": "macos/rust/qwen-chat/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "qwen-chat sources",
+      "summary": "All of qwen-chat's Rust modules, flat: the command line and chat loop, the Qwen3.5 prompt format, the llama.cpp engine and the weights download.",
+      "purpose": "main.rs parses the command line, runs the interactive loop or a one-shot question and handles Ctrl-C; prompt.rs builds ChatML text and splits replies at </think>; engine.rs wraps llama.cpp (context, batches, sampler); download.rs finds or fetches the pinned GGUF file and verifies it.",
+      "boundaries": [
+        "Only engine.rs talks to llama.cpp, and only download.rs uses the network.",
+        "The conversation is kept in one append-only context; when a message no longer fits, the context is rebuilt from the system message and the most recent exchanges, without their reasoning.",
+        "prompt.rs and the UTF-8 and path helpers are pure and unit-tested; running the real model is checked by hand (see the README)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/qwen-chat/src/main.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/qwen-chat/src/prompt.rs",
+          "symbol": "full"
+        },
+        {
+          "path": "macos/rust/qwen-chat/src/engine.rs",
+          "symbol": "Engine"
+        },
+        {
+          "path": "macos/rust/qwen-chat/src/download.rs",
+          "symbol": "ensure"
+        }
+      ]
+    }
+  ]
+}

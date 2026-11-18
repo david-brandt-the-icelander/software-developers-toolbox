@@ -1,0 +1,20 @@
+[package]
+name = "qwen-chat"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+# Stops a reply on Ctrl-C without ending the chat.
+ctrlc = "3"
+# Runs the model: llama.cpp compiled in, CPU on Linux, Metal on macOS.
+llama-cpp-2 = { version = "0.1.161", default-features = false }
+# Verifies the downloaded weights against the pinned checksum.
+sha2 = "0.10"
+# Downloads the weights from Hugging Face on first run.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["metal"] }

@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "qwen-chat component diagram",
+  "folder": "macos/rust/qwen-chat",
+  "description": "The qwen-chat crate: one binary built from src/ with llama.cpp compiled in, which reaches the network only to download the model weights from Hugging Face.",
+  "sources": [
+    {
+      "path": "macos/rust/qwen-chat/Cargo.toml",
+      "symbol": "package"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/main.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "macos/rust/qwen-chat/src/download.rs",
+      "symbol": "ensure"
+    }
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "qwen-chat",
+      "responsibility": "The crate and its binary.",
+      "folder": "macos/rust/qwen-chat"
+    },
+    {
+      "id": "src",
+      "name": "qwen-chat sources",
+      "responsibility": "Command line, chat loop, prompt format, inference and the weights download.",
+      "folder": "macos/rust/qwen-chat/src",
+      "diagram": "macos/rust/qwen-chat/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "llama",
+      "name": "llama.cpp (llama-cpp-2 crate)",
+      "responsibility": "Loads the GGUF weights and runs the model, on Metal on macOS and on the CPU elsewhere; built from source and linked statically.",
+      "external": true
+    },
+    {
+      "id": "hf",
+      "name": "Hugging Face",
+      "responsibility": "Serves the pinned Qwen3.5-9B Q4_K_M GGUF file.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "crate",
+      "to": "src",
+      "kind": "contains",
+      "description": "Built into the qwen-chat binary."
+    },
+    {
+      "from": "src",
+      "to": "llama",
+      "kind": "depends-on",
+      "description": "Model loading, tokenizing, decoding and sampling (engine.rs)."
+    },
+    {
+      "from": "src",
+      "to": "hf",
+      "kind": "depends-on",
+      "description": "HTTPS download with resume on first run (download.rs)."
+    }
+  ]
+}

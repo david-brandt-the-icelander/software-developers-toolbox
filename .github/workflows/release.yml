@@ -152,7 +152,7 @@ jobs:
           ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
         run: |
           export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/zazzled.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
-          cargo build --workspace --release --locked --target "${{ matrix.target }}"
+          cargo build --workspace --exclude qwen-chat --release --locked --target "${{ matrix.target }}"
           mkdir -p bin
           for b in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor; do
             cp "target/${{ matrix.target }}/release/$b" bin/

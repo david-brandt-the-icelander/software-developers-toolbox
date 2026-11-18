@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "qwen-chat backlog",
+  "folder": "macos/rust/qwen-chat/src",
+  "entities": [
+    {
+      "id": "ship-in-release",
+      "title": "Ship qwen-chat in the release and the Homebrew formula",
+      "summary": "qwen-chat is built and tested in CI but left out of the release build, the universal binaries, signing, the tarball and the zazzle formula.",
+      "type": "feature",
+      "status": "open",
+      "details": "The release builds both macOS targets on one runner with zazzled's PGO CFLAGS; the llama.cpp build with Metal has not been tried there, so release.yml excludes the crate until it has.",
+      "acceptanceCriteria": [
+        "release.yml builds qwen-chat for aarch64 and x86_64 macOS and lipo joins them.",
+        "sign-and-notarize, the tarball, bottle.sh, formula.sh and formula.test.sh include qwen-chat.",
+        "The universal binary answers a question on an Apple-silicon Mac using Metal."
+      ],
+      "origin": {
+        "kind": "document",
+        "reference": "macos/rust/qwen-chat/README.md",
+        "description": "Build: 'not yet part of the release tarball or the Homebrew formula.'"
+      },
+      "evidenceStatus": "proposed",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos-build"
+        },
+        {
+          "path": "macos/release/formula.sh",
+          "symbol": "Zazzle.install"
+        }
+      ]
+    }
+  ]
+}
