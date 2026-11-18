@@ -64,7 +64,8 @@ fn test_parse() {
             hook: true,
             hook_edits: false,
             wrap: false,
-            probe: false
+            probe: false,
+            sets: vec![]
         }
     );
     let o = opts(&["--hook-edits", "--workspace", "/a", "--workspace", "/b", "--verify"]);
@@ -231,9 +232,16 @@ fn test_apply_and_undo() {
     assert!(text.contains("Answer briefly.\n<!-- zazzle setup: end -->"), "{text}");
     let same = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("same");
     assert!(!same.contains("~ updated zazzle's instructions") && !same.contains("backups:"), "{same}");
-    std::fs::write(policy::path(&env.home), "[claude]\neffortLevel = \"low\"\n").expect("policy");
-    let keyed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("keys");
-    assert!(keyed.contains("    ~ effortLevel = \"low\"\n"), "{keyed}");
+    let preview = run(&opts(&["--set", "effortLevel=low"]), &env).expect("preview");
+    assert!(preview.contains("would become") && preview.contains("Add --apply"), "{preview}");
+    assert!(run(&opts(&["--set", "effortLevel=low", "--check"]), &env)
+        .unwrap_err()
+        .contains("goes with --apply"));
+    let set = run(&opts(&["--apply", "--workspace", &ws, "--set", "effortLevel=low"]), &env).expect("set");
+    assert!(set.starts_with("policy: set effortLevel=low in ~/.zazzle/policy.toml\n"), "{set}");
+    assert!(run(&opts(&["--explain"]), &env).expect("explain").contains("Now: effortLevel = \"low\""));
+
+    assert!(set.contains("    ~ effortLevel = \"low\"\n"), "{set}");
     let settings: Value =
         serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
             .expect("json");

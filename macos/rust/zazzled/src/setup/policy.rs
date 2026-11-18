@@ -116,6 +116,74 @@ pub fn ensure(home: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+// Sets keys in the policy text (`KEY=VALUE`, KEY as `claude.KEY`, a bare session key, `instructions.extra`, or `claude.modelSettings.MODEL.KEY`), keeping its comments; an empty VALUE removes the key.
+pub fn set(text: &str, sets: &[String]) -> Result<String, String> {
+    let mut doc: toml_edit::DocumentMut =
+        text.parse().map_err(|e| format!("policy is not valid TOML: {e}"))?;
+    for s in sets {
+        let (k, v) = s.split_once('=').ok_or_else(|| format!("--set {s}: expected KEY=VALUE"))?;
+        let k = k.trim();
+        let path: Vec<&str> = match k {
+            "extra" | "instructions.extra" => vec!["instructions", "extra"],
+            _ if SESSION_KEYS.contains(&k) => vec!["claude", k],
+            _ => match k.strip_prefix("claude.modelSettings.").and_then(|r| r.rsplit_once('.')) {
+                Some((m, key)) => vec!["claude", "modelSettings", m, key],
+                None => k.split('.').collect(),
+            },
+        };
+        let (last, tables) = path.split_last().ok_or("empty key")?;
+        let mut t = doc.as_table_mut();
+        for name in tables {
+            let entry = t.entry(name).or_insert(toml_edit::table());
+            if let Some(it) = entry.as_inline_table_mut() {
+                let owned = std::mem::take(it).into_table();
+                *entry = toml_edit::Item::Table(owned);
+            }
+            t = entry.as_table_mut().ok_or_else(|| format!("--set {s}: {name} is not a table"))?;
+            t.set_implicit(true);
+        }
+        let v = v.trim();
+        if v.is_empty() {
+            t.remove(last);
+            continue;
+        }
+        let val: toml_edit::Value = if let Ok(i) = v.parse::<i64>() {
+            i.into()
+        } else if let Ok(b) = v.parse::<bool>() {
+            b.into()
+        } else {
+            v.trim_matches('"').into()
+        };
+        t.insert(last, toml_edit::value(val));
+    }
+    let out = doc.to_string();
+    parse(&out)?;
+    Ok(out)
+}
+
+// Describes what the policy controls and what it holds now, for `zazzle setup --explain`.
+pub fn explain(p: &Policy, file: &str) -> String {
+    let mut out = format!("zazzle setup --explain: what {file} controls.\n\n");
+    out.push_str("- instructions.extra: text added inside zazzle's marked block in ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md. Setup never changes text outside the markers.\n");
+    out.push_str(
+        "- claude.KEY: Claude Code session keys in ~/.claude/settings.json, owned only when named here: ",
+    );
+    out.push_str(&SESSION_KEYS.join(", "));
+    out.push_str("; per model, claude.modelSettings.\"MODEL\".autoCompactWindow. Setup remembers each key's earlier value; removing the key or `--undo` restores it.\n");
+    out.push_str("- The hook (unless --no-hook) refuses raw reads, searches, writes and long builds with the exact zazzle command; `# allow-raw` lets one through, logged.\n\n");
+    out.push_str("Change: zazzle setup --set KEY=VALUE --apply (an empty VALUE removes the key). Check drift: zazzle setup --check. Undo all: zazzle setup --undo.\n\nNow: ");
+    let mut now: Vec<String> = p.claude.iter().map(|(k, v)| format!("{k} = {v}")).collect();
+    if !p.extra.is_empty() {
+        now.push(format!("instructions.extra ({} characters)", p.extra.chars().count()));
+    }
+    out.push_str(&if now.is_empty() {
+        "nothing owned (generic defaults).".to_string()
+    } else {
+        now.join("; ")
+    });
+    out
+}
+
 // Returns the JSON path of an owned key in Claude Code's settings: `KEY`, or `modelSettings.MODEL.KEY`.
 fn key_path(key: &str) -> Vec<String> {
     match key.strip_prefix("modelSettings.").and_then(|r| r.rsplit_once('.')) {
@@ -258,6 +326,44 @@ mod tests {
         assert_eq!(odd, serde_json::json!({"modelSettings": {"m": {"k": 1}}}));
         put(&mut odd, "modelSettings.m.k", None);
         assert_eq!(odd, serde_json::json!({}));
+    }
+
+    // Checks --set edits keep the template's comments, round-trip through parse, remove on an empty value, and refuse unknown keys.
+    #[test]
+    fn test_set_and_explain() {
+        let text = set(
+            TEMPLATE,
+            &[
+                "effortLevel=low".into(),
+                "claude.idleCompaction=false".into(),
+                "extra=Be brief".into(),
+                "claude.modelSettings.m-1.autoCompactWindow=120000".into(),
+            ],
+        )
+        .expect("set");
+        assert!(text.contains("# zazzle policy") && text.contains("effortLevel = \"low\""), "{text}");
+        let p = parse(&text).expect("parse");
+        assert_eq!((p.claude.len(), p.extra.as_str()), (3, "Be brief"));
+        assert_eq!(p.claude["modelSettings.m-1.autoCompactWindow"], 120000);
+        let removed = parse(&set(&text, &["effortLevel=".into()]).expect("remove")).expect("parse");
+        assert!(!removed.claude.contains_key("effortLevel"));
+        assert!(set(TEMPLATE, &["claude.theme=dark".into()])
+            .unwrap_err()
+            .contains("unknown key claude.theme"));
+        assert!(set(TEMPLATE, &["nokey".into()]).unwrap_err().contains("expected KEY=VALUE"));
+        assert!(set("[x", &[]).is_err());
+        assert!(set("claude = 1", &["effortLevel=low".into()]).unwrap_err().contains("not a table"));
+        let inline =
+            parse(&set("claude = { effortLevel = \"x\" }", &["idleCompaction=true".into()]).expect("inline"))
+                .expect("parse");
+        assert_eq!(inline.claude.len(), 2);
+        let e = explain(&p, "~/.zazzle/policy.toml");
+        assert!(
+            e.contains("effortLevel = \"low\"") && e.contains("instructions.extra (8 characters)"),
+            "{e}"
+        );
+        assert!(e.len() < 2400, "about 600 tokens at most: {}", e.len());
+        assert!(explain(&Policy::default(), "f").contains("nothing owned"));
     }
 
     // Checks the template is written once and a missing file reads as the empty policy.

@@ -8,7 +8,7 @@ use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--no-wrap] [--probe]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--explain] [--set KEY=VALUE].. [--no-wrap] [--probe]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -49,6 +49,7 @@ pub enum Action {
     Off,
     On,
     Uninstall,
+    Explain,
 }
 
 // The parsed `zazzle setup` command line.
@@ -62,6 +63,7 @@ pub struct Opts {
     pub hook_edits: bool,
     pub wrap: bool,
     pub probe: bool,
+    pub sets: Vec<String>,
 }
 
 // Parses the arguments after `zazzled setup`.
@@ -75,6 +77,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         hook_edits: false,
         wrap: true,
         probe: false,
+        sets: Vec::new(),
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -94,6 +97,8 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--off" => action(Action::Off)?,
             "--on" => action(Action::On)?,
             "--uninstall" => action(Action::Uninstall)?,
+            "--explain" => action(Action::Explain)?,
+            "--set" => o.sets.push(it.next().ok_or("--set needs KEY=VALUE")?.clone()),
             "--hook" => o.hook = true,
             "--no-hook" => o.hook = false,
             "--probe" => o.probe = true,
@@ -332,6 +337,7 @@ fn load_applied(env: &Env, action: Action) -> Option<Opts> {
         hook_edits: a["hook_edits"].as_bool().unwrap_or(false),
         wrap: a["wrap"].as_bool().unwrap_or(true),
         probe: false,
+        sets: Vec::new(),
     })
 }
 
@@ -707,7 +713,29 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
     let applied = |action| {
         load_applied(env, action).ok_or("setup has no record of an --apply to turn off or on: run `zazzle setup --apply` with your options first")
     };
+    let mut set_note = String::new();
+    if !opts.sets.is_empty() {
+        let p = policy::path(&env.home);
+        let text = std::fs::read_to_string(&p).unwrap_or_else(|_| policy::TEMPLATE.to_string());
+        let new = policy::set(&text, &opts.sets)?;
+        match opts.action {
+            Action::Apply => {
+                write_file(&p, &new)?;
+                set_note = format!("policy: set {} in {}\n", opts.sets.join(", "), env.short(&p));
+            }
+            Action::Plan => {
+                return Ok(format!(
+                "zazzle setup --set: {} would become:\n{new}\nAdd --apply to write it and apply the setup.",
+                env.short(&p)
+            ))
+            }
+            _ => return Err("--set goes with --apply (or alone, to preview the policy)".into()),
+        }
+    }
     match opts.action {
+        Action::Explain => {
+            Ok(policy::explain(&policy::load(&env.home)?, &env.short(&policy::path(&env.home))))
+        }
         Action::Check => check::run(opts, env),
         Action::Verify => verify::run(opts, env),
         Action::Report => check::report(env),
@@ -733,6 +761,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
                     hook_edits: false,
                     wrap: true,
                     probe: false,
+                    sets: Vec::new(),
                 })
             };
             let mut out = change(&undo, env)?;
@@ -747,7 +776,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
             ));
             Ok(out)
         }
-        _ => change(opts, env),
+        _ => Ok(format!("{set_note}{}", change(opts, env)?)),
     }
 }
 
@@ -759,7 +788,13 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         }
     }
     let repo = opts.repo.as_ref().map(|r| r.canonicalize().unwrap_or_else(|_| r.clone()));
-    let opts = Opts { repo, clients: opts.clients.clone(), workspaces: opts.workspaces.clone(), ..*opts };
+    let opts = Opts {
+        repo,
+        clients: opts.clients.clone(),
+        workspaces: opts.workspaces.clone(),
+        sets: Vec::new(),
+        ..*opts
+    };
     let (mut routes, mut added) = load_state(env);
     let chosen: Vec<Client> = if opts.clients.is_empty() {
         Client::ALL.into_iter().filter(|c| env.installed(*c)).collect()
