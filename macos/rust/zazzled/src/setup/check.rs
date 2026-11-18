@@ -69,7 +69,7 @@ fn enforcement(env: &Env, c: Client) -> String {
         None if c == Client::ClaudeDesktop => {
             format!("instructions only (the desktop chat has no hooks); {instr}")
         }
-        None => format!("instructions only, nothing enforced (add --hook); {instr}"),
+        None => format!("instructions only, nothing enforced (apply without --no-hook); {instr}"),
     }
 }
 
@@ -135,7 +135,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str(&format!("\n{}: {}\n", c.name(), env.short(&file.path)));
         out.push_str(&format!("  routing: {}\n", enforcement(env, c)));
         if out.contains("SELF-TEST FAILED") {
-            hints.push("A hook did not answer as expected: run `zazzle setup --hook --apply` again, then restart the client.");
+            hints.push("A hook did not answer as expected: run `zazzle setup --apply` again, then restart the client.");
         }
         let servers = file.servers();
         if !servers.iter().any(is_zazzle) {
@@ -666,7 +666,7 @@ mod tests {
         );
         assert!(
             r.contains(
-                "codex: ~/.codex/config.toml\n  routing: instructions only, nothing enforced (add --hook)"
+                "codex: ~/.codex/config.toml\n  routing: instructions only, nothing enforced (apply without --no-hook)"
             ),
             "{r}"
         );

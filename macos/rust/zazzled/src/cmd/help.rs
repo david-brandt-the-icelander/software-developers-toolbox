@@ -330,11 +330,11 @@ const PAGES: &[Page] = &[
             ("--client NAME", "Only claude-code, claude-desktop or codex (repeatable)"),
             ("--repo DIR", "The folder the Claude desktop app should use"),
             ("--workspace DIR", "Let edits reach every repository below DIR (repeatable)"),
-            ("--hook", "Add a hook that sends shell searches and reads to zazzle"),
+            ("--no-hook", "Leave out the hook that sends shell searches, reads and builds to zazzle"),
             ("--hook-edits", "Also send the client's own edits through zazzle"),
             ("--no-wrap", "Leave the client's other MCP servers alone"),
         ],
-        examples: &["zazzle setup --workspace ~/dev --hook", "zazzle setup --apply --workspace ~/dev --hook", "zazzle setup --check"],
+        examples: &["zazzle setup --workspace ~/dev", "zazzle setup --apply --workspace ~/dev", "zazzle setup --check"],
     },
     Page {
         name: "status",

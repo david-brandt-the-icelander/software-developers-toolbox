@@ -219,7 +219,7 @@ pub fn run(opts: &Opts, env: &Env) -> Result<String, String> {
     let hooks = match hooks.is_empty() {
         true => vec![Step {
             ok: true,
-            what: "no hook installed: routing is by instructions only (add --hook)".into(),
+            what: "no hook installed: routing is by instructions only (apply without --no-hook)".into(),
         }],
         false => hooks,
     };
