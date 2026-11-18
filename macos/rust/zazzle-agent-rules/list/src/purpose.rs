@@ -53,6 +53,12 @@ pub fn is_marker(line: &str) -> bool {
     marker(line).is_some()
 }
 
+// Tells whether a purpose name starts with a letter or digit and can be written in a marker, so a --purpose value that could never match (or is a flag) is refused.
+pub fn valid(name: &str) -> bool {
+    name.starts_with(char::is_alphanumeric)
+        && marker(&format!("{MARK}:{name}")).is_some_and(|m| m.purpose == name)
+}
+
 // Sorts line ranges and joins those that overlap or touch.
 fn merge(mut ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     ranges.sort_unstable();
@@ -179,5 +185,16 @@ mod tests {
         );
         assert!(!is_marker("see #zazzle-purpose:a here"));
         assert!(is_marker("#zazzle-purpose:a"));
+    }
+
+    // Only names a marker can carry are valid purposes.
+    #[test]
+    fn test_valid_names() {
+        for good in ["commit", "a.b_c-d"] {
+            assert!(valid(good), "{good}");
+        }
+        for bad in ["-x", "commit-", "a b", "", "a:b"] {
+            assert!(!valid(bad), "{bad}");
+        }
     }
 }

@@ -7,7 +7,7 @@
     {
       "id": "folder",
       "title": "zazzle-agent-rules-list",
-      "summary": "`zazzle agent get-rules PATH`: prints the names and text of the rule files (AGENTS.md, CLAUDE.md, .claude/rules) and skill files (SKILL.md) that apply to a path, from the home folder and every folder above the path, closest last; skills print only their description unless asked, and a CLAUDE.md that only imports listed files is not repeated.",
+      "summary": "`zazzle agent get-rules PATH`: prints the names and text of the rule files (AGENTS.md, AGENTS.override.md, CLAUDE.md, CLAUDE.local.md, .claude/rules at any depth, scoped by their `paths:` globs) and skill files (SKILL.md) that apply to a path, from the home folder and every folder above the path, closest last, with each file a rule imports (`@file`) after it; skills print only their description unless asked, and a CLAUDE.md that only imports listed files is not repeated.",
       "purpose": "The crate of the zazzle-agent binary: Cargo.toml, the user README, and the library, binary and tests in src/. It is one member of the Cargo workspace in macos/rust.",
       "boundaries": [
         "It prints the files and marked segments that apply but never decides which rules matter to a task.",

@@ -390,6 +390,16 @@ const PAGES: &[Page] = &[
         examples: &["zazzle git commit -m 'Fix the parser'"],
     },
     Page {
+        name: "agent",
+        group: 4,
+        brief: "agent get-rules PATH",
+        summary: "Print the rule and skill files that apply to a path",
+        usage: &["zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]"],
+        about: &["zazzle agent has its own help: run zazzle agent --help."],
+        options: &[],
+        examples: &["zazzle agent get-rules src/main.rs --name-only"],
+    },
+    Page {
         name: "free-disk-space",
         group: 4,
         brief: "free-disk-space ...",
