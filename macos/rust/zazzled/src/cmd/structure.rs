@@ -211,7 +211,9 @@ pub fn changed_since(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         }
         _ => return Err(CHANGED_USAGE.into()),
     }
-    Target::locate(ctx, p.value("repo"))?.ask("changed_since", a)
+    let mut out = Target::locate(ctx, p.value("repo"))?.ask("changed_since", a)?;
+    out.idable = false;
+    Ok(out)
 }
 
 // Runs git-log: recent commits of the repository holding the path (or --repo, or the working directory), with an optional message filter.
@@ -317,6 +319,19 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    // Checks changed-since is sent in full every time in a session, since the same answer later means something new.
+    #[test]
+    fn test_changed_since_is_never_deduplicated() {
+        let _g = env_lock();
+        let fake = FakeIndexer::start(echoing);
+        let (t, _name, saved) = setup(&fake);
+        let e = crate::engine::Engine::new();
+        let first = crate::testutil::run_cmd_with(&e, t.path(), "s", &["changed-since"]).text;
+        let second = crate::testutil::run_cmd_with(&e, t.path(), "s", &["changed-since"]).text;
+        assert_eq!((first.as_str(), second.as_str()), ("\"changed_since\" {}", "\"changed_since\" {}"));
+        restore(saved);
     }
 
     // Checks refs answers from the indexer's Roslyn tool when a C# file matches, counts other text matches, and falls back to text when the name has no C# declaration.
