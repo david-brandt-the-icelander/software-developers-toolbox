@@ -90,6 +90,21 @@
       ]
     },
     {
+      "id": "daemon-reclaims-beyond-cleaning",
+      "title": "The daemon also deduplicates and compresses when cleaning is not enough",
+      "summary": "Below the threshold the daemon cleans first; if free space is still below it, it brings the scan up to date, runs dedupe --apply and compress --yes limited to the amount still missing.",
+      "status": "accepted",
+      "context": "The daemon only cleaned, which leaves the larger savings of dedupe and compress to a manual run.",
+      "decision": "After cleaning, probe again; when still below the threshold, run scan (resume, start, or rescan when over 7 days old), dedupe --apply and compress --yes --limit DEFICIT as child processes of the same binary, logged; --clean-only keeps the old behaviour.",
+      "rationale": "The owner asked for it. Both commands verify every file before replacing it and leave failures untouched, and child processes keep a step that exits on an error from ending the daemon.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "check"},
+        {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "reclaim_steps"},
+        {"path": "macos/rust/free-disk-space/src/daemon.rs", "symbol": "run_steps"}
+      ]
+    },
+    {
       "id": "carry-on-past-failures",
       "title": "Carry on past failures, recording each file",
       "summary": "compress and dedupe no longer stop after three failures in a row: each file that fails verification is left as it was, recorded, reported with its reason, and the run carries on.",

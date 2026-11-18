@@ -501,6 +501,7 @@
         "pub cadence: Duration",
         "pub targets: Vec<String>",
         "pub dev_root: String",
+        "pub clean_only: bool",
         "threshold_text: String",
         "cadence_text: String",
         "pub fn parse(threshold: &str, cadence: &str, targets: Vec<String>, dev_root: &str) -> Result<Self, String>"
@@ -555,6 +556,19 @@
         "pub fn dir(&self, rel: &str) -> PathBuf",
         "pub fn tool(&self, name: &str, body: &str)",
         "fn drop(&mut self)"
+      ]
+    },
+    {
+      "id": "ScanAge",
+      "name": "ScanAge",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/free-disk-space/src/daemon.rs"
+      ],
+      "members": [
+        "Missing",
+        "Unfinished",
+        "Finished(f64)"
       ]
     }
   ],

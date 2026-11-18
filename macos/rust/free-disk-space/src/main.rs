@@ -140,6 +140,9 @@ struct DaemonOpts {
     /// project tree for `dev`
     #[arg(long, default_value = "~/dev")]
     dev_root: String,
+    /// only clean; don't also deduplicate and compress when cleaning was not enough
+    #[arg(long)]
+    clean_only: bool,
 }
 
 // Options for new.
@@ -318,7 +321,10 @@ struct CleanArgs {
 // Validate daemon options into settings or exit with the problem.
 fn daemon_settings(o: DaemonOpts) -> daemon::Settings {
     let targets = o.targets.into_iter().map(value_name).collect();
-    daemon::Settings::parse(&o.threshold, &o.cadence, targets, &o.dev_root).unwrap_or_else(|e| util::die(&e))
+    let mut s = daemon::Settings::parse(&o.threshold, &o.cadence, targets, &o.dev_root)
+        .unwrap_or_else(|e| util::die(&e));
+    s.clean_only = o.clean_only;
+    s
 }
 
 // Return the lowercase name of a clap value.

@@ -477,7 +477,8 @@
         "The clock stops while the Mac sleeps, and the daemon never wakes it.",
         "Settings change only by reinstalling; the plist holds the absolute path of the binary that installed it.",
         "Docker's stop grace is fixed at 30 seconds when the daemon cleans.",
-        "macOS only: installing runs /bin/launchctl."
+        "macOS only: installing runs /bin/launchctl.",
+        "When free space is still below the threshold after cleaning, it brings the scan up to date (resume an unfinished one, start one if none, rescan if the last finished over 7 days ago), runs dedupe --apply, then compress --yes --limit with the amount still missing, each as a child process so an error exits only that step; --clean-only skips this."
       ],
       "implementation": [
         {
@@ -511,6 +512,10 @@
         {
           "path": "macos/rust/free-disk-space/src/util.rs",
           "symbol": "display_awake"
+        },
+        {
+          "path": "macos/rust/free-disk-space/src/daemon.rs",
+          "symbol": "reclaim_steps"
         }
       ]
     }

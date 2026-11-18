@@ -1,12 +1,16 @@
-// Background mode: check free space on an awake-time cadence, clean below a threshold, install as a launchd item.
+// Background mode: check free space on an awake-time cadence; below a threshold clean, then dedupe and compress; install as a launchd item.
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::clean;
+use crate::scan;
 use crate::util::{self, die, human_i};
 
 // launchd label of the startup item.
 pub const LABEL: &str = "local.free-disk-space";
+
+// Age after which a finished scan is redone before deduplicating and compressing.
+const RESCAN_SECS: f64 = 7.0 * 86400.0;
 
 // Longest sleep between stop-flag checks.
 const POLL: Duration = Duration::from_secs(5);
@@ -35,6 +39,7 @@ pub struct Settings {
     pub cadence: Duration,
     pub targets: Vec<String>,
     pub dev_root: String,
+    pub clean_only: bool,
     threshold_text: String,
     cadence_text: String,
 }
@@ -89,6 +94,7 @@ impl Settings {
             cadence: parse_cadence(cadence)?,
             targets,
             dev_root: dev_root.to_string(),
+            clean_only: false,
             threshold_text: threshold.trim().to_string(),
             cadence_text: cadence.trim().to_string(),
         })
@@ -100,8 +106,15 @@ fn log(msg: &str) {
     println!("[{}] {msg}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
 }
 
-// Check once and clean if free space is below the threshold; return true if a cleanup ran.
-fn check(s: &Settings, space: Option<(i64, i64)>, clean_now: &mut dyn FnMut()) -> bool {
+// Check once and clean if free space is below the threshold, then (unless clean-only) reclaim what is still missing by
+// deduplicating and compressing; return true if a cleanup ran.
+fn check(
+    s: &Settings,
+    space: Option<(i64, i64)>,
+    probe: &dyn Fn() -> Option<(i64, i64)>,
+    clean_now: &mut dyn FnMut(),
+    reclaim_now: &mut dyn FnMut(i64),
+) -> bool {
     let Some((total, free)) = space else {
         log("skipped: display asleep or volume unreadable");
         return false;
@@ -118,7 +131,73 @@ fn check(s: &Settings, space: Option<(i64, i64)>, clean_now: &mut dyn FnMut()) -
         s.targets.join(", ")
     ));
     clean_now();
+    if s.clean_only {
+        return true;
+    }
+    match probe() {
+        Some((_, free)) if free < limit => {
+            log(&format!(
+                "still below after cleaning: {} free; deduplicating and compressing",
+                human_i(free)
+            ));
+            reclaim_now(limit - free);
+        }
+        _ => log("enough space after cleaning"),
+    }
     true
+}
+
+// How far the scan in the state file has got.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScanAge {
+    Missing,
+    Unfinished,
+    Finished(f64),
+}
+
+// Reads how far the scan in the state file has got and, when finished, how many seconds ago.
+fn scan_age(state: &str) -> ScanAge {
+    if !Path::new(state).exists() {
+        return ScanAge::Missing;
+    }
+    let db = scan::open_db(state, false);
+    if !scan::finished(&db) {
+        return ScanAge::Unfinished;
+    }
+    let at = scan::meta_get(&db, "finished").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    ScanAge::Finished(util::now() - at)
+}
+
+// Returns the free-disk-space commands that win back space beyond cleaning: bring the scan up to date, then
+// deduplicate, then compress until about `deficit` bytes are saved.
+fn reclaim_steps(age: ScanAge, deficit: i64) -> Vec<Vec<String>> {
+    let scan: &[&str] = match age {
+        ScanAge::Missing => &["scan", "--skip-clean"],
+        ScanAge::Unfinished => &["resume", "--skip-clean"],
+        ScanAge::Finished(secs) if secs > RESCAN_SECS => &["scan", "--force", "--skip-clean"],
+        ScanAge::Finished(_) => &[],
+    };
+    let limit = deficit.max(1).to_string();
+    [scan, &["dedupe", "--apply"], &["compress", "--yes", "--limit", &limit]]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.iter().map(|a| a.to_string()).collect())
+        .collect()
+}
+
+// Runs each step as a child process of this binary, so a step that exits on an error does not end the daemon.
+fn run_steps(exe: &Path, steps: &[Vec<String>]) {
+    for step in steps {
+        if util::stopped() {
+            return;
+        }
+        log(&format!("running: free-disk-space {}", step.join(" ")));
+        match std::process::Command::new(exe).args(step).status() {
+            Ok(st) if st.success() => {}
+            Ok(st) => log(&format!("{} ended with {st}", step[0])),
+            Err(e) => log(&format!("cannot run {}: {e}", step[0])),
+        }
+    }
 }
 
 // Loop on awake time until stopped: probe the disk, then clean when below the threshold.
@@ -127,11 +206,12 @@ fn run_loop(
     poll: Duration,
     probe: &dyn Fn() -> Option<(i64, i64)>,
     clean_now: &mut dyn FnMut(),
+    reclaim_now: &mut dyn FnMut(i64),
 ) {
     let mut next = 0.0;
     while !util::stopped() {
         if util::awake_secs() >= next {
-            check(s, probe(), clean_now);
+            check(s, probe(), probe, clean_now, reclaim_now);
             next = util::awake_secs() + s.cadence.as_secs_f64();
         }
         let wait = Duration::from_secs_f64((next - util::awake_secs()).max(0.0));
@@ -150,7 +230,10 @@ pub fn cmd_run(s: &Settings) {
     ));
     let probe = || util::display_awake().then(util::data_volume_space).flatten();
     let mut clean_now = || clean::cmd_clean(&s.targets, true, &s.dev_root, 30);
-    run_loop(s, POLL, &probe, &mut clean_now);
+    let exe = std::env::current_exe().unwrap_or_else(|e| die(&format!("cannot find myself: {e}")));
+    let state = crate::default_state();
+    let mut reclaim_now = |deficit| run_steps(&exe, &reclaim_steps(scan_age(&state), deficit));
+    run_loop(s, POLL, &probe, &mut clean_now, &mut reclaim_now);
     log("daemon stopped");
 }
 
@@ -174,6 +257,9 @@ fn plist(exe: &Path, s: &Settings, log_path: &Path) -> String {
         "--targets".into(),
     ];
     args.extend(s.targets.iter().cloned());
+    if s.clean_only {
+        args.push("--clean-only".into());
+    }
     let items: String = args.iter().map(|a| format!("    <string>{}</string>\n", xml(a))).collect();
     let log = xml(&log_path.to_string_lossy());
     format!(
@@ -232,10 +318,11 @@ pub fn cmd_install(s: &Settings, exe: &Path) {
     }
     println!("Installed {} (starts at login, running now)", path.display());
     println!(
-        "Every {} awake: clean {} when free space < {}",
+        "Every {} awake: clean {} when free space < {}{}",
         s.cadence_text,
         s.targets.join(", "),
-        s.threshold_text
+        s.threshold_text,
+        if s.clean_only { "" } else { ", then deduplicate and compress if still below" }
     );
     println!("Log: {}   Remove with: free-disk-space daemon uninstall", log.display());
 }
@@ -309,15 +396,24 @@ mod tests {
         assert!(Settings::parse("30G", "no", vec![], "~").is_err());
     }
 
-    // Check a check cleans only when free space is below the threshold.
+    // Check a check cleans only below the threshold, and reclaims the deficit only when cleaning was not enough.
     #[test]
     fn test_check_decisions() {
         let s = settings("10%", "15m");
         let mut cleaned = 0;
-        assert!(!check(&s, None, &mut || cleaned += 1));
-        assert!(!check(&s, Some((1000, 100)), &mut || cleaned += 1));
-        assert!(check(&s, Some((1000, 99)), &mut || cleaned += 1));
-        assert_eq!(cleaned, 1);
+        let mut reclaimed = Vec::new();
+        let still_low = || Some((1000, 50));
+        let fixed = || Some((1000, 500));
+        assert!(!check(&s, None, &still_low, &mut || cleaned += 1, &mut |d| reclaimed.push(d)));
+        assert!(!check(&s, Some((1000, 100)), &still_low, &mut || cleaned += 1, &mut |d| reclaimed.push(d)));
+        assert!(check(&s, Some((1000, 99)), &fixed, &mut || cleaned += 1, &mut |d| reclaimed.push(d)));
+        assert!(reclaimed.is_empty(), "cleaning was enough");
+        assert!(check(&s, Some((1000, 99)), &still_low, &mut || cleaned += 1, &mut |d| reclaimed.push(d)));
+        assert_eq!(reclaimed, [50], "the deficit after cleaning");
+        let only = Settings { clean_only: true, ..s.clone() };
+        assert!(check(&only, Some((1000, 99)), &still_low, &mut || cleaned += 1, &mut |d| reclaimed.push(d)));
+        assert_eq!(reclaimed.len(), 1, "--clean-only never reclaims");
+        assert_eq!(cleaned, 3, "every check below the threshold cleans first");
     }
 
     // Check the loop checks immediately, then once per cadence, until stopped.
@@ -327,15 +423,16 @@ mod tests {
         let mut s = settings("30G", "15m");
         s.cadence = Duration::from_millis(120);
         let mut runs = 0;
-        run_loop(&s, Duration::from_millis(20), &|| Some((100 << 30, 1 << 30)), &mut || {
+        let mut clean = || {
             runs += 1;
             if runs == 3 {
                 util::set_stop(true);
             }
-        });
+        };
+        run_loop(&s, Duration::from_millis(20), &|| Some((100 << 30, 1 << 30)), &mut clean, &mut |_| {});
         assert_eq!(runs, 3);
         util::set_stop(true);
-        run_loop(&s, POLL, &|| panic!("must not probe"), &mut || {});
+        run_loop(&s, POLL, &|| panic!("must not probe"), &mut || {}, &mut |_| {});
     }
 
     // Check the foreground daemon cleans the sandbox home once and then stops.
@@ -345,6 +442,8 @@ mod tests {
         sb.write("home/.cache/big", &[1u8; 8192]);
         let mut s = settings("1%", "15m");
         s.threshold = Threshold::Bytes(i64::MAX);
+        // Always below the threshold: clean only, so the test binary is never run as a reclaim step.
+        s.clean_only = true;
         let stopper = std::thread::spawn(|| {
             std::thread::sleep(Duration::from_millis(1500));
             util::set_stop(true);
@@ -352,6 +451,48 @@ mod tests {
         cmd_run(&s);
         stopper.join().unwrap();
         assert!(!sb.path("home/.cache/big").exists());
+    }
+
+    // Check the scan step follows the state file, dedupe and compress always follow, and compress is limited to the
+    // deficit.
+    #[test]
+    fn test_reclaim_steps() {
+        let words = |age, d| reclaim_steps(age, d).iter().map(|s| s.join(" ")).collect::<Vec<_>>();
+        let tail = ["dedupe --apply".to_string(), "compress --yes --limit 500".to_string()];
+        assert_eq!(
+            words(ScanAge::Missing, 500),
+            [vec!["scan --skip-clean".to_string()], tail.to_vec()].concat()
+        );
+        assert_eq!(words(ScanAge::Unfinished, 500)[0], "resume --skip-clean");
+        assert_eq!(words(ScanAge::Finished(RESCAN_SECS + 1.0), 500)[0], "scan --force --skip-clean");
+        assert_eq!(words(ScanAge::Finished(60.0), 500), tail);
+        assert_eq!(words(ScanAge::Finished(60.0), 0)[1], "compress --yes --limit 1");
+        let sb = Sandbox::new();
+        let state = sb.state();
+        assert_eq!(scan_age(&sb.path("none").to_string_lossy()), ScanAge::Missing);
+        drop(scan::open_db(&state, true));
+        assert_eq!(scan_age(&state), ScanAge::Unfinished);
+        let db = scan::open_db(&state, false);
+        scan::meta_set(&db, "finished", &serde_json::json!(util::now() - 100.0));
+        assert!(matches!(scan_age(&state), ScanAge::Finished(s) if (99.0..200.0).contains(&s)));
+    }
+
+    // Check each step runs as a child process, a failing one does not stop the rest, and a missing program is logged.
+    #[test]
+    fn test_run_steps() {
+        let sb = Sandbox::new();
+        let log = sb.path("calls");
+        let exe = sb.path("fake");
+        std::fs::write(&exe, format!("#!/bin/sh\necho \"$*\" >> {}\n[ \"$1\" != dedupe ]\n", log.display()))
+            .unwrap();
+        crate::testkit::chmod(&exe, 0o755);
+        run_steps(&exe, &reclaim_steps(ScanAge::Missing, 7));
+        let calls = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(calls, "scan --skip-clean\ndedupe --apply\ncompress --yes --limit 7\n");
+        run_steps(&sb.path("missing"), &reclaim_steps(ScanAge::Finished(1.0), 7));
+        util::set_stop(true);
+        run_steps(&exe, &reclaim_steps(ScanAge::Missing, 7));
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), calls, "a stop request runs nothing more");
     }
 
     // Check the plist names the program, arguments, log and escapes text.
