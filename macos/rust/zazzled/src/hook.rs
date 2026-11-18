@@ -43,6 +43,7 @@ const FIND_MSG: &str = "List files with zazzle (MCP tool zazzle_ls, or `zazzle l
 const READ_MSG: &str = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`): a terse view with source line numbers; add source=true (`--source`) for the exact code and the sha every edit needs.";
 const RUN_MSG: &str = "Run builds and tests through zazzle: put `zazzle run --` in front of the same command (for example `zazzle run -- cargo test`). It runs unchanged in this shell, keeps the exit code, and cleans the output; `zazzle read-again r:ID --full` gives all of it.";
 const EDIT_MSG: &str = "Edit with zazzle (MCP tool zazzle_edit, or `zazzle edit`): read the file with source=true first for its sha, then edit with expect=SHA.";
+const WRITE_MSG: &str = "Change files with zazzle edit (MCP tool zazzle_edit, or `zazzle edit FILE --old TEXT --new TEXT --expect SHA`; the sha comes from `zazzle read FILE --source`): it checks the file did not change since you read it and shows the result.";
 const ESCAPE: &str =
     " If zazzle cannot do what you need, add the comment `# allow-raw` to the command (it is logged).";
 
@@ -169,6 +170,11 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
         return Some((prog.into(), READ_MSG));
     }
     let flag = |a: &str, f: char| a.starts_with('-') && !a.starts_with("--") && a.contains(f);
+    if (prog == "sed" && args.iter().any(|a| flag(a, 'i') || a.starts_with("--in-place")))
+        || (prog == "perl" && args.iter().any(|a| flag(a, 'i')))
+    {
+        return Some((format!("{prog} -i"), WRITE_MSG));
+    }
     if prog == "sed"
         && args.iter().any(|a| flag(a, 'n'))
         && !args.iter().any(|a| flag(a, 'i'))
@@ -182,6 +188,15 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     }
     let python = prog.starts_with("python") && args.windows(2).any(|w| w[0] == "-m" && w[1] == "pytest");
     python.then(|| ("pytest".into(), RUN_MSG))
+}
+
+// True when a command runs Python from a heredoc or -c that writes files.
+fn writes_with_python(cmd: &str) -> bool {
+    let python = segments(cmd).iter().any(|s| program(s).is_some_and(|(p, _)| p.starts_with("python")));
+    let inline = cmd.contains("<<") || cmd.contains(" -c ");
+    let writes =
+        [".write(", "write_text(", "write_bytes(", "open(p,'w')", "'w')", "\"w\")", "'a')", "os.replace("];
+    python && inline && writes.iter().any(|w| cmd.contains(w))
 }
 
 // Quotes a word for the shell when it needs it.
@@ -261,6 +276,9 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
                 Value::Array(a) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "),
                 v => v.as_str().unwrap_or("").to_string(),
             };
+            if writes_with_python(&cmd) && !cmd.contains(ALLOW_MARKER) {
+                return deny("python-write", format!("{WRITE_MSG}{ESCAPE}"));
+            }
             let segs = segments(&cmd);
             let Some((seg, (program, message))) = segs.iter().find_map(|s| classify(s).map(|c| (s, c)))
             else {
@@ -352,6 +370,28 @@ mod tests {
         }
     }
 
+    // Checks in-place shell writes go to zazzle edit, while reading sed and Python that only reads pass.
+    #[test]
+    fn test_shell_writes() {
+        for c in [
+            "sed -i 's/a/b/' f.rs",
+            "sed -i.bak -e x f",
+            "sed --in-place=.b x f",
+            "perl -pi -e 's/a/b/' f",
+            "python3 - <<'EOF'\nopen('f','w').write('x')\nEOF",
+            "python3 -c \"import pathlib; pathlib.Path('f').write_text('x')\"",
+        ] {
+            assert!(denied(c, WRITE_MSG), "{c}");
+        }
+        for c in ["python3 - <<'EOF'\nprint(open('f').read())\nEOF", "perl -e 'print 1'", "echo 'w') | cat"] {
+            assert!(!denied(c, WRITE_MSG), "{c}");
+        }
+        let allowed = "sed -i x f # allow-raw";
+        assert!(matches!(bash(allowed), Decision::Bypass { why: "allow-raw", .. }));
+        let py = "python3 - <<'EOF' # allow-raw\nopen('f','w')\nEOF";
+        assert!(!denied(py, WRITE_MSG));
+    }
+
     // Checks redirects spell out the zazzle command that replaces a read, search or build.
     #[test]
     fn test_exact_replacements() {
@@ -393,7 +433,7 @@ mod tests {
         for c in ["cat src/a.rs", "head -n 40 a.rs", "sed -n '1,40p' a.rs", "nl a.rs"] {
             assert!(denied(c, READ_MSG), "{c}");
         }
-        for c in ["cat > a.txt <<EOF", "tail -f log.txt", "sed -i 's/a/b/' f", "cat", "sed -n p"] {
+        for c in ["cat > a.txt <<EOF", "tail -f log.txt", "cat", "sed -n p"] {
             assert_eq!(bash(c), Decision::Allow, "{c}");
         }
         for c in [
