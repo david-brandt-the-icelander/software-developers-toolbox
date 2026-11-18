@@ -160,6 +160,7 @@ const PAGES: &[Page] = &[
             "TEXT '-' reads the text from standard input.",
         ],
         options: &[
+            ("--old A --new B ..", "Several pairs apply in order in one write; none is written if one fails"),
             ("--old TEXT", "The text to replace; it must occur exactly once unless --all"),
             ("--new TEXT", "The replacement, the new lines or the new file's contents"),
             ("--all", "Replace every occurrence of --old"),

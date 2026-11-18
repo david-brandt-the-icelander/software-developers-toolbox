@@ -127,49 +127,60 @@ fn hint(old: &str, data: &[u8], meta: &Meta) -> String {
     }
 }
 
-// Replaces exact text, which must be unique unless all occurrences are wanted, in a file whose current hash the caller gives.
+// Replaces exact text pairs in order, each unique unless all occurrences are wanted, in a file whose current hash the caller gives; nothing is written unless every pair applies.
 fn replace_text(
     ctx: &Ctx,
     arg: &str,
-    old: &str,
-    new: &str,
+    pairs: &[(String, String)],
     all: bool,
     expect: Option<&str>,
 ) -> Result<Output, String> {
-    if old.is_empty() {
-        return Err("--old must not be empty".into());
-    }
     let t = open_target(ctx, arg)?;
     check_precondition(&t, expect, &[])?;
-    let (old_b, new_b) = (to_eol(old, t.meta.crlf), to_eol(new, t.meta.crlf));
-    let found: Vec<usize> = memchr::memmem::find_iter(&t.data, old_b.as_bytes()).collect();
-    if found.is_empty() {
-        return Err(format!("{}: old text not found; {}", t.shown, hint(old, &t.data, &t.meta)));
-    }
-    let lines: Vec<String> = found.iter().map(|o| line_at(&t.meta.starts, *o).to_string()).collect();
-    if found.len() > 1 && !all {
+    let mut data = t.data.clone();
+    let mut done = Vec::new();
+    for (i, (old, new)) in pairs.iter().enumerate() {
+        let which = if pairs.len() > 1 { format!(" (pair {})", i + 1) } else { String::new() };
+        if old.is_empty() {
+            return Err(format!("--old must not be empty{which}"));
+        }
+        let (old_b, new_b) = (to_eol(old, t.meta.crlf), to_eol(new, t.meta.crlf));
+        let found: Vec<usize> = memchr::memmem::find_iter(&data, old_b.as_bytes()).collect();
+        let starts = crate::meta::line_starts(&data);
+        if found.is_empty() {
+            let meta = crate::meta::Meta::compute(&data);
+            return Err(format!("{}: old text not found{which}; {}", t.shown, hint(old, &data, &meta)));
+        }
+        let lines: Vec<String> = found.iter().map(|o| line_at(&starts, *o).to_string()).collect();
         let listed = lines.iter().take(MAX_LISTED).cloned().collect::<Vec<_>>().join(", ");
-        return Err(format!(
-            "{}: old text matches {} places (lines {listed}); add context or use --all",
+        if found.len() > 1 && !all {
+            return Err(format!(
+                "{}: old text matches {} places{which} (lines {listed}); add context or use --all",
+                t.shown,
+                found.len()
+            ));
+        }
+        let mut out = Vec::with_capacity(data.len());
+        let mut at = 0;
+        for off in &found {
+            out.extend_from_slice(&data[at..*off]);
+            out.extend_from_slice(new_b.as_bytes());
+            at = off + old_b.len();
+        }
+        out.extend_from_slice(&data[at..]);
+        data = out;
+        done.push((found.len(), listed));
+    }
+    let sha = commit(ctx, &t, data)?;
+    Ok(Output::plain(match done.as_slice() {
+        [(n, listed)] => format!("ok {}: replaced {n} occurrence(s) at line(s) {listed}; sha {sha}", t.shown),
+        _ => format!(
+            "ok {}: {} changes at line(s) {}; sha {sha}",
             t.shown,
-            found.len()
-        ));
-    }
-    let mut out = Vec::with_capacity(t.data.len());
-    let mut at = 0;
-    for off in &found {
-        out.extend_from_slice(&t.data[at..*off]);
-        out.extend_from_slice(new_b.as_bytes());
-        at = off + old_b.len();
-    }
-    out.extend_from_slice(&t.data[at..]);
-    let sha = commit(ctx, &t, out)?;
-    let listed = lines.iter().take(MAX_LISTED).cloned().collect::<Vec<_>>().join(", ");
-    Ok(Output::plain(format!(
-        "ok {}: replaced {} occurrence(s) at line(s) {listed}; sha {sha}",
-        t.shown,
-        found.len()
-    )))
+            done.len(),
+            done.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join("; ")
+        ),
+    }))
 }
 
 // Parses "A", "A-B" or an anchored "A#xyz-B#xyz" into line numbers and optional anchors.
@@ -331,15 +342,25 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     if p.has("create") {
         return create_file(ctx, path, &new("--create")?);
     }
-    if let Some(old) = p.value("old") {
-        return replace_text(
-            ctx,
-            path,
-            &value_of(ctx, old)?,
-            &new("--old")?,
-            p.has("all"),
-            p.value("expect"),
-        );
+    let olds = p.values("old");
+    if !olds.is_empty() {
+        let news = p.values("new");
+        if olds.len() > 1 && olds.len() != news.len() {
+            return Err(format!(
+                "give one --new for each --old ({} --old, {} --new)",
+                olds.len(),
+                news.len()
+            ));
+        }
+        let mut pairs = Vec::new();
+        for (i, old) in olds.iter().enumerate() {
+            let text = match news.get(i).filter(|_| olds.len() > 1) {
+                Some(n) => value_of(ctx, n)?,
+                None => new("--old")?,
+            };
+            pairs.push((value_of(ctx, old)?, text));
+        }
+        return replace_text(ctx, path, &pairs, p.has("all"), p.value("expect"));
     }
     if let Some(span) = p.value("at").or(p.value("lines")) {
         return replace_lines(ctx, path, span, &new("--lines")?, p.value("expect"));
@@ -367,6 +388,46 @@ mod tests {
             }
         }
         out
+    }
+
+    // Checks several --old/--new pairs apply in order in one write, and a pair that fails leaves the file as it was.
+    #[test]
+    fn test_several_pairs() {
+        let t = TempDir::new();
+        t.write("a.txt", b"one\ntwo\nthree\n");
+        let o = run_cmd(
+            t.path(),
+            &signed_ref(
+                t.path(),
+                &["edit", "a.txt", "--old", "one", "--new", "1", "--old", "three", "--new", "3"],
+            ),
+        );
+        assert!(o.text.starts_with("ok a.txt: 2 changes at line(s) 1; 3; sha "), "{}", o.text);
+        assert_eq!(std::fs::read_to_string(t.path().join("a.txt")).expect("a"), "1\ntwo\n3\n");
+        let bad = run_cmd(
+            t.path(),
+            &signed_ref(
+                t.path(),
+                &["edit", "a.txt", "--old", "two", "--new", "2", "--old", "nope", "--new", "x"],
+            ),
+        );
+        assert!(bad.text.contains("old text not found (pair 2)"), "{}", bad.text);
+        assert_eq!(std::fs::read_to_string(t.path().join("a.txt")).expect("a"), "1\ntwo\n3\n");
+        let odd = run_cmd(
+            t.path(),
+            &signed_ref(t.path(), &["edit", "a.txt", "--old", "1", "--old", "3", "--new", "x"]),
+        );
+        assert!(odd.text.contains("give one --new for each --old (2 --old, 1 --new)"), "{}", odd.text);
+        let empty = run_cmd(
+            t.path(),
+            &signed_ref(t.path(), &["edit", "a.txt", "--old", "1", "--new", "x", "--old", "", "--new", "y"]),
+        );
+        assert!(empty.text.contains("--old must not be empty (pair 2)"), "{}", empty.text);
+    }
+
+    // Returns signed arguments as string slices for run_cmd.
+    fn signed_ref<'a>(cwd: &std::path::Path, args: &[&str]) -> Vec<&'a str> {
+        signed(cwd, args).into_iter().map(|s| &*Box::leak(s.into_boxed_str())).collect()
     }
 
     // Runs a command line in a directory with signed text edits.

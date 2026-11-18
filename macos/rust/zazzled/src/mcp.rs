@@ -185,9 +185,10 @@ fn edit_schema() -> Value {
             "lines": {"type": "string", "description": "Line range A-B to replace; also give expect or at"},
             "at": {"type": "string", "description": "Anchored range A#xyz-B#xyz from zazzle_read with anchors"},
             "after": {"type": "integer", "description": "Insert new after this line (0 = at the start); also give expect"},
-            "expect": {"type": "string", "description": "Sha from zazzle_read source=true; every edit but create needs it"}
+            "expect": {"type": "string", "description": "Sha from zazzle_read source=true; every edit but create needs it"},
+            "edits": {"type": "array", "description": "Several {old, new} pairs, applied in order in one write; none is written if one fails", "items": {"type": "object", "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}
         }),
-        &["path", "new"],
+        &["path"],
     )
 }
 
@@ -392,6 +393,12 @@ fn edit_args(v: &Value) -> Result<Vec<String>, String> {
         if let Some(s) = get_str(v, key)? {
             a.push(format!("--{key}"));
             a.push(s);
+        }
+    }
+    for pair in v.get("edits").and_then(Value::as_array).into_iter().flatten() {
+        for key in ["old", "new"] {
+            a.push(format!("--{key}"));
+            a.push(need_str(pair, key)?);
         }
     }
     Ok(a)
@@ -699,6 +706,17 @@ mod tests {
             }
         }
         assert!(tools.contains("zazzle_find_symbol") && tools.contains("zazzle_edit"));
+    }
+
+    // Checks edit pairs become repeated --old/--new options.
+    #[test]
+    fn test_edit_pairs() {
+        let a = edit_args(&json!({"path": "f", "expect": "s", "edits": [{"old": "a", "new": "b"}, {"old": "c", "new": "d"}]})).expect("args");
+        assert_eq!(
+            a,
+            vec!["edit", "f", "--expect", "s", "--old", "a", "--new", "b", "--old", "c", "--new", "d"]
+        );
+        assert!(edit_args(&json!({"path": "f", "edits": [{"old": "a"}]})).is_err());
     }
 
     // Checks ping, tools/list and unknown methods.

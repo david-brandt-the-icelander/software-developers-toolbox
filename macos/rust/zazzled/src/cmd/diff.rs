@@ -230,7 +230,10 @@ mod tests {
         let t = changed();
         let o = run_cmd(t.path(), &["diff"]).text;
         assert!(o.starts_with("diff HEAD (working tree): 1 files, +1 -1\nsrc/a.rs +1 -1\nskipped (generated or .ignore'd; name one to see it): Cargo.lock notes/n.md\n"), "{o}");
-        assert!(o.contains("\nsrc/a.rs\n@@ -3,5 +3,5 @@ fn two\n }\n \n fn two() {\n-    2\n+    22\n"), "{o}");
+        assert!(
+            o.contains("\nsrc/a.rs\n@@ -3,5 +3,5 @@ fn two\n }\n \n fn two() {\n-    2\n+    22\n"),
+            "{o}"
+        );
         let names = run_cmd(t.path(), &["diff", "--names"]).text;
         assert!(!names.contains("@@") && names.contains("src/a.rs +1 -1"), "{names}");
         let lock = run_cmd(t.path(), &["diff", "Cargo.lock"]).text;
