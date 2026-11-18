@@ -4,6 +4,8 @@ use std::path::Path;
 
 pub const USAGE: &str =
     "usage: zazzled hook [--client claude-code|codex] [--edits]  (reads the PreToolUse JSON on stdin)";
+const READ_LIMIT: u64 = 24 * 1024;
+const RANGE_LINES: u64 = 400;
 const ALLOW_MARKER: &str = "# allow-raw";
 const WRAPPERS: &[&str] = &["sudo", "command", "exec", "nohup", "time", "env", "xargs", "builtin", "timeout"];
 const SEARCHERS: &[&str] = &["grep", "egrep", "fgrep", "rg", "ag", "ack", "zgrep"];
@@ -43,6 +45,7 @@ const FIND_MSG: &str = "List files with zazzle (MCP tool zazzle_ls, or `zazzle l
 const READ_MSG: &str = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`): a terse view with source line numbers; add source=true (`--source`) for the exact code and the sha every edit needs.";
 const RUN_MSG: &str = "Run builds and tests through zazzle: put `zazzle run --` in front of the same command (for example `zazzle run -- cargo test`). It runs unchanged in this shell, keeps the exit code, and cleans the output; `zazzle read-again r:ID --full` gives all of it.";
 const EDIT_MSG: &str = "Edit with zazzle (MCP tool zazzle_edit, or `zazzle edit`): read the file with source=true first for its sha, then edit with expect=SHA.";
+const WRITE_MSG: &str = "Change files with zazzle edit (MCP tool zazzle_edit, or `zazzle edit FILE --old TEXT --new TEXT --expect SHA`; the sha comes from `zazzle read FILE --source`): it checks the file did not change since you read it and shows the result.";
 const ESCAPE: &str =
     " If zazzle cannot do what you need, add the comment `# allow-raw` to the command (it is logged).";
 
@@ -169,11 +172,12 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
         return Some((prog.into(), READ_MSG));
     }
     let flag = |a: &str, f: char| a.starts_with('-') && !a.starts_with("--") && a.contains(f);
-    if prog == "sed"
-        && args.iter().any(|a| flag(a, 'n'))
-        && !args.iter().any(|a| flag(a, 'i'))
-        && files.len() >= 2
+    if (prog == "sed" && args.iter().any(|a| flag(a, 'i') || a.starts_with("--in-place")))
+        || (prog == "perl" && args.iter().any(|a| flag(a, 'i')))
     {
+        return Some((format!("{prog} -i"), WRITE_MSG));
+    }
+    if prog == "sed" && args.iter().any(|a| flag(a, 'n')) && files.len() >= 2 {
         return Some((prog.into(), READ_MSG));
     }
     let builds = |subs: &[&str]| subs.is_empty() || first.is_some_and(|f| subs.contains(&f));
@@ -184,6 +188,75 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     python.then(|| ("pytest".into(), RUN_MSG))
 }
 
+// True when the built-in Read would load a large file whole: over READ_LIMIT bytes with no limit of at most RANGE_LINES lines.
+fn too_big(path: &str, input: &Value) -> bool {
+    let ranged = input["limit"].as_u64().is_some_and(|n| n <= RANGE_LINES);
+    !ranged && std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > READ_LIMIT)
+}
+
+// True when a command runs Python from a heredoc or -c that writes files.
+fn writes_with_python(cmd: &str) -> bool {
+    let python = segments(cmd).iter().any(|s| program(s).is_some_and(|(p, _)| p.starts_with("python")));
+    let inline = cmd.contains("<<") || cmd.contains(" -c ");
+    let writes =
+        [".write(", "write_text(", "write_bytes(", "open(p,'w')", "'w')", "\"w\")", "'a')", "os.replace("];
+    python && inline && writes.iter().any(|w| cmd.contains(w))
+}
+
+// Quotes a word for the shell when it needs it.
+fn sh_quote(w: &str) -> String {
+    match w.chars().all(|c| c.is_alphanumeric() || "-_./:=@%+,".contains(c)) {
+        true => w.to_string(),
+        false => format!("'{}'", w.replace('\'', "'\\''")),
+    }
+}
+
+// Returns the zazzle command that replaces one redirected segment, when it can be spelled out exactly.
+fn exact(tokens: &[String], cmd: &str) -> Option<String> {
+    let (prog, args) = program(tokens)?;
+    let plain: Vec<&str> = args.iter().map(String::as_str).filter(|a| !a.starts_with('-')).collect();
+    let num = |flag: &str| {
+        args.windows(2)
+            .find(|w| w[0] == flag)
+            .and_then(|w| w[1].parse::<u64>().ok())
+            .or_else(|| args.iter().find_map(|a| a.strip_prefix('-').and_then(|n| n.parse::<u64>().ok())))
+    };
+    let file = |p: &[&str]| p.iter().rev().find(|a| a.parse::<u64>().is_err()).map(|f| sh_quote(f));
+    match prog {
+        "cat" | "bat" | "nl" | "less" | "more" if plain.len() == 1 => {
+            Some(format!("zazzle read {}", sh_quote(plain[0])))
+        }
+        "head" => Some(format!("zazzle read {}:1-{}", file(&plain)?, num("-n").unwrap_or(10))),
+        "sed" => {
+            let range = plain.iter().find_map(|a| {
+                let (x, y) = a.strip_suffix('p')?.split_once(',')?;
+                Some(format!("{}-{}", x.parse::<u64>().ok()?, y.parse::<u64>().ok()?))
+            })?;
+            Some(format!("zazzle read {}:{range}", file(&plain[1..])?))
+        }
+        "rg" | "grep" | "egrep" | "fgrep" | "ag" | "ack" if !plain.is_empty() => {
+            let paths: Vec<String> = plain[1..].iter().map(|p| sh_quote(p)).collect();
+            let i = if args
+                .iter()
+                .any(|a| a == "-i" || (a.starts_with('-') && !a.starts_with("--") && a.contains('i')))
+            {
+                " -i"
+            } else {
+                ""
+            };
+            Some(format!(
+                "zazzle find {}{i}{}",
+                sh_quote(plain[0]),
+                paths.iter().map(|p| format!(" {p}")).collect::<String>()
+            ))
+        }
+        _ if BUILDERS.iter().any(|(p, _)| *p == prog) || prog.starts_with("python") => {
+            Some(format!("zazzle run -- {}", cmd.trim()))
+        }
+        _ => None,
+    }
+}
+
 // Decides one tool call from its client's tool name and input.
 pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
     let deny = |program: &str, message: String| Decision::Deny { program: program.into(), message };
@@ -192,8 +265,8 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
         "Glob" => deny("Glob", format!("{FIND_MSG}{ESCAPE}")),
         "Read" => {
             let path = input["file_path"].as_str().unwrap_or("");
-            if path.to_ascii_lowercase().ends_with(".cs") || o.edits {
-                deny("Read", READ_MSG.into())
+            if path.to_ascii_lowercase().ends_with(".cs") || o.edits || too_big(path, input) {
+                deny("Read", format!("Use: zazzle read {}\n{READ_MSG}", sh_quote(path)))
             } else {
                 Decision::Allow
             }
@@ -207,13 +280,22 @@ pub fn decide(o: &Opts, tool: &str, input: &Value) -> Decision {
                 Value::Array(a) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "),
                 v => v.as_str().unwrap_or("").to_string(),
             };
-            let Some((program, message)) = segments(&cmd).iter().find_map(|s| classify(s)) else {
+            if writes_with_python(&cmd) && !cmd.contains(ALLOW_MARKER) {
+                return deny("python-write", format!("{WRITE_MSG}{ESCAPE}"));
+            }
+            let segs = segments(&cmd);
+            let Some((seg, (program, message))) = segs.iter().find_map(|s| classify(s).map(|c| (s, c)))
+            else {
                 return Decision::Allow;
             };
             if cmd.contains(ALLOW_MARKER) {
                 return Decision::Bypass { program, why: "allow-raw" };
             }
-            deny(&program, format!("{message}{ESCAPE}"))
+            let single = segs.len() == 1;
+            match exact(seg, &cmd).filter(|_| single || message != RUN_MSG) {
+                Some(e) => deny(&program, format!("Use: {e}\n{message}{ESCAPE}")),
+                None => deny(&program, format!("{message}{ESCAPE}")),
+            }
         }
         _ => Decision::Allow,
     }
@@ -283,7 +365,7 @@ fn tag_session(o: &Opts, tool: &str, input: &Value, sid: &str, agent: Option<&st
         if !matches!(first.as_deref(), Some("zazzle" | "z")) || cmd.contains("ZAZZLE_SESSION=") {
             return String::new();
         }
-        updated["command"] = json!(format!("ZAZZLE_SESSION='{}' {cmd}", key.replace('\'', "")));
+        updated["command"] = json!(format!("ZAZZLE_SESSION={} {cmd}", sh_quote(&key)));
     } else {
         return String::new();
     }
@@ -321,7 +403,113 @@ mod tests {
 
     // True when the command is redirected with the given advice.
     fn denied(cmd: &str, msg: &str) -> bool {
-        matches!(bash(cmd), Decision::Deny { message, .. } if message.starts_with(msg))
+        matches!(bash(cmd), Decision::Deny { message, .. } if message.contains(msg))
+    }
+
+    // Returns the exact replacement a redirect names, if any.
+    fn use_line(cmd: &str) -> Option<String> {
+        match bash(cmd) {
+            Decision::Deny { message, .. } => message.strip_prefix("Use: ")?.lines().next().map(String::from),
+            _ => None,
+        }
+    }
+
+    // Checks the built-in Read is refused for a large file read whole, and allowed for a small file or a short range.
+    #[test]
+    fn test_read_size() {
+        let t = TempDir::new();
+        let big = t.write("big.txt", &vec![b'x'; 30_000]);
+        let small = t.write("small.txt", b"x");
+        let read = |p: &std::path::Path, extra: Value| {
+            let mut input = json!({"file_path": p});
+            if let Some(l) = extra.get("limit") {
+                input["limit"] = l.clone();
+            }
+            decide(&Opts::default(), "Read", &input)
+        };
+        assert!(
+            matches!(read(&big, json!({})), Decision::Deny { message, .. } if message.starts_with("Use: zazzle read "))
+        );
+        assert!(matches!(read(&big, json!({"limit": 5000})), Decision::Deny { .. }));
+        assert_eq!(read(&big, json!({"limit": 100})), Decision::Allow);
+        assert_eq!(read(&small, json!({})), Decision::Allow);
+        assert_eq!(read(&t.path().join("missing"), json!({})), Decision::Allow);
+    }
+
+    // Checks in-place shell writes go to zazzle edit, while reading sed and Python that only reads pass.
+    #[test]
+    fn test_shell_writes() {
+        for c in [
+            "sed -i 's/a/b/' f.rs",
+            "sed -i.bak -e x f",
+            "sed --in-place=.b x f",
+            "perl -pi -e 's/a/b/' f",
+            "python3 - <<'EOF'\nopen('f','w').write('x')\nEOF",
+            "python3 -c \"import pathlib; pathlib.Path('f').write_text('x')\"",
+        ] {
+            assert!(denied(c, WRITE_MSG), "{c}");
+        }
+        for c in ["python3 - <<'EOF'\nprint(open('f').read())\nEOF", "perl -e 'print 1'", "echo 'w') | cat"] {
+            assert!(!denied(c, WRITE_MSG), "{c}");
+        }
+        let allowed = "sed -i x f # allow-raw";
+        assert!(matches!(bash(allowed), Decision::Bypass { why: "allow-raw", .. }));
+        let py = "python3 - <<'EOF' # allow-raw\nopen('f','w')\nEOF";
+        assert!(!denied(py, WRITE_MSG));
+    }
+
+    // Checks redirects spell out the zazzle command that replaces a read, search or build.
+    #[test]
+    fn test_exact_replacements() {
+        for (cmd, want) in [
+            ("cat src/a.rs", "zazzle read src/a.rs"),
+            ("head -n 40 src/a.rs", "zazzle read src/a.rs:1-40"),
+            ("head -5 a.rs", "zazzle read a.rs:1-5"),
+            ("head a.rs", "zazzle read a.rs:1-10"),
+            ("sed -n '10,20p' a.rs", "zazzle read a.rs:10-20"),
+            ("rg -i 'fn main' src", "zazzle find 'fn main' -i src"),
+            ("grep -rn foo .", "zazzle find foo ."),
+            ("cargo test -p x", "zazzle run -- cargo test -p x"),
+            ("cat 'a b.rs'", "zazzle read 'a b.rs'"),
+        ] {
+            assert_eq!(use_line(cmd).as_deref(), Some(want), "{cmd}");
+        }
+        for cmd in ["cat a b", "sed -n /x/p a.rs", "cargo test | tail", "tail -n 5 a.rs", "find . -name x"] {
+            assert_eq!(use_line(cmd), None, "{cmd}");
+        }
+        for (cmd, want) in [
+            ("bat a.rs", "zazzle read a.rs"),
+            ("less a.rs", "zazzle read a.rs"),
+            ("more a.rs", "zazzle read a.rs"),
+            ("egrep x a", "zazzle find x a"),
+            ("fgrep --fixed-strings x", "zazzle find x"),
+            ("ag x", "zazzle find x"),
+            ("ack -i x", "zazzle find x -i"),
+            ("pytest -q", "zazzle run -- pytest -q"),
+            ("python3 -m pytest", "zazzle run -- python3 -m pytest"),
+        ] {
+            assert_eq!(use_line(cmd).as_deref(), Some(want), "{cmd}");
+        }
+        for cmd in [
+            "rg",
+            "grep",
+            "egrep",
+            "fgrep",
+            "ag",
+            "ack",
+            "bat a b",
+            "nl a b",
+            "less a b",
+            "more a b",
+            "sed -n '1,xp' a b",
+            "sed -n 'x,2p' a b",
+            "head -n 5 3",
+        ] {
+            assert_eq!(use_line(cmd), None, "{cmd}");
+        }
+        let dir = decide(&Opts::default(), "Read", &json!({"file_path": std::env::temp_dir()}));
+        assert_eq!(dir, Decision::Allow);
+        assert_eq!(sh_quote("it's"), "'it'\\''s'");
     }
 
     // Checks allowed zazzle calls get the conversation and agent's session key, and PostCompact forgets the conversation's sessions.
@@ -347,7 +535,7 @@ mod tests {
             serde_json::from_str(&call("Bash", json!({"command": "zazzle read a"}), None)).expect("json");
         assert_eq!(
             sh["hookSpecificOutput"]["updatedInput"]["command"],
-            "ZAZZLE_SESSION='S/main' zazzle read a"
+            "ZAZZLE_SESSION=S/main zazzle read a"
         );
         assert_eq!(call("Bash", json!({"command": "ZAZZLE_SESSION=x zazzle read a"}), None), "");
         assert_eq!(call("Bash", json!({"command": "ls"}), None), "");
@@ -392,7 +580,7 @@ mod tests {
         for c in ["cat src/a.rs", "head -n 40 a.rs", "sed -n '1,40p' a.rs", "nl a.rs"] {
             assert!(denied(c, READ_MSG), "{c}");
         }
-        for c in ["cat > a.txt <<EOF", "tail -f log.txt", "sed -i 's/a/b/' f", "cat", "sed -n p"] {
+        for c in ["cat > a.txt <<EOF", "tail -f log.txt", "cat", "sed -n p"] {
             assert_eq!(bash(c), Decision::Allow, "{c}");
         }
         for c in [
@@ -420,10 +608,11 @@ mod tests {
             assert_eq!(bash(c), Decision::Allow, "{c}");
         }
         assert_eq!(bash("rg x # allow-raw"), Decision::Bypass { program: "rg".into(), why: "allow-raw" });
-        for c in ["a-b=c ls", "env A=1", "sed -ni p a b", "python -m pip install x", "a#b"] {
+        for c in ["a-b=c ls", "env A=1", "python -m pip install x", "a#b"] {
             assert_eq!(bash(c), Decision::Allow, "{c}");
         }
         assert!(denied("sed --quiet -n p a b", READ_MSG));
+        assert!(denied("sed -ni p a b", WRITE_MSG));
         assert_eq!(segments("\"a\\"), vec![vec!["a\\"]]);
         assert!(matches!(bash("cargo test"), Decision::Deny { program, .. } if program == "cargo test"));
         let codex = decide(&Opts::default(), "exec_command", &json!({"command": ["bash", "-lc", "rg x"]}));
@@ -476,7 +665,7 @@ mod tests {
         assert!(out["hookSpecificOutput"]["permissionDecisionReason"]
             .as_str()
             .expect("reason")
-            .starts_with(SEARCH_MSG));
+            .starts_with("Use: zazzle find x\nSearch with zazzle"));
         assert_eq!(run(&o, &p("rg x"), &|| false, &|_| {}), "");
         assert_eq!(run(&o, &p("ls"), &|| true, &|_| {}), "");
         assert_eq!(run(&o, &p("rg x # allow-raw"), &|| true, &|_| {}), "");

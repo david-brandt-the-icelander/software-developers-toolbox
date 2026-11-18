@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle-agent-rules/list",
+  "folder": "macos/rust/zazzle-agent-rules/list",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle-agent-rules-list",
+      "summary": "`zazzle agent get-rules PATH`: prints the names and text of the rule files (AGENTS.md, AGENTS.override.md, CLAUDE.md, CLAUDE.local.md, .claude/rules at any depth, scoped by their `paths:` globs) and skill files (SKILL.md) that apply to a path, from the home folder and every folder above the path, closest last, with each file a rule imports (`@file`) after it; skills print only their description unless asked, and a CLAUDE.md that only imports listed files is not repeated.",
+      "purpose": "The crate of the zazzle-agent binary: Cargo.toml, the user README, and the library, binary and tests in src/. It is one member of the Cargo workspace in macos/rust.",
+      "boundaries": [
+        "It prints the files and marked segments that apply but never decides which rules matter to a task.",
+        "The zazzle invoker (macos/c/zazzle) runs it for `zazzle agent ARGS` by exec'ing the zazzle-agent binary beside itself; it never goes through the zazzled daemon.",
+        "Packaging zazzle-agent in releases is the release scripts' concern, not this folder's."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-agent-rules/list/Cargo.toml", "symbol": "package" },
+        { "path": "macos/rust/zazzle-agent-rules/list/src/lib.rs", "symbol": "list_rules" },
+        { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/c/zazzle/.dev/folder.json", "entityId": "folder", "description": "The invoker that execs zazzle-agent for `zazzle agent`." }
+      ]
+    }
+  ]
+}

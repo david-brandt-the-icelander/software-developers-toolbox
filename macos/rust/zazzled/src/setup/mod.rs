@@ -7,7 +7,7 @@ use clients::{Client, ConfigFile, Kind, Server};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--hook] [--hook-edits] [--no-wrap] [--probe]";
+pub const USAGE: &str = "usage: zazzle setup [--apply | --undo | --off | --on | --uninstall | --check | --verify | --report] [--client claude-code|claude-desktop|codex].. [--repo DIR] [--workspace DIR].. [--no-hook] [--hook-edits] [--no-wrap] [--probe]";
 const FIRST_PORT: u16 = 8809;
 const BLOCK_BEGIN: &str = "<!-- zazzle setup: begin -->";
 const BLOCK_END: &str = "<!-- zazzle setup: end -->";
@@ -70,7 +70,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
         clients: Vec::new(),
         repo: None,
         workspaces: Vec::new(),
-        hook: false,
+        hook: true,
         hook_edits: false,
         wrap: true,
         probe: false,
@@ -94,6 +94,7 @@ pub fn parse(args: &[String]) -> Result<Opts, String> {
             "--on" => action(Action::On)?,
             "--uninstall" => action(Action::Uninstall)?,
             "--hook" => o.hook = true,
+            "--no-hook" => o.hook = false,
             "--probe" => o.probe = true,
             "--hook-edits" => (o.hook, o.hook_edits) = (true, true),
             "--workspace" => {
@@ -813,9 +814,9 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
             None if c == Client::ClaudeDesktop => out.push_str(
                 "  = no hook: the desktop app's chat has none, so it relies on zazzle's instructions\n",
             ),
-            None => {
-                out.push_str("  = no hook (add --hook to send raw searches, reads and builds to zazzle)\n")
-            }
+            None => out.push_str(
+                "  = no hook (--no-hook was given; without it raw searches, reads and builds go to zazzle)\n",
+            ),
         }
         if apply {
             apply_plan(env, &mut plan, &mut backups)?;

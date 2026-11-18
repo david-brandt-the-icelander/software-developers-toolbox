@@ -399,6 +399,33 @@
           "symbol": "build_request"
         }
       ]
+    },
+    {
+      "id": "nested-instructions",
+      "name": "Nested instructions",
+      "description": "A read or edit through zazzle carries the instructions a client loads when its own tools touch that path.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/nested.rs",
+          "symbol": "for_paths"
+        }
+      ],
+      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; each file is sent once per session, cut at 4,000 bytes.",
+      "outcome": "Sending reads through zazzle instead of the client's own tools does not lose a folder's own rules.",
+      "constraints": [
+        "No session, no instructions added.",
+        "The working directory and the folders above it are left out, since the client loads them at start."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/nested.rs",
+          "symbol": "for_paths"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "touched"
+        }
+      ]
     }
   ],
   "relatedViews": [

@@ -230,6 +230,8 @@ static const char *tool_binary(const char *a)
 		return a;
 	if (str_eq(a, "git"))
 		return "zazzle-git";
+	if (str_eq(a, "agent"))
+		return "zazzle-agent";
 	return 0;
 }
 

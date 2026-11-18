@@ -24,6 +24,7 @@ pub mod md;
 pub mod meta;
 pub mod minified;
 pub mod modules;
+pub mod nested;
 pub mod nim;
 pub mod outline;
 pub mod outputs;
