@@ -13,6 +13,7 @@
         "The client half, the C invoker `zazzle`, is a separate program in macos/c/zazzle; the two share only the wire protocol, which this crate defines, and the invoker's exec of `zazzled proxy` and `zazzled wrap`. The same invoker run as `zazz`, or under an installed script's name, sends zazz requests.",
         "The terse C# view and the structure tools' answers come from zazzle-csharp-indexer (macos/dotnet/zazzle-csharp-indexer), a separate program reached over its own socket.",
         "zazz scripts run in zazz-worker (macos/rust/zazz-worker), a separate binary found beside zazzled, or natively when signed by an authority trusted for native code; zazzled builds them with the user's rustc. The .zazz format comes from macos/rust/zazz-format and the script protocol from macos/rust/zazz-sdk, whose sources zazzled also embeds and compiles for scripts.",
+        "`zazzled llm` runs zazzle-llm (macos/rust/zazzle-llm), a separate binary found beside zazzled or downloaded on first use and checked against the tool manifest compiled in from ZAZZLED_TOOLS_MANIFEST (src/tools.rs).",
         "Builds and releases run from the workspace and the repository's workflows, not from this folder."
       ],
       "evidenceStatus": "source-verified",

@@ -395,7 +395,64 @@
       "sources": [
         {
           "path": "macos/rust/zazzled/build.rs",
-          "symbol": "main"
+          "symbol": "embed"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_TOOLS_DIR",
+      "title": "ZAZZLE_TOOLS_DIR",
+      "summary": "Where downloaded JIT tools (zazzle-llm) are kept.",
+      "key": "ZAZZLE_TOOLS_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/v1/tools (under ZAZZLE_CACHE_DIR when set)",
+      "sensitive": false,
+      "scope": "Read by `zazzled llm` when it looks for or downloads zazzle-llm.",
+      "takesEffect": "per-use",
+      "details": "A tool beside the zazzled executable is used first, without looking here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/tools.rs",
+          "symbol": "store"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_TOOLS_URL",
+      "title": "ZAZZLE_TOOLS_URL",
+      "summary": "Where JIT tools download from.",
+      "key": "ZAZZLE_TOOLS_URL",
+      "type": "url",
+      "default": "https://icelander.net/downloads/zazzle/vVERSION/tools/PLATFORM",
+      "sensitive": false,
+      "scope": "Read by `zazzled llm` when it downloads a tool.",
+      "takesEffect": "per-use",
+      "details": "Downloads are still checked against the tool manifest compiled into zazzled, so another source can only serve the same files.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/tools.rs",
+          "symbol": "store"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLED_TOOLS_MANIFEST",
+      "title": "ZAZZLED_TOOLS_MANIFEST (build time)",
+      "summary": "The JIT tool manifest compiled into zazzled.",
+      "key": "ZAZZLED_TOOLS_MANIFEST",
+      "type": "path",
+      "default": "unset: an empty manifest (development builds download no tool; put zazzle-llm beside zazzled instead)",
+      "sensitive": false,
+      "scope": "Read by zazzled's build script.",
+      "takesEffect": "at-build",
+      "details": "The release sets it to the manifest tools.sh --manifest wrote after building and signing the tools.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/build.rs",
+          "symbol": "embed"
         }
       ]
     }

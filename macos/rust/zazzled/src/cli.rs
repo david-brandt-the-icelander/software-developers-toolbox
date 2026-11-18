@@ -1,4 +1,4 @@
-// Command-line entry for the zazzled binary: serve, mcp, proxy, setup, install, uninstall and in-process run.
+// Command-line entry for the zazzled binary: serve, mcp, proxy, setup, llm (runs zazzle-llm), install, uninstall and in-process run.
 use crate::client;
 use crate::cmd::{self, Ctx};
 use crate::engine::Engine;
@@ -18,7 +18,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | install | uninstall | restart | run CMD.. | version";
+const USAGE: &str = "usage: zazzled serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | llm llm|prompt .. | install | uninstall | restart | run CMD.. | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -34,6 +34,7 @@ pub enum Cli {
     Setup(setup::Opts),
     Wrap(Vec<String>),
     Hook(crate::hook::Opts),
+    Llm(Vec<String>),
     Help(&'static str),
     Version,
 }
@@ -92,6 +93,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "setup" => setup::parse(rest).map(Cli::Setup),
         "wrap" => Ok(Cli::Wrap(rest.to_vec())),
         "hook" => crate::hook::parse(rest).map(Cli::Hook),
+        "llm" => Ok(Cli::Llm(rest.to_vec())),
         "version" | "--version" => Ok(Cli::Version),
         _ => Err(USAGE.into()),
     }
@@ -298,6 +300,7 @@ pub fn main(args: Vec<String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),
+        Cli::Llm(rest) => finish(Err(crate::tools::exec("zazzle-llm", &rest))),
         Cli::Wrap(rest) => match wrap::main(&rest, &mut std::io::stdout()) {
             Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
             Err(e) => finish(Err(e)),
@@ -356,6 +359,7 @@ mod tests {
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));
         assert!(matches!(parse(&v(&["proxy", "--", "srv"])), Ok(Cli::Proxy(_))));
         assert_eq!(parse(&v(&["wrap", "make"])), Ok(Cli::Wrap(v(&["make"]))));
+        assert_eq!(parse(&v(&["llm", "prompt", "hi"])), Ok(Cli::Llm(v(&["prompt", "hi"]))));
         assert!(parse(&v(&["proxy"])).unwrap_err().starts_with("give either"));
         assert_eq!(parse(&v(&["serve"])), Ok(Cli::Serve { socket: None, idle: Duration::from_secs(1800) }));
     }

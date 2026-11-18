@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzled source class diagram",
   "folder": "macos/rust/zazzled/src",
-  "description": "The types the zazzled source declares outside cmd/, proxy/, wrap/ and zazz/ (which have their own diagrams). Engine is the shared state every front end and command uses, including the zazz state declared in zazz/; Store, WalkCache and Sessions are its caches; Stored is an output read back from the output store; Request is the wire message; Backend lets the MCP server be tested without a daemon; Pool and Arena are per-process and per-thread machinery for parallel work and tree-sitter parses. testutil.rs (tests only) is left out.",
+  "description": "The types the zazzled source declares outside cmd/, proxy/, wrap/ and zazz/ (which have their own diagrams). Engine is the shared state every front end and command uses, including the zazz state declared in zazz/; Store, WalkCache and Sessions are its caches; Stored is an output read back from the output store; Request is the wire message; Backend lets the MCP server be tested without a daemon; Pool and Arena are per-process and per-thread machinery for parallel work and tree-sitter parses; the modules Store and its Entry lines describe downloadable language modules, and tools.rs (which declares no type) uses the same Store for JIT tools such as zazzle-llm; Cli::Llm is `zazzled llm`. testutil.rs (tests only) is left out.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/engine.rs",
@@ -28,11 +28,19 @@
     {
       "path": "macos/rust/zazzled/src/delivery.rs",
       "symbol": "DeliveryLog"
+    },
+    {
+      "path": "macos/rust/zazzled/src/modules.rs",
+      "symbol": "Store"
+    },
+    {
+      "path": "macos/rust/zazzled/src/tools.rs",
+      "symbol": "store"
     }
   ],
   "types": [
     { "id": "Request", "name": "Request", "kind": "struct", "sources": ["macos/rust/zazzled/src/proto.rs"], "members": ["cwd: String", "session: String", "args: Vec<String>"] },
-    { "id": "Cli", "name": "Cli", "kind": "enum", "sources": ["macos/rust/zazzled/src/cli.rs"], "members": ["Serve { socket: Option<PathBuf>, idle: Duration }", "Mcp", "Install", "Uninstall", "Restart", "Run(Vec<String>)", "Proxy(proxy::Opts)", "Setup(setup::Opts)", "Wrap(Vec<String>)", "Hook(hook::Opts)", "Help(&str)", "Version"] },
+    { "id": "Cli", "name": "Cli", "kind": "enum", "sources": ["macos/rust/zazzled/src/cli.rs"], "members": ["Serve { socket: Option<PathBuf>, idle: Duration }", "Mcp", "Install", "Uninstall", "Restart", "Run(Vec<String>)", "Proxy(proxy::Opts)", "Setup(setup::Opts)", "Wrap(Vec<String>)", "Hook(hook::Opts)", "Llm(Vec<String>)", "Help(&str)", "Version"] },
     { "id": "restart.Mode", "name": "restart.Mode", "kind": "enum", "sources": ["macos/rust/zazzled/src/restart.rs"], "members": ["Always", "OnlyOlder"] },
     { "id": "Config", "name": "Config", "kind": "struct", "sources": ["macos/rust/zazzled/src/server.rs"], "members": ["idle: Duration"] },
     { "id": "Fds", "name": "Fds", "kind": "struct", "sources": ["macos/rust/zazzled/src/server.rs"], "members": ["stdin: Option<OwnedFd>", "stdout: Option<OwnedFd>", "stderr: Option<OwnedFd>", "cwd: Option<OwnedFd>"] },
@@ -67,6 +75,8 @@
     { "id": "Miss", "name": "Miss", "kind": "enum", "sources": ["macos/rust/zazzled/src/symbols.rs"], "members": ["None(Vec<String>)", "Many(usize, Vec<String>)", "Index(usize)"] },
     { "id": "Stored", "name": "Stored", "kind": "struct", "sources": ["macos/rust/zazzled/src/outputs.rs"], "members": ["shown: String", "full: String"] },
     { "id": "Indexer", "name": "Indexer", "kind": "struct", "sources": ["macos/rust/zazzled/src/indexer.rs"], "members": ["exe: PathBuf", "state: PathBuf", "locate() -> Result<Indexer, String>", "view(path) -> Result<String, String>", "ask(root, tool, args) -> Result<String, String>"] },
+    { "id": "modules.Store", "name": "Store (modules)", "kind": "struct", "sources": ["macos/rust/zazzled/src/modules.rs"], "members": ["entries: Vec<Entry>", "dir: PathBuf", "base: String", "from_env() -> Option<Store>", "entry(name) -> Option<&Entry>", "installed(e) -> bool", "fetch(e) -> Result<(), String>", "load(name) -> Result<Language, String>"] },
+    { "id": "modules.Entry", "name": "Entry (modules)", "kind": "struct", "sources": ["macos/rust/zazzled/src/modules.rs"], "members": ["name: String", "sha256: String", "file: String"] },
     { "id": "markup.Kind", "name": "Kind (markup)", "kind": "enum", "sources": ["macos/rust/zazzled/src/markup.rs"], "members": ["Html", "Razor"] },
     { "id": "terse.Lang", "name": "Lang (terse)", "kind": "enum", "sources": ["macos/rust/zazzled/src/terse.rs"], "members": ["Python", "JavaScript", "TypeScript", "Tsx", "Dart", "Rust", "Go", "Java", "Kotlin", "Swift", "C", "Cpp", "Ruby", "Php", "Scala", "Perl", "Lua", "Elixir", "Haskell", "OCaml", "FSharp", "Clojure", "Erlang", "R", "Julia", "Zig", "ObjC", "Groovy", "PowerShell", "Sql", "VisualBasic", "Shell", "is_script() -> bool", "last_is_value() -> bool", "function_scoped() -> bool"] },
     { "id": "terse.Plan", "name": "Plan (terse)", "kind": "struct", "sources": ["macos/rust/zazzled/src/terse.rs"], "members": ["src: &str", "starts: Vec<usize>", "hidden: Vec<(usize, usize, Option<String>)>", "changes: Vec<(usize, usize, String)>", "steps: Vec<(&str, usize)>", "alone(node) -> bool", "hide(a, b, note, step) -> bool", "hide_node(node, note, step) -> bool", "change(a, b, new, step)", "render() -> Vec<String>"] },
@@ -126,6 +136,7 @@
     { "from": "CloseGuard", "to": "Batch", "kind": "depends-on", "description": "Closes the batch even when the caller panics." },
     { "from": "ScopeGuard", "to": "Arena", "kind": "depends-on", "description": "Ends one parse scope on the thread's arena." },
     { "from": "Owner", "to": "Arena", "kind": "depends-on", "description": "Releases the thread's arena when the thread ends." },
-    { "from": "Cli", "to": "Config", "kind": "depends-on", "description": "Serve's idle time, the binary to watch for an upgrade and the socket it bound become the server's Config." }
+    { "from": "Cli", "to": "Config", "kind": "depends-on", "description": "Serve's idle time, the binary to watch for an upgrade and the socket it bound become the server's Config." },
+    { "from": "modules.Store", "to": "modules.Entry", "kind": "depends-on", "description": "The manifest's lines; tools.rs builds a Store of the same kind from the tool manifest, its directory and URL." }
   ]
 }

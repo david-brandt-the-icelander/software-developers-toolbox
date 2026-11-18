@@ -73,7 +73,7 @@
           "id": "macos",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On macOS: stamps the version into every crate, builds zazz-worker and tests the workspace, trains the PGO profile, builds both architectures, builds and smoke tests the zazzle invoker, makes universal binaries and copies the invoker as zazz, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set (zazz-worker with its entitlements), packs the tarball, creates the GitHub release and copies the tarball to the download bucket.",
+          "action": "On macOS: stamps the version into every crate, builds zazz-worker and tests the workspace, builds and signs the language modules and the JIT tools (zazzle-llm) and writes their manifests, trains the PGO profile, builds both architectures with the manifests embedded, builds and smoke tests the zazzle invoker, makes universal binaries and copies the invoker as zazz, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set (zazz-worker with its entitlements), packs the tarball, creates the GitHub release and copies the tarball to the download bucket, and the language modules and JIT tools under the tag only.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",
@@ -93,7 +93,7 @@
           "id": "linux",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On Linux x86_64 and aarch64: builds zazz-worker and tests zazzled, builds zazzled with a PGO profile, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz (with zazz and zazz-worker) to the release and copies it to the download bucket.",
+          "action": "On Linux x86_64 and aarch64: builds zazz-worker and tests zazzled, builds the language modules and the JIT tools with their manifests, builds zazzled with a PGO profile and both manifests, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz (with zazz and zazz-worker) to the release and copies it, the language modules and the JIT tools to the download bucket.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",

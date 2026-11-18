@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "zazzle-llm operations",
+  "folder": "macos/rust/zazzle-llm/src",
+  "description": "zazzle-llm's two commands, reached as `zazzle agent llm|prompt` (the invoker execs `zazzled llm`, which execs zazzle-llm) or by running the binary directly. An error prints `error: ...` on standard error and exits 2.",
+  "sources": [
+    { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "Cmd" },
+    { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "main" }
+  ],
+  "entities": [
+    {
+      "id": "llm",
+      "name": "zazzle agent llm",
+      "description": "Lists the model catalogue; or downloads a model and makes it, and an effort, the default; or removes a downloaded model.",
+      "sources": [
+        { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" },
+        { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "list" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "llm" },
+      "action": "command",
+      "transport": "zazzle agent llm [--model NAME] [--effort low|medium|high] | --remove NAME (zazzle-llm llm ..)",
+      "authorization": "None checked: the caller's own permissions on the model directory.",
+      "result": "With no option, the catalogue (name, size, downloaded or not, what it is for, the default marked) with the default model, effort and model directory; with --model or --effort, `default: MODEL at effort EFFORT`; with --remove, `removed NAME` or `NAME was not downloaded`.",
+      "failures": [
+        "An unknown or ambiguous model name.",
+        "An effort other than low, medium or high.",
+        "--remove together with --model or --effort (clap refuses it).",
+        "A failed or mismatching model download.",
+        "The directory or defaults file cannot be written; HOME is unset and ZAZZLE_LLM_DIR is not given."
+      ]
+    },
+    {
+      "id": "prompt",
+      "name": "zazzle agent prompt",
+      "description": "Asks a model and streams its answer, downloading the model first when it is missing.",
+      "sources": [
+        { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
+        { "path": "macos/rust/zazzle-llm/src/engine.rs", "symbol": "generate" }
+      ],
+      "entrypoint": { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
+      "action": "query",
+      "transport": "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [TEXT.. | -] (zazzle-llm prompt ..)",
+      "authorization": "None checked: the caller's own permissions.",
+      "result": "The answer on standard output; the thinking on standard error with --show-thinking; exit 0, or 3 with a note on standard error when the token limit cut the answer short. It changes nothing but the model store, when it downloads the model.",
+      "failures": [
+        "An unknown or ambiguous model name, or an unknown effort.",
+        "An empty prompt: `nothing to ask: give TEXT, or pipe it in`.",
+        "A failed or mismatching model download.",
+        "A model that cannot be loaded or has no usable chat template.",
+        "A prompt as long as the model's training context or longer."
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "use-case", "folder": "macos/rust/zazzle-llm/src", "path": "macos/rust/zazzle-llm/src/.dev/use-case.json", "relationship": "The use cases that call these commands." },
+    { "kind": "operation", "folder": "macos/rust/zazzled/src", "path": "macos/rust/zazzled/src/.dev/operation.json", "relationship": "`zazzled llm`, the way in from zazzle." }
+  ]
+}

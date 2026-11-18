@@ -56,7 +56,7 @@
         {
           "id": "dispatch",
           "actor": "zazzle",
-          "action": "Looks at the name it was started under and at CMD: free-disk-space, fix-network, git, proxy and run (each only as zazzle) are not daemon requests; anything else is, so `zazz run NAME` and a script's own `run` argument reach the daemon.",
+          "action": "Looks at the name it was started under and at CMD: free-disk-space, fix-network, git, proxy, setup, run, `agent llm` and `agent prompt` (each only as zazzle) are not daemon requests; anything else is, so `zazz run NAME` and a script's own `run` argument reach the daemon.",
           "sources": [
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
@@ -69,6 +69,10 @@
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
               "symbol": "own_name"
+            },
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "is_llm"
             }
           ],
           "participantKind": "system"
@@ -141,7 +145,7 @@
       "alternatives": [
         {
           "atStep": "dispatch",
-          "condition": "CMD is free-disk-space, fix-network, git or agent.",
+          "condition": "CMD is free-disk-space, fix-network or git.",
           "outcome": "zazzle replaces itself with the binary of that name (zazzle-git for git) in its own directory, with the remaining arguments; no daemon is contacted, and the tool's streams and exit status are the caller's. If it cannot be run: `cannot run the tool (error N)`, exit 69.",
           "sources": [
             {
@@ -158,6 +162,21 @@
             {
               "path": "macos/c/zazzle/src/zazzle_core.h",
               "symbol": "exec_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "dispatch",
+          "condition": "CMD is `agent llm` or `agent prompt` and the invoker runs as zazzle.",
+          "outcome": "zazzle replaces itself with `zazzled llm llm|prompt ARGS` (ZAZZLE_DAEMON, or the zazzled beside it), which runs zazzle-llm, downloading it first when needed; no daemon is contacted, and a long answer streams straight to the caller. Other `agent` commands (get-rules) go to the daemon. If zazzled cannot be run: `cannot run zazzled (error N)`, exit 69.",
+          "sources": [
+            {
+              "path": "macos/c/zazzle/src/zazzle_core.h",
+              "symbol": "is_llm"
+            },
+            {
+              "path": "macos/rust/zazzled/src/tools.rs",
+              "symbol": "exec"
             }
           ]
         },
@@ -291,6 +310,12 @@
       "folder": "macos/rust/zazzled/src/proxy",
       "path": "macos/rust/zazzled/src/proxy/.dev/use-case.json",
       "relationship": "What `zazzle proxy` does once the invoker has become `zazzled proxy`."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzle-llm/src",
+      "path": "macos/rust/zazzle-llm/src/.dev/use-case.json",
+      "relationship": "What `zazzle agent llm|prompt` does once `zazzled llm` has become zazzle-llm."
     },
     {
       "kind": "deployment",

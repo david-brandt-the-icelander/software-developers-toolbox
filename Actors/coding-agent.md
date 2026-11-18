@@ -1,7 +1,7 @@
 # Coding agent
 
 **Kind:** agent
-**Evidence:** `agents/skills/zazzle/SKILL.md`, `agents/skills/agent-fs/SKILL.md`, `agents/skills/fix-network/SKILL.md`, `agents/skills/free-disk-space/SKILL.md` (written to an agent), `macos/rust/zazzled/src/mcp.rs`, `macos/rust/zazzled/src/mcp_structure.rs`, `macos/rust/agent-fs/src/mcp.rs` (MCP servers over standard input and output), `macos/rust/zazzled/src/proxy/mod.rs` (`zazzle proxy` in front of another MCP server), `macos/c/zazzle/src/zazzle_core.h` (`ZAZZLE_SESSION`: the session a shell's commands share), `agents/skills/zazz/SKILL.md` and `macos/rust/zazzled/src/zazz/mcptools.rs` (zazz scripts, from a shell or as MCP tools), `macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs` (the Claude Code hook that redirects its raw commands), `agents/skills/zazzle/SKILL.md` (`Git`: `zazzle git commit -m`, never the editor)
+**Evidence:** `agents/skills/zazzle/SKILL.md`, `agents/skills/agent-fs/SKILL.md`, `agents/skills/fix-network/SKILL.md`, `agents/skills/free-disk-space/SKILL.md` (written to an agent), `macos/rust/zazzled/src/mcp.rs`, `macos/rust/zazzled/src/mcp_structure.rs`, `macos/rust/agent-fs/src/mcp.rs` (MCP servers over standard input and output), `macos/rust/zazzled/src/proxy/mod.rs` (`zazzle proxy` in front of another MCP server), `macos/c/zazzle/src/zazzle_core.h` (`ZAZZLE_SESSION`: the session a shell's commands share), `agents/skills/zazz/SKILL.md` and `macos/rust/zazzled/src/zazz/mcptools.rs` (zazz scripts, from a shell or as MCP tools), `macos/dotnet/zazzle-csharp-indexer/src/Cli/HookPolicy.cs` (the Claude Code hook that redirects its raw commands), `agents/skills/zazzle/SKILL.md` (`Git`: `zazzle git commit -m`, never the editor), `agents/skills/zazzle-agent/SKILL.md` (`Local models: llm and prompt`: `zazzle agent prompt`)
 
 ## What they want from the system
 
@@ -14,6 +14,7 @@
 - To get compact, current answers about the code's structure in its work tree from zazzle, which asks zazzle-csharp-indexer, and be pointed at zazzle when it reaches for grep, cat or a raw read of a C# file: [indexer use cases](../macos/dotnet/zazzle-csharp-indexer/src/.dev/use-case.json), `answer-code-question`; [indexer CLI use cases](../macos/dotnet/zazzle-csharp-indexer/src/Cli/.dev/use-case.json), `redirect-raw-command`.
 - To run git and commit with a message in one non-interactive command: [zazzle git use cases](../macos/rust/zazzle-git/src/.dev/use-case.json), `agent-commits-with-message`.
 - To write a small program once, have it built and tested on this machine, and call it by id with JSON in and out, inside a sandbox: [zazz use cases](../macos/rust/zazzled/src/zazz/.dev/use-case.json), `add-and-call-a-script`.
+- To get a second opinion, a review or a summary from an open model running on the developer's machine, without the text leaving it: [zazzle-llm use cases](../macos/rust/zazzle-llm/src/.dev/use-case.json), `ask-a-local-model`.
 - To repair the developer's Mac network, or free disk space for them, changing only what they authorized and reporting truthfully: [fix-network skill](../agents/skills/fix-network/.dev/use-case.json), `fix-the-developers-network`; [free-disk-space skill](../agents/skills/free-disk-space/.dev/use-case.json), `free-space-for-developer`.
 
 ## How they reach it

@@ -3,7 +3,7 @@
   "kind": "delivery",
   "title": "Where a release goes",
   "folder": "macos/release",
-  "description": "Every tool (zazzle, also shipped as zazz, zazzled with zazz-worker, zazzle-csharp-indexer, afs, fix-network, free-disk-space, zazzle-git) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in macos/release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from.",
+  "description": "Every tool (zazzle, also shipped as zazz, zazzled with zazz-worker, zazzle-csharp-indexer, afs, fix-network, free-disk-space, zazzle-git) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in macos/release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from. zazzle-llm is not in the tarballs or the formula: it is a JIT tool that zazzled downloads from icelander.net on first use.",
   "entities": [
     {
       "id": "github-release",
@@ -175,6 +175,46 @@
           "path": "macos/rust/zazzle-lang/.dev/folder.json",
           "entityId": "folder",
           "description": "The modules this delivers."
+        }
+      ]
+    },
+    {
+      "id": "jit-tools",
+      "title": "JIT tools on icelander.net",
+      "summary": "Each release's JIT tools (zazzle-llm: universal on macOS, signed when configured, with Metal for Apple Silicon; one per Linux architecture) and their manifest, under icelander.net/downloads/zazzle/vX.Y.Z/tools/{macos-universal,linux-x86_64,linux-aarch64}/. Only the tag's directory gets them, not latest, because a zazzled accepts only the tools whose SHA-256s were compiled into it (ZAZZLED_TOOLS_MANIFEST). They are not in the tarballs, the bottle or the formula.",
+      "environment": "Cloudflare R2 bucket icelander-downloads, served as icelander.net/downloads",
+      "purpose": "`zazzled llm` downloads zazzle-llm from here the first time `zazzle agent llm` or `zazzle agent prompt` runs. The models zazzle-llm runs come from huggingface.co, not from a release.",
+      "deployedBy": "The release workflow: tools.sh builds them in the alpha, macos-languages and linux jobs; the alpha, macos and linux-publish jobs upload them (Publish to icelander.net)",
+      "rollback": "No rollback; each tag keeps its own directory, which its zazzled keeps using.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "macos: Publish to icelander.net"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux-publish: Publish to icelander.net"
+        },
+        {
+          "path": "macos/release/tools.sh",
+          "symbol": "--manifest"
+        },
+        {
+          "path": "macos/release/README.md",
+          "symbol": "JIT tools (`tools.sh`)"
+        },
+        {
+          "path": "macos/rust/zazzled/src/tools.rs",
+          "symbol": "store"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "macos/rust/zazzle-llm/.dev/folder.json",
+          "entityId": "folder",
+          "description": "The tool this delivers."
         }
       ]
     }

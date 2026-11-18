@@ -22,6 +22,10 @@
       "symbol": "exec_tool"
     },
     {
+      "path": "macos/c/zazzle/src/zazzle_core.h",
+      "symbol": "is_llm"
+    },
+    {
       "path": ".github/workflows/release.yml",
       "symbol": "Build and smoke test the zazzle invoker"
     },
@@ -83,7 +87,7 @@
       "id": "exec",
       "name": "Program the invoker becomes",
       "kind": "process",
-      "description": "For `zazzle run`, `zazzle proxy`, `zazzle free-disk-space`, `zazzle fix-network`, `zazzle git` and `zazzle agent`, the same process after exec: `zazzled wrap`, `zazzled proxy`, or the tool found beside the invoker (zazzle-git for `git`, zazzle-agent for `agent`), with the caller's environment, streams and exit status."
+      "description": "For `zazzle run`, `zazzle proxy`, `zazzle setup`, `zazzle agent llm|prompt`, `zazzle free-disk-space`, `zazzle fix-network` and `zazzle git`, the same process after exec: `zazzled wrap`, `zazzled proxy`, `zazzled setup`, `zazzled llm` (which in turn execs zazzle-llm, downloaded on first use: macos/rust/zazzle-llm/.dev/deployment-diagram.json), or the tool found beside the invoker (zazzle-git for `git`), with the caller's environment, streams and exit status."
     }
   ],
   "artifacts": [

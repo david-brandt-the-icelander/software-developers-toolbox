@@ -1,6 +1,6 @@
 # First publish an alpha (vX.Y.Z-alpha.N: a quick macOS build without the tests and the PGO profile, as a GitHub
 # pre-release, icelander.net zazzle/alpha and the zazzle-alpha formula), then the release itself.
-# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or, when run by hand, the exact version given or the next one after the latest tag for a bump (macos/release/version.sh); every binary is built with it.
+# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules and JIT tools (zazzle-llm) zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or, when run by hand, the exact version given or the next one after the latest tag for a bump (macos/release/version.sh); every binary is built with it.
 name: Release
 
 on:
@@ -93,13 +93,26 @@ jobs:
           bash ../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
           (cd dist/languages && ../../../release/sign-and-notarize.sh . ./*.dylib)
           bash ../release/language-modules.sh --manifest dist/languages
+      - name: Build, sign and list the JIT tools
+        env:
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          bash ../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
+          (cd dist/tools && ../../../release/sign-and-notarize.sh . zazzle-llm)
+          bash ../release/tools.sh --manifest dist/tools
       - name: Build universal binaries
         env:
           ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
+          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
         run: |
           bins="zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor"
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo build --workspace --release --locked --target "$t"
+            cargo build --workspace --exclude zazzle-llm --release --locked --target "$t"
           done
           for b in $bins; do
             lipo -create -output "dist/$b" "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
@@ -163,6 +176,9 @@ jobs:
           for f in dist/languages/*; do
             bash "$put" "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
           done
+          for f in dist/tools/*; do
+            bash "$put" "zazzle/$TAG/tools/macos-universal/${f##*/}" "$f" application/octet-stream
+          done
 
   # The zazzle-alpha formula in the zazzcat/homebrew-z tap, with its bottle on the pre-release.
   alpha-homebrew:
@@ -208,6 +224,8 @@ jobs:
   # Language modules (macos/release/README.md): one universal dylib per grammar (zazzled links none). They are signed
   # before their hashes go into the manifest that zazzled embeds, so a signed zazzled loads them under library validation.
   # The PGO profile for zazzled's C code (tree-sitter) is trained on arm64 with them and used for both CPU types.
+  # The JIT tools (zazzle-llm, which zazzled downloads for `zazzle agent llm|prompt`) are built, signed and listed here
+  # too, so their manifest is ready for the zazzled builds.
   macos-languages:
     needs: [version, alpha]
     if: ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.stable == 'true' && contains(fromJSON('["success","skipped"]'), needs.alpha.result) }}
@@ -242,6 +260,18 @@ jobs:
           ../../../release/sign-and-notarize.sh . *.dylib
       - name: Write the language module manifest
         run: bash ../release/language-modules.sh --manifest dist/languages
+      - name: Build, sign and list the JIT tools
+        env:
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          bash ../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
+          (cd dist/tools && ../../../release/sign-and-notarize.sh . zazzle-llm)
+          bash ../release/tools.sh --manifest dist/tools
       - name: Train the PGO profile for zazzled's C code
         env:
           PGO_LANGUAGES: dist/languages
@@ -254,6 +284,7 @@ jobs:
           name: macos-languages
           path: |
             macos/rust/dist/languages
+            macos/rust/dist/tools
             macos/rust/dist/pgo
 
   # The workspace tests, run beside the builds instead of before them.
@@ -279,7 +310,7 @@ jobs:
       - run: cargo build --release -p zazz-worker --locked
       - run: cargo test --workspace --locked
 
-  # One build of the workspace per CPU type, with the language manifest and PGO profile from macos-languages.
+  # One build of the workspace per CPU type (zazzle-llm aside), with the language and tool manifests and PGO profile from macos-languages.
   macos-build:
     needs: [version, macos-languages]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'skipped') && !contains(needs.*.result, 'cancelled') }}
@@ -310,9 +341,10 @@ jobs:
         env:
           CC: clang
           ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
+          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
         run: |
           export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/zazzled.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
-          cargo build --workspace --release --locked --target "${{ matrix.target }}"
+          cargo build --workspace --exclude zazzle-llm --release --locked --target "${{ matrix.target }}"
           mkdir -p bin
           for b in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor; do
             cp "target/${{ matrix.target }}/release/$b" bin/
@@ -373,6 +405,7 @@ jobs:
             lipo -create -output "dist/$bin" "bin/aarch64-apple-darwin/$bin" "bin/x86_64-apple-darwin/$bin"
           done
           cp -R artifacts/macos-languages/languages dist/languages
+          cp -R artifacts/macos-languages/tools dist/tools
           cp artifacts/macos-indexer/*.gz dist/
       - name: Build and smoke test the zazzle invoker (arm64 only; Intel Macs use zazzled mcp or zazzled run)
         env:
@@ -437,9 +470,12 @@ jobs:
             bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
               "text/plain; charset=utf-8"
           done
-          # The modules belong to this release's zazzled only, so they go under the tag, not latest.
+          # The modules and tools belong to this release's zazzled only, so they go under the tag, not latest.
           for f in dist/languages/*; do
             bash "$put" "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
+          done
+          for f in dist/tools/*; do
+            bash "$put" "zazzle/$TAG/tools/macos-universal/${f##*/}" "$f" application/octet-stream
           done
 
   # Linux tarballs build beside the macOS jobs; only publishing them (linux-publish) waits for the GitHub release.
@@ -479,6 +515,11 @@ jobs:
         run: |
           bash ../release/language-modules.sh dist/languages
           bash ../release/language-modules.sh --manifest dist/languages
+      - name: Build the JIT tools and their manifest
+        working-directory: macos/rust
+        run: |
+          bash ../release/tools.sh dist/tools
+          bash ../release/tools.sh --manifest dist/tools
       - name: Train the PGO profile for zazzled's C code
         env:
           PGO_LANGUAGES: macos/rust/dist/languages
@@ -489,6 +530,7 @@ jobs:
           CC: clang
           CFLAGS: ${{ env.PGO_CFLAGS }}
           ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
+          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
         run: cargo build --release -p zazzled --locked
       - name: Build and smoke test the zazzle invoker
         working-directory: macos/c/zazzle
@@ -521,7 +563,8 @@ jobs:
             zazzle-linux-${{ matrix.arch }}.tar.gz
             zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
             macos/rust/dist/languages
-  # Attach the Linux tarballs to the release the macos job created, and upload them and their language modules.
+            macos/rust/dist/tools
+  # Attach the Linux tarballs to the release the macos job created, and upload them and their language modules and tools.
   linux-publish:
     needs: [version, macos, linux]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'skipped') && !contains(needs.*.result, 'cancelled') && needs.version.outputs.publish == 'true' }}
@@ -558,6 +601,9 @@ jobs:
           done
           for f in macos/rust/dist/languages/*; do
             bash "$put" "zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
+          done
+          for f in macos/rust/dist/tools/*; do
+            bash "$put" "zazzle/$TAG/tools/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
           done
 
 

@@ -7,8 +7,8 @@
     {
       "id": "folder",
       "title": "Release scripts",
-      "summary": "The scripts the release workflow runs to work out and stamp the version, train the PGO profile for zazzled's C code, pack the Homebrew bottle, write the zazzle formula and, when configured, sign and notarize the macOS binaries; the version, bottle, formula and signing scripts have tests that run in CI.",
-      "purpose": "Holds version.sh (the release's tag, version and whether to publish, from the tags and the bump), set-version.sh (writes the version into every crate's manifest and Cargo.lock entry), pgo.sh (a clang profile for tree-sitter's C code in zazzled), bottle.sh (the zazzle bottle from the release files), formula.sh (Formula/zazzle.rb for the tap), sign-and-notarize.sh (Developer ID signature and Apple notarization, with entitlements/NAME.plist for a binary that needs them: zazz-worker's executable memory for WebAssembly), their tests version.test.sh, formula.test.sh and sign-and-notarize.test.sh, and README.md, the owner's guide to version numbers, the formula, PGO and signing.",
+      "summary": "The scripts the release workflow runs to work out and stamp the version, train the PGO profile for zazzled's C code, build the JIT tools zazzled downloads (tools.sh, zazzle-llm) and the language modules, pack the Homebrew bottle, write the zazzle formula and, when configured, sign and notarize the macOS binaries; the version, bottle, formula and signing scripts have tests that run in CI.",
+      "purpose": "Holds version.sh (the release's tag, version and whether to publish, from the tags and the bump), set-version.sh (writes the version into every crate's manifest and Cargo.lock entry), pgo.sh (a clang profile for tree-sitter's C code in zazzled), bottle.sh (the zazzle bottle from the release files), formula.sh (Formula/zazzle.rb for the tap), sign-and-notarize.sh (Developer ID signature and Apple notarization, with entitlements/NAME.plist for a binary that needs them: zazz-worker's executable memory for WebAssembly), tools.sh (builds the JIT tools, zazzle-llm, universal on macOS, and writes their `NAME SHA256 FILE` manifest for zazzled), their tests version.test.sh, formula.test.sh, sign-and-notarize.test.sh and tools.test.sh, and README.md, the owner's guide to version numbers, the formula, PGO and signing.",
       "boundaries": [
         "The workflows that run these scripts are .github/workflows/release.yml and, for pgo.sh, zazzle-bench.yml.",
         "The formula is written into a checkout of the external tap zazzcat/homebrew-z, not into this repository."
@@ -25,6 +25,10 @@
         {
           "path": "macos/release/pgo.sh",
           "symbol": "runtime_flags"
+        },
+        {
+          "path": "macos/release/tools.sh",
+          "symbol": "names"
         },
         {
           "path": "macos/release/bottle.sh",

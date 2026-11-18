@@ -87,6 +87,7 @@ Keep everything else equal: the same model and settings, the same repository sta
 | `CMD \| clean [--as auto\|grep\|json\|text] [--lossless] [--budget T] [--stats]` | the piped output of any command, shrunk: see [Clean](#clean) |
 | `overview`, `find-symbol`, `changed-since`, `git-log`, `git-blame`, `report-gap` | structure answered by `zazzle-csharp-indexer`: see [C# structure](#c-structure) |
 | `status` | daemon, cache and session counters |
+| `agent llm [--model NAME] [--effort low\|medium\|high]`, `agent prompt [--model NAME] [--effort E] [TEXT.. \| -]` | open models run locally: the catalogue, or download one and make it the default; ask one and stream its answer: see [Local models](#local-models) |
 | `languages [jit [on\|off] \| fetch [NAME..]]` | the language modules: installed and missing ones, whether they download on first use, or download the missing ones: see [Language modules](#language-modules) |
 
 Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
@@ -208,6 +209,10 @@ A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when m
 - `zazzle languages fetch [NAME..]` downloads every missing module (or the named ones), for example before going offline.
 - `ZAZZLE_LANGUAGES_DIR` and `ZAZZLE_LANGUAGES_URL` override the directory and the download URL; downloads are still checked against the manifest.
 - Development builds carry no manifest and so no grammars (line-based outlines, no tree-sitter terse views). To try modules locally: `bash ../release/language-modules.sh /tmp/langs && bash ../release/language-modules.sh --manifest /tmp/langs`, build with `ZAZZLED_LANGUAGES_MANIFEST=/tmp/langs/manifest cargo build --release -p zazzled`, and serve `/tmp/langs` as `ZAZZLE_LANGUAGES_URL` (or copy the files into the languages directory). Tests link the module grammars statically.
+
+## Local models
+
+`zazzle agent llm` and `zazzle agent prompt` run open-weight models (Qwen, Gemma, gpt-oss) on the machine with llama.cpp: `zazzle agent llm --model qwen3.5-9b --effort high` downloads a model and makes it the default, `git diff | zazzle agent prompt "Review this diff:" -` asks it. The program behind them, `zazzle-llm` (`macos/rust/zazzle-llm`, where the catalogue, efforts and exit codes are described), is a JIT tool: the invoker execs `zazzled llm ARGS`, which uses a `zazzle-llm` beside zazzled or else the one in `~/.zazzle/v1/tools`, downloading it first from `https://icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/` and accepting it only when its SHA-256 matches the manifest compiled into zazzled (`ZAZZLED_TOOLS_MANIFEST`; `src/tools.rs`). `ZAZZLE_TOOLS_DIR` and `ZAZZLE_TOOLS_URL` override the directory and URL. `zazzle-llm` in turn downloads each model from Hugging Face on first use, checked against the SHA-256 its catalogue pins. Through the daemon (MCP, `zazzled run`) these commands answer that they run as their own process.
 
 ## C# structure
 
