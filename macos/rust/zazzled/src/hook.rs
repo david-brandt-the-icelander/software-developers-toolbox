@@ -43,6 +43,7 @@ const EDITORS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_
 const SEARCH_MSG: &str = "Search with zazzle (MCP tool zazzle_find, or `zazzle find PATTERN [PATH..]`): matches grouped by file, capped and deduplicated. For C# declarations zazzle_find_symbol answers from the index; zazzle_refs lists uses.";
 const FIND_MSG: &str = "List files with zazzle (MCP tool zazzle_ls, or `zazzle ls [DIR]`; `zazzle find -l PATTERN` for files containing text).";
 const READ_MSG: &str = "Read with zazzle (MCP tool zazzle_read, or `zazzle read FILE[:A-B]`): a terse view with source line numbers; add source=true (`--source`) for the exact code and the sha every edit needs.";
+const DIFF_MSG: &str = "Diff with zazzle (MCP tool zazzle_diff, or `zazzle diff [BASE[...HEAD]] [PATH..]`): file stats first, hunks labelled with their symbol, generated files skipped, under a budget.";
 const RUN_MSG: &str = "Run builds and tests through zazzle: put `zazzle run --` in front of the same command (for example `zazzle run -- cargo test`). It runs unchanged in this shell, keeps the exit code, and cleans the output; `zazzle read-again r:ID --full` gives all of it.";
 const EDIT_MSG: &str = "Edit with zazzle (MCP tool zazzle_edit, or `zazzle edit`): read the file with source=true first for its sha, then edit with expect=SHA.";
 const WRITE_MSG: &str = "Change files with zazzle edit (MCP tool zazzle_edit, or `zazzle edit FILE --old TEXT --new TEXT --expect SHA`; the sha comes from `zazzle read FILE --source`): it checks the file did not change since you read it and shows the result.";
@@ -164,6 +165,17 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     if prog == "git" && first == Some("grep") {
         return Some(("git-grep".into(), SEARCH_MSG));
     }
+    let sub: Vec<&str> = args.iter().map(String::as_str).filter(|a| !a.starts_with('-')).collect();
+    if prog == "git" && first == Some("show") && sub.len() == 2 && sub[1].contains(':') && !redirected {
+        return Some(("git-show".into(), READ_MSG));
+    }
+    if prog == "git"
+        && first == Some("diff")
+        && !redirected
+        && !args.iter().any(|a| a == "--stat" || a == "--name-only" || a == "--quiet" || a == "--exit-code")
+    {
+        return Some(("git-diff".into(), DIFF_MSG));
+    }
     if prog == "find" && !args.iter().any(|a| FIND_ACTIONS.contains(&a.as_str())) {
         return Some((prog.into(), FIND_MSG));
     }
@@ -205,7 +217,7 @@ fn writes_with_python(cmd: &str) -> bool {
 
 // Quotes a word for the shell when it needs it.
 fn sh_quote(w: &str) -> String {
-    match w.chars().all(|c| c.is_alphanumeric() || "-_./:=@%+,".contains(c)) {
+    match !w.starts_with('~') && w.chars().all(|c| c.is_alphanumeric() || "-_./:=@%+,~^".contains(c)) {
         true => w.to_string(),
         false => format!("'{}'", w.replace('\'', "'\\''")),
     }
@@ -222,6 +234,17 @@ fn exact(tokens: &[String], cmd: &str) -> Option<String> {
             .or_else(|| args.iter().find_map(|a| a.strip_prefix('-').and_then(|n| n.parse::<u64>().ok())))
     };
     let file = |p: &[&str]| p.iter().rev().find(|a| a.parse::<u64>().is_err()).map(|f| sh_quote(f));
+    if prog == "git" {
+        let sub: Vec<&str> = args.iter().map(String::as_str).filter(|a| !a.starts_with('-')).collect();
+        return match sub.as_slice() {
+            ["show", target] => Some(format!("zazzle read {}", sh_quote(target))),
+            ["diff", rest @ ..] => Some(format!(
+                "zazzle diff{}",
+                rest.iter().map(|r| format!(" {}", sh_quote(r))).collect::<String>()
+            )),
+            _ => None,
+        };
+    }
     match prog {
         "cat" | "bat" | "nl" | "less" | "more" if plain.len() == 1 => {
             Some(format!("zazzle read {}", sh_quote(plain[0])))
@@ -394,6 +417,26 @@ mod tests {
         assert_eq!(read(&big, json!({"limit": 100})), Decision::Allow);
         assert_eq!(read(&small, json!({})), Decision::Allow);
         assert_eq!(read(&t.path().join("missing"), json!({})), Decision::Allow);
+    }
+
+    // Checks git show REV:PATH and git diff go to zazzle read and zazzle diff, and the forms zazzle does not replace pass.
+    #[test]
+    fn test_git_show_and_diff() {
+        assert_eq!(use_line("git show HEAD~1:src/a.rs").as_deref(), Some("zazzle read HEAD~1:src/a.rs"));
+        assert_eq!(use_line("git diff main...HEAD src").as_deref(), Some("zazzle diff main...HEAD src"));
+        assert_eq!(use_line("git diff").as_deref(), Some("zazzle diff"));
+        assert_eq!(use_line("git --no-pager diff --cached").as_deref(), Some("zazzle diff"));
+        assert!(denied("git diff HEAD", DIFF_MSG));
+        for c in [
+            "git show HEAD",
+            "git diff --stat",
+            "git diff --quiet",
+            "git show a:b > f",
+            "git diff > p.patch",
+            "git status",
+        ] {
+            assert_eq!(bash(c), Decision::Allow, "{c}");
+        }
     }
 
     // Checks in-place shell writes go to zazzle edit, while reading sed and Python that only reads pass.
