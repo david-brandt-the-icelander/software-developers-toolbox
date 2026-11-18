@@ -177,11 +177,7 @@ fn classify(tokens: &[String]) -> Option<(String, &'static str)> {
     {
         return Some((format!("{prog} -i"), WRITE_MSG));
     }
-    if prog == "sed"
-        && args.iter().any(|a| flag(a, 'n'))
-        && !args.iter().any(|a| flag(a, 'i'))
-        && files.len() >= 2
-    {
+    if prog == "sed" && args.iter().any(|a| flag(a, 'n')) && files.len() >= 2 {
         return Some((prog.into(), READ_MSG));
     }
     let builds = |subs: &[&str]| subs.is_empty() || first.is_some_and(|f| subs.contains(&f));
@@ -254,7 +250,7 @@ fn exact(tokens: &[String], cmd: &str) -> Option<String> {
                 paths.iter().map(|p| format!(" {p}")).collect::<String>()
             ))
         }
-        _ if BUILDERS.iter().any(|(p, _)| *p == prog) || prog == "pytest" || prog.starts_with("python") => {
+        _ if BUILDERS.iter().any(|(p, _)| *p == prog) || prog.starts_with("python") => {
             Some(format!("zazzle run -- {}", cmd.trim()))
         }
         _ => None,
@@ -441,6 +437,38 @@ mod tests {
         for cmd in ["cat a b", "sed -n /x/p a.rs", "cargo test | tail", "tail -n 5 a.rs", "find . -name x"] {
             assert_eq!(use_line(cmd), None, "{cmd}");
         }
+        for (cmd, want) in [
+            ("bat a.rs", "zazzle read a.rs"),
+            ("less a.rs", "zazzle read a.rs"),
+            ("more a.rs", "zazzle read a.rs"),
+            ("egrep x a", "zazzle find x a"),
+            ("fgrep --fixed-strings x", "zazzle find x"),
+            ("ag x", "zazzle find x"),
+            ("ack -i x", "zazzle find x -i"),
+            ("pytest -q", "zazzle run -- pytest -q"),
+            ("python3 -m pytest", "zazzle run -- python3 -m pytest"),
+        ] {
+            assert_eq!(use_line(cmd).as_deref(), Some(want), "{cmd}");
+        }
+        for cmd in [
+            "rg",
+            "grep",
+            "egrep",
+            "fgrep",
+            "ag",
+            "ack",
+            "bat a b",
+            "nl a b",
+            "less a b",
+            "more a b",
+            "sed -n '1,xp' a b",
+            "sed -n 'x,2p' a b",
+            "head -n 5 3",
+        ] {
+            assert_eq!(use_line(cmd), None, "{cmd}");
+        }
+        let dir = decide(&Opts::default(), "Read", &json!({"file_path": std::env::temp_dir()}));
+        assert_eq!(dir, Decision::Allow);
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
     }
 

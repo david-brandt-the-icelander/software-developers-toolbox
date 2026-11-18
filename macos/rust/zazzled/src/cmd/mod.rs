@@ -331,6 +331,18 @@ mod tests {
     // Checks help appears with no arguments and for the help words.
     #[test]
     fn test_help_variants() {
+        let t0 = crate::testutil::TempDir::new();
+        let all = run_cmd(t0.path(), &["help", "--all"]).text;
+        assert!(all.contains("setup") && run_cmd(t0.path(), &["help"]).text == all);
+        let agent = run_cmd(t0.path(), &["help", "--agent"]).text;
+        assert!(agent.ends_with("humans: zazzle help --all") && !agent.contains("setup"));
+        assert_eq!(
+            touched(t0.path(), &["a:".into(), "b:x".into(), ":1".into()]),
+            Vec::<std::path::PathBuf>::new()
+        );
+        t0.write("f:x", b"f");
+        assert_eq!(touched(t0.path(), &["f:x".into(), "--source".into()]), vec![t0.path().join("f:x")]);
+
         let t = TempDir::new();
         for args in [vec![], vec!["help"], vec!["--help"], vec!["-h"]] {
             let o = run_cmd(t.path(), &args);

@@ -17,7 +17,7 @@ pub fn for_paths(cwd: &Path, paths: &[PathBuf], first: &dyn Fn(&str) -> bool) ->
     }
     let mut out = String::new();
     for f in files {
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        let text = std::fs::read_to_string(&f).unwrap_or_default();
         if text.trim().is_empty() || !first(&format!("nested:{}", f.display())) {
             continue;
         }
@@ -51,7 +51,7 @@ fn nested_files(cwd: &Path, path: &Path) -> Vec<PathBuf> {
 // Returns the rules whose globs match a path: `.claude/rules/*.md` with `paths:` and `.github/instructions/*.instructions.md` with `applyTo:`.
 fn scoped_rules(path: &Path) -> Vec<PathBuf> {
     let Some(root) = crate::indexer::work_tree(path) else { return Vec::new() };
-    let Ok(rel) = path.strip_prefix(root) else { return Vec::new() };
+    let rel = path.strip_prefix(root).unwrap_or(path);
     let mut out = Vec::new();
     for (dir, key) in [(".claude/rules", "paths"), (".github/instructions", "applyTo")] {
         let Ok(entries) = std::fs::read_dir(root.join(dir)) else { continue };
@@ -147,6 +147,15 @@ mod tests {
         assert!(big.contains("[cut; zazzle read api/v1/big/AGENTS.md for the rest]"), "{big}");
         assert_eq!(for_paths(&root.join("api"), &[root.join("api/AGENTS.md")], &|_| true), "");
         assert_eq!(for_paths(&root, &[PathBuf::from("/no/such/file")], &|_| true), "");
+        t.write("api/v1/empty/AGENTS.md", b"  \n");
+        t.write("api/v1/empty/e.rs", b"e");
+        let twice = [root.join("api/v1/empty/e.rs"), root.join("api/v1/empty/e.rs")];
+        let out = for_paths(&root, &twice, &|_| true);
+        assert!(out.matches("api rules").count() == 1 && !out.contains("empty/AGENTS.md"), "{out}");
+        let dir = for_paths(&root, &[root.join("api/v1")], &|_| true);
+        assert!(dir.contains("v1 rules"), "{dir}");
+        let outside = for_paths(Path::new("/elsewhere"), &[root.join("web/y.ts")], &|_| true);
+        assert!(outside.contains("root rules") && outside.contains("ts rule"), "{outside}");
     }
 
     // Checks a read in a session carries a nested folder's rules once, and a read without a session carries none.
