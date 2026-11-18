@@ -846,6 +846,9 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
                 edit_hook(&h.path, (opts.action != Action::Undo).then_some(h), &mut backups)?;
             }
         }
+        if c == Client::ClaudeCode {
+            session_keys(env, &policy, opts.action, apply, &mut backups, &mut out)?;
+        }
     }
     let direct = unmanaged(env, &opts);
     if !direct.is_empty() {
@@ -872,6 +875,47 @@ fn change(opts: &Opts, env: &Env) -> Result<String, String> {
         out.push_str("\nNext, for an agent: show this plan to the user and ask before applying. Quit Claude Code (terminal, VS Code and desktop), the Claude desktop app and Codex first, since they rewrite their settings files, then run `zazzle setup --apply` with the same options. `zazzle setup --undo` reverses it.\n");
     }
     Ok(out)
+}
+
+// Sets the Claude Code session keys the policy names (or, on undo, restores them) and reports each change.
+fn session_keys(
+    env: &Env,
+    policy: &policy::Policy,
+    action: Action,
+    apply: bool,
+    backups: &mut Vec<PathBuf>,
+    out: &mut String,
+) -> Result<(), String> {
+    let path = env.home.join(".claude/settings.json");
+    let state: Value = serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap_or_default())
+        .unwrap_or(json!({}));
+    let owned = state["session_keys"].as_object().cloned().unwrap_or_default();
+    let want = if action == Action::Undo { serde_json::Map::new() } else { policy.claude.clone() };
+    if want.is_empty() && owned.is_empty() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut v: Value = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(&text).map_err(|e| format!("{}: not valid JSON: {e}", path.display()))?
+    };
+    let before = v.clone();
+    let (lines, record) = policy::apply_keys(&mut v, &want, &owned);
+    out.push_str(&format!(
+        "  session keys in {} (from {}):\n",
+        env.short(&path),
+        env.short(&policy::path(&env.home))
+    ));
+    lines.iter().for_each(|l| out.push_str(&format!("    {l}\n")));
+    if apply {
+        if v != before {
+            backup(&path, backups)?;
+            write_or_remove(&path, &format!("{}\n", serde_json::to_string_pretty(&v).unwrap_or_default()))?;
+        }
+        update_state(env, &[("session_keys", (!record.is_empty()).then(|| Value::Object(record)))])?;
+    }
+    Ok(())
 }
 
 // Returns the managed block's text: zazzle's instructions and the policy's extra text, between the markers.

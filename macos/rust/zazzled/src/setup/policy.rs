@@ -116,6 +116,86 @@ pub fn ensure(home: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+// Returns the JSON path of an owned key in Claude Code's settings: `KEY`, or `modelSettings.MODEL.KEY`.
+fn key_path(key: &str) -> Vec<String> {
+    match key.strip_prefix("modelSettings.").and_then(|r| r.rsplit_once('.')) {
+        Some((m, k)) => vec!["modelSettings".into(), m.into(), k.into()],
+        None => vec![key.into()],
+    }
+}
+
+// Reads an owned key from settings.
+pub fn get(settings: &Value, key: &str) -> Option<Value> {
+    key_path(key).iter().try_fold(settings, |v, k| v.get(k)).cloned()
+}
+
+// Sets an owned key in settings, or removes it (and an emptied model entry) when `value` is None.
+fn put(settings: &mut Value, key: &str, value: Option<&Value>) {
+    let path = key_path(key);
+    let (last, parents) = path.split_last().expect("a key");
+    if !settings.is_object() {
+        *settings = Value::Object(Map::new());
+    }
+    let mut at = &mut *settings;
+    for p in parents {
+        if value.is_none() && at.get(p).is_none() {
+            return;
+        }
+        let o = at.as_object_mut().expect("an object");
+        at = o.entry(p.clone()).or_insert_with(|| Value::Object(Map::new()));
+        if !at.is_object() {
+            *at = Value::Object(Map::new());
+        }
+    }
+    let o = at.as_object_mut().expect("an object");
+    match value {
+        Some(v) => {
+            o.insert(last.clone(), v.clone());
+        }
+        None => {
+            o.remove(last);
+        }
+    }
+    if parents.len() == 2 {
+        let models = settings["modelSettings"].as_object_mut().expect("an object");
+        if models.get(&parents[1]).is_some_and(|m| m.as_object().is_some_and(Map::is_empty)) {
+            models.remove(&parents[1]);
+        }
+        if models.is_empty() {
+            settings.as_object_mut().expect("an object").remove("modelSettings");
+        }
+    }
+}
+
+// Applies the owned keys: sets each wanted key, restores keys owned before but no longer wanted, and returns the lines to report and the record of what each owned key held before setup (null for absent).
+pub fn apply_keys(
+    settings: &mut Value,
+    want: &Map<String, Value>,
+    owned: &Map<String, Value>,
+) -> (Vec<String>, Map<String, Value>) {
+    let mut lines = Vec::new();
+    let mut record = Map::new();
+    for (k, v) in want {
+        let before = owned.get(k).cloned().unwrap_or_else(|| get(settings, k).unwrap_or(Value::Null));
+        record.insert(k.clone(), before);
+        match get(settings, k) {
+            Some(now) if now == *v => lines.push(format!("= {k} = {v}")),
+            _ => {
+                put(settings, k, Some(v));
+                lines.push(format!("~ {k} = {v}"));
+            }
+        }
+    }
+    for (k, before) in owned.iter().filter(|(k, _)| !want.contains_key(*k)) {
+        put(settings, k, (!before.is_null()).then_some(before));
+        lines.push(format!(
+            "- {k}: back to {}",
+            if before.is_null() { "unset".to_string() } else { before.to_string() }
+        ));
+    }
+    (lines, record)
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -146,6 +226,38 @@ mod tests {
         ] {
             assert!(parse(bad).unwrap_err().contains(why), "{bad}");
         }
+    }
+
+    // Checks owned keys are set, a second apply changes nothing, and dropping them restores what was there before.
+    #[test]
+    fn test_apply_keys() {
+        let mut settings =
+            serde_json::json!({"effortLevel": "high", "theme": "dark", "modelSettings": {"other": {"x": 1}}});
+        let want: Map<String, Value> = serde_json::from_value(
+            serde_json::json!({"effortLevel": "low", "modelSettings.m.1.autoCompactWindow": 9}),
+        )
+        .expect("map");
+        let (lines, owned) = apply_keys(&mut settings, &want, &Map::new());
+        assert_eq!(lines, vec!["~ effortLevel = \"low\"", "~ modelSettings.m.1.autoCompactWindow = 9"]);
+        assert_eq!(settings["modelSettings"]["m.1"]["autoCompactWindow"], 9);
+        assert_eq!(owned["effortLevel"], "high");
+        assert!(owned["modelSettings.m.1.autoCompactWindow"].is_null());
+        let snapshot = settings.clone();
+        let (again, owned2) = apply_keys(&mut settings, &want, &owned);
+        assert!(again.iter().all(|l| l.starts_with("= ")) && settings == snapshot && owned2 == owned);
+        let (undo, rest) = apply_keys(&mut settings, &Map::new(), &owned);
+        assert_eq!(undo.len(), 2);
+        assert!(rest.is_empty());
+        assert_eq!(
+            settings,
+            serde_json::json!({"effortLevel": "high", "theme": "dark", "modelSettings": {"other": {"x": 1}}})
+        );
+        let mut odd = serde_json::json!(3);
+        put(&mut odd, "modelSettings.m.k", None);
+        put(&mut odd, "modelSettings.m.k", Some(&Value::from(1)));
+        assert_eq!(odd, serde_json::json!({"modelSettings": {"m": {"k": 1}}}));
+        put(&mut odd, "modelSettings.m.k", None);
+        assert_eq!(odd, serde_json::json!({}));
     }
 
     // Checks the template is written once and a missing file reads as the empty policy.

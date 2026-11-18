@@ -231,6 +231,15 @@ fn test_apply_and_undo() {
     assert!(text.contains("Answer briefly.\n<!-- zazzle setup: end -->"), "{text}");
     let same = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("same");
     assert!(!same.contains("~ updated zazzle's instructions") && !same.contains("backups:"), "{same}");
+    std::fs::write(policy::path(&env.home), "[claude]\neffortLevel = \"low\"\n").expect("policy");
+    let keyed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("keys");
+    assert!(keyed.contains("    ~ effortLevel = \"low\"\n"), "{keyed}");
+    let settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(env.home.join(".claude/settings.json")).expect("s"))
+            .expect("json");
+    assert_eq!(settings["effortLevel"], "low");
+    let keyed = run(&opts(&["--apply", "--workspace", &ws]), &env).expect("keys again");
+    assert!(keyed.contains("    = effortLevel = \"low\"\n") && !keyed.contains("backups:"), "{keyed}");
 
     let undo = run(&opts(&["--undo"]), &env).expect("undo");
     assert!(
