@@ -94,7 +94,21 @@ impl Sessions {
         self.apply_with(session, desc, None, text, allow_dedupe)
     }
 
-    // True the first time a session is sent a fixed note (a usage line, a hint), or again once the recency window has passed; always true without a session.
+    // True when the session was sent the note within the recency window, without recording anything.
+    pub fn has_note(&self, session: &str, note: &str) -> bool {
+        let guard = self.inner.lock().expect("session lock");
+        guard
+            .0
+            .get(session)
+            .is_some_and(|s| s.notes.get(note).is_some_and(|at| s.sent_tokens - at < WINDOW_TOKENS))
+    }
+
+    // Records a note as sent to the session without asking whether it was new.
+    pub fn mark_note(&self, session: &str, note: &str) {
+        self.first_note(session, note);
+    }
+
+    // Returns true the first time a session meets a note (or again once it has fallen out of the window), and remembers it.
     pub fn first_note(&self, session: &str, note: &str) -> bool {
         if session.is_empty() {
             return true;

@@ -33,6 +33,7 @@ pub mod pool;
 pub mod proto;
 pub mod proxy;
 pub mod restart;
+pub mod rules;
 pub mod schema;
 pub mod server;
 pub mod session;

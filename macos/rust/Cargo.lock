@@ -3580,6 +3580,7 @@ dependencies = [
  "x509-cert",
  "zazz-format",
  "zazz-sdk",
+ "zazzle-agent-rules-list",
 ]
 
 [[package]]

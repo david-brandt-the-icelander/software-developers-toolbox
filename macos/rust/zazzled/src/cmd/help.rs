@@ -24,6 +24,7 @@ pub const AGENT: &[&str] = &[
     "run",
     "clean",
     "read-again",
+    "get-rules",
 ];
 
 // True when agents are shown the command.
@@ -201,6 +202,21 @@ const PAGES: &[Page] = &[
             ("--create", "Create a new file"),
         ],
         examples: &["zazzle edit src/a.rs --old 'let x = 1;' --new 'let x = 2;' --expect 3f2a9c1"],
+    },
+    Page {
+        name: "get-rules",
+        group: 0,
+        brief: "get-rules PATH..",
+        summary: "Rules and skills for paths, once a session",
+        usage: &["zazzle get-rules PATH.. [--purpose NAME].. [--name-only] [--skill-bodies] [--again]", "zazzle agent get-rules PATH.."],
+        about: &["Lists the AGENTS.md, CLAUDE.md, imported, scoped-rule and skill files that apply to the paths, each once. In a session it leaves out what the session was already sent, by get-rules or after a read or edit, and names it in one line; a changed file, a new purpose's sections, or a session reset after compaction send it again."],
+        options: &[
+            ("--purpose NAME", "Only the sections marked for NAME (repeatable)"),
+            ("--name-only", "Only the file names"),
+            ("--skill-bodies", "Whole skill files, not their descriptions"),
+            ("--again", "Send everything, even what the session has"),
+        ],
+        examples: &["zazzle get-rules src/api src/web --purpose review"],
     },
     Page {
         name: "read-again",
@@ -647,7 +663,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules"
         );
     }
 

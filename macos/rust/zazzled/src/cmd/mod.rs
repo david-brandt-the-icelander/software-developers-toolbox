@@ -204,11 +204,29 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
         deduplicated = applied.deduplicated;
     }
     if out.status == 0 && !ctx.session.is_empty() && matches!(cmd.as_str(), "read" | "cat" | "edit") {
-        let first = |k: &str| ctx.engine.sessions.first_note(&ctx.session, k);
-        out.text.push_str(&crate::nested::for_paths(&ctx.cwd, &touched(&ctx.cwd, rest), &first));
+        let (has, mark) = ledger(ctx);
+        let l = crate::rules::Ledger { has: &has, mark: &mark };
+        out.text.push_str(&crate::nested::for_paths(&ctx.cwd, &touched(&ctx.cwd, rest), &l));
     }
     ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &out.text, out.status, deduplicated);
     out
+}
+
+// Returns the session's rule ledger as a lookup and a record, shared by get-rules and the instructions appended to reads and edits.
+fn ledger<'a>(ctx: &'a Ctx) -> (impl Fn(&str) -> bool + 'a, impl Fn(&str) + 'a) {
+    (
+        move |k: &str| ctx.engine.sessions.has_note(&ctx.session, k),
+        move |k: &str| ctx.engine.sessions.mark_note(&ctx.session, k),
+    )
+}
+
+// Runs get-rules against the session's ledger, or the zazzle-agent command line for anything else under `agent`.
+fn get_rules(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let (has, mark) = ledger(ctx);
+    let l = crate::rules::Ledger { has: &has, mark: &mark };
+    let l = (!ctx.session.is_empty()).then_some(&l);
+    crate::rules::get_rules(rest, &ctx.cwd, home.as_deref(), l).map(Output::plain)
 }
 
 // Returns the existing files a read or edit names, without line ranges.
@@ -295,6 +313,22 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
                 .into(),
         ),
         "zazz" => crate::zazz::run(ctx, rest),
+        "get-rules" => get_rules(ctx, rest),
+        "agent" => match rest.split_first() {
+            Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
+                get_rules(ctx, r)
+            }
+            _ => {
+                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                let (text, code) =
+                    zazzle_agent_rules_list::run(rest, home.as_deref(), std::path::Path::new("/"));
+                if code == 0 {
+                    Ok(Output::plain(text.trim_end().to_string()))
+                } else {
+                    Err(text.trim_end().to_string())
+                }
+            }
+        },
         "forget-sessions" => match rest {
             [prefix] if !prefix.is_empty() => {
                 Ok(Output::plain(format!("forgot {} sessions", ctx.engine.sessions.forget_prefix(prefix))))
@@ -396,7 +430,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -421,7 +455,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules"
         );
         assert!(!o.idable);
     }

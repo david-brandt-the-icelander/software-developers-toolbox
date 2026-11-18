@@ -269,7 +269,7 @@ pub(crate) fn need_str(v: &Value, key: &str) -> Result<String, String> {
 }
 
 // Reads an optional list of strings.
-fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
+pub(crate) fn get_list(v: &Value, key: &str) -> Result<Vec<String>, String> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(vec![]),
         Some(Value::Array(a)) => a
@@ -491,7 +491,11 @@ fn initialize(params: &Value) -> Value {
 
 // Every exposed tool: the file tools here, the structure tools answered by zazzle-csharp-indexer, then the zazz script tools.
 fn all_tools() -> impl Iterator<Item = &'static Tool> {
-    TOOLS.iter().chain(crate::mcp_structure::TOOLS).chain(crate::zazz::mcptools::TOOLS.iter())
+    TOOLS
+        .iter()
+        .chain(crate::mcp_structure::TOOLS)
+        .chain(crate::rules::TOOLS)
+        .chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
 // True when the zazz tools are worth their place in every request: ZAZZLE_MCP_ZAZZ=1, or at least one script is registered; the zazz CLI works either way.
@@ -1224,10 +1228,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 17);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 18);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 10);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 11);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

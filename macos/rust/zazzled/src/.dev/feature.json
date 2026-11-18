@@ -410,7 +410,7 @@
           "symbol": "for_paths"
         }
       ],
-      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; each file is sent once per session, cut at 4,000 bytes.",
+      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; each file is sent whole, once per session and content revision, sharing the session's rule ledger with get-rules.",
       "outcome": "Sending reads through zazzle instead of the client's own tools does not lose a folder's own rules.",
       "constraints": [
         "No session, no instructions added.",
@@ -424,6 +424,33 @@
         {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
           "symbol": "touched"
+        }
+      ]
+    },
+    {
+      "id": "session-rule-delivery",
+      "name": "Session rule delivery",
+      "description": "`get-rules` (also `agent get-rules` and MCP `zazzle_get_rules`) and the instructions appended to reads and edits deliver each rule, import and skill text once per session.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/rules.rs",
+          "symbol": "get_rules"
+        }
+      ],
+      "behavior": "Deliveries are keyed by canonical path, a hash of the content and the selected line ranges; several paths print their union once; what the session already has is left out and named in one line; a changed file, a new purpose's segments, `--again` or a session reset (forget-sessions after compaction) send it again.",
+      "outcome": "Repeated scoped lookups and reads do not resend root and global rules, and nothing is silently dropped: skipped files are named.",
+      "constraints": [
+        "No session, no ledger: everything is sent.",
+        "The `zazzle-agent` binary still lists rules without a ledger."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/rules.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/session.rs",
+          "symbol": "has_note"
         }
       ]
     }

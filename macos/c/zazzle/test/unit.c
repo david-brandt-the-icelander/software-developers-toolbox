@@ -397,7 +397,7 @@ static void test_tool_exec(void)
 	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
 	char *argv10[] = {"zazzle", "agent", "get-rules", ".", 0};
 	reset();
-	CHECK(run(4, argv10, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-agent") == 0);
+	CHECK(run(4, argv10, env_home) == 0 && M.exec_path[0] == 0);
 	char *argv9[] = {"/usr/bin/z", "git", 0};
 	reset();
 	CHECK(run(2, argv9, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/zazzle-git") == 0);

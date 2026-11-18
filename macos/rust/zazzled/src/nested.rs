@@ -3,10 +3,9 @@ use ignore::overrides::OverrideBuilder;
 use std::path::{Path, PathBuf};
 
 const NAMES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
-const MAX_BYTES: usize = 4000;
 
-// Returns the instruction files that apply to the paths and that this session has not been sent, formatted to follow an answer.
-pub fn for_paths(cwd: &Path, paths: &[PathBuf], first: &dyn Fn(&str) -> bool) -> String {
+// Returns the instruction files that apply to the paths and that this session has not been sent by any route (get-rules included), whole, formatted to follow an answer.
+pub fn for_paths(cwd: &Path, paths: &[PathBuf], ledger: &crate::rules::Ledger) -> String {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
         for f in nested_files(cwd, p).into_iter().chain(scoped_rules(p)) {
@@ -18,17 +17,13 @@ pub fn for_paths(cwd: &Path, paths: &[PathBuf], first: &dyn Fn(&str) -> bool) ->
     let mut out = String::new();
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap_or_default();
-        if text.trim().is_empty() || !first(&format!("nested:{}", f.display())) {
+        let key = crate::rules::file_key(&crate::rules::canonical(&f), &text);
+        if text.trim().is_empty() || (ledger.has)(&key) {
             continue;
         }
+        (ledger.mark)(&key);
         let shown = f.strip_prefix(cwd).unwrap_or(&f).display().to_string();
-        let mut body = text.trim().to_string();
-        if body.len() > MAX_BYTES {
-            let cut = (0..=MAX_BYTES).rev().find(|i| body.is_char_boundary(*i)).unwrap_or(0);
-            body.truncate(cut);
-            body.push_str(&format!("\n[cut; zazzle read {shown} for the rest]"));
-        }
-        out.push_str(&format!("\n[instructions for this path: {shown}]\n{body}\n"));
+        out.push_str(&format!("\n[instructions for this path: {shown}]\n{}\n", text.trim()));
     }
     out
 }
@@ -126,11 +121,11 @@ mod tests {
         t.write("api/v1/big/AGENTS.md", "z".repeat(5000).as_bytes());
         t.write("api/v1/big/z.rs", b"z");
         let seen = std::cell::RefCell::new(Vec::<String>::new());
-        let first = |k: &str| {
-            let new = !seen.borrow().iter().any(|s| s == k);
-            seen.borrow_mut().push(k.into());
-            new
-        };
+        let (has, mark) =
+            (|k: &str| seen.borrow().iter().any(|s| s == k), |k: &str| seen.borrow_mut().push(k.into()));
+        let first = crate::rules::Ledger { has: &has, mark: &mark };
+        let (never, skip) = (|_: &str| false, |_: &str| {});
+        let fresh = crate::rules::Ledger { has: &never, mark: &skip };
         let out = for_paths(&root, &[root.join("api/v1/x.rs")], &first);
         assert!(!out.contains("root rules"), "{out}");
         let (a, v) = (out.find("api rules").expect("api"), out.find("v1 rules").expect("v1"));
@@ -144,17 +139,17 @@ mod tests {
         let ts = for_paths(&root, &[root.join("web/y.ts")], &first);
         assert!(ts.contains("ts rule") && !ts.contains("no front matter"), "{ts}");
         let big = for_paths(&root, &[root.join("api/v1/big/z.rs")], &first);
-        assert!(big.contains("[cut; zazzle read api/v1/big/AGENTS.md for the rest]"), "{big}");
-        assert_eq!(for_paths(&root.join("api"), &[root.join("api/AGENTS.md")], &|_| true), "");
-        assert_eq!(for_paths(&root, &[PathBuf::from("/no/such/file")], &|_| true), "");
+        assert!(big.contains(&"z".repeat(5000)), "whole files, no cut");
+        assert_eq!(for_paths(&root.join("api"), &[root.join("api/AGENTS.md")], &fresh), "");
+        assert_eq!(for_paths(&root, &[PathBuf::from("/no/such/file")], &fresh), "");
         t.write("api/v1/empty/AGENTS.md", b"  \n");
         t.write("api/v1/empty/e.rs", b"e");
         let twice = [root.join("api/v1/empty/e.rs"), root.join("api/v1/empty/e.rs")];
-        let out = for_paths(&root, &twice, &|_| true);
+        let out = for_paths(&root, &twice, &fresh);
         assert!(out.matches("api rules").count() == 1 && !out.contains("empty/AGENTS.md"), "{out}");
-        let dir = for_paths(&root, &[root.join("api/v1")], &|_| true);
+        let dir = for_paths(&root, &[root.join("api/v1")], &fresh);
         assert!(dir.contains("v1 rules"), "{dir}");
-        let outside = for_paths(Path::new("/elsewhere"), &[root.join("web/y.ts")], &|_| true);
+        let outside = for_paths(Path::new("/elsewhere"), &[root.join("web/y.ts")], &fresh);
         assert!(outside.contains("root rules") && outside.contains("ts rule"), "{outside}");
     }
 
