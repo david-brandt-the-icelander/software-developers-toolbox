@@ -390,6 +390,18 @@ mod tests {
         out
     }
 
+    // Checks the sha a --source range read shows is the one edit expects.
+    #[test]
+    fn test_range_read_sha_edits() {
+        let t = TempDir::new();
+        t.write("a.txt", b"one\ntwo\nthree\n");
+        let head = run_cmd(t.path(), &["read", "a.txt:2-2", "--source"]).text;
+        let sha =
+            head.split("sha ").nth(1).and_then(|r| r.split_whitespace().next()).expect("sha").to_string();
+        let o = run_cmd(t.path(), &["edit", "a.txt", "--old", "two", "--new", "2", "--expect", &sha]);
+        assert!(o.text.starts_with("ok a.txt: replaced 1"), "{}", o.text);
+    }
+
     // Checks several --old/--new pairs apply in order in one write, and a pair that fails leaves the file as it was.
     #[test]
     fn test_several_pairs() {
