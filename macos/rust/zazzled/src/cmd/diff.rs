@@ -255,6 +255,17 @@ mod tests {
             small.contains("-- read next (1 files over the 30-token budget): zazzle diff HEAD~1 src/b.rs"),
             "{small}"
         );
+        let dots = run_cmd(t.path(), &["diff", "..HEAD"]).text;
+        assert!(dots.starts_with("no changes") || dots.starts_with("diff ..HEAD"), "{dots}");
+        std::fs::remove_file(t.path().join("src/b.rs")).expect("rm");
+        t.write("src/a.rs", &b"fn c() {}\n".repeat(40));
+        let gone = run_cmd(t.path(), &["diff", "--budget", "30"]).text;
+        assert!(
+            gone.contains("src/b.rs +0 -1")
+                && gone.contains("-- read next (1 files over the 30-token budget): zazzle diff "),
+            "{gone}"
+        );
+        git_commit(t.path(), "four");
         assert_eq!(run_cmd(t.path(), &["diff"]).text, "no changes (HEAD (working tree))");
         assert!(run_cmd(t.path(), &["diff", "--zz"]).text.contains("unknown flag"));
         let none = TempDir::new();

@@ -540,6 +540,8 @@ mod tests {
             "{}",
             r(&["read", "nope:src/a.txt"])
         );
+        assert!(r(&["read", "HEAD:"]).starts_with("error: "));
+        assert!(r(&["read", ":x"]).starts_with("error: "));
         t.write("c:d.txt", b"colon\n");
         assert!(r(&["read", "c:d.txt"]).ends_with("1\tcolon"));
     }

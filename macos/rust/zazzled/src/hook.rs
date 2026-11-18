@@ -427,6 +427,9 @@ mod tests {
         assert_eq!(use_line("git diff").as_deref(), Some("zazzle diff"));
         assert_eq!(use_line("git --no-pager diff --cached").as_deref(), Some("zazzle diff"));
         assert!(denied("git diff HEAD", DIFF_MSG));
+        for c in ["git show a:b c", "git diff --name-only", "git diff --exit-code"] {
+            assert_eq!(bash(c), Decision::Allow, "{c}");
+        }
         for c in [
             "git show HEAD",
             "git diff --stat",

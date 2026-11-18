@@ -41,6 +41,9 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         if crate::meta::looks_binary(&data) || !re.is_match(&data) {
             continue;
         }
+        let shown = display(f, &ctx.cwd);
+        let t = if dry { None } else { Some(open_target(ctx, &shown)?) };
+        let data = t.as_ref().map_or(data, |t| t.data.clone());
         let starts = line_starts(&data);
         let at: Vec<usize> =
             re.find_iter(&data).map(|m| starts.partition_point(|s| (*s as usize) <= m.start())).collect();
@@ -49,28 +52,16 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         } else {
             re.replace_all(&data, replacement.as_bytes())
         };
-        let shown = display(f, &ctx.cwd);
-        if !dry {
-            let t = open_target(ctx, &shown)?;
-            if t.data != data {
-                return Err(format!(
-                    "{shown}: changed while replacing; run it again ({changed} files written before it)"
-                ));
-            }
-            commit(ctx, &t, new.into_owned())?;
+        if let Some(t) = &t {
+            commit(ctx, t, new.into_owned())?;
+            let listed = at.iter().map(usize::to_string).collect::<Vec<_>>().join(", ");
+            lines.push(format!("{shown}: {} at line(s) {listed}", at.len()));
         } else {
             let new_starts = line_starts(&new);
             for line in at.iter().take(PREVIEW.saturating_sub(lines.len())) {
                 let text = crate::meta::line_bytes(&new, &new_starts, *line);
                 lines.push(format!("{shown}:{line}: {}", String::from_utf8_lossy(text).trim_end()));
             }
-        }
-        if !dry {
-            lines.push(format!(
-                "{shown}: {} at line(s) {}",
-                at.len(),
-                at.iter().map(usize::to_string).collect::<Vec<_>>().join(", ")
-            ));
         }
         total += at.len();
         changed += 1;
@@ -113,6 +104,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(t.path().join("c.txt")).expect("c"), "$x\n");
         assert_eq!(run_cmd(t.path(), &["replace", "zzz", "y"]).text, "no matches for zzz in 3 files");
         assert!(run_cmd(t.path(), &["replace", "x"]).text.contains("usage: replace"));
+        t.write("bin.dat", b"old_name\0\x01");
+        assert!(run_cmd(t.path(), &["replace", "old_name", "y", "bin.dat"]).text.starts_with("no matches"));
         assert!(run_cmd(t.path(), &["replace", "(", "y"]).text.starts_with("error: "));
     }
 }
