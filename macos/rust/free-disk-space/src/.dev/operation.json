@@ -168,6 +168,7 @@
         "No state file: exits with an error pointing at new.",
         "--limit is not a size: exits with an error.",
         "No pending candidates: prints so and stops.",
+        "--dry-run and a planned file does not decode back byte-identical with Apple's libcompression: prints ROUND TRIP FAILED with the chunk and offset, then exits with an error after saying nothing changed.",
         "The scan has not finished: warns and works from the candidates found so far.",
         "A file fails verification: prints NOT COMPRESSIBLE with the reason, leaves it as it was, records it as failed so later runs skip it, and carries on; the summary groups these files by reason."
       ]

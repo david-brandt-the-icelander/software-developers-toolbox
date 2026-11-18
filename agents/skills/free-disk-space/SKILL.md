@@ -16,7 +16,7 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 
 ## Compression (resumable)
 1. `... scan --root ~ --min-size 5M` (Ctrl-C safe; `new` is an alias). When it completes it reports compression candidates, likely duplicates and a cleanup preview (`--skip-clean` leaves that out); continue with `resume`; inspect with `status`, `list --top 30`.
-2. Verify first: `... compress --sample 5`, then compare "verified saving" with "free-space change".
+2. Check first: `... compress --dry-run` compresses every planned file in memory and decodes it with Apple's libcompression; stop and report if any line says ROUND TRIP FAILED. Then `... compress --sample 5`, then compare "verified saving" with "free-space change".
 3. Go wider: `... compress --limit 20G --yes`.
 4. State: `~/.local/state/free-disk-space/scan.sqlite3` (`--state` or `$FDS_STATE`).
 
