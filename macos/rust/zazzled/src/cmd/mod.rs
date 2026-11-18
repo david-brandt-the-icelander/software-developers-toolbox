@@ -198,8 +198,29 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
         out.text = applied.text;
         deduplicated = applied.deduplicated;
     }
+    if out.status == 0 && !ctx.session.is_empty() && matches!(cmd.as_str(), "read" | "cat" | "edit") {
+        let first = |k: &str| ctx.engine.sessions.first_note(&ctx.session, k);
+        out.text.push_str(&crate::nested::for_paths(&ctx.cwd, &touched(&ctx.cwd, rest), &first));
+    }
     ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &out.text, out.status, deduplicated);
     out
+}
+
+// Returns the existing files a read or edit names, without line ranges.
+fn touched(cwd: &std::path::Path, rest: &[String]) -> Vec<std::path::PathBuf> {
+    rest.iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| match a.rsplit_once(':') {
+            Some((p, r))
+                if !p.is_empty() && r.chars().all(|c| c.is_ascii_digit() || c == '-' || c == ',') =>
+            {
+                p
+            }
+            _ => a.as_str(),
+        })
+        .map(|p| cwd.join(p))
+        .filter(|p| p.is_file())
+        .collect()
 }
 
 // Fixed parts of error messages, keyed by the text matched without digits (so a failure's age does not count): each is sent in full once per session, then shortened when that is shorter.
