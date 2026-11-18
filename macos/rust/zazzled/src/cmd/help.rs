@@ -11,8 +11,20 @@ const GROUPS: [&str; 5] = [
     "Other tools",
 ];
 // The commands agents see, the one list behind agent help, the MCP tool list and the agent instructions; every other command is for people and shows only in `help --all`.
-pub const AGENT: &[&str] =
-    &["read", "outline", "find", "refs", "find-symbol", "edit", "ls", "run", "clean", "read-again"];
+pub const AGENT: &[&str] = &[
+    "read",
+    "outline",
+    "find",
+    "refs",
+    "find-symbol",
+    "edit",
+    "replace",
+    "ls",
+    "diff",
+    "run",
+    "clean",
+    "read-again",
+];
 
 // True when agents are shown the command.
 pub fn is_agent(cmd: &str) -> bool {
@@ -76,6 +88,7 @@ const PAGES: &[Page] = &[
             "Code files are shown as a terse view: declarations and behaviour, without the sha. Use --source for the code itself and the sha that edit needs.",
         ],
         options: &[
+            ("-r, --rev REV", "Read the files as they are at a git revision (also REV:PATH)"),
             ("--source", "Show the code itself and its sha"),
             ("-s, --symbol NAME[#N]", "Show one symbol (the Nth of that name) with its comments and attributes"),
             ("-a, --around N", "Show the lines around line N"),
@@ -121,7 +134,7 @@ const PAGES: &[Page] = &[
         brief: "refs SYMBOL [PATH...]",
         summary: "Find where a symbol is defined and used",
         usage: &["zazzle refs SYMBOL|Type.Member [PATH...] [OPTIONS]"],
-        about: &["Shows the definitions first, then each use with the symbol that encloses it. In C# files, a mention in a comment or a string is not counted as a use."],
+        about: &["Shows the definitions first, then each use with the symbol that encloses it. A mention in a comment or a string is not counted as a use; in C#, the indexer's Roslyn answer is exact when it is available."],
         options: &[
             ("-g, --glob GLOB", "Look only in files matching GLOB (repeatable)"),
             ("-m, --max N", "Show at most N results (default 50)"),
@@ -129,6 +142,35 @@ const PAGES: &[Page] = &[
             ("--code-only", "Skip tests and documentation"),
         ],
         examples: &["zazzle refs parse_args", "zazzle refs Engine src -g '*.rs'"],
+    },
+    Page {
+        name: "replace",
+        group: 0,
+        brief: "replace PATTERN TEXT",
+        summary: "Replace a regular expression across files",
+        usage: &["zazzle replace PATTERN REPLACEMENT [PATH...] [OPTIONS]"],
+        about: &["Replaces every match in the files below PATH (default: the current folder) that .gitignore does not ignore; $1 in REPLACEMENT is the first group. Each file is written only if it did not change since it was read, and only inside the folders edit may write."],
+        options: &[
+            ("-g, --glob GLOB", "Only files matching GLOB (repeatable)"),
+            ("-n, --dry-run", "Show the changed lines and write nothing"),
+            ("-i, --ignore-case", "Ignore case"),
+            ("-F, --fixed", "PATTERN and REPLACEMENT are plain text"),
+            ("-u, --no-ignore", "Also files that .gitignore ignores"),
+        ],
+        examples: &["zazzle replace 'old_(\\w+)' 'new_$1' -g '*.rs' --dry-run", "zazzle replace -F 'a.b' 'a::b' src"],
+    },
+    Page {
+        name: "diff",
+        group: 0,
+        brief: "diff [RANGE] [PATH...]",
+        summary: "Show what changed, file stats first",
+        usage: &["zazzle diff [BASE[..HEAD|...HEAD]] [PATH...] [OPTIONS]"],
+        about: &["With no range, compares the working tree with HEAD. Lists each file's added and removed lines first, then the hunks, each labelled with the symbol it is in. Lock files, generated code and files .ignore matches are listed as skipped unless named. When the budget runs out, a footer names the files to read next."],
+        options: &[
+            ("--names", "Show only the file stats"),
+            ("-C, --context N", "Lines of context around each change (default 3)"),
+        ],
+        examples: &["zazzle diff", "zazzle diff main...HEAD --names", "zazzle diff HEAD~1 src/a.rs"],
     },
     Page {
         name: "edit",
@@ -146,6 +188,7 @@ const PAGES: &[Page] = &[
             "TEXT '-' reads the text from standard input.",
         ],
         options: &[
+            ("--old A --new B ..", "Several pairs apply in order in one write; none is written if one fails"),
             ("--old TEXT", "The text to replace; it must occur exactly once unless --all"),
             ("--new TEXT", "The replacement, the new lines or the new file's contents"),
             ("--all", "Replace every occurrence of --old"),
@@ -602,7 +645,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit ls run clean read-again"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again"
         );
     }
 

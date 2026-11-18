@@ -31,8 +31,9 @@ pub(super) const SPEC: &[Flag] = &[
     flag("anchors", '\0'),
     flag("source", '\0'),
     flag("full", '\0'),
+    opt("rev", 'r'),
 ];
-const USAGE: &str = "usage: read PATH[:A-B].. [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
+const USAGE: &str = "usage: read [REV:]PATH[:A-B].. [--rev REV] [--source] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
 const DEFAULT_BUDGET: usize = 2000;
 // A multi-path read shares one budget, each file getting an even share of what is left; below this many tokens it stops and names the files it did not read.
 const MIN_SHARE: usize = 100;
@@ -137,12 +138,47 @@ fn format_line(data: &[u8], meta: &Meta, n: usize, anchors: bool) -> String {
 
 // Settings shared by every file in one read call.
 #[derive(Clone, Copy)]
-struct Opts {
+struct Opts<'a> {
     sel: Select,
     ctx: usize,
     budget: usize,
     anchors: bool,
     terse: bool,
+    rev: Option<&'a str>,
+}
+
+// Loads a file as it is at a git revision, for `REV:PATH` (when no such local file exists) or `--rev REV`; None for an ordinary path.
+fn at_rev(
+    ctx: &Ctx,
+    arg: &str,
+    rev: Option<&str>,
+) -> Result<Option<(std::path::PathBuf, String, crate::engine::Loaded)>, String> {
+    let (rev, rel) = match rev {
+        Some(r) => (r, arg),
+        None => match arg.split_once(':') {
+            Some((r, p)) if !r.is_empty() && !p.is_empty() && !locate(arg, &ctx.cwd).exists() => (r, p),
+            _ => return Ok(None),
+        },
+    };
+    let out = std::process::Command::new("git")
+        .arg("show")
+        .arg(format!("{rev}:./{}", rel.trim_start_matches("./")))
+        .current_dir(&ctx.cwd)
+        .output()
+        .map_err(|e| format!("{rev}:{rel}: cannot run git: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "{rev}:{rel}: {}",
+            why.lines().next().unwrap_or("not found").trim_start_matches("fatal: ")
+        ));
+    }
+    let meta = std::sync::Arc::new(crate::meta::Meta::compute(&out.stdout));
+    Ok(Some((
+        locate(rel, &ctx.cwd),
+        format!("{rev}:{rel}"),
+        crate::engine::Loaded { data: out.stdout, meta },
+    )))
 }
 
 // Formats a load error, offering similar files when the path does not exist.
@@ -163,9 +199,16 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
         (s, None) => s,
         (_, Some(_)) => return Err("give either PATH:A-B or --around/--head/--tail, not both".into()),
     };
-    let path = locate(path_arg, &ctx.cwd);
-    let shown = display(&path, &ctx.cwd);
-    let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, path_arg, &shown, e))?;
+    let (path, shown, loaded) = match at_rev(ctx, path_arg, o.rev)? {
+        Some(x) => x,
+        None => {
+            let path = locate(path_arg, &ctx.cwd);
+            let shown = display(&path, &ctx.cwd);
+            let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, path_arg, &shown, e))?;
+            (path, shown, loaded)
+        }
+    };
+    let from_rev = shown.contains(':');
     let (data, meta) = (&loaded.data, &loaded.meta);
     let sha = hex8(&meta.hash);
     if meta.binary {
@@ -177,7 +220,7 @@ fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String>
     }
     let (a, b) = bounds(sel, nl, o.ctx).map_err(|e| format!("{shown}: {e}"))?;
     let mut unavailable = String::new();
-    if o.terse && outline::lang_of(&path) == outline::Lang::CSharp {
+    if o.terse && !from_rev && outline::lang_of(&path) == outline::Lang::CSharp {
         match Indexer::locate().and_then(|ix| ix.view(&path, &ctx.session)) {
             Ok(view) => return Ok(render_terse(&shown, &view, (a, b), nl, o, label)),
             Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
@@ -433,6 +476,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         budget,
         anchors: p.has("anchors"),
         terse: !p.has("source") && !p.has("anchors"),
+        rev: p.value("rev"),
     };
     let symbol = p.value("symbol");
     if symbol.is_some() && opts.sel != Select::Whole {
@@ -474,6 +518,34 @@ mod tests {
     }
 
     // Checks reading a whole file shows a header and numbered lines.
+    // Checks REV:PATH and --rev read a file as committed, and a missing revision or file says so.
+    #[test]
+    fn test_read_at_revision() {
+        let t = TempDir::new();
+        t.write("src/a.txt", b"old line\n");
+        crate::testutil::git_commit(t.path(), "one");
+        t.write("src/a.txt", b"new line\n");
+        let r = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert!(
+            r(&["read", "HEAD:src/a.txt"]).starts_with("HEAD:src/a.txt 1 lines, sha "),
+            "{}",
+            r(&["read", "HEAD:src/a.txt"])
+        );
+        assert!(r(&["read", "HEAD:src/a.txt"]).ends_with("1\told line"));
+        assert!(r(&["read", "src/a.txt", "--rev", "HEAD"]).ends_with("1\told line"));
+        assert!(r(&["read", "src/a.txt"]).ends_with("1\tnew line"));
+        assert!(r(&["read", "HEAD:src/a.txt:1-1"]).ends_with("1\told line"));
+        assert!(
+            r(&["read", "nope:src/a.txt"]).starts_with("error: nope:src/a.txt: "),
+            "{}",
+            r(&["read", "nope:src/a.txt"])
+        );
+        assert!(r(&["read", "HEAD:"]).starts_with("error: "));
+        assert!(r(&["read", ":x"]).starts_with("error: "));
+        t.write("c:d.txt", b"colon\n");
+        assert!(r(&["read", "c:d.txt"]).ends_with("1\tcolon"));
+    }
+
     #[test]
     fn test_read_whole_file() {
         let t = ten();
@@ -944,7 +1016,7 @@ mod tests {
                 "f.cs 1 lines",
                 (1, 1),
                 1,
-                &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true },
+                &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true, rev: None },
                 ""
             ),
             "f.cs 1 lines, terse view: nothing to shorten; sha: --source"
