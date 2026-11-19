@@ -1,4 +1,4 @@
-// Hands text to the local model (zazzle-llm) from inside zazzle, so an agent reads the model's short answer instead of the whole text: post-processing a command's output (`--llm`), `agent prompt` over MCP, and choosing rules for `brief`.
+// Asks the local model (zazzle-llm) from inside zazzled through one shared worker kept loaded between calls and stopped when idle: post-processing (`--llm`), `brief`, `investigate`, `agent prompt` over MCP and the per-terminal chats.
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -7,9 +7,7 @@ use std::time::{Duration, Instant};
 
 const MAX_INPUT: usize = 400_000;
 const DEFAULT_TIMEOUT: u64 = 300;
-
-// One local model in memory at a time: each call, or a whole worker session, holds this.
-static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+const DEFAULT_IDLE: u64 = 600;
 
 // The local model's answer and whether its token limit cut it short.
 #[derive(Debug, PartialEq)]
@@ -18,100 +16,20 @@ pub struct Reply {
     pub truncated: bool,
 }
 
-// What a finished zazzle-llm run produced: its exit code, standard output and standard error.
-struct Ran {
-    code: i32,
-    out: String,
-    err: String,
-}
-
 // Returns how long one local model call may take: ZAZZLE_LLM_TIMEOUT seconds, default 300.
 fn timeout() -> Duration {
-    let secs = std::env::var("ZAZZLE_LLM_TIMEOUT").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0);
-    Duration::from_secs(secs.unwrap_or(DEFAULT_TIMEOUT))
+    secs("ZAZZLE_LLM_TIMEOUT", DEFAULT_TIMEOUT)
 }
 
-// Reads a pipe to its end on its own thread.
-fn drain(mut r: impl Read + Send + 'static) -> std::thread::JoinHandle<String> {
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = r.read_to_end(&mut buf);
-        String::from_utf8_lossy(&buf).into_owned()
-    })
+// Returns how long an unused worker stays loaded: ZAZZLE_LLM_IDLE seconds, default 600.
+pub fn idle() -> Duration {
+    secs("ZAZZLE_LLM_IDLE", DEFAULT_IDLE)
 }
 
-// Runs a program with arguments, writing `input` to its standard input, and kills it past the timeout.
-fn run(program: &Path, args: &[String], input: &str, limit: Duration) -> Result<Ran, String> {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("starting {}: {e}", program.display()))?;
-    let mut stdin = child.stdin.take().ok_or("no stdin pipe")?;
-    let bytes = input.as_bytes().to_vec();
-    let writer = std::thread::spawn(move || {
-        let _ = stdin.write_all(&bytes);
-    });
-    let out = drain(child.stdout.take().ok_or("no stdout pipe")?);
-    let err = drain(child.stderr.take().ok_or("no stderr pipe")?);
-    let start = Instant::now();
-    let status = loop {
-        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
-            break st;
-        }
-        if start.elapsed() > limit {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "the local model took longer than {}s (ZAZZLE_LLM_TIMEOUT)",
-                limit.as_secs()
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    let _ = writer.join();
-    let (out, err) = (out.join().unwrap_or_default(), err.join().unwrap_or_default());
-    Ok(Ran { code: status.code().unwrap_or(-1), out, err })
-}
-
-// Asks the local model at a given program: the instruction, then the input (if any), with extra zazzle-llm flags (effort, system, grammar); never downloads a model.
-pub fn ask_with(
-    program: &Path,
-    instruction: &str,
-    input: &str,
-    flags: &[&str],
-    limit: Duration,
-) -> Result<Reply, String> {
-    if input.len() > MAX_INPUT {
-        return Err(format!(
-            "{} bytes is more than the local model takes ({MAX_INPUT}); narrow the command first",
-            input.len()
-        ));
-    }
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
-    let mut args: Vec<String> = vec!["prompt".into(), "--no-download".into()];
-    args.extend(flags.iter().map(|f| f.to_string()));
-    if input.is_empty() {
-        args.push(instruction.into());
-    } else {
-        args.extend([format!("{instruction}\n\n---\n"), "-".into()]);
-    }
-    let ran = run(program, &args, input, limit)?;
-    let reason = || {
-        let last = ran.err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-        let last = last.strip_prefix("error: ").unwrap_or(last);
-        if last.is_empty() {
-            format!("zazzle-llm exited {}", ran.code)
-        } else {
-            last.to_string()
-        }
-    };
-    match ran.code {
-        0 | 3 => Ok(Reply { text: ran.out.trim().to_string(), truncated: ran.code == 3 }),
-        _ => Err(format!("local model: {}", reason())),
-    }
+// Reads a positive number of seconds from the environment, or the default.
+fn secs(var: &str, default: u64) -> Duration {
+    let n = std::env::var(var).ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0);
+    Duration::from_secs(n.unwrap_or(default))
 }
 
 // Takes the last line a program printed to standard error, without `error: `, as the reason it failed.
@@ -120,7 +38,7 @@ fn last_reason(err: &str) -> Option<String> {
     Some(last.strip_prefix("error: ").unwrap_or(last).to_string())
 }
 
-// A zazzle-llm worker keeping one model loaded across several prompts (investigate's turns), holding the one-model lock until it is dropped.
+// A zazzle-llm worker keeping one model loaded across prompts; its ready line names the model.
 pub struct Session {
     child: std::process::Child,
     input: std::process::ChildStdin,
@@ -128,18 +46,12 @@ pub struct Session {
     err: std::sync::Arc<Mutex<String>>,
     err_done: Option<std::thread::JoinHandle<()>>,
     limit: Duration,
-    _turn: std::sync::MutexGuard<'static, ()>,
+    model: String,
 }
 
 impl Session {
-    // Starts the worker at the default model and waits until it has loaded it.
-    pub fn start(flags: &[&str]) -> Result<Session, String> {
-        Session::start_with(&program()?, flags, timeout())
-    }
-
     // Starts `PROGRAM worker --no-download FLAGS` and waits for its ready line, each wait bounded by `limit`.
     pub fn start_with(program: &Path, flags: &[&str], limit: Duration) -> Result<Session, String> {
-        let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
         let mut child = Command::new(program)
             .args(["worker", "--no-download"])
             .args(flags)
@@ -167,10 +79,14 @@ impl Session {
             }
         });
         let input = child.stdin.take().ok_or("no stdin pipe")?;
-        let mut s = Session { child, input, lines, err, err_done: Some(err_done), limit, _turn: turn };
+        let mut s =
+            Session { child, input, lines, err, err_done: Some(err_done), limit, model: String::new() };
         let ready: serde_json::Value = serde_json::from_str(&s.line()?).unwrap_or_default();
         match ready["ready"].as_str() {
-            Some(_) => Ok(s),
+            Some(m) => {
+                s.model = m.to_string();
+                Ok(s)
+            }
             None => Err(s.failed("the local model did not start")),
         }
     }
@@ -223,8 +139,15 @@ impl Session {
     }
 }
 
+impl Session {
+    // Tells whether the worker process is still running.
+    fn alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+}
+
 impl Drop for Session {
-    // Stops the worker, freeing the model's memory and the one-model lock.
+    // Stops the worker, freeing the model's memory.
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -245,9 +168,86 @@ fn program() -> Result<PathBuf, String> {
     )
 }
 
-// Asks the local model with zazzle-llm, at the default model.
-pub fn ask(instruction: &str, input: &str, flags: &[&str]) -> Result<Reply, String> {
-    ask_with(&program()?, instruction, input, flags, timeout())
+// The worker zazzled keeps loaded, the program it runs and when it last answered.
+struct Live {
+    session: Session,
+    program: PathBuf,
+    last: Instant,
+}
+
+// The one worker kept between calls (one model in memory at a time); its lock also makes calls take turns.
+static POOL: Mutex<Option<Live>> = Mutex::new(None);
+
+// Asks with the shared worker, starting it (or replacing it for another model) as needed: `model` None takes the loaded model, else the default; a worker that died or timed out is dropped.
+pub fn ask_in(
+    program: &Path,
+    model: Option<&str>,
+    req: &serde_json::Value,
+    limit: Duration,
+) -> Result<Reply, String> {
+    let mut pool = POOL.lock().unwrap_or_else(|p| p.into_inner());
+    let fits = |l: &Live| {
+        l.program == program && model.is_none_or(|m| l.session.model == m || l.session.model.starts_with(m))
+    };
+    if !pool.as_ref().is_some_and(fits) {
+        *pool = None;
+        let mut flags = vec!["--effort", "low"];
+        flags.extend(model.iter().flat_map(|m| ["--model", m]));
+        let session = Session::start_with(program, &flags, limit)?;
+        *pool = Some(Live { session, program: program.to_path_buf(), last: Instant::now() });
+    }
+    let live = pool.as_mut().expect("started above");
+    let r = live.session.ask(req);
+    live.last = Instant::now();
+    if r.is_err() && !live.session.alive() {
+        *pool = None;
+    }
+    r
+}
+
+// Stops the shared worker when it has been unused for longer than `idle`; returns whether it did.
+pub fn reap(idle: Duration) -> bool {
+    let mut pool = POOL.lock().unwrap_or_else(|p| p.into_inner());
+    let stale = pool.as_ref().is_some_and(|l| l.last.elapsed() > idle);
+    if stale {
+        *pool = None;
+    }
+    stale
+}
+
+// Starts, once, the thread that stops the worker after ZAZZLE_LLM_IDLE seconds unused.
+fn start_reaper() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        std::thread::spawn(|| loop {
+            let idle = idle();
+            std::thread::sleep((idle / 4).clamp(Duration::from_secs(1), Duration::from_secs(30)));
+            reap(idle);
+        });
+    });
+}
+
+// Runs `zazzle-llm fetch [--model M]`: downloads the model unless it is here (progress on this terminal's standard error) and returns its full name.
+pub fn fetch(model: Option<&str>) -> Result<String, String> {
+    let program = program()?;
+    let out = Command::new(&program)
+        .arg("fetch")
+        .stdin(Stdio::null())
+        .args(model.iter().flat_map(|m| ["--model", m]))
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|e| format!("starting {}: {e}", program.display()))?;
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match out.status.success() && !name.is_empty() {
+        true => Ok(name),
+        false => Err(format!("zazzle-llm could not fetch {}", model.unwrap_or("the default model"))),
+    }
+}
+
+// Asks the local model through the shared worker (zazzle-llm from ZAZZLE_LLM, beside zazzled or the tool store; never downloading a model).
+pub fn ask(model: Option<&str>, req: &serde_json::Value) -> Result<Reply, String> {
+    start_reaper();
+    ask_in(&program()?, model, req, timeout())
 }
 
 // Formats a post-processed answer with a line saying how much it saved.
@@ -278,8 +278,15 @@ pub fn post(input: &str, instruction: &str) -> Result<String, String> {
             input.trim_end()
         ));
     }
-    ask(instruction, input, &["--effort", "low", "--temp", "0", "--system", POST_SYSTEM])
-        .map(|r| mark(input, &r))
+    if input.len() > MAX_INPUT {
+        return Err(format!(
+            "{} bytes is more than the local model takes ({MAX_INPUT}); narrow the command first",
+            input.len()
+        ));
+    }
+    let user = format!("{instruction}\n\n---\n{input}");
+    let req = serde_json::json!({"system": POST_SYSTEM, "user": user, "effort": "low", "temp": 0});
+    ask(None, &req).map(|r| mark(input, &r))
 }
 
 #[cfg(test)]
@@ -297,54 +304,52 @@ mod tests {
         p
     }
 
-    // Checks the arguments and input reach zazzle-llm and its answer comes back, also when cut short.
+    // Checks the shared worker: it starts once for many calls, `model` None reuses whatever is loaded, another model or program replaces it, a dead worker is dropped, and idle ones are reaped.
     #[test]
-    fn test_llm_ask_with() {
+    fn test_llm_pool() {
+        let _g = crate::testutil::env_lock();
         let t = TempDir::new();
-        let echo = fake(&t, "printf '%s|' \"$@\"; cat; exit 0");
-        let r =
-            ask_with(&echo, "Sum up", "DATA", &["--effort", "low"], Duration::from_secs(10)).expect("ask");
-        assert_eq!(
-            r,
-            Reply {
-                text: "prompt|--no-download|--effort|low|Sum up\n\n---\n|-|DATA".into(),
-                truncated: false
-            }
-        );
-        let bare = ask_with(&echo, "Hi", "", &[], Duration::from_secs(10)).expect("bare");
-        assert_eq!(bare.text, "prompt|--no-download|Hi|");
-        let cut = fake(&t, "echo partial; exit 3");
-        assert!(
-            ask_with(&cut, "x", "y", &["--effort", "low"], Duration::from_secs(10)).expect("cut").truncated
-        );
-    }
-
-    // Checks failures name the reason: the model's error line, a bare exit code, a timeout, too much input and a missing program.
-    #[test]
-    fn test_llm_ask_failures() {
-        let t = TempDir::new();
+        let starts = t.path().join("starts");
+        let worker = fake(&t, &format!("echo \"$*\" >> {}\nm=qwen3.5-4b; case \"$*\" in *gemma*) m=gemma-4-12b;; esac\necho \"{{\\\"ready\\\":\\\"$m\\\"}}\"\nwhile read l; do case \"$l\" in *die*) exit 1;; *oops*) echo \"{{\\\"error\\\":\\\"bad\\\"}}\";; *) echo \"{{\\\"text\\\":\\\"$m\\\"}}\";; esac; done\n", starts.display()));
         let d = Duration::from_secs(10);
-        let missing = fake(&t, "echo 'error: qwen3.5-4b is not downloaded' >&2; exit 4");
+        let q = serde_json::json!({"user": "x"});
+        assert_eq!(ask_in(&worker, None, &q, d).expect("first").text, "qwen3.5-4b");
+        assert_eq!(ask_in(&worker, Some("qwen3.5"), &q, d).expect("prefix").text, "qwen3.5-4b");
+        assert_eq!(ask_in(&worker, Some("gemma-4-12b"), &q, d).expect("switch").text, "gemma-4-12b");
+        assert_eq!(ask_in(&worker, None, &q, d).expect("any").text, "gemma-4-12b");
+        let log = std::fs::read_to_string(&starts).expect("starts");
         assert_eq!(
-            ask_with(&missing, "x", "y", &["--effort", "low"], d),
-            Err("local model: qwen3.5-4b is not downloaded".into())
+            log.lines().collect::<Vec<_>>(),
+            ["worker --no-download --effort low", "worker --no-download --effort low --model gemma-4-12b"]
         );
-        let silent = fake(&t, "exit 2");
         assert_eq!(
-            ask_with(&silent, "x", "y", &["--effort", "low"], d),
-            Err("local model: zazzle-llm exited 2".into())
+            ask_in(&worker, None, &serde_json::json!({"user": "oops"}), d),
+            Err("local model: bad".into())
         );
-        let slow = fake(&t, "sleep 5");
-        assert!(ask_with(&slow, "x", "y", &["--effort", "low"], Duration::from_millis(200))
-            .expect_err("slow")
-            .contains("longer than"));
-        let big = "x".repeat(MAX_INPUT + 1);
-        assert!(ask_with(&silent, "x", &big, &["--effort", "low"], d)
-            .expect_err("big")
-            .contains("narrow the command"));
-        assert!(ask_with(&t.path().join("none"), "x", "y", &["--effort", "low"], d)
-            .expect_err("none")
-            .contains("starting"));
+        assert!(ask_in(&worker, None, &serde_json::json!({"user": "die"}), d).is_err());
+        assert_eq!(
+            ask_in(&worker, None, &q, d).expect("restarted").text,
+            "qwen3.5-4b",
+            "a dead worker is replaced"
+        );
+        let (t2, t3, t4) = (TempDir::new(), TempDir::new(), TempDir::new());
+        let other = fake(&t2, "echo '{\"ready\":\"m\"}'\nwhile read l; do echo '{\"text\":\"other\"}'; done");
+        assert_eq!(ask_in(&other, None, &q, d).expect("program").text, "other");
+        assert!(!reap(Duration::from_secs(60)) && reap(Duration::ZERO) && !reap(Duration::ZERO));
+        assert!(ask_in(&t.path().join("none"), None, &q, d).expect_err("none").contains("starting"));
+        std::env::set_var("ZAZZLE_LLM", &other);
+        assert_eq!(ask(None, &q).expect("env").text, "other");
+        std::env::set_var("ZAZZLE_LLM", fake(&t4, "exit 2"));
+        assert_eq!(fetch(None), Err("zazzle-llm could not fetch the default model".into()));
+        let named = fake(&t3, "echo \"${3:-qwen3.5-4b}\"");
+        std::env::set_var("ZAZZLE_LLM", &named);
+        assert_eq!((fetch(None), fetch(Some("gemma"))), (Ok("qwen3.5-4b".into()), Ok("gemma".into())));
+        std::env::set_var("ZAZZLE_LLM_IDLE", "5");
+        assert_eq!(idle(), Duration::from_secs(5));
+        std::env::remove_var("ZAZZLE_LLM_IDLE");
+        std::env::remove_var("ZAZZLE_LLM");
+        let _ = program();
+        reap(Duration::ZERO);
     }
 
     // Checks the saving line, the cut-short note, empty output passing through and the timeout setting.
@@ -354,6 +359,8 @@ mod tests {
         let m = mark(&long, &Reply { text: "short".into(), truncated: true });
         assert!(m.starts_with("short\n[post-processed by the local model: ~") && m.contains("cut short"));
         assert_eq!(post("  \n", "x"), Ok("  \n".into()));
+        let huge = "word ".repeat(MAX_INPUT / 4);
+        assert!(post(&huge, "x").expect_err("big").contains("narrow the command"));
         let _g = crate::testutil::env_lock();
         std::env::set_var("ZAZZLE_LLM_TIMEOUT", "7");
         assert_eq!(timeout(), Duration::from_secs(7));

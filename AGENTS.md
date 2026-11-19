@@ -33,7 +33,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - Read, search, outline and safely edit files with `zazzle` instead of cat/grep/sed; commit with `zazzle git commit -m`: `agents/skills/zazzle/SKILL.md`
 - Write, test and run sandboxed zazz scripts (`zazz new|test|pack|add|call`): `agents/skills/zazz/SKILL.md`
 - Keep one test file per method under test in repositories using `zazzle-csharp-minifier --split-tests`: `agents/skills/zazzle-csharp-minifier/SKILL.md`
-- Get the rules and skills that apply to a path with `zazzle agent get-rules PATH`, or ask a local open model with `zazzle agent prompt`: `agents/skills/zazzle-agent/SKILL.md`
+- Get the rules and skills that apply to a path with `zazzle agent get-rules PATH`, or ask a local open model with `zazzle agent prompt` (or `zazzle agent chat`): `agents/skills/zazzle-agent/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
 
 ## Architecture diagrams and knowledge files
@@ -41,7 +41,7 @@ Personal developer toolbox: small macOS command-line tools written in Rust, plus
 - `populate-dev` decides what a folder needs. Each tool is its own unit; there is no diagram across tools, and grouping folders (`macos`, `macos/rust`, `macos/c`, `macos/dotnet`, `agents`) get only a `folder` record.
 - `describe-component-diagram`: each tool folder (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/<tool>`), its `src`, and source folders with parts of their own (zazzled's `src/cmd`, `src/proxy`, `src/wrap`; the indexer's `src/Analysis`, `src/Daemon`, `src/Index`, `src/Tools`).
 - `describe-class-diagram`: a folder that itself declares more than one struct, enum, trait or class (each `src`, zazzled's `src/cmd`, `src/proxy`, `src/wrap`, the indexer's `src/*` except `Mcp`).
-- `describe-state-diagram`: a folder that implements a state machine; one `<Identifier>.state-diagram.json` per machine, named after its type (agent-fs `TriIndex`, free-disk-space `Cand` and `ScanState`, zazzle-git `Editor`).
+- `describe-state-diagram`: a folder that implements a state machine; one `<Identifier>.state-diagram.json` per machine, named after its type (agent-fs `TriIndex`, free-disk-space `Cand` and `ScanState`, zazzle-git `Editor`, zazzled's chat `Editor`).
 - `describe-deployment-diagram`: each tool folder that builds a binary someone installs (`macos/rust/<tool>`, `macos/c/zazzle`, `macos/dotnet/<tool>`).
 - Releases are `.github/.dev` (pipelines, the release use case) and `macos/release/.dev` (delivery to the GitHub release, icelander.net/downloads and the `zazzcat/homebrew-z` tap).
 - What a folder does, offers and exposes: `describe-use-case`, `describe-user-journey`, `describe-capability`, `describe-feature`, `describe-operation`, linked with `relatedViews`.

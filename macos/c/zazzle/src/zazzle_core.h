@@ -246,10 +246,11 @@ static void exec_tool(char **argv, char **envp, const char *tool)
 	die_errno("cannot run the tool", -r, 69);
 }
 
-/* Returns true for `agent llm ..` and `agent prompt ..`, which zazzled runs as its own process (it fetches zazzle-llm and execs it). */
+/* Returns true for `agent llm ..`, `agent prompt ..` and `agent chat ..`, which zazzled runs as its own process (llm execs zazzle-llm; prompt and chat are clients of the daemon's per-terminal chat). */
 static int is_llm(int argc, char **argv)
 {
-	return argc > 2 && str_eq(argv[1], "agent") && (str_eq(argv[2], "llm") || str_eq(argv[2], "prompt"));
+	return argc > 2 && str_eq(argv[1], "agent") &&
+	       (str_eq(argv[2], "llm") || str_eq(argv[2], "prompt") || str_eq(argv[2], "chat"));
 }
 
 /* Replaces this process with `zazzled SUB ARGS`, for commands that need the caller's environment (the MCP proxy, setup, run), so they are not daemon requests. */
