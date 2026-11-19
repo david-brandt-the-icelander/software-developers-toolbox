@@ -1,0 +1,95 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "zazzle git contracts",
+  "folder": "src/macos/git-tools/src",
+  "entities": [
+    {
+      "id": "exit-status",
+      "title": "Exit statuses",
+      "summary": "zazzle git message exits 0 when saved and 1 when cancelled or failed, which git reads as go on or abort; zazzle git commit returns git commit's status; forwarded commands return git's own.",
+      "contractType": "cli",
+      "consumers": ["git, running the editor as core.editor, GIT_EDITOR or GIT_SEQUENCE_EDITOR", "The developer's shell and scripts", "Coding agents running `zazzle git commit -m`"],
+      "guarantees": [
+        "message: 0 saved; 1 cancelled, interrupted by a signal, or failed (file too large, not UTF-8, no terminal, write error); 2 for a wrong command line; 0 for help.",
+        "commit: git commit's exit status; 1 when cancelled, when there is nothing to commit, or when a git step before the commit fails; 0 for help.",
+        "Any other command: git's own exit status, since git-tools replaces itself with git; 127 only if git cannot be started.",
+        "help and version exit 0."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/src/message.rs", "symbol": "main" },
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "main" },
+        { "path": "src/macos/git-tools/src/router.rs", "symbol": "main" },
+        { "path": "src/macos/git-tools/src/git.rs", "symbol": "exec_git" },
+        { "path": "src/macos/git-tools/src/term.rs", "symbol": "Term::run" }
+      ]
+    },
+    {
+      "id": "draft-and-marks",
+      "title": "The commit draft and saved marks",
+      "summary": "zazzle git commit keeps the message in ZAZZLE_COMMIT_MSG and the file marks in ZAZZLE_COMMIT_FILES inside the repository's git directory until a commit succeeds.",
+      "contractType": "file-format",
+      "consumers": ["The next run of zazzle git commit in the same repository", "A developer who wants to recover a message after a failed commit"],
+      "definition": "Both paths come from `git rev-parse --git-path`. ZAZZLE_COMMIT_MSG is the message text, git comments included, handed to `git commit --cleanup=strip -F`. ZAZZLE_COMMIT_FILES is JSON: {\"head\": the HEAD commit id when saved (empty before the first commit), \"marks\": {path: one of skip, add, ignore, remove, delete}}.",
+      "guarantees": [
+        "The draft is written only when none exists, from the last message (--amend) or commit.template, then guidance comments and the branch.",
+        "The marks are written after Ctrl+S, before any file is staged.",
+        "Both files are removed only when git commit exits 0; a cancel or a failing commit keeps them.",
+        "Saved marks are applied only when their head equals the current HEAD, and only to files that are still changed."
+      ],
+      "compatibility": "Nothing versions the marks format; an unreadable file or an unknown mark name is ignored.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "DRAFT" },
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "MARKS" },
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "run" },
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "commit" },
+        { "path": "src/macos/git-tools/src/files.rs", "symbol": "save_marks" },
+        { "path": "src/macos/git-tools/src/files.rs", "symbol": "load_marks" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_commit_keeps_draft_when_git_fails" }
+      ]
+    },
+    {
+      "id": "program-names",
+      "title": "Program names and version line",
+      "summary": "The package builds git-tools, git-tools-commit and git-tools-commit-message-editor, and `git-tools --version` prints `git-tools VERSION` followed by git's version.",
+      "contractType": "cli",
+      "consumers": ["The zazzle invoker, which execs git-tools for `zazzle git`", "The release workflow, bottle.sh and formula.sh, which ship the three binaries", "The formula's test block and CI's smoke test, which run git-tools --version"],
+      "guarantees": [
+        "git-tools takes the arguments that followed `zazzle git`.",
+        "git-tools-commit takes the same arguments as `zazzle git commit`, and git-tools-commit-message-editor the same as `zazzle git message`."
+      ],
+      "compatibility": "Renaming a binary breaks the invoker's exec, the release packaging and brew test.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/Cargo.toml", "symbol": "bin" },
+        { "path": "src/macos/git-tools/src/router.rs", "symbol": "version" },
+        { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
+        { "path": "release/formula.sh", "symbol": "Zazzle.install" }
+      ]
+    },
+    {
+      "id": "editor-offer",
+      "title": "The one-time offer to become git's editor",
+      "summary": "The first interactive zazzle git commit asks once whether to set the global core.editor to `zazzle git message`, and records in the global git config that it asked.",
+      "contractType": "behaviour",
+      "consumers": ["A developer running zazzle git commit for the first time", "git, which then opens zazzle git message for git commit, rebase -i and merge"],
+      "definition": "Before the editor opens, zazzle git commit reads core.editor and the global key zazzle.editorOffered. If core.editor does not already name zazzle git message, z git message or git-tools-commit-message-editor, and zazzle.editorOffered is not true, it prints the question with the exact git config command on /dev/tty and reads one line: y or yes runs `git config --global core.editor 'zazzle git message'`; anything else changes nothing. Either way it sets zazzle.editorOffered to true.",
+      "guarantees": [
+        "The question is asked at most once per user (global git config), whatever the answer.",
+        "Nothing is changed without a yes; the default answer is no.",
+        "It is never asked with -m, -F, -C or --no-edit, nor without a terminal.",
+        "The help texts of zazzle git, zazzle git commit and zazzle git message show the same command and how to undo it."
+      ],
+      "compatibility": "Removing zazzle.editorOffered from the global git config makes the next zazzle git commit ask again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/src/offer.rs", "symbol": "offer" },
+        { "path": "src/macos/git-tools/src/offer.rs", "symbol": "HOW_TO" },
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "run" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_commit_offers_editor_once" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,558 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle / daemon deployment diagram",
+  "folder": "src/macos/daemon",
+  "description": "zazzle and zazzle daemon run as separate processes of one user on one machine (a Mac, or Linux). Each `zazzle` command is a short-lived process that hands its command line, streams and working directory to the long-lived `zazzle daemon serve` over a private unix socket; an MCP client's `zazzle daemon mcp` process forwards tool calls over the same socket. The daemon is started on demand: by the invoker or `zazzle daemon mcp` when nothing listens, or by launchd once `zazzle daemon install` has been run on macOS. It exits when idle. `zazzle run` and `zazzle proxy` become `zazzle daemon wrap` and `zazzle daemon proxy` processes of their own, and `zazzle agent llm|prompt` becomes `zazzle daemon llm`, which execs ai-agent (downloaded on first use into the tool store), which start the caller's command or MCP server as children. For an agent's `--llm`, `brief` and `prompt`, the daemon (or `zazzle daemon wrap`, for `zazzle run --llm`) runs `ai-agent prompt --no-download` as a child, one at a time, with the input on its standard input. clean, run and proxy outputs are kept for an hour in an output store directory that those processes write and the daemon reads for read-again. For C# reads and the structure commands the daemon starts and talks to the csharp-indexer daemon. For zazz scripts the daemon runs the user's rustc and `zazz-script-runner compile` and `zazz-script-runner test` to build and test a script once, keeps the results in the script store, and runs calls in warm `zazz-script-runner serve` processes (or a natively trusted script's own binary), each under the OS sandbox (sandbox-exec on macOS, Landlock and seccomp on Linux); the invoker run as `zazz`, or under an installed script's name, sends those requests. The release tarballs ship zazzle, zazz (the same invoker), daemon and zazz-script-runner side by side, with the indexer; their delivery is recorded in release/.dev.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "src/macos/daemon/src/cli.rs",
+      "symbol": "serve_main"
+    },
+    {
+      "path": "src/macos/daemon/src/client.rs",
+      "symbol": "socket_path"
+    },
+    {
+      "path": "src/macos/daemon/src/server.rs",
+      "symbol": "bind"
+    },
+    {
+      "path": "src/macos/daemon/src/launchd.rs",
+      "symbol": "plist"
+    },
+    {
+      "path": "src/macos/daemon/src/store.rs",
+      "symbol": "default_dir"
+    },
+    {
+      "path": "src/macos/daemon/src/indexer.rs",
+      "symbol": "Indexer::start_daemon"
+    },
+    {
+      "path": "src/macos/daemon/src/proxy/stdio.rs",
+      "symbol": "run_with"
+    },
+    {
+      "path": "src/macos/daemon/src/wrap/mod.rs",
+      "symbol": "run_command"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "connect_daemon"
+    },
+    {
+      "path": "src/macos/daemon/README.md",
+      "symbol": "Setup"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Package"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/pool.rs",
+      "symbol": "spawn"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/call.rs",
+      "symbol": "execute"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/compile.rs",
+      "symbol": "aot"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/pipeline.rs",
+      "symbol": "run_tests"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/tools.rs",
+      "symbol": "worker"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/sandbox.rs",
+      "symbol": "command"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/registry.rs",
+      "symbol": "default_root"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/trust.rs",
+      "symbol": "SYSTEM_TRUST_DIR"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/install.rs",
+      "symbol": "install"
+    },
+    {
+      "path": "src/macos/daemon/src/tools.rs",
+      "symbol": "path"
+    },
+    {
+      "path": "src/macos/daemon/src/llm.rs",
+      "symbol": "run"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac (zazzle itself on arm64 only) or a Linux machine (x86_64 or aarch64), with the binaries built from source or unpacked from a release tarball."
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "A shell where the developer runs `zazzle daemon install`, `zazzle daemon run`, zazzle itself, or a zazz script installed as a command.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent",
+      "kind": "client",
+      "description": "An agent that runs `zazzle ...` or `zazz ...` in a shell (setting ZAZZLE_SESSION), or whose MCP client starts `zazzle daemon mcp`, or `zazzle proxy` in front of another server, in the project directory.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "zazzle",
+      "name": "zazzle process",
+      "kind": "process",
+      "description": "One per command: connects to the socket, passes descriptors 0, 1, 2 and its working directory, waits for the status byte and exits with it; for run and proxy it replaces itself with daemon instead. Run as `zazz` it sends `zazz ARGS`, and under an installed script's name `zazz exec-name NAME ARGS`. On RESTART from a retiring daemon it reconnects and sends the request once more."
+    },
+    {
+      "id": "mcp",
+      "name": "zazzle daemon mcp process",
+      "kind": "process",
+      "description": "One per MCP connection, started by the client with standard input and output as the transport; one session for its lifetime."
+    },
+    {
+      "id": "daemon",
+      "name": "zazzle daemon serve process",
+      "kind": "process",
+      "description": "The daemon, listening on $ZAZZLE_SOCK (by default ~/.zazzle/sock, mode 0600 in a 0700 directory): 2 to 8 worker threads and a pool of helper threads; exits after the idle time (default 1800 s) with no connection open. It also exits once an upgrade has replaced its binary, answering connections still queued on its own socket with RESTART so the invoker resends them to the new daemon."
+    },
+    {
+      "id": "cache",
+      "name": "Cache directory",
+      "kind": "cache",
+      "description": "$ZAZZLE_CACHE_DIR, by default ~/.zazzle/v1: paths.log, derived summaries only."
+    },
+    {
+      "id": "outputs",
+      "name": "Output store",
+      "kind": "cache",
+      "description": "$ZAZZLE_OUTPUTS_DIR, by default ~/.zazzle/outputs (mode 0700): the shown text and full input of clean, run and proxy outputs, files of mode 0600, removed after an hour or when the store passes its size limit."
+    },
+    {
+      "id": "wrap",
+      "name": "zazzle daemon wrap process",
+      "kind": "process",
+      "description": "One per `zazzle run`: runs the caller's command as a child with the caller's environment, prints its cleaned output and exits with its code."
+    },
+    {
+      "id": "proxy",
+      "name": "zazzle daemon proxy process",
+      "kind": "process",
+      "description": "One per `zazzle proxy`: runs an MCP server as a child over stdio, or listens on a local TCP address (default 127.0.0.1:8808) in front of an HTTP one, keeping client connections open for further requests."
+    },
+    {
+      "id": "upstream-http",
+      "name": "Upstream MCP endpoint",
+      "kind": "external-service",
+      "description": "A Streamable HTTP MCP server named with --upstream, reached over HTTP or HTTPS.",
+      "condition": "`zazzle proxy --upstream URL`"
+    },
+    {
+      "id": "indexer",
+      "name": "csharp-indexer daemon process",
+      "kind": "process",
+      "description": "The C# indexer's own daemon, listening on daemon.sock in its state directory; started detached by daemon when a C# file is read or a structure command runs and nothing listens.",
+      "condition": "C# reads and structure commands, with csharp-indexer installed"
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "kind": "external-service",
+      "description": "The user's gui launchd domain, with ~/Library/LaunchAgents/com.zazzle.daemon.plist loaded: holds the socket and starts `zazzle daemon serve` on a connection.",
+      "condition": "macOS, after `zazzle daemon install`"
+    },
+    {
+      "id": "zazz-script-runner",
+      "name": "zazz-script-runner processes",
+      "kind": "process",
+      "description": "Started by the daemon under the OS sandbox with a cleared environment: short-lived `zazz-script-runner compile` (AOT) and `zazz-script-runner test` runs while a script is added or tested, and warm `zazz-script-runner serve` workers, one pool per script, working directory and policy, each with its control socket on descriptor 3, its compiled module on descriptor 4, standard streams on /dev/null and a new session; the caller's streams come with each call. Idle workers are retired after 60 s or 1000 calls, at most 2 per key and 32 in all.",
+      "condition": "zazz scripts"
+    },
+    {
+      "id": "native-script",
+      "name": "Native script process",
+      "kind": "process",
+      "description": "A script's own host binary from the script store, serving calls over the same control socket under the OS sandbox only.",
+      "condition": "A script signed by an authority this machine trusts for native code, while the policy allows native code"
+    },
+    {
+      "id": "rustc",
+      "name": "rustc processes",
+      "kind": "process",
+      "description": "The user's toolchain (ZAZZ_RUSTC, then fixed locations such as ~/.cargo/bin, then PATH), run with an argument list, a cleared environment and a timeout under the OS sandbox, to build the zazz SDK once per toolchain and target, then each script and its tests.",
+      "condition": "Adding or testing a Rust script"
+    },
+    {
+      "id": "zazz-store",
+      "name": "zazz script store",
+      "kind": "database",
+      "description": "$ZAZZ_STORE, by default ~/.zazzle/v1/zazz (mode 0700): compiled modules, native binaries, metadata with the test record and trust verdict, installed names, locks, scratch space and the built SDK; never the .zazz itself."
+    },
+    {
+      "id": "trust",
+      "name": "Trust directory and policy",
+      "kind": "database",
+      "description": "Root-owned /etc/zazzle/trust.d (authority certificates) and /etc/zazzle/policy.json (global ceiling and trust_ttl); ignored unless owned by root and not writable by others.",
+      "condition": "Signed scripts"
+    },
+    {
+      "id": "keychain",
+      "name": "macOS Keychain",
+      "kind": "external-service",
+      "description": "Evaluates a signer's chain (SecTrust) and holds the trust settings `zazz trust add` sets.",
+      "condition": "macOS, signed scripts"
+    },
+    {
+      "id": "https-hosts",
+      "name": "Allowlisted HTTPS hosts",
+      "kind": "external-service",
+      "description": "The hosts a script's manifest names and its signer's authority grants, reached by zazz-script-runner over HTTPS.",
+      "condition": "A signed script granted network"
+    },
+    {
+      "id": "languages",
+      "name": "Language modules (~/.zazzle/v1/languages)",
+      "kind": "database",
+      "description": "Grammar shared libraries downloaded from icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/ and checked against the SHA-256s compiled into daemon; the daemon loads them with dlopen (src/macos/language-modules/.dev)."
+    },
+    {
+      "id": "llm",
+      "name": "zazzle daemon llm process",
+      "kind": "process",
+      "description": "One per `zazzle agent llm|prompt`: finds ai-agent beside the daemon or in the tool store, downloading it first, and replaces itself with it (src/macos/ai-agent/.dev/deployment-diagram.json).",
+      "condition": "Only for `zazzle agent llm` and `zazzle agent prompt`."
+    },
+    {
+      "id": "llm-child",
+      "name": "ai-agent prompt process",
+      "kind": "process",
+      "description": "Started by the daemon, or by `zazzle daemon wrap`, as `ai-agent prompt --no-download ...` (ZAZZLE_LLM, beside the daemon, or from the tool store) with pipes for its streams; killed after ZAZZLE_LLM_TIMEOUT (default 300 s). It loads a model the user already downloaded and never downloads one (src/macos/ai-agent/.dev/deployment-diagram.json).",
+      "condition": "Only for `--llm`, `brief` and `prompt` (MCP zazzle_prompt, zazzle_brief and the llm argument)."
+    },
+    {
+      "id": "tools",
+      "name": "JIT tools (~/.zazzle/v1/tools)",
+      "kind": "database",
+      "description": "Programs not in the release tarball (ai-agent), downloaded from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ and accepted only with the SHA-256 compiled into daemon; ZAZZLE_TOOLS_DIR moves it."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "daemon-bin",
+      "name": "daemon",
+      "source": "src/macos/daemon/Cargo.toml",
+      "deployedTo": "daemon",
+      "description": "The Rust binary; the same file also runs as `zazzle daemon mcp`, `zazzle daemon proxy`, `zazzle daemon wrap`, `zazzle daemon llm`, `zazzle daemon run`, `zazzle daemon install` and `zazzle daemon uninstall`."
+    },
+    {
+      "id": "zazzle-bin",
+      "name": "zazzle",
+      "source": "src/macos/zazzle/Makefile",
+      "deployedTo": "zazzle",
+      "description": "The C invoker, built into src/macos/zazzle/build/zazzle; it starts the daemon from the tools' folder (libexec/zazzle in an install, its own folder in a build) unless ZAZZLE_DAEMON names another."
+    },
+    {
+      "id": "plist",
+      "name": "com.zazzle.daemon.plist",
+      "source": "src/macos/daemon/src/launchd.rs",
+      "deployedTo": "launchd",
+      "description": "Written by `zazzle daemon install`: the daemon path with `serve`, the socket path with mode 0600, process type Interactive."
+    },
+    {
+      "id": "zazz-script-runner-bin",
+      "name": "zazz-script-runner",
+      "source": "src/macos/zazz-script/runner/Cargo.toml",
+      "deployedTo": "zazz-script-runner",
+      "description": "The WebAssembly host binary, found through ZAZZ_WORKER or beside the daemon; shipped in the release tarballs, and signed on macOS with entitlements for executable memory."
+    },
+    {
+      "id": "zazz-bin",
+      "name": "zazz",
+      "source": "src/macos/zazzle/Makefile",
+      "deployedTo": "zazzle",
+      "description": "The invoker under the name `zazz` (a copy in the release tarballs); it sends its arguments as a zazz command."
+    },
+    {
+      "id": "shims",
+      "name": "Installed script commands",
+      "source": "src/macos/daemon/src/zazz/install.rs",
+      "deployedTo": "zazzle",
+      "description": "Written by `zazz install`: ~/.zazzle/bin/NAME ($ZAZZ_BIN), a symlink to the invoker beside the daemon (zazz, else zazzle), which runs that script."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "zazzle",
+      "kind": "hosts",
+      "description": "Short-lived, one per command."
+    },
+    {
+      "from": "machine",
+      "to": "mcp",
+      "kind": "hosts",
+      "description": "One per MCP connection."
+    },
+    {
+      "from": "machine",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Long-lived until idle."
+    },
+    {
+      "from": "machine",
+      "to": "wrap",
+      "kind": "hosts",
+      "description": "One per `zazzle run`."
+    },
+    {
+      "from": "machine",
+      "to": "proxy",
+      "kind": "hosts",
+      "description": "As long as its MCP client keeps it."
+    },
+    {
+      "from": "machine",
+      "to": "indexer",
+      "kind": "hosts",
+      "description": "Long-lived, managed by the indexer itself."
+    },
+    {
+      "from": "terminal",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazzle CMD ...`."
+    },
+    {
+      "from": "agent",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazzle CMD ...` in its shell."
+    },
+    {
+      "from": "agent",
+      "to": "mcp",
+      "kind": "connects-to",
+      "description": "Its MCP client starts `zazzle daemon mcp` and speaks JSON-RPC on its standard input and output."
+    },
+    {
+      "from": "agent",
+      "to": "proxy",
+      "kind": "connects-to",
+      "description": "Its MCP client starts `zazzle proxy -- CMD` on stdio, or sends HTTP requests to the proxy's listen address."
+    },
+    {
+      "from": "zazzle",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket, descriptor mode: the request with SCM_RIGHTS descriptors; the daemon writes to zazzle's own stdout or stderr and answers with a status byte. When nothing listens, zazzle first starts `zazzle daemon serve` detached with its streams on /dev/null and retries for up to 3 s."
+    },
+    {
+      "from": "zazzle",
+      "to": "wrap",
+      "kind": "connects-to",
+      "description": "`zazzle run` replaces itself (exec) with `zazzle daemon wrap`."
+    },
+    {
+      "from": "zazzle",
+      "to": "proxy",
+      "kind": "connects-to",
+      "description": "`zazzle proxy` replaces itself (exec) with `zazzle daemon proxy`."
+    },
+    {
+      "from": "mcp",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket, relay mode: the request with its working directory; the status byte and text come back on the socket. When nothing listens, starts `zazzle daemon serve` from its own executable and retries for up to 3 s."
+    },
+    {
+      "from": "proxy",
+      "to": "upstream-http",
+      "kind": "connects-to",
+      "description": "HTTP or HTTPS, one upstream request per client request, through one client shared by every connection."
+    },
+    {
+      "from": "daemon",
+      "to": "indexer",
+      "kind": "connects-to",
+      "description": "Unix socket in the indexer's state directory: a JSON hello with the indexer's version and the work tree, then tools/call of view or a structure tool (overview, find_symbol, changed_since, git_log, git_blame, report_gap). When nothing listens, starts `csharp-indexer daemon` detached and waits up to 5 s."
+    },
+    {
+      "from": "launchd",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Starts `zazzle daemon serve` on a connection and passes it the listening socket."
+    },
+    {
+      "from": "daemon",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "clean saves its answer and input; read-again loads stored outputs, including those wrap and proxy saved."
+    },
+    {
+      "from": "wrap",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "Saves each run's result and raw output, reaping old entries."
+    },
+    {
+      "from": "proxy",
+      "to": "outputs",
+      "kind": "connects-to",
+      "description": "Saves each shortened text with its original, reaping old entries."
+    },
+    {
+      "from": "daemon",
+      "to": "cache",
+      "kind": "connects-to",
+      "description": "Loads the log at start; appends pending records every 100 ms and on exit."
+    },
+    {
+      "from": "terminal",
+      "to": "launchd",
+      "kind": "connects-to",
+      "description": "`zazzle daemon install` and `zazzle daemon uninstall` run launchctl bootstrap and bootout."
+    },
+    {
+      "from": "machine",
+      "to": "zazz-script-runner",
+      "kind": "hosts",
+      "description": "Warm workers until recycled; compile and test runs while they last."
+    },
+    {
+      "from": "machine",
+      "to": "native-script",
+      "kind": "hosts",
+      "description": "Warm like the workers."
+    },
+    {
+      "from": "machine",
+      "to": "rustc",
+      "kind": "hosts",
+      "description": "One per build, while a script is added or tested."
+    },
+    {
+      "from": "daemon",
+      "to": "rustc",
+      "kind": "connects-to",
+      "description": "Spawns it under the OS sandbox, reads its JSON diagnostics and condenses them."
+    },
+    {
+      "from": "daemon",
+      "to": "zazz-script-runner",
+      "kind": "connects-to",
+      "description": "`compile` with the module on standard input; `test` with the test module and a scratch directory; `serve` over a unix socketpair: length-prefixed JSON frames (hello, json-command, service-call, openapi, progress, cancel, result), with the caller's descriptors 0, 1 and 2 (or capture pipes, over MCP) attached to each call with SCM_RIGHTS, and cancel when the caller hangs up."
+    },
+    {
+      "from": "daemon",
+      "to": "native-script",
+      "kind": "connects-to",
+      "description": "The same socketpair protocol as `zazz-script-runner serve`."
+    },
+    {
+      "from": "daemon",
+      "to": "zazz-store",
+      "kind": "connects-to",
+      "description": "Publishes a built and tested script atomically under a per-script lock; reads metadata and modules for each call; refreshes expired trust verdicts in the background."
+    },
+    {
+      "from": "daemon",
+      "to": "trust",
+      "kind": "connects-to",
+      "description": "Reads the authorities and policy when a signed script is added and when its verdict is refreshed; `zazz trust add` and `rm` write the directory, which needs root."
+    },
+    {
+      "from": "daemon",
+      "to": "keychain",
+      "kind": "connects-to",
+      "description": "Trust evaluation off the call path; trust settings for `zazz trust add`."
+    },
+    {
+      "from": "zazz-script-runner",
+      "to": "https-hosts",
+      "kind": "connects-to",
+      "description": "HTTPS for the script's zazz_host.http requests, each checked against the allowlist, no redirects."
+    },
+    {
+      "from": "agent",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs `zazz CMD ...` (new, test, pack, add, call) in its shell."
+    },
+    {
+      "from": "terminal",
+      "to": "zazzle",
+      "kind": "connects-to",
+      "description": "Runs an installed script by its name, or `zazz run NAME ARGS`."
+    },
+    {
+      "from": "daemon",
+      "to": "languages",
+      "kind": "connects-to",
+      "description": "Downloads a module on first use (JIT) or `zazzle languages fetch`, verifies it and loads it."
+    },
+    {
+      "from": "machine",
+      "to": "llm",
+      "kind": "hosts",
+      "description": "One per `zazzle agent llm|prompt`, until it execs ai-agent."
+    },
+    {
+      "from": "zazzle",
+      "to": "llm",
+      "kind": "connects-to",
+      "description": "`zazzle agent llm|prompt` replaces itself (exec) with `zazzle daemon llm llm|prompt ARGS`."
+    },
+    {
+      "from": "llm",
+      "to": "tools",
+      "kind": "connects-to",
+      "description": "Downloads ai-agent on first use, verifies it, stores it executable, then execs it."
+    },
+    {
+      "from": "machine",
+      "to": "llm-child",
+      "kind": "hosts",
+      "description": "One at a time per daemon, for the length of one answer."
+    },
+    {
+      "from": "daemon",
+      "to": "llm-child",
+      "kind": "connects-to",
+      "description": "Spawns it with the instruction as arguments and the input on standard input; reads the answer from standard output, the reason from standard error and the exit code (3 cut short, 4 no model)."
+    },
+    {
+      "from": "wrap",
+      "to": "llm-child",
+      "kind": "connects-to",
+      "description": "`zazzle run --llm`: the same, with the delivered output as input."
+    },
+    {
+      "from": "daemon",
+      "to": "tools",
+      "kind": "connects-to",
+      "description": "Finds ai-agent in the tool store, downloading the program (never a model) when it is neither there nor beside the daemon."
+    }
+  ]
+}

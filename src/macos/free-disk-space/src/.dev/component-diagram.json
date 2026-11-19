@@ -1,0 +1,429 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "free-disk-space source component diagram",
+  "folder": "src/macos/free-disk-space/src",
+  "description": "The modules of the one free-disk-space binary and what each reaches outside the process. The scan records directories, file names and compression candidates in a SQLite state file; compress and dedupe act only on what it recorded; clean and the daemon work without it. All modules are compiled into one process; none is deployed on its own.",
+  "sources": [
+    {
+      "path": "src/macos/free-disk-space/src/main.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/scan.rs",
+      "symbol": "SCHEMA"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/compress.rs",
+      "symbol": "cmd_compress"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/dedupe.rs",
+      "symbol": "cmd_dedupe"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/clean.rs",
+      "symbol": "cmd_clean"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/clean.rs",
+      "symbol": "Progress"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/daemon.rs",
+      "symbol": "cmd_run"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/util.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/lzfse.rs",
+      "symbol": "compress_onto"
+    },
+    {
+      "path": "src/macos/free-disk-space/build.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/repair.rs",
+      "symbol": "cmd_repair"
+    }
+  ],
+  "components": [
+    {
+      "id": "source",
+      "name": "free-disk-space source",
+      "responsibility": "The binary's code: one module per command family plus shared helpers.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs)",
+      "responsibility": "Parses the subcommands and flags with clap, fills in defaults such as the state path, and dispatches to the command modules.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "scan",
+      "name": "Scan (scan.rs)",
+      "responsibility": "Walks a root directory, recording every directory, every file's path, leaf name and size, and the compression candidates, in the state file; resumable after Ctrl-C; also status and list.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "compress",
+      "name": "Compression (compress.rs)",
+      "responsibility": "Compresses pending candidates in place: clones each file into a temp file beside the original, has the lzfse module put the LZFSE compressed form on the clone, verifies it and swaps it in by rename; first checks with a probe file that a compressed copy reads back compressed and unchanged, and tallies skips by reason.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "dedupe",
+      "name": "Clone dedupe (dedupe.rs)",
+      "responsibility": "Hashes same-named, same-sized files the scan recorded and replaces identical ones with verified copy-on-write clones of one kept copy.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "repair",
+      "name": "Compression repair (repair.rs)",
+      "responsibility": "Checks every file the scan recorded for a false compression claim: resets files recorded as compressed that are not, records flagged files with broken compressed data, and rewrites flagged files that save no space through compress's verified path.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "clean",
+      "name": "Cleanup (clean.rs)",
+      "responsibility": "Deletes regenerable files per target: caches, Xcode derived data, Downloads, Trash, dev build artifacts, Homebrew's cache and Docker's images and build cache, with a running total; records the steps an applying run finishes so an interrupted run resumes after them; also the process snapshot dedupe reuses.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "daemon",
+      "name": "Daemon (daemon.rs)",
+      "responsibility": "Checks free space on an awake-time cadence and runs clean when it is below a threshold; installs, removes and reports itself as a launchd login item.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "util",
+      "name": "Helpers (util.rs)",
+      "responsibility": "Output and colour, sizes, progress lines, the Ctrl-C stop flag, subprocesses with time limits, free space, awake time, display state, BSD file flags, hashes and xattr names.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "meta",
+      "name": "File metadata (meta.rs)",
+      "responsibility": "Reads every extended attribute's value (without the compression attributes) or a single one, the ACL as text and the birth time; sets an attribute, the birth time and BSD flags, and copies an ACL onto an open file; tells whether a file has a real resource fork and whether two files' flags (apart from the compressed flag) and times match, so compress can check a copy keeps them and repair can rebuild one.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "lzfse",
+      "name": "LZFSE library wrapper (lzfse.rs)",
+      "responsibility": "Maps a file read-only and calls the lempel-ziv-finite-state-entropy-compression library to compress it into decmpfs attributes and apply them to an open copy, naming the failed step on error; off macOS the copy stays plain.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "lempel-ziv-finite-state-entropy-compression",
+      "name": "lempel-ziv-finite-state-entropy-compression C library",
+      "responsibility": "Vendored LZFSE compressor (src/macos/lempel-ziv-finite-state-entropy-compression, MPL-2.0), compiled into the binary by build.rs: lzfse_zazzcat_decmpfs_compress builds the com.apple.decmpfs header and resource fork on all cores, and lzfse_zazzcat_decmpfs_apply sets them on a file, empties its data fork and sets the compressed flag.",
+      "folder": "src/macos/lempel-ziv-finite-state-entropy-compression"
+    },
+    {
+      "id": "state",
+      "name": "Scan state file",
+      "responsibility": "A SQLite database (bundled by rusqlite) at $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3, holding the scan's settings, progress, directories, file names and candidates.",
+      "external": true
+    },
+    {
+      "id": "progress",
+      "name": "Clean progress file",
+      "responsibility": "A text file at ~/.local/state/free-disk-space/clean-progress.txt, one finished step per line (dir:, dev: or target: and its name), kept only while an applying clean is interrupted and for at most 12 hours.",
+      "external": true
+    },
+    {
+      "id": "apfs",
+      "name": "APFS clone and metadata calls",
+      "responsibility": "macOS clonefile and copyfile, called directly to clone a file copy-on-write (for dedupe and for compress's temp copy) and copy its ACL, mode, owner, flags, times and xattrs; the xattr, ACL and setattrlist calls meta uses.",
+      "external": true
+    },
+    {
+      "id": "file-tools",
+      "name": "macOS file tools",
+      "responsibility": "/usr/bin/xattr (extended attribute names and removal).",
+      "external": true
+    },
+    {
+      "id": "process-tools",
+      "name": "Process listing tools",
+      "responsibility": "lsof (open files and working directories) and ps (command lines) of running processes.",
+      "external": true
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "responsibility": "Tells whether a build artifact directory is inside a work tree, ignored and untracked.",
+      "external": true
+    },
+    {
+      "id": "finder",
+      "name": "Finder",
+      "responsibility": "Empties the Trash when asked through osascript.",
+      "external": true
+    },
+    {
+      "id": "docker",
+      "name": "Docker Desktop",
+      "responsibility": "Prunes images and build cache, stops containers and quits, through the docker CLI and osascript.",
+      "external": true
+    },
+    {
+      "id": "brew",
+      "name": "Homebrew",
+      "responsibility": "Removes its old downloads and versions (brew cleanup --prune=all -s).",
+      "external": true
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "responsibility": "Starts the daemon at login and keeps it running, from the plist the install writes; driven with /bin/launchctl.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "source",
+      "to": "cli",
+      "kind": "contains",
+      "description": "The entry point."
+    },
+    {
+      "from": "source",
+      "to": "scan",
+      "kind": "contains",
+      "description": "Scan, status and list."
+    },
+    {
+      "from": "source",
+      "to": "compress",
+      "kind": "contains",
+      "description": "Verified compression."
+    },
+    {
+      "from": "source",
+      "to": "dedupe",
+      "kind": "contains",
+      "description": "Clone dedupe."
+    },
+    {
+      "from": "source",
+      "to": "repair",
+      "kind": "contains",
+      "description": "Compression repair."
+    },
+    {
+      "from": "source",
+      "to": "clean",
+      "kind": "contains",
+      "description": "Cleanup targets."
+    },
+    {
+      "from": "source",
+      "to": "daemon",
+      "kind": "contains",
+      "description": "Background mode."
+    },
+    {
+      "from": "source",
+      "to": "util",
+      "kind": "contains",
+      "description": "Shared helpers used by every module."
+    },
+    {
+      "from": "source",
+      "to": "lzfse",
+      "kind": "contains",
+      "description": "The C library wrapper."
+    },
+    {
+      "from": "cli",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "new, resume, status and list call cmd_new, cmd_resume, cmd_status and cmd_list."
+    },
+    {
+      "from": "cli",
+      "to": "compress",
+      "kind": "depends-on",
+      "description": "compress calls cmd_compress with CompressOpts."
+    },
+    {
+      "from": "cli",
+      "to": "dedupe",
+      "kind": "depends-on",
+      "description": "dedupe calls cmd_dedupe with DedupeOpts."
+    },
+    {
+      "from": "cli",
+      "to": "repair",
+      "kind": "depends-on",
+      "description": "repair calls cmd_repair with RepairOpts."
+    },
+    {
+      "from": "cli",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "clean calls cmd_clean with the target names."
+    },
+    {
+      "from": "cli",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "daemon run, install, uninstall and status; options are validated into daemon::Settings first."
+    },
+    {
+      "from": "compress",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "Opens the state with open_db and warns when the scan has not finished."
+    },
+    {
+      "from": "dedupe",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "Opens the state with open_db, and reuses under and SKIP_PREFIXES to recognise system files."
+    },
+    {
+      "from": "dedupe",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "Reuses clean::Snapshot to skip files a running process has open."
+    },
+    {
+      "from": "daemon",
+      "to": "clean",
+      "kind": "depends-on",
+      "description": "Runs clean::cmd_clean with --apply on its targets when free space is below the threshold."
+    },
+    {
+      "from": "scan",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Creates the schema and writes directories, files, candidates and progress, committing about every 2 seconds."
+    },
+    {
+      "from": "compress",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads pending candidates and writes each one's status, note and verified saving."
+    },
+    {
+      "from": "dedupe",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads name groups from the files table and marks replaced files cloned."
+    },
+    {
+      "from": "clean",
+      "to": "progress",
+      "kind": "depends-on",
+      "description": "Progress::load reads it for an applying run, mark appends each finished step, finish removes it after a complete run."
+    },
+    {
+      "from": "compress",
+      "to": "meta",
+      "kind": "depends-on",
+      "description": "Compares attribute values, the ACL, BSD flags and times of the original and the copy, skips files with a real resource fork, and puts the original's birth time on the copy."
+    },
+    {
+      "from": "meta",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "listxattr and getxattr, acl_get_link_np and acl_to_text, and setattrlist for the birth time (ACL and birth time on macOS only)."
+    },
+    {
+      "from": "compress",
+      "to": "process-tools",
+      "kind": "depends-on",
+      "description": "lsof -t on each file before compressing it."
+    },
+    {
+      "from": "dedupe",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "clonefile into the temp file, copyfile to give it the target's metadata (macOS only; a plain copy elsewhere)."
+    },
+    {
+      "from": "dedupe",
+      "to": "file-tools",
+      "kind": "depends-on",
+      "description": "xattr to compare attribute names and remove ones the target lacks."
+    },
+    {
+      "from": "clean",
+      "to": "process-tools",
+      "kind": "depends-on",
+      "description": "Snapshot::capture runs lsof and ps once per run."
+    },
+    {
+      "from": "clean",
+      "to": "git",
+      "kind": "depends-on",
+      "description": "rev-parse, check-ignore and ls-files on each artifact's parent, with optional locks off."
+    },
+    {
+      "from": "clean",
+      "to": "finder",
+      "kind": "depends-on",
+      "description": "The trash target, with --apply on macOS."
+    },
+    {
+      "from": "clean",
+      "to": "docker",
+      "kind": "depends-on",
+      "description": "The docker target, only if Docker Desktop is already running."
+    },
+    {
+      "from": "clean",
+      "to": "brew",
+      "kind": "depends-on",
+      "description": "The brew target, if brew is on PATH."
+    },
+    {
+      "from": "daemon",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "install writes the plist and runs launchctl bootout then bootstrap; uninstall runs bootout; status runs print."
+    },
+    {
+      "from": "compress",
+      "to": "apfs",
+      "kind": "depends-on",
+      "description": "clonefile into the temp file and the probe copy (macOS only; a plain copy elsewhere)."
+    },
+    {
+      "from": "compress",
+      "to": "lzfse",
+      "kind": "depends-on",
+      "description": "compress_onto for each temp copy and for the probe."
+    },
+    {
+      "from": "lzfse",
+      "to": "lempel-ziv-finite-state-entropy-compression",
+      "kind": "depends-on",
+      "description": "decmpfs_compress, decmpfs_apply, decmpfs_free and status_string over the C ABI."
+    },
+    {
+      "from": "repair",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads the files table and done candidates; writes pending, broken and rewrite results to cands."
+    },
+    {
+      "from": "repair",
+      "to": "compress",
+      "kind": "depends-on",
+      "description": "rewrite_flagged and the compression probe, so a rewrite is checked and swapped in exactly like compress."
+    },
+    {
+      "from": "repair",
+      "to": "meta",
+      "kind": "depends-on",
+      "description": "Reads the decmpfs header and resource fork, and copies attribute values, the ACL and flags onto the plain copy."
+    }
+  ]
+}

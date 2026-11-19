@@ -1,0 +1,543 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "free-disk-space features",
+  "folder": "src/macos/free-disk-space/src",
+  "description": "The behavior the binary offers for reclaiming disk space, with the limits the code puts on each. Every command that changes files reports the summed sizes it saw separately from the change in the volume's free space, and says the two can differ.",
+  "sources": [
+    {
+      "path": "src/macos/free-disk-space/src/main.rs",
+      "symbol": "Cmd"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/util.rs",
+      "symbol": "report_free"
+    }
+  ],
+  "entities": [
+    {
+      "id": "resumable-scan",
+      "name": "Resumable scan",
+      "description": "A scan of a directory tree that survives Ctrl-C and continues where it stopped.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "run_scan"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "scan_entry"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "consider"
+        }
+      ],
+      "behavior": "The scan queues directories in the state file and always takes the newest pending one. For each entry it skips symlinks, queues subdirectories that are not excluded and (without --cross-devices) on the root's device, records every regular file's path, leaf name and size, and records a candidate when the file qualifies. A file qualifies when it is at least --min-size (default 1M), has one link, carries no compressed, immutable, append-only or dataless flag, was not modified within --min-age-days (default 14), is not sparse (allocated at least 80% of its size), is not a skipped name or extension, and zlib on up to three 64 KiB samples shows at least --min-savings-pct (default 25) and an estimated saving of at least 128 KiB. The estimate is the size times the sampled saving ratio times 0.85. Progress is committed about every 2 seconds; the first Ctrl-C stops after the current directory.",
+      "outcome": "A list of compression candidates ranked by estimated saving, and a record of every file name for dedupe, built in as many sittings as the user likes.",
+      "constraints": [
+        "Directories named .Trash, .Spotlight-V100, .fseventsd, .DocumentRevisions-V100, .TemporaryItems, .ssh, .gnupg, .aws, .gcloud, Keychains, Mobile Documents, CloudStorage or com.docker.docker, bundles and libraries such as .app, .photoslibrary and .xcarchive, the paths under SKIP_PREFIXES (/System, /usr, /Volumes, /private/var/vm and others) and every --exclude are not entered.",
+        "Archives, media, databases and their journals, VM disks, lock files and credential files (by extension, by name, and any name starting id_) are never candidates.",
+        "Only one scan per state file; a new one replaces a finished scan, and an unfinished one only with --force."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "cmd_resume"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "run_scan"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "scan_entry"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "dir_excluded"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "consider"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "sample_ratio"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/util.rs",
+          "symbol": "install_sigint"
+        }
+      ]
+    },
+    {
+      "id": "verified-compression",
+      "name": "Verified in-place compression",
+      "description": "Each candidate is compressed through a temp copy that must match the original before it replaces it.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compress_one"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        }
+      ],
+      "behavior": "Pending candidates are taken largest estimated saving first, up to --sample or --max-files files and until --limit of estimated saving is planned. Before each file it checks the file is unchanged since the scan, single-linked, unflagged, without a real com.apple.ResourceFork (compression stores its data there, so it would be overwritten or removed), not modified within --min-age-days, in a writable directory, not open (lsof), and that the data volume has the file's size plus --reserve (default 2G) free. It is cloned to .fds-<pid>-<name>.tmp beside it (clonefile, which keeps mode, owner, flags, xattrs and times), and the vendored lempel-ziv-finite-state-entropy-compression library compresses the original with LZFSE on all cores and puts the compressed form on the clone (a resource fork or an inline com.apple.decmpfs attribute, an emptied data fork and the compressed flag); the copy must carry the compressed flag, save at least --min-gain (default 64K) of allocated space, match the original's size, mode, owner, group, BSD flags (apart from the compressed flag) and SHA-256, and keep every extended attribute value (apart from the compression attributes) and the ACL the original has. The original's access and modification times and then its birth time are put on the copy, and all three are read back, the original is checked once more for change, and the copy is renamed over it. On macOS, before the first file and before asking for confirmation, it checks that compressed copies work: it compresses a highly compressible probe file in the system temp directory the same way and requires the copy to carry the compressed flag and read back unchanged, and otherwise exits saying nothing was changed. While it runs, the progress line shows how many files were compressed and how many were not; per file it prints only failures, and at the end how many files were skipped for each reason, pointing at list --status skipped for each file's note. The copy gets back any attribute value it holds differently from the original (macOS stamps a clone with its maker's com.apple.provenance), through /usr/bin/xattr when macOS refuses the direct call; a value that still differs fails the file with a note naming it and why.",
+      "outcome": "Files read exactly as before and take less space; the run reports the verified saving and the volume's free-space change separately.",
+      "constraints": [
+        "macOS only, unless FDS_FORCE is set.",
+        "Refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
+        "A file without a com.apple.provenance (missing or empty: Apple's and system files) is skipped with the note 'no provenance' unless --include-no-provenance; a copy may carry this tool's provenance instead of the original's, which verification accepts, while every other attribute must match.",
+        "Files that failed only because of the provenance go back in the queue on the next run; --retry-failed puts every earlier failure back.",
+        "A file that fails verification is recorded as failed and the run carries on.",
+        "--dry-run lists up to 25 planned files and changes nothing.",
+        "A non-terminal run does not ask for confirmation."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "precheck"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "in_use"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/util.rs",
+          "symbol": "temp_beside"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "xattrs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "acl_text"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "set_birth"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "resource_fork_note"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "same_times"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compression_works"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "reason_key"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "print_skip_reasons"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/lzfse.rs",
+          "symbol": "compress_onto"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "requeue"
+        }
+      ]
+    },
+    {
+      "id": "compression-repair",
+      "name": "Repair of false compression claims",
+      "description": "Files the state file or the compressed flag falsely claim are compressed are found and, where possible, repaired.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "repair_one"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "rewrite_flagged"
+        }
+      ],
+      "behavior": "Every file the scan recorded, plus every candidate recorded as done, is checked. A file recorded as done that does not carry the compressed flag is reset to pending. A flagged file is read: a missing or invalid com.apple.decmpfs header, a header size different from the file size, or a read error makes it broken. A flagged file whose resource fork takes at least as many 4 KiB blocks as the plain file would saves no space (data kept inside the attribute takes none, so small compressed files are fine); it is decompressed: rewritten as a plain copy with its mode, group, BSD flags (without the compressed flag), extended attribute values and ACL, verified and swapped in like compress, and recorded as skipped so compress leaves it alone.",
+      "outcome": "The state file matches what is compressed on disk, broken files are listed for restoring from a backup, and flagged files whose compression saved nothing are plain files again.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "macOS only, unless FDS_FORCE is set; with --apply it refuses to start when a compressed probe copy does not read back as compressed and unchanged.",
+        "Broken files are only recorded (list --status broken), never changed or deleted.",
+        "A rewrite is skipped for the same reasons as compress (age, links, open files, writable directory, free space), except that the compressed flag is allowed."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "rewritten_copy"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "xattr"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/meta.rs",
+          "symbol": "copy_acl"
+        }
+      ]
+    },
+    {
+      "id": "clone-dedupe",
+      "name": "Copy-on-write dedupe",
+      "description": "Identical same-named files become clones of one kept copy, each keeping its own metadata.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "clone_verified"
+        }
+      ],
+      "behavior": "Groups of recorded files with the same leaf name and size (at least --min-size, default 1 byte), largest first, are checked against the disk; a group with at least two members and one replaceable member is hashed with SHA-256 and split by volume and digest. In each set it keeps a member that cannot be replaced if there is one, else the oldest, and for each replaceable other member clones the kept copy to a temp file beside it, gives the clone the target's ACL, mode, owner, flags, times and xattrs (dropping xattrs the target lacks), checks permissions, ownership, xattr names, the hash and that the target has not changed, and renames the clone over the target, marking it cloned in the state file. Every identical copy is first cloned into the temp folder once (and the clone deleted); a copy macOS will not let the process clone, such as one under privacy protection, is reported as skipped and is neither the source nor replaced, so another copy is cloned from. A failed clone names its source.",
+      "outcome": "Duplicate copies share their blocks on disk while every path keeps its own metadata.",
+      "constraints": [
+        "A dry run unless --apply; the dry run prints at most 50 of the files it would clone, then says it is still hashing and that the totals come at the end; the progress line stays up while it hashes.",
+        "Without --include-system it skips files owned by root or another user and files under /Library, /Applications, /private, /etc, /var, /tmp and the scan's SKIP_PREFIXES.",
+        "Hard-linked, open, compressed, immutable, append-only and dataless (iCloud placeholder) files are never replaced.",
+        "Only files the scan recorded, and only same-named ones, are compared.",
+        "--sample N stops after N duplicates; a duplicate whose clone fails verification is recorded (cloned = 2) and the run carries on.",
+        "--apply needs macOS, unless FDS_FORCE is set, and a successful lsof snapshot.",
+        "A duplicate without a com.apple.provenance (missing or empty) is not replaced unless --include-no-provenance, but may be the kept copy; the summary counts those left alone. A clone may carry this tool's provenance instead of the duplicate's, which verification accepts.",
+        "--retry-failed puts the duplicates earlier runs left as they were (cloned = 2) back in the queue."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "groups"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "members"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "is_system_file"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "plan"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "clone_verified"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "keep_metadata"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "dedupe_group"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "apfs"
+        }
+      ]
+    },
+    {
+      "id": "folder-cleanup",
+      "name": "Cache, Downloads and Trash cleanup",
+      "description": "Empties fixed cache folders, Xcode's derived data, the Downloads folder and the Trash.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "CACHE_DIRS"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "empty_dir"
+        }
+      ],
+      "behavior": "caches empties ~/.cache, ~/.nuget/packages, ~/Library/Caches, VS Code's cached extensions, cached data and logs, and the Claude app's Cache and Code Cache under ~/Library/Application Support; xcode empties ~/Library/Developer/Xcode/DerivedData; downloads empties ~/Downloads, hidden files included. Each folder is kept and its contents removed without following symlinks; its line shows its size and the running total of the run. trash asks Finder to empty the Trash; its dry run measures ~/.Trash.",
+      "outcome": "Space held by regenerable caches and unwanted downloads is freed, with a per-folder size.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Entries the user may not remove are listed as protected and skipped.",
+        "all includes downloads but not brew or xcode.",
+        "Emptying the Trash needs Finder (macOS), unless FDS_FORCE is set.",
+        "With --apply, a folder emptied by an interrupted run is skipped by the next applying run within 12 hours (resumable-cleanup)."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "empty_dir"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "rm_tree"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_trash"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "ordered_targets"
+        }
+      ]
+    },
+    {
+      "id": "dev-artifact-cleanup",
+      "name": "Dev build artifact cleanup",
+      "description": "Deletes build output and dependency folders under the dev root that can be proved regenerable.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "ARTIFACTS"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "verify_artifact"
+        }
+      ],
+      "behavior": "Under --dev-root (default ~/dev) it finds directories named node_modules, .next, .nuxt, dist, build, target, .gradle, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, obj, bin and DerivedData, without descending into them or into .git. Each must have its rule's manifest beside it (package.json, Cargo.toml, a .csproj and so on), a lockfile where the rule asks for one, a marker inside where the rule asks for one, only .pyc and .pyo files for __pycache__; it must be inside a git work tree, ignored by git and contain no tracked files; nothing in it may be modified since the start of the current day in Atlantic/Reykjavik (UTC); and no running process may have a file in it open, its parent as working directory, or its parent in its command line. Eligibility is checked again just before deleting. Each artifact's line shows its size and the running total of the run.",
+      "outcome": "Old, unused build output and dependencies are deleted; anything unproven is listed as uncertain and kept.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Skipped when git is not on PATH or the dev root does not exist.",
+        "Everything is kept when the lsof snapshot fails.",
+        "With --apply, an artifact deleted or kept (modified today or in use) by an interrupted run is skipped by the next applying run within 12 hours (resumable-cleanup)."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "find_artifacts"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "verify_artifact"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "today_start_ts"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Snapshot"
+        }
+      ]
+    },
+    {
+      "id": "tool-cleanup",
+      "name": "Homebrew and Docker cleanup",
+      "description": "Lets Homebrew and an already-running Docker Desktop remove what they can download again.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_brew"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_docker"
+        }
+      ],
+      "behavior": "brew runs brew cleanup --prune=all -s when brew is on PATH. docker, only when the docker CLI is on PATH, Docker Desktop's process is running and docker info answers, prunes all unused images and the build cache, stops every running container with --docker-stop-timeout seconds' grace (default 30), asks Docker Desktop to quit and waits up to 180 seconds for it to stop.",
+      "outcome": "Space held by Homebrew's cache and Docker's images and build cache is freed.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "Docker is never started; containers and volumes are never deleted.",
+        "If a container cannot be stopped, Docker is left running."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_brew"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "docker_running"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_docker"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "wait_for_quit"
+        }
+      ]
+    },
+    {
+      "id": "resumable-cleanup",
+      "name": "Resumable cleanup",
+      "description": "An applying clean that was interrupted continues after the steps it finished, the next time an applying clean runs.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Progress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        }
+      ],
+      "behavior": "With --apply, clean appends each step it finishes to ~/.local/state/free-disk-space/clean-progress.txt: a cache, Xcode or Downloads folder emptied (dir:<folder>), a dev artifact deleted or kept because it was modified today or is in use (dev:<path>), and a target completed (target:<name>). A step during which the stop flag was set (Ctrl-C, or SIGTERM) is not recorded. The next applying run prints `resuming an interrupted run: N steps already done` and skips those steps, saying `done before the interruption` for each folder and target it skips. A run that completes removes the file; a file older than 12 hours is deleted unread. Dry runs neither read nor write it.",
+      "outcome": "A long cleanup stopped part way, by the user or by a logout that ends the daemon, does not start over from the first folder.",
+      "constraints": [
+        "Only applying runs, clean --apply and the daemon's cleanups, use it; there is one file per user, wherever --state or FDS_STATE points.",
+        "Progress older than 12 hours is discarded.",
+        "Steps are keyed by folder, artifact path and target name only, not by the interrupted run's dev root or targets (backlog clean-resume-ignores-dev-root).",
+        "The totals a resumed run prints count only what that run deleted."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Progress::mark"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Progress::finish"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_dirs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "clean_dev"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/util.rs",
+          "symbol": "install_sigint"
+        }
+      ]
+    },
+    {
+      "id": "threshold-daemon",
+      "name": "Free-space threshold daemon",
+      "description": "A login item that cleans when free space falls below a threshold, counting only awake time.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        }
+      ],
+      "behavior": "Every --cadence (default 15m) of awake time it reads the data volume's total and free space and compares free space with --threshold (default 30G, or a percentage of the volume); below it, it runs clean --apply on --targets (default caches dev) with --dev-root (default ~/dev). A check is skipped while the main display is asleep. install writes a launchd plist that runs daemon run with these settings at load and keeps it alive, as a background process at nice 10 with low-priority I/O, logging to ~/Library/Logs/free-disk-space.log.",
+      "outcome": "Caches and old build output are cleared when space runs low, without the user remembering to.",
+      "constraints": [
+        "The clock stops while the Mac sleeps, and the daemon never wakes it.",
+        "Settings change only by reinstalling; the plist holds the absolute path of the binary that installed it.",
+        "Docker's stop grace is fixed at 30 seconds when the daemon cleans.",
+        "macOS only: installing runs /bin/launchctl.",
+        "When free space is still below the threshold after cleaning, it brings the scan up to date (resume an unfinished one, start one if none, rescan if the last finished over 7 days ago), runs dedupe --apply, then compress --yes --limit with the amount still missing, each as a child process so an error exits only that step; --clean-only skips this."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "Settings::parse"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/util.rs",
+          "symbol": "awake_secs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/util.rs",
+          "symbol": "display_awake"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "reclaim_steps"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/capability.json",
+      "relationship": "The capabilities these features belong to."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/operation.json",
+      "relationship": "The commands that carry them out."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The use cases that exercise them."
+    }
+  ]
+}

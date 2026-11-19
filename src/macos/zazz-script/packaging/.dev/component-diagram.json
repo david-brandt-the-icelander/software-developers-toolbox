@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-script-packaging component diagram",
+  "folder": "src/macos/zazz-script/packaging",
+  "description": "The zazz-script-packaging library crate (lib zazz_script_packaging): the .zazz archive, its manifest, packing, the signature envelope and script ids. It builds no binary and is not deployed on its own; the daemon is the only crate of the workspace that depends on it. Its modules are drawn in the source folder's diagram.",
+  "sources": [
+    { "path": "src/macos/zazz-script/packaging/Cargo.toml", "symbol": "[lib]" },
+    { "path": "src/macos/daemon/Cargo.toml", "symbol": "zazz-script-packaging" },
+    { "path": "src/macos/daemon/src/zazz/add.rs", "symbol": "zazz_script_packaging::script_id" },
+    { "path": "src/macos/daemon/src/zazz/signing.rs", "symbol": "zazz_script_packaging::sig" }
+  ],
+  "components": [
+    {
+      "id": "zazz-script-packaging",
+      "name": "zazz-script-packaging crate",
+      "responsibility": "Builds the zazz_script_packaging library: a member of the src/macos workspace whose dependencies are blake3 (ids and digests), miniz_oxide (deflate) and serde_json (manifests and envelopes).",
+      "folder": "src/macos/zazz-script/packaging"
+    },
+    {
+      "id": "src",
+      "name": "zazz-script-packaging source",
+      "responsibility": "The strict ZIP reader and deterministic writer, manifest parsing, directory packing, the zazz.sig envelope and script ids.",
+      "folder": "src/macos/zazz-script/packaging/src",
+      "diagram": "src/macos/zazz-script/packaging/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "The daemon whose zazz commands pack, test, add, sign and call scripts.",
+      "folder": "src/macos/daemon",
+      "diagram": "src/macos/daemon/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-script-packaging", "to": "src", "kind": "contains", "description": "src/lib.rs is the [lib] target zazz_script_packaging." },
+    { "from": "daemon", "to": "src", "kind": "depends-on", "description": "Path dependency: its zazz module reads archives (zip::read with Limits), parses manifests (Manifest::of, Manifest::parse), packs directories (pack::pack_dir), reads and writes zazz.sig (sig::Envelope, sig::digest) and names scripts (script_id)." }
+  ]
+}

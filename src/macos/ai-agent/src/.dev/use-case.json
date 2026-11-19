@@ -1,0 +1,327 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "ai-agent use cases",
+  "folder": "src/macos/ai-agent/src",
+  "description": "Asking a local open model from the shell, having zazzle ask it for an agent, and choosing which one answers. The steps before ai-agent starts (the invoker's exec of `zazzle daemon llm`, and daemon downloading ai-agent on first use) are in the invoker's and daemon's views.",
+  "sources": [
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+    { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" }
+  ],
+  "entities": [
+    {
+      "id": "ask-a-local-model",
+      "name": "Ask a local model",
+      "description": "A coding agent asks an open model on the developer's machine for a second opinion, a review or a summary, without an API key and without the text leaving the machine.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+        { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" }
+      ],
+      "actor": "Coding agent",
+      "actorDocument": "Actors/coding-agent.md",
+      "goal": "Get a local model's answer to a prompt on standard output.",
+      "preconditions": [
+        "ai-agent is beside the daemon or can be downloaded for this release (see the daemon views).",
+        "The chosen model is downloaded, or huggingface.co is reachable and there is room for it."
+      ],
+      "postconditions": [
+        "The answer was written to standard output, ending with a newline; thinking went nowhere, or to standard error with --show-thinking.",
+        "The exit status is 0 for a full answer and 3 when the token limit cut it short.",
+        "A model that was missing is installed in the model store, verified."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md",
+          "action": "Runs `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] [--show-thinking] TEXT..`, with `-` (or no TEXT) for piped standard input.",
+          "sources": [
+            { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" },
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Prompt" }
+          ]
+        },
+        {
+          "id": "pick",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Picks the model (--model, else the saved default, else qwen3.5-4b), by exact name or unique prefix, and the effort (--effort, else the saved one, else medium).",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "find" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "defaults" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "effort" }
+          ]
+        },
+        {
+          "id": "text",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Joins the words with spaces, putting standard input where a word is `-`, or reads only standard input when there are no words.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt_text" }
+          ]
+        },
+        {
+          "id": "fetch",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "When the model is not installed, says so on standard error and downloads it from huggingface.co at the pinned commit, with progress when standard error is a terminal, resuming a partial download and installing it only when size and SHA-256 match.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "ensure" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "fetch" }
+          ]
+        },
+        {
+          "id": "generate",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Loads the model, renders its chat template with the messages and the effort, decodes the prompt and samples up to the token limit (4096, 8192 or 32768 by effort, or --max-tokens), held to --grammar when given and at --temp (default 0.7; 0 is greedy).",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" },
+            { "path": "src/macos/ai-agent/src/template.rs", "symbol": "render" },
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "max_tokens" }
+          ]
+        },
+        {
+          "id": "stream",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Splits each piece of text into answer and thinking, writes the answer to standard output as it comes, and the thinking to standard error only with --show-thinking; exits 0.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter::push" },
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "pick",
+          "condition": "The model name matches no model or several, or the effort is not low, medium or high.",
+          "outcome": "`error: no model 'NAME'; known: ..`, `error: 'NAME' could be ..` or `error: no effort ..` on standard error, exit 2.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "find" },
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "main" }
+          ]
+        },
+        {
+          "atStep": "text",
+          "condition": "The prompt is empty or only blank.",
+          "outcome": "`error: nothing to ask: give TEXT, or pipe it in`, exit 2, before any download.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" }
+          ]
+        },
+        {
+          "atStep": "fetch",
+          "condition": "The download fails, or the file's size or SHA-256 differs from the catalogue's.",
+          "outcome": "The error on standard error, exit 2; a mismatching partial file is deleted, an interrupted one is kept for the next try.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "fetch" }
+          ]
+        },
+        {
+          "atStep": "fetch",
+          "condition": "--no-download is given and the model is not installed.",
+          "outcome": "`error: NAME is not downloaded (SIZE): run `zazzle agent llm --model NAME` first` on standard error, exit 4; nothing is downloaded.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "installed" }
+          ]
+        },
+        {
+          "atStep": "generate",
+          "condition": "The model cannot be loaded, has no chat template, its template fails, or the prompt is as long as the model's training context or longer.",
+          "outcome": "The error on standard error, exit 2.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" }
+          ]
+        },
+        {
+          "atStep": "stream",
+          "condition": "Generation stopped at the token limit or the context's end.",
+          "outcome": "`[stopped after N tokens, the answer is cut short ..]` (or `still thinking, no answer yet`) on standard error, exit 3.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "answer-for-zazzle",
+      "name": "Answer for zazzle's agent features",
+      "description": "The daemon hands an agent's work to the local model: post-processing a command's output (`--llm`), choosing the rule sections a task needs (`brief`) or answering `prompt`, by running ai-agent as a child that never downloads a model.",
+      "sources": [
+        { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" },
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" }
+      ],
+      "actor": "Coding agent",
+      "actorDocument": "Actors/coding-agent.md",
+      "goal": "Read the local model's short answer instead of a whole output or every rule file.",
+      "preconditions": [
+        "The developer has downloaded a model (`zazzle agent llm --model NAME`).",
+        "The daemon finds ai-agent through ZAZZLE_LLM, beside itself or in the tool store."
+      ],
+      "postconditions": [
+        "The daemon has the answer from standard output and the exit code: 0 full, 3 cut short; nothing was downloaded."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md",
+          "action": "Runs a zazzle command with `--llm INSTRUCTION`, `zazzle brief INTENT` or `zazzle prompt TEXT` (or their MCP tools).",
+          "sources": [
+            { "path": "src/macos/daemon/src/cmd/mod.rs", "symbol": "produce" },
+            { "path": "src/macos/daemon/src/mcp.rs", "symbol": "llm_args" }
+          ]
+        },
+        {
+          "id": "spawn",
+          "actor": "daemon",
+          "participantKind": "system",
+          "action": "Runs `ai-agent prompt --no-download` with the flags of the feature (low effort, --temp 0 and a result-only --system for --llm; also --grammar for brief), the instruction, and `-` with the input on standard input, one call at a time.",
+          "sources": [
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" },
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "post" },
+            { "path": "src/macos/daemon/src/brief.rs", "symbol": "ask_local" }
+          ]
+        },
+        {
+          "id": "check",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Picks the default model and checks it is installed instead of downloading it.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "installed" }
+          ]
+        },
+        {
+          "id": "generate",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Generates under the grammar, when given, with the greedy sampler at temperature 0, and writes the answer to standard output.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" }
+          ]
+        },
+        {
+          "id": "read",
+          "actor": "daemon",
+          "participantKind": "system",
+          "action": "Reads the answer and exit code and gives the agent the answer (marked as post-processed for --llm, or as chosen sections for brief).",
+          "sources": [
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" },
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "mark" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "check",
+          "condition": "The model is not downloaded.",
+          "outcome": "ai-agent exits 4 with the command to download it; the daemon reports `local model: NAME is not downloaded ..` as the error.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" }
+          ]
+        },
+        {
+          "atStep": "spawn",
+          "condition": "The input is over 400,000 bytes, ai-agent cannot be started, or it runs past ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "The daemon refuses or kills it and reports the reason as the error.",
+          "sources": [
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" },
+            { "path": "src/macos/daemon/src/llm.rs", "symbol": "run" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "choose-a-model",
+      "name": "Choose the default model and effort",
+      "description": "The developer looks at the catalogue and picks the model and effort `prompt` uses when none is named, or deletes a model they no longer want.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+        { "path": "src/macos/ai-agent/README.md", "symbol": "Models" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Have the model and effort they want ready on their machine as the default.",
+      "preconditions": [
+        "zazzle is installed with a daemon that can run ai-agent."
+      ],
+      "postconditions": [
+        "The defaults file names the chosen model and effort, and the model is installed."
+      ],
+      "flow": [
+        {
+          "id": "list",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle agent llm` and reads the catalogue: each model's size, whether it is downloaded, what it is for and the Mac it fits, with the default marked.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "list" }
+          ]
+        },
+        {
+          "id": "choose",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle agent llm --model NAME [--effort low|medium|high]`.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Llm" }
+          ]
+        },
+        {
+          "id": "save",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Downloads the model unless it is installed, then writes the model and effort to the defaults file and prints them.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "save_defaults" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "choose",
+          "condition": "Only --effort is given.",
+          "outcome": "The effort is saved and the default model kept, without a download.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" }
+          ]
+        },
+        {
+          "atStep": "choose",
+          "condition": "`--remove NAME` is given instead.",
+          "outcome": "The model's file and any partial download are deleted: `removed NAME`, or `NAME was not downloaded`.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "remove" }
+          ]
+        },
+        {
+          "atStep": "save",
+          "condition": "The name or effort is unknown, or the download fails.",
+          "outcome": "The error on standard error, exit 2; the defaults are not changed.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" }
+          ]
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "operation", "folder": "src/macos/ai-agent/src", "path": "src/macos/ai-agent/src/.dev/operation.json", "relationship": "The `llm` and `prompt` commands these use cases call." },
+    { "kind": "use-case", "folder": "src/macos/zazzle/src", "path": "src/macos/zazzle/src/.dev/use-case.json", "relationship": "How `zazzle agent llm|prompt` reaches `zazzle daemon llm` before these steps." },
+    { "kind": "operation", "folder": "src/macos/daemon/src", "path": "src/macos/daemon/src/.dev/operation.json", "relationship": "`zazzle daemon llm`, which fetches and execs ai-agent." },
+    { "kind": "use-case", "folder": "src/macos/daemon/src", "path": "src/macos/daemon/src/.dev/use-case.json", "relationship": "brief and post-processing from the agent's side, which run ai-agent as in answer-for-zazzle." },
+    { "kind": "state", "folder": "src/macos/ai-agent/src", "path": "src/macos/ai-agent/src/.dev/Filter.state-diagram.json", "relationship": "How the stream step tells thinking from answer." },
+    { "kind": "deployment", "folder": "src/macos/ai-agent", "path": "src/macos/ai-agent/.dev/deployment-diagram.json", "relationship": "Where the downloads come from and where they go." }
+  ]
+}

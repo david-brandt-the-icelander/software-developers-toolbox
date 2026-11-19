@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-script-engine component diagram",
+  "folder": "src/macos/zazz-script/engine",
+  "description": "The zazz-script-engine crate (lib zazz), the std-only SDK every zazz script is written against, and what crosses its boundary. It is used three ways: daemon embeds its source files with include_str! and compiles them into an rlib for each script build; daemon and zazz-script-runner also link it as an ordinary path dependency for the frame protocol, descriptor passing, JSON and the human command line; and scripts call zazz::serve and test with zazz::test. Not deployed on its own. Its modules are drawn in the source folder's diagram.",
+  "sources": [
+    { "path": "src/macos/zazz-script/engine/Cargo.toml", "symbol": "[lib]" },
+    { "path": "src/macos/daemon/Cargo.toml", "symbol": "zazz-script-engine" },
+    { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "zazz-script-engine" },
+    { "path": "src/macos/daemon/src/zazz/sdk.rs", "symbol": "FILES" },
+    { "path": "src/macos/daemon/src/zazz/call.rs", "symbol": "zazz::{fdpass, proto}" },
+    { "path": "src/macos/zazz-script/runner/src/serve.rs", "symbol": "zazz::{fdpass, proto, Error, Json}" }
+  ],
+  "components": [
+    {
+      "id": "zazz-script-engine",
+      "name": "zazz-script-engine crate",
+      "responsibility": "Builds the zazz library with no dependencies, on purpose, so the daemon can compile it with plain rustc for every script.",
+      "folder": "src/macos/zazz-script/engine"
+    },
+    {
+      "id": "src",
+      "name": "zazz SDK source",
+      "responsibility": "Handlers and serve, the per-call context, the launcher protocol and its native and WASM backends, HTTP, JSON, errors, the human command line, output rendering and the zazz::test library.",
+      "folder": "src/macos/zazz-script/engine/src",
+      "diagram": "src/macos/zazz-script/engine/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "The daemon that builds, tests and calls zazz scripts.",
+      "folder": "src/macos/daemon",
+      "diagram": "src/macos/daemon/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-runner",
+      "name": "zazz-script-runner",
+      "responsibility": "The WASM host that runs a script's module, one fresh instance per call.",
+      "folder": "src/macos/zazz-script/runner",
+      "diagram": "src/macos/zazz-script/runner/.dev/component-diagram.json"
+    },
+    {
+      "id": "scripts",
+      "name": "zazz scripts",
+      "responsibility": "Script authors' Rust sources, written with std and the zazz SDK and shipped inside a .zazz; not part of this repository.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-script-engine", "to": "src", "kind": "contains", "description": "src/lib.rs is the [lib] target zazz." },
+    { "from": "daemon", "to": "src", "kind": "depends-on", "description": "Embeds every source file (src/zazz/sdk.rs FILES, include_str!) and compiles them per toolchain and target, the SDK's hash being part of each build key; links the crate for proto, fdpass, cliargs, render, http::host_matches and Json." },
+    { "from": "zazz-script-runner", "to": "src", "kind": "depends-on", "description": "Path dependency: proto and fdpass for the control socket, http for the guest's requests and the allowlist, Json and Error." },
+    { "from": "scripts", "to": "src", "kind": "depends-on", "description": "Register Handlers and call zazz::serve; tests use zazz::test." }
+  ]
+}

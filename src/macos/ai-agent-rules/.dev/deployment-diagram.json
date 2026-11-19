@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "ai-agent-rules deployment diagram",
+  "folder": "src/macos/ai-agent-rules",
+  "description": "How ai-agent-rules runs: one binary installed beside zazzle on the developer's machine, started by a coding agent or a developer through `zazzle agent get-rules`; it reads rule and skill files and exits. Nothing stays resident.",
+  "sources": [
+    {
+      "path": "src/macos/ai-agent-rules/Cargo.toml",
+      "symbol": "bin"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "exec_tool"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "macos"
+    },
+    {
+      "path": "release/formula.sh",
+      "symbol": "Zazzle.install"
+    },
+    {
+      "path": "agents/skills/zazzle-agent/SKILL.md",
+      "symbol": "get-rules"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "agent",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle agent get-rules PATH` before working in a folder, as agents/skills/zazzle-agent/SKILL.md says.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "machine",
+      "name": "The developer's machine",
+      "kind": "host",
+      "description": "A Mac (the release ships universal macOS binaries) or, from a local build, another Unix."
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "kind": "process",
+      "description": "Replaces itself with the ai-agent-rules found in its own directory for `zazzle agent ARGS`.",
+      "condition": "When run as `zazzle agent`."
+    },
+    {
+      "id": "tool",
+      "name": "ai-agent-rules",
+      "kind": "process",
+      "description": "Reads rule and skill files from the file system and prints them, or just their names."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "ai-agent-rules",
+      "source": "src/macos/ai-agent-rules/Cargo.toml",
+      "deployedTo": "machine",
+      "description": "Built with cargo build --release -p ai-agent-rules, or installed beside zazzle from the universal macOS release tarball or the zazzle Homebrew formula."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "tool",
+      "kind": "hosts",
+      "description": "Runs as the calling user, in the caller's working directory."
+    },
+    {
+      "from": "agent",
+      "to": "invoker",
+      "kind": "connects-to",
+      "description": "`zazzle agent get-rules PATH`."
+    },
+    {
+      "from": "invoker",
+      "to": "tool",
+      "kind": "connects-to",
+      "description": "exec with the arguments after `agent`, keeping the caller's streams and exit status."
+    }
+  ]
+}

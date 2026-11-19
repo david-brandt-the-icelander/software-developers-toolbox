@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "csharp-minifier source",
+  "folder": "src/macos/csharp-minifier/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "csharp-minifier source",
+      "summary": "The command line, test splitting, identifier listing and renaming, repository setup and benchmark reporting in one executable.",
+      "purpose": "Program.cs parses switches with Cli.Parse. Runner.Run applies SplitTests, Rename and read-permission plans or reports checks, and installs repository guidance after test-layout commands. Identifiers prints the tree consumed by Rename. Benchmark runs prompts against a clone and records usage.",
+      "boundaries": [
+        "The tests are in src/macos/csharp-minifier/tests/, which reaches the internal types through InternalsVisibleTo.",
+        "Build settings shared with the tests (target framework, version) are in src/macos/csharp-minifier/Directory.Build.props.",
+        "The skill text it writes into repositories is agents/skills/csharp-minifier/SKILL.md, embedded at build time; change it there.",
+        "C# is parsed, bound and renamed with Roslyn (Microsoft.CodeAnalysis.CSharp and its Workspaces package); compile checks use the .NET 8 reference assemblies package, so nothing is loaded from the machine's .NET.",
+        "It starts git during repository setup, and for --benchmark also cp, rm, git and the claude CLI (Proc.RunWithInput), never through a shell."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-minifier/src/csharp-minifier.csproj",
+          "symbol": "AssemblyName"
+        },
+        {
+          "path": "src/macos/csharp-minifier/src/Program.cs",
+          "symbol": "Usage"
+        },
+        {
+          "path": "src/macos/csharp-minifier/src/Runner.cs",
+          "symbol": "Runner.Run"
+        },
+        {
+          "path": "src/macos/csharp-minifier/src/Plan.cs",
+          "symbol": "Plan"
+        },
+        {
+          "path": "src/macos/csharp-minifier/src/RepoSetup.cs",
+          "symbol": "RepoSetup.Run"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "src/macos/csharp-minifier/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

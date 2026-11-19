@@ -1,0 +1,214 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle setup features",
+  "folder": "src/macos/daemon/src/setup",
+  "description": "What `zazzle setup` does to the MCP clients' user-level settings, and what it checks.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/setup/mod.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/daemon/src/setup/check.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "client-setup",
+      "name": "Configure MCP clients for zazzle",
+      "description": "`zazzle setup` plans, `--apply` makes and `--undo` reverses the user-level settings that make Claude Code, the Claude desktop app and Codex start zazzle, carry zazzle's instructions, and send their other MCP servers through the zazzle proxy.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "plan_client"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "apply_plan"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/clients.rs",
+          "symbol": "ConfigFile"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Configuring clients: `zazzle setup`"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "unmanaged"
+        }
+      ],
+      "behavior": "Clients that look installed (their settings file or folder exists) are chosen unless --client names them. For each: zazzle is added when missing (Claude Code: `zazzle daemon mcp` in ~/.claude.json's user scope; desktop app: with --repo, `/bin/sh -c \"cd REPO && exec zazzle daemon mcp\"`, since it starts servers in /; Codex: `[mcp_servers.zazzle]` in config.toml); each other stdio server becomes `zazzle daemon proxy --log -- ORIGINAL`; each Streamable HTTP server whose entry has headers or a bearer-token variable is routed through http://127.0.0.1:PORT/mcp (from 8809, one port per upstream), where a LaunchAgent keeps `zazzle daemon proxy --upstream URL` running (macOS only); HTTP servers without static auth (OAuth), SSE servers and broken entries are left alone with the reason; --no-wrap leaves every other server alone. The instructions go between markers in ~/.claude/CLAUDE.md and Codex's AGENTS.md, and Unless --no-hook is given, setup adds `zazzle daemon hook` as a PreToolUse hook to ~/.claude/settings.json (Claude Code) and ~/.codex/hooks.json (Codex, which asks the user to trust it), replacing the C# indexer's hook from earlier versions; --hook-edits makes it refuse native edits. --workspace DIR (and --repo) adds folders to ~/.zazzle/workspaces, refusing the home folder and /. Without --apply nothing changes and the report ends with what an agent should ask the user. --apply backs up each changed file as FILE.zazzle-backup-SECONDS and records routes in ~/.zazzle/setup.json; running it twice changes nothing. --undo removes zazzle, unwraps and unroutes servers, stops the proxy agents and removes the instructions, the hooks and the workspace lines it added. Servers it does not change are listed with the reason: plugin servers (Claude Code plugin .mcp.json and plugin.json, Codex [plugins.*.mcp_servers]) and repositories' shared .mcp.json and .codex/config.toml under --repo and the workspaces; wrapping changes only command and args, so env, cwd, enabled state and tool policy stay; secrets in env and headers are never printed. --apply records its options in ~/.zazzle/setup.json; --off undoes with them and keeps the record, --on applies them again, and --undo and --uninstall forget it; --uninstall also unloads daemon's own LaunchAgent and prints how to remove the programs and ~/.zazzle.",
+      "outcome": "An agent told to run `zazzle setup` can configure every client the user has, with the user's consent, and reverse it.",
+      "constraints": [
+        "The apps rewrite their settings files, so they should be quit before --apply.",
+        "HTTP servers that sign in with OAuth cannot be proxied: the proxy forwards every request to one upstream URL.",
+        "HTTP routing needs launchd (macOS)."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "plan_client"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "edit_block"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "edit_hook"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "agent"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/clients.rs",
+          "symbol": "ConfigFile::set_command"
+        }
+      ]
+    },
+    {
+      "id": "client-check",
+      "name": "Check configured MCP servers",
+      "description": "`zazzle setup --check` reports locally how each chosen client is configured and tests zazzle and the hook; `--check --probe` also starts every other server the way that client would and reports what works.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "probe_stdio"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "probe_http"
+        }
+      ],
+      "behavior": "A stdio server is started with its command, arguments and environment in its client's folder (`/` for the desktop app, the project for Claude Code's project servers, else --repo or the current folder) and sent initialize, notifications/initialized and tools/list, and for zazzle tools/call zazzle_overview, within 20 seconds; it is stopped afterwards. An HTTP server gets an initialize POST with its headers and its bearer-token variable's value. Each line reads ok, note (a 401 or 403 asking for sign-in, an unset token variable, zazzle without the indexer) or FAIL (cannot start, error, no answer, HTTP error) with the reason and the tail of its stderr; a client without zazzle fails. The report ends with counts and fixes for common failures. Each server is marked [zazzle], [proxied: stdio], [proxied: http] or [direct: reason] (OAuth, not wrapped or routed yet, disabled), each client's routing as enforced by the hook (with a self-test that feeds it rg, cargo test and git status) or instructions only, zazzle's repository access from the folder it starts in (git work tree or repositories below, and where edits are allowed), and the last day of the activity log.",
+      "outcome": "The user and their agent learn which servers each client will actually start, before relying on them.",
+      "constraints": [
+        "It cannot see a client's own environment: an app started from the Dock may lack the shell's PATH, which the report points out when a command does not start."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "folder"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "response"
+        }
+      ]
+    },
+    {
+      "id": "client-verify",
+      "name": "Verify zazzle end to end",
+      "description": "`zazzle setup --verify [--repo DIR]` uses zazzle as an agent would and shows the activity entries it produced.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/verify.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/verify.rs",
+          "symbol": "exercise"
+        }
+      ],
+      "behavior": "On --repo or the current repository it starts `zazzle daemon mcp` inside the repository (relative paths) and again in the home folder (absolute paths), and in each does zazzle_find for a word of a tracked file, zazzle_read source=true, a reversible edit (create .zazzle-verify-PID.txt, edit it with the read's sha, remove it) and zazzle_overview. It then runs a failing command through `zazzle daemon wrap` and checks the exit code, calls tools/list through every wrapped server, self-tests each installed hook, and lists the activity-log entries since it started; no logged zazzle command counts as a failure.",
+      "outcome": "The user sees which operations actually traversed zazzle, from a chat started inside a repository and from one started elsewhere.",
+      "constraints": [
+        "The edit from the home folder works only when the repository is in a workspace."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/setup/verify.rs",
+          "symbol": "run_step"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/verify.rs",
+          "symbol": "proxy_steps"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "Session"
+        }
+      ]
+    },
+    {
+      "id": "client-report",
+      "name": "Report what went through zazzle",
+      "description": "`zazzle setup --report` summarizes the last day of the activity log and names what it cannot see.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "report"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "summary"
+        }
+      ],
+      "behavior": "It counts zazzle commands by name and session, `zazzle run` runs and failures, MCP calls through the proxy by server and tool, raw commands the hook redirected, and bypasses (native edits, # allow-raw, zazzle unavailable), then lists what never reaches the log: native tools the hook allows, direct MCP servers, the desktop chat and clients without a trusted hook.",
+      "outcome": "Coverage claims rest on what agents did, not on configuration entries.",
+      "constraints": [
+        "Covers only clients that use this machine's daemon and its log."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/activity.rs",
+          "symbol": "read"
+        }
+      ]
+    },
+    {
+      "id": "managed-policy",
+      "name": "Managed agent configuration",
+      "description": "A user policy file decides the managed instruction block and the Claude Code session keys setup owns, and setup keeps them applied.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/policy.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "drift"
+        }
+      ],
+      "behavior": "`--apply` writes ~/.zazzle/policy.toml once as a commented template that owns nothing; its instructions.extra joins zazzle's marked block in ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, refreshed when it differs, and the session keys it names (autoCompactWindow, also per model under modelSettings; promptSuggestionEnabled, idleCompaction, effortLevel) go into ~/.claude/settings.json with their earlier values recorded. `--explain` describes the policy, `--set KEY=VALUE --apply` edits it, a SessionStart hook runs `setup --check --brief` to report drift in one line (including a block another version wrote in a client left out of the last --apply), `--check` marks such blocks OUTDATED, an upgraded daemon re-applies the last --apply once per version and refreshes every client's stale block, and `--report` recommends an autoCompactWindow from the cost model.",
+      "outcome": "Agent settings stay as the user chose without anyone editing ~/.claude or ~/.codex by hand.",
+      "constraints": [
+        "Only keys the policy names are written; dropping one or --undo restores its earlier value.",
+        "Text outside the markers is never changed.",
+        "A second --apply changes nothing.",
+        "Development builds and daemons started with --socket never re-apply."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/setup/policy.rs",
+          "symbol": "apply_keys"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "reapply_after_upgrade"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/compaction.rs",
+          "symbol": "section"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "component",
+      "folder": "src/macos/daemon/src/setup",
+      "path": "src/macos/daemon/src/setup/.dev/component-diagram.json",
+      "relationship": "The parts that implement it."
+    }
+  ]
+}

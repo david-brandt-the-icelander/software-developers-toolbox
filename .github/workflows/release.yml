@@ -1,6 +1,6 @@
 # First publish an alpha (vX.Y.Z-alpha.N: a quick macOS build without the tests and the PGO profile, as a GitHub
 # pre-release, icelander.net zazzle/alpha and the zazzle-alpha formula), then the release itself.
-# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules and JIT tools (zazzle-llm) zazzled downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or, when run by hand, the exact version given or the next one after the latest tag for a bump (macos/release/version.sh); every binary is built with it.
+# Build universal macOS binaries (signed when configured), Linux tarballs and the language modules and JIT tools (ai-agent) daemon downloads; publish them to a GitHub release (no release notes), icelander.net/downloads and the zazzcat/homebrew-z tap. The version comes from the tag: a pushed vX.Y.Z tag, or, when run by hand, the exact version given or the next one after the latest tag for a bump (release/version.sh); every binary is built with it.
 name: Release
 
 on:
@@ -46,7 +46,7 @@ jobs:
       - id: v
         env:
           EXACT_VERSION: ${{ inputs.version }}
-        run: bash macos/release/version.sh "${{ github.ref_type }}" "$GITHUB_REF_NAME" "${{ inputs.bump || 'none' }}" "$EXACT_VERSION" "${{ inputs.channel || 'both' }}" >> "$GITHUB_OUTPUT"
+        run: bash release/version.sh "${{ github.ref_type }}" "$GITHUB_REF_NAME" "${{ inputs.bump || 'none' }}" "$EXACT_VERSION" "${{ inputs.channel || 'both' }}" >> "$GITHUB_OUTPUT"
       # A tag pushed with GITHUB_TOKEN starts no other workflow, so this run goes on to publish it.
       - name: Tag the release
         if: github.ref_type != 'tag' && steps.v.outputs.publish == 'true'
@@ -65,7 +65,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.alpha_version }}
     defaults:
       run:
-        working-directory: macos/rust
+        working-directory: src/macos
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -73,14 +73,14 @@ jobs:
           targets: aarch64-apple-darwin, x86_64-apple-darwin, wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
           key: release-alpha
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Stamp the version
         working-directory: .
-        run: bash macos/release/set-version.sh "$VERSION"
+        run: bash release/set-version.sh "$VERSION"
       - name: Build, sign and list the language modules
         env:
           REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
@@ -90,9 +90,9 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
-          bash ../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
-          (cd dist/languages && ../../../release/sign-and-notarize.sh . ./*.dylib)
-          bash ../release/language-modules.sh --manifest dist/languages
+          bash ../../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
+          (cd dist/languages && ../../../../release/sign-and-notarize.sh . ./*.dylib)
+          bash ../../release/language-modules.sh --manifest dist/languages
       - name: Build, sign and list the JIT tools
         env:
           REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
@@ -102,35 +102,33 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
-          bash ../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
-          (cd dist/tools && ../../../release/sign-and-notarize.sh . zazzle-llm)
-          bash ../release/tools.sh --manifest dist/tools
+          bash ../../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
+          (cd dist/tools && ../../../../release/sign-and-notarize.sh . ai-agent)
+          bash ../../release/tools.sh --manifest dist/tools
       - name: Build universal binaries
         env:
-          ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
-          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
+          ZAZZLE_LANGUAGES_MANIFEST: ${{ github.workspace }}/src/macos/dist/languages/manifest
+          ZAZZLE_TOOLS_MANIFEST: ${{ github.workspace }}/src/macos/dist/tools/manifest
         run: |
-          bins="zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor"
+          bins="daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor"
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo build --workspace --exclude zazzle-llm --release --locked --target "$t"
+            cargo build --workspace --exclude ai-agent --release --locked --target "$t"
           done
           for b in $bins; do
             lipo -create -output "dist/$b" "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
           done
-          make -C ../c/zazzle
-          cp ../c/zazzle/build/zazzle dist/zazzle
-          cp ../c/zazzle/build/zazzle dist/zazz
-          ln -sf zazzle dist/z
+          make -C zazzle
+          cp zazzle/build/zazzle dist/zazzle
       - name: Build the C# indexer for both CPU types
-        working-directory: macos/dotnet/zazzle-csharp-indexer
+        working-directory: src/macos/csharp-indexer
         run: |
           for pair in arm64:osx-arm64 x64:osx-x64; do
             dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}" -p:Version="$VERSION"
-            gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "$GITHUB_WORKSPACE/macos/rust/dist/zazzle-csharp-indexer-${pair%%:*}.gz"
+            gzip -9 -n -c "out/${pair#*:}/csharp-indexer" > "$GITHUB_WORKSPACE/src/macos/dist/csharp-indexer-${pair%%:*}.gz"
           done
       - name: Add cyberspace-generator
         run: |
-          bash ../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
+          bash ../../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
           lipo -create -output dist/cyberspace-generator cg/cyberspace-generator-aarch64-apple-darwin cg/cyberspace-generator-x86_64-apple-darwin
       - name: Sign and notarize
         env:
@@ -140,18 +138,18 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor cyberspace-generator
+        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
       - name: Package
         run: |
-          ./dist/zazzled --version
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle z zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          ./dist/daemon --version
+          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
           name: zazzle-alpha-macos-universal
           path: |
-            macos/rust/zazzle-macos-universal.tar.gz
-            macos/rust/zazzle-macos-universal.tar.gz.sha256
+            src/macos/zazzle-macos-universal.tar.gz
+            src/macos/zazzle-macos-universal.tar.gz.sha256
       - name: Publish the pre-release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,7 +165,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          put="$GITHUB_WORKSPACE/macos/release/r2-put.sh"
+          put="$GITHUB_WORKSPACE/release/r2-put.sh"
           for dir in "$TAG" alpha; do
             bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz" zazzle-macos-universal.tar.gz application/gzip
             bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
@@ -203,12 +201,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tar -xzf dist/zazzle-macos-universal.tar.gz -C dist
-          bash macos/release/bottle.sh "$TAG" dist bottles
+          bash release/bottle.sh "$TAG" dist bottles
           gh release upload "$TAG" bottles/*.bottle.tar.gz --clobber
       - name: Write and push the formula
         run: |
           sha=$(cut -d' ' -f1 dist/zazzle-macos-universal.tar.gz.sha256)
-          bash macos/release/formula.sh "$TAG" "$sha" tap/Formula bottles
+          bash release/formula.sh "$TAG" "$sha" tap/Formula bottles
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -221,18 +219,18 @@ jobs:
   # PGO profile trained on them), the C# indexer and one build per CPU type, then one job that assembles, signs and
   # publishes. Rust jobs restore a build cache (keyed before the version is stamped, so it survives version changes).
 
-  # Language modules (macos/release/README.md): one universal dylib per grammar (zazzled links none). They are signed
-  # before their hashes go into the manifest that zazzled embeds, so a signed zazzled loads them under library validation.
-  # The PGO profile for zazzled's C code (tree-sitter) is trained on arm64 with them and used for both CPU types.
-  # The JIT tools (zazzle-llm, which zazzled downloads for `zazzle agent llm|prompt`) are built, signed and listed here
-  # too, so their manifest is ready for the zazzled builds.
+  # Language modules (release/README.md): one universal dylib per grammar (daemon links none). They are signed
+  # before their hashes go into the manifest that daemon embeds, so a signed daemon loads them under library validation.
+  # The PGO profile for daemon's C code (tree-sitter) is trained on arm64 with them and used for both CPU types.
+  # The JIT tools (ai-agent, which daemon downloads for `zazzle agent llm|prompt`) are built, signed and listed here
+  # too, so their manifest is ready for the daemon builds.
   macos-languages:
     needs: [version, alpha]
     if: ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.stable == 'true' && contains(fromJSON('["success","skipped"]'), needs.alpha.result) }}
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: macos/rust
+        working-directory: src/macos
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -240,13 +238,13 @@ jobs:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
           key: release-languages
       - name: Stamp the version
         working-directory: .
-        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
+        run: bash release/set-version.sh "${{ needs.version.outputs.version }}"
       - name: Build the language modules
-        run: bash ../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
+        run: bash ../../release/language-modules.sh dist/languages aarch64-apple-darwin x86_64-apple-darwin
       - name: Sign the language modules
         env:
           REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
@@ -257,9 +255,9 @@ jobs:
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
           cd dist/languages
-          ../../../release/sign-and-notarize.sh . *.dylib
+          ../../../../release/sign-and-notarize.sh . *.dylib
       - name: Write the language module manifest
-        run: bash ../release/language-modules.sh --manifest dist/languages
+        run: bash ../../release/language-modules.sh --manifest dist/languages
       - name: Build, sign and list the JIT tools
         env:
           REQUIRE_SIGNING: ${{ vars.REQUIRE_SIGNING == 'true' }}
@@ -269,23 +267,23 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
-          bash ../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
-          (cd dist/tools && ../../../release/sign-and-notarize.sh . zazzle-llm)
-          bash ../release/tools.sh --manifest dist/tools
-      - name: Train the PGO profile for zazzled's C code
+          bash ../../release/tools.sh dist/tools aarch64-apple-darwin x86_64-apple-darwin
+          (cd dist/tools && ../../../../release/sign-and-notarize.sh . ai-agent)
+          bash ../../release/tools.sh --manifest dist/tools
+      - name: Train the PGO profile for daemon's C code
         env:
           PGO_LANGUAGES: dist/languages
         run: |
-          sh ../release/pgo.sh > pgo.env
+          sh ../../release/pgo.sh > pgo.env
           mkdir -p dist/pgo
-          cp target/pgo/zazzled.profdata dist/pgo/
+          cp target/pgo/daemon.profdata dist/pgo/
       - uses: actions/upload-artifact@v7
         with:
           name: macos-languages
           path: |
-            macos/rust/dist/languages
-            macos/rust/dist/tools
-            macos/rust/dist/pgo
+            src/macos/dist/languages
+            src/macos/dist/tools
+            src/macos/dist/pgo
 
   # The workspace tests, run beside the builds instead of before them.
   macos-test:
@@ -294,7 +292,7 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: macos/rust
+        working-directory: src/macos
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -302,15 +300,15 @@ jobs:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
           key: release-test
       - name: Stamp the version
         working-directory: .
-        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
-      - run: cargo build --release -p zazz-worker --locked
+        run: bash release/set-version.sh "${{ needs.version.outputs.version }}"
+      - run: cargo build --release -p zazz-script-runner --locked
       - run: cargo test --workspace --locked
 
-  # One build of the workspace per CPU type (zazzle-llm aside), with the language and tool manifests and PGO profile from macos-languages.
+  # One build of the workspace per CPU type (ai-agent aside), with the language and tool manifests and PGO profile from macos-languages.
   macos-build:
     needs: [version, macos-languages]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'skipped') && !contains(needs.*.result, 'cancelled') }}
@@ -320,7 +318,7 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: macos/rust
+        working-directory: src/macos
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -328,32 +326,32 @@ jobs:
           targets: ${{ matrix.target }}, wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
           key: release-${{ matrix.target }}
       - name: Stamp the version
         working-directory: .
-        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
+        run: bash release/set-version.sh "${{ needs.version.outputs.version }}"
       - uses: actions/download-artifact@v8
         with:
           name: macos-languages
-          path: macos/rust/dist
+          path: src/macos/dist
       - name: Build
         env:
           CC: clang
-          ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
-          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
+          ZAZZLE_LANGUAGES_MANIFEST: ${{ github.workspace }}/src/macos/dist/languages/manifest
+          ZAZZLE_TOOLS_MANIFEST: ${{ github.workspace }}/src/macos/dist/tools/manifest
         run: |
-          export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/zazzled.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
-          cargo build --workspace --exclude zazzle-llm --release --locked --target "${{ matrix.target }}"
+          export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/daemon.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
+          cargo build --workspace --exclude ai-agent --release --locked --target "${{ matrix.target }}"
           mkdir -p bin
-          for b in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor; do
+          for b in daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
             cp "target/${{ matrix.target }}/release/$b" bin/
           done
           tar -C bin -cf bin.tar .
       - uses: actions/upload-artifact@v7
         with:
           name: macos-bin-${{ matrix.target }}
-          path: macos/rust/bin.tar
+          path: src/macos/bin.tar
 
   # The indexer is a self-contained single file per CPU type (not universal); the formula expands the matching one.
   macos-indexer:
@@ -362,7 +360,7 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: macos/dotnet/zazzle-csharp-indexer
+        working-directory: src/macos/csharp-indexer
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -374,12 +372,12 @@ jobs:
           mkdir -p gz
           for pair in arm64:osx-arm64 x64:osx-x64; do
             dotnet publish src -c Release -r "${pair#*:}" -o "out/${pair#*:}" -p:Version="${{ needs.version.outputs.version }}"
-            gzip -9 -n -c "out/${pair#*:}/zazzle-csharp-indexer" > "gz/zazzle-csharp-indexer-${pair%%:*}.gz"
+            gzip -9 -n -c "out/${pair#*:}/csharp-indexer" > "gz/csharp-indexer-${pair%%:*}.gz"
           done
       - uses: actions/upload-artifact@v7
         with:
           name: macos-indexer
-          path: macos/dotnet/zazzle-csharp-indexer/gz
+          path: src/macos/csharp-indexer/gz
 
   # Assemble the universal binaries, build the arm64 zazzle invoker, sign, package and publish.
   macos:
@@ -388,42 +386,40 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: macos/rust
+        working-directory: src/macos
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: macos-*
-          path: macos/rust/artifacts
+          path: src/macos/artifacts
       - name: Make universal binaries
         run: |
           mkdir -p dist bin/aarch64-apple-darwin bin/x86_64-apple-darwin
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             tar -C "bin/$t" -xf "artifacts/macos-bin-$t/bin.tar"
           done
-          for bin in zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor; do
+          for bin in daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
             lipo -create -output "dist/$bin" "bin/aarch64-apple-darwin/$bin" "bin/x86_64-apple-darwin/$bin"
           done
           cp -R artifacts/macos-languages/languages dist/languages
           cp -R artifacts/macos-languages/tools dist/tools
           cp artifacts/macos-indexer/*.gz dist/
-      - name: Build and smoke test the zazzle invoker (arm64 only; Intel Macs use zazzled mcp or zazzled run)
+      - name: Build and smoke test the zazzle invoker (arm64 only; Intel Macs use zazzle daemon mcp or zazzle daemon run)
         env:
-          ZAZZLED: bin/aarch64-apple-darwin/zazzled
+          DAEMON: bin/aarch64-apple-darwin/daemon
         run: |
-          make -C ../c/zazzle
-          make -C ../c/zazzle unit
-          sh ../c/zazzle/test/smoke.sh
-          cp ../c/zazzle/build/zazzle dist/zazzle
-          cp ../c/zazzle/build/zazzle dist/zazz
-          ln -sf zazzle dist/z
-      # cyberspace-generator is built in cyberspace-explorer; ship the release pinned in macos/release/cyberspace-generator.version.
+          make -C zazzle
+          make -C zazzle unit
+          sh zazzle/test/smoke.sh
+          cp zazzle/build/zazzle dist/zazzle
+      # cyberspace-generator is built in cyberspace-explorer; ship the release pinned in release/cyberspace-generator.version.
       - name: Add cyberspace-generator
         run: |
-          bash ../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
+          bash ../../release/fetch-cyberspace-generator.sh cg aarch64-apple-darwin x86_64-apple-darwin
           lipo -create -output dist/cyberspace-generator cg/cyberspace-generator-aarch64-apple-darwin cg/cyberspace-generator-x86_64-apple-darwin
           ./dist/cyberspace-generator --version
-      # Optional Developer ID signature and Apple notarization (macos/release/README.md): skipped with a
+      # Optional Developer ID signature and Apple notarization (release/README.md): skipped with a
       # warning without the Apple secrets, unless the repository variable REQUIRE_SIGNING is "true".
       - name: Sign and notarize
         env:
@@ -433,17 +429,17 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../release/sign-and-notarize.sh dist zazzle zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor cyberspace-generator
+        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
       - name: Package
         run: |
-          tar -C dist -czf zazzle-macos-universal.tar.gz zazzle z zazz zazzled zazz-worker afs fix-network free-disk-space zazzle-git zazzle-git-commit zazzle-agent zazzle-git-commit-message-editor cyberspace-generator zazzle-csharp-indexer-arm64.gz zazzle-csharp-indexer-x64.gz
+          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
           name: zazzle-macos-universal
           path: |
-            macos/rust/zazzle-macos-universal.tar.gz
-            macos/rust/zazzle-macos-universal.tar.gz.sha256
+            src/macos/zazzle-macos-universal.tar.gz
+            src/macos/zazzle-macos-universal.tar.gz.sha256
       - name: Publish release
         if: needs.version.outputs.publish == 'true'
         env:
@@ -464,13 +460,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          put="$GITHUB_WORKSPACE/macos/release/r2-put.sh"
+          put="$GITHUB_WORKSPACE/release/r2-put.sh"
           for dir in "$TAG" latest; do
             bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz" zazzle-macos-universal.tar.gz application/gzip
             bash "$put" "zazzle/$dir/zazzle-macos-universal.tar.gz.sha256" zazzle-macos-universal.tar.gz.sha256 \
               "text/plain; charset=utf-8"
           done
-          # The modules and tools belong to this release's zazzled only, so they go under the tag, not latest.
+          # The modules and tools belong to this release's daemon only, so they go under the tag, not latest.
           for f in dist/languages/*; do
             bash "$put" "zazzle/$TAG/languages/macos-universal/${f##*/}" "$f" application/octet-stream
           done
@@ -495,15 +491,15 @@ jobs:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
           key: release-linux-${{ matrix.arch }}
       - name: Stamp the version
-        run: bash macos/release/set-version.sh "${{ needs.version.outputs.version }}"
-      - name: Test zazzled
-        working-directory: macos/rust
+        run: bash release/set-version.sh "${{ needs.version.outputs.version }}"
+      - name: Test daemon
+        working-directory: src/macos
         run: |
-          cargo build --release -p zazz-worker --locked
-          cargo test -p zazzled --locked
+          cargo build --release -p zazz-script-runner --locked
+          cargo test -p daemon --locked
       - name: Install clang, LLVM and clang's profile runtime for PGO
         run: |
           sudo apt-get update -qq
@@ -511,29 +507,29 @@ jobs:
           v=$(clang --version | sed -n 's/.*clang version \([0-9][0-9]*\).*/\1/p' | head -1)
           sudo apt-get install -y -qq "libclang-rt-$v-dev"
       - name: Build the language modules and their manifest
-        working-directory: macos/rust
+        working-directory: src/macos
         run: |
-          bash ../release/language-modules.sh dist/languages
-          bash ../release/language-modules.sh --manifest dist/languages
+          bash ../../release/language-modules.sh dist/languages
+          bash ../../release/language-modules.sh --manifest dist/languages
       - name: Build the JIT tools and their manifest
-        working-directory: macos/rust
+        working-directory: src/macos
         run: |
-          bash ../release/tools.sh dist/tools
-          bash ../release/tools.sh --manifest dist/tools
-      - name: Train the PGO profile for zazzled's C code
+          bash ../../release/tools.sh dist/tools
+          bash ../../release/tools.sh --manifest dist/tools
+      - name: Train the PGO profile for daemon's C code
         env:
-          PGO_LANGUAGES: macos/rust/dist/languages
-        run: sh macos/release/pgo.sh >> "$GITHUB_ENV"
-      - name: Build zazzled with the profile
-        working-directory: macos/rust
+          PGO_LANGUAGES: src/macos/dist/languages
+        run: sh release/pgo.sh >> "$GITHUB_ENV"
+      - name: Build daemon with the profile
+        working-directory: src/macos
         env:
           CC: clang
           CFLAGS: ${{ env.PGO_CFLAGS }}
-          ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
-          ZAZZLED_TOOLS_MANIFEST: ${{ github.workspace }}/macos/rust/dist/tools/manifest
-        run: cargo build --release -p zazzled --locked
+          ZAZZLE_LANGUAGES_MANIFEST: ${{ github.workspace }}/src/macos/dist/languages/manifest
+          ZAZZLE_TOOLS_MANIFEST: ${{ github.workspace }}/src/macos/dist/tools/manifest
+        run: cargo build --release -p daemon --locked
       - name: Build and smoke test the zazzle invoker
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: |
           make
           make unit
@@ -542,19 +538,17 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Build the C# indexer
-        working-directory: macos/dotnet/zazzle-csharp-indexer
+        working-directory: src/macos/csharp-indexer
         run: |
           dotnet test tests
           dotnet publish src -c Release -r ${{ matrix.rid }} -o out -p:Version="${{ needs.version.outputs.version }}"
       - name: Package
         run: |
           mkdir -p dist
-          cp macos/rust/target/release/zazzled macos/rust/target/release/zazz-worker macos/c/zazzle/build/zazzle macos/dotnet/zazzle-csharp-indexer/out/zazzle-csharp-indexer dist/
-          cp macos/c/zazzle/build/zazzle dist/zazz
-          ln -sf zazzle dist/z
-          bash macos/release/fetch-cyberspace-generator.sh cg ${{ matrix.arch }}-unknown-linux-musl
+          cp src/macos/target/release/daemon src/macos/target/release/zazz-script-runner src/macos/zazzle/build/zazzle src/macos/csharp-indexer/out/csharp-indexer dist/
+          bash release/fetch-cyberspace-generator.sh cg ${{ matrix.arch }}-unknown-linux-musl
           cp cg/cyberspace-generator-${{ matrix.arch }}-unknown-linux-musl dist/cyberspace-generator
-          tar -C dist -czf zazzle-linux-${{ matrix.arch }}.tar.gz zazzle z zazz zazzled zazz-worker zazzle-csharp-indexer cyberspace-generator
+          bash release/pack.sh dist zazzle-linux-${{ matrix.arch }}.tar.gz zazzle daemon zazz-script-runner csharp-indexer cyberspace-generator
           sha256sum zazzle-linux-${{ matrix.arch }}.tar.gz > zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
@@ -562,8 +556,8 @@ jobs:
           path: |
             zazzle-linux-${{ matrix.arch }}.tar.gz
             zazzle-linux-${{ matrix.arch }}.tar.gz.sha256
-            macos/rust/dist/languages
-            macos/rust/dist/tools
+            src/macos/dist/languages
+            src/macos/dist/tools
   # Attach the Linux tarballs to the release the macos job created, and upload them and their language modules and tools.
   linux-publish:
     needs: [version, macos, linux]
@@ -593,16 +587,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ab026008f5aa2bef2dca4cfccd0f70ef
         run: |
-          put="$GITHUB_WORKSPACE/macos/release/r2-put.sh"
+          put="$GITHUB_WORKSPACE/release/r2-put.sh"
           for dir in "$TAG" latest; do
             bash "$put" "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz" zazzle-linux-${{ matrix.arch }}.tar.gz application/gzip
             bash "$put" "zazzle/$dir/zazzle-linux-${{ matrix.arch }}.tar.gz.sha256" zazzle-linux-${{ matrix.arch }}.tar.gz.sha256 \
               "text/plain; charset=utf-8"
           done
-          for f in macos/rust/dist/languages/*; do
+          for f in src/macos/dist/languages/*; do
             bash "$put" "zazzle/$TAG/languages/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
           done
-          for f in macos/rust/dist/tools/*; do
+          for f in src/macos/dist/tools/*; do
             bash "$put" "zazzle/$TAG/tools/linux-${{ matrix.arch }}/${f##*/}" "$f" application/octet-stream
           done
 
@@ -632,12 +626,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tar -xzf dist/zazzle-macos-universal.tar.gz -C dist
-          bash macos/release/bottle.sh "$TAG" dist bottles
+          bash release/bottle.sh "$TAG" dist bottles
           gh release upload "$TAG" bottles/*.bottle.tar.gz --clobber
       - name: Write and push the formula
         run: |
           sha=$(cut -d' ' -f1 dist/zazzle-macos-universal.tar.gz.sha256)
-          bash macos/release/formula.sh "$TAG" "$sha" tap/Formula bottles
+          bash release/formula.sh "$TAG" "$sha" tap/Formula bottles
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

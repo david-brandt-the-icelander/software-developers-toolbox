@@ -1,11 +1,11 @@
 ---
-name: zazzle-agent
+name: ai-agent-rules
 description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`, ask a local open model (Qwen, Gemma, gpt-oss) with `zazzle agent prompt`, shrink a command's output through it with `--llm`, get only the rules and skills a task needs with `zazzle brief INTENT`, and have it investigate a multi-file question with cited evidence (`zazzle investigate`). Use before editing in a folder you have not worked in, when starting work somewhere other than the repository root, or when the user asks for a local model's answer, a second opinion or a summary that must not leave the machine.
 ---
 
 # zazzle agent
 
-`zazzle agent get-rules ...` or `zazzle get-rules ...` (MCP `zazzle_get_rules`) is answered by zazzled, which remembers per session what it sent; the `zazzle-agent` binary runs the same lister without that memory. Docs: `macos/rust/zazzle-agent-rules/list/README.md`.
+`zazzle agent get-rules ...` or `zazzle get-rules ...` (MCP `zazzle_get_rules`) is answered by daemon, which remembers per session what it sent; the `ai-agent-rules` binary runs the same lister without that memory. Docs: `src/macos/ai-agent-rules/README.md`.
 
 ## get-rules
 - `zazzle agent get-rules PATH... [--purpose NAME]... [--name-only] [--skill-bodies] [--again]` prints the rules and skills for the home folder and every folder from `/` down to PATH (a file or folder that exists; else exit 66). Several paths print their union, each file once.
@@ -17,8 +17,8 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .clau
 
 ## Local models: llm and prompt
 - `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] TEXT..` prints a local model's answer; `-` in TEXT (or no TEXT) reads standard input: `git diff | zazzle agent prompt "Review this diff:" -`.
-- `zazzle agent llm` lists the models (size, downloaded or not, default); `--model NAME [--effort E]` downloads one and makes it the default; `--remove NAME` deletes it. Docs: `macos/rust/zazzle-llm/README.md`.
-- The first use downloads `zazzle-llm` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
+- `zazzle agent llm` lists the models (size, downloaded or not, default); `--model NAME [--effort E]` downloads one and makes it the default; `--remove NAME` deletes it. Docs: `src/macos/ai-agent/README.md`.
+- The first use downloads `ai-agent` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
 - Use `--effort low` for quick factual or formatting tasks; thinking is hidden unless `--show-thinking`.
 - Exit 3 means the token limit cut the answer short: raise `--max-tokens` or lower `--effort`.
 - To spend fewer tokens on output you need only part of (an API response, a log, a test run), add `--llm 'INSTRUCTION'` to the zazzle command (`zazzle run --llm 'Only the failing tests' -- cargo test`; MCP: `llm` on reading tools). The answer is the local model's and may drop detail: rerun without `--llm` when exact text matters.

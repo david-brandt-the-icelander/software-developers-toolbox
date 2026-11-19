@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "ai-agent configuration",
+  "folder": "src/macos/ai-agent/src",
+  "entities": [
+    {
+      "id": "ZAZZLE_LLM_DIR",
+      "title": "ZAZZLE_LLM_DIR",
+      "summary": "Where ai-agent keeps its models and defaults.",
+      "key": "ZAZZLE_LLM_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/v1/llm",
+      "sensitive": false,
+      "scope": "Read by ai-agent on every command.",
+      "takesEffect": "per-use",
+      "details": "Holds `models/` (installed GGUF files, `.FILE.part` partial downloads and `.FILE.lock` lock files) and `defaults` (`model=` and `effort=` lines written by `llm`). Directories are created with mode 0700.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/store.rs", "symbol": "root" },
+        { "path": "src/macos/ai-agent/src/store.rs", "symbol": "save_defaults" }
+      ]
+    },
+    {
+      "id": "ZAZZLE_LLM_LOG",
+      "title": "ZAZZLE_LLM_LOG",
+      "summary": "Shows llama.cpp's own log on standard error when set.",
+      "key": "ZAZZLE_LLM_LOG",
+      "type": "flag (set or unset)",
+      "default": "unset: llama.cpp's log is silenced",
+      "sensitive": false,
+      "scope": "Read by the engine when a prompt runs.",
+      "takesEffect": "per-use",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" }
+      ]
+    },
+    {
+      "id": "defaults",
+      "title": "Default model and effort",
+      "summary": "The model and effort `prompt` uses when it is given neither, set with `zazzle agent llm --model NAME --effort E`.",
+      "key": "defaults (file in ZAZZLE_LLM_DIR)",
+      "type": "model name and one of low, medium, high",
+      "default": "qwen3.5-4b at effort medium",
+      "sensitive": false,
+      "scope": "Read by `prompt` and `llm`.",
+      "takesEffect": "per-use",
+      "validation": "An effort that is not low, medium or high in the file is read as medium; an unknown model name fails when used.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/store.rs", "symbol": "defaults" },
+        { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "DEFAULT" }
+      ]
+    }
+  ]
+}

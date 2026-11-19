@@ -1,0 +1,81 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "csharp-indexer command-line helper classes",
+  "folder": "src/macos/csharp-indexer/src/Cli",
+  "description": "One static class per command and the hook's decision record. They share nothing with each other.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+      "symbol": "HookPolicy"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+      "symbol": "Init"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+      "symbol": "Report"
+    }
+  ],
+  "types": [
+    {
+      "id": "Cli.HookDecision",
+      "name": "HookDecision",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/HookPolicy.cs"
+      ],
+      "members": [
+        "bool Block",
+        "string Message",
+        "string Program"
+      ]
+    },
+    {
+      "id": "Cli.HookPolicy",
+      "name": "HookPolicy",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/HookPolicy.cs"
+      ],
+      "members": [
+        "static HookDecision Decide(string toolName, string? command, string? filePath = null)",
+        "static List<List<string>> Segments(string cmd)"
+      ]
+    },
+    {
+      "id": "Cli.Init",
+      "name": "Init",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/Init.cs"
+      ],
+      "members": [
+        "static string? FindDaemon(string exe)",
+        "static List<string> Apply(string dir, string exe, string? daemon)",
+        "const string AgentsSnippet"
+      ]
+    },
+    {
+      "id": "Cli.Report",
+      "name": "Report",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/Report.cs"
+      ],
+      "members": [
+        "static string FromDir(string stateDir)",
+        "static string Build(List<JsonNode> all)"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Cli.HookPolicy",
+      "to": "Cli.HookDecision",
+      "kind": "depends-on",
+      "description": "Decide returns one."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle setup",
+  "folder": "src/macos/daemon/src/setup",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle setup",
+      "summary": "`zazzle daemon setup` (reached as `zazzle setup`): plans, applies, undoes and checks the user-level settings that make Claude Code, the Claude desktop app and Codex use zazzle and send their other MCP servers through the zazzle proxy.",
+      "purpose": "mod.rs parses the options, finds the home folder, daemon, the C# indexer and Codex's home (Env), plans each client's changes (add zazzle, wrap stdio servers in `zazzle daemon proxy`, route Streamable HTTP servers with static auth through a local proxy kept by a LaunchAgent, leave the rest with a reason), reports the plan, and with --apply or --undo writes the files with backups, the instructions block in CLAUDE.md and AGENTS.md, the indexer's hook and the proxy agents; INSTRUCTIONS is also what zazzle daemon mcp sends in its handshake. clients.rs knows each client's settings file and reads and edits its servers while keeping everything else (JSON key order, TOML comments). check.rs starts each configured server the way its client does and does a real MCP handshake.",
+      "boundaries": [
+        "Runs as its own process in the caller's environment: the invoker execs `zazzle daemon setup` (src/macos/zazzle/src/zazzle_core.h), and the daemon's dispatcher refuses `setup`.",
+        "Edits only user-level settings; a repository's shared .mcp.json is reported, never changed.",
+        "The proxy itself is src/proxy; the LaunchAgent files and launchctl calls are src/launchd.rs; the hook is the C# indexer's (`csharp-indexer hook`)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "plan_client"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/clients.rs",
+          "symbol": "ConfigFile"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "main"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "src/macos/daemon/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

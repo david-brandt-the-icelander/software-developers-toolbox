@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../../../../Meta/Agents/Knowledge/schemas/configuration.schema.json",
+  "kind": "configuration",
+  "title": "zazz::test configuration",
+  "folder": "src/macos/zazz-script/engine/src/test",
+  "description": "Environment variables assert_snapshot reads. daemon and zazz-script-runner set them when they run a script's tests; script code never reads them.",
+  "entities": [
+    {
+      "id": "snapshot-dir",
+      "title": "Snapshot directory",
+      "summary": "Where assert_snapshot looks for NAME.json.",
+      "key": "ZAZZ_SNAPSHOTS",
+      "type": "path",
+      "default": "tests/snapshots, relative to the test's working directory",
+      "sensitive": false,
+      "scope": "per test process",
+      "takesEffect": "per-use",
+      "details": "daemon points it at the script's tests/snapshots for native test runs (src/macos/daemon/src/zazz/native.rs); zazz-script-runner sets it for WASM test runs (src/macos/zazz-script/runner/src/testrun.rs).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/zazz-script/engine/src/test/check.rs", "symbol": "snapshot_dir" },
+        { "path": "src/macos/daemon/src/zazz/native.rs", "symbol": "ZAZZ_SNAPSHOTS" },
+        { "path": "src/macos/zazz-script/runner/src/testrun.rs", "symbol": "ZAZZ_SNAPSHOTS" }
+      ]
+    },
+    {
+      "id": "update-snapshots",
+      "title": "Update snapshots",
+      "summary": "When \"1\", assert_snapshot writes a snapshot that is missing or different instead of failing.",
+      "key": "ZAZZ_UPDATE_SNAPSHOTS",
+      "type": "flag",
+      "default": "unset (compare and fail)",
+      "sensitive": false,
+      "scope": "per test process",
+      "takesEffect": "per-use",
+      "details": "Only the exact value 1 turns it on. zazz-script-runner sets it for a WASM test run when updating is asked for; the snapshot-missing message points at `zazz test DIR --update`.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/zazz-script/engine/src/test/check.rs", "symbol": "assert_snapshot" },
+        { "path": "src/macos/zazz-script/runner/src/testrun.rs", "symbol": "ZAZZ_UPDATE_SNAPSHOTS" }
+      ]
+    }
+  ]
+}

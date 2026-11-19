@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["daemon", "language-modules", "zazz-script/packaging", "zazz-script/engine", "zazz-script/runner", "shell-tools", "fix-network", "free-disk-space", "git-tools", "ai-agent-rules", "ai-agent"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "Unlicense"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

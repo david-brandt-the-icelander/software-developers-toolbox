@@ -1,7 +1,7 @@
 # Owner
 
 **Kind:** person in a role
-**Evidence:** `.github/workflows/release.yml` (`on`: running the workflow with a version bump, or pushing a `vX.Y.Z` tag, releases every tool; `homebrew`: the formula is pushed to the owner's tap with `HOMEBREW_TAP_TOKEN`), `macos/release/README.md` (`Homebrew formula (formula.sh, bottle.sh)`, `One-time signing setup`: the tap token, repository secrets and Apple accounts only the owner sets up)
+**Evidence:** `.github/workflows/release.yml` (`on`: running the workflow with a version bump, or pushing a `vX.Y.Z` tag, releases every tool; `homebrew`: the formula is pushed to the owner's tap with `HOMEBREW_TAP_TOKEN`), `release/README.md` (`Homebrew formula (formula.sh, bottle.sh)`, `One-time signing setup`: the tap token, repository secrets and Apple accounts only the owner sets up)
 
 ## What they want from the system
 

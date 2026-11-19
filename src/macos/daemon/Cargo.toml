@@ -1,0 +1,130 @@
+[package]
+name = "daemon"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "daemon"
+path = "src/main.rs"
+
+# Each dependency has one reason; std covers everything else.
+[dependencies]
+# Content hashing: NEON-accelerated and fast enough to hash every file lazily.
+blake3 = "1"
+# gitignore-aware directory walking.
+ignore = "0.4"
+# P-256 keys and ECDSA signatures for signed zazz scripts.
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+# Randomness for generating signing keys.
+rand_core = { version = "0.6", features = ["getrandom"] }
+# The SHA-256 algorithm identifier that ECDSA certificates name (only the "oid" feature is needed).
+sha2 = { version = "0.10", features = ["oid"] }
+# X.509 certificates for zazz authorities: building, parsing and chain checks.
+x509-cert = { version = "0.2", features = ["builder", "pem"] }
+# Raw socket calls, SCM_RIGHTS, getpeereid and launchd activation.
+libc = "0.2"
+# Fast newline and substring scans (NEON on Apple Silicon).
+memchr = "2"
+# Regular-expression search; std has none.
+regex = "1"
+# MCP JSON-RPC messages, keeping key order so `zazzle setup` rewrites client settings without reordering them.
+serde_json = { version = "1", features = ["preserve_order"] }
+# Editing Codex's config.toml in `zazzle setup` while keeping its comments and layout.
+toml_edit = "0.22"
+# Exact syntax trees for symbol outlines.
+tree-sitter = "0.25"
+# The function type a language module returns its grammar as.
+tree-sitter-language = "0.1"
+# HTTPS client for the MCP proxy: blocking like the rest of the daemon, rustls with the OS trust store.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
+
+# The rule and skill files that apply to a path, shared with the ai-agent-rules program; daemon delivers them once per session.
+ai-agent-rules = { path = "../ai-agent-rules" }
+
+# .zazz archives, manifests and script ids, shared with the zazz tools.
+zazz-script-packaging = { path = "../zazz-script/packaging" }
+# The script protocol: frames, descriptor passing, the human CLI parser and output rendering.
+zazz-script-engine = { path = "../zazz-script/engine" }
+
+# The Keychain: evaluating certificate trust and setting trust for an authority.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+# tree-sitter-c grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-c = "0.24"
+# tree-sitter-c-sharp grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-c-sharp = "0.23"
+# tree-sitter-javascript grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-javascript = "0.23"
+# tree-sitter-python grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-python = "0.23"
+# tree-sitter-rust grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-rust = "0.23"
+# tree-sitter-typescript grammar for outlines and terse views in tests (release builds load it as a language module).
+tree-sitter-typescript = "0.23"
+# Fortran grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-fortran = "0.6"
+# Pascal grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-pascal = "0.10"
+# Bash grammar for the shell terse view.
+tree-sitter-bash = "0.25"
+# Dart grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-dart = "0.3"
+# Go grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-go = "0.23"
+# Java grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-java = "0.23"
+# C++ grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-cpp = "0.23"
+# Lua grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-lua = "0.5"
+# Kotlin grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-kotlin-ng = "1.1"
+# Swift grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-swift = "0.7"
+# Perl grammar for the terse view in tests (release builds load it as a language module) (the tree-sitter-perl project's crate).
+ts-parser-perl = "2.0"
+# PHP grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-php = "0.25"
+# Ruby grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-ruby = "0.23"
+# Scala grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-scala = "0.26"
+# Elixir grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-elixir = "0.3"
+# Haskell grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-haskell = "0.24"
+# OCaml grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-ocaml = "0.26"
+# F# grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-fsharp = "0.3"
+# Clojure grammar for the terse view in tests (release builds load it as a language module) (the maintained fork; tree-sitter-clojure is unmaintained).
+tree-sitter-clojure-orchard = "0.2"
+# Erlang grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-erlang = "0.21"
+# R grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-r = "1.3"
+# Julia grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-julia = "0.23"
+# Zig grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-zig = "1.1"
+# Objective-C grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-objc = "3.0"
+# Groovy grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-groovy = "0.1"
+# PowerShell grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-powershell = "0.26"
+# Visual Basic .NET grammar for the terse view in tests (release builds load it as a language module).
+tree-sitter-vb-dotnet = "0.1"
+# Hand-written WebAssembly text for zazz tests.
+wat = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

@@ -1,0 +1,1254 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "daemon source component diagram",
+  "folder": "src/macos/daemon/src",
+  "description": "The parts of the daemon crate's source. Three front ends (the socket server, the MCP server and in-process run) feed command lines to the commands, which run on one shared engine; the MCP proxy and `zazzle run` are separate subcommands of the same binary that reuse clean's steps. clean, `zazzle run` and the proxy keep their outputs in the output store, from which read-again gives them back. The `zazz` command line goes to the zazz scripts module, which builds, tests and runs scripts in zazz-script-runner processes and adds its tools to the MCP server. `zazzle daemon llm` hands `zazzle agent llm|prompt` to ai-agent, a JIT tool the tools module fetches like a language module; inside the daemon, the llm module runs ai-agent as a subprocess so agents can post-process any command's output (`--llm`), ask it (`prompt`) and have it choose the rule sections and skills a task needs (`brief`). All of it is one binary.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/lib.rs",
+      "symbol": "cmd"
+    },
+    {
+      "path": "src/macos/daemon/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "src/macos/daemon/src/server.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "src/macos/daemon/src/mcp.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "src/macos/daemon/src/engine.rs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "src/macos/daemon/src/outputs.rs",
+      "symbol": "save"
+    },
+    {
+      "path": "src/macos/daemon/src/params.rs",
+      "symbol": "matches"
+    },
+    {
+      "path": "src/macos/daemon/src/lib.rs",
+      "symbol": "zazz"
+    },
+    {
+      "path": "src/macos/daemon/src/tools.rs",
+      "symbol": "exec"
+    },
+    {
+      "path": "src/macos/daemon/src/llm.rs",
+      "symbol": "ask_with"
+    },
+    {
+      "path": "src/macos/daemon/src/brief.rs",
+      "symbol": "run"
+    }
+  ],
+  "components": [
+    {
+      "id": "src",
+      "name": "daemon source",
+      "responsibility": "The daemon library and binary.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs, cli.rs)",
+      "responsibility": "Parses `zazzle daemon serve|mcp|proxy|setup|wrap|hook|llm|install|uninstall|restart|run|version`, opens the engine with its cache and output store and starts the chosen front end, or hands proxy, setup and wrap to their folders and llm to the JIT tools.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "server",
+      "name": "Socket server (server.rs)",
+      "responsibility": "Binds the private socket (or takes launchd's), serves connections on 2 to 8 worker threads (script calls and human runs on a thread of their own), checks the peer's uid, receives the request and passed descriptors, runs the command with copies of the caller's streams for a script to use, and answers; flushes the cache every 100 ms and exits when idle.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "proto",
+      "name": "Wire format (proto.rs)",
+      "responsibility": "Encodes and decodes the length-prefixed request, limits its size, and does the relay round trip.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "client",
+      "name": "Socket client (client.rs)",
+      "responsibility": "Finds the socket path, calls the daemon in relay mode, and starts `zazzle daemon serve` and retries when no daemon is listening.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP server (mcp.rs, mcp_structure.rs, mcp_upgrade.rs)",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the zazzle file tools (zazzle_prompt among them), zazzle_get_rules and zazzle_brief, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1); every tool that only reads takes an `llm` instruction, passed on as `--llm` after the command, with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed daemon on the same connection and announces tools/list_changed.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "rules",
+      "name": "Rule delivery (rules.rs, nested.rs)",
+      "responsibility": "Answers get-rules for several paths and appends folder instructions to reads and edits, both through one per-session ledger keyed by canonical path, content hash and line ranges, so each rule reaches a session once until it changes or the session is reset.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "launchd",
+      "name": "launchd integration (launchd.rs)",
+      "responsibility": "Takes the socket launchd opened, writes and loads or unloads the LaunchAgent, and runs external programs with a timeout.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "restart",
+      "name": "Daemon replacement (restart.rs)",
+      "responsibility": "Asks the running daemon for its version and pid, stops it (SIGTERM, then SIGKILL) so the next request starts the installed daemon, and points a LaunchAgent that names another program at it: always for zazzle daemon restart, only for a daemon older than this binary when zazzle daemon mcp starts; adds the mismatch note to zazzle daemon --version.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine (engine.rs, meta.rs)",
+      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock, the counters and the zazz state (script store, worker binary and warm workers).",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "store",
+      "name": "Persistent cache (store.rs)",
+      "responsibility": "The append-only log of per-path summaries under the cache directory: checksums, torn-tail repair, compaction on open, flushed by the server.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "walk",
+      "name": "Walker (walk.rs)",
+      "responsibility": "Lists the files under a root honouring .gitignore, .ignore and git's exclude file, applies globs, and reuses a listing while every directory and ignore file keeps its stat, checked on the pool.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "outline",
+      "name": "Outliner (outline.rs, arena.rs)",
+      "responsibility": "Symbols with line ranges: tree-sitter for Rust, Python, C, C#, JavaScript, TypeScript and TSX up to 1 MiB, its allocations in a per-thread arena during each parse; headings, tables and keys for Markdown, TOML and JSON; keywords and indentation for the rest, plus methods and constructors in C-like languages such as C# and Java when no grammar is installed.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "symbols",
+      "name": "Symbol finder (symbols.rs)",
+      "responsibility": "Resolves a symbol name or qualified name, with optional parameter types, to one outline symbol, lists candidates otherwise, and finds the comments and attributes above it.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "params",
+      "name": "Parameter lists (params.rs)",
+      "responsibility": "Splits a query's `Name(T1, T2)` and a declaration's parameter list, and compares them by type, or by name for untyped parameters.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "markup",
+      "name": "Markup terse view (markup.rs)",
+      "responsibility": "Builds the terse view of HTML and Razor files in the indexer's line format: hides long comments, <style> and <svg> elements, head tag runs and Razor @using runs, and shortens long class and style values.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "styles",
+      "name": "Stylesheet terse view (styles.rs)",
+      "responsibility": "Builds the terse view of CSS, SCSS, Sass and Less files line by line, in the indexer's line format, with markup.rs's Plan: hides long comments, source map comments, import runs, @font-face and @keyframes blocks, vendor-prefixed duplicates and SCSS @debug lines, collapses runs of 10+ rules setting the same properties or of 10+ small utility rules and runs of 12+ declarations, cuts long selector lists, and shortens inline data URIs.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "nim",
+      "name": "Nim terse view (nim.rs)",
+      "responsibility": "Builds the terse view of Nim files line by line, since no tree-sitter grammar for Nim parses enough of it: hides runs of top-level imports, indented one-line logging calls without side effects and region comments, leaving lines in triple-quoted strings alone.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "sql",
+      "name": "SQL terse view (sql.rs)",
+      "responsibility": "Builds the terse view of SQL files line by line: hides region comments and collapses the middle rows of an INSERT .. VALUES list of 6+ rows that each sit alone on their lines.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "cobol",
+      "name": "COBOL terse view (cobol.rs)",
+      "responsibility": "Builds the terse view of COBOL files line by line with markup.rs's Plan: drops fixed-format sequence and identification areas, collapses comment blocks and COPY runs, and hides debugging lines.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "data",
+      "name": "Data terse view (data.rs)",
+      "responsibility": "Builds the terse view of JSON, YAML and TOML files line by line with markup.rs's Plan: collapses runs of 10+ list items (multi-line ones only when they name the same keys), lock file entries and 6+ TOML [[tables]] to their first and last, long comment blocks, YAML block scalars and TOML multi-line strings, and shortens quoted strings over 120 characters.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "md",
+      "name": "Markdown terse view (md.rs)",
+      "responsibility": "Builds the terse view of Markdown files line by line with markup.rs's Plan: hides HTML comments, badge lines, link reference definitions and tables of contents, leaving fenced code and front matter alone.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "xml",
+      "name": "XML terse view (xml.rs)",
+      "responsibility": "Builds the terse view of XML and SVG files line by line with markup.rs's Plan: collapses comments of 3+ lines and runs of 10+ sibling elements with the same tag to their first and last, hides SVG editor metadata, and cuts long values (path data) and blobs; markup.rs reuses its sibling runs.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "config",
+      "name": "INI and Dockerfile terse view (config.rs)",
+      "responsibility": "Builds the terse view of INI-style files and Dockerfiles line by line with markup.rs's Plan: collapses comment blocks of 4+ lines, Dockerfile LABEL runs and package lists in continued RUN instructions, and cuts long values.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "schema",
+      "name": "HCL, Protobuf and GraphQL terse view (schema.rs)",
+      "responsibility": "Builds the terse view of HCL/Terraform, Protobuf and GraphQL files line by line with markup.rs's Plan: collapses comments of 3+ lines and multi-line GraphQL descriptions (to a note quoting their first line), HCL heredoc bodies, Protobuf import and option runs, and runs of 10+ enum values or HCL list and map items, and cuts long values.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "buildfile",
+      "name": "CMake and Makefile terse view (buildfile.rs)",
+      "responsibility": "Builds the terse view of CMake files and Makefiles line by line with markup.rs's Plan: collapses comments of 3+ lines, include runs and lists of 6+ one-word items, hides CMake message(STATUS ..)-style and Make $(info ..) logging, and cuts long values.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "minified",
+      "name": "Minified JSON, XML, SVG, HTML and CSS terse view (minified.rs)",
+      "responsibility": "Detects JSON, XML, SVG, HTML and CSS written mostly on 500+ character lines, reformats it one value, element or declaration per line, runs data.rs's view (as generated data), xml.rs's, markup.rs's or styles.rs's view over the result, and maps the view's line numbers back to the source.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "terse",
+      "name": "Code terse view (terse.rs)",
+      "responsibility": "Builds the terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files with tree-sitter, in the indexer's line format: hides imports, logging, region markers, constructors that only store parameters, catches that only log and rethrow and Go `if err != nil` returns, and drops TypeScript, Java, Kotlin, Swift, Rust, PHP and Scala access modifiers.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "modules",
+      "name": "Language modules (modules.rs)",
+      "responsibility": "Loads every tree-sitter grammar from language modules: parses the manifest compiled into the binary, downloads a missing module from icelander.net when JIT is on, checks its SHA-256, stores it in ~/.zazzle/v1/languages and opens it with dlopen, checking the module format and tree-sitter ABI; caches loaded grammars for the process and failures for a minute.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "tools",
+      "name": "JIT tools (tools.rs)",
+      "responsibility": "Finds a program that is not in the release tarball (ai-agent): beside the daemon when there, else in ZAZZLE_TOOLS_DIR or ~/.zazzle/v1/tools, downloading it first from ZAZZLE_TOOLS_URL or this release's icelander.net tools directory and accepting it only with the SHA-256 of the manifest compiled in from ZAZZLE_TOOLS_MANIFEST; makes it executable and execs it, or returns its path for the llm module.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "investigate",
+      "name": "Investigation (investigate/)",
+      "responsibility": "Answers `investigate`: resolves the starting symbols inside the scope before inference (real candidates for a miss, or a no-evidence report without the model), then asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs each distinct lookup once with zazzle's own commands under a separate rules ledger, gives an empty answer one repair turn before returning the evidence as PARTIAL, and checks and quotes each path:line the answer cites.",
+      "folder": "src/macos/daemon/src/investigate"
+    },
+    {
+      "id": "llm",
+      "name": "Local model calls (llm.rs)",
+      "responsibility": "Runs `ai-agent prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved; Session keeps one `ai-agent worker --no-download` (and the one-model lock) for a multi-turn caller such as investigate, each answer bounded by the timeout.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "brief",
+      "name": "Brief (brief.rs)",
+      "responsibility": "Answers `brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` and the zazzle_brief MCP tool: lists the rule and skill files for the paths and purposes, prints every rule section that applies (split at headings inside the purpose ranges), has the local model rank only the skills under a GBNF grammar, adds the ranked skills whole within the budget, and reads and records the session's shared rule ledger so nothing is repeated and only what was printed is recorded.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "ai-agent-rules",
+      "name": "ai-agent-rules",
+      "responsibility": "The library in this repository that finds the rule and skill files for a path, used by rule delivery and brief.",
+      "folder": "src/macos/ai-agent-rules",
+      "diagram": "src/macos/ai-agent-rules/.dev/component-diagram.json"
+    },
+    {
+      "id": "ai-agent",
+      "name": "ai-agent",
+      "responsibility": "The program in this repository that runs open models locally: exec'd by the tools module for `zazzle agent llm|prompt`, and run by the llm module as `ai-agent prompt --no-download` for the agent features.",
+      "folder": "src/macos/ai-agent",
+      "diagram": "src/macos/ai-agent/.dev/component-diagram.json"
+    },
+    {
+      "id": "locals",
+      "name": "Short locals (locals.rs)",
+      "responsibility": "Finds each function's locals of 6+ characters in a Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy, Erlang, Visual Basic, Pascal, Fortran or shell syntax tree and, when every place the name appears can be renamed safely, gives it the C# view's short name at its declaration and every use; Erlang, Visual Basic, Pascal and Fortran by plainer rules over each outermost routine.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "pool",
+      "name": "Thread pool (pool.rs)",
+      "responsibility": "One pool of threads per process, started on first use; par_map runs borrowed work on the caller and pool helpers and returns results in item order.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "indexer",
+      "name": "C# indexer bridge (indexer.rs)",
+      "responsibility": "Finds csharp-indexer and its state directory, starts its daemon when nothing listens, says hello with the indexer's version and the git work tree, asks its `view` tool for a C# file's terse view and its structure tools for overview, find_symbol, changed_since, git_log, git_blame and report_gap, retries a restarting daemon with backoff for up to 15 s, remembers a failed connection for 15 s so later calls fail at once, and rewrites root:path references for the working directory.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "session",
+      "name": "Session table (session.rs)",
+      "responsibility": "Gives each response a short id per session, replaces a repeat within the window by an \"already sent\" notice, and remembers the request behind each id for read-again.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "outputs",
+      "name": "Output store (outputs.rs)",
+      "responsibility": "Keeps outputs that cannot be produced again (clean, run, proxy) on disk under a ten-character id derived from their text: the text shown and the full input, in an owner-only directory; each save drops entries older than an hour and, past the size limit, the oldest until half the bytes remain.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "support",
+      "name": "Helpers (args.rs, tokens.rs, util.rs)",
+      "responsibility": "Flag parsing with one-line errors, token estimates, path display and resolution, ranking and line clipping.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "cmd",
+      "name": "zazzle commands",
+      "responsibility": "find, read, ls, outline, refs, edit, clean, read-again and status; the dispatcher also routes get-rules, brief and prompt, and applies the global `--llm` option.",
+      "folder": "src/macos/daemon/src/cmd",
+      "diagram": "src/macos/daemon/src/cmd/.dev/component-diagram.json"
+    },
+    {
+      "id": "proxy",
+      "name": "MCP proxy",
+      "responsibility": "`zazzle daemon proxy`: cleans another MCP server's results, over stdio or Streamable HTTP.",
+      "folder": "src/macos/daemon/src/proxy",
+      "diagram": "src/macos/daemon/src/proxy/.dev/component-diagram.json"
+    },
+    {
+      "id": "setup",
+      "name": "zazzle setup",
+      "responsibility": "`zazzle daemon setup`: plans, applies, undoes and checks the MCP clients' user-level settings for zazzle and the proxy.",
+      "folder": "src/macos/daemon/src/setup",
+      "diagram": "src/macos/daemon/src/setup/.dev/component-diagram.json"
+    },
+    {
+      "id": "wrap",
+      "name": "zazzle run",
+      "responsibility": "`zazzle daemon wrap`: runs a command and prints its output cleaned with a profile.",
+      "folder": "src/macos/daemon/src/wrap",
+      "diagram": "src/macos/daemon/src/wrap/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz",
+      "name": "zazz scripts",
+      "responsibility": "`zazz ...`: packs, builds, tests once, registers and runs sandboxed scripts by hash, installs them as commands, and signs and trusts them; the MCP tools zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls.",
+      "folder": "src/macos/daemon/src/zazz",
+      "diagram": "src/macos/daemon/src/zazz/.dev/component-diagram.json"
+    },
+    {
+      "id": "launchd-service",
+      "name": "launchd",
+      "responsibility": "macOS's service manager: owns the socket of an installed LaunchAgent and starts `zazzle daemon serve` on the first connection; driven with launchctl.",
+      "external": true
+    },
+    {
+      "id": "csharp-indexer",
+      "name": "csharp-indexer",
+      "responsibility": "The C# tool in this repository whose the daemon answers `view` and the structure tools over its own unix socket; it lists no tools to clients.",
+      "folder": "src/macos/csharp-indexer",
+      "diagram": "src/macos/csharp-indexer/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-runner",
+      "name": "zazz-script-runner",
+      "responsibility": "The WebAssembly host binary in this repository that compiles, tests and runs scripts, started by the zazz module.",
+      "folder": "src/macos/zazz-script/runner",
+      "diagram": "src/macos/zazz-script/runner/.dev/component-diagram.json"
+    },
+    {
+      "id": "hook",
+      "name": "PreToolUse hook (hook.rs)",
+      "responsibility": "Decides Claude Code and Codex tool calls: refuses raw searches, reads, listings and builds with the zazzle equivalent, logs bypasses.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "workspace",
+      "name": "Workspaces (workspace.rs)",
+      "responsibility": "Computes where edits may write and confines paths to it.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "activity",
+      "name": "Activity log (activity.rs)",
+      "responsibility": "Appends and reads the JSON lines that record what went through zazzle.",
+      "folder": "src/macos/daemon/src"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "src",
+      "to": "cli",
+      "kind": "contains",
+      "description": "The binary's entry."
+    },
+    {
+      "from": "src",
+      "to": "server",
+      "kind": "contains",
+      "description": "The daemon."
+    },
+    {
+      "from": "src",
+      "to": "proto",
+      "kind": "contains",
+      "description": "The wire format."
+    },
+    {
+      "from": "src",
+      "to": "client",
+      "kind": "contains",
+      "description": "The socket client."
+    },
+    {
+      "from": "src",
+      "to": "mcp",
+      "kind": "contains",
+      "description": "The MCP front end."
+    },
+    {
+      "from": "src",
+      "to": "launchd",
+      "kind": "contains",
+      "description": "launchd integration."
+    },
+    {
+      "from": "src",
+      "to": "engine",
+      "kind": "contains",
+      "description": "Shared state."
+    },
+    {
+      "from": "src",
+      "to": "store",
+      "kind": "contains",
+      "description": "The persistent cache."
+    },
+    {
+      "from": "src",
+      "to": "walk",
+      "kind": "contains",
+      "description": "Directory walking."
+    },
+    {
+      "from": "src",
+      "to": "outline",
+      "kind": "contains",
+      "description": "Outlines."
+    },
+    {
+      "from": "src",
+      "to": "symbols",
+      "kind": "contains",
+      "description": "Symbol lookup."
+    },
+    {
+      "from": "src",
+      "to": "params",
+      "kind": "contains",
+      "description": "Parameter lists for overloads."
+    },
+    {
+      "from": "src",
+      "to": "markup",
+      "kind": "contains",
+      "description": "Terse view of HTML and Razor."
+    },
+    {
+      "from": "src",
+      "to": "styles",
+      "kind": "contains",
+      "description": "Terse view of CSS, SCSS, Sass and Less."
+    },
+    {
+      "from": "styles",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "src",
+      "to": "terse",
+      "kind": "contains",
+      "description": "Terse view of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic and shell."
+    },
+    {
+      "from": "src",
+      "to": "locals",
+      "kind": "contains",
+      "description": "Short local names for the code terse view."
+    },
+    {
+      "from": "terse",
+      "to": "locals",
+      "kind": "depends-on",
+      "description": "Applies the renames to lines it does not hide."
+    },
+    {
+      "from": "src",
+      "to": "pool",
+      "kind": "contains",
+      "description": "The thread pool."
+    },
+    {
+      "from": "src",
+      "to": "indexer",
+      "kind": "contains",
+      "description": "The C# indexer bridge."
+    },
+    {
+      "from": "src",
+      "to": "session",
+      "kind": "contains",
+      "description": "Sessions."
+    },
+    {
+      "from": "src",
+      "to": "outputs",
+      "kind": "contains",
+      "description": "Stored outputs."
+    },
+    {
+      "from": "src",
+      "to": "support",
+      "kind": "contains",
+      "description": "Helpers."
+    },
+    {
+      "from": "src",
+      "to": "cmd",
+      "kind": "contains",
+      "description": "The commands."
+    },
+    {
+      "from": "src",
+      "to": "proxy",
+      "kind": "contains",
+      "description": "The MCP proxy."
+    },
+    {
+      "from": "src",
+      "to": "setup",
+      "kind": "contains",
+      "description": "Client setup."
+    },
+    {
+      "from": "cli",
+      "to": "setup",
+      "kind": "depends-on",
+      "description": "`zazzle daemon setup`: setup::parse, Env::detect, setup::run."
+    },
+    {
+      "from": "src",
+      "to": "wrap",
+      "kind": "contains",
+      "description": "zazzle run."
+    },
+    {
+      "from": "src",
+      "to": "zazz",
+      "kind": "contains",
+      "description": "zazz scripts."
+    },
+    {
+      "from": "cli",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "serve_main binds or takes the socket and serves until idle."
+    },
+    {
+      "from": "cli",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "mcp_main serves MCP on standard input and output."
+    },
+    {
+      "from": "cli",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "Takes launchd's socket; install and uninstall the LaunchAgent."
+    },
+    {
+      "from": "cli",
+      "to": "client",
+      "kind": "depends-on",
+      "description": "The default socket path."
+    },
+    {
+      "from": "cli",
+      "to": "store",
+      "kind": "depends-on",
+      "description": "Opens the cache, or runs without one if it cannot."
+    },
+    {
+      "from": "cli",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "`zazzle daemon run` runs one command in-process, without the persistent cache."
+    },
+    {
+      "from": "cli",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "outputs::dir gives the daemon's and `zazzle daemon run`'s engine its output store."
+    },
+    {
+      "from": "cli",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "`zazzle daemon proxy`: proxy::parse, then stdio::run or http::run."
+    },
+    {
+      "from": "cli",
+      "to": "wrap",
+      "kind": "depends-on",
+      "description": "`zazzle daemon wrap`: wrap::main."
+    },
+    {
+      "from": "server",
+      "to": "proto",
+      "kind": "depends-on",
+      "description": "Reads the frame length and decodes the request."
+    },
+    {
+      "from": "server",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Runs the request's command line."
+    },
+    {
+      "from": "server",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Flushes pending cache records every tick and on exit."
+    },
+    {
+      "from": "mcp",
+      "to": "client",
+      "kind": "depends-on",
+      "description": "Forwards each tool call to the daemon, starting it if needed."
+    },
+    {
+      "from": "client",
+      "to": "proto",
+      "kind": "depends-on",
+      "description": "The relay round trip."
+    },
+    {
+      "from": "cmd",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Loads files, metadata and outlines; takes the edit lock."
+    },
+    {
+      "from": "cmd",
+      "to": "walk",
+      "kind": "depends-on",
+      "description": "The files under the given roots."
+    },
+    {
+      "from": "cmd",
+      "to": "pool",
+      "kind": "depends-on",
+      "description": "find, refs and ls run their per-file work on the pool."
+    },
+    {
+      "from": "cmd",
+      "to": "symbols",
+      "kind": "depends-on",
+      "description": "read --symbol."
+    },
+    {
+      "from": "cmd",
+      "to": "indexer",
+      "kind": "depends-on",
+      "description": "read's terse C# view and the structure commands."
+    },
+    {
+      "from": "cmd",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "read's terse HTML and Razor view."
+    },
+    {
+      "from": "cmd",
+      "to": "styles",
+      "kind": "depends-on",
+      "description": "read's terse CSS, SCSS, Sass and Less view."
+    },
+    {
+      "from": "src",
+      "to": "nim",
+      "kind": "contains",
+      "description": "Terse view of Nim."
+    },
+    {
+      "from": "cmd",
+      "to": "nim",
+      "kind": "depends-on",
+      "description": "read's terse Nim view."
+    },
+    {
+      "from": "src",
+      "to": "sql",
+      "kind": "contains",
+      "description": "Terse view of SQL."
+    },
+    {
+      "from": "cmd",
+      "to": "sql",
+      "kind": "depends-on",
+      "description": "read's terse SQL view."
+    },
+    {
+      "from": "src",
+      "to": "data",
+      "kind": "contains",
+      "description": "Terse view of JSON, YAML and TOML."
+    },
+    {
+      "from": "src",
+      "to": "md",
+      "kind": "contains",
+      "description": "Terse view of Markdown."
+    },
+    {
+      "from": "data",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "md",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "cmd",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "read's terse JSON, YAML and TOML view."
+    },
+    {
+      "from": "cmd",
+      "to": "md",
+      "kind": "depends-on",
+      "description": "read's terse Markdown view."
+    },
+    {
+      "from": "src",
+      "to": "xml",
+      "kind": "contains",
+      "description": "Terse view of XML."
+    },
+    {
+      "from": "src",
+      "to": "config",
+      "kind": "contains",
+      "description": "Terse view of INI files and Dockerfiles."
+    },
+    {
+      "from": "xml",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "config",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "xml",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "config",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "read's terse XML view."
+    },
+    {
+      "from": "cmd",
+      "to": "config",
+      "kind": "depends-on",
+      "description": "read's terse INI and Dockerfile view."
+    },
+    {
+      "from": "src",
+      "to": "schema",
+      "kind": "contains",
+      "description": "Terse view of HCL, Protobuf and GraphQL."
+    },
+    {
+      "from": "schema",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "schema",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "schema",
+      "kind": "depends-on",
+      "description": "read's terse HCL, Protobuf and GraphQL view."
+    },
+    {
+      "from": "src",
+      "to": "buildfile",
+      "kind": "contains",
+      "description": "Terse view of CMake files and Makefiles."
+    },
+    {
+      "from": "buildfile",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Builds its view lines with markup.rs's Plan."
+    },
+    {
+      "from": "buildfile",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Cuts long values with data.rs's string helpers."
+    },
+    {
+      "from": "cmd",
+      "to": "buildfile",
+      "kind": "depends-on",
+      "description": "read's terse CMake and Makefile view."
+    },
+    {
+      "from": "src",
+      "to": "minified",
+      "kind": "contains",
+      "description": "Terse view of minified JSON, XML, SVG, HTML and CSS."
+    },
+    {
+      "from": "minified",
+      "to": "data",
+      "kind": "depends-on",
+      "description": "Views reformatted JSON as generated data."
+    },
+    {
+      "from": "minified",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "Views reformatted XML and SVG."
+    },
+    {
+      "from": "minified",
+      "to": "markup",
+      "kind": "depends-on",
+      "description": "Views reformatted HTML."
+    },
+    {
+      "from": "minified",
+      "to": "styles",
+      "kind": "depends-on",
+      "description": "Views reformatted CSS."
+    },
+    {
+      "from": "markup",
+      "to": "xml",
+      "kind": "depends-on",
+      "description": "Collapses HTML sibling runs with xml.rs's run."
+    },
+    {
+      "from": "cmd",
+      "to": "minified",
+      "kind": "depends-on",
+      "description": "read's terse view of minified JSON, XML, SVG, HTML and CSS."
+    },
+    {
+      "from": "cmd",
+      "to": "terse",
+      "kind": "depends-on",
+      "description": "read's terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic and shell view."
+    },
+    {
+      "from": "cmd",
+      "to": "session",
+      "kind": "depends-on",
+      "description": "Ids, dedupe and read-again through the engine's session table."
+    },
+    {
+      "from": "cmd",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "clean saves its answer and input; read-again loads stored outputs."
+    },
+    {
+      "from": "cmd",
+      "to": "support",
+      "kind": "depends-on",
+      "description": "Flags, budgets, paths and clipping."
+    },
+    {
+      "from": "proxy",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "clean::shrink_steps and clean::cuts for each text."
+    },
+    {
+      "from": "proxy",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "Saves each shortened text with its original."
+    },
+    {
+      "from": "wrap",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "clean::tidy_lines, shrink_steps, cuts and store."
+    },
+    {
+      "from": "wrap",
+      "to": "outputs",
+      "kind": "depends-on",
+      "description": "The store directory, through outputs::dir; clean::store saves the output."
+    },
+    {
+      "from": "engine",
+      "to": "store",
+      "kind": "depends-on",
+      "description": "Reads and records persisted summaries."
+    },
+    {
+      "from": "engine",
+      "to": "outline",
+      "kind": "depends-on",
+      "description": "Builds outlines it then caches."
+    },
+    {
+      "from": "engine",
+      "to": "walk",
+      "kind": "depends-on",
+      "description": "Holds the walk cache."
+    },
+    {
+      "from": "engine",
+      "to": "session",
+      "kind": "depends-on",
+      "description": "Holds the session table."
+    },
+    {
+      "from": "walk",
+      "to": "pool",
+      "kind": "depends-on",
+      "description": "Validates a cached listing's stamps on up to four pool workers."
+    },
+    {
+      "from": "symbols",
+      "to": "outline",
+      "kind": "depends-on",
+      "description": "Works on outline symbols and their languages."
+    },
+    {
+      "from": "store",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "On macOS runs `tmutil addexclusion` on a new cache directory with run_with_timeout."
+    },
+    {
+      "from": "launchd",
+      "to": "launchd-service",
+      "kind": "depends-on",
+      "description": "launch_activate_socket; launchctl bootstrap and bootout in the user's gui domain."
+    },
+    {
+      "from": "indexer",
+      "to": "csharp-indexer",
+      "kind": "depends-on",
+      "description": "Runs `csharp-indexer --version` and `csharp-indexer daemon`, and speaks JSON lines on its daemon socket: a hello, then tools/call of view or a structure tool."
+    },
+    {
+      "from": "symbols",
+      "to": "params",
+      "kind": "depends-on",
+      "description": "Picks overloads by parameter types."
+    },
+    {
+      "from": "cmd",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "The dispatcher hands `zazz ...` command lines to zazz::run."
+    },
+    {
+      "from": "mcp",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "Lists and maps the zazz tools (zazz::mcptools::TOOLS) after its own."
+    },
+    {
+      "from": "engine",
+      "to": "zazz",
+      "kind": "depends-on",
+      "description": "Holds the zazz state every request shares."
+    },
+    {
+      "from": "zazz",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Takes the command context, with the caller's streams, and answers with an Output (raw for human runs)."
+    },
+    {
+      "from": "zazz",
+      "to": "zazz-script-runner",
+      "kind": "depends-on",
+      "description": "Runs `zazz-script-runner compile`, `test` and `serve` under the OS sandbox."
+    },
+    {
+      "from": "zazz",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "Defines its tools with mcp's Tool and argument helpers."
+    },
+    {
+      "from": "src",
+      "to": "modules",
+      "kind": "contains",
+      "description": "Language module loading."
+    },
+    {
+      "from": "terse",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "Gets the grammars of languages outlines do not use."
+    },
+    {
+      "from": "cmd",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "The languages command lists, configures and fetches modules."
+    },
+    {
+      "from": "src",
+      "to": "cobol",
+      "kind": "contains",
+      "description": "Terse view of COBOL."
+    },
+    {
+      "from": "cmd",
+      "to": "cobol",
+      "kind": "depends-on",
+      "description": "read's terse COBOL view."
+    },
+    {
+      "from": "outline",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "Gets the Rust, Python, C, C#, JavaScript, TypeScript and TSX grammars."
+    },
+    {
+      "from": "src",
+      "to": "hook",
+      "kind": "contains",
+      "description": "PreToolUse hook (hook.rs)"
+    },
+    {
+      "from": "src",
+      "to": "workspace",
+      "kind": "contains",
+      "description": "Workspaces (workspace.rs)"
+    },
+    {
+      "from": "src",
+      "to": "activity",
+      "kind": "contains",
+      "description": "Activity log (activity.rs)"
+    },
+    {
+      "from": "cli",
+      "to": "hook",
+      "kind": "depends-on",
+      "description": "Runs `zazzle daemon hook`."
+    },
+    {
+      "from": "hook",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs its decisions."
+    },
+    {
+      "from": "server",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs each command."
+    },
+    {
+      "from": "cmd",
+      "to": "workspace",
+      "kind": "depends-on",
+      "description": "edit confines writes."
+    },
+    {
+      "from": "proxy",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs proxied tool calls."
+    },
+    {
+      "from": "wrap",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "Logs runs."
+    },
+    {
+      "from": "setup",
+      "to": "activity",
+      "kind": "depends-on",
+      "description": "--check, --verify and --report read it."
+    },
+    {
+      "from": "src",
+      "to": "restart",
+      "kind": "contains",
+      "description": "Daemon replacement."
+    },
+    {
+      "from": "cli",
+      "to": "restart",
+      "kind": "depends-on",
+      "description": "zazzle daemon restart, the check at zazzle daemon mcp's start, and the note on zazzle daemon --version."
+    },
+    {
+      "from": "restart",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "Rewrites a LaunchAgent that names another program."
+    },
+    {
+      "from": "src",
+      "to": "tools",
+      "kind": "contains",
+      "description": "JIT tools."
+    },
+    {
+      "from": "cli",
+      "to": "tools",
+      "kind": "depends-on",
+      "description": "`zazzle daemon llm ARGS` (Cli::Llm): tools::exec(\"ai-agent\", ARGS)."
+    },
+    {
+      "from": "tools",
+      "to": "modules",
+      "kind": "depends-on",
+      "description": "Reuses modules::Store (entry, installed, fetch with its SHA-256 check), parse and platform for the tool manifest and directory."
+    },
+    {
+      "from": "tools",
+      "to": "ai-agent",
+      "kind": "depends-on",
+      "description": "Replaces the process with the ai-agent executable, keeping the caller's streams and exit status."
+    },
+    {
+      "from": "src",
+      "to": "llm",
+      "kind": "contains",
+      "description": "Local model calls."
+    },
+    {
+      "from": "src",
+      "to": "brief",
+      "kind": "contains",
+      "description": "The brief command."
+    },
+    {
+      "from": "src",
+      "to": "investigate",
+      "kind": "contains",
+      "description": "The investigate command."
+    },
+    {
+      "from": "cmd",
+      "to": "investigate",
+      "kind": "depends-on",
+      "description": "The dispatcher runs `investigate` and `agent investigate` with investigate::run."
+    },
+    {
+      "from": "investigate",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Each turn asks the local model with llm::ask."
+    },
+    {
+      "from": "investigate",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Lookups run as read, refs, outline and find through cmd::run under the SESSION>local ledger."
+    },
+    {
+      "from": "cmd",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "produce runs a successful output through llm::post when `--llm` is given; `prompt` answers with llm::ask."
+    },
+    {
+      "from": "cmd",
+      "to": "brief",
+      "kind": "depends-on",
+      "description": "The dispatcher runs `brief` and `agent brief` with brief::run and brief::ask_local."
+    },
+    {
+      "from": "wrap",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "`zazzle run --llm` hands the delivered output to llm::post."
+    },
+    {
+      "from": "mcp",
+      "to": "brief",
+      "kind": "depends-on",
+      "description": "Lists and maps zazzle_brief (brief::TOOLS)."
+    },
+    {
+      "from": "brief",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "Defines zazzle_brief with mcp's Tool and argument helpers."
+    },
+    {
+      "from": "brief",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Asks the model for the verdicts with --grammar at low effort and temperature 0."
+    },
+    {
+      "from": "brief",
+      "to": "ai-agent-rules",
+      "kind": "depends-on",
+      "description": "list_rules and body for the files that apply to each path."
+    },
+    {
+      "from": "rules",
+      "to": "ai-agent-rules",
+      "kind": "depends-on",
+      "description": "list_rules, body, purpose and show for get-rules and folder instructions."
+    },
+    {
+      "from": "llm",
+      "to": "tools",
+      "kind": "depends-on",
+      "description": "tools::path finds ai-agent beside the daemon or in the tool store, downloading the program (never a model)."
+    },
+    {
+      "from": "llm",
+      "to": "ai-agent",
+      "kind": "depends-on",
+      "description": "Runs `ai-agent prompt --no-download` with flags, reading its answer and exit code (3 cut short, 4 model missing)."
+    }
+  ]
+}

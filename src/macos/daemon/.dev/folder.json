@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "daemon",
+  "folder": "src/macos/daemon",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "daemon",
+      "summary": "The daemon half of zazzle, a file tool for agents: one Rust crate that builds the daemon binary (socket daemon, MCP server, MCP proxy, command runner, LaunchAgent installer and in-process runner), which also builds, tests and runs sandboxed zazz scripts.",
+      "purpose": "Holds the daemon crate of the Cargo workspace in src/macos: Cargo.toml (dependencies, each commented with its one reason), the README with setup, commands, the C#, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim, shell, HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL/Terraform, Protobuf, GraphQL, CMake, Makefile and minified JSON, XML, SVG, HTML and CSS terse views, symbols, clean, run, the MCP proxy, stored outputs, zazz scripts, sessions, safety notes, limits, measurements and test commands for zazzle and daemon together, ZAZZ-PLAN.md (the design of zazz scripts, with what this branch implements and where it deviates), coverage.sh (the branch-coverage gate, for daemon or another crate named on its command line) and the source in src/.",
+      "boundaries": [
+        "The client half, the C invoker `zazzle`, is a separate program in src/macos/zazzle; the two share only the wire protocol, which this crate defines, and the invoker's exec of `zazzle daemon proxy` and `zazzle daemon wrap`. The same invoker run as `zazz`, or under an installed script's name, sends zazz requests.",
+        "The terse C# view and the structure tools' answers come from csharp-indexer (src/macos/csharp-indexer), a separate program reached over its own socket.",
+        "zazz scripts run in zazz-script-runner (src/macos/zazz-script/runner), a separate binary found beside the daemon, or natively when signed by an authority trusted for native code; the daemon builds them with the user's rustc. The .zazz format comes from src/macos/zazz-script/packaging and the script protocol from src/macos/zazz-script/engine, whose sources the daemon also embeds and compiles for scripts.",
+        "`zazzle daemon llm` runs ai-agent (src/macos/ai-agent), a separate binary found beside the daemon or downloaded on first use and checked against the tool manifest compiled in from ZAZZLE_TOOLS_MANIFEST (src/tools.rs).",
+        "Builds and releases run from the workspace and the repository's workflows, not from this folder."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "[[bin]]"
+        },
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "zazz-script-engine"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "zazzle / daemon"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "zazz scripts"
+        },
+        {
+          "path": "src/macos/daemon/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        },
+        {
+          "path": "src/macos/daemon/coverage.sh",
+          "symbol": "crate"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/macos/zazzle/.dev/folder.json",
+          "entityId": "folder",
+          "description": "The invoker that talks to this daemon."
+        },
+        {
+          "relation": "depends-on",
+          "path": "src/macos/zazz-script/packaging/.dev/component-diagram.json",
+          "description": "Archives, manifests, signatures and script ids."
+        },
+        {
+          "relation": "depends-on",
+          "path": "src/macos/zazz-script/engine/.dev/component-diagram.json",
+          "description": "The script protocol, the human CLI parser and rendering; its sources are compiled into every Rust script."
+        },
+        {
+          "relation": "depends-on",
+          "path": "src/macos/zazz-script/runner/.dev/component-diagram.json",
+          "description": "The WebAssembly host the daemon starts to compile, test and run scripts."
+        }
+      ]
+    }
+  ]
+}

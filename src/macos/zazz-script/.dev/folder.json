@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz scripts",
+  "folder": "src/macos/zazz-script",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz scripts",
+      "summary": "The three crates behind zazz scripts: packaging (the .zazz archive, manifest and script id), engine (the script protocol and SDK) and runner (the WebAssembly host the daemon starts).",
+      "purpose": "Groups the zazz script crates the daemon builds on; each is its own crate in the Cargo workspace.",
+      "boundaries": [
+        "A grouping folder: it has no code of its own.",
+        "runner is a separate program, zazz-script-runner, installed in libexec/zazzle beside the daemon."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/Cargo.toml",
+          "symbol": "workspace"
+        },
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "zazz-script-packaging"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "src/macos/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

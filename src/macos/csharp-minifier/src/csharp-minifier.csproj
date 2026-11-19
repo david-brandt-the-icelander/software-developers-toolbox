@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>csharp-minifier</AssemblyName>
+    <RootNamespace>CSharpMinifier</RootNamespace>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RuntimeIdentifiers>osx-arm64;osx-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Roslyn: parses C# and binds the calls that identify each test's target. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <!-- .NET 8 reference assemblies: lets the test split bind calls to framework types inside a single-file binary, which has no assembly files on disk. -->
+    <PackageReference Include="Basic.Reference.Assemblies.Net80" Version="1.8.4" />
+    <!-- Roslyn workspaces: the renamer that rewrites a symbol and every reference to it for the rename switch. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The skill the tool copies into each repository it changes; one source, agents/skills in this repository. -->
+    <EmbeddedResource Include="../../../../agents/skills/csharp-minifier/SKILL.md" LogicalName="SKILL.md" />
+    <InternalsVisibleTo Include="tests" />
+  </ItemGroup>
+</Project>

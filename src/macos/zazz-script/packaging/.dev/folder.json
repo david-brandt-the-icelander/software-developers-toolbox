@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-script-packaging",
+  "folder": "src/macos/zazz-script/packaging",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-script-packaging",
+      "summary": "The zazz-script-packaging crate, the library that defines the .zazz file: a strict ZIP subset, the zazz.json manifest, deterministic packing, the zazz.sig signature envelope and BLAKE3 script ids.",
+      "purpose": "Holds the format half of zazz scripts apart from the daemon that runs them, so the rules for what a .zazz may contain live in one small crate with three dependencies. The crate manifest (Cargo.toml, a member of the src/macos workspace, each dependency commented with its reason) and the source in src/.",
+      "boundaries": [
+        "A library only: no binary, nothing installed on its own; the daemon is its one dependent in the workspace.",
+        "Says what an archive, manifest and envelope are, not what is trusted or allowed: signature verification, certificate chains, grants and the sandbox are daemon's (src/macos/daemon/src/zazz).",
+        "Does no I/O beyond reading a directory to pack; archives are read and written in memory."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/zazz-script/packaging/Cargo.toml", "symbol": "[dependencies]" },
+        { "path": "src/macos/zazz-script/packaging/src/lib.rs", "symbol": "script_id" },
+        { "path": "src/macos/Cargo.toml", "symbol": "workspace.members" },
+        { "path": "src/macos/daemon/Cargo.toml", "symbol": "zazz-script-packaging" }
+      ]
+    }
+  ]
+}

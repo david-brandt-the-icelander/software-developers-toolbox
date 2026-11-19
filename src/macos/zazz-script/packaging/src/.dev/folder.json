@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-script-packaging source",
+  "folder": "src/macos/zazz-script/packaging/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-script-packaging source",
+      "summary": "The five modules of zazz_script_packaging, flat in one folder: lib.rs (script ids), zip.rs, manifest.rs, pack.rs and sig.rs.",
+      "purpose": "Holds every rule a .zazz file must follow, so one reader decides what the daemon accepts and one writer makes the bytes `zazz pack` and `zazz sign` produce. zip.rs reads and writes the archive, manifest.rs parses zazz.json, pack.rs packs a directory, sig.rs handles the zazz.sig envelope and lib.rs computes script ids.",
+      "boundaries": [
+        "Archives are read whole from memory and fully validated before any entry is returned; nothing is extracted to disk.",
+        "No cryptographic verification: sig.rs computes the digest and the signed message and carries the signature and certificates as bytes; the daemon checks them.",
+        "Every function reports failure as a String message; there are no error types."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/zazz-script/packaging/src/lib.rs", "symbol": "script_id" },
+        { "path": "src/macos/zazz-script/packaging/src/zip.rs", "symbol": "read" },
+        { "path": "src/macos/zazz-script/packaging/src/sig.rs", "symbol": "message" },
+        { "path": "src/macos/daemon/src/zazz/signing.rs", "symbol": "zazz_script_packaging::sig" }
+      ]
+    }
+  ]
+}

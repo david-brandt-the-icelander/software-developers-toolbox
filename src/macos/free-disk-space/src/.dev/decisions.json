@@ -1,0 +1,139 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "free-disk-space decisions",
+  "folder": "src/macos/free-disk-space/src",
+  "description": "Choices the code makes that a change could undo, and questions only the owner can answer. Where the code or README gives no reason, none is recorded.",
+  "entities": [
+    {
+      "id": "today-boundary",
+      "title": "Which day protects dev artifacts",
+      "summary": "Dev artifacts modified today are kept, and today starts at midnight UTC (Atlantic/Reykjavik) for every user, whatever the Mac's own time zone.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "clean_dev keeps any artifact with something modified since today_start_ts, which is midnight UTC; the README and the skill both say \"today (Atlantic/Reykjavik)\". The binary is published through Homebrew and release tarballs, so it may run in any time zone. East of UTC the protected day starts after local midnight (at 10:00 at UTC+10), so build output from that morning can be deleted; west of UTC it starts on the previous local day, which only keeps more.",
+      "options": [
+        {
+          "title": "Keep the fixed UTC day",
+          "consequences": "The same rule everywhere, as documented; users east of UTC get less protection than the word today suggests."
+        },
+        {
+          "title": "Use the Mac's local day",
+          "consequences": "Today means what the user expects; the README, the skill and the KEEP_TODAY text change, and the tests need a time zone."
+        },
+        {
+          "title": "Use a rolling window (such as the last 24 hours)",
+          "consequences": "Independent of time zones; changes the documented rule."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/clean.rs", "symbol": "today_start_ts"},
+        {"path": "src/macos/free-disk-space/src/clean.rs", "symbol": "KEEP_TODAY"},
+        {"path": "src/macos/free-disk-space/src/clean.rs", "symbol": "clean_dev"},
+        {"path": "src/macos/free-disk-space/README.md", "symbol": "Clean"},
+        {"path": "agents/skills/free-disk-space/SKILL.md", "symbol": "Cleanup (dry run by default)"}
+      ]
+    },
+    {
+      "id": "tool-override-in-release",
+      "title": "Whether FDS_TOOLS stays in release builds",
+      "summary": "The test seam that redirects /usr/bin/xattr, /bin/launchctl and the other absolute tool paths is read by release builds too.",
+      "status": "open",
+      "waitingOn": "owner",
+      "context": "util::tool rewrites any absolute program path to $FDS_TOOLS/<name> when that variable is set; its comment says it is there so tests can fake macOS tools. It is not behind cfg(test), so in normal use whatever sets FDS_TOOLS in the environment decides which programs compress, dedupe, trash and the daemon install run.",
+      "options": [
+        {
+          "title": "Keep it in every build",
+          "consequences": "Tests and manual experiments can fake tools without rebuilding; the environment can redirect what the tool runs."
+        },
+        {
+          "title": "Compile it only for tests",
+          "consequences": "Release builds always run the system's tools; manual runs against fake tools need a test build."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "tool"},
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "run"}
+      ]
+    },
+    {
+      "id": "verify-then-swap",
+      "title": "Change files only by swapping in a verified copy",
+      "summary": "compress and dedupe never write into a user's file: they build a temp copy beside it, check it, and rename it over the original.",
+      "status": "accepted",
+      "context": "Both commands replace files the user may care about, on a file system that also holds snapshots and clones.",
+      "decision": "Write .fds-<pid>-<name>.tmp in the same directory; check mode, owner, group, xattr names and SHA-256 against the original (and size, for compression) (and, for compression, the compressed flag, the gain, every extended attribute's value, the ACL, the other BSD flags and, after setting them, the access, modification and birth times; a file with a real resource fork is skipped, since compression would overwrite it); re-read the original's size, mtime, inode and link count; then rename. Any mismatch leaves the original and removes the temp file.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/compress.rs", "symbol": "compress_verified"},
+        {"path": "src/macos/free-disk-space/src/dedupe.rs", "symbol": "clone_verified"},
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "temp_beside"},
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "remove_temp"}
+      ]
+    },
+    {
+      "id": "provenance-may-change",
+      "title": "Allow a new provenance, except on files without one",
+      "summary": "compress, repair and dedupe accept a copy whose com.apple.provenance differs from the original's, but leave files without a provenance alone unless --include-no-provenance.",
+      "status": "accepted",
+      "context": "macOS stamps a new file with the provenance of the app that made it, and on the owner's Mac it did not keep the original's value on the copy, so nearly every file was left uncompressed and not deduplicated. A file without a provenance is usually Apple's or the system's.",
+      "decision": "Leave com.apple.provenance out of every attribute comparison, still trying to restore the original's value. Skip files whose provenance is missing or empty (compress, repair) or never replace them (dedupe, where one may still be the kept copy) unless --include-no-provenance. Put files that failed only because of the provenance back in the queue; --retry-failed puts every earlier failure back.",
+      "rationale": "The owner chose it: the provenance only records which app last wrote the file, and keeping the files compressible matters more, while Apple's and system files should not gain this tool's provenance by default.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/meta.rs", "symbol": "without_provenance"},
+        {"path": "src/macos/free-disk-space/src/compress.rs", "symbol": "precheck"},
+        {"path": "src/macos/free-disk-space/src/compress.rs", "symbol": "requeue"},
+        {"path": "src/macos/free-disk-space/src/dedupe.rs", "symbol": "members"}
+      ]
+    },
+    {
+      "id": "daemon-reclaims-beyond-cleaning",
+      "title": "The daemon also deduplicates and compresses when cleaning is not enough",
+      "summary": "Below the threshold the daemon cleans first; if free space is still below it, it brings the scan up to date, runs dedupe --apply and compress --yes limited to the amount still missing.",
+      "status": "accepted",
+      "context": "The daemon only cleaned, which leaves the larger savings of dedupe and compress to a manual run.",
+      "decision": "After cleaning, probe again; when still below the threshold, run scan (resume, start, or rescan when over 7 days old), dedupe --apply and compress --yes --limit DEFICIT as child processes of the same binary, logged; --clean-only keeps the old behaviour.",
+      "rationale": "The owner asked for it. Both commands verify every file before replacing it and leave failures untouched, and child processes keep a step that exits on an error from ending the daemon.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "check"},
+        {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "reclaim_steps"},
+        {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "run_steps"}
+      ]
+    },
+    {
+      "id": "carry-on-past-failures",
+      "title": "Carry on past failures, recording each file",
+      "summary": "compress and dedupe no longer stop after three failures in a row: each file that fails verification is left as it was, recorded, reported with its reason, and the run carries on.",
+      "status": "accepted",
+      "context": "They used to stop after three failures in a row, for safety. On the owner's Mac, three files in a row failed for the same reason (macOS would not keep their com.apple.provenance), which ended the run although nothing was at risk: a failure never replaces the original.",
+      "decision": "On a failure, print NOT COMPRESSIBLE (compress) or NOT DEDUPLICATED (dedupe) with the reason, record it (status failed in cands, cloned = 2 in files) so later runs skip it, and continue; compress's summary groups the failures by reason.",
+      "rationale": "The owner asked for it. Every failure leaves the file untouched, so carrying on costs only time, and recording the file keeps later runs from trying it again.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/compress.rs", "symbol": "cmd_compress"},
+        {"path": "src/macos/free-disk-space/src/dedupe.rs", "symbol": "dedupe_group"},
+        {"path": "src/macos/free-disk-space/src/dedupe.rs", "symbol": "NOT_CLONABLE"}
+      ]
+    },
+    {
+      "id": "awake-time-cadence",
+      "title": "The daemon counts awake time and skips maintenance wakes",
+      "summary": "The daemon's cadence runs on a clock that stops while the Mac sleeps, it never schedules a wake, and it skips a check while the display is asleep.",
+      "status": "accepted",
+      "context": "A Mac wakes briefly in the background for maintenance with its display off; a cleanup is a burst of disk work and deletion.",
+      "decision": "Measure the cadence with CLOCK_UPTIME_RAW on macOS; read free space only when CGDisplayIsAsleep says the main display is awake; otherwise log the check as skipped.",
+      "rationale": "The README names maintenance wakes as the case the display check excludes.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "awake_secs"},
+        {"path": "src/macos/free-disk-space/src/util.rs", "symbol": "display_awake"},
+        {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "cmd_run"},
+        {"path": "src/macos/free-disk-space/README.md", "symbol": "Daemon"}
+      ]
+    }
+  ]
+}

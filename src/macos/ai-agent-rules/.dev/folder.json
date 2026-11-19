@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "ai-agent-rules",
+  "folder": "src/macos/ai-agent-rules",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "ai-agent-rules",
+      "summary": "`zazzle agent get-rules PATH`: prints the names and text of the rule files (AGENTS.md, AGENTS.override.md, CLAUDE.md, CLAUDE.local.md, .claude/rules at any depth, scoped by their `paths:` globs) and skill files (SKILL.md) that apply to a path, from the home folder and every folder above the path, closest last, with each file a rule imports (`@file`) after it; skills print only their description unless asked, and a CLAUDE.md that only imports listed files is not repeated.",
+      "purpose": "The crate of the ai-agent-rules binary: Cargo.toml, the user README, and the library, binary and tests in src/. It is one member of the Cargo workspace in src/macos.",
+      "boundaries": [
+        "It prints the files and marked segments that apply but never decides which rules matter to a task.",
+        "The zazzle invoker (src/macos/zazzle) runs it for `zazzle ai-agent-rules ARGS` by exec'ing the ai-agent-rules binary from the tools' folder (libexec/zazzle); `zazzle agent get-rules` goes to the daemon, which links this crate as a library.",
+        "Packaging ai-agent-rules in releases is the release scripts' concern, not this folder's."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/ai-agent-rules/Cargo.toml", "symbol": "package" },
+        { "path": "src/macos/ai-agent-rules/src/lib.rs", "symbol": "list_rules" },
+        { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "tool_binary" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "src/macos/zazzle/.dev/folder.json", "entityId": "folder", "description": "The invoker that execs ai-agent-rules for `zazzle agent`." }
+      ]
+    }
+  ]
+}

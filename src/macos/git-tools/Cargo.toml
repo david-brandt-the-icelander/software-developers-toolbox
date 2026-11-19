@@ -1,0 +1,28 @@
+[package]
+name = "git-tools"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "git-tools"
+path = "src/bin/git-tools.rs"
+
+[[bin]]
+name = "git-tools-commit"
+path = "src/bin/git-tools-commit.rs"
+
+[[bin]]
+name = "git-tools-commit-message-editor"
+path = "src/bin/git-tools-commit-message-editor.rs"
+
+# libc: raw terminal mode, window size and signals; serde_json: the saved file marks; unicode-width: cursor columns for wide characters.
+[dependencies]
+libc = "0.2"
+serde_json = "1"
+unicode-width = "0.2"
+
+# cargo llvm-cov sets coverage_nightly to keep test code out of the coverage figures.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }

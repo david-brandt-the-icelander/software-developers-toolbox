@@ -1,0 +1,193 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "git-tools deployment diagram",
+  "folder": "src/macos/git-tools",
+  "description": "How git-tools runs: three binaries installed beside zazzle on the developer's machine, started by a developer or a coding agent through `zazzle git`, directly, or by git as its editor; the editor draws on /dev/tty and every git step runs the git on PATH. Nothing stays resident.",
+  "sources": [
+    {
+      "path": "src/macos/git-tools/Cargo.toml",
+      "symbol": "bin"
+    },
+    {
+      "path": "src/macos/git-tools/src/term.rs",
+      "symbol": "Term::open"
+    },
+    {
+      "path": "src/macos/git-tools/src/git.rs",
+      "symbol": "git_interactive"
+    },
+    {
+      "path": "src/macos/git-tools/src/git.rs",
+      "symbol": "exec_git"
+    },
+    {
+      "path": "src/macos/git-tools/src/clipboard.rs",
+      "symbol": "SystemClipboard::detect"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "exec_tool"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "macos"
+    },
+    {
+      "path": "release/formula.sh",
+      "symbol": "Zazzle.install"
+    },
+    {
+      "path": "src/macos/git-tools/README.md",
+      "symbol": "Programs"
+    },
+    {
+      "path": "agents/skills/zazzle/SKILL.md",
+      "symbol": "Git"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs `zazzle git ...`, git with zazzle git message as its editor, or the binaries directly, and types into the editor.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle git ARGS` and `zazzle git commit -m MSG [--no-add]`, which never open the editor, as agents/skills/zazzle/SKILL.md says.",
+      "actor": "Actors/coding-agent.md",
+      "condition": "When a coding agent follows the zazzle skill."
+    },
+    {
+      "id": "machine",
+      "name": "The developer's machine",
+      "kind": "host",
+      "description": "A Mac (the release ships universal macOS binaries) or, from a local build, another Unix with git installed."
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "kind": "process",
+      "description": "Replaces itself with the git-tools found in its own directory for `zazzle git ARGS`.",
+      "condition": "When run as `zazzle git`."
+    },
+    {
+      "id": "router",
+      "name": "git-tools",
+      "kind": "process",
+      "description": "Answers help and version, runs the message editor or the commit flow in-process, and replaces itself with `git ARGS` for everything else."
+    },
+    {
+      "id": "commit",
+      "name": "git-tools-commit",
+      "kind": "process",
+      "description": "The commit flow as its own program; keeps the draft and marks in the repository's git directory."
+    },
+    {
+      "id": "editor",
+      "name": "git-tools-commit-message-editor",
+      "kind": "process",
+      "description": "The message editor as its own program, for git's core.editor, GIT_EDITOR or GIT_SEQUENCE_EDITOR; opens /dev/tty in raw mode on the alternate screen and saves the file in place."
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "kind": "process",
+      "description": "The git on PATH: captured with a 30-second limit for queries and staging, attached to the terminal with no limit for git commit, or exec'd for forwarded commands."
+    },
+    {
+      "id": "clipboard",
+      "name": "Clipboard commands",
+      "kind": "process",
+      "description": "pbcopy and pbpaste on macOS, wl-copy and wl-paste under Wayland, xclip under X11, each with a 2-second limit; the terminal also gets OSC 52.",
+      "condition": "Only on copy, cut and paste."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binaries",
+      "name": "git-tools, git-tools-commit, git-tools-commit-message-editor",
+      "source": "src/macos/git-tools/Cargo.toml",
+      "deployedTo": "machine",
+      "description": "Built with cargo build --release -p git-tools, or installed beside zazzle from the universal macOS release tarball or the zazzle Homebrew formula."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "router",
+      "kind": "hosts",
+      "description": "Runs as the calling user, in the caller's working directory."
+    },
+    {
+      "from": "machine",
+      "to": "commit",
+      "kind": "hosts",
+      "description": "Runs as the calling user."
+    },
+    {
+      "from": "machine",
+      "to": "editor",
+      "kind": "hosts",
+      "description": "Runs as the calling user."
+    },
+    {
+      "from": "machine",
+      "to": "git",
+      "kind": "hosts",
+      "description": "The installed git."
+    },
+    {
+      "from": "terminal",
+      "to": "invoker",
+      "kind": "connects-to",
+      "description": "`zazzle git ARGS`."
+    },
+    {
+      "from": "agent",
+      "to": "invoker",
+      "kind": "connects-to",
+      "description": "`zazzle git ARGS`, always with -m for commit."
+    },
+    {
+      "from": "invoker",
+      "to": "router",
+      "kind": "connects-to",
+      "description": "exec with the arguments after `git`, keeping the caller's streams and exit status."
+    },
+    {
+      "from": "terminal",
+      "to": "commit",
+      "kind": "connects-to",
+      "description": "Command line, then keys on /dev/tty."
+    },
+    {
+      "from": "router",
+      "to": "git",
+      "kind": "connects-to",
+      "description": "exec for forwarded commands; captured and attached runs for the commit flow."
+    },
+    {
+      "from": "commit",
+      "to": "git",
+      "kind": "connects-to",
+      "description": "Captured runs for status, config, rev-parse and staging; git commit attached to the terminal."
+    },
+    {
+      "from": "git",
+      "to": "editor",
+      "kind": "connects-to",
+      "description": "Starts it with the file to edit when it is git's editor; exit 0 continues, 1 aborts."
+    },
+    {
+      "from": "editor",
+      "to": "clipboard",
+      "kind": "connects-to",
+      "description": "Copy and paste through the system command, falling back to an in-memory copy."
+    }
+  ]
+}

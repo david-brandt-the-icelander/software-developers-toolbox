@@ -1,0 +1,689 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "daemon features",
+  "folder": "src/macos/daemon/src",
+  "description": "Behavior the daemon adds to the commands' answers: session ids and dedupe, read-again, stored outputs, and handing work to the local model.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/session.rs",
+      "symbol": "Sessions::apply_with"
+    }
+  ],
+  "entities": [
+    {
+      "id": "session-dedupe",
+      "name": "Session ids and dedupe",
+      "description": "Within a session, each query answer has a short id, and an answer already sent recently is replaced by a one-line notice.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::apply_with"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Session ids and dedupe"
+        }
+      ],
+      "behavior": "When a request carries a session (ZAZZLE_SESSION through the invoker or `zazzle daemon run`; one random `mcp-...` id per `zazzle daemon mcp` process), a find, read, ls, outline or refs answer starts with `[r:ID]`, ID being at least five characters derived from a hash of the session and the text. If the same session was sent the identical text within its last 40,000 estimated tokens, the answer is `[r:ID] already sent: zazzle CMD ARGS, unchanged. If you no longer have it: read-again r:ID`. --disable-session-deduping (MCP disable_session_deduping) sends it in full again.",
+      "outcome": "An agent is not sent text that is still in its context, and can refer to earlier answers by id.",
+      "constraints": [
+        "No session, no ids and no dedupe.",
+        "Edits, errors, status, help and version are never given an id or deduplicated; clean, `zazzle run` and proxied outputs get no session id either, but an output id of their own (stored-outputs).",
+        "Sessions live in daemon memory only; a restart forgets them.",
+        "At most 64 sessions (the least recently used is dropped) and 512 answers per session (the oldest is dropped).",
+        "Through Claude Code's hook, each conversation and each of its subagents has its own session (`SESSION_ID/AGENT_ID`, `main` for the conversation), and a PostCompact hook forgets the conversation's sessions, since its context no longer holds what was sent.",
+        "changed-since answers are never deduplicated: the same answer later is news."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::apply_with"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "unique_id"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "new_session_id"
+        }
+      ]
+    },
+    {
+      "id": "read-again",
+      "name": "Read again by id",
+      "description": "An answer can be fetched again by its id: a session response unchanged under the same id or current under a new one; a stored output as it was shown, or in full.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::resend"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Session ids and dedupe"
+        }
+      ],
+      "behavior": "With each id the session table keeps the command line (without --disable-session-deduping) and working directory that produced it. `zazzle read-again r:ID` (MCP zazzle_read_again) runs that request again in its original working directory and session: if the text is the same, it comes back whole under the same id; if not, it comes back under a new id with `r:OLD changed since it was sent; this is the current version`. A read again never reveals more than the original request did: a terse view stays without a sha. An id the session does not hold (or any id, without a session) is looked up in the output store instead: a stored clean, run or proxy output comes back as it was shown, and with --full (or --lines A-B) its whole input comes back as numbered lines within a budget of 3000 tokens (--budget).",
+      "outcome": "An agent can drop an answer from its context, or lose it to compaction, keep only its id, and get it back exactly when needed.",
+      "constraints": [
+        "A session response is rerun only within its session, and only while the session table keeps it (512 per session, daemon memory only).",
+        "A stored output is there for an hour at most (stored-outputs); --full is refused for a session response, which is never cut.",
+        "A read-again is never deduplicated."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "rerun"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "render_full"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::replay"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::resend"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Replay"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "read_again_args"
+        }
+      ]
+    },
+    {
+      "id": "stored-outputs",
+      "name": "Stored outputs",
+      "description": "clean, `zazzle run` and proxied outputs, whose input cannot be had again, are kept for an hour under an id, with the input they came from.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Stored outputs"
+        }
+      ],
+      "behavior": "When clean (in the daemon or `zazzle daemon run`), `zazzle daemon wrap` or `zazzle daemon proxy` has an output store, it saves the text it shows and its whole input under a ten-character id derived from both. clean and run answers start with `[r:ID]`, and end with `[full output: read-again r:ID --full]` when something was cut: input past its cap, a budget, a run profile's dropped lines, progress bars, blobs or long lines. The proxy appends to the result, after its items, one item of its own per text it shortened, `[r:ID shortened by zazzle]` (with `; full text: read-again r:ID --full` when something was cut), so a JSON text stays JSON. `read-again r:ID` returns the output as shown; `--full` returns the input with its line numbers. Each save drops entries older than an hour and, past the size limit, the oldest until half the bytes remain.",
+      "outcome": "An agent can drop a cleaned output from its context, or see what cleaning cut, without running a build or test again or asking the other server again.",
+      "constraints": [
+        "Kept for an hour at most, and less when the store passes its size limit (ZAZZLE_OUTPUTS_MAX_GB, default 2).",
+        "The store is the directory each process finds in its own environment (ZAZZLE_OUTPUTS_DIR, else ~/.zazzle/outputs); a `zazzle run` or proxy output is found only by a daemon using the same one.",
+        "Without HOME or ZAZZLE_OUTPUTS_DIR nothing is stored and outputs carry no id; a save that fails leaves the output with a note that it was not stored.",
+        "Stored outputs are not deduplicated."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "dir"
+        },
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "id_of"
+        },
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "src/macos/daemon/src/engine.rs",
+          "symbol": "Engine::with_outputs"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "open_engine"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "store"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "cuts"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "src/macos/daemon/src/proxy/mod.rs",
+          "symbol": "Filter::keep"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "run"
+        }
+      ]
+    },
+    {
+      "id": "pretooluse-hook",
+      "name": "Routing hook for Claude Code and Codex",
+      "description": "`zazzle daemon hook --client claude-code|codex [--edits]` is the PreToolUse hook setup installs: it refuses raw shell searches, listings, reads and builds with a pointer to the zazzle tool or `zazzle run`, and logs what it lets through.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "decide"
+        },
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Routing: what is enforced and what is asked"
+        }
+      ],
+      "behavior": "It reads the hook payload on stdin. Shell commands (Claude Code's Bash, Codex's shell, including `bash -lc` scripts) are split into pipeline segments; a segment that runs grep, rg, ag, ack or git grep, find without actions, cat/head/tail/less/bat/nl on files, sed -n on files, or a build or test runner (cargo build/test/check/clippy, dotnet build/test, go build/test, npm/pnpm/yarn/bun test/run/install, make, pytest, gradle, mvn, tsc, jest, vitest, xcodebuild and others) is refused with `permissionDecision: deny` and the zazzle tool or `zazzle run --` to use instead. Claude Code's Grep and Glob are refused, Read only for .cs files. Edit tools (Edit, Write, MultiEdit, NotebookEdit, apply_patch) are allowed and logged as native edits, or refused with --edits (which also refuses Read). A command ending in `# allow-raw` passes and is logged; when the zazzle daemon cannot be reached every refusal becomes a logged pass; ZAZZLE_HOOK=off turns it off. It never rewrites or approves a command.",
+      "outcome": "Raw tool calls that zazzle can answer more cheaply are sent back to the agent with the zazzle equivalent, in both Claude Code and Codex, and every bypass is visible in the activity log.",
+      "constraints": [
+        "Codex runs a new or changed hook only after the user trusts it.",
+        "Claude Code's Read of non-C# files is allowed, since its Edit tool needs it.",
+        "Hosted tools, web tools and MCP servers left direct are not seen."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "segments"
+        },
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "classify"
+        },
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "zazzle_reachable"
+        }
+      ]
+    },
+    {
+      "id": "edit-workspaces",
+      "name": "Workspace boundaries for edits",
+      "description": "Edits may write in the working directory, the git work tree holding it, the roots the MCP client names and the user's workspaces, and nowhere else.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/workspace.rs",
+          "symbol": "roots"
+        },
+        {
+          "path": "src/macos/daemon/src/workspace.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "serve"
+        }
+      ],
+      "behavior": "workspace::roots collects the command's working directory and its git work tree (so a chat started in a subdirectory edits the whole repository), the roots an MCP client returns for roots/list (asked after initialize when the client offers roots, and again on roots/list_changed, carried to the daemon after the session id), and the folders in ~/.zazzle/workspaces (one per line, `~/` allowed, written by `zazzle setup --workspace`) and ZAZZLE_WORKSPACES. The home folder and / never count, so a chat started there edits only its workspaces. confine resolves symlinks and `..` and refuses anything outside, naming the allowed folders and how to add one.",
+      "outcome": "One global setup lets an agent edit any repository under ~/dev from a chat started anywhere, including by absolute path and across repositories, without unrestricted writes.",
+      "constraints": [
+        "A linked git worktree outside every workspace is refused until its folder is added."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/workspace.rs",
+          "symbol": "configured"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "confine"
+        },
+        {
+          "path": "src/macos/daemon/src/proto.rs",
+          "symbol": "split_session"
+        }
+      ]
+    },
+    {
+      "id": "activity-log",
+      "name": "Activity log",
+      "description": "Every zazzle command the daemon runs, every `zazzle run`, every tool call through the proxy and every hook decision other than a plain allow is appended to ~/.zazzle/activity.log as one JSON line.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/activity.rs",
+          "symbol": "record"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "run_request"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/check.rs",
+          "symbol": "summary"
+        }
+      ],
+      "behavior": "Entries carry the time, the source (zazzle, run, proxy, hook), the session, the folder and what ran with its status or outcome; the proxy adds the server it fronts. version and status calls are left out. The log is moved to activity.log.1 past 2 MiB; ZAZZLE_ACTIVITY_LOG moves it, an empty value turns it off. Failures to write are ignored.",
+      "outcome": "`zazzle setup --report` and `--verify` can show what actually went through zazzle and what bypassed it, instead of inferring coverage from configuration.",
+      "constraints": [
+        "Tool calls that never reach zazzle (native tools the hook allows, direct MCP servers) leave no entry."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/activity.rs",
+          "symbol": "read"
+        },
+        {
+          "path": "src/macos/daemon/src/hook.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "src/macos/daemon/src/proxy/mod.rs",
+          "symbol": "Pending::note_text"
+        }
+      ]
+    },
+    {
+      "id": "agent-token-economy",
+      "name": "Small fixed cost per agent session",
+      "description": "What an agent pays for zazzle before and around its work is kept small: short MCP instructions, a catalog without the zazz tools until a script is registered, one shared budget for a multi-path read, similar files offered for a missing path, and one immediate message while the C# indexer is unavailable, sent in full once per session and shortened on repeats like an error's usage line and `similar:` list.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "MCP_INSTRUCTIONS"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "offers_zazz"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "MIN_SHARE"
+        },
+        {
+          "path": "src/macos/daemon/src/util.rs",
+          "symbol": "similar"
+        },
+        {
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "FAIL_MEMORY"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "shorten_repeats"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "Sessions::first_note"
+        }
+      ],
+      "behavior": "Initialize sends about 500 characters of instructions (the full text stays in CLAUDE.md and AGENTS.md); tools/list has the 8 agent tools (the others, meant for people, still answer tools/call) unless ZAZZLE_MCP_ZAZZ=1 or a zazz script is registered; read gives each remaining path an even share of what is left of its budget and names files it did not reach; read, outline and ls add `similar: ...` with up to three files of the same name or stem; after a failed indexer connection, structure tools answer `C# indexer unavailable: WHY` at once for 15 s, and report_gap still records the gap in the activity log.",
+      "outcome": "Measured on this repository: instructions 2,044 to 524 characters, catalog 14,370 to 8,939 characters, a four-file read of 2,000-line files 39,137 to 10,358 bytes, and a Java test class outline from 1 symbol to 5 (class and its four methods). Repeated errors in one MCP session: the indexer-unavailable message 148 to 86 characters, a usage line to `usage: as above` (read's is 212 characters).",
+      "constraints": [
+        "Clients that repeat the instructions per tool (Codex tool discovery) still pay them once per discovered tool.",
+        "Suggestions only search the work tree holding the working directory (or the working directory), and only by file name."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "unavailable"
+        },
+        {
+          "path": "src/macos/daemon/src/outline.rs",
+          "symbol": "method_name"
+        }
+      ]
+    },
+    {
+      "id": "agent-surface",
+      "name": "Agent surface",
+      "description": "Agents are shown only the commands meant for them; every other command stays available to people.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/help.rs",
+          "symbol": "AGENT"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "is_agent"
+        }
+      ],
+      "behavior": "One list (read, outline, find, refs, find-symbol, edit, replace, ls, diff, run, clean, read-again, get-rules, brief and prompt) decides agent help (`help --agent`, which bare `zazzle help` becomes when CLAUDECODE, CODEX_SANDBOX or CODEX_THREAD_ID is set), the MCP tools/list and the agent instructions; `help --all` lists every command, and errors suggest only agent commands.",
+      "outcome": "Agents spend no tokens on commands they should not run, and people keep every command.",
+      "constraints": [
+        "No command is removed: tools/call still answers the tools tools/list leaves out."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/cmd/help.rs",
+          "symbol": "agent_overview"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "agent_tool"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "build_request"
+        }
+      ]
+    },
+    {
+      "id": "nested-instructions",
+      "name": "Nested instructions",
+      "description": "A read or edit through zazzle carries the instructions a client loads when its own tools touch that path.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/nested.rs",
+          "symbol": "for_paths"
+        }
+      ],
+      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; narrowed to the purposes the session last passed to get-rules, each file or marked range sent once per session and content revision through the ledger shared with get-rules. The instructions travel as notes, apart from the source: on the command line they go to standard error, so a pipe (for example into `zazzle agent prompt`) carries only the source while the caller still sees the rules; over MCP they follow the answer.",
+      "outcome": "Sending reads through zazzle instead of the client's own tools does not lose a folder's own rules.",
+      "constraints": [
+        "No session, no instructions added.",
+        "The working directory and the folders above it are left out, since the client loads them at start."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/nested.rs",
+          "symbol": "for_paths"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "touched"
+        }
+      ]
+    },
+    {
+      "id": "mcp-upgrade-handover",
+      "name": "MCP upgrade handover",
+      "description": "A long-lived `zazzle daemon mcp` connection serves the installed version's tools after an upgrade.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/mcp_upgrade.rs",
+          "symbol": "reexec_if_changed"
+        }
+      ],
+      "behavior": "Before answering a request, the stdio server checks whether the daemon it was started as was replaced; if so it re-executes the new program on the same connection, handing over the request, the session and whether the client offers roots. The new program sends notifications/tools/list_changed (initialize advertises tools.listChanged), asks for roots again and answers the request.",
+      "outcome": "Clients no longer see an old version's tool descriptions and read budgets after `brew upgrade`.",
+      "constraints": [
+        "Only the stdio MCP server re-executes; the daemon is replaced by its own restart."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "serve_resumed"
+        }
+      ]
+    },
+    {
+      "id": "session-rule-delivery",
+      "name": "Session rule delivery",
+      "description": "`get-rules` (also `agent get-rules` and MCP `zazzle_get_rules`) and the instructions appended to reads and edits deliver each rule, import and skill text once per session.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/rules.rs",
+          "symbol": "get_rules"
+        }
+      ],
+      "behavior": "Deliveries are keyed by canonical path, a hash of the content and the selected line ranges; several paths print their union once; what the session already has is left out and named in one line; a changed file, a new purpose's segments, `--again` or a session reset (forget-sessions after compaction) send it again.",
+      "outcome": "Repeated scoped lookups and reads do not resend root and global rules, and nothing is silently dropped: skipped files are named.",
+      "constraints": [
+        "No session, no ledger: everything is sent.",
+        "The `ai-agent-rules` binary still lists rules without a ledger."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/rules.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "src/macos/daemon/src/session.rs",
+          "symbol": "has_note"
+        }
+      ]
+    },
+    {
+      "id": "llm-post-processing",
+      "name": "Output post-processed by the local model",
+      "description": "Any daemon command (and every MCP tool that only reads) takes `--llm INSTRUCTION`: its output goes to the user's local model with the instruction, and the agent reads only the model's answer.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "llm_args"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Agents asking the local model"
+        }
+      ],
+      "behavior": "split_globals takes `--llm INSTRUCTION` (or `--llm=INSTRUCTION`) out of the command line, the command runs as usual, and when it succeeded produce hands its output to llm::post: ai-agent runs as `prompt --no-download --effort low --temp 0` with a system message asking for the result only, the instruction and then the output on standard input. The answer comes back followed by `[post-processed by the local model: ~N → ~M tokens; run without --llm for the exact output]`, noting when the token limit cut it short, and is then cut to the budget like any output. Empty output passes through untouched, and output under ~400 tokens comes back as it is with `[kept as is: ~N tokens is short enough to read directly; --llm is for larger outputs]`, since reading it costs less than a model call. Over MCP, the `llm` argument of a reading tool becomes `--llm` right after the command name; zazzle_edit, zazzle_replace, zazzle_prompt and zazzle_brief do not take it.",
+      "outcome": "An agent that needs only part of a large output (an API response, a log, a long listing) spends fewer tokens, and the marker tells it the text is not exact.",
+      "constraints": [
+        "Needs a model the user already downloaded: a missing model is the command's error, never a download.",
+        "Input over 400,000 bytes is refused; narrow the command first.",
+        "One local model call at a time per daemon, for at most ZAZZLE_LLM_TIMEOUT seconds (default 300).",
+        "A model failure replaces the output with `error: local model: REASON`; a failed command is not post-processed.",
+        "The answer may lose or invent detail; drop --llm when exact text matters."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "split_globals"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask_with"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "mark"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "takes_llm"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "llm_args"
+        }
+      ]
+    },
+    {
+      "id": "brief",
+      "name": "Brief: the rules a task must follow and the skills it needs",
+      "description": "`brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` (also `agent brief`, MCP zazzle_brief) prints, verbatim, every rule section that applies to the paths and purposes, then the skills the local model ranks as needed for the intended task.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "brief"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "brief"
+        }
+      ],
+      "behavior": "Paths and purposes are applied before any inference: the rule and skill files for each path (default: the working directory) are listed with ai-agent-rules's list_rules for the given purposes (else the session's last get-rules purposes; a brief with --purpose sets them), each file and range once. Rule and import files are split at their Markdown headings outside code fences, inside the purpose ranges, without purpose marker lines; every such section is mandatory and always printed with its path and line range. Only skills not yet delivered go to the local model, by their descriptions, at low effort and temperature 0 with a GBNF grammar that forces `N:h`, `N:m` or `N:n` (needed, may help, not) for each in turn; with no skills the model is not asked. Needed skills, then those that may help, are added whole while they fit the budget (default 8000 tokens, its own --budget), so a cut falls between sections; the rest are named. Sections the session already has on the shared rule ledger (from get-rules, a read's notes or an earlier brief: the whole file, the purpose range or the section) are named, not repeated, and only what was printed is recorded: each section's range, and the whole file or purpose range once all of it has been sent.",
+      "outcome": "Before a task an agent reads the rules and skills that matter for it, not every rule file that applies to the folder.",
+      "constraints": [
+        "Rule sections are always sent, even past the budget, which the brief then says.",
+        "If the local model fails, the rule sections are still printed and the skills named, with the error.",
+        "The skill ranking depends on the model: a small model can miss one, so `get-rules --skill-bodies` remains the complete answer."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "sections"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "split"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "keys"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "delivered"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "record"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "rank"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "verdicts"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "ranked"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "parse"
+        }
+      ]
+    },
+    {
+      "id": "local-investigation",
+      "name": "Local investigation with checked citations",
+      "description": "One call hands a multi-file repository question to the user's local model and returns cited evidence instead of having the agent feed it file after file.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/investigate/mod.rs",
+          "symbol": "investigate"
+        }
+      ],
+      "behavior": "The starting symbols' refs inside the scope are the first evidence; each turn the model asks for up to three READ, REFS, OUTLINE or FIND lookups, which run through zazzle's own read-only commands confined to the scope (reads at ~1,500 tokens, refs and find at 15 results), until it answers, its turns run out (default 6, at most 12) or the evidence passes ~12,000 tokens. The rules for files it reads are tracked on a separate SESSION>local ledger and put in its system message, never among the evidence. Its ANSWER's `FINDING path:A-B claim` lines are checked (inside the scope, an existing text file, a valid range) and quoted literally; the rest are rejected with a reason. Seeds are resolved before inference: a starting symbol with no refs in the scope gets up to eight real files and eight symbols there that resemble it, shown to the model and listed in the report, and when no symbol is there and nothing resembles any, the report says no evidence and the model is not asked. A lookup that already ran is not run again (the model is told it has the output or that it failed), and two turns of only repeats end the run. An empty answer after lookups that found evidence gets one repair turn; if it is still empty the report is PARTIAL and carries those lookups' output verbatim (up to ~6,000 tokens).",
+      "outcome": "The agent spends one call and reads checked excerpts and explicit unknowns, not the files the model read.",
+      "constraints": [
+        "Only citations are checked, not the claims; the report says so.",
+        "One `ai-agent worker --no-download` serves every turn, so the model loads once per investigation; the worker holds the one-model lock until the run ends, each answer is bounded by ZAZZLE_LLM_TIMEOUT, and a ai-agent without the worker is asked once per turn instead."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/investigate/cite.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask"
+        },
+        {
+          "path": "src/macos/daemon/src/investigate/seed.rs",
+          "symbol": "candidates"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/capability.json",
+      "relationship": "The capability whose answers it tags."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The read-again and clean operations."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/use-case.json",
+      "relationship": "The MCP use case, where each connection is a session."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/zazzle/src",
+      "path": "src/macos/zazzle/src/.dev/use-case.json",
+      "relationship": "The shell use case, where ZAZZLE_SESSION is the session."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/use-case.json",
+      "relationship": "Getting back what a cleaned output cut, from the output store."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src/wrap",
+      "path": "src/macos/daemon/src/wrap/.dev/feature.json",
+      "relationship": "`zazzle run`, whose outputs are stored."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src/proxy",
+      "path": "src/macos/daemon/src/proxy/.dev/feature.json",
+      "relationship": "The MCP proxy, whose shortened texts are stored."
+    }
+  ]
+}

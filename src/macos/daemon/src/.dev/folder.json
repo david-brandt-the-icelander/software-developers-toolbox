@@ -1,0 +1,70 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "daemon source",
+  "folder": "src/macos/daemon/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "daemon source",
+      "summary": "The daemon library and binary: the daemon, its front ends, the engine the zazzle commands run on, and zazz scripts.",
+      "purpose": "Holds everything in daemon except the commands, the MCP proxy, `zazzle run` and zazz scripts: the binary's command line (main.rs, cli.rs); the unix-socket daemon (server.rs) and its wire format (proto.rs); the socket client and the MCP stdio server in front of the daemon (client.rs, mcp.rs, with the structure tools' definitions in mcp_structure.rs); launchd socket activation and the LaunchAgent (launchd.rs); and the shared engine: per-file metadata with its in-memory and persistent caches (engine.rs, meta.rs, store.rs), directory walking with a validated listing cache (walk.rs), symbol outlines (outline.rs) parsed in a per-thread arena (arena.rs), symbol lookup by name and parameter types for read --symbol (symbols.rs, params.rs), a thread pool shared by find, refs, ls and listing validation (pool.rs), the bridge to csharp-indexer for the terse C# view and the structure tools (indexer.rs), the terse views of HTML and Razor files (markup.rs), of CSS, SCSS, Sass and Less files (styles.rs) and of Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, Visual Basic, Fortran, Pascal and shell files (terse.rs, with short local names from locals.rs) of Nim and SQL files (nim.rs, sql.rs) of JSON, YAML, TOML and Markdown files (data.rs, md.rs) of XML, INI files and Dockerfiles (xml.rs, config.rs) of HCL/Terraform, Protobuf and GraphQL files (schema.rs) of CMake files and Makefiles (buildfile.rs) and of minified JSON and XML, reformatted (minified.rs), session ids, dedupe and replay records (session.rs), the disk store that keeps clean, run and proxy outputs for read-again (outputs.rs), the local model calls behind `--llm` and `prompt` (llm.rs, running ai-agent as a child) and `brief`, which has the local model pick the rule sections and skills a task needs (brief.rs), token estimates (tokens.rs), argument parsing (args.rs) and small helpers (util.rs). The commands are in cmd/, the MCP proxy in proxy/, client setup (`zazzle setup`) in setup/, `zazzle run` in wrap/, and zazz scripts (the `zazz` command and its MCP tools) in zazz/.",
+      "boundaries": [
+        "Owns the wire protocol the C invoker in src/macos/zazzle speaks (contracts.json, wire-protocol).",
+        "Keeps persistent state in two places: the cache directory, with derived data only, never file text; and the output store, which keeps clean, run and proxy outputs and their whole input (which can include file text) for an hour, owner-only (contracts.json, output-store). Sessions live in daemon memory.",
+        "Talks to csharp-indexer (src/macos/csharp-indexer) only through that tool's daemon socket, calling `view` and the structure tools (overview, find_symbol, changed_since, git_log, git_blame, report_gap) by name, starting the daemon when nothing listens.",
+        "zazz scripts keep their own state in the script store (~/.zazzle/v1/zazz) and run in separate zazz-script-runner processes; the rest of the daemon reaches them only through zazz::run, the zazz MCP tools and the engine's zazz field (the zazz/ diagram).",
+        "Runs ai-agent (src/macos/ai-agent) as a child with `prompt --no-download`, through its command line and exit codes only, and never downloads a model for an agent; rule and skill files come from ai-agent-rules (src/macos/ai-agent-rules).",
+        "testutil.rs is compiled for tests only."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/lib.rs",
+          "symbol": "testutil"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "src/macos/daemon/src/proto.rs",
+          "symbol": "Request"
+        },
+        {
+          "path": "src/macos/daemon/src/store.rs",
+          "symbol": "Store"
+        },
+        {
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "Indexer"
+        },
+        {
+          "path": "src/macos/daemon/src/outputs.rs",
+          "symbol": "save"
+        },
+        {
+          "path": "src/macos/daemon/src/lib.rs",
+          "symbol": "zazz"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask_with"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "src/macos/daemon/.dev/folder.json",
+          "entityId": "folder"
+        },
+        {
+          "relation": "depends-on",
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/contracts.json",
+          "entityId": "handshake",
+          "description": "indexer.rs speaks the indexer daemon's socket handshake."
+        }
+      ]
+    }
+  ]
+}

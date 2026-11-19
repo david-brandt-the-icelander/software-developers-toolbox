@@ -1,0 +1,493 @@
+// Reclaim macOS disk space via a resumable scan, compression, clone dedupe and safe cleanups.
+mod clean;
+mod compress;
+mod daemon;
+mod dedupe;
+mod lzfse;
+mod meta;
+mod repair;
+mod scan;
+#[cfg(test)]
+mod testkit;
+mod util;
+
+use clap::{Args, Parser, Subcommand, ValueEnum};
+
+// Return the default scan state path.
+fn default_state() -> String {
+    std::env::var("FDS_STATE")
+        .unwrap_or_else(|_| format!("{}/.local/state/free-disk-space/scan.sqlite3", util::home()))
+}
+
+// Parse a size argument for clap.
+fn size_arg(text: &str) -> Result<i64, String> {
+    util::parse_size(text)
+}
+
+const EXAMPLES: &str = "examples:
+  free-disk-space clean all                    # dry run of cache/downloads/trash/dev/docker cleanup
+  free-disk-space clean caches dev --apply     # actually clean just those
+  free-disk-space scan --root ~ --min-size 5M  # scan for compression, duplicates, cleanup (Ctrl-C safe)
+  free-disk-space resume                       # continue it later
+  free-disk-space status                       # progress, candidates, free space
+  free-disk-space dedupe                       # dry run: same-named identical files to clone
+  free-disk-space dedupe --sample 5 --apply    # replace 5 duplicates with APFS clones
+  free-disk-space compress --sample 5          # verify on 5 files first
+  free-disk-space compress --limit 20G --yes   # then go bigger
+  free-disk-space daemon install               # clean caches+dev below 30G free, checked every 15m awake
+  free-disk-space daemon install --threshold 10% --cadence 1h --targets caches dev trash
+
+state file: $FDS_STATE or ~/.local/state/free-disk-space/scan.sqlite3";
+
+// Command-line interface.
+#[derive(Parser)]
+#[command(
+    version,
+    about = "Reclaim disk space on macOS: resumable scan, APFS compression, clone dedupe, cleanups.",
+    after_help = EXAMPLES
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Cmd,
+}
+
+// Shared --state option.
+#[derive(Args)]
+struct StateArg {
+    /// scan state file
+    #[arg(long, default_value_t = default_state())]
+    state: String,
+}
+
+// Available subcommands.
+#[derive(Subcommand)]
+enum Cmd {
+    /// scan for compression, duplicates and cleanup (`new` still works)
+    #[command(alias = "new")]
+    Scan(NewArgs),
+    /// continue an interrupted scan
+    Resume(ResumeArgs),
+    /// show scan progress, candidates and free space
+    Status(StateArg),
+    /// list best candidates
+    List(ListArgs),
+    /// compress candidates in place (verified)
+    ///
+    /// Each file is cloned into a temp file in the same directory, given APFS LZFSE compression by the
+    /// built-in lempel-ziv-finite-state-entropy-compression library, checked (flags, size, mode, owner, xattrs, SHA-256, allocated
+    /// size), then atomically swapped in. Skips hard-linked, open, recently changed and flagged files.
+    Compress(CompressArgs),
+    /// find and repair files falsely claimed to be compressed (dry run unless --apply)
+    ///
+    /// Checks every file the scan recorded. A file the state file records as compressed that is not
+    /// is reset to pending for `compress`. A flagged file whose com.apple.decmpfs attribute is missing,
+    /// invalid or unreadable is reported and recorded as broken (`list --status broken`); nothing can be
+    /// recovered from it. A flagged file whose compressed form takes as many disk blocks as the plain
+    /// file would is decompressed (a verified plain copy, flag cleared) and left alone by `compress`.
+    Repair(RepairArgs),
+    /// replace identical same-named files with APFS clones (dry run unless --apply)
+    ///
+    /// Files recorded by the scan that share a leaf name and size are SHA-256 hashed when at least
+    /// one is writable. Identical ones are replaced by copy-on-write clones of one kept copy (like
+    /// `cp -c`), keeping each file's own metadata. Skips system files (not owned by you, or under
+    /// system paths), hard-linked, open, compressed and flagged files.
+    Dedupe(DedupeArgs),
+    /// delete regenerable files (dry run unless --apply)
+    ///
+    /// Targets: caches, downloads, trash, dev, docker (all of these = `all`), plus opt-in brew, xcode.
+    Clean(CleanArgs),
+    /// run cleanups in the background on a cadence (macOS login item)
+    ///
+    /// Every cadence of awake time (the clock stops while the Mac sleeps; nothing wakes it, and checks
+    /// are skipped while the display is asleep) free space on the data volume is compared with the
+    /// threshold; below it, `clean --apply` runs on the chosen targets. `install` registers a launchd
+    /// login item (~/Library/LaunchAgents) that starts now and at every login.
+    Daemon(DaemonArgs),
+}
+
+// Daemon actions.
+#[derive(Args)]
+struct DaemonArgs {
+    #[command(subcommand)]
+    action: DaemonAction,
+}
+
+// What to do with the daemon.
+#[derive(Subcommand)]
+enum DaemonAction {
+    /// run in the foreground (what the login item executes)
+    Run(DaemonOpts),
+    /// install and start the login item
+    Install(DaemonOpts),
+    /// stop and remove the login item
+    Uninstall,
+    /// show whether the login item is installed and running
+    Status,
+}
+
+// Options shared by daemon run and install.
+#[derive(Args)]
+struct DaemonOpts {
+    /// clean when free space falls below this: a size such as 30G or a percentage such as 10%
+    #[arg(long, default_value = "30G")]
+    threshold: String,
+    /// time between checks, in awake time: 90s, 15m or 2h (bare number = minutes)
+    #[arg(long, default_value = "15m")]
+    cadence: String,
+    /// what to clean when below the threshold
+    #[arg(long, value_enum, num_args = 1.., default_values_t = [Target::Caches, Target::Dev])]
+    targets: Vec<Target>,
+    /// project tree for `dev`
+    #[arg(long, default_value = "~/dev")]
+    dev_root: String,
+    /// only clean; don't also deduplicate and compress when cleaning was not enough
+    #[arg(long)]
+    clean_only: bool,
+}
+
+// Options for new.
+#[derive(Args)]
+struct NewArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// where to scan (default: your home; /System/Volumes/Data for all)
+    #[arg(long, default_value_t = util::home())]
+    root: String,
+    /// smallest file to consider
+    #[arg(long, default_value = "1M")]
+    min_size: String,
+    /// only files untouched this long
+    #[arg(long, default_value_t = 14)]
+    min_age_days: i64,
+    /// min sampled compressibility %
+    #[arg(long, default_value_t = 25)]
+    min_savings_pct: i64,
+    /// also descend into other filesystems
+    #[arg(long)]
+    cross_devices: bool,
+    /// skip this directory (repeatable)
+    #[arg(long, value_name = "PATH")]
+    exclude: Vec<String>,
+    /// discard an unfinished scan
+    #[arg(long)]
+    force: bool,
+    /// don't preview the cleanup targets when the scan completes
+    #[arg(long)]
+    skip_clean: bool,
+}
+
+// Options for resume.
+#[derive(Args)]
+struct ResumeArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// don't preview the cleanup targets when the scan completes
+    #[arg(long)]
+    skip_clean: bool,
+}
+
+// Candidate states for list.
+#[derive(Clone, Copy, ValueEnum)]
+enum Status {
+    Pending,
+    Done,
+    Skipped,
+    Failed,
+    Broken,
+}
+
+// Options for list.
+#[derive(Args)]
+struct ListArgs {
+    #[command(flatten)]
+    state: StateArg,
+    #[arg(long, default_value_t = 30)]
+    top: i64,
+    #[arg(long, value_enum, default_value = "pending")]
+    status: Status,
+}
+
+// Options for compress.
+#[derive(Args)]
+struct CompressArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// only process the N best files, then stop
+    #[arg(long, value_name = "N")]
+    sample: Option<usize>,
+    #[arg(long)]
+    max_files: Option<usize>,
+    /// stop once this much estimated savings is planned (e.g. 20G)
+    #[arg(long, value_name = "SIZE")]
+    limit: Option<String>,
+    /// re-check file is this old
+    #[arg(long, default_value_t = 14)]
+    min_age_days: i64,
+    /// min verified gain per file
+    #[arg(long, value_parser = size_arg, default_value = "64K")]
+    min_gain: i64,
+    /// extra free space to keep beyond the temp copy
+    #[arg(long, value_parser = size_arg, default_value = "2G")]
+    reserve: i64,
+    #[arg(long)]
+    dry_run: bool,
+    /// don't ask for confirmation
+    #[arg(short, long)]
+    yes: bool,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
+    /// try again the files earlier runs left as they were
+    #[arg(long)]
+    retry_failed: bool,
+}
+
+// Options for repair.
+#[derive(Args)]
+struct RepairArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// actually repair (default is a dry run)
+    #[arg(long)]
+    apply: bool,
+    /// only rewrite files at least this many days old
+    #[arg(long, default_value_t = 14)]
+    min_age_days: i64,
+    /// min verified gain per rewritten file
+    #[arg(long, value_parser = size_arg, default_value = "64K")]
+    min_gain: i64,
+    /// extra free space to keep beyond the temp copy
+    #[arg(long, value_parser = size_arg, default_value = "2G")]
+    reserve: i64,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
+}
+
+// Options for dedupe.
+#[derive(Args)]
+struct DedupeArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// actually replace duplicates (default is a dry run)
+    #[arg(long)]
+    apply: bool,
+    /// also process files not owned by you or under system paths such as /Library
+    #[arg(long)]
+    include_system: bool,
+    /// smallest file to consider
+    #[arg(long, default_value = "1")]
+    min_size: String,
+    /// only process N duplicates, then stop
+    #[arg(long, value_name = "N")]
+    sample: Option<u64>,
+    /// also change files without a com.apple.provenance (Apple's and system files); their copies get this tool's
+    #[arg(long)]
+    include_no_provenance: bool,
+    /// try again the files earlier runs left as they were
+    #[arg(long)]
+    retry_failed: bool,
+}
+
+// Cleanup targets.
+#[derive(Clone, Copy, ValueEnum)]
+enum Target {
+    All,
+    Caches,
+    Downloads,
+    Trash,
+    Dev,
+    Docker,
+    Brew,
+    Xcode,
+}
+
+// Options for clean.
+#[derive(Args)]
+struct CleanArgs {
+    #[arg(required = true, value_enum)]
+    targets: Vec<Target>,
+    /// actually delete (default is a dry run)
+    #[arg(long)]
+    apply: bool,
+    /// project tree for `dev`
+    #[arg(long, default_value = "~/dev")]
+    dev_root: String,
+    /// graceful stop seconds
+    #[arg(long, default_value_t = 30)]
+    docker_stop_timeout: u64,
+}
+
+// Validate daemon options into settings or exit with the problem.
+fn daemon_settings(o: DaemonOpts) -> daemon::Settings {
+    let targets = o.targets.into_iter().map(value_name).collect();
+    let mut s = daemon::Settings::parse(&o.threshold, &o.cadence, targets, &o.dev_root)
+        .unwrap_or_else(|e| util::die(&e));
+    s.clean_only = o.clean_only;
+    s
+}
+
+// Return the lowercase name of a clap value.
+fn value_name<T: ValueEnum>(v: T) -> String {
+    v.to_possible_value().map(|p| p.get_name().to_string()).unwrap_or_default()
+}
+
+// Parse arguments and dispatch to the chosen command.
+fn main() {
+    run(Cli::parse());
+}
+
+// Dispatch a parsed command line to the chosen command.
+fn run(cli: Cli) {
+    match cli.command {
+        Cmd::Scan(a) => scan::cmd_new(&scan::NewOpts {
+            state: a.state.state,
+            root: a.root,
+            min_size: a.min_size,
+            min_age_days: a.min_age_days,
+            min_savings_pct: a.min_savings_pct,
+            cross_devices: a.cross_devices,
+            exclude: a.exclude,
+            force: a.force,
+            skip_clean: a.skip_clean,
+        }),
+        Cmd::Resume(a) => scan::cmd_resume(&a.state.state, a.skip_clean),
+        Cmd::Status(a) => scan::cmd_status(&a.state),
+        Cmd::List(a) => scan::cmd_list(&a.state.state, &value_name(a.status), a.top),
+        Cmd::Compress(a) => compress::cmd_compress(&compress::CompressOpts {
+            state: a.state.state,
+            sample: a.sample,
+            max_files: a.max_files,
+            limit: a.limit,
+            min_age_days: a.min_age_days,
+            min_gain: a.min_gain,
+            reserve: a.reserve,
+            dry_run: a.dry_run,
+            yes: a.yes,
+            include_no_provenance: a.include_no_provenance,
+            retry_failed: a.retry_failed,
+        }),
+        Cmd::Repair(a) => repair::cmd_repair(&repair::RepairOpts {
+            compress: compress::CompressOpts {
+                state: a.state.state,
+                sample: None,
+                max_files: None,
+                limit: None,
+                min_age_days: a.min_age_days,
+                min_gain: a.min_gain,
+                reserve: a.reserve,
+                dry_run: false,
+                yes: true,
+                include_no_provenance: a.include_no_provenance,
+                retry_failed: false,
+            },
+            apply: a.apply,
+        }),
+        Cmd::Dedupe(a) => dedupe::cmd_dedupe(&dedupe::DedupeOpts {
+            state: a.state.state,
+            apply: a.apply,
+            include_system: a.include_system,
+            min_size: a.min_size,
+            sample: a.sample,
+            include_no_provenance: a.include_no_provenance,
+            retry_failed: a.retry_failed,
+        }),
+        Cmd::Daemon(a) => match a.action {
+            DaemonAction::Run(o) => daemon::cmd_run(&daemon_settings(o)),
+            DaemonAction::Install(o) => {
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|e| util::die(&format!("cannot find myself: {e}")));
+                // The launcher runs the keg's versioned copy; the LaunchAgent must name the upgrade-proof opt link.
+                let exe = util::stable_exe(&exe.canonicalize().unwrap_or(exe));
+                daemon::cmd_install(&daemon_settings(o), &exe);
+            }
+            DaemonAction::Uninstall => daemon::cmd_uninstall(),
+            DaemonAction::Status => daemon::cmd_status(),
+        },
+        Cmd::Clean(a) => {
+            let targets: Vec<String> = a.targets.into_iter().map(value_name).collect();
+            clean::cmd_clean(&targets, a.apply, &a.dev_root, a.docker_stop_timeout);
+        }
+    }
+}
+
+// Unit tests for argument parsing and dispatch.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::Sandbox;
+
+    // Parse a command line and run it.
+    fn go(args: &[&str]) {
+        let mut full = vec!["free-disk-space"];
+        full.extend_from_slice(args);
+        run(Cli::try_parse_from(full).expect("valid arguments"));
+    }
+
+    // Check the default state path honours FDS_STATE and falls back to the home directory.
+    #[test]
+    fn test_default_state_paths() {
+        let sb = Sandbox::new();
+        assert_eq!(default_state(), sb.state());
+        std::env::remove_var("FDS_STATE");
+        assert!(default_state().ends_with("/.local/state/free-disk-space/scan.sqlite3"));
+    }
+
+    // Check size and value-name helpers.
+    #[test]
+    fn test_size_arg_and_value_name() {
+        assert_eq!(size_arg("2K"), Ok(2048));
+        assert!(size_arg("nope").is_err());
+        assert_eq!(value_name(Target::Docker), "docker");
+        assert_eq!(value_name(Status::Pending), "pending");
+    }
+
+    // Check invalid command lines are rejected by the parser.
+    #[test]
+    fn test_cli_rejects_bad_arguments() {
+        let _sb = Sandbox::new();
+        assert!(Cli::try_parse_from(["fds"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "clean"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "compress", "--min-gain", "x"]).is_err());
+    }
+
+    // Check every subcommand dispatches to its implementation.
+    #[test]
+    fn test_run_dispatches_every_command() {
+        let sb = Sandbox::new();
+        std::env::set_var("FDS_FORCE", "1");
+        let root = sb.dir("root");
+        sb.write("root/a/f", &vec![b'a'; 1 << 20]);
+        let root = root.to_str().unwrap();
+        go(&["scan", "--root", root, "--min-size", "1K", "--min-age-days", "0", "--skip-clean", "--force"]);
+        go(&[
+            "new",
+            "--root",
+            root,
+            "--min-size",
+            "1K",
+            "--min-age-days",
+            "0",
+            "--exclude",
+            "/nowhere",
+            "--force",
+        ]);
+        go(&["resume"]);
+        go(&["status"]);
+        go(&["list", "--top", "3", "--status", "done"]);
+        go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
+        go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);
+        go(&["repair", "--min-age-days", "0", "--min-gain", "1", "--reserve", "0"]);
+        let home = sb.home().to_string_lossy().into_owned();
+        go(&["clean", "caches", "trash", "--dev-root", &home]);
+        sb.tool("launchctl", "exit 0");
+        go(&["daemon", "install", "--threshold", "10%", "--cadence", "1h", "--targets", "caches", "trash"]);
+        go(&["daemon", "status"]);
+        go(&["daemon", "uninstall"]);
+        util::set_stop(true);
+        go(&["daemon", "run"]);
+        util::set_stop(false);
+        let bad = std::panic::catch_unwind(|| go(&["daemon", "run", "--threshold", "nope"]));
+        assert!(bad.is_err());
+    }
+}

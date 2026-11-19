@@ -1,0 +1,357 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Editor state diagram",
+  "folder": "src/macos/git-tools/src",
+  "description": "The life of one Editor while Term::run feeds it keys: the state is derived from its view, prompt and find fields, and Editor::handle checks them in that order (a prompt first, then the find bar, then the global keys Ctrl+S, Esc, F1/Ctrl+G, Tab/Shift+Tab, Ctrl+F/Ctrl+R, then the view's own keys). Any key other than an arrow resets the tap count. Outside this machine, Term::run also ends with Cancel when SIGHUP, SIGTERM or SIGINT arrives or the terminal closes, and a lone Esc is delivered only after a 25 ms wait for the rest of a sequence.",
+  "sources": [
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::handle"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::new"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::save"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::cancel"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::answer"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::find_key"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor::problem"
+    },
+    {
+      "path": "src/macos/git-tools/src/term.rs",
+      "symbol": "Term::run"
+    },
+    {
+      "path": "src/macos/git-tools/src/editor_tests.rs",
+      "symbol": "test_editor_prompts"
+    }
+  ],
+  "machine": "Editor (editor.rs), driven by Term::run through Editor::handle",
+  "initialState": "new",
+  "states": [
+    {
+      "id": "new",
+      "description": "Editor::new has built the editor for a buffer: the views are Edit, plus Files when changed files are given (the commit flow), plus Rebase for a git-rebase-todo file. No key handled yet."
+    },
+    {
+      "id": "editing",
+      "description": "View::Edit with no prompt and no find bar: keys type, move, select, copy, undo and move lines."
+    },
+    {
+      "id": "files",
+      "description": "View::Files with no prompt and no find bar: arrows move the list cursor and keys change file marks."
+    },
+    {
+      "id": "rebase",
+      "description": "View::Rebase with no prompt and no find bar: arrows move between todo lines and keys set their commands or reorder them."
+    },
+    {
+      "id": "help",
+      "description": "Prompt::Help: the key help for the current view is shown over it."
+    },
+    {
+      "id": "discard",
+      "description": "Prompt::Discard: `Discard your changes? y/n` after Esc with changed text or marks."
+    },
+    {
+      "id": "delete",
+      "description": "Prompt::Delete: `Delete N file(s) from disk? ... y/n` after Ctrl+S with files marked [DELETE]."
+    },
+    {
+      "id": "find",
+      "description": "The find bar (Editor.find is Some) is open over a view and takes every key; with replace on, over the editing view only."
+    },
+    {
+      "id": "saved",
+      "description": "handle returned Outcome::Save; the caller writes the file.",
+      "terminal": true
+    },
+    {
+      "id": "cancelled",
+      "description": "handle returned Outcome::Cancel; nothing is written.",
+      "terminal": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "new",
+      "to": "editing",
+      "trigger": "Editor::new",
+      "guard": "The file is not a rebase todo list"
+    },
+    {
+      "from": "new",
+      "to": "rebase",
+      "trigger": "Editor::new",
+      "guard": "The file is a rebase todo list (Kind::Rebase)"
+    },
+    {
+      "from": "editing",
+      "to": "files",
+      "trigger": "Tab or Shift+Tab",
+      "guard": "Files are offered",
+      "action": "cycle_view moves along Edit, Files."
+    },
+    {
+      "from": "files",
+      "to": "editing",
+      "trigger": "Tab or Shift+Tab",
+      "action": "cycle_view."
+    },
+    {
+      "from": "editing",
+      "to": "rebase",
+      "trigger": "Tab or Shift+Tab",
+      "guard": "Rebase is offered",
+      "action": "cycle_view moves along Edit, Rebase."
+    },
+    {
+      "from": "rebase",
+      "to": "editing",
+      "trigger": "Tab or Shift+Tab",
+      "action": "cycle_view."
+    },
+    {
+      "from": "editing",
+      "to": "editing",
+      "trigger": "Any other key",
+      "action": "edit_key: typing, Enter, paste, Backspace, Delete, Ctrl+K, Ctrl+Z/Y, Ctrl+A, Ctrl+C/X/V, PageUp/Down; arrows move by one, a word or page on a double tap, the line or text edge on a triple tap (Taps::press), Shift selects, Alt+Up/Down moves the line."
+    },
+    {
+      "from": "files",
+      "to": "files",
+      "trigger": "Any other key",
+      "action": "files_key: Up/Down with taps move the list cursor, Space cycles the mark, A toggles all, Backspace marks [DELETE], PageUp/Down, Ctrl+Z undoes a mark change. Ctrl+R only shows `Replace works while editing (Tab)`."
+    },
+    {
+      "from": "rebase",
+      "to": "rebase",
+      "trigger": "Any other key",
+      "action": "rebase_key: p r e s f d set the line's command (a message on other lines), Alt+Up/Down moves the line, Up/Down with taps, Ctrl+Z/Y, PageUp/Down. Ctrl+R only shows `Replace works while editing (Tab)`."
+    },
+    {
+      "from": "editing",
+      "to": "help",
+      "trigger": "F1 or Ctrl+G"
+    },
+    {
+      "from": "help",
+      "to": "editing",
+      "trigger": "Any key",
+      "guard": "Help was opened over the editing view",
+      "action": "The prompt closes; the key does nothing else."
+    },
+    {
+      "from": "editing",
+      "to": "find",
+      "trigger": "Ctrl+F, or Ctrl+R for find and replace",
+      "action": "open_find: the query starts from a one-line selection; search starts from the selection or cursor."
+    },
+    {
+      "from": "find",
+      "to": "editing",
+      "trigger": "Esc",
+      "guard": "The bar was opened over the editing view",
+      "action": "The bar closes; the selection or row found stays."
+    },
+    {
+      "from": "editing",
+      "to": "editing",
+      "trigger": "Ctrl+S",
+      "guard": "problem() finds an empty commit message or a todo list starting with squash or fixup",
+      "action": "The reason is shown in the status line."
+    },
+    {
+      "from": "editing",
+      "to": "saved",
+      "trigger": "Ctrl+S",
+      "guard": "No problem and no file marked [DELETE]"
+    },
+    {
+      "from": "editing",
+      "to": "cancelled",
+      "trigger": "Esc",
+      "guard": "Nothing changed since loading (Editor::changed is false)"
+    },
+    {
+      "from": "editing",
+      "to": "discard",
+      "trigger": "Esc",
+      "guard": "The text or a file mark changed"
+    },
+    {
+      "from": "discard",
+      "to": "editing",
+      "trigger": "Any key but y or Y",
+      "guard": "The prompt was opened over the editing view"
+    },
+    {
+      "from": "files",
+      "to": "help",
+      "trigger": "F1 or Ctrl+G"
+    },
+    {
+      "from": "help",
+      "to": "files",
+      "trigger": "Any key",
+      "guard": "Help was opened over the Files view",
+      "action": "The prompt closes; the key does nothing else."
+    },
+    {
+      "from": "files",
+      "to": "find",
+      "trigger": "Ctrl+F",
+      "action": "open_find: the query starts from a one-line selection; search starts from the selection or cursor."
+    },
+    {
+      "from": "find",
+      "to": "files",
+      "trigger": "Esc",
+      "guard": "The bar was opened over the Files view",
+      "action": "The bar closes; the selection or row found stays."
+    },
+    {
+      "from": "files",
+      "to": "files",
+      "trigger": "Ctrl+S",
+      "guard": "problem() finds an empty commit message or a todo list starting with squash or fixup",
+      "action": "The reason is shown in the status line."
+    },
+    {
+      "from": "files",
+      "to": "saved",
+      "trigger": "Ctrl+S",
+      "guard": "No problem and no file marked [DELETE]"
+    },
+    {
+      "from": "files",
+      "to": "cancelled",
+      "trigger": "Esc",
+      "guard": "Nothing changed since loading (Editor::changed is false)"
+    },
+    {
+      "from": "files",
+      "to": "discard",
+      "trigger": "Esc",
+      "guard": "The text or a file mark changed"
+    },
+    {
+      "from": "discard",
+      "to": "files",
+      "trigger": "Any key but y or Y",
+      "guard": "The prompt was opened over the Files view"
+    },
+    {
+      "from": "rebase",
+      "to": "help",
+      "trigger": "F1 or Ctrl+G"
+    },
+    {
+      "from": "help",
+      "to": "rebase",
+      "trigger": "Any key",
+      "guard": "Help was opened over the Rebase view",
+      "action": "The prompt closes; the key does nothing else."
+    },
+    {
+      "from": "rebase",
+      "to": "find",
+      "trigger": "Ctrl+F",
+      "action": "open_find: the query starts from a one-line selection; search starts from the selection or cursor."
+    },
+    {
+      "from": "find",
+      "to": "rebase",
+      "trigger": "Esc",
+      "guard": "The bar was opened over the Rebase view",
+      "action": "The bar closes; the selection or row found stays."
+    },
+    {
+      "from": "rebase",
+      "to": "rebase",
+      "trigger": "Ctrl+S",
+      "guard": "problem() finds an empty commit message or a todo list starting with squash or fixup",
+      "action": "The reason is shown in the status line."
+    },
+    {
+      "from": "rebase",
+      "to": "saved",
+      "trigger": "Ctrl+S",
+      "guard": "No problem and no file marked [DELETE]"
+    },
+    {
+      "from": "rebase",
+      "to": "cancelled",
+      "trigger": "Esc",
+      "guard": "Nothing changed since loading (Editor::changed is false)"
+    },
+    {
+      "from": "rebase",
+      "to": "discard",
+      "trigger": "Esc",
+      "guard": "The text or a file mark changed"
+    },
+    {
+      "from": "discard",
+      "to": "rebase",
+      "trigger": "Any key but y or Y",
+      "guard": "The prompt was opened over the Rebase view"
+    },
+    {
+      "from": "editing",
+      "to": "delete",
+      "trigger": "Ctrl+S",
+      "guard": "No problem and some file is marked [DELETE]"
+    },
+    {
+      "from": "delete",
+      "to": "editing",
+      "trigger": "Any key but y or Y",
+      "guard": "The prompt was opened over the editing view"
+    },
+    {
+      "from": "files",
+      "to": "delete",
+      "trigger": "Ctrl+S",
+      "guard": "No problem and some file is marked [DELETE]"
+    },
+    {
+      "from": "delete",
+      "to": "files",
+      "trigger": "Any key but y or Y",
+      "guard": "The prompt was opened over the Files view"
+    },
+    {
+      "from": "find",
+      "to": "find",
+      "trigger": "Any other key",
+      "action": "find_key: typing, paste and Backspace edit the focused field and search from where the bar opened; Enter finds the next match (or replaces one), Alt+A replaces all, Tab switches fields, Ctrl+F and Ctrl+R switch between find and replace."
+    },
+    {
+      "from": "discard",
+      "to": "cancelled",
+      "trigger": "y or Y"
+    },
+    {
+      "from": "delete",
+      "to": "saved",
+      "trigger": "y or Y"
+    }
+  ]
+}

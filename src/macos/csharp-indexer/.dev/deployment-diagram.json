@@ -1,0 +1,227 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "csharp-indexer deployment diagram",
+  "folder": "src/macos/csharp-indexer",
+  "description": "How csharp-indexer runs on a developer's machine: one self-contained executable, a shared daemon per user that daemon queries for terse C# views and structure, a short-lived hook per tool call, and a stdio server for debugging. Nothing runs anywhere else.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/csharp-indexer.csproj",
+      "symbol": "PublishSingleFile"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "serve"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy.SpawnDaemon"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+      "symbol": "Init.Apply"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+      "symbol": "Init.FindDaemon"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Build the C# indexer for both CPU types"
+    },
+    {
+      "path": "src/macos/csharp-indexer/README.md",
+      "symbol": "zazzle read"
+    },
+    {
+      "path": "src/macos/daemon/src/indexer.rs",
+      "symbol": "Indexer.start_daemon"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "macOS (arm64 or x64) or Linux (x64 or arm64); the release builds these four. Everything below runs here as the same user."
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's client (for example Claude Code)",
+      "kind": "client",
+      "description": "Starts zazzle daemon mcp as the stdio MCP server per session where init found daemon, and runs csharp-indexer hook before Bash, Grep, Glob and Read calls once init has configured the project. It does not start the indexer itself.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs csharp-indexer init in a project and csharp-indexer report.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "serve",
+      "name": "csharp-indexer serve",
+      "kind": "process",
+      "description": "Started by hand for debugging: pipes standard input and output to the daemon, or serves in process with --no-daemon, ZAZZLE_INDEXER_NO_DAEMON=1 or when no daemon can be used. It lists no tools.",
+      "condition": "Only when someone starts it"
+    },
+    {
+      "id": "daemon",
+      "name": "csharp-indexer daemon",
+      "kind": "process",
+      "description": "One per state directory (per user by default), started detached by the first daemon (or serve) that finds none, holding the engine, watchers and indexes; serves every client of daemon.sock and exits after the idle period."
+    },
+    {
+      "id": "zazzle-daemon",
+      "name": "daemon (src/macos/daemon/)",
+      "kind": "process",
+      "description": "zazzle's daemon, another tool in this repository and the agents' only front door. init registers zazzle daemon mcp as the project's zazzle MCP server when it finds the daemon beside the indexer in libexec/zazzle. For zazzle read of a .cs file and for zazzle's structure tools, the daemon connects to daemon.sock, starting the indexer daemon if nothing answers, sends the hello line and calls view, overview, find_symbol, changed_since, git_log, git_blame or report_gap by name over MCP.",
+      "condition": "When zazzle is installed"
+    },
+    {
+      "id": "hook",
+      "name": "csharp-indexer hook",
+      "kind": "process",
+      "description": "One short-lived process per Bash, Grep, Glob or Read call; decides by exit code and appends to the usage log.",
+      "condition": "In projects where csharp-indexer init has run"
+    },
+    {
+      "id": "oneshot",
+      "name": "csharp-indexer init and report",
+      "kind": "process",
+      "description": "One-shot commands: init writes the project's .mcp.json and .claude/settings.json, naming the daemon it finds and the hook; report reads the usage log."
+    },
+    {
+      "id": "state",
+      "name": "State directory",
+      "kind": "database",
+      "description": "store.db (SQLite, WAL), usage.jsonl and usage.jsonl.1 and daemon.sock, in ~/Library/Application Support/csharp-indexer, $XDG_STATE_HOME/csharp-indexer or ZAZZLE_INDEXER_STATE_DIR."
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "kind": "process",
+      "description": "Child processes for work-tree checks, listings, ignore checks, log and blame; must be on PATH."
+    },
+    {
+      "id": "worktrees",
+      "name": "Git work trees (the roots)",
+      "kind": "database",
+      "description": "The source files the index reads and watches. csharp-indexer never writes them."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "csharp-indexer (single-file executable)",
+      "source": "src/macos/csharp-indexer/src/csharp-indexer.csproj",
+      "deployedTo": "machine",
+      "description": "dotnet publish src -c Release -r <rid>: self-contained, single file, ReadyToRun, native libraries included, not Developer ID signed. For macOS it is gzipped per CPU type into the release tarball and the zazzle Homebrew formula expands the matching one on install; for Linux it is in zazzle-linux-<arch>.tar.gz (delivery.json)."
+    }
+  ],
+  "relationships": [
+    {
+      "from": "machine",
+      "to": "serve",
+      "kind": "hosts",
+      "description": "Started by hand, for debugging."
+    },
+    {
+      "from": "machine",
+      "to": "daemon",
+      "kind": "hosts",
+      "description": "Started detached, by daemon or by serve through /bin/sh with nohup."
+    },
+    {
+      "from": "machine",
+      "to": "hook",
+      "kind": "hosts",
+      "description": "Started by the agent's client."
+    },
+    {
+      "from": "machine",
+      "to": "zazzle-daemon",
+      "kind": "hosts",
+      "description": "Runs as its own process; how it starts is recorded in src/macos/daemon/."
+    },
+    {
+      "from": "machine",
+      "to": "oneshot",
+      "kind": "hosts",
+      "description": "Started from the terminal."
+    },
+    {
+      "from": "agent",
+      "to": "hook",
+      "kind": "connects-to",
+      "description": "PreToolUse event as JSON on standard input; exit code 0 or 2."
+    },
+    {
+      "from": "agent",
+      "to": "zazzle-daemon",
+      "kind": "connects-to",
+      "description": "MCP on the standard input and output of zazzle daemon mcp, which init registers as the zazzle server."
+    },
+    {
+      "from": "terminal",
+      "to": "oneshot",
+      "kind": "connects-to",
+      "description": "Command line; serve too, when debugging."
+    },
+    {
+      "from": "serve",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket daemon.sock in the state directory: hello line, then MCP."
+    },
+    {
+      "from": "zazzle-daemon",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "Unix socket daemon.sock: hello line with the version and roots, then MCP tools/call of view and the structure tools."
+    },
+    {
+      "from": "daemon",
+      "to": "state",
+      "kind": "connects-to",
+      "description": "store.db and the usage log."
+    },
+    {
+      "from": "serve",
+      "to": "state",
+      "kind": "connects-to",
+      "description": "Its own store connection and log when serving in process."
+    },
+    {
+      "from": "hook",
+      "to": "state",
+      "kind": "connects-to",
+      "description": "Appends to usage.jsonl."
+    },
+    {
+      "from": "oneshot",
+      "to": "state",
+      "kind": "connects-to",
+      "description": "report reads usage.jsonl and usage.jsonl.1."
+    },
+    {
+      "from": "daemon",
+      "to": "worktrees",
+      "kind": "connects-to",
+      "description": "Reads files; FSEvents (macOS) or FileSystemWatcher (elsewhere) on each root."
+    },
+    {
+      "from": "daemon",
+      "to": "git",
+      "kind": "connects-to",
+      "description": "Spawned with an argument list and a timeout, never through a shell."
+    },
+    {
+      "from": "terminal",
+      "to": "serve",
+      "kind": "connects-to",
+      "description": "MCP on standard input and output, typed or piped by hand."
+    }
+  ]
+}

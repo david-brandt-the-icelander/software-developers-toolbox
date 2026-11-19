@@ -7,11 +7,11 @@
     {
       "id": "folder",
       "title": "Tool skills",
-      "summary": "One SKILL.md per tool, telling a coding agent when and how to use it: zazzle, zazz scripts, agent-fs, fix-network, free-disk-space and cyberspace-generator.",
+      "summary": "One SKILL.md per tool, telling a coding agent when and how to use it: zazzle, zazz scripts, shell-tools, fix-network, free-disk-space and cyberspace-generator.",
       "purpose": "Each subfolder is one skill, named after its directory, with frontmatter an agent matches a task against and short imperative steps. AGENTS.md lists them.",
       "boundaries": [
-        "A skill wraps its tool's binary; what the tool does is documented in the tool's own folder (zazz scripts: zazzled's src/zazz).",
-        "zazzle-csharp-indexer has no skill here: zazzle-csharp-indexer init prints its own snippet for AGENTS.md or CLAUDE.md."
+        "A skill wraps its tool's binary; what the tool does is documented in the tool's own folder (zazz scripts: daemon's src/zazz).",
+        "csharp-indexer has no skill here: csharp-indexer init prints its own snippet for AGENTS.md or CLAUDE.md."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
@@ -24,7 +24,7 @@
           "symbol": "Skills"
         },
         {
-          "path": "macos/dotnet/zazzle-csharp-indexer/README.md",
+          "path": "src/macos/csharp-indexer/README.md",
           "symbol": "Quick start"
         }
       ]

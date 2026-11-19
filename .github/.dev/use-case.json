@@ -21,13 +21,13 @@
           "symbol": "jobs"
         },
         {
-          "path": "macos/release/README.md",
+          "path": "release/README.md",
           "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
         }
       ],
       "actor": "Owner",
       "actorDocument": "Actors/owner.md",
-      "goal": "Make a new version of zazzle (and zazz), zazzled with zazz-worker, zazzle-csharp-indexer, afs, fix-network, free-disk-space, zazzle-git and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
+      "goal": "Make a new version of zazzle (and zazz), daemon with zazz-script-runner, csharp-indexer, shell-tools, fix-network, free-disk-space, git-tools and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
       "preconditions": [
         "The change is on main: main takes only pull requests.",
         "The repository holds the secrets CLOUDFLARE_R2_TOKEN and HOMEBREW_TAP_TOKEN; the Apple signing secrets are optional.",
@@ -64,7 +64,7 @@
               "symbol": "version"
             },
             {
-              "path": "macos/release/version.sh",
+              "path": "release/version.sh",
               "symbol": "next"
             }
           ]
@@ -73,18 +73,18 @@
           "id": "macos",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On macOS: stamps the version into every crate, builds zazz-worker and tests the workspace, builds and signs the language modules and the JIT tools (zazzle-llm) and writes their manifests, trains the PGO profile, builds both architectures with the manifests embedded, builds and smoke tests the zazzle invoker, makes universal binaries and copies the invoker as zazz, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set (zazz-worker with its entitlements), packs the tarball, creates the GitHub release and copies the tarball to the download bucket, and the language modules and JIT tools under the tag only.",
+          "action": "On macOS: stamps the version into every crate, builds zazz-script-runner and tests the workspace, builds and signs the language modules and the JIT tools (ai-agent) and writes their manifests, trains the PGO profile, builds both architectures with the manifests embedded, builds and smoke tests the zazzle invoker, makes universal binaries and copies the invoker as zazz, builds the C# indexer for both CPU types, signs and notarizes when the Apple secrets are set (zazz-script-runner with its entitlements), packs the tarball, creates the GitHub release and copies the tarball to the download bucket, and the language modules and JIT tools under the tag only.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",
               "symbol": "macos"
             },
             {
-              "path": "macos/release/pgo.sh",
+              "path": "release/pgo.sh",
               "symbol": "profdata"
             },
             {
-              "path": "macos/release/sign-and-notarize.sh",
+              "path": "release/sign-and-notarize.sh",
               "symbol": "cleanup"
             }
           ]
@@ -93,7 +93,7 @@
           "id": "linux",
           "actor": "Release workflow",
           "participantKind": "system",
-          "action": "On Linux x86_64 and aarch64: builds zazz-worker and tests zazzled, builds the language modules and the JIT tools with their manifests, builds zazzled with a PGO profile and both manifests, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz (with zazz and zazz-worker) to the release and copies it, the language modules and the JIT tools to the download bucket.",
+          "action": "On Linux x86_64 and aarch64: builds zazz-script-runner and tests daemon, builds the language modules and the JIT tools with their manifests, builds daemon with a PGO profile and both manifests, builds and tests the invoker, tests and publishes the indexer, attaches zazzle-linux-<arch>.tar.gz (with zazz and zazz-script-runner) to the release and copies it, the language modules and the JIT tools to the download bucket.",
           "sources": [
             {
               "path": ".github/workflows/release.yml",
@@ -112,11 +112,11 @@
               "symbol": "homebrew"
             },
             {
-              "path": "macos/release/bottle.sh",
+              "path": "release/bottle.sh",
               "symbol": "root"
             },
             {
-              "path": "macos/release/formula.sh",
+              "path": "release/formula.sh",
               "symbol": "bottle_block"
             }
           ]
@@ -129,7 +129,7 @@
           "outcome": "Every binary is built and tested with version 0.0.0-dev, and nothing is tagged or published.",
           "sources": [
             {
-              "path": "macos/release/version.sh",
+              "path": "release/version.sh",
               "symbol": "publish=false"
             }
           ]
@@ -140,7 +140,7 @@
           "outcome": "The version job fails and nothing is built or published.",
           "sources": [
             {
-              "path": "macos/release/version.sh",
+              "path": "release/version.sh",
               "symbol": "is not vX.Y.Z"
             }
           ]
@@ -151,7 +151,7 @@
           "outcome": "The binaries are released unsigned with a warning; when the repository variable REQUIRE_SIGNING is true, the job fails and nothing is published.",
           "sources": [
             {
-              "path": "macos/release/sign-and-notarize.sh",
+              "path": "release/sign-and-notarize.sh",
               "symbol": "missing"
             }
           ]
@@ -162,7 +162,7 @@
           "outcome": "The job fails, prints Apple's log, and nothing is published.",
           "sources": [
             {
-              "path": "macos/release/sign-and-notarize.sh",
+              "path": "release/sign-and-notarize.sh",
               "symbol": "status"
             }
           ]
@@ -173,7 +173,7 @@
           "outcome": "pgo.sh fails, so the build and everything after it do not run.",
           "sources": [
             {
-              "path": "macos/release/pgo.sh",
+              "path": "release/pgo.sh",
               "symbol": "training wrote no profile"
             }
           ]
@@ -195,7 +195,7 @@
           "outcome": "Each file is tried up to five times, waiting 15, 30, 60 and 120 seconds in between. If every attempt fails, the job fails, and \"Re-run failed jobs\" finishes publishing: the GitHub release step uploads to a release that already exists instead of creating it.",
           "sources": [
             {
-              "path": "macos/release/r2-put.sh",
+              "path": "release/r2-put.sh",
               "symbol": "attempt"
             },
             {

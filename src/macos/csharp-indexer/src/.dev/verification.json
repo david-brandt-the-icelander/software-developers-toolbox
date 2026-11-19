@@ -1,0 +1,90 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "csharp-indexer source verification",
+  "folder": "src/macos/csharp-indexer/src",
+  "entities": [
+    {
+      "id": "usage-log",
+      "title": "Usage log records",
+      "summary": "Tool calls write versioned records with stable sessions, response hashes and view source metrics while hiding free text; gap reports remain plain text by design.",
+      "subject": [
+        {
+          "path": "src/macos/csharp-indexer/src/.dev/observability.json",
+          "entityId": "usage-log"
+        }
+      ],
+      "criteria": [
+        "The server lists no tools, and a find_symbol called by name writes a v2 record with the caller's session and a response hash without the name it was asked for",
+        "A view reports source size, line count and transformation counts",
+        "The report summarises daemon final-delivery records and session-dedupe savings",
+        "report_gap's note appears in the log's note field"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ToolTests.cs",
+          "symbol": "test_server_lists_no_tools_and_logs",
+          "command": "dotnet test tests --filter test_server_lists_no_tools_and_logs"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_delivery_report",
+          "command": "dotnet test tests --filter test_delivery_report"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ViewTests.cs",
+          "symbol": "test_view_tool",
+          "command": "dotnet test tests --filter test_view_tool"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+          "symbol": "test_report_gap_logged",
+          "command": "dotnet test tests --filter test_report_gap_logged"
+        }
+      ],
+      "details": "Rotation at 20 MiB and the readable first element and flags of array arguments are not covered by a test.",
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "suite",
+      "title": "The whole suite",
+      "summary": "All xunit tests of the tool, which must pass on Linux and macOS.",
+      "subject": [
+        {
+          "path": "src/macos/csharp-indexer/src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ],
+      "criteria": [
+        "dotnet test tests passes; each folder's verification.json lists what its tests check"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/tests.csproj",
+          "command": "dotnet test tests",
+          "description": "Run in src/macos/csharp-indexer/. CI and the release workflow run it on macOS and Linux."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-style.md",
+          "symbol": "Testing"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "symbol": "dotnet"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "dotnet test tests"
+        }
+      ]
+    }
+  ]
+}

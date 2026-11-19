@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle and its tools",
+  "folder": "src/macos",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle and its tools",
+      "summary": "zazzle, the launcher, and every tool it runs, one folder per tool with a plain descriptive name, in any language; also the Cargo workspace and the Rust and C# rules for agents.",
+      "purpose": "Holds the launcher (zazzle/, C), the daemon (daemon/), the language modules and the zazz script crates (language-modules/, zazz-script/), the standalone tools (shell-tools/, fix-network/, free-disk-space/, git-tools/, ai-agent/, ai-agent-rules/), the C# tools (csharp-indexer/, csharp-minifier/) and the vendored LZFSE library (lempel-ziv-finite-state-entropy-compression/). Only zazzle is a command on PATH; an install puts every other tool in libexec/zazzle, where `zazzle TOOL` runs it. The folder is named for the tools' primary platform: zazzle, the daemon and csharp-indexer also build and run on Linux.",
+      "boundaries": [
+        "A grouping folder: the tools share settings, not code; only the zazz-script crates are shared (the daemon uses packaging and engine, runner uses engine).",
+        "The Cargo workspace (Cargo.toml, Cargo.lock, rustfmt.toml, rust-style.md) covers the Rust folders; the release profile uses link-time optimization, stripped symbols and one codegen unit. ai-agent is left out of release workspace builds (`--exclude ai-agent`) and built by release/tools.sh.",
+        "zazz-script/runner embeds wasmtime and sets its own minimum Rust version (1.97); the rest of the workspace keeps 1.85.",
+        "lempel-ziv-finite-state-entropy-compression/ is changed only by copying a new version from the lzfse-compression repository.",
+        "Build output (target/, bin/, obj/, out/, build/) is never committed."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/Cargo.toml",
+          "symbol": "workspace"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "tool_binary"
+        },
+        {
+          "path": "release/pack.sh",
+          "symbol": "libexec/zazzle"
+        },
+        {
+          "path": "src/macos/.gitignore",
+          "symbol": "target/"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "symbol": "linux"
+        }
+      ],
+      "links": [
+        {
+          "label": "Rust rules for agents",
+          "path": "src/macos/rust-style.md"
+        },
+        {
+          "label": "C# rules for agents",
+          "path": "src/macos/csharp-style.md"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": "src/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazzle invoker component diagram",
+  "folder": "src/macos/zazzle",
+  "description": "The invoker's source, its tests and its benchmarks, the daemon all three need, the standalone tools the invoker runs for `zazzle free-disk-space`, `zazzle fix-network` and `zazzle git`, and ai-agent, which `zazzle daemon llm` runs for `zazzle agent llm|prompt`. The same program, run as `zazz` or under an installed script's name, sends zazz requests to the daemon.",
+  "sources": [
+    {
+      "path": "src/macos/zazzle/Makefile",
+      "symbol": "all"
+    },
+    {
+      "path": "src/macos/zazzle/test/smoke.sh",
+      "symbol": "DAEMON"
+    },
+    {
+      "path": "src/macos/zazzle/bench/run.sh",
+      "symbol": "DAEMON"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "tool_binary"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "build_request"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "is_llm"
+    }
+  ],
+  "components": [
+    {
+      "id": "zazzle",
+      "name": "zazzle invoker",
+      "responsibility": "Builds and tests the zazzle program.",
+      "folder": "src/macos/zazzle"
+    },
+    {
+      "id": "src",
+      "name": "Invoker source",
+      "responsibility": "The program: logic, entry and per-platform syscalls.",
+      "folder": "src/macos/zazzle/src",
+      "diagram": "src/macos/zazzle/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "test",
+      "name": "Tests",
+      "responsibility": "Host unit tests against a mock syscall layer, the gcov branch gate and the end-to-end smoke test, which also runs the invoker as `zazz` and as a script's shim.",
+      "folder": "src/macos/zazzle/test"
+    },
+    {
+      "id": "bench",
+      "name": "Benchmarks",
+      "responsibility": "Spawn-latency measurements of zazzle against a startup floor, a libc hello, grep and cat, and cold and warm refs timings.",
+      "folder": "src/macos/zazzle/bench"
+    },
+    {
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "The daemon the invoker talks to, for zazzle commands (`agent get-rules` included) and (as zazz or a shim) zazz commands, and the binary it execs for `run`, `proxy`, `setup` and `agent llm|prompt`.",
+      "folder": "src/macos/daemon",
+      "diagram": "src/macos/daemon/.dev/component-diagram.json"
+    },
+    {
+      "id": "free-disk-space",
+      "name": "free-disk-space",
+      "responsibility": "The standalone tool `zazzle free-disk-space` runs.",
+      "folder": "src/macos/free-disk-space",
+      "diagram": "src/macos/free-disk-space/.dev/component-diagram.json"
+    },
+    {
+      "id": "fix-network",
+      "name": "fix-network",
+      "responsibility": "The standalone tool `zazzle fix-network` runs.",
+      "folder": "src/macos/fix-network",
+      "diagram": "src/macos/fix-network/.dev/component-diagram.json"
+    },
+    {
+      "id": "git-tools",
+      "name": "git-tools",
+      "responsibility": "The git front end and commit message editor `zazzle git` runs.",
+      "folder": "src/macos/git-tools",
+      "diagram": "src/macos/git-tools/.dev/component-diagram.json"
+    },
+    {
+      "id": "ai-agent-rules",
+      "name": "ai-agent-rules",
+      "responsibility": "The rule and skill finder behind `zazzle agent get-rules`, which the daemon links and answers through the daemon; its ai-agent-rules binary still runs it alone.",
+      "folder": "src/macos/ai-agent-rules",
+      "diagram": "src/macos/ai-agent-rules/.dev/component-diagram.json"
+    },
+    {
+      "id": "ai-agent",
+      "name": "ai-agent",
+      "responsibility": "Runs open models locally for `zazzle agent llm|prompt`; `zazzle daemon llm` downloads and execs it.",
+      "folder": "src/macos/ai-agent",
+      "diagram": "src/macos/ai-agent/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    { "from": "zazzle", "to": "src", "kind": "contains", "description": "The program." },
+    { "from": "zazzle", "to": "test", "kind": "contains", "description": "Its tests." },
+    { "from": "zazzle", "to": "bench", "kind": "contains", "description": "Its benchmarks." },
+    { "from": "src", "to": "daemon", "kind": "depends-on", "description": "Sends every daemon command over its socket (prefixed `zazz` or `zazz exec-name NAME` when run under another name) and starts it when nothing listens; execs `zazzle daemon wrap`, `zazzle daemon proxy`, `zazzle daemon setup` and, for `agent llm|prompt`, `zazzle daemon llm`." },
+    { "from": "src", "to": "free-disk-space", "kind": "depends-on", "description": "Execs the free-disk-space binary from the tools' folder (libexec/zazzle)." },
+    { "from": "src", "to": "fix-network", "kind": "depends-on", "description": "Execs the fix-network binary from the tools' folder (libexec/zazzle)." },
+    { "from": "src", "to": "git-tools", "kind": "depends-on", "description": "Execs the git-tools binary from the tools' folder (libexec/zazzle) for `zazzle git`." },
+    { "from": "daemon", "to": "ai-agent-rules", "kind": "depends-on", "description": "Answers `zazzle agent get-rules` with the ai-agent-rules library and a per-session ledger." },
+    { "from": "daemon", "to": "ai-agent", "kind": "depends-on", "description": "`zazzle daemon llm` fetches ai-agent when needed and execs it." },
+    { "from": "test", "to": "src", "kind": "depends-on", "description": "unit.c includes zazzle_core.h with the mock; smoke.sh runs build/zazzle." },
+    { "from": "test", "to": "daemon", "kind": "depends-on", "description": "smoke.sh runs the release daemon (DAEMON)." },
+    { "from": "bench", "to": "src", "kind": "depends-on", "description": "exit0.c reuses entry.h; run.sh and refs.sh time build/zazzle." },
+    { "from": "bench", "to": "daemon", "kind": "depends-on", "description": "run.sh and refs.sh start the release daemon on a temporary socket; refs.sh also times `zazzle daemon run refs` cold." }
+  ]
+}

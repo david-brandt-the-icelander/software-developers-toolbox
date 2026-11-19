@@ -134,8 +134,8 @@
     }
   ],
   "relatedViews": [
-    { "kind": "operation", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/operation.json", "relationship": "The diagnose, fix --dry-run and fix commands the agent runs." },
-    { "kind": "use-case", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/use-case.json", "relationship": "The same goals pursued by the developer directly." },
-    { "kind": "feature", "folder": "macos/rust/fix-network/src", "path": "macos/rust/fix-network/src/.dev/feature.json", "relationship": "The outcomes and repairs the agent relays." }
+    { "kind": "operation", "folder": "src/macos/fix-network/src", "path": "src/macos/fix-network/src/.dev/operation.json", "relationship": "The diagnose, fix --dry-run and fix commands the agent runs." },
+    { "kind": "use-case", "folder": "src/macos/fix-network/src", "path": "src/macos/fix-network/src/.dev/use-case.json", "relationship": "The same goals pursued by the developer directly." },
+    { "kind": "feature", "folder": "src/macos/fix-network/src", "path": "src/macos/fix-network/src/.dev/feature.json", "relationship": "The outcomes and repairs the agent relays." }
   ]
 }

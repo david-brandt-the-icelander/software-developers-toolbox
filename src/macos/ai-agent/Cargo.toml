@@ -1,0 +1,34 @@
+[package]
+name = "ai-agent"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The program behind `zazzle agent llm` and `zazzle agent prompt`; daemon downloads it on first use, it downloads the models.
+[[bin]]
+name = "ai-agent"
+path = "src/main.rs"
+
+# Each dependency has one reason; std covers everything else.
+[dependencies]
+# The command line and its help text, as in the other tools.
+clap = { version = "4", features = ["derive"] }
+# Runs GGUF models on the CPU, or the GPU through Metal on macOS: one engine for every architecture the catalogue names.
+llama-cpp-2 = { version = "0.1.161", default-features = false }
+# Renders the chat template each model carries, with its thinking and effort switches.
+minijinja = { version = "2", features = ["json", "loop_controls"] }
+# The Python string and dict methods (`.startswith`, `.split`, `.get`) chat templates call.
+minijinja-contrib = { version = "2", features = ["pycompat"] }
+# Messages handed to the chat template, and `tojson`.
+serde_json = "1"
+# Checks each downloaded model file against the SHA-256 the catalogue pins.
+sha2 = "0.10"
+# Model downloads over HTTPS with the OS trust store, as daemon downloads language modules.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
+# flock, so two prompts never download the same model at once.
+libc = "0.2"
+
+[features]
+# GPU inference on Apple Silicon; the release builds the macOS binary with it.
+metal = ["llama-cpp-2/metal"]

@@ -1,0 +1,1041 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "csharp-minifier classes",
+  "folder": "src/macos/csharp-minifier/src",
+  "description": "The types declared in the project's files, all internal, in namespace CSharpMinifier. Program.cs uses top-level statements and declares no type. Static classes are shown as classes; Roslyn types appear only in member signatures.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-minifier/src/Runner.cs",
+      "symbol": "Runner"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/Plan.cs",
+      "symbol": "Plan"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/Cli.cs",
+      "symbol": "ParsedArgs"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/SplitTests.cs",
+      "symbol": "SplitTests"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/Rename.cs",
+      "symbol": "Rename"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/RepoSetup.cs",
+      "symbol": "RepoSetup"
+    },
+    {
+      "path": "src/macos/csharp-minifier/src/Benchmark.cs",
+      "symbol": "Benchmark"
+    }
+  ],
+  "types": [
+    {
+      "id": "CSharpMinifier.ParsedArgs",
+      "name": "ParsedArgs",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Cli.cs"
+      ],
+      "members": [
+        "bool Help",
+        "bool Version",
+        "bool SplitTests",
+        "bool Check",
+        "string Root",
+        "List<string> Paths",
+        "string? Error",
+        "bool ListIdentifiers",
+        "string? RenameFile",
+        "string? Benchmark",
+        "string? Model",
+        "string? Effort",
+        "bool AllowReads",
+        "List<string> CommandSwitches()"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Cli",
+      "name": "Cli",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Cli.cs"
+      ],
+      "members": [
+        "static ParsedArgs Parse(string[] args)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Runner",
+      "name": "Runner",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Runner.cs"
+      ],
+      "members": [
+        "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.ToolVersion",
+      "name": "ToolVersion",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/ToolVersion.cs"
+      ],
+      "members": [
+        "static readonly string Text"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Edit",
+      "name": "Edit",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Plan.cs"
+      ],
+      "members": [
+        "string Path",
+        "byte[]? Bytes"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Plan",
+      "name": "Plan",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Plan.cs"
+      ],
+      "members": [
+        "List<Edit> Edits",
+        "List<string> Changes",
+        "List<string> Notes",
+        "List<string> Errors",
+        "void Write(string path, string text, bool bom = false)",
+        "void Delete(string path)",
+        "void Apply()",
+        "IEnumerable<string> WrittenSources()"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SourceFile",
+      "name": "SourceFile",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/SourceFile.cs"
+      ],
+      "members": [
+        "string Path",
+        "string Rel",
+        "string Text",
+        "bool Bom",
+        "static SourceFile? Read(string root, string path, out string? error)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SourceFiles",
+      "name": "SourceFiles",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/SourceFiles.cs"
+      ],
+      "members": [
+        "static List<string> Under(IEnumerable<string> paths)",
+        "static bool IsGenerated(string path, string text)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Layout",
+      "name": "Layout",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Layout.cs"
+      ],
+      "members": [
+        "static string? ProjectDir(string root, string path)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.ProjectLanguage",
+      "name": "ProjectLanguage",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/ProjectLanguage.cs"
+      ],
+      "members": [
+        "static (LanguageVersion? Version, string? Why) For(string root, string file)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Proc",
+      "name": "Proc",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Proc.cs"
+      ],
+      "members": [
+        "static (int Code, string Output) Run(string program, IEnumerable<string> args, int timeoutSeconds, string? workingDir = null)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Cut",
+      "name": "Cut",
+      "kind": "struct",
+      "sources": [
+        "src/macos/csharp-minifier/src/TestFileText.cs"
+      ],
+      "members": [
+        "int Start",
+        "int End",
+        "string With"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SplitTests",
+      "name": "SplitTests",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SplitTests.Output",
+      "name": "Output",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "string Text",
+        "bool Bom"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SplitTests.Report",
+      "name": "Report",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/SplitTests.cs"
+      ],
+      "members": [
+        "List<string> Targets",
+        "int Moved",
+        "int Marked",
+        "int Cleared"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Target",
+      "name": "Target",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "string Class",
+        "string Method"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Resolution",
+      "name": "Resolution",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "Target? Target",
+        "string? Reason"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.UnderTest",
+      "name": "UnderTest",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/UnderTest.cs"
+      ],
+      "members": [
+        "static UnderTest Load(string root, CSharpParseOptions options)",
+        "SyntaxTree? Tree(string path)",
+        "Resolution Resolve(MethodDeclarationSyntax test)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.TestMethods",
+      "name": "TestMethods",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/TestMethods.cs"
+      ],
+      "members": [
+        "const string MarkerPrefix",
+        "static bool IsTest(MethodDeclarationSyntax method)",
+        "static List<MethodDeclarationSyntax> In(SyntaxNode root)",
+        "static TextSpan? WhenSection(SyntaxNode body)",
+        "static SyntaxTrivia? Marker(MethodDeclarationSyntax method)",
+        "static string MarkerText(string reason)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.MovedTest",
+      "name": "MovedTest",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/TestFileText.cs"
+      ],
+      "members": [
+        "SourceFile File",
+        "MethodDeclarationSyntax Method",
+        "string Text",
+        "string Indent",
+        "string? Namespace",
+        "bool FileScoped",
+        "List<TypeDeclarationSyntax> Chain",
+        "string Key"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.TestFileText",
+      "name": "TestFileText",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/TestFileText.cs"
+      ],
+      "members": [
+        "static string NewLine(string text)",
+        "static string Indent(SourceText text, int position)",
+        "static int ContentStart(SourceText text, MethodDeclarationSyntax method)",
+        "static string MethodText(SourceText text, MethodDeclarationSyntax method, string nl)",
+        "static Cut RemovalCut(SourceText text, MethodDeclarationSyntax method)",
+        "static Cut? MarkerEdit(SourceText text, MethodDeclarationSyntax method, string reason, string nl)",
+        "static Cut? MarkerRemoval(SourceText text, MethodDeclarationSyntax method)",
+        "static string WithoutMarker(string methodText)",
+        "static IEnumerable<Cut> PartialEdits(IEnumerable<TypeDeclarationSyntax> types)",
+        "static string Apply(string text, IEnumerable<Cut> cuts)",
+        "static string Reindent(MovedTest test, string newIndent)",
+        "static string TypeBlock(List<MovedTest> tests, int depth, string unit, string nl)",
+        "static IEnumerable<string> Usings(MovedTest test)",
+        "static string NewFile(List<MovedTest> tests, string unit, string nl)",
+        "static string? Extend(string existing, List<MovedTest> tests, string unit, CSharpParseOptions options)",
+        "static List<string> ChainNames(TypeDeclarationSyntax type)",
+        "static string? NamespaceOf(SyntaxNode node)",
+        "static bool IsEmpty(SyntaxNode root)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Identifiers",
+      "name": "Identifiers",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Identifiers.cs"
+      ],
+      "members": [
+        "static string List(string root, IReadOnlyList<string> files)",
+        "static IdentifierNode Build(string root, IReadOnlyList<string> files)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.IdentifierNode",
+      "name": "IdentifierNode",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "string Name",
+        "SortedDictionary<string, IdentifierNode> Children",
+        "string? NewName",
+        "int Line",
+        "IdentifierNode Child(string name)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.RenameRequest",
+      "name": "RenameRequest",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "IReadOnlyList<string> Path",
+        "string NewName",
+        "int Line",
+        "string Dotted"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.IdentifierTree",
+      "name": "IdentifierTree",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/IdentifierTree.cs"
+      ],
+      "members": [
+        "static string Render(IdentifierNode root)",
+        "static (List<RenameRequest> Renames, List<string> Errors) Parse(string text)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.RenameKind",
+      "name": "RenameKind",
+      "kind": "enum",
+      "sources": [
+        "src/macos/csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "Namespace",
+        "Type",
+        "Member"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.ResolvedRename",
+      "name": "ResolvedRename",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "RenameRequest Request",
+        "RenameKind Kind",
+        "IReadOnlyList<string> TypeChain"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Rename",
+      "name": "Rename",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Rename.cs"
+      ],
+      "members": [
+        "static Plan Make(string root, string renameFile)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.SourceWorkspace",
+      "name": "SourceWorkspace",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/SourceWorkspace.cs"
+      ],
+      "members": [
+        "const string ImplicitUsingsName",
+        "Solution Solution",
+        "Dictionary<string, SourceFile> Files",
+        "static SourceWorkspace Load(string root)",
+        "static Task<Dictionary<string, int>> ErrorCounts(Solution solution)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.FileFacts",
+      "name": "FileFacts",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/FileMoves.cs"
+      ],
+      "members": [
+        "HashSet<string> Namespaces",
+        "HashSet<string> Types",
+        "bool HasTests"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.FileMoves",
+      "name": "FileMoves",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/FileMoves.cs"
+      ],
+      "members": [
+        "static void Plan(string root, SourceWorkspace workspace, List<ResolvedRename> renames, Dictionary<string, string> texts, Plan plan)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.RepoSetup",
+      "name": "RepoSetup",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/RepoSetup.cs"
+      ],
+      "members": [
+        "static List<string> Run(string root, IReadOnlyList<string> switches)",
+        "static readonly string[] ReadOnlyCommands",
+        "static string ReadOnlySettings(string text)",
+        "static Plan AllowReads(string root)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Benchmark",
+      "name": "Benchmark",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "const int Runs",
+        "const string Marker",
+        "static int Run(ParsedArgs args, TextWriter output, TextWriter errors)",
+        "static List<string> PromptFiles(string path)",
+        "static List<string> ClaudeArgs(BenchmarkSetup setup)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.BenchmarkSetup",
+      "name": "BenchmarkSetup",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "RepoIdentity Repo",
+        "string ClonePath",
+        "List<string> Switches",
+        "string Model",
+        "string Effort",
+        "string ClaudeVersion",
+        "string? TransformLog"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.RepoIdentity",
+      "name": "RepoIdentity",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "string Name",
+        "string Sha",
+        "bool Dirty",
+        "string? Origin",
+        "string Path",
+        "static RepoIdentity Of(string folder)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.RunResult",
+      "name": "RunResult",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/Benchmark.cs"
+      ],
+      "members": [
+        "int Number",
+        "int ExitCode",
+        "string Raw",
+        "string Stderr",
+        "JsonObject? Json",
+        "List<Turn> Turns",
+        "string? Problem",
+        "bool Failed",
+        "long TotalTokens",
+        "int TurnCount",
+        "string Route",
+        "long Usage(string key)",
+        "static RunResult Parse(int number, int code, string stdout, string stderr)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.BenchmarkStore",
+      "name": "BenchmarkStore",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/BenchmarkStore.cs"
+      ],
+      "members": [
+        "const double AgreementTolerance",
+        "static string Root()",
+        "static string Create(BenchmarkSetup setup, string promptPath, string promptText)",
+        "static void WriteRun(string dir, RunResult run)",
+        "static string WriteSummary(string dir, List<RunResult> runs)",
+        "static (bool? Agree, double? Spread) Agreement(List<RunResult> runs)",
+        "static (bool? SameTurns, bool? SameTools) SameRoute(List<RunResult> runs)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.BenchmarkStream",
+      "name": "BenchmarkStream",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "static JsonObject? Result(IEnumerable<JsonObject> events)",
+        "static List<JsonObject> Events(string stdout)",
+        "static List<Turn> Turns(List<JsonObject> events)",
+        "static long Count(JsonNode? usage, string key)"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.Turn",
+      "name": "Turn",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "int Number",
+        "string MessageId",
+        "long Input",
+        "long Output",
+        "long CacheCreation",
+        "long CacheRead",
+        "List<ToolCall> Tools",
+        "long Total"
+      ]
+    },
+    {
+      "id": "CSharpMinifier.ToolCall",
+      "name": "ToolCall",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-minifier/src/BenchmarkStream.cs"
+      ],
+      "members": [
+        "string Id",
+        "string Name",
+        "string? Target",
+        "bool Denied",
+        "bool Failed"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "CSharpMinifier.Cli",
+      "to": "CSharpMinifier.ParsedArgs",
+      "kind": "depends-on",
+      "description": "Parse returns the parsed command line."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.ParsedArgs",
+      "kind": "depends-on",
+      "description": "Reads the commands, paths and --check."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.SplitTests",
+      "kind": "depends-on",
+      "description": "Runs SplitTests.Make as one step."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.Rename",
+      "kind": "depends-on",
+      "description": "Runs Rename.Make as one step."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.Identifiers",
+      "kind": "depends-on",
+      "description": "--list-identifiers prints Identifiers.List."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Prints Notes and Errors, applies or reports Changes, follows WrittenSources."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Lists the .cs files under the paths before each step."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.RepoSetup",
+      "kind": "depends-on",
+      "description": "Sets up the repository after a run without --check."
+    },
+    {
+      "from": "CSharpMinifier.Plan",
+      "to": "CSharpMinifier.Edit",
+      "kind": "depends-on",
+      "description": "Queues one Edit per write or deletion."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Make returns a Plan."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "CSharpMinifier.Identifiers",
+      "to": "CSharpMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "CSharpMinifier.SourceWorkspace",
+      "to": "CSharpMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "CSharpMinifier.UnderTest",
+      "to": "CSharpMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "Reads sources with SourceFile.Read."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "CSharpMinifier.Identifiers",
+      "to": "CSharpMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Skips generated code with SourceFiles.IsGenerated."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.UnderTest",
+      "kind": "depends-on",
+      "description": "Loads the compilation and resolves each test."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Finds test methods."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.TestFileText",
+      "kind": "depends-on",
+      "description": "Cuts, marks and writes test text."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.MovedTest",
+      "kind": "depends-on",
+      "description": "Queues moving tests by destination."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.Target",
+      "kind": "depends-on",
+      "description": "Destination from the class and method under test."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.Cut",
+      "kind": "depends-on",
+      "description": "Collects the edits to each source file."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.SplitTests.Output",
+      "kind": "depends-on",
+      "description": "Final text per file."
+    },
+    {
+      "from": "CSharpMinifier.SplitTests",
+      "to": "CSharpMinifier.SplitTests.Report",
+      "kind": "depends-on",
+      "description": "Report line per source file."
+    },
+    {
+      "from": "CSharpMinifier.UnderTest",
+      "to": "CSharpMinifier.Resolution",
+      "kind": "depends-on",
+      "description": "Resolve returns it."
+    },
+    {
+      "from": "CSharpMinifier.UnderTest",
+      "to": "CSharpMinifier.Target",
+      "kind": "depends-on",
+      "description": "The resolved class and member."
+    },
+    {
+      "from": "CSharpMinifier.UnderTest",
+      "to": "CSharpMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Marks test trees and reads the // When section."
+    },
+    {
+      "from": "CSharpMinifier.UnderTest",
+      "to": "CSharpMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Parses every .cs file under the root."
+    },
+    {
+      "from": "CSharpMinifier.Resolution",
+      "to": "CSharpMinifier.Target",
+      "kind": "depends-on",
+      "description": "Holds the target when found."
+    },
+    {
+      "from": "CSharpMinifier.TestFileText",
+      "to": "CSharpMinifier.MovedTest",
+      "kind": "depends-on",
+      "description": "Writes and extends files from moved tests."
+    },
+    {
+      "from": "CSharpMinifier.TestFileText",
+      "to": "CSharpMinifier.Cut",
+      "kind": "depends-on",
+      "description": "Returns removal, marker and partial edits as cuts."
+    },
+    {
+      "from": "CSharpMinifier.TestFileText",
+      "to": "CSharpMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Marker text and test detection."
+    },
+    {
+      "from": "CSharpMinifier.MovedTest",
+      "to": "CSharpMinifier.SourceFile",
+      "kind": "depends-on",
+      "description": "The file the test leaves."
+    },
+    {
+      "from": "CSharpMinifier.Identifiers",
+      "to": "CSharpMinifier.IdentifierNode",
+      "kind": "depends-on",
+      "description": "Builds the tree."
+    },
+    {
+      "from": "CSharpMinifier.Identifiers",
+      "to": "CSharpMinifier.IdentifierTree",
+      "kind": "depends-on",
+      "description": "Renders it."
+    },
+    {
+      "from": "CSharpMinifier.IdentifierTree",
+      "to": "CSharpMinifier.IdentifierNode",
+      "kind": "depends-on",
+      "description": "Renders and parses nodes."
+    },
+    {
+      "from": "CSharpMinifier.IdentifierTree",
+      "to": "CSharpMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "Parse returns the renames deepest first."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.IdentifierTree",
+      "kind": "depends-on",
+      "description": "Parses the rename file."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "One per rename."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.ResolvedRename",
+      "kind": "depends-on",
+      "description": "Checks each request against the code."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.RenameKind",
+      "kind": "depends-on",
+      "description": "Namespace, type or member."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.SourceWorkspace",
+      "kind": "depends-on",
+      "description": "Loads the solution and counts compiler errors."
+    },
+    {
+      "from": "CSharpMinifier.Rename",
+      "to": "CSharpMinifier.FileMoves",
+      "kind": "depends-on",
+      "description": "Queues file moves and document updates."
+    },
+    {
+      "from": "CSharpMinifier.ResolvedRename",
+      "to": "CSharpMinifier.RenameRequest",
+      "kind": "depends-on",
+      "description": "Wraps the request."
+    },
+    {
+      "from": "CSharpMinifier.ResolvedRename",
+      "to": "CSharpMinifier.RenameKind",
+      "kind": "depends-on",
+      "description": "What it names."
+    },
+    {
+      "from": "CSharpMinifier.SourceWorkspace",
+      "to": "CSharpMinifier.SourceFiles",
+      "kind": "depends-on",
+      "description": "Finds the .cs files under the root."
+    },
+    {
+      "from": "CSharpMinifier.SourceWorkspace",
+      "to": "CSharpMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.ProjectDir groups files into projects."
+    },
+    {
+      "from": "CSharpMinifier.SourceWorkspace",
+      "to": "CSharpMinifier.ProjectLanguage",
+      "kind": "depends-on",
+      "description": "Parse options per project."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.SourceWorkspace",
+      "kind": "depends-on",
+      "description": "Reads the original files."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.ResolvedRename",
+      "kind": "depends-on",
+      "description": "Moves files per rename kind."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.FileFacts",
+      "kind": "depends-on",
+      "description": "What each file declares."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.Plan",
+      "kind": "depends-on",
+      "description": "Queues writes and deletions."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.Layout",
+      "kind": "depends-on",
+      "description": "Layout.ProjectDir locates the namespace's project folder."
+    },
+    {
+      "from": "CSharpMinifier.FileMoves",
+      "to": "CSharpMinifier.TestMethods",
+      "kind": "depends-on",
+      "description": "Tells test files apart."
+    },
+    {
+      "from": "CSharpMinifier.RepoSetup",
+      "to": "CSharpMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Runs git."
+    },
+    {
+      "from": "CSharpMinifier.Runner",
+      "to": "CSharpMinifier.Benchmark",
+      "kind": "depends-on",
+      "description": "Run hands a --benchmark command line to Benchmark.Run."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.Runner",
+      "kind": "depends-on",
+      "description": "Runs the transforming switches on the clone."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.BenchmarkSetup",
+      "kind": "depends-on",
+      "description": "Shares the setup across prompts."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Reads the source's repository, commit and origin."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Parses each session's JSON result."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.BenchmarkStore",
+      "kind": "depends-on",
+      "description": "Writes the results folder."
+    },
+    {
+      "from": "CSharpMinifier.Benchmark",
+      "to": "CSharpMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Runs cp, rm, git and the Claude CLI."
+    },
+    {
+      "from": "CSharpMinifier.BenchmarkSetup",
+      "to": "CSharpMinifier.RepoIdentity",
+      "kind": "depends-on",
+      "description": "Holds the source's identity."
+    },
+    {
+      "from": "CSharpMinifier.BenchmarkStore",
+      "to": "CSharpMinifier.RunResult",
+      "kind": "depends-on",
+      "description": "Summarises the runs."
+    },
+    {
+      "from": "CSharpMinifier.RepoIdentity",
+      "to": "CSharpMinifier.Proc",
+      "kind": "depends-on",
+      "description": "Asks git for the commit, top, status and origin."
+    },
+    {
+      "from": "CSharpMinifier.RunResult",
+      "to": "CSharpMinifier.BenchmarkStream",
+      "kind": "depends-on",
+      "description": "Parse reads the stream's events, result and turns."
+    },
+    {
+      "from": "CSharpMinifier.RunResult",
+      "to": "CSharpMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Holds the run's turns."
+    },
+    {
+      "from": "CSharpMinifier.BenchmarkStream",
+      "to": "CSharpMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Builds one turn per assistant message id."
+    },
+    {
+      "from": "CSharpMinifier.Turn",
+      "to": "CSharpMinifier.ToolCall",
+      "kind": "depends-on",
+      "description": "Holds the turn's tool calls."
+    },
+    {
+      "from": "CSharpMinifier.BenchmarkStore",
+      "to": "CSharpMinifier.Turn",
+      "kind": "depends-on",
+      "description": "Writes each turn's tokens and tools to the summary."
+    }
+  ]
+}

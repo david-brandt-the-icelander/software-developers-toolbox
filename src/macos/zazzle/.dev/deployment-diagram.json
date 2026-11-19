@@ -1,0 +1,121 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "zazzle invoker deployment diagram",
+  "folder": "src/macos/zazzle",
+  "description": "What `make` produces and where it runs: one small executable per platform, run once per command in the user's shell; the only zazzle command on PATH (also as `z`), it starts the daemon and hands every other tool its command from the tools' folder, libexec/zazzle beside its own bin/. `zazzle zazz install` links installed script commands to it; it tells them apart by the name it was started under. The daemon side is in src/macos/daemon/.dev/deployment-diagram.json; the release ships build/zazzle as bin/zazzle (with bin/z) in the macOS and Linux tarballs, with the tools in libexec/zazzle.",
+  "sources": [
+    {
+      "path": "src/macos/zazzle/Makefile",
+      "symbol": "LINK"
+    },
+    {
+      "path": "src/macos/zazzle/src/entry.h",
+      "symbol": "main"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "pick_daemon"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "exec_tool"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "is_llm"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "Build and smoke test the zazzle invoker"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "own_name"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "cp ../c/zazzle/build/zazzle dist/zazz"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "linux",
+      "name": "Linux machine",
+      "kind": "host",
+      "description": "x86_64 or aarch64."
+    },
+    {
+      "id": "mac",
+      "name": "Mac",
+      "kind": "host",
+      "description": "Apple silicon (arm64) only; Intel Macs have no zazzle."
+    },
+    {
+      "id": "shell",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle CMD ...` or `zazz CMD ...`, with ZAZZLE_SESSION set for ids and dedupe.",
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs a zazz script installed as a command: ~/.zazzle/bin/NAME, a symlink to the invoker.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "zazzle-linux",
+      "name": "zazzle process (Linux)",
+      "kind": "process",
+      "description": "A static executable with no libc: raw syscalls only, its own `_start`."
+    },
+    {
+      "id": "zazzle-mac",
+      "name": "zazzle process (macOS)",
+      "kind": "process",
+      "description": "Loaded by dyld with libSystem, entered at `main`; its I/O, socket and exec calls are still raw syscalls."
+    },
+    {
+      "id": "daemon",
+      "name": "zazzle daemon serve process",
+      "kind": "process",
+      "description": "The daemon; see the daemon deployment diagram."
+    },
+    {
+      "id": "exec",
+      "name": "Program the invoker becomes",
+      "kind": "process",
+      "description": "For `zazzle run`, `zazzle proxy`, `zazzle setup`, `zazzle agent llm|prompt`, `zazzle ai-agent`, `zazzle git` and `zazzle TOOL` for each tool, the same process after exec: `daemon wrap`, `daemon proxy`, `daemon setup`, `daemon llm` (which in turn execs ai-agent, downloaded on first use: src/macos/ai-agent/.dev/deployment-diagram.json), or the tool found in the tools' folder (git-tools for `git`), with the caller's environment, streams and exit status."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "zazzle-static",
+      "name": "build/zazzle (Linux)",
+      "source": "src/macos/zazzle/Makefile",
+      "deployedTo": "zazzle-linux",
+      "description": "-Os -ffreestanding, linked -static -nostdlib -no-pie with sections garbage-collected, two LOAD segments (-z noseparate-code) and symbols stripped; shipped in the Linux release tarballs as bin/zazzle, with bin/z linked to it."
+    },
+    {
+      "id": "zazzle-macho",
+      "name": "build/zazzle (macOS)",
+      "source": "src/macos/zazzle/Makefile",
+      "deployedTo": "zazzle-mac",
+      "description": "-Os -ffreestanding with ZAZZLE_LIBSYSTEM, linked against libSystem with dead code stripped; shipped in the macOS release tarball and the Homebrew bottle as bin/zazzle; the tarball also links bin/z to it, Homebrew links z only when nothing else uses it."
+    }
+  ],
+  "relationships": [
+    { "from": "linux", "to": "zazzle-linux", "kind": "hosts", "description": "One process per command." },
+    { "from": "mac", "to": "zazzle-mac", "kind": "hosts", "description": "One process per command." },
+    { "from": "shell", "to": "zazzle-linux", "kind": "connects-to", "description": "Runs it." },
+    { "from": "shell", "to": "zazzle-mac", "kind": "connects-to", "description": "Runs it." },
+    { "from": "terminal", "to": "zazzle-linux", "kind": "connects-to", "description": "Runs an installed script by name." },
+    { "from": "terminal", "to": "zazzle-mac", "kind": "connects-to", "description": "Runs an installed script by name." },
+    { "from": "zazzle-linux", "to": "daemon", "kind": "connects-to", "description": "Unix socket, descriptor mode; starts ZAZZLE_DAEMON or the daemon in the tools' folder with clone, setsid and execve when nothing listens." },
+    { "from": "zazzle-mac", "to": "daemon", "kind": "connects-to", "description": "Unix socket, descriptor mode; starts ZAZZLE_DAEMON or the daemon in the tools' folder with posix_spawn in a new session when nothing listens (or launchd does, once installed)." },
+    { "from": "zazzle-linux", "to": "exec", "kind": "connects-to", "description": "execve, for the commands that run as their own process." },
+    { "from": "zazzle-mac", "to": "exec", "kind": "connects-to", "description": "execve, for the commands that run as their own process." }
+  ]
+}

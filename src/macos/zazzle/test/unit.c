@@ -1,0 +1,548 @@
+/* Unit tests for the invoker logic, run on the host against a mock syscall layer (built with -DZAZZLE_TEST). */
+#include <stdio.h>
+#include <stdlib.h>
+#include "../src/zazzle_core.h"
+
+static int failures, checks;
+
+#define CHECK(cond)                                                                     \
+	do {                                                                            \
+		checks++;                                                               \
+		if (!(cond)) {                                                          \
+			failures++;                                                     \
+			printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);          \
+		}                                                                       \
+	} while (0)
+
+/* Resets the mock and the core's static buffers to a working default. */
+static void reset(void)
+{
+	memset(&M, 0, sizeof M);
+	memset(req, 0, sizeof req);
+	memset(sockpath, 0, sizeof sockpath);
+	memset(daemon_path, 0, sizeof daemon_path);
+	memset(exe_path, 0, sizeof exe_path);
+	memset(&addr, 0, sizeof addr);
+	memset(&msg, 0, sizeof msg);
+	memset(&iov, 0, sizeof iov);
+	memset(&ctl, 0, sizeof ctl);
+	M.socket_rc = 5;
+	M.connect_n = 1;
+	M.uid = 1000;
+	M.peer_uid = 1000;
+	M.cwd_rc = 9;
+	M.read_rc = 1;
+	M.recv_rc = -SYS_EAGAIN;
+	M.status = 0;
+	M.self_exe_rc = (long)strlen("/opt/bin/zazzle");
+	strcpy(M.self_exe, "/opt/bin/zazzle");
+	strcpy(M.exists, "/opt/bin/../libexec/zazzle/");
+}
+
+/* Runs zazzle_run and returns its status, or -1000 minus the exit code if it exited early. */
+static int run(int argc, char **argv, char **envp)
+{
+	if (setjmp(M.jb) == 0)
+		return zazzle_run(argc, argv, envp);
+	return -1000 - M.exit_code;
+}
+
+/* Returns true if the captured stderr starts with the full `zazzle: ` prefix and contains the text. */
+static int err_has(const char *s)
+{
+	M.err[M.err_len] = 0;
+	return strncmp(M.err, "zazzle: ", 8) == 0 && strstr(M.err, s) != 0;
+}
+
+/* Returns true if the captured stderr is exactly the text. */
+static int err_is(const char *s)
+{
+	M.err[M.err_len] = 0;
+	return strcmp(M.err, s) == 0;
+}
+
+/* The environment used by most tests. */
+static char *env_home[] = {"PATH=/bin", "HOME=/home/u", 0};
+
+/* Checks the happy path: request layout, descriptors, status and socket path. */
+static void test_happy_path(void)
+{
+	reset();
+	M.status = 7;
+	char *argv[] = {"zazzle", "find", "x", 0};
+	char *env[] = {"ZAZZLE_SESSION=sess1", "HOME=/home/u", 0};
+	CHECK(run(3, argv, env) == 7);
+	CHECK(strcmp(M.addr_path, "/home/u/.zazzle/sock") == 0);
+	uint32_t len;
+	memcpy(&len, M.sent, 4);
+	CHECK(len == M.sent_len - 4);
+	CHECK(memcmp(M.sent + 4, "\0sess1\0find\0x\0", 14) == 0);
+	CHECK(M.sent_fds[0] == 0 && M.sent_fds[1] == 1 && M.sent_fds[2] == 2 && M.sent_fds[3] == 9);
+	CHECK(M.spawn_calls == 0);
+}
+
+/* Checks that no session leaves the field empty and no arguments still works. */
+static void test_no_session_no_args(void)
+{
+	reset();
+	char *argv[] = {"zazzle", 0};
+	CHECK(run(1, argv, env_home) == 0);
+	CHECK(M.sent_len == 4 + 2 && memcmp(M.sent + 4, "\0\0", 2) == 0);
+}
+
+/* Checks an agent asking for help gets the agent list, and anything else passes through unchanged. */
+static void test_agent_help(void)
+{
+	char *claude[] = {"CLAUDECODE=1", "HOME=/h", 0};
+	char *codex[] = {"CODEX_SANDBOX=seatbelt", "HOME=/h", 0};
+	char *thread[] = {"CODEX_THREAD_ID=t", "HOME=/h", 0};
+	char *bare[] = {"zazzle", 0};
+	char *help[] = {"zazzle", "help", 0};
+	char *page[] = {"zazzle", "help", "find", 0};
+	char *find[] = {"zazzle", "find", 0};
+	reset();
+	CHECK(run(1, bare, claude) == 0);
+	CHECK(M.sent_len == 4 + 15 && memcmp(M.sent + 4, "\0\0help\0--agent\0", 15) == 0);
+	reset();
+	CHECK(run(2, help, codex) == 0);
+	CHECK(M.sent_len == 4 + 15 && memcmp(M.sent + 4, "\0\0help\0--agent\0", 15) == 0);
+	reset();
+	CHECK(run(3, page, thread) == 0);
+	CHECK(M.sent_len == 4 + 12 && memcmp(M.sent + 4, "\0\0help\0find\0", 12) == 0);
+	reset();
+	CHECK(run(2, find, claude) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0find\0", 7) == 0);
+	reset();
+	CHECK(run(2, help, env_home) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0help\0", 7) == 0);
+}
+
+/* Checks the invoker's own name: zazzle and z are zazzle, zazz prefixes the zazz command, any other name runs that
+   installed script. */
+static void test_argv0_dispatch(void)
+{
+	reset();
+	char *as_zazz[] = {"/usr/local/bin/zazz", "ls", 0};
+	CHECK(run(2, as_zazz, env_home) == 0);
+	CHECK(M.sent_len == 4 + 10 && memcmp(M.sent + 4, "\0\0zazz\0ls\0", 10) == 0);
+	reset();
+	char *as_script[] = {"csv-sum", "-d", ";", 0};
+	CHECK(run(3, as_script, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0csv-sum\0-d\0;\0", 31) == 0);
+	reset();
+	char *as_zazzle[] = {"./build/zazzle", "read", 0};
+	CHECK(run(2, as_zazzle, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0read\0", 7) == 0);
+	reset();
+	char *as_z[] = {"/opt/homebrew/bin/z", "read", 0};
+	CHECK(run(2, as_z, env_home) == 0);
+	CHECK(M.sent_len == 4 + 7 && memcmp(M.sent + 4, "\0\0read\0", 7) == 0);
+	reset();
+	char *as_zz[] = {"zz", "read", 0};
+	CHECK(run(2, as_zz, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0zz\0read\0", 25) == 0);
+	reset();
+	char *none[] = {0};
+	CHECK(run(0, none, env_home) == 0);
+	CHECK(M.sent_len == 4 + 2);
+	CHECK(str_eq("zaz", "zazz") == 0 && str_eq("zazzz", "zazz") == 0);
+	reset();
+	char *zazz_tool[] = {"zazz", "free-disk-space", 0};
+	CHECK(run(2, zazz_tool, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0free-disk-space\0", 23) == 0);
+	reset();
+	char *zazz_run[] = {"zazz", "run", "csv-sum", 0};
+	CHECK(run(3, zazz_run, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0run\0csv-sum\0", 19) == 0);
+	reset();
+	char *script_proxy[] = {"csv-sum", "proxy", 0};
+	CHECK(run(2, script_proxy, env_home) == 0);
+	CHECK(memcmp(M.sent + 4, "\0\0zazz\0exec-name\0csv-sum\0proxy\0", 31) == 0);
+}
+
+/* Checks ZAZZLE_SOCK overrides HOME and lookalike variables are ignored. */
+static void test_zazzle_sock_override(void)
+{
+	reset();
+	char *argv[] = {"zazzle", 0};
+	char *env[] = {"ZAZZLE_SOCKX=/no", "ZAZZLE_SOC=/no", "ZAZZLE_SOCK", "ZAZZLE_SOCK=/tmp/s", "HOME=/h", 0};
+	CHECK(run(1, argv, env) == 0);
+	CHECK(strcmp(M.addr_path, "/tmp/s") == 0);
+}
+
+/* Checks the path errors: no HOME, too long ZAZZLE_SOCK and too long HOME. */
+static void test_path_errors(void)
+{
+	char *argv[] = {"zazzle", 0};
+	char big[300];
+	memset(big, 'a', sizeof big);
+	big[299] = 0;
+	char sock_env[320] = "ZAZZLE_SOCK=";
+	strcat(sock_env, big);
+	char home_env[320] = "HOME=/";
+	strncat(home_env, big, 100);
+	char *none[] = {"PATH=/bin", 0};
+	char *long_sock[] = {sock_env, 0};
+	char *long_home[] = {home_env, 0};
+	reset();
+	CHECK(run(1, argv, none) == -1000 - 78 && err_is("zazzle: HOME is not set\n"));
+	reset();
+	CHECK(run(1, argv, long_sock) == -1000 - 78 && err_has("socket path too long"));
+	reset();
+	CHECK(run(1, argv, long_home) == -1000 - 78 && err_has("socket path too long"));
+}
+
+/* Checks an oversize argument list is refused. */
+static void test_arguments_too_long(void)
+{
+	reset();
+	static char huge[REQ_MAX + 10];
+	memset(huge, 'x', sizeof huge - 1);
+	char *argv[] = {"zazzle", huge, 0};
+	CHECK(run(2, argv, env_home) == -1000 - 64 && err_has("arguments too long"));
+}
+
+/* Checks socket, cwd and peer failures. */
+static void test_basic_failures(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.socket_rc = -24;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("socket failed"));
+	reset();
+	M.connect_rc[0] = -13;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("cannot connect to daemon"));
+	reset();
+	M.peer_uid = 0;
+	CHECK(run(1, argv, env_home) == -1000 - 77 && err_has("another user"));
+	reset();
+	M.cwd_rc = -2;
+	CHECK(run(1, argv, env_home) == -1000 - 66 && err_has("cannot open cwd"));
+}
+
+/* Checks autostart for both not-running errnos, with the daemon found beside the executable. */
+static void test_autostart_paths(void)
+{
+	char *argv[] = {"zazzle", 0};
+	long codes[] = {-SYS_ENOENT, -SYS_ECONNREFUSED};
+	for (int i = 0; i < 2; i++) {
+		reset();
+		M.connect_n = 3;
+		M.connect_rc[0] = codes[i];
+		M.connect_rc[1] = codes[i];
+		M.connect_rc[2] = 0;
+		CHECK(run(1, argv, env_home) == 0);
+		CHECK(M.spawn_calls == 1 && strcmp(M.spawn_path, "/opt/bin/../libexec/zazzle/daemon") == 0);
+		CHECK(M.slept_ms == 2 + 4 && M.closed == 2);
+	}
+}
+
+/* Checks ZAZZLE_DAEMON overrides the daemon path and an overlong one is refused. */
+static void test_zazzle_daemon_override(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.connect_n = 2;
+	M.connect_rc[0] = -SYS_ENOENT;
+	char *env[] = {"ZAZZLE_DAEMON=/usr/local/libexec/zazzle/daemon", "HOME=/h", 0};
+	CHECK(run(1, argv, env) == 0 && strcmp(M.spawn_path, "/usr/local/libexec/zazzle/daemon") == 0);
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	char big[600];
+	strcpy(big, "ZAZZLE_DAEMON=");
+	memset(big + 14, 'd', 577);
+	big[591] = 0;
+	char *env2[] = {big, "HOME=/h", 0};
+	CHECK(run(1, argv, env2) == -1000 - 78 && err_has("ZAZZLE_DAEMON too long"));
+}
+
+/* Checks the failures around finding and starting the daemon. */
+static void test_autostart_failures(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.self_exe_rc = -2;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("daemon not running"));
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.self_exe_rc = 0;
+	CHECK(run(1, argv, env_home) == -1000 - 69);
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.spawn_rc = -12;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_is("zazzle: cannot start daemon (error 12)\n"));
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.spawn_rc = -100;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("(error 100)"));
+	reset();
+	M.connect_rc[0] = -SYS_ENOENT;
+	memset(M.self_exe, 'e', 511);
+	M.self_exe[0] = '/';
+	M.self_exe[509] = '/';
+	M.self_exe[511] = 0;
+	M.self_exe_rc = 511;
+	CHECK(run(1, argv, env_home) == -1000 - 78 && err_has("daemon path too long"));
+}
+
+/* Checks the daemon path when the executable path has no slash. */
+static void test_exe_without_slash(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.connect_n = 2;
+	M.connect_rc[0] = -SYS_ENOENT;
+	strcpy(M.self_exe, "zazzle");
+	M.self_exe_rc = 3;
+	CHECK(run(1, argv, env_home) == 0 && strcmp(M.spawn_path, "daemon") == 0);
+}
+
+/* Checks giving up when the daemon never listens, and other errors during the wait. */
+static void test_wait_failures(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.connect_rc[0] = -SYS_ECONNREFUSED;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("daemon did not start"));
+	CHECK(M.slept_ms >= START_WAIT_MS);
+	reset();
+	M.connect_n = 2;
+	M.connect_rc[0] = -SYS_ENOENT;
+	M.connect_rc[1] = -13;
+	CHECK(run(1, argv, env_home) == -1000 - 69 && err_has("cannot connect to daemon"));
+}
+
+/* Checks partial sends are completed with writes and write failures are reported. */
+static void test_send_paths(void)
+{
+	char *argv[] = {"zazzle", "find", "pattern", 0};
+	reset();
+	M.sendmsg_part = 5;
+	CHECK(run(3, argv, env_home) == 0 && M.write_calls == 0);
+	reset();
+	M.sendmsg_part = 5;
+	M.write_n = 2;
+	M.write_rc[0] = 3;
+	M.write_rc[1] = 1000;
+	CHECK(run(3, argv, env_home) == 0 && M.write_calls == 2);
+	reset();
+	M.sendmsg_part = 5;
+	M.write_n = 1;
+	M.write_rc[0] = 0;
+	CHECK(run(3, argv, env_home) == -1000 - 74 && err_has("send failed"));
+	reset();
+	M.sendmsg_rc = -32;
+	CHECK(run(3, argv, env_home) == -1000 - 74);
+}
+
+/* Checks a daemon that closes without a status byte is reported. */
+static void test_read_status_failure(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.read_rc = 0;
+	CHECK(run(1, argv, env_home) == -1000 - 70 && err_has("closed without answering"));
+}
+
+/* Checks the spin-wait: a fast reply skips the blocking read, a slow one falls back to it after SPIN_US, and errors stop spinning. */
+static void test_spin_wait(void)
+{
+	char *argv[] = {"zazzle", 0};
+	reset();
+	M.recv_rc = 1;
+	M.status = 3;
+	CHECK(run(1, argv, env_home) == 3 && M.recv_calls == 1 && M.read_calls == 0);
+	reset();
+	M.status = 4;
+	CHECK(run(1, argv, env_home) == 4 && M.recv_calls == SPIN_US && M.relax_calls == SPIN_US && M.read_calls == 1);
+	reset();
+	M.recv_rc = 0;
+	M.read_rc = 0;
+	CHECK(run(1, argv, env_home) == -1000 - 70 && M.recv_calls == 1 && M.read_calls == 1);
+	reset();
+	M.recv_rc = -104;
+	M.status = 5;
+	CHECK(run(1, argv, env_home) == 5 && M.recv_calls == 1 && M.relax_calls == 0 && M.read_calls == 1);
+}
+
+/* Checks that the standalone tools are exec'd from beside the invoker with the remaining arguments, and the failure paths. */
+static void test_tool_exec(void)
+{
+	char *argv[] = {"zazzle", "free-disk-space", "daemon", "status", 0};
+	reset();
+	CHECK(run(4, argv, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/free-disk-space") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/../libexec/zazzle/free-disk-space") == 0 && strcmp(M.exec_arg1, "daemon") == 0);
+	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv2[] = {"zazzle", "fix-network", 0};
+	reset();
+	CHECK(run(2, argv2, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/fix-network") == 0);
+	reset();
+	M.exec_rc = -SYS_ENOENT;
+	char *argv3[] = {"zazzle", "fix-network", 0};
+	CHECK(run(2, argv3, env_home) == -1000 - 69 && err_has("cannot run the tool"));
+	reset();
+	M.self_exe_rc = -1;
+	char *argv4[] = {"zazzle", "fix-network", 0};
+	CHECK(run(2, argv4, env_home) == -1000 - 69 && err_has("cannot find the tool"));
+	reset();
+	char *argv5[] = {"zazzle", "free-disk-spac", 0};
+	CHECK(run(2, argv5, env_home) == 0 && M.exec_path[0] == 0);
+	char *argv6[] = {"zazzle", "free-disk-spaces", 0};
+	reset();
+	CHECK(run(2, argv6, env_home) == 0 && M.exec_path[0] == 0);
+	char *argv7[] = {"zazzle", "git", "status", 0};
+	reset();
+	CHECK(run(3, argv7, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/git-tools") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/../libexec/zazzle/git-tools") == 0 && strcmp(M.exec_arg1, "status") == 0);
+	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *argv10[] = {"zazzle", "agent", "get-rules", ".", 0};
+	reset();
+	CHECK(run(4, argv10, env_home) == 0 && M.exec_path[0] == 0);
+	char *argv9[] = {"/usr/bin/z", "git", 0};
+	reset();
+	CHECK(run(2, argv9, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/git-tools") == 0);
+	char *argv8[] = {"zazzle", "gi", 0};
+	reset();
+	CHECK(run(2, argv8, env_home) == 0 && M.exec_path[0] == 0);
+	const char *tools[] = {"daemon", "shell-tools", "ai-agent-rules", "csharp-indexer", "cyberspace-generator", 0};
+	for (int i = 0; tools[i]; i++) {
+		char want[128] = "/opt/bin/../libexec/zazzle/";
+		strcat(want, tools[i]);
+		char *each[] = {"z", (char *)tools[i], "--version", 0};
+		reset();
+		CHECK(run(3, each, env_home) == -1000 && strcmp(M.exec_path, want) == 0);
+		CHECK(strcmp(M.exec_arg1, "--version") == 0 && M.connect_calls == 0);
+	}
+}
+
+/* Checks that a development build without libexec/zazzle finds the tools and the daemon beside the launcher. */
+static void test_tools_beside(void)
+{
+	char *argv[] = {"zazzle", "git-tools", "log", 0};
+	reset();
+	M.exists[0] = 0;
+	CHECK(run(3, argv, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/git-tools") == 0);
+	char *bare[] = {"zazzle", 0};
+	reset();
+	M.exists[0] = 0;
+	M.connect_n = 2;
+	M.connect_rc[0] = -SYS_ENOENT;
+	CHECK(run(1, bare, env_home) == 0 && strcmp(M.spawn_path, "/opt/bin/daemon") == 0);
+}
+
+/* Checks that `zazzle proxy`, `zazzle setup` and `zazzle run` exec `zazzle daemon proxy`, `zazzle daemon setup` and `zazzle daemon wrap`, from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */
+static void test_proxy_exec(void)
+{
+	char *argv[] = {"zazzle", "proxy", "--", "srv", 0};
+	reset();
+	CHECK(run(4, argv, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/daemon") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/../libexec/zazzle/daemon") == 0 && strcmp(M.exec_arg1, "proxy") == 0);
+	CHECK(M.connect_calls == 0 && M.spawn_calls == 0);
+	char *env[] = {"ZAZZLE_DAEMON=/usr/local/libexec/zazzle/daemon", 0};
+	char *argv2[] = {"zazzle", "proxy", 0};
+	reset();
+	CHECK(run(2, argv2, env) == -1000 && strcmp(M.exec_path, "/usr/local/libexec/zazzle/daemon") == 0);
+	reset();
+	M.exec_rc = -SYS_ENOENT;
+	char *argv3[] = {"zazzle", "proxy", 0};
+	CHECK(run(2, argv3, env_home) == -1000 - 69 && err_has("cannot run daemon"));
+	char *argv4[] = {"zazzle", "run", "--", "make", 0};
+	reset();
+	CHECK(run(4, argv4, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/daemon") == 0);
+	CHECK(strcmp(M.exec_arg0, "/opt/bin/../libexec/zazzle/daemon") == 0 && strcmp(M.exec_arg1, "wrap") == 0);
+	char *argv5[] = {"zazzle", "setup", "--check", 0};
+	reset();
+	CHECK(run(3, argv5, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
+	char *as_z[] = {"/opt/homebrew/bin/z", "setup", 0};
+	reset();
+	CHECK(run(2, as_z, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
+}
+
+/* Checks that `zazzle agent llm` and `zazzle agent prompt` exec `zazzle daemon llm`, and that other agent commands still go to the daemon. */
+static void test_llm_exec(void)
+{
+	char *llm[] = {"zazzle", "agent", "llm", "--model", "qwen3.5-4b", 0};
+	reset();
+	CHECK(run(5, llm, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/daemon") == 0);
+	CHECK(strcmp(M.exec_arg1, "llm") == 0 && M.connect_calls == 0);
+	char *ask[] = {"z", "agent", "prompt", "hi", 0};
+	reset();
+	CHECK(run(4, ask, env_home) == -1000 && strcmp(M.exec_arg1, "llm") == 0);
+	char *rules[] = {"zazzle", "agent", "get-rules", ".", 0};
+	reset();
+	CHECK(run(4, rules, env_home) == 0 && M.exec_path[0] == 0);
+	char *bare[] = {"zazzle", "agent", 0};
+	reset();
+	CHECK(run(2, bare, env_home) == 0 && M.exec_path[0] == 0);
+	char *other[] = {"zazzle", "read", "llm", 0};
+	reset();
+	CHECK(run(3, other, env_home) == 0 && M.exec_path[0] == 0);
+	char *tool[] = {"z", "ai-agent", "models", 0};
+	reset();
+	CHECK(run(3, tool, env_home) == -1000 && strcmp(M.exec_path, "/opt/bin/../libexec/zazzle/daemon") == 0);
+	CHECK(strcmp(M.exec_arg1, "llm") == 0 && M.connect_calls == 0);
+}
+
+/* Scripts the daemon's reply bytes for the following reads. */
+static void reply(const char *bytes, size_t len)
+{
+	M.reply = bytes;
+	M.reply_len = len;
+	M.reply_pos = 0;
+}
+
+/* Checks a retiring daemon's RESTART reply makes the invoker reconnect and resend once, and that anything short of
+   the full tag, or a second RESTART, is returned as the status it looks like. */
+static void test_restart_resends(void)
+{
+	char *argv[] = {"zazzle", "read", "x", 0};
+	static const char restart[] = "\xfe" "daemon-restart";
+	reset();
+	reply(restart, sizeof restart - 1);
+	M.status = 3;
+	CHECK(run(3, argv, env_home) == 3);
+	CHECK(M.connect_calls == 2 && M.closed >= 1);
+	CHECK(memcmp(M.sent + 4, "\0\0read\0x\0", 10) == 0);
+	reset();
+	static const char twice[] = "\xfe" "daemon-restart" "\xfe" "daemon-restart";
+	reply(twice, sizeof twice - 1);
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 2);
+	reset();
+	static const char other[] = "\xfe" "daemon-restarX";
+	reply(other, sizeof other - 1);
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 1);
+	reset();
+	static const char cut[] = "\xfe" "zazz";
+	reply(cut, sizeof cut - 1);
+	M.read_rc = 0;
+	CHECK(run(3, argv, env_home) == 0xFE && M.connect_calls == 1);
+}
+
+/* Runs every test and reports. */
+int main(void)
+{
+	test_happy_path();
+	test_no_session_no_args();
+	test_agent_help();
+	test_argv0_dispatch();
+	test_restart_resends();
+	test_zazzle_sock_override();
+	test_path_errors();
+	test_arguments_too_long();
+	test_basic_failures();
+	test_autostart_paths();
+	test_zazzle_daemon_override();
+	test_autostart_failures();
+	test_exe_without_slash();
+	test_wait_failures();
+	test_send_paths();
+	test_read_status_failure();
+	test_spin_wait();
+	test_tool_exec();
+	test_tools_beside();
+	test_proxy_exec();
+	test_llm_exec();
+	printf("%d checks, %d failures\n", checks, failures);
+	return failures != 0;
+}

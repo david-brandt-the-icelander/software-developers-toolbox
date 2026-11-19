@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "csharp-indexer tests",
+  "folder": "src/macos/csharp-indexer/tests",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "csharp-indexer tests",
+      "summary": "The xunit suite for csharp-indexer, run with dotnet test tests from the tool's folder.",
+      "purpose": "Checks the tool in process, without a published binary: TempRepo creates a throwaway git repository with given files and an engine on a temporary state directory, and the test classes exercise the index, analysis, tools, the terse C# view, daemon (on a temporary socket), hook policy, init and report against it; ViewTests also builds views from source text without a repository. Tests are named test_<unit>_<case> and must pass on Linux and macOS; the FSEvents test returns immediately elsewhere.",
+      "boundaries": [
+        "What each test class checks is recorded in the verification.json of the folder it checks: src/Index, src/Analysis, src/Tools, src/View, src/Daemon, src/Cli and src/.",
+        "The tests need git on PATH. The external-regex test checks the fallback only where rg or a PCRE-enabled git grep is installed, and accepts bad_regex otherwise."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/tests/tests.csproj",
+          "symbol": "ProjectReference"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/TempRepo.cs",
+          "symbol": "TempRepo"
+        },
+        {
+          "path": "src/macos/csharp-style.md",
+          "symbol": "Testing"
+        }
+      ]
+    }
+  ]
+}

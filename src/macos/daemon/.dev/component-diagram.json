@@ -1,0 +1,238 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "daemon component diagram",
+  "folder": "src/macos/daemon",
+  "description": "The daemon crate and what crosses its boundary: the C invoker (as zazzle, zazz or an installed script's shim) and MCP clients call it; it drives launchd on macOS, asks csharp-indexer for C# views and structure, and as the MCP proxy talks to other MCP servers. For `zazzle agent llm|prompt` it downloads ai-agent on first use (a JIT tool) and execs it. For zazz scripts it reads archives with zazz-script-packaging, speaks the script protocol from zazz-script-engine (whose sources it also compiles for scripts with the user's rustc), and starts zazz-script-runner to compile, test and run them; on macOS the Keychain takes part in trusting a script's signer. The crate's parts are in the src/ diagram.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/Cargo.toml",
+      "symbol": "[[bin]]"
+    },
+    {
+      "path": "src/macos/daemon/src/server.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "src/macos/daemon/src/mcp.rs",
+      "symbol": "serve"
+    },
+    {
+      "path": "src/macos/daemon/src/indexer.rs",
+      "symbol": "Indexer::view"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "zazzle_run"
+    },
+    {
+      "path": "src/macos/daemon/Cargo.toml",
+      "symbol": "zazz-script-packaging"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/mod.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/pool.rs",
+      "symbol": "spawn"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/sdk.rs",
+      "symbol": "FILES"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/tools.rs",
+      "symbol": "rustc"
+    },
+    {
+      "path": "src/macos/daemon/src/zazz/trust.rs",
+      "symbol": "evaluate"
+    },
+    {
+      "path": "src/macos/daemon/src/tools.rs",
+      "symbol": "exec"
+    }
+  ],
+  "components": [
+    {
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "The daemon, its MCP front end, the MCP proxy, the command runner, its installer, the zazzle commands and the zazz script commands, in one binary.",
+      "folder": "src/macos/daemon"
+    },
+    {
+      "id": "src",
+      "name": "daemon source",
+      "responsibility": "Library and binary entry: front ends, wire protocol, engine, caches, commands, proxy, runner and zazz scripts.",
+      "folder": "src/macos/daemon/src",
+      "diagram": "src/macos/daemon/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle",
+      "name": "zazzle invoker",
+      "responsibility": "The C client a shell runs: passes its command line, streams and working directory to the daemon and exits with its status, or execs `zazzle daemon proxy`, `zazzle daemon setup`, `zazzle daemon wrap` and (for `agent llm|prompt`) `zazzle daemon llm`; run as `zazz` it sends zazz commands, and under any other name (an installed script's shim) it runs that script.",
+      "folder": "src/macos/zazzle",
+      "diagram": "src/macos/zazzle/.dev/component-diagram.json"
+    },
+    {
+      "id": "csharp-indexer",
+      "name": "csharp-indexer",
+      "responsibility": "The C# tool whose the daemon renders the terse view of a C# file and answers the structure tools; it lists no tools of its own.",
+      "folder": "src/macos/csharp-indexer",
+      "diagram": "src/macos/csharp-indexer/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-packaging",
+      "name": "zazz-script-packaging",
+      "responsibility": "The .zazz file: ZIP reading and deterministic packing, the manifest, the signature envelope and the script id.",
+      "folder": "src/macos/zazz-script/packaging",
+      "diagram": "src/macos/zazz-script/packaging/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-engine",
+      "name": "zazz SDK",
+      "responsibility": "The script protocol (frames, messages, descriptor passing), the human CLI parser and output rendering, and the library every Rust script is compiled against, with its zazz::test fakes.",
+      "folder": "src/macos/zazz-script/engine",
+      "diagram": "src/macos/zazz-script/engine/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-runner",
+      "name": "zazz-script-runner",
+      "responsibility": "The WebAssembly host: AOT-compiles a module, runs a script's tests, and serves calls to a script in a fresh instance each.",
+      "folder": "src/macos/zazz-script/runner",
+      "diagram": "src/macos/zazz-script/runner/.dev/component-diagram.json"
+    },
+    {
+      "id": "ai-agent",
+      "name": "ai-agent",
+      "responsibility": "Runs open models locally: exec'd for `zazzle agent llm|prompt`, and run as a child (`prompt --no-download`) for an agent's `--llm`, `brief` and `prompt`; a JIT tool the daemon finds beside itself or downloads and verifies.",
+      "folder": "src/macos/ai-agent",
+      "diagram": "src/macos/ai-agent/.dev/component-diagram.json"
+    },
+    {
+      "id": "ai-agent-rules",
+      "name": "ai-agent-rules",
+      "responsibility": "The library that finds the rule and skill files for a path; the daemon links it for get-rules, folder instructions and brief.",
+      "folder": "src/macos/ai-agent-rules",
+      "diagram": "src/macos/ai-agent-rules/.dev/component-diagram.json"
+    },
+    {
+      "id": "rustc",
+      "name": "Rust toolchain",
+      "responsibility": "The user's rustc (with the wasm32-wasip1 target): compiles the SDK, scripts and their tests, to WebAssembly or, for natively trusted scripts, to the host.",
+      "external": true
+    },
+    {
+      "id": "keychain",
+      "name": "macOS Keychain",
+      "responsibility": "The operating system's certificate trust on macOS: evaluates a signer's chain, and holds the trust settings `zazz trust add` sets for an authority.",
+      "external": true
+    },
+    {
+      "id": "mcp-client",
+      "name": "MCP client",
+      "responsibility": "The coding agent's client, which starts `zazzle daemon mcp` and calls its tools over standard input and output, or starts `zazzle proxy` in front of another server.",
+      "external": true,
+      "actor": "Actors/coding-agent.md"
+    },
+    {
+      "id": "upstream-mcp",
+      "name": "Upstream MCP server",
+      "responsibility": "Any other MCP server the proxy sits in front of, run as a child over stdio or reached over Streamable HTTP.",
+      "external": true
+    },
+    {
+      "id": "launchd",
+      "name": "launchd",
+      "responsibility": "macOS's service manager: holds an installed LaunchAgent's socket and starts `zazzle daemon serve` on demand.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    {
+      "from": "daemon",
+      "to": "src",
+      "kind": "contains",
+      "description": "All of the crate's code."
+    },
+    {
+      "from": "zazzle",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Sends requests over the unix socket in descriptor mode, starts `zazzle daemon serve` when nothing listens, and execs `zazzle daemon proxy`, `zazzle daemon setup`, `zazzle daemon wrap` and `zazzle daemon llm`; as `zazz` or a shim the request is a zazz command."
+    },
+    {
+      "from": "mcp-client",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "Starts `zazzle daemon mcp` and speaks JSON-RPC to it, or talks to another server through `zazzle daemon proxy`."
+    },
+    {
+      "from": "src",
+      "to": "launchd",
+      "kind": "depends-on",
+      "description": "launchctl bootstrap and bootout; launch_activate_socket."
+    },
+    {
+      "from": "src",
+      "to": "csharp-indexer",
+      "kind": "depends-on",
+      "description": "Starts its daemon when needed and asks its `view` and structure tools over the daemon's socket."
+    },
+    {
+      "from": "src",
+      "to": "upstream-mcp",
+      "kind": "depends-on",
+      "description": "The proxy relays the client's messages to it and cleans its answers."
+    },
+    {
+      "from": "src",
+      "to": "zazz-script-packaging",
+      "kind": "depends-on",
+      "description": "Reads, validates and packs .zazz archives, parses manifests and signature envelopes, and ids scripts by the BLAKE3 of their bytes."
+    },
+    {
+      "from": "src",
+      "to": "zazz-script-engine",
+      "kind": "depends-on",
+      "description": "Frames and descriptor passing to workers, the human CLI parser and rendering; embeds the SDK's sources and compiles them into an rlib per toolchain and target."
+    },
+    {
+      "from": "src",
+      "to": "zazz-script-runner",
+      "kind": "depends-on",
+      "description": "Runs `zazz-script-runner compile` and `zazz-script-runner test` under the OS sandbox, and keeps warm `zazz-script-runner serve` processes per script, directory and policy."
+    },
+    {
+      "from": "src",
+      "to": "rustc",
+      "kind": "depends-on",
+      "description": "Runs rustc with an argument list, a cleared environment and a timeout, under the OS sandbox, to build the SDK, scripts and tests."
+    },
+    {
+      "from": "src",
+      "to": "keychain",
+      "kind": "depends-on",
+      "description": "On macOS, evaluates a signer's chain with SecTrust and sets an authority's trust settings for `zazz trust add`."
+    },
+    {
+      "from": "src",
+      "to": "ai-agent",
+      "kind": "depends-on",
+      "description": "`zazzle daemon llm` downloads ai-agent from icelander.net when it is not beside the daemon, checks its SHA-256 against the embedded tool manifest and execs it. The daemon and `zazzle daemon wrap` also run `ai-agent prompt --no-download` as a child to post-process output (`--llm`), choose rule sections (`brief`) and answer `prompt`."
+    },
+    {
+      "from": "zazz-script-runner",
+      "to": "zazz-script-engine",
+      "kind": "depends-on",
+      "description": "Frames, messages, the HTTP wire layout and the host allowlist."
+    },
+    {
+      "from": "src",
+      "to": "ai-agent-rules",
+      "kind": "depends-on",
+      "description": "A Cargo dependency: list_rules and body for get-rules, the instructions appended to reads and edits, and the sections brief offers the local model."
+    }
+  ]
+}

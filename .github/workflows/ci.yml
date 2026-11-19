@@ -20,7 +20,7 @@ env:
 
 defaults:
   run:
-    working-directory: macos/rust
+    working-directory: src/macos
 
 jobs:
   lint:
@@ -32,12 +32,12 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
+          workspaces: src/macos
       - run: cargo fmt --all --check
       - name: Release scripts (shellcheck; signing against stand-in Apple tools; Homebrew formulas and bottles; version numbers; language modules; JIT tools; R2 upload retries)
-        working-directory: macos/release
+        working-directory: release
         run: |
-          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pgo.sh version.sh version.test.sh set-version.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh language-modules.sh language-modules.test.sh tools.sh tools.test.sh r2-put.sh r2-put.test.sh
+          shellcheck sign-and-notarize.sh sign-and-notarize.test.sh formula.sh formula.test.sh bottle.sh pack.sh pgo.sh version.sh version.test.sh set-version.sh fetch-cyberspace-generator.sh fetch-cyberspace-generator.test.sh language-modules.sh language-modules.test.sh tools.sh tools.test.sh r2-put.sh r2-put.test.sh
           bash sign-and-notarize.test.sh
           bash formula.test.sh
           bash version.test.sh
@@ -62,39 +62,39 @@ jobs:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
-      - run: cargo build --release -p zazz-worker --locked
+          workspaces: src/macos
+      - run: cargo build --release -p zazz-script-runner --locked
       # One zazz test at a time with a hard limit, so a test that hangs under the macOS sandbox shows up by name.
       - name: zazz tests one at a time (macOS, 15 minute limit)
         if: runner.os == 'macOS'
         run: |
-          perl -e 'alarm 900; exec @ARGV' cargo test -p zazzled --locked zazz:: -- --test-threads=1
+          perl -e 'alarm 900; exec @ARGV' cargo test -p daemon --locked zazz:: -- --test-threads=1
       # Runs even when the macOS zazz step failed, so failures in the other crates show up in the same run.
       - run: cargo test --workspace --locked
         if: always()
-      - name: Name the failing zazzled test (single-threaded rerun)
+      - name: Name the failing daemon test (single-threaded rerun)
         if: failure()
-        run: cargo test -p zazzled --locked -- --test-threads=1 2>&1 | tail -25
+        run: cargo test -p daemon --locked -- --test-threads=1 2>&1 | tail -25
       - run: cargo build --workspace --release --locked
       - name: Smoke test CLIs
         run: |
-          ./target/release/afs --help
-          ./target/release/afs call '{"op":"stat","path":"."}'
+          ./target/release/shell-tools --help
+          ./target/release/shell-tools call '{"op":"stat","path":"."}'
           ./target/release/fix-network --help
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches
-          ./target/release/zazzle-git --version
-          ./target/release/zazzle-git help commit
-          ./target/release/zazzle-agent --version
-          ./target/release/zazzle-agent get-rules . --name-only
+          ./target/release/git-tools --version
+          ./target/release/git-tools help commit
+          ./target/release/ai-agent-rules --version
+          ./target/release/ai-agent-rules get-rules . --name-only
 
   msrv:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.85
-      # zazz-worker embeds wasmtime, which needs a recent Rust; it has its own rust-version.
-      - run: cargo check --workspace --exclude zazz-worker --locked
+      # zazz-script-runner embeds wasmtime, which needs a recent Rust; it has its own rust-version.
+      - run: cargo check --workspace --exclude zazz-script-runner --locked
 
   zazzle-c:
     strategy:
@@ -105,12 +105,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p zazzled --locked
+      - run: cargo build --release -p daemon --locked
       - name: Build, unit test and smoke test the C invoker
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: make && make unit && sh test/smoke.sh
 
-  # Branch coverage needs nightly (cargo llvm-cov --branch); agent-fs, fix-network, zazzle-git and zazzle-agent-rules-list must keep 95% of branches and lines.
+  # Branch coverage needs nightly (cargo llvm-cov --branch); shell-tools, fix-network, git-tools and ai-agent-rules must keep 95% of branches and lines.
   coverage:
     runs-on: ubuntu-24.04
     steps:
@@ -122,10 +122,10 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: macos/rust
-      - name: agent-fs needs 95% line and branch coverage
+          workspaces: src/macos
+      - name: shell-tools needs 95% line and branch coverage
         run: |
-          cargo llvm-cov -p agent-fs --branch --locked --fail-under-lines 95 --lcov --output-path lcov.info
+          cargo llvm-cov -p shell-tools --branch --locked --fail-under-lines 95 --lcov --output-path lcov.info
           awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
             END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov.info
       - name: fix-network needs 95% line and branch coverage
@@ -133,25 +133,25 @@ jobs:
           cargo llvm-cov -p fix-network --branch --locked --summary-only --json --output-path cov.json --fail-under-lines 95
           jq -e '.data[0].totals.branches.percent >= 95' cov.json \
             || { echo "::error::fix-network branch coverage is below 95%"; exit 1; }
-      - name: zazzle-git needs 95% line and branch coverage (includes the pseudo-terminal end-to-end tests)
+      - name: git-tools needs 95% line and branch coverage (includes the pseudo-terminal end-to-end tests)
         run: |
-          cargo llvm-cov -p zazzle-git --branch --locked --fail-under-lines 95 --lcov --output-path lcov-zazzle-git.info
+          cargo llvm-cov -p git-tools --branch --locked --fail-under-lines 95 --lcov --output-path lcov-git-tools.info
           awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
-            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov-zazzle-git.info
-      - name: zazzle-agent-rules-list needs 95% line and branch coverage
+            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov-git-tools.info
+      - name: ai-agent-rules needs 95% line and branch coverage
         run: |
-          cargo llvm-cov -p zazzle-agent-rules-list --branch --locked --fail-under-lines 95 --lcov --output-path lcov-zazzle-agent.info
+          cargo llvm-cov -p ai-agent-rules --branch --locked --fail-under-lines 95 --lcov --output-path lcov-ai-agent-rules.info
           awk -F'[:,]' '/^BRDA/ { total++; if ($5 != "0" && $5 != "-") hit++ }
-            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov-zazzle-agent.info
+            END { printf "branch coverage %.2f%% (%d/%d)\n", 100*hit/total, hit, total; if (100*hit/total < 95) exit 1 }' lcov-ai-agent-rules.info
       - name: Rust branch coverage (at least 95%)
-        run: sh zazzled/coverage.sh 95
+        run: sh daemon/coverage.sh 95
       - name: zazz crates branch coverage (at least 95%)
         run: |
-          sh zazzled/coverage.sh 95 zazz-format
-          sh zazzled/coverage.sh 95 zazz-sdk
-          sh zazzled/coverage.sh 95 zazz-worker
+          sh daemon/coverage.sh 95 zazz-script-packaging
+          sh daemon/coverage.sh 95 zazz-script-engine
+          sh daemon/coverage.sh 95 zazz-script-runner
       - name: C invoker branch coverage (at least 95%)
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: make coverage
 
   dotnet:
@@ -162,7 +162,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: macos/dotnet/zazzle-csharp-indexer
+        working-directory: src/macos/csharp-indexer
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -172,13 +172,13 @@ jobs:
       - run: dotnet publish src -c Release -o out
       - name: Smoke test server and daemon
         env:
-          ZAZZLE_INDEXER_STATE_DIR: ${{ runner.temp }}/zazzle-csharp-indexer-state
+          ZAZZLE_INDEXER_STATE_DIR: ${{ runner.temp }}/csharp-indexer-state
         run: |
-          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/zazzle-csharp-indexer serve --root repo=../../.. | tee smoke.txt
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"overview","arguments":{}}}' | ./out/csharp-indexer serve --root repo=../../.. | tee smoke.txt
           grep -q '"tools":\[\]' smoke.txt
           grep -q '"isError":false' smoke.txt
-          ./out/zazzle-csharp-indexer report
-          pkill -f "zazzle-csharp-indexer daemon" || true
+          ./out/csharp-indexer report
+          pkill -f "csharp-indexer daemon" || true
 
   dotnet-minifier:
     strategy:
@@ -188,7 +188,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: macos/dotnet/zazzle-csharp-minifier
+        working-directory: src/macos/csharp-minifier
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -199,12 +199,12 @@ jobs:
       - name: Smoke test test splitting and renaming on a copy of the indexer
         run: |
           plain="$RUNNER_TEMP/indexer-plain"
-          cp -R ../zazzle-csharp-indexer "$plain"
+          cp -R ../csharp-indexer "$plain"
           git -C "$plain" init -q
-          ./out/zazzle-csharp-minifier --root "$plain" --split-tests
-          ./out/zazzle-csharp-minifier --root "$plain" --check --split-tests
+          ./out/csharp-minifier --root "$plain" --split-tests
+          ./out/csharp-minifier --root "$plain" --check --split-tests
           dotnet build "$plain/tests"
-          ./out/zazzle-csharp-minifier --root "$plain" --list-identifiers | sed 's/^    Daemon:$/    Daemon => Server:/' > "$RUNNER_TEMP/rename.txt"
-          ./out/zazzle-csharp-minifier --root "$plain" --rename "$RUNNER_TEMP/rename.txt"
+          ./out/csharp-minifier --root "$plain" --list-identifiers | sed 's/^    Daemon:$/    Daemon => Server:/' > "$RUNNER_TEMP/rename.txt"
+          ./out/csharp-minifier --root "$plain" --rename "$RUNNER_TEMP/rename.txt"
           test -f "$plain/src/Server/Daemon.cs"
           dotnet test "$plain/tests"

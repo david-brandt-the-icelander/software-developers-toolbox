@@ -1,0 +1,1157 @@
+// The read command: numbered lines of files or ranges, bounded by a token budget.
+use super::{Ctx, Output};
+use crate::args::{self, flag, opt, Flag};
+use crate::buildfile;
+use crate::cobol;
+use crate::config;
+use crate::data;
+use crate::indexer::Indexer;
+use crate::markup;
+use crate::md;
+use crate::meta::{anchor_str, line_anchor, line_bytes, Meta};
+use crate::minified;
+use crate::nim;
+use crate::outline;
+use crate::schema;
+use crate::sql;
+use crate::styles;
+use crate::symbols::{self, Miss};
+use crate::terse;
+use crate::tokens;
+use crate::util::{clip, display, hex8, locate, similar};
+use crate::xml;
+
+pub(super) const SPEC: &[Flag] = &[
+    opt("around", 'a'),
+    opt("ctx", '\0'),
+    opt("head", 'n'),
+    opt("tail", 't'),
+    opt("budget", 'b'),
+    opt("symbol", 's'),
+    flag("anchors", '\0'),
+    flag("source", '\0'),
+    flag("full", '\0'),
+    flag("terse", '\0'),
+    opt("rev", 'r'),
+];
+const USAGE: &str = "usage: read [REV:]PATH[:A-B].. [--rev REV] [--terse] [--symbol NAME[#N]] [--around N] [--ctx N] [--head N] [--tail N] [--budget T] [--anchors] [--full] | read --symbol Namespace.Type.Member (the file found through the C# indexer)";
+// The default and the ceiling of a read's token budget, also the ceiling MCP allows and what --full means; a selection past it ends with the omitted range and the read that continues it.
+pub(crate) const DEFAULT_BUDGET: usize = 6000;
+pub(crate) const MAX_BUDGET: usize = 16000;
+// A multi-path read shares one budget, each file getting an even share of what is left; below this many tokens it stops and names the files it did not read.
+const MIN_SHARE: usize = 100;
+const DEFAULT_CTX: usize = 20;
+const MINIFIED_CLIP: usize = 400;
+
+// Which part of a file to show.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Select {
+    Whole,
+    Range(usize, Option<usize>),
+    Around(usize),
+    Head(usize),
+    Tail(usize),
+}
+
+// Parses the text after a colon into a start line and optional end line.
+pub(super) fn parse_range(r: &str) -> Option<(usize, Option<usize>)> {
+    let (a, b) = match r.split_once('-') {
+        Some((a, "")) => (a.parse().ok()?, None),
+        Some((a, b)) => (a.parse().ok()?, Some(b.parse().ok()?)),
+        None => {
+            let a: usize = r.parse().ok()?;
+            (a, Some(a))
+        }
+    };
+    (a >= 1).then_some((a, b))
+}
+
+// Splits PATH:A-B into the path and an optional range.
+pub(super) fn split_target(arg: &str) -> (&str, Option<(usize, Option<usize>)>) {
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    // PATH:A:B, a common slip for PATH:A-B.
+    if let Some((rest, b)) = arg.rsplit_once(':') {
+        if let Some((path, a)) = rest.rsplit_once(':') {
+            if !path.is_empty() && digits(a) && digits(b) {
+                if let Some(range) = parse_range(&format!("{a}-{b}")) {
+                    return (path, Some(range));
+                }
+            }
+        }
+    }
+    if let Some(i) = arg.rfind(':') {
+        if i > 0 {
+            if let Some(range) = parse_range(&arg[i + 1..]) {
+                return (&arg[..i], Some(range));
+            }
+        }
+    }
+    (arg, None)
+}
+
+// Resolves the selection into an inclusive 1-based line range within the file.
+fn bounds(sel: Select, nl: usize, ctx: usize) -> Result<(usize, usize), String> {
+    let (a, b) = match sel {
+        Select::Whole => (1, nl),
+        Select::Range(a, b) => (a, b.unwrap_or(nl)),
+        Select::Around(n) => (n.saturating_sub(ctx).max(1), n + ctx),
+        Select::Head(n) => (1, n),
+        Select::Tail(n) => (nl.saturating_sub(n) + 1, nl),
+    };
+    if a > nl {
+        return Err(format!("start line {a} is past the end ({nl} lines)"));
+    }
+    if b < a {
+        return Err(format!("range {a}-{b} is backwards"));
+    }
+    Ok((a, b.min(nl)))
+}
+
+// Returns how many leading lines fit the budget, at least one, so a cut read is a contiguous prefix that a continuation read completes.
+fn prefix(costs: &[usize], budget: usize) -> usize {
+    let mut used = 0;
+    let n = costs.iter().take_while(|c| {
+        used += **c;
+        used <= budget
+    });
+    n.count().max(1).min(costs.len())
+}
+
+// Chooses which lines to keep within the budget: a head part, a tail part and the elided count between.
+pub(super) fn fit(costs: &[usize], budget: usize) -> (usize, usize) {
+    let total: usize = costs.iter().sum();
+    if total <= budget {
+        return (costs.len(), costs.len());
+    }
+    let head_budget = budget * 7 / 10;
+    let (mut head, mut used) = (0, 0);
+    while used + costs[head] <= head_budget {
+        used += costs[head];
+        head += 1;
+    }
+    let head = head.max(1);
+    let (mut tail_start, mut used) = (costs.len(), 0);
+    while tail_start > head && used + costs[tail_start - 1] <= budget - head_budget {
+        used += costs[tail_start - 1];
+        tail_start -= 1;
+    }
+    (head, tail_start)
+}
+
+// Formats one numbered line.
+fn format_line(data: &[u8], meta: &Meta, n: usize, anchors: bool) -> String {
+    let text = String::from_utf8_lossy(line_bytes(data, &meta.starts, n));
+    let text = if meta.minified { clip(&text, 0, MINIFIED_CLIP) } else { text.into_owned() };
+    if anchors {
+        format!("{n}#{}\t{text}", anchor_str(line_anchor(data, &meta.starts, n)))
+    } else {
+        format!("{n}\t{text}")
+    }
+}
+
+// Settings shared by every file in one read call.
+#[derive(Clone, Copy)]
+struct Opts<'a> {
+    sel: Select,
+    ctx: usize,
+    budget: usize,
+    anchors: bool,
+    terse: bool,
+    rev: Option<&'a str>,
+}
+
+// Loads a file as it is at a git revision, for `REV:PATH` (when no such local file exists) or `--rev REV`; None for an ordinary path.
+fn at_rev(
+    ctx: &Ctx,
+    arg: &str,
+    rev: Option<&str>,
+) -> Result<Option<(std::path::PathBuf, String, crate::engine::Loaded)>, String> {
+    let (rev, rel) = match rev {
+        Some(r) => (r, arg),
+        None => match arg.split_once(':') {
+            Some((r, p)) if !r.is_empty() && !p.is_empty() && !locate(arg, &ctx.cwd).exists() => (r, p),
+            _ => return Ok(None),
+        },
+    };
+    let out = std::process::Command::new("git")
+        .arg("show")
+        .arg(format!("{rev}:./{}", rel.trim_start_matches("./")))
+        .current_dir(&ctx.cwd)
+        .output()
+        .map_err(|e| format!("{rev}:{rel}: cannot run git: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "{rev}:{rel}: {}",
+            why.lines().next().unwrap_or("not found").trim_start_matches("fatal: ")
+        ));
+    }
+    let meta = std::sync::Arc::new(crate::meta::Meta::compute(&out.stdout));
+    Ok(Some((
+        locate(rel, &ctx.cwd),
+        format!("{rev}:{rel}"),
+        crate::engine::Loaded { data: out.stdout, meta },
+    )))
+}
+
+// Formats a load error, offering similar files when the path does not exist.
+fn missing(ctx: &Ctx, arg: &str, shown: &str, e: String) -> String {
+    let hint = if e == "no such file or directory" {
+        similar(arg, &ctx.cwd, &ctx.engine.walks)
+    } else {
+        String::new()
+    };
+    format!("{shown}: {e}{hint}")
+}
+
+// Renders one file according to the options; the label names a symbol in the header.
+fn render(ctx: &Ctx, arg: &str, o: &Opts, label: &str) -> Result<String, String> {
+    let (path_arg, range) = split_target(arg);
+    let sel = match (o.sel, range) {
+        (Select::Whole, Some((a, b))) => Select::Range(a, b),
+        (s, None) => s,
+        (_, Some(_)) => return Err("give either PATH:A-B or --around/--head/--tail, not both".into()),
+    };
+    let (path, shown, loaded) = match at_rev(ctx, path_arg, o.rev)? {
+        Some(x) => x,
+        None => {
+            let path = locate(path_arg, &ctx.cwd);
+            let shown = display(&path, &ctx.cwd);
+            let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, path_arg, &shown, e))?;
+            (path, shown, loaded)
+        }
+    };
+    let from_rev = shown.contains(':');
+    let (data, meta) = (&loaded.data, &loaded.meta);
+    let sha = hex8(&meta.hash);
+    if meta.binary {
+        return Ok(format!("{shown}: binary, {} bytes, sha {sha}", meta.size));
+    }
+    let nl = meta.lines();
+    if nl == 0 {
+        return Ok(format!("{shown}: empty, sha {sha}"));
+    }
+    let (a, b) = bounds(sel, nl, o.ctx).map_err(|e| format!("{shown}: {e}"))?;
+    let mut unavailable = String::new();
+    if o.terse && !from_rev && outline::lang_of(&path) == outline::Lang::CSharp {
+        match Indexer::locate().and_then(|ix| ix.view(&path, &ctx.session)) {
+            Ok(view) => return Ok(render_terse(&shown, &view, (a, b), nl, o, label)),
+            Err(e) => unavailable = format!("(no terse view: {e}; this is the source)\n"),
+        }
+    }
+    if let Some(view) = o.terse.then(|| other_view(&path, &shown, data, &ctx.session)).flatten() {
+        return Ok(render_terse(&shown, &view, (a, b), nl, o, label));
+    }
+    let costs: Vec<usize> =
+        (a..=b).map(|n| tokens::from_bytes(line_bytes(data, &meta.starts, n).len() + 8)).collect();
+    let keep = prefix(&costs, o.budget);
+    let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
+    let cut = if keep < costs.len() {
+        format!(", INCOMPLETE: lines {a}-{} of {a}-{b}", a + keep - 1)
+    } else {
+        String::new()
+    };
+    let mut out = format!("{shown} {nl} lines, sha {sha}{partial}{cut}\n{unavailable}");
+    for i in 0..keep {
+        out.push_str(&format_line(data, meta, a + i, o.anchors));
+        out.push('\n');
+    }
+    if keep < costs.len() {
+        let x = a + keep;
+        out.push_str(&format!(
+            "-- incomplete: {} lines omitted ({x}-{b}), over the {}-token budget; continue with: zazzle read {shown}:{x}-{b}\n",
+            b - x + 1,
+            o.budget
+        ));
+    }
+    out.pop();
+    Ok(out)
+}
+
+// Returns daemon's own terse view of an HTML, Razor, CSS, SCSS, Sass, Less, JSON, YAML, TOML, Markdown, XML, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake, Makefile, Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Zig, Objective-C, Groovy or shell file, if it has one.
+fn other_view(path: &std::path::Path, shown: &str, data: &[u8], session: &str) -> Option<String> {
+    let text = String::from_utf8_lossy(data);
+    if let Some(kind) = markup::kind_of(path) {
+        let csharp = |code: &str| Indexer::locate().and_then(|ix| ix.view_text(path, code, session)).ok();
+        let minified = (kind == markup::Kind::Html && minified::is_minified(&text))
+            .then(|| minified::html_view(shown, &text))
+            .flatten();
+        return minified.or_else(|| markup::view(shown, &text, kind, &csharp));
+    }
+    if let Some(kind) = styles::kind_of(path) {
+        let minified = (kind == styles::Kind::Css && minified::is_minified(&text))
+            .then(|| minified::css_view(shown, &text))
+            .flatten();
+        return minified.or_else(|| styles::view(shown, &text, kind));
+    }
+    if nim::is_nim(path) {
+        return nim::view(shown, &text);
+    }
+    if sql::is_sql(path) {
+        return sql::view(shown, &text);
+    }
+    if cobol::is_cobol(path) {
+        return cobol::view(shown, &text);
+    }
+    if let Some((kind, lock)) = data::kind_of(path) {
+        let minified = (kind == data::Kind::Json && minified::is_minified(&text))
+            .then(|| minified::json_view(shown, &text, lock))
+            .flatten();
+        return minified.or_else(|| data::view(shown, &text, kind, lock));
+    }
+    if md::is_markdown(path) {
+        return md::view(shown, &text);
+    }
+    if xml::is_xml(path) {
+        let svg = xml::is_svg(path);
+        let minified = minified::is_minified(&text).then(|| minified::xml_view(shown, &text, svg)).flatten();
+        return minified.or_else(|| xml::view(shown, &text, svg));
+    }
+    if let Some(kind) = config::kind_of(path) {
+        return config::view(shown, &text, kind);
+    }
+    if let Some(kind) = schema::kind_of(path) {
+        return schema::view(shown, &text, kind);
+    }
+    if let Some(kind) = buildfile::kind_of(path) {
+        return buildfile::view(shown, &text, kind);
+    }
+    terse::lang_of(path).and_then(|lang| terse::view(shown, &text, lang))
+}
+
+// Returns the source lines a terse view line covers, from its key: `N`, `N~` or `A-B`.
+fn view_key(key: &str) -> Option<(usize, usize)> {
+    let k = key.trim_end_matches('~');
+    match k.split_once('-') {
+        Some((a, b)) => Some((a.parse().ok()?, b.parse().ok()?)),
+        None => k.parse().ok().map(|n| (n, n)),
+    }
+}
+
+// Renders the opt-in terse view for a line range under the budget; it is lossy and has no sha, and its header says so.
+fn render_terse(shown: &str, view: &str, (a, b): (usize, usize), nl: usize, o: &Opts, label: &str) -> String {
+    let (head, body) = view.split_once('\n').unwrap_or((view, ""));
+    let steps = head.split_once("terse: ").map_or("nothing to shorten", |(_, s)| s);
+    let lines: Vec<(usize, usize, &str)> = body
+        .lines()
+        .filter_map(|l| view_key(l.split_once('\t')?.0).map(|(s, e)| (s, e, l)))
+        .filter(|(s, e, _)| *e >= a && *s <= b)
+        .collect();
+    let costs: Vec<usize> = lines.iter().map(|(_, _, l)| tokens::from_bytes(l.len() + 1)).collect();
+    let (keep, tail_start) = fit(&costs, o.budget);
+    let partial = if (a, b) == (1, nl) { String::new() } else { format!(" [{a}-{b}{label}]") };
+    let mut out = format!("{shown} {nl} lines, terse view{partial}: {steps}; lossy: read without --terse for the source and sha\n");
+    let shown_lines = lines[..keep].iter().chain(&lines[tail_start.max(keep)..]);
+    let indent = common_indent(shown_lines.map(|(_, _, l)| *l));
+    for (_, _, l) in &lines[..keep] {
+        out.push_str(&dedent(l, indent));
+        out.push('\n');
+    }
+    if tail_start > keep {
+        let (x, y) = (lines[keep].0, lines[tail_start - 1].1);
+        if x == y {
+            out.push_str(&format!(
+                "… {} view lines of line {x} elided; read {shown} --full\n",
+                tail_start - keep
+            ));
+        } else {
+            out.push_str(&format!("… lines {x}-{y} elided; read {shown}:{x}-{y} or --full\n"));
+        }
+    }
+    for (_, _, l) in &lines[tail_start.max(keep)..] {
+        out.push_str(&dedent(l, indent));
+        out.push('\n');
+    }
+    out.pop();
+    out
+}
+
+// The leading spaces every shown code line shares, ignoring blank lines and fold markers, which are written unindented.
+fn common_indent<'a>(lines: impl Iterator<Item = &'a str>) -> usize {
+    lines
+        .filter_map(|l| l.split_once('\t').map(|(_, code)| code))
+        .filter(|code| !code.trim().is_empty() && !code.trim_start().starts_with('⋯'))
+        .map(|code| code.bytes().take_while(|b| *b == b' ').count())
+        .min()
+        .unwrap_or(0)
+}
+
+// Removes up to n leading spaces from a view line's code, keeping its key.
+fn dedent(line: &str, n: usize) -> std::borrow::Cow<'_, str> {
+    match line.split_once('\t') {
+        Some((key, code)) if n > 0 => {
+            let cut = code.bytes().take(n).take_while(|b| *b == b' ').count();
+            format!("{key}\t{}", &code[cut..]).into()
+        }
+        _ => line.into(),
+    }
+}
+
+// Finds the one file that declares a symbol named without a path, through the C# indexer's index; several files are listed for the caller to pick from.
+fn declared_in(ctx: &Ctx, query: &str) -> Result<Vec<String>, String> {
+    let name = query.split(['(', '#']).next().unwrap_or(query).trim();
+    let file_of = |l: &String| l.split_once(' ')?.0.rsplit_once(':').map(|(p, _)| p.to_string());
+    // A namespace-qualified or misremembered Type.Member falls back to Type.Member, then Member alone.
+    let segs: Vec<&str> = name.split('.').filter(|s| !s.is_empty()).collect();
+    let mut tries = vec![name.to_string()];
+    for keep in [2, 1] {
+        if segs.len() > keep {
+            tries.push(segs[segs.len() - keep..].join("."));
+        }
+    }
+    let mut found = Vec::new();
+    for t in &tries {
+        found = crate::cmd::structure::declarations(ctx, t)
+            .map_err(|e| format!("--symbol without a path looks it up in the index: {e}"))?;
+        if found.iter().any(|l| file_of(l).is_some()) {
+            break;
+        }
+    }
+    let mut files: Vec<String> = found.iter().filter_map(file_of).collect();
+    files.dedup();
+    match files.as_slice() {
+        [] => Err(format!("no declaration of '{name}' in the index; search with zazzle find")),
+        [one] => Ok(vec![one.clone()]),
+        _ => Err(format!(
+            "'{name}' is declared in {} files; give the file too, or qualify the name:\n{}",
+            files.len(),
+            found.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+        )),
+    }
+}
+
+// Explains a symbol name that did not resolve, listing what can be asked for instead.
+fn miss_text(shown: &str, query: &str, miss: Miss) -> String {
+    match miss {
+        Miss::None(near) if near.is_empty() => {
+            format!("{shown}: no symbol '{query}'; list them with zazzle outline {shown}")
+        }
+        Miss::None(near) => format!("{shown}: no symbol '{query}'; similar:\n{}", near.join("\n")),
+        Miss::Many(n, list) => {
+            format!(
+                "{shown}: '{query}' matches {n} symbols; pick one with its parameter types, Name(T1, T2), or #N:\n{}",
+                list.join("\n")
+            )
+        }
+        Miss::Index(n) => format!("{shown}: '{query}' has {n} match(es); pick #1 to #{n}"),
+    }
+}
+
+// Renders one named symbol with the doc comments and attributes directly above it.
+fn render_symbol(ctx: &Ctx, arg: &str, query: &str, o: &Opts) -> Result<String, String> {
+    if split_target(arg).1.is_some() {
+        return Err("give either PATH:A-B or --symbol, not both".into());
+    }
+    let path = locate(arg, &ctx.cwd);
+    let shown = display(&path, &ctx.cwd);
+    let loaded = ctx.engine.load(&path).map_err(|e| missing(ctx, arg, &shown, e))?;
+    if loaded.meta.binary {
+        return render(ctx, arg, o, "");
+    }
+    let syms = ctx.engine.outline(&path, &loaded);
+    let (data, starts) = (&loaded.data, &loaded.meta.starts);
+    let line = |n: usize| String::from_utf8_lossy(line_bytes(data, starts, n)).into_owned();
+    let s = &syms[symbols::find(&syms, query, &line).map_err(|m| miss_text(&shown, query, m))?];
+    let above: Vec<&str> =
+        (1..s.start).map(|n| std::str::from_utf8(line_bytes(data, starts, n)).unwrap_or("")).collect();
+    let first = symbols::lead_start(&above, s.start, outline::lang_of(&path));
+    let picked = Opts { sel: Select::Range(first, Some(s.end)), ..*o };
+    render(ctx, arg, &picked, &format!(" {} {}", s.kind, s.name))
+}
+
+// Builds the selection from the flags, rejecting conflicts.
+fn selection(p: &args::Parsed) -> Result<Select, String> {
+    let picks = [("around", p.number("around")?), ("head", p.number("head")?), ("tail", p.number("tail")?)];
+    let given: Vec<_> = picks.iter().filter(|(_, v)| v.is_some()).collect();
+    if given.len() > 1 {
+        return Err("use only one of --around, --head, --tail".into());
+    }
+    Ok(match given.first() {
+        Some(("around", Some(n))) => Select::Around(*n),
+        Some(("head", Some(n))) => Select::Head(*n),
+        Some((_, Some(n))) => Select::Tail(*n),
+        _ => Select::Whole,
+    })
+}
+
+// Runs the read command.
+pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
+    let p = args::parse(SPEC, argv).map_err(|e| format!("{e}; {USAGE}"))?;
+    let mut paths = p.positional.clone();
+    if paths.is_empty() {
+        let Some(q) = p.value("symbol") else { return Err(USAGE.into()) };
+        paths = declared_in(ctx, q)?;
+    }
+    let budget = match p.number("budget")? {
+        Some(0) => return Err("--budget must be at least 1".into()),
+        Some(n) => n.min(MAX_BUDGET),
+        None if p.has("full") => MAX_BUDGET,
+        None => DEFAULT_BUDGET,
+    };
+    let opts = Opts {
+        sel: selection(&p)?,
+        ctx: p.number("ctx")?.unwrap_or(DEFAULT_CTX),
+        budget,
+        anchors: p.has("anchors"),
+        terse: p.has("terse") && !p.has("source") && !p.has("anchors"),
+        rev: p.value("rev"),
+    };
+    let symbol = p.value("symbol");
+    if symbol.is_some() && opts.sel != Select::Whole {
+        return Err("--symbol picks the lines itself; drop --around, --head and --tail".into());
+    }
+    let one = |arg: &str, o: &Opts| match symbol {
+        Some(q) => render_symbol(ctx, arg, q, o),
+        None => render(ctx, arg, o, ""),
+    };
+    let mut parts: Vec<Option<String>> =
+        paths.iter().map(|a| one(a, &opts).map(Some)).collect::<Result<_, _>>()?;
+    let costs: Vec<usize> = parts.iter().map(|p| tokens::estimate(p.as_deref().unwrap_or(""))).collect();
+    if paths.len() > 1 && costs.iter().sum::<usize>() > budget {
+        let mut order: Vec<usize> = (0..paths.len()).collect();
+        order.sort_by_key(|&i| costs[i]);
+        let (mut opts, mut left, mut skipped) = (opts, budget, Vec::new());
+        for (n, &i) in order.iter().enumerate() {
+            let share = (left / (order.len() - n)).max(MIN_SHARE.min(left));
+            if costs[i] <= share {
+                left -= costs[i];
+                continue;
+            }
+            if n > 0 && left < MIN_SHARE {
+                parts[i] = None;
+                skipped.push(paths[i].clone());
+                continue;
+            }
+            opts.budget = share;
+            let part = one(&paths[i], &opts)?;
+            left = left.saturating_sub(tokens::estimate(&part));
+            parts[i] = Some(part);
+        }
+        if !skipped.is_empty() {
+            parts.push(Some(format!(
+                "not read, the {budget}-token budget is spent: {} (read them next, or pass --budget)",
+                skipped.join(" ")
+            )));
+        }
+    }
+    let parts: Vec<String> = parts.into_iter().flatten().collect();
+    Ok(Output::ok(parts.join("\n\n")))
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::testutil::{run_cmd, TempDir};
+
+    // Writes a numbered 10-line file.
+    fn ten() -> TempDir {
+        let t = TempDir::new();
+        let body: String = (1..=10).map(|i| format!("line{i}\n")).collect();
+        t.write("f.txt", body.as_bytes());
+        t
+    }
+
+    // Checks reading a whole file shows a header and numbered lines.
+    // Checks REV:PATH and --rev read a file as committed, and a missing revision or file says so.
+    #[test]
+    fn test_read_at_revision() {
+        let t = TempDir::new();
+        t.write("src/a.txt", b"old line\n");
+        crate::testutil::git_commit(t.path(), "one");
+        t.write("src/a.txt", b"new line\n");
+        let r = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert!(
+            r(&["read", "HEAD:src/a.txt"]).starts_with("HEAD:src/a.txt 1 lines, sha "),
+            "{}",
+            r(&["read", "HEAD:src/a.txt"])
+        );
+        assert!(r(&["read", "HEAD:src/a.txt"]).ends_with("1\told line"));
+        assert!(r(&["read", "src/a.txt", "--rev", "HEAD"]).ends_with("1\told line"));
+        assert!(r(&["read", "src/a.txt"]).ends_with("1\tnew line"));
+        assert!(r(&["read", "HEAD:src/a.txt:1-1"]).ends_with("1\told line"));
+        assert!(
+            r(&["read", "nope:src/a.txt"]).starts_with("error: nope:src/a.txt: "),
+            "{}",
+            r(&["read", "nope:src/a.txt"])
+        );
+        assert!(r(&["read", "HEAD:"]).starts_with("error: "));
+        assert!(r(&["read", ":x"]).starts_with("error: "));
+        t.write("c:d.txt", b"colon\n");
+        assert!(r(&["read", "c:d.txt"]).ends_with("1\tcolon"));
+    }
+
+    #[test]
+    fn test_read_whole_file() {
+        let t = ten();
+        let o = run_cmd(t.path(), &["read", "f.txt"]);
+        let lines: Vec<&str> = o.text.lines().collect();
+        assert!(lines[0].starts_with("f.txt 10 lines, sha ") && !lines[0].contains('['));
+        assert_eq!(lines[1], "1\tline1");
+        assert_eq!(lines.len(), 11);
+        assert!(o.idable);
+    }
+
+    // Checks ranges: closed, open-ended and single-line.
+    #[test]
+    fn test_read_ranges() {
+        let t = ten();
+        let a = run_cmd(t.path(), &["read", "f.txt:3-4"]).text;
+        assert!(a.contains("[3-4]") && a.ends_with("3\tline3\n4\tline4"));
+        let b = run_cmd(t.path(), &["read", "f.txt:9-"]).text;
+        assert!(b.ends_with("9\tline9\n10\tline10"));
+        let c = run_cmd(t.path(), &["read", "f.txt:5"]).text;
+        assert!(c.ends_with("5\tline5") && c.contains("[5-5]"));
+    }
+
+    // Checks around, head and tail selections.
+    #[test]
+    fn test_read_around_head_tail() {
+        let t = ten();
+        let a = run_cmd(t.path(), &["read", "f.txt", "--around", "5", "--ctx", "1"]).text;
+        assert!(a.ends_with("4\tline4\n5\tline5\n6\tline6") && a.contains("[4-6]"));
+        let h = run_cmd(t.path(), &["read", "f.txt", "-n", "2"]).text;
+        assert!(h.ends_with("1\tline1\n2\tline2"));
+        let tl = run_cmd(t.path(), &["read", "f.txt", "-t", "2"]).text;
+        assert!(tl.ends_with("9\tline9\n10\tline10"));
+        let near_top = run_cmd(t.path(), &["read", "f.txt", "-a", "1", "--ctx", "2"]).text;
+        assert!(near_top.contains("[1-3]"));
+    }
+
+    // Checks anchors appear with --anchors.
+    #[test]
+    fn test_read_anchors() {
+        let t = ten();
+        let o = run_cmd(t.path(), &["read", "f.txt:1-1", "--anchors"]).text;
+        let line = o.lines().nth(1).expect("line");
+        assert!(line.starts_with("1#") && line.ends_with("\tline1") && line.len() == "1#abc\tline1".len());
+    }
+
+    // Checks a range over the budget is a contiguous prefix marked incomplete, naming the omitted lines and the read that continues it, and --full reads it whole.
+    #[test]
+    fn test_read_budget_cuts_with_continuation() {
+        let t = TempDir::new();
+        let body: String = (1..=200).map(|i| format!("this is line number {i}\n")).collect();
+        t.write("big.txt", body.as_bytes());
+        let o = run_cmd(t.path(), &["read", "big.txt", "--budget", "100"]).text;
+        let shown = o.lines().filter(|l| l.contains("\tthis is line")).count();
+        assert!(
+            o.lines().next().expect("header").contains(&format!(", INCOMPLETE: lines 1-{shown} of 1-200")),
+            "{o}"
+        );
+        assert!(o.ends_with(&format!("-- incomplete: {} lines omitted ({}-200), over the 100-token budget; continue with: zazzle read big.txt:{}-200", 200 - shown, shown + 1, shown + 1)), "{o}");
+        assert!(!o.contains("200\tthis is line number 200"), "no tail is shown out of order");
+        let next =
+            run_cmd(t.path(), &["read", &format!("big.txt:{}-200", shown + 1), "--budget", "100000"]).text;
+        assert!(next.ends_with("200\tthis is line number 200") && !next.contains("INCOMPLETE"), "{next}");
+        let full = run_cmd(t.path(), &["read", "big.txt", "--full"]).text;
+        assert!(!full.contains("incomplete") && full.lines().count() == 201);
+    }
+
+    // Checks several paths share one budget evenly, and that files past a spent budget are named instead of read.
+    #[test]
+    fn test_read_shared_budget() {
+        let t = TempDir::new();
+        let body: String = (1..=400).map(|i| format!("line {i} with a few words\n")).collect();
+        for f in ["a.txt", "b.txt", "c.txt"] {
+            t.write(f, body.as_bytes());
+        }
+        let all = run_cmd(t.path(), &["read", "a.txt", "b.txt", "c.txt", "--budget", "600"]).text;
+        assert!(tokens::estimate(&all) < 800, "{}", tokens::estimate(&all));
+        assert_eq!(all.matches("-- incomplete: ").count(), 3, "{all}");
+        let few = run_cmd(t.path(), &["read", "a.txt", "b.txt", "c.txt", "--budget", "150"]).text;
+        assert!(
+            few.ends_with(
+                "not read, the 150-token budget is spent: b.txt c.txt (read them next, or pass --budget)"
+            ),
+            "{few}"
+        );
+    }
+
+    // Checks the default budget applies to large files, and a budget above the ceiling is lowered to it.
+    #[test]
+    fn test_read_default_budget() {
+        let t = TempDir::new();
+        let body: String = (1..=6000).map(|i| format!("this is line number {i}\n")).collect();
+        t.write("big.txt", body.as_bytes());
+        assert!(run_cmd(t.path(), &["read", "big.txt"]).text.contains("over the 6000-token budget"));
+        assert!(run_cmd(t.path(), &["read", "big.txt", "--budget", "999999"])
+            .text
+            .contains("over the 16000-token budget"));
+        assert_eq!(prefix(&[5, 5, 5], 1), 1);
+        assert_eq!(prefix(&[5, 5, 5], 10), 2);
+        assert_eq!(prefix(&[5, 5, 5], 99), 3);
+    }
+
+    // Checks binary, empty and minified files.
+    #[test]
+    fn test_read_special_files() {
+        let t = TempDir::new();
+        t.write("b.bin", b"a\0b");
+        t.write("e.txt", b"");
+        t.write("m.js", format!("{}\n", "x".repeat(6000)).as_bytes());
+        assert!(run_cmd(t.path(), &["read", "b.bin"]).text.starts_with("b.bin: binary, 3 bytes, sha "));
+        assert!(run_cmd(t.path(), &["read", "e.txt"]).text.starts_with("e.txt: empty, sha "));
+        let m = run_cmd(t.path(), &["read", "m.js"]).text;
+        assert!(m.contains('…') && m.len() < 700);
+    }
+
+    // Checks multiple files are joined with a blank line.
+    #[test]
+    fn test_read_multiple_files() {
+        let t = ten();
+        t.write("g.txt", b"only\n");
+        let o = run_cmd(t.path(), &["read", "g.txt", "f.txt:1-1"]).text;
+        assert!(o.contains("1\tonly\n\nf.txt 10 lines"));
+    }
+
+    // Checks every error message.
+    #[test]
+    fn test_read_errors() {
+        let t = ten();
+        let e = |args: &[&str]| run_cmd(t.path(), args).text;
+        assert!(e(&["read"]).starts_with("error: usage: read"));
+        assert!(e(&["read", "f.txt", "--nope"]).contains("unknown flag"));
+        assert_eq!(e(&["read", "f.txt:20-30"]), "error: f.txt: start line 20 is past the end (10 lines)");
+        assert_eq!(e(&["read", "f.txt:5-2"]), "error: f.txt: range 5-2 is backwards");
+        assert_eq!(e(&["read", "nope.txt"]), "error: nope.txt: no such file or directory");
+        assert_eq!(e(&["read", "f.txt", "--budget", "0"]), "error: --budget must be at least 1");
+        assert_eq!(
+            e(&["read", "f.txt", "-n", "1", "-t", "1"]),
+            "error: use only one of --around, --head, --tail"
+        );
+        assert!(e(&["read", "f.txt:2-3", "-n", "1"]).contains("not both"));
+        assert!(e(&["read", "f.txt", "--budget", "x"]).contains("needs a number"));
+    }
+
+    // Checks target splitting and range parsing edge cases.
+    #[test]
+    fn test_split_target_and_ranges() {
+        assert_eq!(split_target("a.rs:3-5"), ("a.rs", Some((3, Some(5)))));
+        assert_eq!(split_target("a.rs:3-"), ("a.rs", Some((3, None))));
+        assert_eq!(split_target("a.rs:7"), ("a.rs", Some((7, Some(7)))));
+        assert_eq!(split_target("a.rs:0"), ("a.rs:0", None));
+        assert_eq!(split_target("a:b"), ("a:b", None));
+        assert_eq!(split_target(":5"), (":5", None));
+        assert_eq!(split_target("plain"), ("plain", None));
+        assert_eq!(parse_range("x-3"), None);
+        assert_eq!(parse_range("3-x"), None);
+    }
+
+    // Checks the shared indent of shown code lines is removed, ignoring blank lines and fold markers.
+    #[test]
+    fn test_terse_dedent() {
+        let lines = [
+            "10\t        if (x) {",
+            "11~\t            y();",
+            "12\t",
+            "13-15\t⋯ 3 log statement(s)",
+            "16\t        }",
+        ];
+        let n = common_indent(lines.iter().copied());
+        assert_eq!(n, 8);
+        let out: Vec<String> = lines.iter().map(|l| dedent(l, n).into_owned()).collect();
+        assert_eq!(out, ["10\tif (x) {", "11~\t    y();", "12\t", "13-15\t⋯ 3 log statement(s)", "16\t}"]);
+        assert_eq!(common_indent(["1\tclass C", "2\t    int x;"].into_iter()), 0);
+    }
+
+    // Checks PATH:A:B reads as the range A-B, and a colon in the path itself still works.
+    #[test]
+    fn test_colon_range() {
+        assert_eq!(split_target("src/a.cs:10:20"), ("src/a.cs", Some((10, Some(20)))));
+        assert_eq!(split_target("src/a.cs:10-20"), ("src/a.cs", Some((10, Some(20)))));
+        assert_eq!(split_target("a:b.cs:5"), ("a:b.cs", parse_range("5")));
+        assert_eq!(split_target(":1:2").0, ":1");
+        assert_eq!(split_target("a.cs:1:x").0, "a.cs:1:x");
+        assert_eq!(split_target("a.cs::5").0, "a.cs:");
+    }
+
+    // Checks the budget fitting maths directly.
+    #[test]
+    fn test_fit_cases() {
+        assert_eq!(fit(&[1, 1, 1], 10), (3, 3));
+        let costs = vec![10; 20];
+        let (head, tail) = fit(&costs, 100);
+        assert_eq!(head, 7);
+        assert_eq!(tail, 17);
+        assert_eq!(fit(&[50, 50], 10), (1, 2));
+    }
+
+    // Checks fitting when one huge head line leaves the tail reaching the head.
+    #[test]
+    fn test_fit_tail_reaches_head() {
+        assert_eq!(fit(&[100, 1, 1], 50), (1, 1));
+    }
+
+    // Writes a Rust file with a documented, attributed method in each of two impls.
+    fn rust_file() -> TempDir {
+        let t = TempDir::new();
+        let src = "struct A;\n\nimpl A {\n    /// Makes one.\n    #[inline]\n    fn new() -> A {\n        A\n    }\n}\n\nstruct B;\n\nimpl B {\n    fn new() -> B {\n        B\n    }\n}\n";
+        t.write("m.rs", src.as_bytes());
+        t
+    }
+
+    // Checks a qualified name reads the symbol with its doc comment and attribute, labelled in the header.
+    #[test]
+    fn test_symbol_reads_with_docs() {
+        let t = rust_file();
+        let o = run_cmd(t.path(), &["read", "m.rs", "--symbol", "A.new"]);
+        assert_eq!(
+            o.text,
+            "m.rs 17 lines, sha {SHA} [4-8 fn new]\n4\t    /// Makes one.\n5\t    #[inline]\n6\t    fn new() -> A {\n7\t        A\n8\t    }"
+                .replace("{SHA}", &o.text[o.text.find("sha ").expect("sha") + 4..][..8])
+        );
+        let picked = run_cmd(t.path(), &["read", "m.rs", "-s", "new#2"]).text;
+        assert!(picked.contains("[14-16 fn new]") && picked.contains("14\t    fn new() -> B {"));
+        let both = run_cmd(t.path(), &["read", "m.rs", "m.rs", "-s", "B::new"]).text;
+        assert_eq!(both.matches("[14-16 fn new]").count(), 2);
+    }
+
+    // Checks the explanations for ambiguous, unknown and out-of-range names.
+    #[test]
+    fn test_symbol_misses() {
+        let t = rust_file();
+        let many = run_cmd(t.path(), &["read", "m.rs", "-s", "new"]);
+        assert_eq!(many.status, 2);
+        assert_eq!(
+            many.text,
+            "error: m.rs: 'new' matches 2 symbols; pick one with its parameter types, Name(T1, T2), or #N:\n#1 6-8 fn A.new: fn new() -> A {\n#2 14-16 fn B.new: fn new() -> B {"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["read", "m.rs", "-s", "ne"]).text,
+            "error: m.rs: no symbol 'ne'; similar:\n6-8 fn A.new: fn new() -> A {\n14-16 fn B.new: fn new() -> B {"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["read", "m.rs", "-s", "zzz"]).text,
+            "error: m.rs: no symbol 'zzz'; list them with zazzle outline m.rs"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["read", "m.rs", "-s", "new#3"]).text,
+            "error: m.rs: 'new#3' has 2 match(es); pick #1 to #2"
+        );
+    }
+
+    // Checks --symbol refuses other selections, reports load errors and leaves binary files to the plain reader.
+    #[test]
+    fn test_symbol_conflicts_and_files() {
+        let t = rust_file();
+        assert_eq!(
+            run_cmd(t.path(), &["read", "m.rs", "-s", "A", "--head", "2"]).text,
+            "error: --symbol picks the lines itself; drop --around, --head and --tail"
+        );
+        assert_eq!(
+            run_cmd(t.path(), &["read", "m.rs:1-2", "-s", "A"]).text,
+            "error: give either PATH:A-B or --symbol, not both"
+        );
+        assert!(run_cmd(t.path(), &["read", "nope.rs", "-s", "A"]).text.starts_with("error: nope.rs: "));
+        t.write("b.bin", b"\0\x01\x02");
+        assert!(run_cmd(t.path(), &["read", "b.bin", "-s", "A"]).text.starts_with("b.bin: binary, 3 bytes"));
+    }
+
+    // Points the indexer bridge at a fake daemon while a test runs, and writes a C# file in a git work tree.
+    fn csharp(
+        fake: &crate::indexer::tests::FakeIndexer,
+    ) -> (TempDir, Vec<(&'static str, Option<std::ffi::OsString>)>) {
+        let saved = ["ZAZZLE_INDEXER", "ZAZZLE_INDEXER_STATE_DIR"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        std::env::set_var("ZAZZLE_INDEXER", &fake.exe);
+        std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", fake.dir.path());
+        let t = TempDir::new();
+        std::fs::create_dir_all(t.path().join(".git")).expect("git dir");
+        t.write("C.cs", b"using A;\nusing B;\n\npublic class C\n{\n}\n");
+        (t, saved)
+    }
+
+    // Puts back the environment a test changed.
+    fn restore(saved: Vec<(&'static str, Option<std::ffi::OsString>)>) {
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+
+    // Checks HTML and Razor files read as the markup terse view, files with nothing to shorten as source, and --source gives the code.
+    #[test]
+    fn test_markup_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.html"), "<html>\n<!--\nnote\n-->\n<p>hi</p>\n").expect("write");
+        std::fs::write(t.path().join("b.cshtml"), "@using A\n@using B\n<p class=\"a b c d e\">x</p>\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.htm"), "<p>plain</p>\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.html", "--terse"]).text,
+            "a.html 5 lines, terse view: 1 comments; lossy: read without --terse for the source and sha\n1\t<html>\n2-4\t⋯ comment, 3 line(s)\n5\t<p>hi</p>"
+        );
+        let razor = run_cmd(t.path(), &["read", "b.cshtml:3-3", "--terse"]).text;
+        assert!(
+            razor.starts_with(
+                "b.cshtml 3 lines, terse view [3-3]: 1 usings, 1 long attributes; lossy: read without --terse for the source and sha\n"
+            ) && razor.ends_with("\n3~\t<p class=\"a b c …\">x</p>"),
+            "{razor}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.htm", "--terse"]).text.starts_with("c.htm 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.html", "--source"]).text.contains("3\tnote"));
+    }
+
+    // Checks Python, TypeScript and Dart files read as daemon's terse view, and --source gives the code.
+    #[test]
+    fn test_code_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.py"), "import os\nimport sys\nx = 1\n").expect("write");
+        std::fs::write(t.path().join("b.ts"), "function f() {\n  console.log('x');\n  return 1;\n}\n")
+            .expect("write");
+        std::fs::write(t.path().join("c.dart"), "int f() => 1;\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.py", "--terse"]).text,
+            "a.py 3 lines, terse view: 1 imports; lossy: read without --terse for the source and sha\n1-2\t⋯ 2 import(s)\n3\tx = 1"
+        );
+        let ts = run_cmd(t.path(), &["read", "b.ts", "--symbol", "f", "--terse"]).text;
+        assert!(
+            ts.starts_with("b.ts 4 lines, terse view: 1 log statements; lossy: read without --terse for the source and sha\n")
+                && ts.ends_with("\n1\tfunction f() {\n3\t  return 1;\n4\t}"),
+            "{ts}"
+        );
+        assert!(run_cmd(t.path(), &["read", "c.dart", "--terse"]).text.starts_with("c.dart 1 lines, sha "));
+        assert!(run_cmd(t.path(), &["read", "a.py", "--source"]).text.contains("1\timport os"));
+    }
+
+    // Checks CSS, SCSS, Sass and Less files read as the stylesheet terse view.
+    #[test]
+    fn test_style_terse_view() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("a.css"), "@import \"x.css\";\n@import \"y.css\";\na { color: red; }\n")
+            .expect("write");
+        std::fs::write(t.path().join("b.scss"), "a { color: red; }\n").expect("write");
+        assert_eq!(
+            run_cmd(t.path(), &["read", "a.css", "--terse"]).text,
+            "a.css 3 lines, terse view: 1 imports; lossy: read without --terse for the source and sha\n1-2\t⋯ 2 import(s)\n3\ta { color: red; }"
+        );
+        assert!(run_cmd(t.path(), &["read", "b.scss", "--terse"]).text.starts_with("b.scss 1 lines, sha "));
+    }
+
+    // Checks JSON, Markdown, Nim, SQL, XML, SVG, INI, Dockerfile, HCL, Protobuf, GraphQL, CMake and Make files, and minified JSON, XML, CSS and HTML, read as their line-based terse views, and a plain one as source.
+    #[test]
+    fn test_line_terse_views() {
+        let t = TempDir::new();
+        let items: String = (1..=12).map(|n| format!("  {n},\n")).collect();
+        std::fs::write(t.path().join("a.json"), format!("[\n{items}  13\n]\n")).expect("write");
+        std::fs::write(t.path().join("b.md"), "<!-- x -->\n# B\n").expect("write");
+        std::fs::write(t.path().join("c.nim"), "# region x\necho 1\n").expect("write");
+        std::fs::write(t.path().join("d.sql"), "-- region x\nSELECT 1;\n").expect("write");
+        std::fs::write(t.path().join("e.toml"), "a = 1\n").expect("write");
+        let json = run_cmd(t.path(), &["read", "a.json", "--terse"]).text;
+        assert!(
+            json.starts_with("a.json 15 lines, terse view: 1 list items; lossy: read without --terse for the source and sha\n")
+                && json.contains("\n3-13\t⋯ 11 item(s)\n"),
+            "{json}"
+        );
+        assert!(run_cmd(t.path(), &["read", "b.md", "--terse"])
+            .text
+            .ends_with("terse view: 1 comments; lossy: read without --terse for the source and sha\n2\t# B"));
+        assert!(run_cmd(t.path(), &["read", "c.nim", "--terse"]).text.ends_with("\n2\techo 1"));
+        assert!(run_cmd(t.path(), &["read", "d.sql", "--terse"]).text.ends_with("\n2\tSELECT 1;"));
+        assert!(run_cmd(t.path(), &["read", "e.toml", "--terse"]).text.starts_with("e.toml 1 lines, sha "));
+        std::fs::write(t.path().join("f.xml"), "<!--\na\n-->\n<x/>\n").expect("write");
+        std::fs::write(t.path().join("g.ini"), "; a\n; b\n; c\n; d\nk = v\n").expect("write");
+        std::fs::write(t.path().join("Dockerfile"), "# a\n# b\n# c\n# d\nFROM x\n").expect("write");
+        assert!(run_cmd(t.path(), &["read", "f.xml", "--terse"])
+            .text
+            .ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\t<x/>"));
+        assert!(run_cmd(t.path(), &["read", "g.ini", "--terse"])
+            .text
+            .ends_with("\n1-4\t⋯ comment, 4 line(s)\n5\tk = v"));
+        assert!(run_cmd(t.path(), &["read", "Dockerfile", "--terse"])
+            .text
+            .ends_with("\n1-4\t⋯ comment, 4 line(s)\n5\tFROM x"));
+        std::fs::write(t.path().join("h.tf"), "# a\n# b\n# c\nx = 1\n").expect("write");
+        std::fs::write(t.path().join("i.proto"), "// a\n// b\n// c\nsyntax = \"proto3\";\n").expect("write");
+        std::fs::write(t.path().join("j.graphql"), "\"\"\"\na\n\"\"\"\ntype T { a: Int }\n").expect("write");
+        assert!(run_cmd(t.path(), &["read", "h.tf", "--terse"])
+            .text
+            .ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\tx = 1"));
+        assert!(run_cmd(t.path(), &["read", "i.proto", "--terse"])
+            .text
+            .ends_with("\n4\tsyntax = \"proto3\";"));
+        assert!(run_cmd(t.path(), &["read", "j.graphql", "--terse"])
+            .text
+            .ends_with("\n4\ttype T { a: Int }"));
+        std::fs::write(t.path().join("CMakeLists.txt"), "message(STATUS x)\nproject(p)\n").expect("write");
+        std::fs::write(t.path().join("Makefile"), "# a\n# b\n# c\nall:\n").expect("write");
+        assert!(run_cmd(t.path(), &["read", "CMakeLists.txt", "--terse"]).text.ends_with("\n2\tproject(p)"));
+        let rows: String = (1..=30).map(|n| format!("{{\"id\":{n},\"name\":\"row number {n}\"}},")).collect();
+        std::fs::write(t.path().join("k.json"), format!("[{rows}0]\n")).expect("write");
+        let mini = run_cmd(t.path(), &["read", "k.json", "--terse"]).text;
+        assert!(
+            mini.starts_with("k.json 1 lines, terse view: 1 minified lines reformatted, ")
+                && mini.contains("\n1-1\t⋯ "),
+            "{mini}"
+        );
+        let elems: String = (1..=30).map(|n| format!("<e n=\"{n}\">value {n}</e>")).collect();
+        std::fs::write(t.path().join("l.xml"), format!("<r>{elems}</r>")).expect("write");
+        assert!(run_cmd(t.path(), &["read", "l.xml", "--terse"])
+            .text
+            .contains("\n1-1\t⋯ 28 <e> element(s)\n"));
+        let nine: Vec<String> =
+            (1..=9).map(|n| format!("\"key{n}\":[{}]", vec!["\"a long value\""; 30].join(","))).collect();
+        let row = format!("{{{}}}", nine.join(","));
+        std::fs::write(t.path().join("m.json"), format!("[{}]", vec![row; 9].join(","))).expect("write");
+        std::fs::write(
+            t.path().join("n.svg"),
+            "<svg>\n  <metadata>\n  </metadata>\n  <path d=\"M0 0\"/>\n</svg>\n",
+        )
+        .expect("write");
+        assert!(run_cmd(t.path(), &["read", "n.svg", "--terse"])
+            .text
+            .contains("\n2-3\t⋯ <metadata>, 2 line(s)\n"));
+        let icons: String = (1..=40).map(|n| format!(".icon-{n}:before{{content:\"\\f{n:03}\"}}")).collect();
+        std::fs::write(t.path().join("o.min.css"), format!("{icons}\n")).expect("write");
+        assert!(run_cmd(t.path(), &["read", "o.min.css", "--terse"])
+            .text
+            .contains("\n1-1\t⋯ 38 rule(s) setting content\n"));
+        let rows: String = (1..=40).map(|n| format!("<tr><td>row {n}</td></tr>")).collect();
+        std::fs::write(t.path().join("p.html"), format!("<html><body><table>{rows}</table></body></html>\n"))
+            .expect("write");
+        assert!(run_cmd(t.path(), &["read", "p.html", "--terse"])
+            .text
+            .contains("\n1-1\t⋯ 38 <tr> element(s)\n"));
+        let cut = run_cmd(t.path(), &["read", "m.json", "--budget", "200", "--terse"]).text;
+        assert!(cut.contains(" view lines of line 1 elided; read m.json --full\n"), "{cut}");
+        assert!(run_cmd(t.path(), &["read", "Makefile", "--terse"])
+            .text
+            .ends_with("\n1-3\t⋯ comment, 3 line(s)\n4\tall:"));
+    }
+
+    // Checks a C# file reads as the terse view with no sha, by range and by symbol, and --source gives the code and sha.
+    #[test]
+    fn test_csharp_terse_view() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(crate::indexer::tests::viewing);
+        let (t, saved) = csharp(&fake);
+        let whole = run_cmd(t.path(), &["read", "C.cs", "--terse"]).text;
+        assert_eq!(
+            whole,
+            "C.cs 6 lines, terse view: 1 usings, 1 access modifiers; lossy: read without --terse for the source and sha\n1-2\t⋯ 2 using(s)\n3\t\n4~\tclass C\n5\t{\n6\t}"
+        );
+        let part = run_cmd(t.path(), &["read", "C.cs:4-5", "--terse"]).text;
+        assert!(
+            part.starts_with("C.cs 6 lines, terse view [4-5]: ") && part.ends_with("\n4~\tclass C\n5\t{"),
+            "{part}"
+        );
+        let sym = run_cmd(t.path(), &["read", "C.cs", "--symbol", "C", "--terse"]).text;
+        assert!(sym.contains("[4-6 class C]") && sym.ends_with("4~\tclass C\n5\t{\n6\t}"), "{sym}");
+        let source = run_cmd(t.path(), &["read", "C.cs", "--source"]).text;
+        assert!(source.starts_with("C.cs 6 lines, sha ") && source.contains("4\tpublic class C"));
+        assert!(run_cmd(t.path(), &["read", "C.cs", "--anchors"]).text.starts_with("C.cs 6 lines, sha "));
+        let small = run_cmd(t.path(), &["read", "C.cs", "--budget", "8", "--terse"]).text;
+        assert!(small.contains("… lines ") && small.contains(" elided; read C.cs:"), "{small}");
+        restore(saved);
+    }
+
+    // Checks the source comes back, saying why, when the indexer cannot give a view.
+    #[test]
+    fn test_csharp_view_unavailable() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(crate::indexer::tests::viewing);
+        let (t, saved) = csharp(&fake);
+        std::env::set_var("ZAZZLE_INDEXER", t.path().join("missing-indexer"));
+        let out = run_cmd(t.path(), &["read", "C.cs", "--terse"]).text;
+        assert!(out.starts_with("C.cs 6 lines, sha "), "{out}");
+        assert!(out.contains("\n(no terse view: csharp-indexer --version: "), "{out}");
+        assert!(out.contains("4\tpublic class C"));
+        restore(saved);
+    }
+
+    // Checks view line keys parse into the source lines they cover.
+    #[test]
+    fn test_view_key() {
+        assert_eq!(view_key("12"), Some((12, 12)));
+        assert_eq!(view_key("12~"), Some((12, 12)));
+        assert_eq!(view_key("3-9"), Some((3, 9)));
+        assert_eq!(view_key("x"), None);
+        assert_eq!(view_key("3-x"), None);
+        assert_eq!(
+            render_terse(
+                "f.cs",
+                "f.cs 1 lines",
+                (1, 1),
+                1,
+                &Opts { sel: Select::Whole, ctx: 0, budget: 100, anchors: false, terse: true, rev: None },
+                ""
+            ),
+            "f.cs 1 lines, terse view: nothing to shorten; lossy: read without --terse for the source and sha"
+        );
+    }
+
+    // Checks C# symbols read by their namespace-qualified names, for block and file-scoped namespaces.
+    #[test]
+    fn test_csharp_qualified_symbols() {
+        let t = TempDir::new();
+        t.write("A.cs", b"namespace Acme.Shop.Orders\n{\n    public class OrderService\n    {\n        public int Submit(int id) { return id; }\n        public int Submit(string c) { return 0; }\n    }\n}\n");
+        t.write("B.cs", b"namespace Acme.Shop.Billing;\n\npublic class Invoice\n{\n    public decimal Total() => 0m;\n}\n");
+        let read = |f: &str, q: &str| run_cmd(t.path(), &["read", f, "--source", "--symbol", q]).text;
+        assert!(read("A.cs", "Acme.Shop.Orders.OrderService.Submit(int)").contains("[5-5 method Submit]"));
+        assert!(read("A.cs", "Orders.OrderService.Submit(string)").contains("[6-6 method Submit]"));
+        assert!(read("B.cs", "Acme.Shop.Billing.Invoice.Total").contains("[5-5 method Total]"));
+        assert!(read("B.cs", "Billing.Invoice").contains("[3-6 class Invoice]"));
+        assert!(read("B.cs", "Invoice.Total").contains("[5-5 method Total]"));
+    }
+
+    // A daemon whose find_symbol finds `Submit` in one file, `Run` in two and nothing else, under the first root's name.
+    fn declaring(
+        hello: &serde_json::Value,
+        req: &serde_json::Value,
+    ) -> (serde_json::Value, Option<serde_json::Value>) {
+        let root = hello["roots"][0].as_str().unwrap_or("").split('=').next().unwrap_or("").to_string();
+        let text = match req.pointer("/params/arguments/name").and_then(serde_json::Value::as_str) {
+            Some("Acme.Shop.Orders.OrderService.Submit") | Some("Submit") => format!("{root}:A.cs:5 method Acme.Shop.Orders.OrderService.Submit | int Submit(int id)\n{root}:A.cs:6 method Acme.Shop.Orders.OrderService.Submit | int Submit(string c)\n[2 symbols]"),
+            Some("Run") => format!("{root}:A.cs:3 method A.Run | void Run()\n{root}:B.cs:3 method B.Run | void Run()\n[2 symbols]"),
+            _ => "[0 symbols]".to_string(),
+        };
+        (
+            serde_json::json!({"ok": true}),
+            Some(
+                serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}),
+            ),
+        )
+    }
+
+    // Checks --symbol without a path: one declaring file is read, several are listed, none and a missing indexer are explained.
+    #[test]
+    fn test_symbol_without_path() {
+        let _g = crate::testutil::env_lock();
+        let fake = crate::indexer::tests::FakeIndexer::start(declaring);
+        let saved: Vec<_> = ["ZAZZLE_INDEXER", "ZAZZLE_INDEXER_STATE_DIR"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        std::env::set_var("ZAZZLE_INDEXER", &fake.exe);
+        std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", fake.dir.path());
+        let t = TempDir::new();
+        std::fs::create_dir_all(t.path().join(".git")).expect("git");
+        t.write("A.cs", b"namespace Acme.Shop.Orders\n{\n    public class OrderService\n    {\n        public int Submit(int id) { return id; }\n        public int Submit(string c) { return 0; }\n    }\n}\n");
+        let read = |q: &str| run_cmd(t.path(), &["read", "--source", "--symbol", q]).text;
+        assert!(read("Acme.Shop.Orders.OrderService.Submit(string)").contains("[6-6 method Submit]"));
+        assert!(read("Submit#1").contains("[5-5 method Submit]"));
+        let fell_back = read("Wrong.Ns.OrderService.Submit(string)");
+        assert!(fell_back.contains("[6-6 method Submit]"), "{fell_back}");
+        let several = read("Run");
+        assert!(several.starts_with("error: 'Run' is declared in 2 files; give the file too, or qualify the name:\nA.cs:3 method A.Run"), "{several}");
+        assert_eq!(
+            read("Nothing"),
+            "error: no declaration of 'Nothing' in the index; search with zazzle find"
+        );
+        std::env::set_var("ZAZZLE_INDEXER", t.path().join("missing"));
+        assert!(read("Submit").starts_with("error: --symbol without a path looks it up in the index: "));
+        assert_eq!(run_cmd(t.path(), &["read"]).text, format!("error: {USAGE}"));
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+}
