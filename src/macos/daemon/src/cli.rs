@@ -115,6 +115,7 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "hook" => crate::hook::parse(rest).map(Cli::Hook),
         "llm" => Ok(Cli::Llm(rest.to_vec())),
         "version" | "--version" => Ok(Cli::Version),
+        "help" | "--help" | "-h" => Ok(Cli::Help("daemon")),
         _ => Err(USAGE.into()),
     }
 }
@@ -517,6 +518,9 @@ mod tests {
         assert_eq!(parse(&v(&["status", "-x"])).unwrap_err(), "usage: zazzle daemon status [--json]");
         assert_eq!(parse(&v(&["tools", "a", "b"])).unwrap_err(), "usage: zazzle tools [--json]");
         assert_eq!(parse(&v(&["version"])), Ok(Cli::Version));
+        for h in ["help", "--help", "-h"] {
+            assert_eq!(parse(&v(&[h])), Ok(Cli::Help("daemon")));
+        }
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));
         assert!(matches!(parse(&v(&["proxy", "--", "srv"])), Ok(Cli::Proxy(_))));

@@ -12,6 +12,7 @@ zazzle: a launcher (`zazzle`, short name `z`) and the macOS tools it runs, in Ru
 - Each tool is one folder `src/macos/<name>` with a plain descriptive name; only the launcher is called zazzle.
 - Only `zazzle` and `z` go on PATH; every other binary installs to `libexec/zazzle/` and runs as `zazzle TOOL ARGS`. A new tool needs an entry in `TOOLS` (`src/macos/zazzle/src/zazzle_core.h`), `release/pack.sh` callers, `release/bottle.sh`, `release/formula.sh` and `release.yml`.
 - Name a new Rust crate and its binary after its folder (`zazz-script/runner` is crate `zazz-script-runner`).
+- Every tool answers `--version` (`NAME VERSION` on the first line, which `zazzle tools` reads) and `help`; a tool that keeps state has `status [--json]` whose JSON starts with `tool`, `version` and `ok`.
 
 ## Commands (run in `src/macos/`)
 - Build: `cargo build --release`
