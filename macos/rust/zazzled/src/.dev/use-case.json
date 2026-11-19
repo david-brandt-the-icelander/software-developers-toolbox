@@ -229,8 +229,8 @@
     },
     {
       "id": "brief-before-a-task",
-      "name": "Get only the rules and skills a task needs",
-      "description": "Before a task, a coding agent asks for a brief with its intent and gets the rule sections and skills the user's local model picked, verbatim.",
+      "name": "Get the rules a task must follow and the skills it needs",
+      "description": "Before a task, a coding agent asks for a brief with its intent, paths and purposes and gets every rule section that applies, verbatim, plus the skills the user's local model ranked as needed.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/brief.rs",
@@ -249,17 +249,16 @@
       "goal": "Follow the rules and skills that apply to what it is about to do without reading every rule file for the folder.",
       "actorDocument": "Actors/coding-agent.md",
       "preconditions": [
-        "The user has downloaded a local model (`zazzle agent llm --model NAME`).",
-        "zazzled can find zazzle-llm (ZAZZLE_LLM, beside zazzled, or the tool store)."
+        "For skills to be ranked, the user has downloaded a local model (`zazzle agent llm --model NAME`) and zazzled can find zazzle-llm (ZAZZLE_LLM, beside zazzled, or the tool store)."
       ],
       "postconditions": [
-        "The agent has the chosen sections verbatim with their paths and line ranges, and one line naming what was left out."
+        "The agent has every rule section that applies, verbatim with paths and line ranges, the ranked skills that fit the budget, and one line each for what it already had and what was left out; the session's ledger records what was printed."
       ],
       "flow": [
         {
           "id": "ask",
           "actor": "Coding agent",
-          "action": "Calls zazzle_brief with its intent and the paths it will touch, or runs `zazzle brief INTENT --path PATH`.",
+          "action": "Calls zazzle_brief with its intent, the paths it will touch and its purposes, or runs `zazzle brief INTENT --path PATH --purpose NAME`.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/brief.rs",
@@ -267,7 +266,7 @@
             },
             {
               "path": "macos/rust/zazzled/src/cmd/mod.rs",
-              "symbol": "dispatch"
+              "symbol": "brief"
             }
           ],
           "participantKind": "actor",
@@ -276,7 +275,7 @@
         {
           "id": "collect",
           "actor": "zazzled",
-          "action": "Lists the rule and skill files that apply to each path and splits them into sections: rule files at their headings, skills whole, rules first.",
+          "action": "Lists the rule and skill files for the paths and purposes (the session's when none are given), splits rule files at their headings inside the purpose ranges, and sets aside what the session's ledger shows it already has.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/brief.rs",
@@ -285,6 +284,10 @@
             {
               "path": "macos/rust/zazzled/src/brief.rs",
               "symbol": "sections"
+            },
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "delivered"
             }
           ],
           "participantKind": "system"
@@ -292,11 +295,11 @@
         {
           "id": "judge",
           "actor": "zazzled",
-          "action": "Hands the numbered menu to zazzle-llm at low effort and temperature 0 with a grammar that forces a y/n verdict per section.",
+          "action": "Hands only the skills not yet delivered, by description, to zazzle-llm at low effort and temperature 0 with a grammar that forces h, m or n for each.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/brief.rs",
-              "symbol": "brief"
+              "symbol": "rank"
             },
             {
               "path": "macos/rust/zazzled/src/brief.rs",
@@ -316,19 +319,19 @@
         {
           "id": "answer",
           "actor": "zazzled",
-          "action": "Prints the sections judged y verbatim with their line ranges and names the rest in one line, within an 8000-token budget.",
+          "action": "Prints every rule section verbatim, then the needed skills whole while they fit the budget (default 8000 tokens), names what was already delivered and what was left out, and records what it printed on the shared ledger.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/brief.rs",
-              "symbol": "chosen"
+              "symbol": "brief"
             },
             {
               "path": "macos/rust/zazzled/src/brief.rs",
-              "symbol": "render"
+              "symbol": "ranked"
             },
             {
-              "path": "macos/rust/zazzled/src/cmd/mod.rs",
-              "symbol": "produce"
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "record"
             }
           ],
           "participantKind": "system"
@@ -348,12 +351,23 @@
         },
         {
           "atStep": "judge",
-          "condition": "No model is downloaded, zazzle-llm fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
-          "outcome": "An error naming the reason, adding that `zazzle get-rules PATH` sends the rules without the local model.",
+          "condition": "There are no skills left to rank.",
+          "outcome": "The rule sections are printed without asking the model.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/brief.rs",
-              "symbol": "run"
+              "symbol": "rank"
+            }
+          ]
+        },
+        {
+          "atStep": "judge",
+          "condition": "No model is downloaded, zazzle-llm fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "The rule sections are still printed; a line names the reason and the skills are listed as not ranked.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "brief"
             },
             {
               "path": "macos/rust/zazzled/src/llm.rs",

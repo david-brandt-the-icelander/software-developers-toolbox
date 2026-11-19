@@ -1,5 +1,6 @@
 // `zazzle investigate QUESTION --path P.. --symbol S..`: the local model resolves a repository question with bounded read-only lookups inside the scope, and its answer comes back as findings whose `path:line` citations zazzle has checked and quoted, plus what it could not establish.
 mod cite;
+mod seed;
 
 use crate::cmd::{Ctx, Output};
 use crate::llm::Reply;
@@ -13,6 +14,10 @@ const LOOKUP_BUDGET: &str = "1500";
 const LOOKUP_MAX: &str = "15";
 const SEEN_TOKENS: usize = 12_000;
 const REPLY_TOKENS: &str = "1500";
+const EVIDENCE_TOKENS: usize = 6000;
+
+// What the model is told when it answers with nothing after lookups that found something.
+const REPAIR: &str = "Your answer was empty, but the lookups above found evidence. Reply now with ANSWER, then FINDING path:A-B lines citing only lines shown above, and UNKNOWN lines for what the evidence does not show. No lookups.";
 
 // The system message: what the model may do each turn and how to answer.
 const SYSTEM: &str = "You investigate a code repository to answer one question, using read-only lookups. Each turn, reply with either lookups or the answer, nothing else.
@@ -144,6 +149,11 @@ struct Trail {
     seen: Vec<(String, String)>,
     rules: String,
     lookups: Vec<String>,
+    // Each lookup run, by its normalized key, with why it failed (None when it found something).
+    done: Vec<(String, Option<String>)>,
+    // Indexes into `seen` of the lookups that found something.
+    evidence: Vec<usize>,
+    skipped: usize,
 }
 
 impl Trail {
@@ -173,20 +183,67 @@ impl Trail {
     }
 }
 
-// Runs one lookup through zazzle's own commands, confined to the scope; the rules that apply to what it read go to the trail's rules, not into the evidence.
-fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trail) -> String {
+// Splits `path:A-B` into the path and the range, when the part after the last colon is a line range.
+fn path_part(p: &str) -> (&str, &str) {
+    p.rsplit_once(':').filter(|(_, r)| r.chars().all(|c| c.is_ascii_digit() || c == '-')).unwrap_or((p, ""))
+}
+
+// The key two lookups share when they would return the same thing: the canonical file and range for reads and outlines, the words otherwise.
+fn key(lctx: &Ctx, l: &Lookup) -> String {
+    match l {
+        Lookup::Read(p) | Lookup::Outline(p) => {
+            let (file, range) = path_part(p);
+            let canon = std::fs::canonicalize(lctx.cwd.join(file)).unwrap_or_else(|_| lctx.cwd.join(file));
+            let kind = if matches!(l, Lookup::Read(_)) { "read" } else { "outline" };
+            format!("{kind} {}:{range}", canon.display())
+        }
+        _ => l.label().split_whitespace().collect::<Vec<_>>().join(" "),
+    }
+}
+
+// Tells why a lookup's output found nothing (a refusal, an error, no references or no matches), or None when it found something.
+fn failure(text: &str, status: u8) -> Option<String> {
+    let first =
+        text.lines().map(str::trim).find(|l| !(l.starts_with("[r:") && l.ends_with(']'))).unwrap_or("");
+    let empty = first.starts_with("refused:")
+        || first.starts_with("no references to ")
+        || first.starts_with("no matches in ")
+        || first.is_empty();
+    (status != 0 || empty).then(|| first.chars().take(160).collect())
+}
+
+// Runs a lookup unless the same one already ran: records it and its output, and returns whether it found something; a repeat returns the reason it is not run again.
+fn step(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trail) -> Result<bool, String> {
+    let k = key(lctx, l);
+    if let Some((_, why)) = trail.done.iter().find(|(d, _)| *d == k) {
+        trail.skipped += 1;
+        return Err(match why {
+            None => format!("{} (its output is already above)", l.label()),
+            Some(w) => format!("{} (it already failed: {w})", l.label()),
+        });
+    }
+    let (text, status) = look(lctx, scope, plan, l, trail);
+    let why = failure(&text, status);
+    let ok = why.is_none();
+    trail.done.push((k, why));
+    trail.lookups.push(l.label());
+    if ok {
+        trail.evidence.push(trail.seen.len());
+    }
+    trail.seen.push((l.label(), text));
+    Ok(ok)
+}
+
+// Runs one lookup through zazzle's own commands, confined to the scope, returning its text and status; the rules that apply to what it read go to the trail's rules, not into the evidence.
+fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trail) -> (String, u8) {
     let path_ok = |p: &str| {
-        let file = p
-            .rsplit_once(':')
-            .filter(|(_, r)| r.chars().all(|c| c.is_ascii_digit() || c == '-'))
-            .map_or(p, |(f, _)| f);
-        std::fs::canonicalize(lctx.cwd.join(file)).is_ok_and(|f| cite::in_scope(&f, scope))
+        std::fs::canonicalize(lctx.cwd.join(path_part(p).0)).is_ok_and(|f| cite::in_scope(&f, scope))
     };
     let args: Vec<String> = match l {
         Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => {
-            return format!(
-                "refused: {p} is not an existing path inside the scope ({})",
-                plan.scope.join(", ")
+            return (
+                format!("refused: {p} is not an existing path inside the scope ({})", plan.scope.join(", ")),
+                0,
             )
         }
         Lookup::Read(p) => vec!["read".into(), p.clone(), "--budget".into(), LOOKUP_BUDGET.into()],
@@ -206,7 +263,45 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     args.insert(1, "--disable-session-deduping".into());
     let o = crate::cmd::run(lctx, &args);
     trail.rules.push_str(&o.notes);
-    o.text
+    (o.text, o.status)
+}
+
+// Resolves the starting symbols before any inference: their refs inside the scope are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
+fn seeds(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, trail: &mut Trail) -> Vec<(String, Vec<String>)> {
+    let mut missed = Vec::new();
+    for s in &plan.symbols {
+        if step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail) == Ok(false) {
+            let c = seed::candidates(lctx.engine, &lctx.cwd, scope, s);
+            let text = match c.is_empty() {
+                true => format!("{s} is not inside the scope, and nothing there resembles it."),
+                false => format!(
+                    "{s} is not inside the scope. Real files and symbols there that resemble it:\n{}",
+                    c.join("\n")
+                ),
+            };
+            trail.seen.push((format!("SEED {s}"), text));
+            missed.push((s.clone(), c));
+        }
+    }
+    missed
+}
+
+// The report when no starting symbol exists in the scope and nothing resembles any of them: the model is not asked.
+fn no_evidence(plan: &Plan) -> Output {
+    Output::plain(format!(
+        "investigate: {}\nscope: {}\nno evidence: none of the starting symbols ({}) occurs inside the scope, and no file or symbol there resembles them.\n-- the local model was not asked. Check the names (zazzle find-symbol NAME, zazzle refs NAME) or widen --path.",
+        plan.question,
+        plan.scope.join(", "),
+        plan.symbols.join(", ")
+    ))
+}
+
+// Tells whether a reply holds no answer at all: empty, or an ANSWER with no findings and no unknowns.
+fn empty(r: &Reply) -> bool {
+    match cite::parse_answer(&r.text) {
+        Some(a) => a.findings.is_empty() && a.unknowns.is_empty(),
+        None => r.text.trim().is_empty(),
+    }
 }
 
 // Investigates with the given local model and returns the report, with the rules for the cited and read files as notes for the caller.
@@ -228,17 +323,26 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         stdin: std::cell::RefCell::new(None),
         caller: std::cell::RefCell::new(None),
     };
-    let mut trail = Trail { seen: Vec::new(), rules: String::new(), lookups: Vec::new() };
-    for s in &plan.symbols {
-        let l = Lookup::Refs(s.clone());
-        let text = look(&lctx, &scope, &plan, &l, &mut trail);
-        trail.lookups.push(l.label());
-        trail.seen.push((l.label(), text));
+    let mut trail = Trail {
+        seen: Vec::new(),
+        rules: String::new(),
+        lookups: Vec::new(),
+        done: Vec::new(),
+        evidence: Vec::new(),
+        skipped: 0,
+    };
+    let missed = seeds(&lctx, &scope, &plan, &mut trail);
+    if !plan.symbols.is_empty()
+        && missed.len() == plan.symbols.len()
+        && missed.iter().all(|(_, c)| c.is_empty())
+    {
+        return Ok(no_evidence(&plan));
     }
-    let (mut answer, mut stop, mut cut, mut turns, mut strayed) = (None, String::new(), false, 0, false);
-    for step in 1..=plan.steps {
-        turns = step;
-        let left = if step == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step };
+    let mut st = Status { stop: String::new(), cut: false, turns: 0, partial: false, missed };
+    let (mut answer, mut strayed, mut stalled) = (None, false, false);
+    for step_no in 1..=plan.steps {
+        st.turns = step_no;
+        let left = if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
         let system = match trail.rules.trim() {
             "" => SYSTEM.to_string(),
             r => format!(
@@ -249,11 +353,35 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
             Ok(r) => r,
             Err(e) if trail.seen.is_empty() => return Err(e),
             Err(e) => {
-                stop = format!("the local model failed: {e}");
+                st.stop = format!("the local model failed: {e}");
                 break;
             }
         };
-        cut |= reply.truncated;
+        st.cut |= reply.truncated;
+        if empty(&reply) && !trail.evidence.is_empty() {
+            trail.seen.push(("NOTE".into(), REPAIR.into()));
+            st.turns += 1;
+            match local.ask(&system, &trail.transcript(&plan, 0)) {
+                Ok(r) if !empty(&r) && cite::parse_answer(&r.text).is_some() => {
+                    st.cut |= r.truncated;
+                    answer = cite::parse_answer(&r.text);
+                }
+                Ok(r) => {
+                    st.partial = true;
+                    st.stop = format!(
+                        "the local model gave no answer after {} lookups that found evidence, and none after one repair turn (it began: {})",
+                        trail.evidence.len(),
+                        began(&r.text)
+                    );
+                }
+                Err(e) => {
+                    st.partial = true;
+                    st.stop =
+                        format!("the local model gave an empty answer, and the repair turn failed: {e}");
+                }
+            }
+            break;
+        }
         if let Some(a) = cite::parse_answer(&reply.text) {
             answer = Some(a);
             break;
@@ -266,7 +394,7 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
             continue;
         }
         if left == 0 || lookups.is_empty() {
-            stop = match left {
+            st.stop = match left {
                 0 => format!(
                     "it gave no ANSWER when its lookups ran out (its reply began: {})",
                     began(&reply.text)
@@ -278,13 +406,27 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
             };
             break;
         }
+        let mut repeats = Vec::new();
+        let mut ran = 0;
         for l in lookups {
-            let text = look(&lctx, &scope, &plan, &l, &mut trail);
-            trail.lookups.push(l.label());
-            trail.seen.push((l.label(), text));
+            match step(&lctx, &scope, &plan, &l, &mut trail) {
+                Ok(_) => ran += 1,
+                Err(why) => repeats.push(why),
+            }
+        }
+        if !repeats.is_empty() {
+            let note = format!("Not run again: {}. Ask for something new, or ANSWER.", repeats.join("; "));
+            trail.seen.push(("NOTE".into(), note));
+        }
+        if ran == 0 {
+            if stalled {
+                st.stop = "it asked only for lookups it had already made, twice".into();
+                break;
+            }
+            stalled = true;
         }
     }
-    Ok(report(ctx, &plan, &scope, &trail, answer, Status { stop, cut, turns }))
+    Ok(report(ctx, &plan, &scope, &trail, answer, st))
 }
 
 // Quotes the start of a reply on one line, for a note to the model or the report.
@@ -298,11 +440,13 @@ fn began(reply: &str) -> String {
     }
 }
 
-// How the run ended: why it stopped early, whether a reply was cut short, and the turns used.
+// How the run ended: why it stopped early, whether a reply was cut short, the turns used, whether only the evidence can be returned, and the starting symbols not found with their candidates.
 struct Status {
     stop: String,
     cut: bool,
     turns: usize,
+    partial: bool,
+    missed: Vec<(String, Vec<String>)>,
 }
 
 // Formats the checked findings, rejected citations and unknowns, with the caller's rules for the files involved as notes.
@@ -356,13 +500,25 @@ fn report(
             unknowns.iter().map(|u| format!("- {u}\n")).collect::<String>()
         ));
     }
-    let state = match (st.stop.is_empty(), st.cut) {
-        (true, false) => "complete".to_string(),
-        (true, true) => "INCOMPLETE: a reply was cut short by the token limit".to_string(),
-        (false, _) => format!("INCOMPLETE: {}", st.stop),
+    for (name, c) in &st.missed {
+        let alts = if c.is_empty() { "nothing in scope resembles it".to_string() } else { c.join("; ") };
+        out.push_str(&format!("starting symbol not in scope: {name} (candidates: {alts})\n"));
+    }
+    if st.partial {
+        out.push_str(&evidence(trail));
+    }
+    let state = match (st.stop.is_empty(), st.cut, st.partial) {
+        (_, _, true) => format!("PARTIAL: {}; the evidence it gathered is above, verbatim", st.stop),
+        (true, false, _) => "complete".to_string(),
+        (true, true, _) => "INCOMPLETE: a reply was cut short by the token limit".to_string(),
+        (false, _, _) => format!("INCOMPLETE: {}", st.stop),
+    };
+    let skipped = match trail.skipped {
+        0 => String::new(),
+        n => format!(", {n} repeated lookups not run again"),
     };
     out.push_str(&format!(
-        "-- local model, {} of {} turns, {} lookups ({}); {state}. Excerpts are read from the files; claims are the model's.",
+        "-- local model, {} of {} turns, {} lookups ({}){skipped}; {state}. Excerpts are read from the files; claims are the model's.",
         st.turns,
         plan.steps,
         trail.lookups.len(),
@@ -377,6 +533,26 @@ fn report(
         o.notes = crate::nested::for_paths(&ctx.cwd, &files, &purposes, &l);
     }
     o
+}
+
+// The lookups that found something, verbatim, up to a token cap at lookup boundaries; the rest are named.
+fn evidence(trail: &Trail) -> String {
+    let (mut out, mut used, mut left) =
+        (String::from("evidence gathered (lookup output, verbatim):\n"), 0, Vec::new());
+    for &i in &trail.evidence {
+        let (label, text) = &trail.seen[i];
+        let cost = crate::tokens::estimate(text);
+        if used + cost > EVIDENCE_TOKENS && used > 0 {
+            left.push(label.clone());
+            continue;
+        }
+        used += cost;
+        out.push_str(&format!("### {label}\n{}\n", text.trim_end()));
+    }
+    if !left.is_empty() {
+        out.push_str(&format!("(over ~{EVIDENCE_TOKENS} tokens, not shown: {})\n", left.join("; ")));
+    }
+    out
 }
 
 // The MCP tool for investigate.

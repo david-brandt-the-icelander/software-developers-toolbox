@@ -50,7 +50,7 @@ pub fn file_key(canon: &Path, text: &str) -> String {
 }
 
 // The key of one line range of a file's current content.
-fn range_key(canon: &Path, text: &str, (a, b): (usize, usize)) -> String {
+pub fn range_key(canon: &Path, text: &str, (a, b): (usize, usize)) -> String {
     format!("{}:{a}-{b}", file_key(canon, text))
 }
 

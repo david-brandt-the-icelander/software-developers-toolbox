@@ -13,8 +13,8 @@
     { "id": "Model", "name": "Model", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["ask: llm::ask at low effort, temperature 0, 1500 tokens"] },
     { "id": "Plan", "name": "Plan", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["question: String", "scope: Vec<String>", "symbols: Vec<String>", "steps: usize"] },
     { "id": "Lookup", "name": "Lookup", "kind": "enum", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["Read(String)", "Refs(String)", "Outline(String)", "Find(String)"] },
-    { "id": "Trail", "name": "Trail", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["seen: Vec<(String, String)>", "rules: String", "lookups: Vec<String>", "transcript(plan, left) -> String"] },
-    { "id": "Status", "name": "Status", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["stop: String", "cut: bool", "turns: usize"] },
+    { "id": "Trail", "name": "Trail", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["seen: Vec<(String, String)>", "rules: String", "lookups: Vec<String>", "done: Vec<(String, Option<String>)>", "evidence: Vec<usize>", "skipped: usize"] },
+    { "id": "Status", "name": "Status", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["stop: String", "cut: bool", "turns: usize", "partial: bool", "missed: Vec<(String, Vec<String>)>"] },
     { "id": "Answer", "name": "Answer", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["findings: Vec<Claim>", "unknowns: Vec<String>"] },
     { "id": "Claim", "name": "Claim", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["path: String", "start: usize", "end: usize", "text: String"] },
     { "id": "Checked", "name": "Checked", "kind": "enum", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["Verified { excerpt }", "Rejected(String)"] }

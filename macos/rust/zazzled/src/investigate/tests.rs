@@ -253,12 +253,18 @@ fn test_investigate_ranges_refusals_and_cap() {
         .collect();
     t.write("api/Big.cs", big.as_bytes());
     let e = crate::engine::Engine::new();
-    let turn = "READ api/Big.cs:1-400\nREAD api/Big.cs:401-800\nREAD api/Big.cs:801-1200";
+    let turn = |k: usize| {
+        (0..3)
+            .map(|i| format!("READ api/Big.cs:{}-{}", k * 3 + i * 400 + 1, k * 3 + i * 400 + 400))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let (t0, t1, t2) = (turn(0), turn(1), turn(2));
     let s = Script::new(vec![
         Ok("OUTLINE sim/Fake.cs\nREAD api/Endpoint.cs:2-3\nREAD api/Endpoint.cs:x"),
-        Ok(turn),
-        Ok(turn),
-        Ok(turn),
+        Ok(&t0),
+        Ok(&t1),
+        Ok(&t2),
         Ok("ANSWER\nUNKNOWN nothing more"),
     ]);
     let o = go(&root, &e, &s, &["q", "--path", "api", "--steps", "12"]).expect("run");
@@ -273,4 +279,109 @@ fn test_investigate_ranges_refusals_and_cap() {
     let last = &seen.last().expect("last").1;
     assert!(last.contains("No lookups left: reply with ANSWER now."), "the cap ends the lookups early");
     assert!(seen.len() < 12 && o.text.contains("complete."), "{}", o.text);
+}
+
+// Regression for the logged seed miss: the starting symbol is not in the scope, the model kept asking for it, and the run ended with nothing. Now the miss is resolved before inference with real candidates, repeated failed lookups are not run again, and a seed with nothing like it returns a clear no-evidence result without asking the model.
+#[test]
+fn test_investigate_regression_seed_miss() {
+    let (t, root) = repo();
+    t.write(
+        "api/WashSubscriptionService.cs",
+        b"class WashSubscriptionService {\n  bool AuthorizeWash(int id) {\n    return Core.Handoff(id);\n  }\n}\n",
+    );
+    let e = crate::engine::Engine::new();
+    let s = Script::new(vec![
+        Ok("REFS AuthorizeWashBySubscription\nFIND AuthorizeWashBySubscription"),
+        Ok("REFS AuthorizeWashBySubscription\nFIND AuthorizeWashBySubscription"),
+        Ok("REFS AuthorizeWashBySubscription"),
+    ]);
+    let o = go(&root, &e, &s, &["Who calls it?", "--path", "api", "--symbol", "AuthorizeWashBySubscription"])
+        .expect("run");
+    let seen = s.seen.borrow();
+    assert!(
+        seen[0].1.contains("### SEED AuthorizeWashBySubscription\nAuthorizeWashBySubscription is not inside the scope. Real files and symbols there that resemble it:\nfile api/WashSubscriptionService.cs\nsymbol AuthorizeWash (api/WashSubscriptionService.cs:2)"),
+        "{}",
+        seen[0].1
+    );
+    assert!(
+        seen[1].1.contains("Not run again: REFS AuthorizeWashBySubscription (it already failed: no references to AuthorizeWashBySubscription"),
+        "{}",
+        seen[1].1
+    );
+    assert_eq!(seen.len(), 3, "two turns of only repeats end the run");
+    let text = &o.text;
+    assert!(text.contains("starting symbol not in scope: AuthorizeWashBySubscription (candidates: file api/WashSubscriptionService.cs; symbol AuthorizeWash (api/WashSubscriptionService.cs:2)"), "{text}");
+    assert!(text.contains("2 lookups (REFS AuthorizeWashBySubscription; FIND AuthorizeWashBySubscription), 4 repeated lookups not run again; INCOMPLETE: it asked only for lookups it had already made, twice"), "{text}");
+    let silent = Script::new(vec![Ok("ANSWER\nUNKNOWN should not be asked")]);
+    let none = go(&root, &e, &silent, &["q", "--path", "api", "--symbol", "Zebra"]).expect("none");
+    assert!(silent.seen.borrow().is_empty(), "no evidence, so the model is not asked");
+    assert!(
+        none.text.contains("no evidence: none of the starting symbols (Zebra) occurs inside the scope"),
+        "{}",
+        none.text
+    );
+    let both = Script::new(vec![Ok("ANSWER\nFINDING api/Endpoint.cs:2 Handle is here")]);
+    let o = go(&root, &e, &both, &["q", "--path", "api", "--symbol", "Zebra", "--symbol", "Handle"])
+        .expect("both");
+    assert!(
+        o.text.contains("findings (1 verified)")
+            && o.text.contains("Zebra (candidates: nothing in scope resembles it)"),
+        "{}",
+        o.text
+    );
+}
+
+// Regression for the logged empty answer: the model read the right file, then answered with nothing, and the caller got no findings and no evidence. Now it gets one repair turn; if that is empty too, the report is PARTIAL and carries the evidence verbatim.
+#[test]
+fn test_investigate_regression_empty_answer() {
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let s = Script::new(vec![Ok("READ api/Endpoint.cs\nFIND Nowhere"), Ok("ANSWER"), Ok("")]);
+    let o = go(&root, &e, &s, &["Where is the key checked?", "--path", "api"]).expect("run");
+    let seen = s.seen.borrow();
+    assert_eq!(seen.len(), 3, "one repair turn, no more");
+    assert!(
+        seen[2].1.contains("### NOTE\nYour answer was empty") && seen[2].1.contains("No lookups left"),
+        "{}",
+        seen[2].1
+    );
+    let text = &o.text;
+    assert!(
+        text.contains("evidence gathered (lookup output, verbatim):\n### READ api/Endpoint.cs\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("throw new Missing();") && !text.contains("### FIND Nowhere"),
+        "only lookups that found something: {text}"
+    );
+    assert!(text.contains("3 of 6 turns") && text.contains("PARTIAL: the local model gave no answer after 1 lookups that found evidence, and none after one repair turn (it began: an empty reply); the evidence it gathered is above, verbatim"), "{text}");
+    let fixed = Script::new(vec![
+        Ok("READ api/Endpoint.cs"),
+        Ok(""),
+        Ok("ANSWER\nFINDING api/Endpoint.cs:3 a request without a key is refused"),
+    ]);
+    let o = go(&root, &e, &fixed, &["q", "--path", "api"]).expect("repaired");
+    assert!(
+        o.text.contains("findings (1 verified)")
+            && o.text.contains("complete.")
+            && !o.text.contains("evidence gathered"),
+        "{}",
+        o.text
+    );
+    let failed = Script::new(vec![Ok("READ api/Endpoint.cs"), Ok("ANSWER"), Err("local model: timeout")]);
+    let o = go(&root, &e, &failed, &["q", "--path", "api"]).expect("failed repair");
+    assert!(
+        o.text.contains(
+            "PARTIAL: the local model gave an empty answer, and the repair turn failed: local model: timeout"
+        ),
+        "{}",
+        o.text
+    );
+    let nothing = Script::new(vec![Ok("FIND Nowhere"), Ok("ANSWER")]);
+    let o = go(&root, &e, &nothing, &["q", "--path", "api"]).expect("no evidence");
+    assert!(
+        o.text.contains("complete.") && !o.text.contains("PARTIAL"),
+        "without evidence an empty answer is just empty: {}",
+        o.text
+    );
 }
