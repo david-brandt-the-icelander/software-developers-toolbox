@@ -13,8 +13,6 @@ path = "src/lib.rs"
 [dependencies]
 # Content hashes for etags.
 blake3 = "1"
-# O_NOATIME, posix_fadvise and mkfifo (tests).
-libc = "0.2"
 # Fast newline scans for line slicing.
 memchr = "2"
 # The search pattern, compiled here and scanned by the daemon.
@@ -27,7 +25,13 @@ serde_json = "1"
 similar = "2"
 
 [dev-dependencies]
+# mkfifo in the tests.
+libc = "0.2"
 tempfile = "3"
+
+# O_NOATIME and posix_fadvise, used on Linux only.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

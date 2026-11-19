@@ -172,7 +172,9 @@ pub fn cmd_decompress(o: &DecompressOpts) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testkit::{chmod, is_root, Sandbox};
+    use crate::testkit::Sandbox;
+    #[cfg(not(target_os = "macos"))]
+    use crate::testkit::{chmod, is_root};
 
     // Build decompress options for the sandbox with no reserve, accepting files without a provenance.
     fn opts(sb: &Sandbox, paths: &[&Path], apply: bool) -> DecompressOpts {
@@ -186,6 +188,7 @@ mod tests {
     }
 
     // Read a file's recorded status and note.
+    #[cfg(not(target_os = "macos"))]
     fn status_of(sb: &Sandbox, path: &Path) -> (String, String) {
         let db = open_db(&sb.state(), false);
         let sql = "SELECT status, COALESCE(note,'') FROM cands WHERE path=?";
