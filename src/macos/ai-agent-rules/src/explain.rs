@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(
             lines(&root, "src/x/a.ts", &home, &["a"]),
             vec![
-                format!("applies skill home/agents/skills/h/SKILL.md: in home (the home folder)"),
+                "applies skill home/agents/skills/h/SKILL.md: in home (the home folder)".to_string(),
                 format!("applies rule AGENTS.md: in {r} (2 folders up)"),
                 "skipped rule CLAUDE.md: only imports files that are listed".to_string(),
                 format!("skipped rule .claude/rules/docs.md: in {r} (2 folders up), but no paths: glob matches (`docs/**`, `*.md`)"),
@@ -138,7 +138,7 @@ mod tests {
                 "skipped import other.md: marked only for other purposes".to_string(),
                 "skipped rule .claude/rules/p.md: marked only for other purposes".to_string(),
                 format!("applies rule .claude/rules/ts.md: in {r} (2 folders up), paths: `src/**/*.ts` matches"),
-                format!("applies rule src/AGENTS.md (lines 3-3): in src (1 folder up)"),
+                "applies rule src/AGENTS.md (lines 3-3): in src (1 folder up)".to_string(),
                 "skipped rule src/x/CLAUDE.md: the same file as AGENTS.md".to_string(),
             ]
         );
@@ -158,7 +158,7 @@ mod tests {
         fs::create_dir_all(home.join("p/q")).expect("folders");
         assert_eq!(
             lines(&root, "h/p/q", &home, &[]),
-            vec![format!("applies rule h/AGENTS.md: in h (2 folders up)")]
+            vec!["applies rule h/AGENTS.md: in h (2 folders up)".to_string()]
         );
         let empty = temp("exp-empty");
         let (text, _) = run(&empty, None, &[], &empty, false);
