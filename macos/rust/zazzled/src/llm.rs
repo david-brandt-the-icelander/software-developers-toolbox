@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 const MAX_INPUT: usize = 400_000;
 const DEFAULT_TIMEOUT: u64 = 300;
 
+// One local model in memory at a time: each call, or a whole worker session, holds this.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
 // The local model's answer and whether its token limit cut it short.
 #[derive(Debug, PartialEq)]
 pub struct Reply {
@@ -87,7 +90,6 @@ pub fn ask_with(
             input.len()
         ));
     }
-    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     let mut args: Vec<String> = vec!["prompt".into(), "--no-download".into()];
     args.extend(flags.iter().map(|f| f.to_string()));
@@ -109,6 +111,118 @@ pub fn ask_with(
     match ran.code {
         0 | 3 => Ok(Reply { text: ran.out.trim().to_string(), truncated: ran.code == 3 }),
         _ => Err(format!("local model: {}", reason())),
+    }
+}
+
+// Takes the last line a program printed to standard error, without `error: `, as the reason it failed.
+fn last_reason(err: &str) -> Option<String> {
+    let last = err.lines().rev().find(|l| !l.trim().is_empty())?.trim();
+    Some(last.strip_prefix("error: ").unwrap_or(last).to_string())
+}
+
+// A zazzle-llm worker keeping one model loaded across several prompts (investigate's turns), holding the one-model lock until it is dropped.
+pub struct Session {
+    child: std::process::Child,
+    input: std::process::ChildStdin,
+    lines: std::sync::mpsc::Receiver<String>,
+    err: std::sync::Arc<Mutex<String>>,
+    limit: Duration,
+    _turn: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Session {
+    // Starts the worker at the default model and waits until it has loaded it.
+    pub fn start(flags: &[&str]) -> Result<Session, String> {
+        Session::start_with(&program()?, flags, timeout())
+    }
+
+    // Starts `PROGRAM worker --no-download FLAGS` and waits for its ready line, each wait bounded by `limit`.
+    pub fn start_with(program: &Path, flags: &[&str], limit: Duration) -> Result<Session, String> {
+        let turn = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+        let mut child = Command::new(program)
+            .args(["worker", "--no-download"])
+            .args(flags)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("starting {}: {e}", program.display()))?;
+        let (tx, lines) = std::sync::mpsc::channel();
+        let out = child.stdout.take().ok_or("no stdout pipe")?;
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for l in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                if tx.send(l).is_err() {
+                    break;
+                }
+            }
+        });
+        let err = std::sync::Arc::new(Mutex::new(String::new()));
+        let (sink, mut e) = (std::sync::Arc::clone(&err), child.stderr.take().ok_or("no stderr pipe")?);
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n @ 1..) = e.read(&mut buf) {
+                sink.lock().unwrap_or_else(|p| p.into_inner()).push_str(&String::from_utf8_lossy(&buf[..n]));
+            }
+        });
+        let input = child.stdin.take().ok_or("no stdin pipe")?;
+        let mut s = Session { child, input, lines, err, limit, _turn: turn };
+        let ready: serde_json::Value = serde_json::from_str(&s.line()?).unwrap_or_default();
+        match ready["ready"].as_str() {
+            Some(_) => Ok(s),
+            None => Err(s.failed("the local model did not start")),
+        }
+    }
+
+    // Waits for the worker's next line, killing it past the time limit.
+    fn line(&mut self) -> Result<String, String> {
+        match self.lines.recv_timeout(self.limit) {
+            Ok(l) => Ok(l),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let _ = self.child.kill();
+                Err(format!(
+                    "the local model took longer than {}s (ZAZZLE_LLM_TIMEOUT)",
+                    self.limit.as_secs()
+                ))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err(self.failed("the local model stopped"))
+            }
+        }
+    }
+
+    // Names why the worker failed: the last line it printed to standard error, else `what`.
+    fn failed(&mut self, what: &str) -> String {
+        let _ = self.child.wait();
+        let err = self.err.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        format!("local model: {}", last_reason(&err).unwrap_or_else(|| what.to_string()))
+    }
+
+    // Sends one prompt (`{"user", "system"?, "max_tokens"?, "temp"?, ...}`) and returns the answer.
+    pub fn ask(&mut self, req: &serde_json::Value) -> Result<Reply, String> {
+        if req.to_string().len() > MAX_INPUT {
+            return Err(format!("the prompt is more than the local model takes ({MAX_INPUT} bytes)"));
+        }
+        if writeln!(self.input, "{req}").and_then(|()| self.input.flush()).is_err() {
+            return Err(self.failed("the local model stopped"));
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&self.line()?).map_err(|e| format!("local model: unreadable reply: {e}"))?;
+        match v["error"].as_str() {
+            Some(e) => Err(format!("local model: {e}")),
+            None => Ok(Reply {
+                text: v["text"].as_str().unwrap_or_default().trim().to_string(),
+                truncated: v["truncated"] == true,
+            }),
+        }
+    }
+}
+
+impl Drop for Session {
+    // Stops the worker, freeing the model's memory and the one-model lock.
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -240,5 +354,68 @@ mod tests {
         assert_eq!(timeout(), Duration::from_secs(7));
         std::env::remove_var("ZAZZLE_LLM_TIMEOUT");
         assert_eq!(timeout(), Duration::from_secs(DEFAULT_TIMEOUT));
+    }
+
+    // Checks a worker session: it waits for the ready line, answers several prompts from one process, passes errors and the cut-short flag, and reports a worker that will not start or that stalls.
+    #[test]
+    fn test_session() {
+        let t = TempDir::new();
+        let starts = t.path().join("starts");
+        let worker = fake(&t, &format!("echo start >> {}\necho '{{\"ready\":\"m\"}}'\nwhile read l; do case \"$l\" in *fail*) echo '{{\"error\":\"bad prompt\"}}';; *long*) echo '{{\"text\":\" half \",\"truncated\":true}}';; *) echo '{{\"text\":\"ok\",\"truncated\":false}}';; esac; done\n", starts.display()));
+        let d = Duration::from_secs(10);
+        let mut s = Session::start_with(&worker, &["--effort", "low"], d).expect("start");
+        assert_eq!(
+            s.ask(&serde_json::json!({"user": "a"})),
+            Ok(Reply { text: "ok".into(), truncated: false })
+        );
+        assert_eq!(
+            s.ask(&serde_json::json!({"user": "long"})),
+            Ok(Reply { text: "half".into(), truncated: true })
+        );
+        assert_eq!(
+            s.ask(&serde_json::json!({"user": "fail"})).err().as_deref(),
+            Some("local model: bad prompt")
+        );
+        assert!(s
+            .ask(&serde_json::json!({"user": "x".repeat(MAX_INPUT)}))
+            .expect_err("big")
+            .contains("more than"));
+        drop(s);
+        assert_eq!(
+            std::fs::read_to_string(&starts).expect("starts").lines().count(),
+            1,
+            "one process for every prompt"
+        );
+        let absent = fake(
+            &t,
+            "echo 'error: qwen is not downloaded: run `zazzle agent llm --model qwen` first' >&2\nexit 4\n",
+        );
+        let e = Session::start_with(&absent, &[], d).err().expect("absent");
+        assert!(e.starts_with("local model: qwen is not downloaded"), "{e}");
+        let silent = fake(&t, "exit 2\n");
+        assert_eq!(
+            Session::start_with(&silent, &[], d).err().as_deref(),
+            Some("local model: the local model stopped")
+        );
+        let stall = fake(&t, "echo '{\"ready\":\"m\"}'\nsleep 30\n");
+        let mut s = Session::start_with(&stall, &[], Duration::from_millis(300)).expect("ready");
+        assert!(s.ask(&serde_json::json!({"user": "a"})).expect_err("stall").contains("took longer than"));
+        drop(s);
+        let junk = fake(&t, "echo not-json\n");
+        assert!(Session::start_with(&junk, &[], d).err().expect("junk").contains("did not start"));
+        let dead = fake(&t, "echo '{\"ready\":\"m\"}'\nexit 0\n");
+        let mut s = Session::start_with(&dead, &[], d).expect("ready");
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(s.ask(&serde_json::json!({"user": "a"})).expect_err("dead").starts_with("local model:"));
+        drop(s);
+        let bad = fake(&t, "echo '{\"ready\":\"m\"}'\nread l; echo garbage\n");
+        let mut s = Session::start_with(&bad, &[], d).expect("ready");
+        assert!(s.ask(&serde_json::json!({"user": "a"})).expect_err("garbage").contains("unreadable reply"));
+        drop(s);
+        assert!(Session::start_with(&t.path().join("none"), &[], d)
+            .err()
+            .expect("none")
+            .contains("starting"));
+        assert_eq!(last_reason("x\nerror: y\n\n"), Some("y".into()));
     }
 }

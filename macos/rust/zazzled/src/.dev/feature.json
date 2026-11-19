@@ -620,7 +620,7 @@
       "outcome": "The agent spends one call and reads checked excerpts and explicit unknowns, not the files the model read.",
       "constraints": [
         "Only citations are checked, not the claims; the report says so.",
-        "zazzle-llm starts once per turn and never downloads a model."
+        "One `zazzle-llm worker --no-download` serves every turn, so the model loads once per investigation; the worker holds the one-model lock until the run ends, each answer is bounded by ZAZZLE_LLM_TIMEOUT, and a zazzle-llm without the worker is asked once per turn instead."
       ],
       "implementation": [
         {

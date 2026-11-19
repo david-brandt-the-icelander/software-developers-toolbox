@@ -210,15 +210,31 @@ fn test_investigate_through_zazzle() {
     let (t, root) = repo();
     let fake = t.write(
         "fake-llm",
-        b"#!/bin/sh\ncat >/dev/null\nprintf 'ANSWER\\nFINDING api/Endpoint.cs:3 the key is checked\\n'\n",
+        b"#!/bin/sh\necho start >> \"$0.starts\"\necho '{\"ready\":\"m\"}'\nwhile read l; do echo '{\"text\":\"READ api/Endpoint.cs\"}'; read l; printf '%s\\n' '{\"text\":\"ANSWER\\nFINDING api/Endpoint.cs:3 the key is checked\"}'; done\n",
     );
     std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
     std::env::set_var("ZAZZLE_LLM", &fake);
     let o = crate::testutil::run_cmd(&root, &["investigate", "where?", "--path", "api"]);
     let a = crate::testutil::run_cmd(&root, &["agent", "investigate", "where?"]);
-    std::env::remove_var("ZAZZLE_LLM");
     assert!(o.text.contains("1. the key is checked\n   api/Endpoint.cs:3"), "{}", o.text);
+    assert!(o.text.contains("2 of 6 turns"), "two turns: {}", o.text);
     assert!(a.text.contains("findings (1 verified)"), "{}", a.text);
+    let starts = std::fs::read_to_string(t.path().join("fake-llm.starts")).expect("starts");
+    assert_eq!(starts.lines().count(), 2, "one model load per investigation, not per turn");
+    let old = t.write(
+        "old-llm",
+        b"#!/bin/sh\ncase \"$1\" in worker) echo \"error: unrecognized subcommand 'worker'\" >&2; exit 2;; esac\ncat >/dev/null\nprintf 'ANSWER\\nUNKNOWN asked once per turn\\n'\n",
+    );
+    std::fs::set_permissions(&old, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+    std::env::set_var("ZAZZLE_LLM", &old);
+    let o = crate::testutil::run_cmd(&root, &["investigate", "where?"]);
+    let none = t.write("none-llm", b"#!/bin/sh\necho 'error: qwen is not downloaded' >&2\nexit 4\n");
+    std::fs::set_permissions(&none, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+    std::env::set_var("ZAZZLE_LLM", &none);
+    let n = crate::testutil::run_cmd(&root, &["investigate", "where?"]);
+    std::env::remove_var("ZAZZLE_LLM");
+    assert!(o.text.contains("- asked once per turn"), "an older zazzle-llm still answers: {}", o.text);
+    assert_eq!(n.text, "error: local model: qwen is not downloaded");
     let v = serde_json::json!({"question": "where?", "paths": ["api"], "symbols": ["Handle"], "steps": 3});
     assert_eq!(
         tool_args(&v).expect("args"),

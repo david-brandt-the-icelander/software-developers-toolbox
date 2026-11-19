@@ -240,7 +240,7 @@
     {
       "id": "llm",
       "name": "Local model calls (llm.rs)",
-      "responsibility": "Runs `zazzle-llm prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved.",
+      "responsibility": "Runs `zazzle-llm prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved; Session keeps one `zazzle-llm worker --no-download` (and the one-model lock) for a multi-turn caller such as investigate, each answer bounded by the timeout.",
       "folder": "macos/rust/zazzled/src"
     },
     {

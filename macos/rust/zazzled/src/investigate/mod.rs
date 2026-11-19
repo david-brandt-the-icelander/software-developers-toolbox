@@ -32,12 +32,28 @@ pub trait Local {
     fn ask(&self, system: &str, transcript: &str) -> Result<Reply, String>;
 }
 
-// The user's local model, asked through zazzle-llm without downloading anything.
-pub struct Model;
+// The user's local model through one zazzle-llm worker started at the first turn and kept for the run, so the model loads once; a zazzle-llm without the worker is asked once per turn instead. Nothing is downloaded.
+#[derive(Default)]
+pub struct Model {
+    session: std::cell::RefCell<Option<crate::llm::Session>>,
+    per_turn: std::cell::Cell<bool>,
+}
 
 impl Local for Model {
-    // Asks at low effort and temperature 0, with the transcript on standard input.
+    // Asks at low effort and temperature 0.
     fn ask(&self, system: &str, transcript: &str) -> Result<Reply, String> {
+        let user = format!("Reply with your next lookups, or ANSWER.\n\n---\n{transcript}");
+        if !self.per_turn.get() && self.session.borrow().is_none() {
+            match crate::llm::Session::start(&["--effort", "low"]) {
+                Ok(s) => *self.session.borrow_mut() = Some(s),
+                Err(e) if e.contains("unrecognized subcommand") => self.per_turn.set(true),
+                Err(e) => return Err(e),
+            }
+        }
+        if let Some(s) = self.session.borrow_mut().as_mut() {
+            let max: usize = REPLY_TOKENS.parse().unwrap_or(1500);
+            return s.ask(&serde_json::json!({"system": system, "user": user, "max_tokens": max, "temp": 0}));
+        }
         let flags = ["--effort", "low", "--temp", "0", "--max-tokens", REPLY_TOKENS, "--system", system];
         crate::llm::ask("Reply with your next lookups, or ANSWER.", transcript, &flags)
     }
@@ -400,7 +416,7 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
 
 // Runs `investigate` with the user's local model.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
-    investigate(ctx, argv, &Model)
+    investigate(ctx, argv, &Model::default())
 }
 
 #[cfg(test)]
