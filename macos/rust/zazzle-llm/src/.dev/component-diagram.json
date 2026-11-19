@@ -51,7 +51,7 @@
     {
       "id": "engine",
       "name": "Engine (engine.rs)",
-      "responsibility": "Loads the GGUF model with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
+      "responsibility": "Loads the GGUF model (holding back the routine startup logs of llama.cpp and the GPU backend, quiet.rs, and showing only their error lines when loading fails) with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
       "folder": "macos/rust/zazzle-llm/src"
     },
     {

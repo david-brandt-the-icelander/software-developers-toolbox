@@ -53,13 +53,16 @@ fn take_utf8(bytes: &mut Vec<u8>) -> String {
 
 // Loads the model, renders and decodes the prompt, and reports the prompt and each piece of generated text to `out` until an end token or the limit.
 pub fn generate(ask: &Ask, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
-    let mut backend = LlamaBackend::init().map_err(|e| format!("starting llama.cpp: {e}"))?;
-    if std::env::var_os("ZAZZLE_LLM_LOG").is_none() {
-        backend.void_logs();
-    }
-    let params = LlamaModelParams::default().with_n_gpu_layers(u32::MAX);
-    let model = LlamaModel::load_from_file(&backend, ask.path, &params)
-        .map_err(|e| format!("loading {}: {e}", ask.path.display()))?;
+    let (backend, model) = crate::quiet::run(|| {
+        let mut backend = LlamaBackend::init().map_err(|e| format!("starting llama.cpp: {e}"))?;
+        if std::env::var_os("ZAZZLE_LLM_LOG").is_none() {
+            backend.void_logs();
+        }
+        let params = LlamaModelParams::default().with_n_gpu_layers(u32::MAX);
+        let model = LlamaModel::load_from_file(&backend, ask.path, &params)
+            .map_err(|e| format!("loading {}: {e}", ask.path.display()))?;
+        Ok((backend, model))
+    })?;
     let tmpl =
         model.chat_template(None).map_err(|e| format!("{}: no chat template: {e}", ask.path.display()))?;
     let vocab = model.vocab();
@@ -79,7 +82,9 @@ pub fn generate(ask: &Ask, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
         .with_n_batch(BATCH as u32)
         .with_n_threads(threads)
         .with_n_threads_batch(threads);
-    let mut ctx = model.new_context(&backend, cparams).map_err(|e| format!("creating a context: {e}"))?;
+    let mut ctx = crate::quiet::run(|| {
+        model.new_context(&backend, cparams).map_err(|e| format!("creating a context: {e}"))
+    })?;
     let mut batch = LlamaBatch::new(BATCH, 1);
     for (i, chunk) in tokens.chunks(BATCH).enumerate() {
         batch.clear();

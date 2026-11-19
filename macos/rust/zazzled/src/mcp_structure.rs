@@ -132,6 +132,7 @@ fn find_symbol_args(v: &Value) -> Result<Vec<String>, String> {
         a.extend(["--kind".to_string(), kind]);
     }
     push_capped(&mut a, v, "limit", "--limit", FIND_SYMBOL_LIMIT)?;
+    push_capped(&mut a, v, "max", "--limit", FIND_SYMBOL_LIMIT)?;
     push_num(&mut a, v, "offset", "--offset")?;
     push_repo(&mut a, v)?;
     for p in crate::mcp::get_list(v, "paths")? {
@@ -253,8 +254,8 @@ mod tests {
         let text = |name: &str, args: Value| format!("error: {}", map(name, args).unwrap_err());
         assert_eq!(text("zazzle_find_symbol", json!({})), "error: name or names is required");
         assert_eq!(
-            map("zazzle_find_symbol", json!({"names": ["A", "B"], "paths": ["src/Api"]})).expect("args"),
-            ["find-symbol", "--path", "src/Api", "--", "A", "B"]
+            map("zazzle_find_symbol", json!({"names": ["A", "B"], "paths": ["src/Api"], "max": 3})).expect("args"),
+            ["find-symbol", "--limit", "3", "--path", "src/Api", "--", "A", "B"]
         );
         assert_eq!(
             text("zazzle_find_symbol", json!({"name": "a", "kind": 1})),

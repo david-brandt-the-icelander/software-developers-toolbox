@@ -562,12 +562,12 @@
         "symbol": "prompt"
       },
       "action": "query",
-      "transport": "zazzle prompt [--effort low|medium|high] TEXT.. | `agent prompt` when it reaches the daemon (the invoker execs `zazzled llm` for `zazzle agent prompt`, which streams and may download); MCP tool zazzle_prompt {text, effort?}",
+      "transport": "zazzle prompt [--effort low|medium|high] [--max-tokens N] [--system TEXT] [--] TEXT.. | `agent prompt` when it reaches the daemon (the invoker execs `zazzled llm` for `zazzle agent prompt`, which streams and may download); MCP tool zazzle_prompt {text, effort?}",
       "authorization": "Callers of the daemon's own uid; it runs the user's zazzle-llm with --no-download. Nothing else is checked.",
       "result": "The model's answer, followed by `[the token limit cut this answer short]` when zazzle-llm exited 3.",
       "failures": [
-        "No text: `usage: agent prompt [--effort low|medium|high] TEXT..`.",
-        "--effort without a value: `--effort needs low, medium or high`.",
+        "No text: `usage: agent prompt [--effort low|medium|high] [--max-tokens N] [--system TEXT] [--] TEXT..`.",
+        "A flag without a value (`--effort needs a value; usage: ...`) or an unknown flag (`unknown flag --model; usage: ...`); words after `--` are text.",
         "The local model fails (no model downloaded, timeout, zazzle-llm missing or exiting with an error): `error: local model: REASON`."
       ]
     }

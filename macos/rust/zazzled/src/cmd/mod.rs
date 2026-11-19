@@ -7,6 +7,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 pub mod again;
+mod align;
 pub mod clean;
 pub mod diff;
 pub mod edit;
@@ -262,18 +263,23 @@ fn brief(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
 
 // Answers `agent prompt [--effort E] TEXT..` in the daemon (for MCP): the local model's whole answer, never downloading a model.
 fn prompt(rest: &[String]) -> Result<Output, String> {
-    let (mut effort, mut words, mut it) = (None, Vec::new(), rest.iter());
+    const USAGE: &str =
+        "usage: agent prompt [--effort low|medium|high] [--max-tokens N] [--system TEXT] [--] TEXT..";
+    let (mut flags, mut words, mut it) = (Vec::<&str>::new(), Vec::new(), rest.iter());
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--effort" => effort = Some(it.next().ok_or("--effort needs low, medium or high")?.as_str()),
-            _ => words.push(a.as_str()),
+            "--" => words.extend(it.by_ref().map(String::as_str)),
+            f @ ("--effort" | "--max-tokens" | "--system") => {
+                flags.extend([f, it.next().ok_or_else(|| format!("{f} needs a value; {USAGE}"))?.as_str()])
+            }
+            f if f.starts_with("--") => return Err(format!("unknown flag {f}; {USAGE}")),
+            w => words.push(w),
         }
     }
     let text = words.join(" ");
     if text.trim().is_empty() {
-        return Err("usage: agent prompt [--effort low|medium|high] TEXT..".into());
+        return Err(USAGE.into());
     }
-    let flags: Vec<&str> = effort.map(|e| vec!["--effort", e]).unwrap_or_default();
     let reply = crate::llm::ask(&text, "", &flags)?;
     let cut = if reply.truncated { "\n[the token limit cut this answer short]" } else { "" };
     Ok(Output::plain(format!("{}{cut}", reply.text)))
@@ -339,6 +345,8 @@ fn command_help(cmd: &str, rest: &[String]) -> Option<String> {
 
 // Routes the first argument to a command.
 fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
+    let aligned = align::args(cmd, rest);
+    let rest = aligned.as_slice();
     match cmd {
         "find" | "grep" => find::run(ctx, rest),
         "read" | "cat" => read::run(ctx, rest),
@@ -669,16 +677,26 @@ mod tests {
     fn test_llm_post_processes_output() {
         let _g = crate::testutil::env_lock();
         let t = TempDir::new();
-        t.write("a.txt", b"needle one\nneedle two\n");
+        let long: String = (0..40)
+            .map(|i| format!("needle {i} in a line long enough to make the output worth summarizing\n"))
+            .collect();
+        t.write("a.txt", long.as_bytes());
+        t.write("short.txt", b"needle one\n");
         let llm = t.write("fake-llm", b"#!/bin/sh\ncat >/dev/null; echo two matches\n");
         std::fs::set_permissions(&llm, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
         std::env::set_var("ZAZZLE_LLM", &llm);
-        let out = run_cmd(t.path(), &["find", "needle", "--llm", "Count the matches"]);
+        let out = run_cmd(t.path(), &["find", "needle", "a.txt", "--llm", "Count the matches"]);
         assert!(out.text.starts_with("two matches\n[post-processed by the local model: ~"), "{}", out.text);
+        let short = run_cmd(t.path(), &["find", "needle", "short.txt", "--llm", "Count the matches"]);
+        assert!(
+            short.text.starts_with("short.txt\n1: needle one") && short.text.contains("[kept as is: ~"),
+            "{}",
+            short.text
+        );
         let bad = t.write("bad-llm", b"#!/bin/sh\necho 'error: no model' >&2; exit 4\n");
         std::fs::set_permissions(&bad, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
         std::env::set_var("ZAZZLE_LLM", &bad);
-        let failed = run_cmd(t.path(), &["find", "needle", "--llm", "Count"]);
+        let failed = run_cmd(t.path(), &["find", "needle", "a.txt", "--llm", "Count"]);
         std::env::remove_var("ZAZZLE_LLM");
         assert_eq!((failed.status, failed.text.as_str()), (2, "error: local model: no model"));
     }
@@ -698,6 +716,11 @@ mod tests {
             "half\n[the token limit cut this answer short]"
         );
         assert!(run_cmd(t.path(), &["prompt", "--effort"]).text.contains("--effort needs"));
+        assert_eq!(
+            run_cmd(t.path(), &["prompt", "--max-tokens", "50", "--system", "s", "--", "--x", "y"]).text,
+            "--x y"
+        );
+        assert!(run_cmd(t.path(), &["prompt", "--model", "m", "hi"]).text.contains("unknown flag --model"));
         assert!(run_cmd(t.path(), &["prompt"]).text.contains("usage: agent prompt"));
         let b = run_cmd(t.path(), &["agent", "brief", "be", "nice"]).text;
         std::env::remove_var("ZAZZLE_LLM");

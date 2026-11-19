@@ -385,6 +385,7 @@ fn find_args(v: &Value) -> Result<Vec<String>, String> {
     }
     push_num(&mut a, v, "context", "-C")?;
     push_capped(&mut a, v, "max", "-m", FIND_MAX)?;
+    push_capped(&mut a, v, "limit", "-m", FIND_MAX)?;
     for g in get_list(v, "glob")? {
         a.push("-g".into());
         a.push(g);
@@ -471,6 +472,7 @@ fn refs_args(v: &Value) -> Result<Vec<String>, String> {
     push_flag(&mut a, v, "code_only", "--code-only")?;
     push_flag(&mut a, v, "disable_session_deduping", "--disable-session-deduping")?;
     push_capped(&mut a, v, "max", "-m", REFS_MAX)?;
+    push_capped(&mut a, v, "limit", "-m", REFS_MAX)?;
     for g in get_list(v, "glob")? {
         a.push("-g".into());
         a.push(g);

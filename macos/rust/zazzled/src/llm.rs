@@ -141,6 +141,9 @@ pub fn mark(input: &str, reply: &Reply) -> String {
     )
 }
 
+// Outputs shorter than this many tokens skip the local model: reading them costs less than the model's answer and its latency.
+pub const SHORT: usize = 400;
+
 // The system message for post-processing: the result only, so the agent reads no reasoning.
 const POST_SYSTEM: &str = "Do exactly what the instruction asks with the text after ---. Reply with only the result: no reasoning, no preamble, no notes.";
 
@@ -148,6 +151,13 @@ const POST_SYSTEM: &str = "Do exactly what the instruction asks with the text af
 pub fn post(input: &str, instruction: &str) -> Result<String, String> {
     if input.trim().is_empty() {
         return Ok(input.to_string());
+    }
+    let tokens = crate::tokens::estimate(input);
+    if tokens < SHORT {
+        return Ok(format!(
+            "{}\n[kept as is: ~{tokens} tokens is short enough to read directly; --llm is for larger outputs]",
+            input.trim_end()
+        ));
     }
     ask(instruction, input, &["--effort", "low", "--temp", "0", "--system", POST_SYSTEM])
         .map(|r| mark(input, &r))

@@ -1,6 +1,7 @@
 // zazzle-llm: `zazzle agent llm` lists, fetches and chooses open models; `zazzle agent prompt` asks one, downloading it first when needed.
 mod catalog;
 mod engine;
+mod quiet;
 mod store;
 mod template;
 mod think;
