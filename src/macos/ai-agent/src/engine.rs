@@ -11,10 +11,11 @@ use std::path::Path;
 
 const BATCH: usize = 512;
 
-// One prompt: the model file, the messages, the effort, the most tokens to generate, an optional GBNF grammar the answer must follow and the sampling temperature.
+// One prompt: the model file, the messages (system, earlier turns, user), the effort, the most tokens to generate, an optional GBNF grammar the answer must follow and the sampling temperature.
 pub struct Ask<'a> {
     pub path: &'a Path,
     pub system: Option<&'a str>,
+    pub history: &'a [(String, String)],
     pub user: &'a str,
     pub effort: &'a str,
     pub max_tokens: usize,
@@ -51,7 +52,7 @@ fn take_utf8(bytes: &mut Vec<u8>) -> String {
     text
 }
 
-// A model loaded once and asked many times, as the worker does for `zazzle investigate`.
+// A model loaded once and asked many times, as the worker does for daemon's chats and agents' calls.
 pub struct Loaded {
     backend: LlamaBackend,
     model: LlamaModel,
@@ -85,7 +86,14 @@ impl Loaded {
             model.chat_template(None).map_err(|e| format!("{}: no chat template: {e}", path.display()))?;
         let vocab = model.vocab();
         let (bos, eos) = (token_text(model, vocab.bos()), token_text(model, vocab.eos()));
-        let turn = Turn { system: ask.system, user: ask.user, effort: ask.effort, bos: &bos, eos: &eos };
+        let turn = Turn {
+            system: ask.system,
+            history: ask.history,
+            user: ask.user,
+            effort: ask.effort,
+            bos: &bos,
+            eos: &eos,
+        };
         let prompt = template::render(tmpl.to_str().map_err(|e| e.to_string())?, &turn)?;
         let body = prompt.strip_prefix(bos.as_str()).filter(|_| !bos.is_empty() && vocab.should_add_bos());
         let tokens = vocab.tokenize(body.unwrap_or(&prompt).as_bytes(), true, true);

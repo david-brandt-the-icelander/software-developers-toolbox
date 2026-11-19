@@ -40,7 +40,7 @@
       ],
       "entrypoint": { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
       "action": "query",
-      "transport": "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [--no-download] [--grammar GBNF] [--temp T] [TEXT.. | -] (ai-agent prompt ..)",
+      "transport": "ai-agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [--no-download] [--grammar GBNF] [--temp T] [TEXT.. | -] (people use `zazzle agent prompt`, daemon's chat client)",
       "authorization": "None checked: the caller's own permissions.",
       "result": "The answer on standard output; the thinking on standard error with --show-thinking; exit 0, or 3 with a note on standard error when the token limit cut the answer short. --grammar holds the answer to a GBNF grammar (root rule `root`); --temp sets the sampling temperature (default 0.7; 0 takes the likeliest token every time). It changes nothing but the model store, when it downloads the model; while it runs it holds a shared lock on the model's lock file, so prune leaves the model alone.",
       "failures": [

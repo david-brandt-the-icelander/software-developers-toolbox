@@ -1,20 +1,20 @@
 # zazzle
 zazzle is a launcher for coding agents and developers: one command, `zazzle` (or `z`), in front of a daemon that reads, searches and edits code with short output, and a set of tools for daily work on macOS.
 
-Only `zazzle` and `z` go on your PATH. Every other tool runs through the launcher as `zazzle TOOL ARGS`, for example `z daemon restart` or `z fix-network diagnose`.
+Only `zazzle` and `z` go on your PATH. Every other tool runs through the launcher as `zazzle TOOL ARGS`, for example `z daemon restart` or `z fix-network diagnose`. `zazzle tools` lists the installed tools and their versions; tools that keep state answer `status` (with `--json` for scripts).
 
 ## Tools
 All source is in [`src/macos/`](src/macos), one folder per tool:
 
 - [`zazzle`](src/macos/zazzle/README.md): the launcher, a tiny C program. It sends commands to the daemon, starts the daemon when needed, and runs every other tool from `libexec/zazzle`.
-- [`daemon`](src/macos/daemon/README.md): the file tool and MCP server behind `zazzle` (find, read, outline, refs, safe edit, C# structure from the indexer, `clean` for piped command output, `run` for builds and tests, and `zazzle proxy` to shrink another MCP server's results), with per-session dedupe and a persistent cache. `zazzle daemon install|restart|mcp ...`.
-- [`shell-tools`](src/macos/shell-tools/README.md): JSON read/search/list/outline tool and MCP server for agents, with session caching. `zazzle shell-tools ...`.
-- [`git-tools`](src/macos/git-tools/README.md): git with a commit flow and message editor. `zazzle git ...` (or `zazzle git-tools ...`).
-- [`fix-network`](src/macos/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN. `zazzle fix-network ...`.
-- [`free-disk-space`](src/macos/free-disk-space/README.md): scan, compress, dedupe and clean up disk space; `zazzle free-disk-space daemon install` schedules it.
-- [`ai-agent`](src/macos/ai-agent/README.md): runs open models locally (`zazzle agent llm|prompt`, or `zazzle ai-agent ...`); downloaded on first use.
-- [`ai-agent-rules`](src/macos/ai-agent-rules/README.md): the rule lister behind `zazzle agent get-rules`.
-- [`csharp-indexer`](src/macos/csharp-indexer/README.md) (C#): the C# side of zazzle: a per-user daemon with a live index and Roslyn that answers zazzle's terse C# views and structure tools (overview, find-symbol, changed-since, git history), plus `init` and the redirect hook. `zazzle csharp-indexer ...`.
+- [`daemon`](src/macos/daemon/README.md): the file tool and MCP server behind `zazzle` (find, read, outline, refs, safe edit, C# structure from the indexer, `clean` for piped command output, `run` for builds and tests, and `zazzle proxy` to shrink another MCP server's results), with per-session dedupe and a persistent cache. `zazzle daemon start|stop|status|restart|install|mcp ...`.
+- [`shell-tools`](src/macos/shell-tools/README.md): a library inside the daemon, behind `zazzle call 'JSON'` (batched read/search/list/stat/outline/diff_since requests that remember what each session has seen) and `zazzle stat`.
+- [`git-tools`](src/macos/git-tools/README.md): git with a commit flow and message editor, plus `amend` and `undo` for the last commit. `zazzle git ...` (or `zazzle git-tools ...`).
+- [`fix-network`](src/macos/fix-network/README.md): diagnose and repair Wi-Fi, DNS, routing and VPN (`fix --only wifi|dns|vpn|proxy`), and a one-line `status`. `zazzle fix-network ...`.
+- [`free-disk-space`](src/macos/free-disk-space/README.md): find the largest folders (`top`), scan, compress (and `decompress`), dedupe and clean up disk space; `zazzle free-disk-space daemon install` schedules it.
+- [`ai-agent`](src/macos/ai-agent/README.md): runs open models locally (`zazzle agent llm|chat|prompt`, `status`, `prune`); downloaded on first use.
+- [`ai-agent-rules`](src/macos/ai-agent-rules/README.md): the rule lister behind `zazzle agent get-rules`, and `check` and `explain` for rule files.
+- [`csharp-indexer`](src/macos/csharp-indexer/README.md) (C#): the C# side of zazzle: a per-user daemon with a live index and Roslyn that answers zazzle's terse C# views and structure tools (overview, find-symbol, changed-since, git history), plus `init`/`uninit`, `status`, `stop`, `restart` and the redirect hook. `zazzle csharp-indexer ...`.
 - [`csharp-minifier`](src/macos/csharp-minifier/README.md) (C#): organizes C# tests into one file per method under test and lists and renames identifiers; built and run from source.
 - [`zazz-script`](src/macos/zazz-script): the packaging, engine and runner behind sandboxed zazz scripts (`zazzle zazz ...`).
 - [`language-modules`](src/macos/language-modules): the tree-sitter grammars the daemon downloads.

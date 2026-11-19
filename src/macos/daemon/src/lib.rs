@@ -6,6 +6,8 @@ pub mod arena;
 pub mod args;
 pub mod brief;
 pub mod buildfile;
+pub mod chat;
+pub mod chat_client;
 pub mod cli;
 pub mod client;
 pub mod cmd;

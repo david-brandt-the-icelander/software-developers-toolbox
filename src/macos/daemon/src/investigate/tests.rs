@@ -208,11 +208,14 @@ fn test_parse_lookups() {
 fn test_investigate_through_zazzle() {
     let _g = crate::testutil::env_lock();
     let (t, root) = repo();
-    let fake = t.write(
+    let fake = crate::testutil::fake_worker(
+        &t,
         "fake-llm",
-        b"#!/bin/sh\necho start >> \"$0.starts\"\necho '{\"ready\":\"m\"}'\nwhile read l; do echo '{\"text\":\"READ api/Endpoint.cs\"}'; read l; printf '%s\\n' '{\"text\":\"ANSWER\\nFINDING api/Endpoint.cs:3 the key is checked\"}'; done\n",
+        &[
+            ("(nothing yet)", "READ api/Endpoint.cs"),
+            ("### READ", "ANSWER\nFINDING api/Endpoint.cs:3 the key is checked"),
+        ],
     );
-    std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
     std::env::set_var("ZAZZLE_LLM", &fake);
     let o = crate::testutil::run_cmd(&root, &["investigate", "where?", "--path", "api"]);
     let a = crate::testutil::run_cmd(&root, &["agent", "investigate", "where?"]);
@@ -220,20 +223,12 @@ fn test_investigate_through_zazzle() {
     assert!(o.text.contains("2 of 6 turns"), "two turns: {}", o.text);
     assert!(a.text.contains("findings (1 verified)"), "{}", a.text);
     let starts = std::fs::read_to_string(t.path().join("fake-llm.starts")).expect("starts");
-    assert_eq!(starts.lines().count(), 2, "one model load per investigation, not per turn");
-    let old = t.write(
-        "old-llm",
-        b"#!/bin/sh\ncase \"$1\" in worker) echo \"error: unrecognized subcommand 'worker'\" >&2; exit 2;; esac\ncat >/dev/null\nprintf 'ANSWER\\nUNKNOWN asked once per turn\\n'\n",
-    );
-    std::fs::set_permissions(&old, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
-    std::env::set_var("ZAZZLE_LLM", &old);
-    let o = crate::testutil::run_cmd(&root, &["investigate", "where?"]);
+    assert_eq!(starts.lines().count(), 1, "daemon's worker stays loaded across turns and investigations");
     let none = t.write("none-llm", b"#!/bin/sh\necho 'error: qwen is not downloaded' >&2\nexit 4\n");
     std::fs::set_permissions(&none, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
     std::env::set_var("ZAZZLE_LLM", &none);
     let n = crate::testutil::run_cmd(&root, &["investigate", "where?"]);
     std::env::remove_var("ZAZZLE_LLM");
-    assert!(o.text.contains("- asked once per turn"), "an older ai-agent still answers: {}", o.text);
     assert_eq!(n.text, "error: local model: qwen is not downloaded");
     let v = serde_json::json!({"question": "where?", "paths": ["api"], "symbols": ["Handle"], "steps": 3});
     assert_eq!(

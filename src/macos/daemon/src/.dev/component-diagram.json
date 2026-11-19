@@ -240,7 +240,7 @@
     {
       "id": "llm",
       "name": "Local model calls (llm.rs)",
-      "responsibility": "Runs `ai-agent prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved; Session keeps one `ai-agent worker --no-download` (and the one-model lock) for a multi-turn caller such as investigate, each answer bounded by the timeout.",
+      "responsibility": "Keeps one shared `ai-agent worker --no-download` (one model in memory, calls taking turns) for every local model call in the daemon: chats, --llm post-processing, brief, investigate and MCP zazzle_prompt; starts it on first use, replaces it for another model or program, drops it when it dies or times out (ZAZZLE_LLM_TIMEOUT), and stops it after ZAZZLE_LLM_IDLE seconds unused; finds the program through ZAZZLE_LLM or the tools module; runs `ai-agent fetch` for the chat client; refuses input over 400,000 bytes; marks post-processed answers with the tokens they saved.",
       "folder": "src/macos/daemon/src"
     },
     {
@@ -370,6 +370,18 @@
       "id": "activity",
       "name": "Activity log (activity.rs)",
       "responsibility": "Appends and reads the JSON lines that record what went through zazzle.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "chat",
+      "name": "Terminal chats (chat.rs)",
+      "responsibility": "Answers the internal `llm-chat open|set|clear|release|send KEY` command: keeps each terminal's model, effort (low by default) and turns in a file under ~/.zazzle/v1/chats (ZAZZLE_CHAT_DIR), trims the oldest turns past ~48,000 characters, forgets a chat untouched for a week, and sends a message with its history through llm's shared worker.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "chat_client",
+      "name": "Chat client (chat_client.rs)",
+      "responsibility": "Runs `zazzle agent chat` (banner saying whether this terminal's chat resumes, a raw-mode line editor with Ctrl+K for a new chat and Ctrl+C to leave, `/` commands) and `zazzle agent prompt` (one message in the same chat, no banner) as `zazzle daemon llm chat|prompt`, naming the terminal by its device and shell session and calling the daemon's llm-chat command through client.",
       "folder": "src/macos/daemon/src"
     }
   ],
@@ -1249,6 +1261,48 @@
       "to": "ai-agent",
       "kind": "depends-on",
       "description": "Runs `ai-agent prompt --no-download` with flags, reading its answer and exit code (3 cut short, 4 model missing)."
+    },
+    {
+      "from": "src",
+      "to": "chat",
+      "kind": "contains",
+      "description": "The terminal chats."
+    },
+    {
+      "from": "src",
+      "to": "chat_client",
+      "kind": "contains",
+      "description": "The chat client."
+    },
+    {
+      "from": "chat",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Sends each chat message through the shared worker."
+    },
+    {
+      "from": "chat_client",
+      "to": "client",
+      "kind": "depends-on",
+      "description": "Calls llm-chat in the daemon, starting it when needed."
+    },
+    {
+      "from": "chat_client",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Runs ai-agent fetch to resolve and download a model."
+    },
+    {
+      "from": "cli",
+      "to": "chat_client",
+      "kind": "depends-on",
+      "description": "`zazzle daemon llm chat|prompt` runs the chat client."
+    },
+    {
+      "from": "cmd",
+      "to": "chat",
+      "kind": "depends-on",
+      "description": "The dispatcher answers llm-chat with chat::run."
     }
   ]
 }

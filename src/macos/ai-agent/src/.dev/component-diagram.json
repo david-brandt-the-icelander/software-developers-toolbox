@@ -59,7 +59,7 @@
     {
       "id": "worker",
       "name": "Worker (worker.rs)",
-      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does.",
+      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does. Requests may carry `history` (earlier turns as role and content), rendered before the new message, for daemon's per-terminal chats. The hidden `fetch [--model]` command downloads a model unless it is here and prints its full name.",
       "folder": "src/macos/ai-agent/src"
     },
     {

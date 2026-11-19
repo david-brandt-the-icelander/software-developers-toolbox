@@ -277,12 +277,18 @@ fn brief(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
 fn prompt(rest: &[String]) -> Result<Output, String> {
     const USAGE: &str =
         "usage: agent prompt [--effort low|medium|high] [--max-tokens N] [--system TEXT] [--] TEXT..";
-    let (mut flags, mut words, mut it) = (Vec::<&str>::new(), Vec::new(), rest.iter());
+    let (mut req, mut words, mut it) = (serde_json::json!({"effort": "low"}), Vec::new(), rest.iter());
     while let Some(a) = it.next() {
         match a.as_str() {
             "--" => words.extend(it.by_ref().map(String::as_str)),
             f @ ("--effort" | "--max-tokens" | "--system") => {
-                flags.extend([f, it.next().ok_or_else(|| format!("{f} needs a value; {USAGE}"))?.as_str()])
+                let v = it.next().ok_or_else(|| format!("{f} needs a value; {USAGE}"))?;
+                req[&f[2..].replace('-', "_")] = match f {
+                    "--max-tokens" => {
+                        v.parse::<u64>().map_err(|_| format!("--max-tokens needs a number; {USAGE}"))?.into()
+                    }
+                    _ => v.as_str().into(),
+                };
             }
             f if f.starts_with("--") => return Err(format!("unknown flag {f}; {USAGE}")),
             w => words.push(w),
@@ -292,7 +298,8 @@ fn prompt(rest: &[String]) -> Result<Output, String> {
     if text.trim().is_empty() {
         return Err(USAGE.into());
     }
-    let reply = crate::llm::ask(&text, "", &flags)?;
+    req["user"] = text.into();
+    let reply = crate::llm::ask(None, &req)?;
     let cut = if reply.truncated { "\n[the token limit cut this answer short]" } else { "" };
     Ok(Output::plain(format!("{}{cut}", reply.text)))
 }
@@ -355,6 +362,30 @@ fn command_help(cmd: &str, rest: &[String]) -> Option<String> {
     .ok()
 }
 
+// Resolves the PATH of `agent check|explain` against the caller's folder (check's default is that folder), so the
+// daemon never reads its own working directory; other commands pass through.
+fn rules_args(rest: &[String], cwd: &std::path::Path) -> Vec<String> {
+    let mut args = rest.to_vec();
+    if !matches!(args.first().map(String::as_str), Some("check" | "explain")) {
+        return args;
+    }
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--purpose" => i += 2,
+            a if a.starts_with('-') => i += 1,
+            a => {
+                args[i] = cwd.join(a).to_string_lossy().into_owned();
+                return args;
+            }
+        }
+    }
+    if args[0] == "check" {
+        args.push(cwd.to_string_lossy().into_owned());
+    }
+    args
+}
+
 // Routes the first argument to a command.
 fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
     let aligned = align::args(cmd, rest);
@@ -389,6 +420,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "brief" => brief(ctx, rest),
         "investigate" => crate::investigate::run(ctx, rest),
         "prompt" => prompt(rest),
+        "llm-chat" => crate::chat::run(rest).map(Output::plain),
         "agent" => match rest.split_first() {
             Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
                 get_rules(ctx, r)
@@ -401,12 +433,14 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
             ),
             _ => {
                 let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-                let (text, code) =
-                    ai_agent_rules::run(rest, home.as_deref(), std::path::Path::new("/"));
-                if code == 0 {
-                    Ok(Output::plain(text.trim_end().to_string()))
-                } else {
-                    Err(text.trim_end().to_string())
+                let args = rules_args(rest, &ctx.cwd);
+                let (text, code) = ai_agent_rules::run(&args, home.as_deref(), std::path::Path::new("/"));
+                match code {
+                    0 => Ok(Output::plain(text.trim_end().to_string())),
+                    1 if args.first().is_some_and(|c| c == "check") => {
+                        Ok(Output { status: 1, ..Output::plain(text.trim_end().to_string()) })
+                    }
+                    _ => Err(text.trim_end().to_string()),
                 }
             }
         },
@@ -699,8 +733,7 @@ mod tests {
             .collect();
         t.write("a.txt", long.as_bytes());
         t.write("short.txt", b"needle one\n");
-        let llm = t.write("fake-llm", b"#!/bin/sh\ncat >/dev/null; echo two matches\n");
-        std::fs::set_permissions(&llm, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        let llm = crate::testutil::fake_worker(&t, "fake-llm", &[("Count", "two matches")]);
         std::env::set_var("ZAZZLE_LLM", &llm);
         let out = run_cmd(t.path(), &["find", "needle", "a.txt", "--llm", "Count the matches"]);
         assert!(out.text.starts_with("two matches\n[post-processed by the local model: ~"), "{}", out.text);
@@ -724,8 +757,16 @@ mod tests {
         let _g = crate::testutil::env_lock();
         let t = TempDir::new();
         t.write("AGENTS.md", b"# Rules\nBe kind.\n");
-        let fake = t.write("fake-llm", b"#!/bin/sh\nfor a; do last=$a; done\ncase \"$*\" in *grammar*) seq -f %g:y -s \" \" 99;; *cut*) echo half; exit 3;; *) echo \"$last\";; esac\n");
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        let fake = crate::testutil::fake_worker(
+            &t,
+            "fake-llm",
+            &[
+                ("grammar", "1:h 2:h 3:h"),
+                ("cut", r#"{"text":"half","truncated":true}"#),
+                ("Hi there", "Hi there"),
+                ("--x y", "--x y"),
+            ],
+        );
         std::env::set_var("ZAZZLE_LLM", &fake);
         assert_eq!(run_cmd(t.path(), &["prompt", "--effort", "low", "Hi", "there"]).text, "Hi there");
         assert_eq!(
@@ -750,6 +791,30 @@ mod tests {
         assert!(again.contains("already delivered this session") && !again.contains("Be kind."), "{again}");
         assert!(b.contains("==> rule AGENTS.md:1-2 <==\n# Rules\nBe kind."), "{b}");
         assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
+    }
+
+    // Checks `agent check|explain` read the caller's folder, check's problems come back with exit 1, and other agent commands pass through.
+    #[test]
+    fn test_agent_rules_resolve_against_the_caller() {
+        let cwd = std::path::Path::new("/repo/sub");
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(rules_args(&v(&["check"]), cwd), v(&["check", "/repo/sub"]));
+        assert_eq!(rules_args(&v(&["check", "--json", "x"]), cwd), v(&["check", "--json", "/repo/sub/x"]));
+        assert_eq!(
+            rules_args(&v(&["explain", "--purpose", "review", "a.rs"]), cwd),
+            v(&["explain", "--purpose", "review", "/repo/sub/a.rs"])
+        );
+        assert_eq!(rules_args(&v(&["explain", "/abs.rs"]), cwd), v(&["explain", "/abs.rs"]));
+        assert_eq!(rules_args(&v(&["explain"]), cwd), v(&["explain"]));
+        assert_eq!(rules_args(&v(&["get-rules", "x"]), cwd), v(&["get-rules", "x"]));
+        let t = TempDir::new();
+        t.write("AGENTS.md", b"See @missing.md\n");
+        let o = run_cmd(t.path(), &["agent", "check"]);
+        assert_eq!(o.status, 1, "{}", o.text);
+        assert!(o.text.contains("missing.md"), "{}", o.text);
+        let o = run_cmd(t.path(), &["agent", "explain", "AGENTS.md"]);
+        assert_eq!(o.status, 0, "{}", o.text);
+        assert!(o.text.contains("AGENTS.md"), "{}", o.text);
     }
 
     // Checks the session layer through the dispatcher: ids, notices, the opt-out flag, edits unaffected.
