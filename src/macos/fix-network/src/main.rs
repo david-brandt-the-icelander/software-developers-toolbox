@@ -11,6 +11,7 @@ mod parse;
 mod repair;
 mod report;
 mod run;
+mod status;
 mod sys;
 
 use clap::{Args, Parser, Subcommand};
@@ -18,6 +19,7 @@ use serde_json::Value;
 
 use assess::{assess, Report, Step};
 use facts::{gather, Facts};
+use model::Area;
 use parse::{parse_target, Target};
 use repair::{exec_step, fix_loop, force_steps, plan, Action, Exec, Gates};
 use report::{facts_json, print_actions, print_plan, print_report, to_json};
@@ -114,6 +116,7 @@ fn gates(a: &FixArgs, f: &Facts) -> Gates {
         allow_route_flush: a.allow_route_flush,
         allow_remote: a.allow_remote,
         over_ssh: f.over_ssh,
+        only: a.only.clone(),
     }
 }
 
@@ -184,6 +187,13 @@ fn run(cli: Cli, sys: &dyn Sys, os: &str, root: &Path) -> u8 {
     match cli.command {
         Cmd::Diagnose(a) => cmd_diagnose(sys, root, &a),
         Cmd::Fix(a) => cmd_fix(sys, root, &a),
+        Cmd::Status(a) => {
+            if status::cmd_status(sys, a.json) {
+                OK
+            } else {
+                PROBLEMS
+            }
+        }
     }
 }
 
@@ -194,7 +204,9 @@ fn run(cli: Cli, sys: &dyn Sys, os: &str, root: &Path) -> u8 {
     about = "Diagnose and repair macOS network, DNS, routing, proxy and VPN problems.",
     after_help = "examples:\n  fix-network diagnose --internal-host wiki.corp.example:443\n  \
                   fix-network fix --dry-run --internal-host wiki.corp.example:443\n  \
-                  fix-network fix --vpn --internal-host wiki.corp.example:443\n\n\
+                  fix-network fix --vpn --internal-host wiki.corp.example:443\n  \
+                  fix-network fix --only dns,vpn --vpn\n  \
+                  fix-network status --json\n\n\
                   exit status: 0 healthy, 1 problems remain, 2 not macOS"
 )]
 struct Cli {
@@ -209,6 +221,16 @@ enum Cmd {
     Diagnose(Common),
     /// diagnose, repair least-disruptive first, then verify again
     Fix(FixArgs),
+    /// one-line health summary (Wi-Fi, IP, DNS, internet, VPN) in under about 2s; exit 0 healthy, 1 degraded
+    Status(StatusArgs),
+}
+
+// Options for status.
+#[derive(Args)]
+struct StatusArgs {
+    /// print a JSON object with one field per area instead of the line
+    #[arg(long)]
+    json: bool,
 }
 
 // Options shared by diagnose and fix.
@@ -248,6 +270,9 @@ struct FixArgs {
     /// show the diagnosis and repair plan without changing anything
     #[arg(long)]
     dry_run: bool,
+    /// only repair these areas: wifi (radio, ARP, DHCP, cycle), dns, vpn (reconnect, route flush), proxy
+    #[arg(long, value_enum, value_delimiter = ',', value_name = "AREA")]
+    only: Vec<Area>,
 }
 
 // Parse arguments and run on the real machine.
@@ -318,6 +343,53 @@ mod tests {
         assert_eq!(a.common.internal_host.len(), 2);
         assert!(Cli::try_parse_from(["fix-network", "diagnose", "--internal-host", "a:x"]).is_err());
         assert!(Cli::try_parse_from(["fix-network", "recover"]).is_err());
+    }
+
+    // Check that --only takes repeated and comma-separated areas and rejects unknown ones.
+    #[test]
+    fn test_cli_parses_only() {
+        let args = ["fix-network", "fix", "--only", "wifi,dns", "--only", "vpn"];
+        let Cmd::Fix(a) = Cli::parse_from(args).command else { panic!("expected fix") };
+        assert_eq!(a.only, vec![Area::Wifi, Area::Dns, Area::Vpn]);
+        assert!(Cli::try_parse_from(["fix-network", "fix", "--only", "printer"]).is_err());
+        let Cmd::Status(s) = Cli::parse_from(["fix-network", "status", "--json"]).command else {
+            panic!("expected status")
+        };
+        assert!(s.json);
+    }
+
+    // Check that status exits 0 when healthy and 1 when degraded, without creating a state directory.
+    #[test]
+    fn test_status_exit_codes() {
+        let dir = root("status");
+        let status = |sys: &Fake, args: &[&str]| {
+            run(Cli::parse_from([&["fix-network"], args].concat()), sys, "macos", &dir)
+        };
+        assert_eq!(status(&mac(), &["status"]), OK);
+        let sys = mac();
+        sys.on("networksetup -getairportpower en0", &[(0, "Wi-Fi Power (en0): Off")]);
+        assert_eq!(status(&sys, &["status", "--json"]), PROBLEMS);
+        assert!(!dir.exists());
+    }
+
+    // Check that a dry run with --only marks steps outside those areas as skipped.
+    #[test]
+    fn test_fix_dry_run_only() {
+        let sys = broken_vpn();
+        let args = [
+            "fix",
+            "--dry-run",
+            "--force",
+            "--vpn",
+            "--only",
+            "vpn",
+            "--internal-host",
+            "wiki.corp.example:443",
+        ];
+        let (code, log) = cli(&sys, "dry-only", &args);
+        assert_eq!(code, PROBLEMS);
+        assert!(log.contains("- flush DNS cache  [skipped: needs --only dns]"), "{log}");
+        assert!(log.contains("- reconnect VPN \"Work\"") && !log.contains("\"Work\"  [skipped"), "{log}");
     }
 
     // Check that anything but macOS is refused with status 2 before touching the machine.

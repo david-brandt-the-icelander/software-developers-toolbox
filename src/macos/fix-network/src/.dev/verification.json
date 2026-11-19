@@ -3,16 +3,17 @@
   "kind": "verification",
   "title": "fix-network verification",
   "folder": "src/macos/fix-network/src",
-  "description": "How the tool is checked. Every command, lookup and connection goes through the Sys trait, so the tests drive the whole tool (gathering, diagnosis, each repair step, both commands) against a scripted Mac, and the real implementation against localhost. Results and coverage figures are readings and are not kept here.",
+  "description": "How the tool is checked. Every command, lookup and connection goes through the Sys trait, so the tests drive the whole tool (gathering, diagnosis, each repair step, every command) against a scripted Mac, and the real implementation against localhost. Results and coverage figures are readings and are not kept here.",
   "entities": [
     {
       "id": "end-to-end-scripted-mac",
-      "title": "Both commands against a scripted Mac",
-      "summary": "diagnose and fix run end to end through main.rs's run on sys::fake::Fake, a Mac whose command answers, names, open ports, clock and SSH flag are scripted.",
+      "title": "Every command against a scripted Mac",
+      "summary": "diagnose, fix and status run end to end through main.rs's run on sys::fake::Fake, a Mac whose command answers, names, open ports, clock and SSH flag are scripted.",
       "subject": [
         { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "diagnose" },
         { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "fix" },
-        { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "fix-dry-run" }
+        { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "fix-dry-run" },
+        { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "status" }
       ],
       "criteria": [
         "Repeated --internal-host and the fix flags parse; a bad port is refused",
@@ -24,7 +25,9 @@
         "fix --vpn reconnects the VPN, verifies the intranet again and exits 0 without cycling Wi-Fi",
         "A failed reconnect exits 1, is logged FAILED and ends in manual advice",
         "Dry runs change nothing and list blocked steps; the --force ladder comes first without repeats",
-        "A Mac with no network service still produces a diagnosis"
+        "A Mac with no network service still produces a diagnosis",
+        "--only takes repeated and comma-separated areas and refuses unknown ones; a dry run marks steps outside them as needing --only AREA",
+        "status exits 0 when healthy and 1 when degraded, and creates no state directory"
       ],
       "checks": [
         { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_cli_parses_fix_flags", "command": "cargo test -p fix-network" },
@@ -37,7 +40,10 @@
         { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_fix_vpn_reconnect_fails", "command": "cargo test -p fix-network" },
         { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_fix_dry_run_plans", "command": "cargo test -p fix-network" },
         { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_start_plan_merges", "command": "cargo test -p fix-network" },
-        { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_diagnose_without_any_service", "command": "cargo test -p fix-network" }
+        { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_diagnose_without_any_service", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_cli_parses_only", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_status_exit_codes", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/main.rs", "symbol": "tests::test_fix_dry_run_only", "command": "cargo test -p fix-network" }
       ],
       "evidenceStatus": "source-verified",
       "sources": [
@@ -90,6 +96,7 @@
       ],
       "criteria": [
         "Gated steps need their flag; over SSH, disruptive steps need --allow-remote",
+        "With --only, a step outside the named areas is blocked first, naming the --only value it needs, and the fix loop runs only steps inside them",
         "Plans are deduplicated, sorted least disruptive first and skip manual remedies",
         "A healthy network runs no step without --force; --force runs the ladder and skips what SSH blocks",
         "A VPN-only fault reconnects the VPN and never cycles Wi-Fi; without --vpn it runs nothing and names the flag",
@@ -99,6 +106,8 @@
       ],
       "checks": [
         { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_gates_blocked", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_gates_only_areas", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_only_restricts", "command": "cargo test -p fix-network" },
         { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_plan_dedupes_and_sorts", "command": "cargo test -p fix-network" },
         { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_vpn_fault_spares_wifi", "command": "cargo test -p fix-network" },
         { "type": "automated", "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests::test_fix_loop_vpn_needs_flag", "command": "cargo test -p fix-network" },
@@ -109,6 +118,34 @@
       "evidenceStatus": "source-verified",
       "sources": [
         { "path": "src/macos/fix-network/src/repair.rs", "symbol": "tests" }
+      ]
+    },
+    {
+      "id": "quick-status",
+      "title": "Quick status against a scripted Mac",
+      "summary": "status.rs's tests probe the scripted Mac and check the line, the JSON object and which commands ran.",
+      "subject": [
+        { "path": "src/macos/fix-network/src/.dev/operation.json", "entityId": "status" },
+        { "path": "src/macos/fix-network/src/.dev/feature.json", "entityId": "quick-status" },
+        { "path": "src/macos/fix-network/src/.dev/contracts.json", "entityId": "status-json" }
+      ],
+      "criteria": [
+        "A healthy Wi-Fi Mac reads ok in every area, and no sudo, ping or curl runs",
+        "A radio that is off without an address is degraded and no lookup is tried",
+        "A wired IPv6-only Mac whose raw-IP probe is blocked reads ok through the looked-up address, without asking for the Wi-Fi power",
+        "DNS can fail while the internet path works; no network service reads as no address",
+        "A connected VPN, one without an interface, one stuck connecting (degraded) and a third-party tunnel each read as expected"
+      ],
+      "checks": [
+        { "type": "automated", "path": "src/macos/fix-network/src/status.rs", "symbol": "tests::test_status_healthy", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/status.rs", "symbol": "tests::test_status_wifi_off_no_address", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/status.rs", "symbol": "tests::test_status_wired_ipv6_only", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/status.rs", "symbol": "tests::test_status_dns_and_internet_failures", "command": "cargo test -p fix-network" },
+        { "type": "automated", "path": "src/macos/fix-network/src/status.rs", "symbol": "tests::test_status_vpn_states", "command": "cargo test -p fix-network" }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "tests" }
       ]
     },
     {

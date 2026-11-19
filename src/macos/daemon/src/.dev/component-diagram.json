@@ -344,8 +344,8 @@
       "id": "csharp-indexer",
       "name": "csharp-indexer",
       "responsibility": "The C# tool in this repository whose the daemon answers `view` and the structure tools over its own unix socket; it lists no tools to clients.",
-      "folder": "src/src/macossharp-indexer",
-      "diagram": "src/src/macossharp-indexer/.dev/component-diagram.json"
+      "folder": "src/macos/csharp-indexer",
+      "diagram": "src/macos/csharp-indexer/.dev/component-diagram.json"
     },
     {
       "id": "zazz-script-runner",

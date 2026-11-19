@@ -3,14 +3,15 @@
   "kind": "class",
   "title": "fix-network types",
   "folder": "src/macos/fix-network/src",
-  "description": "The structs, enums and the trait the modules declare: parsed command output, the snapshot, the assessment and its results, the repair gates and actions, the run's session, the machine behind Sys, and the command line. Fake is test-only (cfg(test)).",
+  "description": "The structs, enums and the trait the modules declare: parsed command output, the snapshot, the assessment and its results, the repair areas, gates and actions, the quick status and its verdicts, the run's session, the machine behind Sys, and the command line. Fake is test-only (cfg(test)).",
   "sources": [
     { "path": "src/macos/fix-network/src/model.rs", "symbol": "Report" },
     { "path": "src/macos/fix-network/src/facts.rs", "symbol": "Facts" },
     { "path": "src/macos/fix-network/src/parse.rs", "symbol": "Resolver" },
     { "path": "src/macos/fix-network/src/repair.rs", "symbol": "Gates" },
     { "path": "src/macos/fix-network/src/sys.rs", "symbol": "Sys" },
-    { "path": "src/macos/fix-network/src/main.rs", "symbol": "Cli" }
+    { "path": "src/macos/fix-network/src/main.rs", "symbol": "Cli" },
+    { "path": "src/macos/fix-network/src/status.rs", "symbol": "Status" }
   ],
   "types": [
     {
@@ -179,8 +180,16 @@
         "name() -> String",
         "rank() -> u8",
         "gate() -> Option<&'static str>",
+        "area() -> Area",
         "disruptive() -> bool"
       ]
+    },
+    {
+      "id": "model.Area",
+      "name": "Area",
+      "kind": "enum",
+      "sources": ["src/macos/fix-network/src/model.rs"],
+      "members": ["Wifi", "Dns", "Vpn", "Proxy", "flag() -> &'static str"]
     },
     {
       "id": "model.Remedy",
@@ -231,7 +240,7 @@
       "name": "Gates",
       "kind": "struct",
       "sources": ["src/macos/fix-network/src/repair.rs"],
-      "members": ["vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "over_ssh: bool", "blocked(s: &Step) -> Option<&'static str>"]
+      "members": ["vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "over_ssh: bool", "only: Vec<Area>", "blocked(s: &Step) -> Option<&'static str>"]
     },
     {
       "id": "repair.Action",
@@ -292,7 +301,28 @@
       "name": "Cmd",
       "kind": "enum",
       "sources": ["src/macos/fix-network/src/main.rs"],
-      "members": ["Diagnose(Common)", "Fix(FixArgs)"]
+      "members": ["Diagnose(Common)", "Fix(FixArgs)", "Status(StatusArgs)"]
+    },
+    {
+      "id": "main.StatusArgs",
+      "name": "StatusArgs",
+      "kind": "struct",
+      "sources": ["src/macos/fix-network/src/main.rs"],
+      "members": ["json: bool"]
+    },
+    {
+      "id": "status.Status",
+      "name": "Status",
+      "kind": "struct",
+      "sources": ["src/macos/fix-network/src/status.rs"],
+      "members": ["phys: Option<Service>", "link: IfStatus", "wifi_on: Option<bool>", "dns: bool", "internet: bool", "vpns: Vec<VpnService>", "tunnels: Vec<String>"]
+    },
+    {
+      "id": "status.Verdict",
+      "name": "Verdict",
+      "kind": "struct",
+      "sources": ["src/macos/fix-network/src/status.rs"],
+      "members": ["name: &'static str", "ok: bool", "text: String", "json: Value"]
     },
     {
       "id": "main.Common",
@@ -306,7 +336,7 @@
       "name": "FixArgs",
       "kind": "struct",
       "sources": ["src/macos/fix-network/src/main.rs"],
-      "members": ["common: Common", "vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "force: bool", "dry_run: bool"]
+      "members": ["common: Common", "vpn: bool", "fix_proxy: bool", "allow_route_flush: bool", "allow_remote: bool", "force: bool", "dry_run: bool", "only: Vec<Area>"]
     }
   ],
   "relationships": [
@@ -330,6 +360,12 @@
     { "from": "assess.Ctx", "to": "facts.Facts", "kind": "depends-on", "description": "The snapshot being judged." },
     { "from": "assess.Ctx", "to": "model.Finding", "kind": "depends-on", "description": "Collects findings; a remedy offers only untried steps." },
     { "from": "repair.Gates", "to": "model.Step", "kind": "depends-on", "description": "Says which flag blocks a step." },
+    { "from": "repair.Gates", "to": "model.Area", "kind": "depends-on", "description": "The areas --only allows; a step outside them is blocked first." },
+    { "from": "model.Step", "to": "model.Area", "kind": "depends-on", "description": "The area each step repairs." },
+    { "from": "status.Status", "to": "parse.Service", "kind": "depends-on", "description": "The service in use." },
+    { "from": "status.Status", "to": "parse.IfStatus", "kind": "depends-on", "description": "Its addresses." },
+    { "from": "status.Status", "to": "parse.VpnService", "kind": "depends-on", "description": "The scutil-managed VPNs." },
+    { "from": "status.Verdict", "to": "status.Status", "kind": "depends-on", "description": "One verdict per area, judged from the status." },
     { "from": "repair.Action", "to": "model.Step", "kind": "depends-on", "description": "The step that ran." },
     { "from": "repair.Exec", "to": "sys.Sys", "kind": "depends-on", "description": "Runs the steps on the machine." },
     { "from": "repair.StepFn", "to": "facts.Facts", "kind": "depends-on", "description": "Runs a step against a snapshot." },
@@ -337,6 +373,8 @@
     { "from": "main.Cmd", "to": "main.Common", "kind": "depends-on", "description": "diagnose's options." },
     { "from": "main.Cmd", "to": "main.FixArgs", "kind": "depends-on", "description": "fix's options." },
     { "from": "main.FixArgs", "to": "main.Common", "kind": "depends-on", "description": "Flattened shared options." },
+    { "from": "main.FixArgs", "to": "model.Area", "kind": "depends-on", "description": "The areas given with --only." },
+    { "from": "main.Cmd", "to": "main.StatusArgs", "kind": "depends-on", "description": "status's options." },
     { "from": "main.Common", "to": "parse.Target", "kind": "depends-on", "description": "Each --internal-host, parsed by parse_target." }
   ]
 }

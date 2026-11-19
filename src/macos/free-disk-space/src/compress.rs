@@ -185,7 +185,20 @@ fn compress_one(cand: &Cand, o: &CompressOpts) -> (&'static str, String, i64) {
     result.unwrap_or_else(|e| ("failed", e.to_string(), 0))
 }
 
-// Replace a file that is flagged compressed but saves no space with a verified plain copy that `make` writes.
+// Check that a compressed file is still safe to rewrite plain, with the same rules as compress; return a skip note
+// if not.
+pub fn decompress_precheck(path: &Path, st: &fs::Metadata, o: &CompressOpts) -> Option<String> {
+    let cand = Cand {
+        path: path.to_string_lossy().into_owned(),
+        size: st.len() as i64,
+        mtime_ns: util::mtime_ns(st),
+        ino: st.ino() as i64,
+        est: 0,
+    };
+    precheck(&cand, st, o, util::UF_COMPRESSED)
+}
+
+// Replace a file that is flagged compressed with a verified plain copy that `make` writes.
 pub fn decompress_flagged(
     path: &Path,
     o: &CompressOpts,
@@ -195,14 +208,7 @@ pub fn decompress_flagged(
         Ok(st) => st,
         Err(e) => return ("skipped", format!("gone: {e}"), 0),
     };
-    let cand = Cand {
-        path: path.to_string_lossy().into_owned(),
-        size: st.len() as i64,
-        mtime_ns: util::mtime_ns(&st),
-        ino: st.ino() as i64,
-        est: 0,
-    };
-    if let Some(note) = precheck(&cand, &st, o, util::UF_COMPRESSED) {
+    if let Some(note) = decompress_precheck(path, &st, o) {
         return ("skipped", note, 0);
     }
     let tmp = util::temp_beside(path);

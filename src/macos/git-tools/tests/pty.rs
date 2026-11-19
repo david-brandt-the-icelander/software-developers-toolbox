@@ -417,3 +417,139 @@ fn test_commit_offers_editor_once() {
         assert!(!screen.contains("[y/N]"));
     }
 }
+
+// Runs `zazzle git ARGS` in a directory without a terminal and returns its exit code, standard output and standard error.
+fn zg(dir: &Path, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(ZGIT)
+        .args(args)
+        .current_dir(dir)
+        .env("HOME", dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    (out.status.code().unwrap_or(-1), text(&out.stdout), text(&out.stderr))
+}
+
+// Checks `zazzle git amend` through the editor: the last message and the staged files are shown, and saving amends both into the commit.
+#[test]
+fn test_amend_edits_message_and_adds_staged() {
+    let d = repo("amend-edit");
+    fs::write(d.join("b.txt"), "b\n").unwrap();
+    git(&d, &["add", "b.txt"]);
+    let mut p = Pty::spawn(ZGIT, &["amend"], &d, &[]);
+    p.expect("Staged changes that will be added");
+    p.expect("A b.txt");
+    p.keys(b"Better ");
+    p.keys(b"\x13");
+    assert_eq!(p.exit(), 0);
+    assert_eq!(git(&d, &["log", "--format=%B"]).trim(), "Better first");
+    let files = git(&d, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(files.lines().collect::<Vec<_>>(), vec!["a.txt", "b.txt"]);
+    assert!(!d.join(".git/ZAZZLE_AMEND_MSG").exists());
+}
+
+// Checks that Esc leaves the commit as it was, and that a failing commit-msg hook keeps the edited message and says where.
+#[test]
+fn test_amend_cancel_and_failing_hook() {
+    let d = repo("amend-cancel");
+    let head = git(&d, &["rev-parse", "HEAD"]);
+    let mut p = Pty::spawn(ZGIT, &["amend"], &d, &[]);
+    p.expect("Nothing is staged");
+    p.keys(b"\x1b");
+    assert_eq!(p.exit(), 1);
+    assert_eq!(git(&d, &["rev-parse", "HEAD"]), head);
+    assert!(!d.join(".git/ZAZZLE_AMEND_MSG").exists());
+    let hook = d.join(".git/hooks/commit-msg");
+    fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    Command::new("chmod").arg("+x").arg(&hook).status().unwrap();
+    let mut q = Pty::spawn(ZGIT, &["amend"], &d, &[]);
+    q.expect("Amending the last commit");
+    q.keys(b"Kept ");
+    q.keys(b"\x13");
+    q.expect("your message is in");
+    assert_ne!(q.exit(), 0);
+    assert_eq!(git(&d, &["rev-parse", "HEAD"]), head);
+    assert!(fs::read_to_string(d.join(".git/ZAZZLE_AMEND_MSG")).unwrap().starts_with("Kept first\n"));
+}
+
+// Checks amend --no-edit, the refusals with no commit or no repository, and that the editor needs a terminal.
+#[test]
+fn test_amend_without_editor() {
+    let d = repo("amend-noedit");
+    fs::write(d.join("a.txt"), "two\n").unwrap();
+    git(&d, &["add", "a.txt"]);
+    let (code, _, _) = zg(&d, &["amend", "--no-edit"]);
+    assert_eq!(code, 0);
+    assert_eq!(git(&d, &["log", "--format=%s"]).trim(), "first");
+    assert_eq!(git(&d, &["show", "HEAD:a.txt"]), "two\n");
+    let mut cmd = Command::new(ZGIT);
+    cmd.arg("amend").current_dir(&d).env("HOME", &d).env("GIT_CONFIG_NOSYSTEM", "1");
+    // SAFETY: setsid is async-signal-safe and only detaches the child from any controlling terminal.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let out = cmd.output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("needs a terminal"));
+    assert!(!d.join(".git/ZAZZLE_AMEND_MSG").exists());
+    let e = scratch("amend-empty");
+    git(&e, &["init", "-q", "-b", "main"]);
+    let (code, _, err) = zg(&e, &["amend"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("there is no commit to amend yet"), "{err}");
+    let out = Command::new(ZGIT)
+        .arg("amend")
+        .current_dir(std::env::temp_dir())
+        .env("GIT_CEILING_DIRECTORIES", std::env::temp_dir())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+// Checks `zazzle git undo`: it takes back the last commit keeping its changes staged, and refuses a root commit or no commit.
+#[test]
+fn test_undo_keeps_changes() {
+    let d = repo("undo");
+    fs::write(d.join("b.txt"), "b\n").unwrap();
+    git(&d, &["add", "b.txt"]);
+    git(&d, &["commit", "-q", "-m", "add b"]);
+    let short = git(&d, &["rev-parse", "--short", "HEAD"]);
+    let (code, out, _) = zg(&d, &["undo"]);
+    assert_eq!(code, 0);
+    assert_eq!(out, format!("undid {} add b; its changes are staged\n", short.trim()));
+    assert_eq!(git(&d, &["rev-list", "--count", "HEAD"]).trim(), "1");
+    assert_eq!(git(&d, &["status", "--porcelain"]), "A  b.txt\n");
+    let (code, _, err) = zg(&d, &["undo"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("is the first commit") && err.contains("git update-ref -d HEAD"), "{err}");
+    let e = scratch("undo-empty");
+    git(&e, &["init", "-q", "-b", "main"]);
+    let (code, _, err) = zg(&e, &["undo"]);
+    assert!(code == 1 && err.contains("there is no commit to undo yet"), "{err}");
+}
+
+// Checks that undo refuses a commit already on the upstream branch unless --force, and allows one that is not pushed yet.
+#[test]
+fn test_undo_pushed_commit() {
+    let d = repo("undo-pushed");
+    let remote = scratch("undo-remote");
+    git(&remote, &["init", "-q", "--bare", "-b", "main"]);
+    git(&d, &["remote", "add", "origin", remote.to_str().unwrap()]);
+    fs::write(d.join("b.txt"), "b\n").unwrap();
+    git(&d, &["add", "b.txt"]);
+    git(&d, &["commit", "-q", "-m", "add b"]);
+    git(&d, &["push", "-q", "-u", "origin", "main"]);
+    let (code, _, err) = zg(&d, &["undo"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("is already on origin/main") && err.contains("--force"), "{err}");
+    fs::write(d.join("c.txt"), "c\n").unwrap();
+    git(&d, &["add", "c.txt"]);
+    git(&d, &["commit", "-q", "-m", "add c"]);
+    assert_eq!(zg(&d, &["undo"]).0, 0);
+    assert_eq!(zg(&d, &["undo", "--force"]).0, 0);
+    assert_eq!(git(&d, &["log", "--format=%s"]).trim(), "first");
+}

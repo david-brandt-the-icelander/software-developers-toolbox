@@ -1,4 +1,4 @@
-# zazzle agent llm / prompt
+# zazzle agent llm / prompt / status / prune
 
 Runs open-weight models on your own machine, so an agent (or you) can ask a local model from the shell: a second opinion, a summary of a long log, a classification, without an API key or sending anything off the machine.
 
@@ -10,11 +10,13 @@ zazzle agent prompt "Why is the sky blue?"             # one message in this ter
 git diff | zazzle agent prompt "Review this diff:" -    # `-` is standard input; no TEXT at all reads only standard input
 zazzle agent prompt --model gpt-oss-20b --effort low --system "Answer in one line." "What is RAII?"
 zazzle agent llm --remove qwen3.5-9b                    # delete a downloaded model
+zazzle ai-agent status [--json] [--verify]              # the default, downloaded models and their checks, partial downloads, disk use
+zazzle ai-agent prune [--apply]                         # list (or delete) every model but the default, stale partials, orphaned locks
 ```
 
 ## Two downloads on first use
 - **The program.** `ai-agent` (this crate) is not in the release tarball or the Homebrew bottle: it carries llama.cpp and is only wanted by those who use it. The `zazzle` invoker hands `agent llm` and `agent prompt` to `zazzle daemon llm`, which finds `ai-agent` beside itself (a development build) or in `~/.zazzle/v1/tools`, downloading it first from `https://icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/` (`src/tools.rs` in daemon). Like the language modules, it is accepted only when its SHA-256 matches the manifest compiled into that daemon (`ZAZZLE_TOOLS_MANIFEST`, written by `release/tools.sh`), then exec'd with the caller's terminal, environment and exit status. `ZAZZLE_TOOLS_DIR` and `ZAZZLE_TOOLS_URL` move the directory and the download URL.
-- **The model.** `ai-agent` downloads a model the first time it is chosen or asked, from Hugging Face at the commit the catalogue pins (`src/catalog.rs`), into `~/.zazzle/v1/llm/models` (`ZAZZLE_LLM_DIR` moves `~/.zazzle/v1/llm`). Progress goes to standard error. An interrupted download resumes where it stopped; the file is installed only when its SHA-256 matches the catalogue's, so a changed or corrupted file is never loaded. Two prompts never download the same model at once (a lock file).
+- **The model.** `ai-agent` downloads a model the first time it is chosen or asked, from Hugging Face at the commit the catalogue pins (`src/catalog.rs`), into `~/.zazzle/v1/llm/models` (`ZAZZLE_LLM_DIR` moves `~/.zazzle/v1/llm`). Progress goes to standard error. An interrupted download resumes where it stopped; the file is installed only when its SHA-256 matches the catalogue's, so a changed or corrupted file is never loaded. Two prompts never download the same model at once (a lock file, `models/.FILE.lock`, held exclusively while downloading and shared while a prompt or worker runs the model).
 
 ## Models
 4-bit GGUF files (MXFP4 for gpt-oss), smallest first; the memory figure is the Mac each one fits comfortably.
@@ -43,8 +45,17 @@ A name may be shortened to a unique prefix (`--model gemma-4-1`). To add a model
 - For programs: `--no-download` never starts a model download, `--grammar GBNF` holds the answer to a grammar (root rule `root`; use `--effort low` so no thinking comes first), and `--temp 0` always takes the likeliest token, so the same question gets the same answer. The daemon uses all three when agents ask the model (`zazzle brief`, `--llm`): see `src/macos/daemon/README.md`.
 - `ZAZZLE_LLM_LOG=1` shows llama.cpp's own log on standard error.
 
+<<<<<<< HEAD
 ## The worker
 `ai-agent worker [--model M] [--effort E] [--no-download]` loads a model once and answers JSON lines on standard input (`{"user", "history"?: [{"role","content"}..], "system"?, "effort"?, "max_tokens"?, "temp"?, "grammar"?}`), one JSON line each (`{"text", "tokens", "truncated"}` or `{"error"}`), after a `{"ready": MODEL}` line. daemon keeps one running for chats and agents' calls and stops it when idle (`src/macos/daemon/README.md`, "Chat and prompt"). `ai-agent fetch [--model M]` downloads a model unless it is here and prints its full name; the chat client uses it so a download shows its progress in the user's terminal.
+=======
+## Status and prune
+`status` and `prune` are reached as `zazzle ai-agent status|prune` (the invoker routes only `agent llm` and `agent prompt` to ai-agent; `zazzle agent status` goes to the rule lister).
+
+- `status` prints the default model and effort and whether it is downloaded; each file in `models/` with its size and check (`*` marks the default): `ok (size)`, `ok (sha256)` with `--verify`, `CORRUPT: ..`, or `not in the catalogue`, and `, in use` while a download or run holds its lock; partial downloads with their size, the expected size and `stale` or `downloading`; `store: PATH (N GB on disk)`; `problem: ..` lines; and `ai-agent VERSION`. Models are checked by size (a file is renamed into place only after its hash matched); `--verify` also hashes each one, reading every byte. Nothing is written.
+- `status --json` prints one object: `tool` (`ai-agent`), `version`, `ok`, `store`, `disk_bytes`, `default` {`model`, `effort`, `downloaded`}, `models` [{`name`, `file`, `bytes`, `expected_bytes`, `check`: `size`|`sha256`|`corrupt`|`unknown`, `default`, `in_use`}], `partials` [{`name`, `file`, `bytes`, `expected_bytes`, `downloading`}] and `problems`. Exit 0 when ok; 1 when the default model is not downloaded (or not in the catalogue) or a model is corrupt; 2 on errors.
+- `prune` lists what it would remove, with sizes and the total: every downloaded model except the default (files not in the catalogue included), partial downloads except the missing default's (it resumes), and lock files of models with nothing left. `--apply` deletes them, taking each model's lock first. A model whose lock is held (a download, prompt or worker) is `skipped`; the default model is never deleted. Exit 0, or 2 when a file could not be removed (the rest still are).
+>>>>>>> bf41754 (Add tool commands: git amend/undo, rules check/explain, free-disk-space top/decompress, fix-network status, indexer status/stop/restart/uninit, ai-agent status/prune)
 
 ## How it runs
 - `src/engine.rs`: llama.cpp through the `llama-cpp-2` crate. The model is memory-mapped with every layer on the GPU (Metal on Apple Silicon; the Linux and Intel macOS builds use the CPU). The context is the prompt plus the token limit, capped at what the model was trained on. Sampling: a grammar first when given, then top-k 40, top-p 0.95, min-p 0.05 and temperature 0.7 (`--temp`), or the likeliest token at `--temp 0`.
@@ -53,5 +64,5 @@ A name may be shortened to a unique prefix (`--model gemma-4-1`). To add a model
 
 ## Build and test
 - `cargo build --release -p ai-agent` in `src/macos` (add `--features metal` on Apple Silicon); put the binary beside `daemon` to use it without the download.
-- `cargo test -p ai-agent`: the catalogue, downloads (resume, hash, lock) against a local server, templates, the thinking splitter and the command line. The engine itself needs a model: `ai-agent prompt --model qwen3.5-2b --effort low "What is the capital of Iceland?"`.
+- `cargo test -p ai-agent`: the catalogue, downloads (resume, hash, lock) against a local server, locks, status and prune on a temporary store, templates, the thinking splitter and the command line. The engine itself needs a model: `ai-agent prompt --model qwen3.5-2b --effort low "What is the capital of Iceland?"`.
 - The release builds it with `release/tools.sh` (see `release/README.md`).

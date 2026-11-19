@@ -98,6 +98,57 @@
           "entityId": "tool-version-source"
         }
       ]
+    },
+    {
+      "id": "commands-in-hello",
+      "title": "Daemon commands ride on the hello line, without a version",
+      "summary": "status and stop are hellos with a command key and no version, answered in one reply, so the protocol needs no second socket and every older daemon refuses them harmlessly.",
+      "status": "accepted",
+      "context": "The daemon had no way to report on itself or be stopped except idling out, quitting the apps or a newer client making it drain; status and restart had to work against daemons already installed, which do not know any command.",
+      "options": [
+        {
+          "title": "A JSON-RPC method on an MCP session",
+          "consequences": "A session needs a matching version, so a status request from another version would make an older daemon drain, or be refused by a newer one."
+        },
+        {
+          "title": "A command key in the hello, with no version",
+          "consequences": "New daemons answer before the version check; old daemons see an empty version, refuse it as too old and name their own version in the error, and keep running."
+        }
+      ],
+      "decision": "Control sends {\"command\": \"status\"|\"stop\"} with no version; DaemonServer answers commands before the version check. To stop an older daemon, Control sends the hello of a client of version 99999.0.0-dev, which every version drains for. After the timeout Control kills the process the daemon reported, or for an older daemon the one lsof names as holding the socket whose command line ends in daemon.",
+      "rationale": "Backward compatible in both directions without a protocol version, and stop reuses the drain that already lets connected sessions finish.",
+      "origin": {
+        "kind": "request",
+        "by": "owner",
+        "date": "2026-11-19",
+        "reference": "status, stop, restart commands for zazzle csharp-indexer"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.DrainVersion"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.FindPid"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_older_daemon"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "version-restart"
+        }
+      ]
     }
   ]
 }

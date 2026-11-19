@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "csharp-indexer shared daemon component diagram",
   "folder": "src/macos/csharp-indexer/src/Daemon",
-  "description": "The daemon server and the proxy that serve runs in front of it. Both are in the same binary; they talk over a unix socket in the state directory.",
+  "description": "The daemon server, the proxy that serve runs in front of it, and the commands that check, stop and restart it. All are in the same binary; they talk over a unix socket in the state directory.",
   "sources": [
     {
       "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
@@ -16,6 +16,10 @@
     {
       "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
       "symbol": "Proxy.Pump"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+      "symbol": "Control.StopDaemon"
     }
   ],
   "components": [
@@ -28,13 +32,19 @@
     {
       "id": "server",
       "name": "Daemon server (Daemon.cs)",
-      "responsibility": "Binds daemon.sock (owner read and write only), accepts clients, checks the version in the handshake, attaches roots, runs one MCP session per client and exits after the idle period with no clients.",
+      "responsibility": "Binds daemon.sock (owner read and write only), accepts clients, answers the status and stop commands, checks the version in the handshake, attaches roots, runs one MCP session per client and exits after the idle period with no clients, or once drained.",
       "folder": "src/macos/csharp-indexer/src/Daemon"
     },
     {
       "id": "proxy",
       "name": "Proxy (Proxy.cs)",
       "responsibility": "Connects to the socket, starts a detached daemon from the same executable when nothing answers, sends the hello line, retries after a version restart, then copies standard input to the socket and the socket to standard output.",
+      "folder": "src/macos/csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "control",
+      "name": "Daemon commands (Control.cs)",
+      "responsibility": "status, stop and restart: send a command hello and print the reply, wait for a draining daemon to exit, kill it after the timeout (finding an older daemon's process with lsof), and start a fresh daemon from this executable.",
       "folder": "src/macos/csharp-indexer/src/Daemon"
     },
     {
@@ -86,6 +96,24 @@
       "to": "mcp",
       "kind": "depends-on",
       "description": "McpServer.RunAsync over the connection, logging to the engine's usage log."
+    },
+    {
+      "from": "daemon-folder",
+      "to": "control",
+      "kind": "contains",
+      "description": "The status, stop and restart commands' side."
+    },
+    {
+      "from": "control",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "Unix socket: one command hello, one reply line (contracts.json, daemon-commands); a kill signal after the timeout."
+    },
+    {
+      "from": "control",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "TryConnect, Exchange and SpawnDaemon."
     }
   ]
 }

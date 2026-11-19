@@ -248,7 +248,7 @@
           "action": "Looks at status and list.",
           "sources": [
             {
-              "path": "src/macos/free-disk-space/src/scan.rs",
+              "path": "src/macos/free-disk-space/src/status.rs",
               "symbol": "cmd_status"
             },
             {
@@ -788,6 +788,193 @@
             {
               "path": "src/macos/free-disk-space/src/compress.rs",
               "symbol": "rewrite_flagged"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "find-space",
+      "name": "Find what takes the space",
+      "description": "A developer whose disk is filling up looks for the largest folders and files before choosing what to clean, dedupe or compress.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "cmd_top"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Know which folders and files take the most space on disk.",
+      "preconditions": [
+        "The developer is at a terminal with the binary installed."
+      ],
+      "postconditions": [
+        "Nothing is changed.",
+        "The largest entries, their sizes and anything not read are on the screen or in JSON."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs free-disk-space top, optionally with a folder, --count, --depth or --json.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/main.rs",
+              "symbol": "TopArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "walk",
+          "actor": "free-disk-space",
+          "action": "Walks the folder on several threads, adding up allocated sizes, staying on its volume.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/top.rs",
+              "symbol": "walk_root"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "show",
+          "actor": "free-disk-space",
+          "action": "Prints the largest entries biggest first and notes what it could not read or did not enter.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/top.rs",
+              "symbol": "text"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "choose",
+          "actor": "Developer",
+          "action": "Picks what to clean, dedupe, compress or delete.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/main.rs",
+              "symbol": "EXAMPLES"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "The path is missing or not a folder.",
+          "outcome": "The tool exits with an error.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/top.rs",
+              "symbol": "walk_root"
+            }
+          ]
+        },
+        {
+          "atStep": "walk",
+          "condition": "A folder cannot be read, for example one macOS privacy protection guards.",
+          "outcome": "It counts as empty and the output notes it.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/top.rs",
+              "symbol": "Walk::children"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "decompress-files",
+      "name": "Decompress files again",
+      "description": "A developer whose tool misbehaves with a transparently compressed file, or who wants compress undone, rewrites chosen files plain.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Have the chosen files stored uncompressed, unchanged in content and metadata.",
+      "preconditions": [
+        "The developer is at a terminal on a Mac with the binary installed.",
+        "The volume has room for the plain files."
+      ],
+      "postconditions": [
+        "Each decompressed file is plain, verified and recorded so compress leaves it alone.",
+        "Files that could not be decompressed are unchanged and listed with the reason."
+      ],
+      "flow": [
+        {
+          "id": "preview",
+          "actor": "Developer",
+          "action": "Runs free-disk-space decompress with the files or folders and reads what would change and the space it takes.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/decompress.rs",
+              "symbol": "preview"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "apply",
+          "actor": "Developer",
+          "action": "Runs the same command with --apply.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/main.rs",
+              "symbol": "DecompressArgs"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "rewrite",
+          "actor": "free-disk-space",
+          "action": "Checks there is room for all of them, then rewrites each file as a verified plain copy, swaps it in and records it.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/decompress.rs",
+              "symbol": "apply"
+            },
+            {
+              "path": "src/macos/free-disk-space/src/compress.rs",
+              "symbol": "decompress_flagged"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "apply",
+          "condition": "Free space is below what the plain files need plus the reserve.",
+          "outcome": "The tool exits before changing anything.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/decompress.rs",
+              "symbol": "cmd_decompress"
+            }
+          ]
+        },
+        {
+          "atStep": "rewrite",
+          "condition": "A file is open, hard-linked, flagged immutable or dataless, has no provenance, or fails verification.",
+          "outcome": "It is skipped or reported FAILED and left as it was; the run carries on.",
+          "sources": [
+            {
+              "path": "src/macos/free-disk-space/src/compress.rs",
+              "symbol": "decompress_precheck"
             }
           ]
         }

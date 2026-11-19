@@ -158,7 +158,7 @@
       ],
       "definition": "src/macos/free-disk-space/src/main.rs",
       "guarantees": [
-        "clean and dedupe change nothing without --apply.",
+        "clean, dedupe, repair and decompress change nothing without --apply; top and status never change anything.",
         "Errors exit 1 with `error: ...` on stderr; a second Ctrl-C exits 130.",
         "daemon run accepts the arguments install writes into the plist."
       ],
@@ -198,6 +198,33 @@
         {
           "relation": "documents",
           "path": "src/macos/free-disk-space/src/.dev/operation.json"
+        }
+      ]
+    },
+    {
+      "id": "status-json",
+      "title": "status --json",
+      "summary": "One compact JSON object from free-disk-space status --json for scripts and agents, also when no scan exists.",
+      "contractType": "file-format",
+      "consumers": [
+        "Scripts and shell prompts",
+        "agents/skills/free-disk-space/SKILL.md, which points coding agents at it"
+      ],
+      "definition": "Top-level keys: tool ('free-disk-space'), version, ok (bool), problems [strings], state_file, scan (null, or {root, complete, dirs_queued, dirs, files, bytes, errors, elapsed_secs}), candidates ({status: {files, estimated, saved}}), file_names (null, or {recorded, cloned}), free_space (null, or {volume, total, free}) and daemon {installed, running, plist, log}. Sizes are bytes.",
+      "guarantees": [
+        "tool, version, ok and problems are always present.",
+        "ok is false exactly when problems is not empty."
+      ],
+      "compatibility": "Nothing versions the format; version names the binary that wrote it. top --json is a separate object (tool, version, root, total, files, depth, entries, skipped, other_volumes).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "to_json"
         }
       ]
     }

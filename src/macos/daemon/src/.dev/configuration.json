@@ -216,7 +216,7 @@
       "relationships": [
         {
           "relation": "depends-on",
-          "path": "src/src/macossharp-indexer/src/.dev/contracts.json",
+          "path": "src/macos/csharp-indexer/src/.dev/contracts.json",
           "entityId": "state-dir-layout",
           "description": "The indexer owns the state directory's layout."
         }

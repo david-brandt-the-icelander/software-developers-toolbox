@@ -52,6 +52,36 @@
           "symbol": "Init.Apply"
         }
       ]
+    },
+    {
+      "id": "uninit-no-restore",
+      "title": "uninit does not restore what init removed",
+      "summary": "init removes the indexer's own csharp-indexer server, its mcp__zazzle-csharp-indexer permission and enabled server from an earlier init; uninit takes out zazzle's entries and the hook but does not put those back.",
+      "impact": "A project initialised by an old version and then uninitialised has neither server; the indexer's own server lists no tools, so nothing an agent used is lost.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        }
+      ]
+    },
+    {
+      "id": "uninit-deletes-hollow-files",
+      "title": "uninit cannot tell who created a file",
+      "summary": "uninit deletes .mcp.json or .claude/settings.json when its removals leave nothing but empty objects and arrays, without knowing whether init or the developer created the file.",
+      "impact": "A file the developer created before init that held only init's entries and empty containers is deleted rather than left as {}; Claude Code treats a missing file and an empty one alike.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Hollow"
+        }
+      ]
     }
   ]
 }

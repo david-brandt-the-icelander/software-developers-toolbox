@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "csharp-indexer source component diagram",
   "folder": "src/macos/csharp-indexer/src",
-  "description": "The parts of the csharp-indexer executable. The same binary is the shared daemon the zazzle daemon talks to, the stdio server in front of it and the init, hook and report commands; one engine per process holds the store and the indexes.",
+  "description": "The parts of the csharp-indexer executable. The same binary is the shared daemon the zazzle daemon talks to, the stdio server in front of it and the init, uninit, status, stop, restart, hook and report commands; one engine per process holds the store and the indexes.",
   "sources": [
     {
       "path": "src/macos/csharp-indexer/src/Program.cs",
@@ -36,7 +36,7 @@
     {
       "id": "program",
       "name": "Command line (Program.cs)",
-      "responsibility": "Dispatches serve, daemon, init, report, hook and --version; wires roots, the engine, the daemon proxy and the MCP server together.",
+      "responsibility": "Dispatches serve, daemon, init, uninit, status, stop, restart, report, hook, help and --version; wires roots, the engine, the daemon proxy and the MCP server together.",
       "folder": "src/macos/csharp-indexer/src"
     },
     {
@@ -94,7 +94,7 @@
     {
       "id": "cli",
       "name": "Command-line helpers",
-      "responsibility": "init, which registers zazzle's MCP server and the redirect hook; the hook's policy, which sends raw reads and searches to zazzle; and report.",
+      "responsibility": "init, which registers zazzle's MCP server and the redirect hook, and uninit, which removes them; the hook's policy, which sends raw reads and searches to zazzle; and report.",
       "folder": "src/macos/csharp-indexer/src/Cli"
     },
     {
@@ -219,7 +219,7 @@
       "from": "program",
       "to": "cli",
       "kind": "depends-on",
-      "description": "init, hook and report."
+      "description": "init, uninit, hook and report."
     },
     {
       "from": "program",

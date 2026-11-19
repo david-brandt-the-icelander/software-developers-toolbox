@@ -30,13 +30,15 @@ public static class Proxy
     // Returns the socket path inside the state directory.
     public static string SocketPath(string stateDir) => Path.Combine(stateDir, "daemon.sock");
 
-    // Starts a detached daemon process from this executable.
-    public static void SpawnDaemon()
+    // Starts a detached daemon process from an executable (default: this one), on a given state folder when one is named.
+    public static void SpawnDaemon(string? exe = null, string? stateDir = null)
     {
-        var exe = Environment.ProcessPath!;
+        exe ??= Environment.ProcessPath!;
         var psi = OperatingSystem.IsWindows()
             ? new ProcessStartInfo(exe, "daemon") { UseShellExecute = false, CreateNoWindow = true }
             : new ProcessStartInfo("/bin/sh") { UseShellExecute = false, ArgumentList = { "-c", "nohup \"$0\" daemon >/dev/null 2>&1 </dev/null &", exe } };
+        if (stateDir is not null)
+            psi.Environment["ZAZZLE_INDEXER_STATE_DIR"] = stateDir;
         Process.Start(psi)?.WaitForExit(2000);
     }
 
@@ -84,17 +86,22 @@ public static class Proxy
     }
 
     // Sends the hello line and reads the daemon's reply line.
-    public static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs, string? session = null)
+    public static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs, string? session = null) =>
+        Exchange(socket, new JsonObject { ["version"] = ToolVersion.Text, ["roots"] = new JsonArray(rootSpecs.Select(r => (JsonNode)r).ToArray()), ["session"] = session });
+
+    // Sends one JSON line and reads the reply line; throws IOException when the daemon closes the connection without one.
+    public static JsonNode Exchange(Socket socket, JsonObject message)
     {
-        var hello = new JsonObject { ["version"] = ToolVersion.Text, ["roots"] = new JsonArray(rootSpecs.Select(r => (JsonNode)r).ToArray()), ["session"] = session };
         var stream = new NetworkStream(socket, false);
-        var bytes = Encoding.UTF8.GetBytes(hello.ToJsonString() + "\n");
+        var bytes = Encoding.UTF8.GetBytes(message.ToJsonString() + "\n");
         stream.Write(bytes, 0, bytes.Length);
-        var sb = new StringBuilder();
+        var line = new MemoryStream();
         int b;
         while ((b = stream.ReadByte()) is not (-1 or '\n'))
-            sb.Append((char)b);
-        return JsonNode.Parse(sb.ToString()) ?? new JsonObject();
+            line.WriteByte((byte)b);
+        if (line.Length == 0)
+            throw new IOException("the daemon closed the connection without a reply");
+        return JsonNode.Parse(line.ToArray()) ?? new JsonObject();
     }
 
     // Pipes stdin to the socket and the socket to stdout until the daemon closes the connection.

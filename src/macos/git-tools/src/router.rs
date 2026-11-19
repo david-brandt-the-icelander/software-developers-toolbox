@@ -1,14 +1,16 @@
-// `zazzle git ARGS`: answers help and version itself, runs `message` and `commit`, and hands everything else to git unchanged.
+// `zazzle git ARGS`: answers help and version itself, runs `message`, `commit`, `amend` and `undo`, and hands everything else to git unchanged.
 
 use crate::git::{exec_git, git};
-use crate::{commit, message, offer};
+use crate::{commit, history, message, offer};
 
 // The help text for `zazzle git`.
-pub const HELP: &str = "usage: zazzle git [message FILE | commit [--no-add] [OPTIONS] | GIT ARGS...]
+pub const HELP: &str = "usage: zazzle git [message FILE | commit [--no-add] [OPTIONS] | amend [--no-edit] | undo [--force] | GIT ARGS...]
 
   zazzle git message FILE   edit a commit message (or other short text) in a small editor
   zazzle git commit         draft the message, choose the files, then commit
-  zazzle git help COMMAND   help for message or commit; other topics go to `git help`
+  zazzle git amend          edit the last commit's message and add what is staged to it
+  zazzle git undo           take back the last commit, keeping its changes staged
+  zazzle git help COMMAND   help for message, commit, amend or undo; other topics go to `git help`
 
 Everything else is passed to git unchanged, for example `zazzle git status -sb`.
 Git's own help: git help, or zazzle git help TOPIC.
@@ -20,9 +22,13 @@ pub enum Route {
     Help,
     MessageHelp,
     CommitHelp,
+    AmendHelp,
+    UndoHelp,
     Version,
     Message(Vec<String>),
     Commit(Vec<String>),
+    Amend(Vec<String>),
+    Undo(Vec<String>),
     Git(Vec<String>),
 }
 
@@ -36,11 +42,15 @@ pub fn route(args: &[String]) -> Route {
             None => Route::Help,
             Some("message") => Route::MessageHelp,
             Some("commit") => Route::CommitHelp,
+            Some("amend") => Route::AmendHelp,
+            Some("undo") => Route::UndoHelp,
             Some(_) => Route::Git(args.to_vec()),
         },
         Some("-v" | "--version" | "version") => Route::Version,
         Some("message") => Route::Message(rest),
         Some("commit") => Route::Commit(rest),
+        Some("amend") => Route::Amend(rest),
+        Some("undo") => Route::Undo(rest),
         Some(_) => Route::Git(args.to_vec()),
     }
 }
@@ -57,9 +67,13 @@ pub fn main(args: &[String]) -> i32 {
         Route::Help => print!("{HELP}\n{}", offer::HOW_TO),
         Route::MessageHelp => print!("{}\n{}", message::HELP, offer::HOW_TO),
         Route::CommitHelp => print!("{}\n{}", commit::HELP, offer::HOW_TO),
+        Route::AmendHelp => print!("{}\n{}", history::AMEND_HELP, offer::HOW_TO),
+        Route::UndoHelp => print!("{}", history::UNDO_HELP),
         Route::Version => print!("{}", version()),
         Route::Message(rest) => return message::main(&rest),
         Route::Commit(rest) => return commit::main(&rest),
+        Route::Amend(rest) => return history::amend_main(&rest),
+        Route::Undo(rest) => return history::undo_main(&rest),
         Route::Git(all) => return exec_git(&all),
     }
     0
@@ -83,6 +97,10 @@ mod tests {
         assert_eq!(route(&v(&["help"])), Route::Help);
         assert_eq!(route(&v(&["help", "message"])), Route::MessageHelp);
         assert_eq!(route(&v(&["help", "commit"])), Route::CommitHelp);
+        assert_eq!(route(&v(&["help", "amend"])), Route::AmendHelp);
+        assert_eq!(route(&v(&["help", "undo"])), Route::UndoHelp);
+        assert_eq!(route(&v(&["amend", "--no-edit"])), Route::Amend(v(&["--no-edit"])));
+        assert_eq!(route(&v(&["undo"])), Route::Undo(v(&[])));
         assert_eq!(route(&v(&["help", "rebase"])), Route::Git(v(&["help", "rebase"])));
         assert_eq!(route(&v(&["-v"])), Route::Version);
         assert_eq!(route(&v(&["--version"])), Route::Version);
@@ -97,10 +115,19 @@ mod tests {
     fn test_main_prints() {
         assert!(version().starts_with("git-tools "));
         assert!(version().contains("git version"));
-        for a in [v(&[]), v(&["help", "message"]), v(&["help", "commit"]), v(&["--version"])] {
+        for a in [
+            v(&[]),
+            v(&["help", "message"]),
+            v(&["help", "commit"]),
+            v(&["help", "amend"]),
+            v(&["help", "undo"]),
+            v(&["--version"]),
+        ] {
             assert_eq!(main(&a), 0);
         }
         assert_eq!(main(&v(&["commit", "-h"])), 0);
         assert_eq!(main(&v(&["message", "-h"])), 0);
+        assert_eq!(main(&v(&["amend", "-h"])), 0);
+        assert_eq!(main(&v(&["undo", "-h"])), 0);
     }
 }

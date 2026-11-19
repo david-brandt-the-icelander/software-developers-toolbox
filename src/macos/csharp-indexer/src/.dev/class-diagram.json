@@ -43,6 +43,7 @@
         "string StateDir",
         "string Epoch",
         "static Engine Open(string? stateDir = null, bool watch = true)",
+        "List<RootIndex> Indexes()",
         "RootIndex Attach(string path)",
         "BlobMeta? Blob(int id)",
         "BlobMeta GetOrAddBlob(byte[] bytes, string path)",

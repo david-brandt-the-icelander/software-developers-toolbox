@@ -3,11 +3,12 @@
   "kind": "use-case",
   "title": "ai-agent use cases",
   "folder": "src/macos/ai-agent/src",
-  "description": "Asking a local open model from the shell, having zazzle ask it for an agent, and choosing which one answers. The steps before ai-agent starts (the invoker's exec of `zazzle daemon llm`, and daemon downloading ai-agent on first use) are in the invoker's and daemon's views.",
+  "description": "Asking a local open model from the shell, having zazzle ask it for an agent, choosing which one answers, and checking and tidying the models on disk. The steps before ai-agent starts (the invoker's exec of `zazzle daemon llm`, and daemon downloading ai-agent on first use) are in the invoker's and daemon's views.",
   "sources": [
     { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
     { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
-    { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" }
+    { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" },
+    { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" }
   ],
   "entities": [
     {
@@ -311,6 +312,114 @@
           "outcome": "The error on standard error, exit 2; the defaults are not changed.",
           "sources": [
             { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tidy-the-model-store",
+      "name": "Check and tidy the model store",
+      "description": "The developer (or an agent on their behalf) checks that the default model is downloaded and intact and how much disk the models take, then frees the space of models they no longer use.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status" },
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Know the local model setup is healthy and keep only the default model on disk.",
+      "preconditions": [
+        "ai-agent is beside the daemon or can be downloaded for this release."
+      ],
+      "postconditions": [
+        "models/ holds the default model (or its partial download), the files of models that were in use, and nothing else that prune removes.",
+        "The default model and the defaults file are unchanged."
+      ],
+      "flow": [
+        {
+          "id": "status",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle ai-agent status` (or `--json` for a program, `--verify` to hash every model).",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Status" }
+          ]
+        },
+        {
+          "id": "report",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Scans models/, checks each model file against the catalogue by size (and SHA-256 with --verify), and prints the defaults, the models, partial downloads, the store's disk use, any problems and its version; exits 0 when healthy.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "scan" },
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "check" },
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status_text" }
+          ]
+        },
+        {
+          "id": "dry-run",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle ai-agent prune` and reads what would go and how much space it frees.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Prune" }
+          ]
+        },
+        {
+          "id": "plan",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "Lists every model but the default, partial downloads (but the missing default's) and lock files of models with nothing left, skipping a model whose lock a download or run holds; deletes nothing.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "plan" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "busy" }
+          ]
+        },
+        {
+          "id": "apply",
+          "actor": "Developer",
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md",
+          "action": "Runs `zazzle ai-agent prune --apply`.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Prune" }
+          ]
+        },
+        {
+          "id": "delete",
+          "actor": "ai-agent",
+          "participantKind": "system",
+          "action": "For each model with files to remove, takes its lock exclusively without waiting, deletes the files (the lock file last) and prints each with its size, then the space freed.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" },
+            { "path": "src/macos/ai-agent/src/store.rs", "symbol": "try_lock" }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "report",
+          "condition": "The default model is not downloaded or not in the catalogue, or a model's size (or SHA-256 with --verify) differs from the catalogue's.",
+          "outcome": "`problem: ..` lines naming the fix, `\"ok\": false` in --json, exit 1.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status" }
+          ]
+        },
+        {
+          "atStep": "delete",
+          "condition": "A download, prompt or worker holds the model's lock.",
+          "outcome": "`skipped: NAME (in use: ..)`; its files stay.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" }
+          ]
+        },
+        {
+          "atStep": "delete",
+          "condition": "A file cannot be removed.",
+          "outcome": "`error: removing PATH: ..` after the report, the rest still removed, exit 2.",
+          "sources": [
+            { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "rm" }
           ]
         }
       ]

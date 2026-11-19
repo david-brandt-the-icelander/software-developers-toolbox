@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "csharp-indexer shared daemon classes",
   "folder": "src/macos/csharp-indexer/src/Daemon",
-  "description": "The daemon server and the static client helpers.",
+  "description": "The daemon server, the static client helpers, and the daemon commands with what they find.",
   "sources": [
     {
       "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
@@ -12,6 +12,10 @@
     {
       "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
       "symbol": "Proxy"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+      "symbol": "Control"
     }
   ],
   "types": [
@@ -23,9 +27,10 @@
         "src/macos/csharp-indexer/src/Daemon/Daemon.cs"
       ],
       "members": [
-        "DaemonServer(Engine engine, string socketPath, TimeSpan idleExit)",
+        "DaemonServer(Engine engine, string socketPath, TimeSpan idleExit, string? version = null)",
         "Task Done",
         "void Start()",
+        "JsonObject Status()",
         "void Dispose()"
       ]
     },
@@ -39,9 +44,10 @@
       "members": [
         "static Socket? TryConnect(string socketPath)",
         "static string SocketPath(string stateDir)",
-        "static void SpawnDaemon()",
+        "static void SpawnDaemon(string? exe = null, string? stateDir = null)",
         "static Socket? Connect(string stateDir, IEnumerable<string> rootSpecs, out string? error)",
-        "static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs)",
+        "static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs, string? session = null)",
+        "static JsonNode Exchange(Socket socket, JsonObject message)",
         "static Task Pump(Socket socket)"
       ]
     },
@@ -53,7 +59,9 @@
         "src/macos/csharp-indexer/src/Engine.cs"
       ],
       "members": [
-        "UsageLog Log"
+        "UsageLog Log",
+        "string StateDir",
+        "List<RootIndex> Indexes()"
       ],
       "external": true
     },
@@ -80,6 +88,52 @@
         "Task RunAsync(TextReader input, TextWriter output)"
       ],
       "external": true
+    },
+    {
+      "id": "Daemon.ClientInfo",
+      "name": "ClientInfo",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Daemon.cs"
+      ],
+      "members": [
+        "string Session",
+        "string[] Roots",
+        "DateTime Since"
+      ]
+    },
+    {
+      "id": "Daemon.Control",
+      "name": "Control",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Control.cs"
+      ],
+      "members": [
+        "const int NotRunning",
+        "const string DrainVersion",
+        "static Probe Query(string stateDir)",
+        "static int Status(string stateDir, bool json, TextWriter output)",
+        "static JsonObject StatusJson(string stateDir, Probe probe)",
+        "static string StatusText(JsonObject r)",
+        "static int Stop(string stateDir, TimeSpan timeout, TextWriter output)",
+        "static int Restart(string stateDir, string exe, TimeSpan timeout, TextWriter output)",
+        "static string Duration(long seconds)"
+      ]
+    },
+    {
+      "id": "Daemon.Probe",
+      "name": "Probe",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Control.cs"
+      ],
+      "members": [
+        "bool Running",
+        "JsonObject? Status",
+        "string? Version",
+        "string? Error"
+      ]
     }
   ],
   "relationships": [
@@ -106,6 +160,24 @@
       "to": "Mcp.McpServer",
       "kind": "depends-on",
       "description": "One per connection."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Daemon.ClientInfo",
+      "kind": "depends-on",
+      "description": "One per connected session, listed by Status."
+    },
+    {
+      "from": "Daemon.Control",
+      "to": "Daemon.Proxy",
+      "kind": "depends-on",
+      "description": "TryConnect and Exchange for the command hellos, SpawnDaemon for restart."
+    },
+    {
+      "from": "Daemon.Control",
+      "to": "Daemon.Probe",
+      "kind": "depends-on",
+      "description": "Query returns one."
     }
   ]
 }

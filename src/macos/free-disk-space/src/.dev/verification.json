@@ -264,7 +264,7 @@
       "criteria": [
         "The default state path honours FDS_STATE and falls back to the home directory",
         "Invalid command lines are refused by the parser",
-        "Every subcommand dispatches to its implementation"
+        "Every subcommand dispatches to its implementation, top, decompress and status --json included; decompress without a path and top with a count or depth of 0 are refused"
       ],
       "checks": [
         {"type": "automated", "path": "src/macos/free-disk-space/src/main.rs", "symbol": "test_default_state_paths", "command": "cargo test -p free-disk-space test_default_state_paths"},
@@ -279,6 +279,84 @@
       ]
     },
     {
+      "id": "top",
+      "title": "Largest entries",
+      "summary": "top's walk, renderings and command against a temp tree.",
+      "subject": [
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "largest-entries"},
+        {"path": "src/macos/free-disk-space/src/.dev/operation.json", "entityId": "top"}
+      ],
+      "criteria": [
+        "Rows are biggest first and within the depth; a hard-linked pair counts once; symlinks are not followed; folder sizes include what lies below the depth",
+        "A file or missing path is refused; an empty folder gives no rows",
+        "The text has a header, one aligned row per entry and notes on unreadable folders and other volumes; the JSON has the same rows with their kind",
+        "A vanished entry and an unreadable folder are noted (the latter only when not root); another volume is not entered"
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/free-disk-space/src/top.rs", "symbol": "test_walk_root_sizes_and_depth", "command": "cargo test -p free-disk-space test_walk_root_sizes_and_depth"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/top.rs", "symbol": "test_renderings", "command": "cargo test -p free-disk-space top::tests::test_renderings"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/top.rs", "symbol": "test_walk_skips_and_volumes", "command": "cargo test -p free-disk-space test_walk_skips_and_volumes"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/top.rs", "symbol": "test_cmd_top", "command": "cargo test -p free-disk-space test_cmd_top"}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/top.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "decompress",
+      "title": "Decompression",
+      "summary": "decompress's collection, dry run, refusal and verified rewrite; on Linux the BSD flags are scripted, on macOS a file the library compressed is decompressed for real.",
+      "subject": [
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "decompression"},
+        {"path": "src/macos/free-disk-space/src/.dev/operation.json", "entityId": "decompress"}
+      ],
+      "criteria": [
+        "Only flagged regular files are collected; symlinks are not followed; missing, unreadable and other-volume paths are noted",
+        "A plain file's size on disk rounds up to whole 4 KiB blocks",
+        "A dry run changes nothing and lists skips such as a missing provenance; too little free space only warns",
+        "--apply with too little free space exits before changing anything",
+        "--apply rewrites a file with the same contents, records it as skipped when the state file exists and creates none otherwise; a file without a provenance is skipped and a copy that fails keeps the original",
+        "Off macOS it refuses without FDS_FORCE; nothing compressed is reported as such",
+        "On macOS a file compressed by the library is listed by the dry run and becomes plain with the same contents"
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_plain_alloc", "command": "cargo test -p free-disk-space test_plain_alloc"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_collect", "command": "cargo test -p free-disk-space decompress::tests::test_collect"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_cmd_decompress_linux", "command": "cargo test -p free-disk-space test_cmd_decompress_linux"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_preview_gone", "command": "cargo test -p free-disk-space test_preview_gone"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_cmd_decompress_guards", "command": "cargo test -p free-disk-space test_cmd_decompress_guards"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "test_cmd_decompress_macos", "command": "cargo test -p free-disk-space test_cmd_decompress_macos"}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/decompress.rs", "symbol": "tests"}
+      ]
+    },
+    {
+      "id": "status",
+      "title": "Status",
+      "summary": "status's gathering, text and JSON against a sandbox state file and fake launchctl.",
+      "subject": [
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "status-report"},
+        {"path": "src/macos/free-disk-space/src/.dev/contracts.json", "entityId": "status-json"}
+      ],
+      "criteria": [
+        "Without a state file the JSON is ok with scan null and free space read; the text form exits with an error",
+        "A populated state file gives progress, candidates per status and file names; broken files make it not ok and print a problem line",
+        "An unreadable state file and an installed daemon that is not running are problems; the text form exits naming the open error; a running daemon reads as running"
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/free-disk-space/src/status.rs", "symbol": "test_gather_without_state", "command": "cargo test -p free-disk-space test_gather_without_state"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/status.rs", "symbol": "test_gather_with_state", "command": "cargo test -p free-disk-space test_gather_with_state"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/status.rs", "symbol": "test_gather_problems", "command": "cargo test -p free-disk-space test_gather_problems"}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/status.rs", "symbol": "tests"}
+      ]
+    },
+    {
       "id": "on-a-real-mac",
       "title": "On a real Mac",
       "summary": "The steps whose effect depends on macOS itself, which the README says have not been run on a real Mac.",
@@ -286,16 +364,19 @@
         {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "verified-compression"},
         {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "clone-dedupe"},
         {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "folder-cleanup"},
-        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "tool-cleanup"}
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "tool-cleanup"},
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "decompression"}
       ],
       "criteria": [
         "compress --sample 5 compresses files that read back identical, and the free-space change roughly matches the verified saving",
+        "decompress --apply on a compressed file leaves a plain file that reads back identical with its own metadata",
         "dedupe --sample 5 --apply leaves clones that read back identical with their own metadata, and frees space",
         "clean trash --apply empties the Trash through Finder",
         "clean docker --apply prunes, stops the containers and quits a running Docker Desktop"
       ],
       "checks": [
         {"type": "manual", "command": "free-disk-space scan --root <dir> --min-size 5M && free-disk-space compress --sample 5", "description": "On an APFS Mac, compare the files' SHA-256 before and after, and the verified saving with the free-space change."},
+        {"type": "manual", "command": "free-disk-space decompress <file> --apply", "description": "On an APFS Mac, after compress, check the file is no longer flagged compressed (ls -lO), its SHA-256, mode, owner, times and xattrs are unchanged, and its size on disk grew."},
         {"type": "manual", "command": "free-disk-space dedupe --sample 5 --apply", "description": "After a scan, check each cloned file's content, mode, owner, times and xattrs, and the free-space change."},
         {"type": "manual", "command": "free-disk-space clean trash docker --apply", "description": "With something in the Trash and Docker Desktop running, check both are cleaned and Docker has quit."}
       ],

@@ -7,6 +7,7 @@
   "sources": [
     { "path": "src/macos/fix-network/src/main.rs", "symbol": "cmd_fix" },
     { "path": "src/macos/fix-network/src/main.rs", "symbol": "cmd_diagnose" },
+    { "path": "src/macos/fix-network/src/status.rs", "symbol": "cmd_status" },
     { "path": "src/macos/fix-network/src/sys.rs", "symbol": "Sys" },
     { "path": "src/macos/fix-network/src/sys.rs", "symbol": "fake::Fake" }
   ],
@@ -20,7 +21,7 @@
     {
       "id": "cli",
       "name": "Command line (main.rs)",
-      "responsibility": "Parses diagnose and fix with their flags, refuses anything but macOS, records the original settings, and runs a diagnosis, a dry run or the repair, then picks the exit status.",
+      "responsibility": "Parses diagnose, fix and status with their flags, refuses anything but macOS, records the original settings, and runs a diagnosis, a dry run, the repair or the quick status, then picks the exit status.",
       "folder": "src/macos/fix-network/src"
     },
     {
@@ -44,13 +45,19 @@
     {
       "id": "model",
       "name": "Result types (model.rs)",
-      "responsibility": "Check states, repair steps with their order and gates, remedies, findings and reports.",
+      "responsibility": "Check states, repair steps with their order, gates and areas, remedies, findings and reports.",
+      "folder": "src/macos/fix-network/src"
+    },
+    {
+      "id": "status",
+      "name": "Quick status (status.rs)",
+      "responsibility": "A read-only health summary in about 2 seconds: the service in use, its address, the Wi-Fi radio, a name lookup, a TCP connect to the internet, VPNs and tunnels, judged per area and printed as one line or one JSON object.",
       "folder": "src/macos/fix-network/src"
     },
     {
       "id": "repair",
       "name": "Repair (repair.rs)",
-      "responsibility": "Plans the steps a report calls for, runs the adaptive fix loop under the flag gates, and carries out each step.",
+      "responsibility": "Plans the steps a report calls for, runs the adaptive fix loop under the flag gates and the --only areas, and carries out each step.",
       "folder": "src/macos/fix-network/src"
     },
     {
@@ -91,6 +98,7 @@
     { "from": "tool", "to": "checks", "kind": "contains", "description": "Diagnosis." },
     { "from": "tool", "to": "model", "kind": "contains", "description": "Shared result types." },
     { "from": "tool", "to": "repair", "kind": "contains", "description": "Repair." },
+    { "from": "tool", "to": "status", "kind": "contains", "description": "Quick status." },
     { "from": "tool", "to": "report", "kind": "contains", "description": "Output." },
     { "from": "tool", "to": "run", "kind": "contains", "description": "Logging and state." },
     { "from": "tool", "to": "sys", "kind": "contains", "description": "Machine access." },
@@ -100,6 +108,13 @@
     { "from": "cli", "to": "report", "kind": "depends-on", "description": "print_report, print_plan, print_actions, to_json and facts_json." },
     { "from": "cli", "to": "run", "kind": "depends-on", "description": "Session::at and state_root." },
     { "from": "cli", "to": "parse", "kind": "depends-on", "description": "parse_target validates each --internal-host." },
+    { "from": "cli", "to": "status", "kind": "depends-on", "description": "cmd_status for the status command." },
+    { "from": "cli", "to": "model", "kind": "depends-on", "description": "Area for the --only values." },
+    { "from": "status", "to": "facts", "kind": "depends-on", "description": "service_links, choose_phys, vpn_services and Facts::tunnels, with short limits." },
+    { "from": "status", "to": "parse", "kind": "depends-on", "description": "Parses the default route and the routing table." },
+    { "from": "status", "to": "sys", "kind": "depends-on", "description": "Runs commands, resolves a name and opens TCP connections, each with a short limit." },
+    { "from": "status", "to": "run", "kind": "depends-on", "description": "Terminal colours for the line." },
+    { "from": "repair", "to": "model", "kind": "depends-on", "description": "Area: a step outside --only is blocked." },
     { "from": "cli", "to": "sys", "kind": "depends-on", "description": "Runs on Real, and records the original settings through Sys::run." },
     { "from": "facts", "to": "parse", "kind": "depends-on", "description": "Parses every command's output." },
     { "from": "facts", "to": "sys", "kind": "depends-on", "description": "Runs commands, resolves names and opens TCP connections." },

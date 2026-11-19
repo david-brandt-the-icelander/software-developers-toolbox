@@ -25,7 +25,7 @@
           "symbol": "compress_verified"
         }
       ],
-      "responsibility": "Keeps a resumable scan of a directory tree in a state file, estimates each file's saving from samples, and compresses chosen candidates in place only after verifying the compressed copy. It also finds files falsely recorded or flagged as compressed and repairs the ones that can be repaired.",
+      "responsibility": "Keeps a resumable scan of a directory tree in a state file, estimates each file's saving from samples, and compresses chosen candidates in place only after verifying the compressed copy. It also finds files falsely recorded or flagged as compressed and repairs the ones that can be repaired. On request it decompresses chosen files again.",
       "operations": [
         {
           "path": "src/macos/free-disk-space/src/scan.rs",
@@ -34,10 +34,6 @@
         {
           "path": "src/macos/free-disk-space/src/scan.rs",
           "symbol": "cmd_resume"
-        },
-        {
-          "path": "src/macos/free-disk-space/src/scan.rs",
-          "symbol": "cmd_status"
         },
         {
           "path": "src/macos/free-disk-space/src/scan.rs",
@@ -50,6 +46,10 @@
         {
           "path": "src/macos/free-disk-space/src/repair.rs",
           "symbol": "cmd_repair"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
         }
       ],
       "access": [
@@ -57,7 +57,8 @@
         "A file is compressed only if its directory is writable by the user, no process has it open, and it is unchanged since the scan.",
         "Compressing needs macOS (APFS transparent compression); elsewhere it refuses unless FDS_FORCE is set.",
         "It does not start when a compressed probe copy does not read back as compressed and unchanged.",
-        "On a terminal the user confirms the plan unless --yes is given."
+        "On a terminal the user confirms the plan unless --yes is given.",
+        "A file is decompressed only under the same checks, and only when the volume has room for all the plain files plus the reserve."
       ]
     },
     {
@@ -155,6 +156,36 @@
       "access": [
         "Installed per user, in the user's own launchd gui domain; it deletes with that user's permissions.",
         "Once installed it deletes without asking, on the targets fixed at install time."
+      ]
+    },
+    {
+      "id": "space-overview",
+      "name": "Where the space goes",
+      "description": "Shows which folders and files take the space, and the state of the scan, free space and the daemon.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "walk_root"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
+        }
+      ],
+      "responsibility": "Lets the user, a script or an agent see where space goes and what the tool has done, without changing anything.",
+      "operations": [
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "cmd_top"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "cmd_status"
+        }
+      ],
+      "access": [
+        "Any local user who can run the binary; it sees what that user can read.",
+        "Read-only: neither command changes a file or creates the state file."
       ]
     }
   ],

@@ -3,7 +3,7 @@
   "kind": "deployment",
   "title": "ai-agent-rules deployment diagram",
   "folder": "src/macos/ai-agent-rules",
-  "description": "How ai-agent-rules runs: one binary installed beside zazzle on the developer's machine, started by a coding agent or a developer through `zazzle agent get-rules`; it reads rule and skill files and exits. Nothing stays resident.",
+  "description": "How ai-agent-rules runs: one binary installed beside zazzle on the developer's machine, started by a coding agent or a developer through `zazzle agent get-rules`, `zazzle ai-agent-rules check` or `zazzle ai-agent-rules explain`; it reads rule and skill files and exits. Nothing stays resident.",
   "sources": [
     {
       "path": "src/macos/ai-agent-rules/Cargo.toml",
@@ -31,7 +31,7 @@
       "id": "agent",
       "name": "Coding agent's shell",
       "kind": "client",
-      "description": "Runs `zazzle agent get-rules PATH` before working in a folder, as agents/skills/zazzle-agent/SKILL.md says.",
+      "description": "Runs `zazzle agent get-rules PATH` before working in a folder, and `zazzle ai-agent-rules check` after editing rule or skill files, as agents/skills/zazzle-agent/SKILL.md says.",
       "actor": "Actors/coding-agent.md"
     },
     {
@@ -44,14 +44,14 @@
       "id": "invoker",
       "name": "zazzle invoker",
       "kind": "process",
-      "description": "Replaces itself with the ai-agent-rules found in its own directory for `zazzle agent ARGS`.",
-      "condition": "When run as `zazzle agent`."
+      "description": "Replaces itself with the ai-agent-rules found in its own directory for `zazzle ai-agent-rules ARGS`.",
+      "condition": "When run as `zazzle ai-agent-rules`."
     },
     {
       "id": "tool",
       "name": "ai-agent-rules",
       "kind": "process",
-      "description": "Reads rule and skill files from the file system and prints them, or just their names."
+      "description": "Reads rule and skill files from the file system and prints them or just their names, the problems check finds in them (exit 1 when there are any), or why each one applies."
     }
   ],
   "artifacts": [
@@ -74,7 +74,7 @@
       "from": "agent",
       "to": "invoker",
       "kind": "connects-to",
-      "description": "`zazzle agent get-rules PATH`."
+      "description": "`zazzle agent get-rules PATH`, `zazzle ai-agent-rules check [PATH]`, `zazzle ai-agent-rules explain PATH`."
     },
     {
       "from": "invoker",

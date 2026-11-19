@@ -12,7 +12,7 @@
 - To read, search, list or outline files as JSON from a shell or a script: [shell-tools use cases](../src/macos/shell-tools/src/.dev/use-case.json), `one-shot-request`.
 - To have the zazzle daemon there whenever something connects, without starting it themselves: [daemon use cases](../src/macos/daemon/src/.dev/use-case.json), `install-launch-agent`.
 - To have their coding agent use zazzle for files and for C# structure, which zazzle gets from csharp-indexer, in a project, and see from real use what to improve: [indexer CLI use cases](../src/macos/csharp-indexer/src/Cli/.dev/use-case.json), `wire-into-project`, `review-usage`.
-- To write commit messages, choose the files of a commit and edit rebase todo lists in a small editor without modes, without losing a message when a commit fails: [zazzle git use cases](../src/macos/git-tools/src/.dev/use-case.json), `write-message-as-git-editor`, `commit-with-draft-and-files`, `edit-rebase-todo`.
+- To write commit messages, choose the files of a commit and edit rebase todo lists in a small editor without modes, without losing a message when a commit fails: [zazzle git use cases](../src/macos/git-tools/src/.dev/use-case.json), `write-message-as-git-editor`, `commit-with-draft-and-files`, `edit-rebase-todo`, `amend-last-commit`, `undo-last-commit`.
 - To choose which local open model, and how much thinking, answers prompts on their machine: [ai-agent use cases](../src/macos/ai-agent/src/.dev/use-case.json), `choose-a-model`.
 - To install a zazz script as an ordinary command, with flags and plain output instead of JSON: [zazz use cases](../src/macos/daemon/src/zazz/.dev/use-case.json), `install-and-run-a-script`.
 

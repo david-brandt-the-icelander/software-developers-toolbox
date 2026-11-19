@@ -1,12 +1,26 @@
 # fix-network
 
-`fix-network` diagnoses and repairs macOS network problems: link, public internet, VPN, routing, corporate DNS and services, and proxies. Single Rust binary, two modes.
+`fix-network` diagnoses and repairs macOS network problems: link, public internet, VPN, routing, corporate DNS and services, and proxies. Single Rust binary, three modes.
 
 ```bash
+zazzle fix-network status                                                  # one line in about 2s; exit 0 healthy, 1 degraded
 zazzle fix-network diagnose --internal-host wiki.corp.example:443          # read-only, no root
 zazzle fix-network fix --dry-run --internal-host wiki.corp.example:443     # show the plan, change nothing
 zazzle fix-network fix --vpn --internal-host wiki.corp.example:443         # repair, then verify again
 ```
+
+## Status (`status`)
+A quick health line for a shell prompt or a script, read-only and without root, for example `network ok | Wi-Fi on | IP 192.168.1.5 (en0) | DNS ok | internet ok | VPN Work (utun4)`. It uses the same probes as `diagnose` with short limits (2s per command, 1s for the name lookup and each connection) and skips the slow ones (gateway ping, captive portal, HTTPS, proxies, internal hosts), so it answers in about 2 seconds even when the network is down.
+
+| Area | Healthy when |
+|---|---|
+| Wi-Fi | the radio of the service in use is on (`not used` on a wired service) |
+| IP | the service in use has an IPv4 or global IPv6 address |
+| DNS | `www.apple.com` resolves through the system resolver |
+| Internet | TCP 443 to 1.1.1.1 (or its IPv6 address) or to `www.apple.com` connects |
+| VPN | no scutil-managed VPN is stuck between states (`connected`, a third-party `tunnel` or `none` are healthy) |
+
+Exit status: 0 healthy, 1 degraded, 2 not macOS. `--json` prints one object: `tool` (`fix-network`), `version`, `ok`, and `wifi` (`ok`, `state`, `device`), `ip` (`ok`, `interface`, `service`, `ipv4`, `ipv6_global`), `dns` (`ok`), `internet` (`ok`) and `vpn` (`ok`, `state`, `name`, `interface`).
 
 ## Checks
 Each run reports seven dimensions separately. The states are `HEALTHY`, `FAILED`, `NONE`, `UNKNOWN`, `NOT TESTED` and `UNSUPPORTED`. A check that did not run is never reported as healthy.
@@ -57,11 +71,12 @@ Every command's exit status, and any `networksetup` error text, is checked. Each
 | `--allow-remote` | over SSH, steps that can cut the session: DHCP renew, Wi-Fi cycle, VPN reconnect, route flush |
 | `--force` | first runs flush DNS, clear ARP, renew DHCP and cycle Wi-Fi even if healthy |
 | `--dry-run` | prints the diagnosis and plan only |
+| `--only AREA` | repairs only these areas (repeatable or comma-separated): `wifi` (turn Wi-Fi on, clear ARP, renew DHCP, cycle Wi-Fi), `dns` (flush DNS), `vpn` (reconnect the VPN, flush routes), `proxy` (disable unreachable proxies). Other steps are listed as `needs --only AREA`. It only narrows: `--vpn`, `--fix-proxy` and `--allow-route-flush` are still needed |
 
 Both modes take `--internal-host HOST[:PORT]` (repeatable; `[v6]:port` works), `--json` and `-v`/`--verbose`. Exit status: 0 healthy, 1 problems remain, 2 not macOS.
 
 ## Permissions and safety
-- `diagnose` and `--dry-run` change nothing and need no root.
+- `status`, `diagnose` and `--dry-run` change nothing and need no root; `status` writes no log either.
 - DNS flush, ARP clear, DHCP renew, proxy changes and route flush use `sudo`. It prompts in your terminal, and fails rather than prompting when there is no terminal.
 - Before cycling the radio, a detached watchdog (`recover.sh`) is started that turns Wi-Fi back on after 45s. Manual rescue: `networksetup -setairportpower en0 on` (use your device; the log prints it).
 - Never done: reboot, router changes, deleting network preferences, VPN profiles or keychains, substituting public DNS, editing scoped DNS or MDM-managed settings, killing VPN processes, storing credentials.

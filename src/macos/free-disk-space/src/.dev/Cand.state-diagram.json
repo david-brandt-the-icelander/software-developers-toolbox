@@ -3,7 +3,7 @@
   "kind": "state",
   "title": "Compression candidate state diagram",
   "folder": "src/macos/free-disk-space/src",
-  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it to done, skipped or failed; before planning, compress puts back in the queue (pending) the rows that failed only because of com.apple.provenance, every failed row with --retry-failed, and the rows skipped for having no provenance with --include-no-provenance; repair moves a done row whose file is not compressed back to pending, and any recorded file whose compressed data is broken to broken. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged) or a stop request leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the five.",
+  "description": "The status column of one row in the state file's cands table, which compress reads as compress::Cand. The scan inserts a row as pending; compress moves it to done, skipped or failed; before planning, compress puts back in the queue (pending) the rows that failed only because of com.apple.provenance, every failed row with --retry-failed, and the rows skipped for having no provenance with --include-no-provenance; repair moves a done row whose file is not compressed back to pending, and any recorded file whose compressed data is broken to broken; decompress --apply records a file it rewrote plain as skipped. A dry run, a failed probe (compress stops before touching any row when a compressed probe copy does not read back as compressed and unchanged) or a stop request leaves the remaining rows pending. The row goes only when the whole state file is replaced by a new scan; list --status shows any of the five.",
   "sources": [
     {
       "path": "src/macos/free-disk-space/src/scan.rs",
@@ -44,6 +44,10 @@
     {
       "path": "src/macos/free-disk-space/src/compress.rs",
       "symbol": "rewrite_flagged"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/decompress.rs",
+      "symbol": "apply"
     }
   ],
   "machine": "cands.status (compress::Cand)",
@@ -60,7 +64,7 @@
     },
     {
       "id": "skipped",
-      "description": "Left as it was, with a note why: gone, changed, flagged, without a provenance (unless --include-no-provenance), recently modified, open, directory not writable, not enough free space for the temp copy, APFS declined, or gain below --min-gain."
+      "description": "Left as it was, with a note why: gone, changed, flagged, without a provenance (unless --include-no-provenance), recently modified, open, directory not writable, not enough free space for the temp copy, APFS declined, or gain below --min-gain, or decompressed on request."
     },
     {
       "id": "failed",
@@ -128,6 +132,13 @@
       "trigger": "compress plans a run with --include-no-provenance",
       "guard": "the row was skipped for having no provenance",
       "action": "Clear the note and saving and put the row back in the queue."
+    },
+    {
+      "from": "done",
+      "to": "skipped",
+      "trigger": "decompress --apply rewrites the file plain",
+      "guard": "the state file exists and decompress_flagged verified and swapped in the plain copy",
+      "action": "Refresh size, allocation, mtime and inode and write status skipped with the note 'decompressed on request', so compress leaves it alone."
     }
   ]
 }

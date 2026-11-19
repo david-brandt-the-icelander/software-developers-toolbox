@@ -1,4 +1,6 @@
-// The shared per-user daemon: one engine, one MCP session per connected client.
+// The shared per-user daemon: one engine, one MCP session per connected client, and the status and stop commands.
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -6,10 +8,13 @@ using CSharpIndexer.Mcp;
 
 namespace CSharpIndexer.Daemon;
 
-// Listens on a unix socket; each connection starts with a JSON handshake naming its roots.
+// Listens on a unix socket; each connection starts with a JSON handshake naming its roots, or a command (status, stop) answered in one reply.
 public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idleExit, string? version = null) : IDisposable
 {
     private readonly string _version = version ?? ToolVersion.Text;
+    private readonly DateTime _started = DateTime.UtcNow;
+    private readonly ConcurrentDictionary<int, ClientInfo> _sessions = new();
+    private int _nextSession;
     private readonly Socket _listener = new(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
     private readonly CancellationTokenSource _stop = new();
     private int _clients;
@@ -77,12 +82,13 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
     private async Task Serve(Socket client)
     {
         Interlocked.Increment(ref _clients);
+        var id = Interlocked.Increment(ref _nextSession);
         try
         {
             using var stream = new NetworkStream(client, true);
             using var reader = new StreamReader(stream, new UTF8Encoding(false));
             using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = false };
-            var hello = await Handshake(reader, writer);
+            var hello = await Handshake(reader, writer, id);
             if (hello is null)
                 return;
             await new McpServer(hello.Value.Roots, engine.Log, hello.Value.Session).RunAsync(reader, writer);
@@ -92,20 +98,26 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
         }
         finally
         {
+            _sessions.TryRemove(id, out _);
             _lastActive = DateTime.UtcNow;
             if (Interlocked.Decrement(ref _clients) == 0 && Volatile.Read(ref _draining) == 1)
                 _stop.Cancel();
         }
     }
 
-    // Reads the hello line, checks the version, attaches roots and replies; returns null if the session must end. A newer client makes the daemon drain (finish its clients, refuse new ones, then exit) so the client can start its own; an older one is told to restart its daemon, so two versions never take turns stopping each other.
-    private async Task<(List<Root> Roots, string Session)?> Handshake(StreamReader reader, StreamWriter writer)
+    // Reads the hello line, answers a command, or checks the version, attaches roots, registers the session under id and replies; returns null if the session must end. A newer client makes the daemon drain (finish its clients, refuse new ones, then exit) so the client can start its own; an older one is told to restart its daemon, so two versions never take turns stopping each other.
+    private async Task<(List<Root> Roots, string Session)?> Handshake(StreamReader reader, StreamWriter writer, int id)
     {
         var hello = JsonNode.Parse(await reader.ReadLineAsync() ?? "{}");
+        if (hello?["command"] is JsonValue command)
+        {
+            await Reply(writer, Command(command.TryGetValue<string>(out var name) ? name : ""));
+            return null;
+        }
         var theirs = hello?["version"]?.GetValue<string>() ?? "";
         if (theirs != _version && !ToolVersion.Newer(theirs, _version))
         {
-            await Reply(writer, new JsonObject { ["ok"] = false, ["restart"] = false, ["error"] = $"the indexer daemon is version {_version}, newer than this client's {theirs}: restart daemon (zazzle daemon uninstall && zazzle daemon install, or quit the apps)" });
+            await Reply(writer, new JsonObject { ["ok"] = false, ["restart"] = false, ["version"] = _version, ["error"] = $"the indexer daemon is version {_version}, newer than this client's {theirs}: restart it with `zazzle csharp-indexer restart`" });
             return null;
         }
         if (theirs != _version)
@@ -121,6 +133,7 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
         {
             var roots = (hello?["roots"]?.AsArray() ?? []).Select(r => Root.Parse(r!.GetValue<string>(), engine)).ToList();
             var session = hello?["session"]?.GetValue<string>() ?? "";
+            _sessions[id] = new ClientInfo(session, roots.Select(r => r.Name).ToArray(), DateTime.UtcNow);
             await Reply(writer, new JsonObject { ["ok"] = true });
             return (roots, session);
         }
@@ -129,6 +142,52 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
             await Reply(writer, new JsonObject { ["ok"] = false, ["error"] = e.Message });
             return null;
         }
+    }
+
+    // Answers a command hello: status describes the daemon; stop also makes it drain, so it exits once its clients have finished.
+    private JsonObject Command(string name)
+    {
+        if (name == "stop")
+            Volatile.Write(ref _draining, 1);
+        if (name is "status" or "stop")
+            return new JsonObject { ["ok"] = true, ["status"] = Status() };
+        return new JsonObject { ["ok"] = false, ["restart"] = false, ["version"] = _version, ["error"] = $"unknown command: {name}" };
+    }
+
+    // Describes the daemon: process, version, uptime, socket, state folder, memory, connected clients and the roots it indexes.
+    public JsonObject Status()
+    {
+        var now = DateTime.UtcNow;
+        using var me = Process.GetCurrentProcess();
+        var clients = _sessions.Values.OrderBy(c => c.Since).Select(c => (JsonNode)new JsonObject
+        {
+            ["session"] = c.Session,
+            ["roots"] = new JsonArray(c.Roots.Select(r => (JsonNode)r).ToArray()),
+            ["connected_at"] = c.Since.ToString("o"),
+            ["connected_seconds"] = (long)(now - c.Since).TotalSeconds,
+        });
+        var roots = engine.Indexes().Select(i => (JsonNode)new JsonObject
+        {
+            ["path"] = i.Path,
+            ["files"] = i.FileCount,
+            ["ready"] = i.Ready.IsCompleted,
+            ["indexed_at"] = i.IndexedAt?.ToString("o"),
+            ["changed_at"] = i.ChangedAt?.ToString("o"),
+            ["age_seconds"] = i.UpdatedAt is { } u ? (long)(now - u).TotalSeconds : null,
+        });
+        return new JsonObject
+        {
+            ["pid"] = Environment.ProcessId,
+            ["version"] = _version,
+            ["started"] = _started.ToString("o"),
+            ["uptime_seconds"] = (long)(now - _started).TotalSeconds,
+            ["socket"] = socketPath,
+            ["state_dir"] = engine.StateDir,
+            ["draining"] = Volatile.Read(ref _draining) == 1,
+            ["memory"] = new JsonObject { ["working_set_bytes"] = me.WorkingSet64, ["managed_heap_bytes"] = GC.GetTotalMemory(false) },
+            ["clients"] = new JsonArray(clients.ToArray()),
+            ["roots"] = new JsonArray(roots.ToArray()),
+        };
     }
 
     // Writes one JSON line and flushes.
@@ -152,3 +211,6 @@ public sealed class DaemonServer(Engine engine, string socketPath, TimeSpan idle
         }
     }
 }
+
+// One connected MCP session: the session id its client gave, the names of its roots and when it connected.
+public sealed record ClientInfo(string Session, string[] Roots, DateTime Since);

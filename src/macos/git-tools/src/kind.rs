@@ -20,9 +20,8 @@ impl Kind {
     pub fn detect(path: &Path) -> Kind {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         match name {
-            "COMMIT_EDITMSG" | "MERGE_MSG" | "TAG_EDITMSG" | "SQUASH_MSG" | "ZAZZLE_COMMIT_MSG" => {
-                Kind::Commit
-            }
+            "COMMIT_EDITMSG" | "MERGE_MSG" | "TAG_EDITMSG" | "SQUASH_MSG" | "ZAZZLE_COMMIT_MSG"
+            | "ZAZZLE_AMEND_MSG" => Kind::Commit,
             "git-rebase-todo" => Kind::Rebase,
             n if n.starts_with("CHANGELOG") => Kind::Changelog,
             n if n.ends_with(".md") => Kind::PullRequest,
@@ -94,6 +93,7 @@ mod tests {
     fn test_kind_detect() {
         assert_eq!(Kind::detect(Path::new("/r/.git/COMMIT_EDITMSG")), Kind::Commit);
         assert_eq!(Kind::detect(Path::new("ZAZZLE_COMMIT_MSG")), Kind::Commit);
+        assert_eq!(Kind::detect(Path::new("ZAZZLE_AMEND_MSG")), Kind::Commit);
         assert_eq!(Kind::detect(Path::new(".git/rebase-merge/git-rebase-todo")), Kind::Rebase);
         assert_eq!(Kind::detect(Path::new("CHANGELOG.md")), Kind::Changelog);
         assert_eq!(Kind::detect(Path::new("/tmp/123.md")), Kind::PullRequest);

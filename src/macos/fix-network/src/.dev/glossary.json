@@ -30,9 +30,16 @@
     {
       "id": "gate",
       "title": "Gate",
-      "summary": "A flag a repair step needs before fix may run it: --vpn, --fix-proxy, --allow-route-flush, or --allow-remote for disruptive steps over SSH.",
+      "summary": "A flag a repair step needs before fix may run it: --vpn, --fix-proxy, --allow-route-flush, --allow-remote for disruptive steps over SSH, or, when --only is given, --only with the step's area.",
       "evidenceStatus": "source-verified",
       "sources": [{ "path": "src/macos/fix-network/src/repair.rs", "symbol": "Gates" }]
+    },
+    {
+      "id": "area",
+      "title": "Area",
+      "summary": "What a repair step repairs, for fix --only: wifi (turn Wi-Fi on, clear ARP, renew DHCP, cycle Wi-Fi), dns (flush DNS), vpn (reconnect the VPN, flush routes) or proxy (disable unreachable proxies). In status, the areas judged are Wi-Fi, IP, DNS, internet and VPN.",
+      "evidenceStatus": "source-verified",
+      "sources": [{ "path": "src/macos/fix-network/src/model.rs", "symbol": "Step::area" }]
     },
     {
       "id": "disruptive-step",

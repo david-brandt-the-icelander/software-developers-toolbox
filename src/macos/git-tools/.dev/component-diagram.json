@@ -21,14 +21,14 @@
     {
       "id": "src",
       "name": "git-tools sources",
-      "responsibility": "Routing, the commit flow, the message editor, its terminal and git access; src/bin holds the three entry points.",
+      "responsibility": "Routing, the commit flow, amend and undo, the message editor, its terminal and git access; src/bin holds the three entry points.",
       "folder": "src/macos/git-tools/src",
       "diagram": "src/macos/git-tools/src/.dev/component-diagram.json"
     },
     {
       "id": "tests",
       "name": "Pseudo-terminal tests",
-      "responsibility": "Run the built binaries on a pseudo-terminal in scratch repositories and type keys into them: saving and cancelling a message, commits with marks, the deletion prompt, a failing hook, amend, a first commit and an interactive rebase.",
+      "responsibility": "Run the built binaries on a pseudo-terminal in scratch repositories and type keys into them: saving and cancelling a message, commits with marks, the deletion prompt, a failing hook, amend, a first commit, an interactive rebase, and `zazzle git amend` and `undo` (including a pushed commit and a bare remote).",
       "folder": "src/macos/git-tools/tests"
     },
     {
@@ -41,7 +41,7 @@
     {
       "id": "git",
       "name": "git",
-      "responsibility": "The real git on PATH: status, config, rev-parse, add, rm, reset and commit for the commit flow, and every command zazzle git does not answer itself.",
+      "responsibility": "The real git on PATH: status, config, rev-parse, add, rm, reset and commit for the commit flow, log, diff, rev-list and merge-base for amend and undo, and every command zazzle git does not answer itself.",
       "external": true
     }
   ],

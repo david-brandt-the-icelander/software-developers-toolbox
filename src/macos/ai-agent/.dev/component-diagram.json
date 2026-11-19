@@ -3,7 +3,7 @@
   "kind": "component",
   "title": "ai-agent component diagram",
   "folder": "src/macos/ai-agent",
-  "description": "The ai-agent crate: one binary in src/, the daemon that downloads and execs it for `zazzle agent llm|prompt` and runs `prompt --no-download` for agents' `--llm`, `brief` and `prompt`, llama.cpp, which it links to run the models, and Hugging Face, from which it downloads them.",
+  "description": "The ai-agent crate: one binary in src/, the daemon that downloads and execs it for `zazzle agent llm|prompt` and `zazzle ai-agent ..` (status and prune among them) and runs `prompt --no-download` for agents' `--llm`, `brief` and `prompt`, llama.cpp, which it links to run the models, and Hugging Face, from which it downloads them.",
   "sources": [
     { "path": "src/macos/ai-agent/Cargo.toml", "symbol": "[[bin]]" },
     { "path": "src/macos/ai-agent/Cargo.toml", "symbol": "llama-cpp-2" },

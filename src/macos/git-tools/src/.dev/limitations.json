@@ -70,14 +70,15 @@
     {
       "id": "needs-a-terminal",
       "title": "The editor needs a terminal",
-      "summary": "zazzle git message and zazzle git commit without a message option open /dev/tty; with no terminal they fail.",
+      "summary": "zazzle git message, zazzle git commit without a message option and zazzle git amend without --no-edit open /dev/tty; with no terminal they fail.",
       "impact": "A script or agent without a terminal gets `needs a terminal` and exit 1.",
-      "workaround": "Pass -m, -F, -C or --no-edit to zazzle git commit, which then runs git commit directly.",
+      "workaround": "Pass -m, -F, -C or --no-edit to zazzle git commit, or --no-edit to zazzle git amend, which then run git commit directly.",
       "evidenceStatus": "source-verified",
       "sources": [
         { "path": "src/macos/git-tools/src/message.rs", "symbol": "edit" },
         { "path": "src/macos/git-tools/src/term.rs", "symbol": "Term::open" },
-        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "parse_args" }
+        { "path": "src/macos/git-tools/src/commit.rs", "symbol": "parse_args" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_without_editor" }
       ]
     }
   ]

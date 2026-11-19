@@ -37,3 +37,16 @@ fn test_cli_rejects_non_utf8_argument() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("UTF-8"));
 }
+
+// check prints its problems to standard output with exit 1, so they can be piped.
+#[test]
+fn test_cli_check_problems_on_stdout() {
+    let dir = std::env::temp_dir().join(format!("zalr-cli-check-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("folder");
+    std::fs::write(dir.join("AGENTS.md"), "@gone.md\n").expect("writable");
+    let out = run(&["check".as_ref(), dir.as_os_str()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("AGENTS.md:1: @gone.md points to no file"));
+    assert!(out.stderr.is_empty());
+}

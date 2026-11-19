@@ -8,7 +8,7 @@
     {
       "id": "shared-blocks-unseen",
       "title": "Shared blocks are invisible",
-      "summary": "The tool cannot tell whether a file already shares blocks with another (an APFS clone), so dedupe's saving is an upper bound and summed sizes can differ from the space actually freed.",
+      "summary": "The tool cannot tell whether a file already shares blocks with another (an APFS clone), so dedupe's saving is an upper bound top counts a cloned file in full wherever it appears, and summed sizes can differ from the space actually freed.",
       "impact": "A dedupe or cleanup can report more than the volume gains; snapshots and other writers widen the gap.",
       "workaround": "Compare the free-space change on a --sample run before going broad; each command prints it beside the summed sizes.",
       "evidenceStatus": "source-verified",
@@ -24,14 +24,18 @@
         {
           "path": "src/macos/free-disk-space/README.md",
           "symbol": "Caveats"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "Walk::visit"
         }
       ]
     },
     {
       "id": "macos-only-steps",
-      "title": "Compression, cloning and Finder are macOS only",
-      "summary": "compress, dedupe --apply and emptying the Trash refuse to run elsewhere; the daemon install needs launchd.",
-      "impact": "Off macOS the scan, its reports, the dry runs and the folder and dev cleanups work; compression, cloning, emptying the Trash and the daemon install do not.",
+      "title": "Compression, decompression, cloning and Finder are macOS only",
+      "summary": "compress, decompress, dedupe --apply and emptying the Trash refuse to run elsewhere; the daemon install needs launchd.",
+      "impact": "Off macOS the scan, its reports, top, status, the dry runs and the folder and dev cleanups work; compression, decompression, cloning, emptying the Trash and the daemon install do not.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -49,6 +53,10 @@
         {
           "path": "src/macos/free-disk-space/src/daemon.rs",
           "symbol": "launchctl"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
         }
       ]
     },

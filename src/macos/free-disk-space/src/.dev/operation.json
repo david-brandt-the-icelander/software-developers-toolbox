@@ -81,24 +81,60 @@
     },
     {
       "id": "status",
-      "name": "Show scan status",
-      "description": "Shows the scan's root, progress, candidates by status, recorded file names and current free space.",
+      "name": "Show status",
+      "description": "Shows the scan's root, progress, candidates by status, recorded file names, current free space and whether the daemon is installed and running; with --json, all of it as one object with ok and problems.",
       "sources": [
         {
-          "path": "src/macos/free-disk-space/src/scan.rs",
+          "path": "src/macos/free-disk-space/src/status.rs",
           "symbol": "cmd_status"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
         }
       ],
       "entrypoint": {
-        "path": "src/macos/free-disk-space/src/scan.rs",
+        "path": "src/macos/free-disk-space/src/status.rs",
         "symbol": "cmd_status"
       },
       "action": "query",
-      "transport": "free-disk-space status [--state FILE]",
+      "transport": "free-disk-space status [--json] [--state FILE]",
       "authorization": "None checked.",
-      "result": "Root; complete or in progress with queued directories; directories, files, bytes, errors and elapsed time; per status the file count, estimated and verified savings; file names recorded and replaced by clones; free space on the data volume.",
+      "result": "Root; complete or in progress with queued directories; directories, files, bytes, errors and elapsed time; per status the file count, estimated and verified savings; file names recorded and replaced by clones; free space on the data volume; the daemon's login item installed or not and running or not; one 'problem:' line per problem. With --json, one compact object: tool, version, ok, problems, state_file, scan (null without a state file), candidates, file_names, free_space and daemon.",
       "failures": [
-        "No state file: exits with an error pointing at new."
+        "No state file: the text form exits with an error pointing at scan; --json reports scan as null and ok stays true.",
+        "The state file cannot be opened: the text form exits with the error; --json reports ok false with the error in problems."
+      ]
+    },
+    {
+      "id": "top",
+      "name": "List the largest folders and files",
+      "description": "Walks a folder and lists the largest folders and files under it by allocated size, biggest first.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "TopArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "cmd_top"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "walk_root"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/top.rs",
+        "symbol": "cmd_top"
+      },
+      "action": "query",
+      "transport": "free-disk-space top [PATH] [--count N] [--depth D] [--json]",
+      "authorization": "None checked; it sees what the invoking user can read and changes nothing.",
+      "result": "A header with the total allocated size, the number of files and the depth, then up to N rows (default 20) of size and path relative to PATH (folders end in /), at most D levels (default 3) below PATH; a note with the number of folders it could not read and an example, and one line per other volume it did not enter. With --json, one object: tool, version, root, total, files, depth, entries [{path, size, kind, depth}], skipped [{path, error}] and other_volumes.",
+      "failures": [
+        "PATH missing, unreadable or not a folder: exits with an error.",
+        "--count or --depth 0: clap's usage error."
       ]
     },
     {
@@ -203,6 +239,39 @@
         "No state file: exits with an error pointing at new.",
         "--apply and the compressed probe copy does not read back as compressed and unchanged: exits before changing anything.",
         "A rewrite fails verification: prints FAILED with the reason, records failed and keeps the original."
+      ]
+    },
+    {
+      "id": "decompress",
+      "name": "Decompress files",
+      "description": "Reverses compress for the given files and folders: rewrites each transparently compressed file as a verified plain copy.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "DecompressArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "apply"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/decompress.rs",
+        "symbol": "cmd_decompress"
+      },
+      "action": "command",
+      "transport": "free-disk-space decompress PATH... [--apply] [--reserve SIZE] [--include-no-provenance] [--state FILE]",
+      "authorization": "None checked beyond the file system; a rewrite needs a writable directory, a single-link file no process has open, and no immutable, append-only or dataless flag.",
+      "result": "The number of compressed files with their size on disk now and plain; a dry run lists each with the space it would add or the reason it would be skipped and says nothing changed; with --apply, one line per file (decompressed, skipped or FAILED), the counts, the growth on disk and the change in free space.",
+      "failures": [
+        "Off macOS without FDS_FORCE: exits with an error.",
+        "--apply and free space below what the plain files need plus --reserve: exits before changing anything; a dry run only warns.",
+        "A path that is missing or unreadable, or a folder on another volume: a warning, and the rest goes on.",
+        "A rewrite fails verification: prints FAILED with the reason and keeps the original."
       ]
     },
     {

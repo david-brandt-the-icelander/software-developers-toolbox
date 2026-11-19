@@ -129,7 +129,7 @@
       "summary": "The scan's running totals and per-candidate outcomes are kept in the state file, and status reads them back.",
       "signalType": "health-check",
       "name": "free-disk-space status",
-      "meaning": "Directories, files, bytes and errors processed, elapsed scan time, whether the scan is complete or how many directories are queued, per candidate status the count with estimated and verified savings, and how many recorded files were replaced by clones.",
+      "meaning": "Directories, files, bytes and errors processed, elapsed scan time, whether the scan is complete or how many directories are queued, per candidate status the count with estimated and verified savings, how many recorded files were replaced by clones, free space, and whether the daemon is installed and running. status --json prints the same as one object with ok and problems (a state file that cannot be opened, broken files, unreadable free space, an installed daemon that is not running).",
       "access": "Anyone who can read the state file.",
       "retention": "Until the next new replaces the state file.",
       "evidenceStatus": "source-verified",
@@ -139,7 +139,7 @@
           "symbol": "Stats"
         },
         {
-          "path": "src/macos/free-disk-space/src/scan.rs",
+          "path": "src/macos/free-disk-space/src/status.rs",
           "symbol": "cmd_status"
         }
       ]

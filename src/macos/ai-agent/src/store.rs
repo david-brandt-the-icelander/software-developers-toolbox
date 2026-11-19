@@ -77,6 +77,16 @@ pub fn model_path(root: &Path, file: &str) -> PathBuf {
     root.join("models").join(file)
 }
 
+// Returns where a model file's partial download is kept.
+pub fn part_path(root: &Path, file: &str) -> PathBuf {
+    root.join("models").join(format!(".{file}.part"))
+}
+
+// Returns a model file's lock file.
+pub fn lock_path(root: &Path, file: &str) -> PathBuf {
+    root.join("models").join(format!(".{file}.lock"))
+}
+
 // True when a model file is installed; files are renamed into place only after their hash matched, so the size is enough.
 pub fn installed(root: &Path, file: &str, bytes: u64) -> bool {
     std::fs::metadata(model_path(root, file)).is_ok_and(|m| m.len() == bytes)
@@ -84,9 +94,8 @@ pub fn installed(root: &Path, file: &str, bytes: u64) -> bool {
 
 // Removes an installed model file and any partial download; true when there was something to remove.
 pub fn remove(root: &Path, file: &str) -> Result<bool, String> {
-    let dir = root.join("models");
     let mut removed = false;
-    for p in [dir.join(file), dir.join(format!(".{file}.part"))] {
+    for p in [model_path(root, file), part_path(root, file)] {
         match std::fs::remove_file(&p) {
             Ok(()) => removed = true,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -96,12 +105,12 @@ pub fn remove(root: &Path, file: &str) -> Result<bool, String> {
     Ok(removed)
 }
 
-// Holds an exclusive lock on a file until dropped, so only one process downloads a model.
-struct Lock(File);
+// Holds a flock on a model's lock file until dropped: exclusive while it downloads or prune deletes it, shared while a prompt or worker runs it.
+pub struct Lock(File);
 
 impl Lock {
-    // Opens and locks the file, waiting for another holder.
-    fn take(path: &Path) -> Result<Lock, String> {
+    // Opens (creating) a lock file and flocks it with `op`; None when LOCK_NB found another holder.
+    fn open(path: &Path, op: libc::c_int) -> Result<Option<Lock>, String> {
         let f = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -109,10 +118,14 @@ impl Lock {
             .open(path)
             .map_err(|e| format!("opening {}: {e}", path.display()))?;
         // SAFETY: flock takes an open descriptor owned by f, which outlives the lock.
-        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(format!("locking {}: {}", path.display(), std::io::Error::last_os_error()));
+        if unsafe { libc::flock(f.as_raw_fd(), op) } == 0 {
+            return Ok(Some(Lock(f)));
         }
-        Ok(Lock(f))
+        let e = std::io::Error::last_os_error();
+        if e.kind() == std::io::ErrorKind::WouldBlock {
+            return Ok(None);
+        }
+        Err(format!("locking {}: {e}", path.display()))
     }
 }
 
@@ -121,6 +134,44 @@ impl Drop for Lock {
     fn drop(&mut self) {
         // SAFETY: the descriptor is still open; unlocking cannot invalidate it.
         unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
+// Takes a shared lock on an installed model while it runs, so prune leaves it alone; waits while prune holds it, then fails if prune removed the model.
+pub fn hold(root: &Path, file: &str, bytes: u64) -> Result<Option<Lock>, String> {
+    let lock = Lock::open(&lock_path(root, file), libc::LOCK_SH)?;
+    if !installed(root, file, bytes) {
+        return Err(format!("{file} was removed while starting; run again"));
+    }
+    Ok(lock)
+}
+
+// Takes a model's lock exclusively without waiting; None when a download or run holds it.
+pub fn try_lock(root: &Path, file: &str) -> Result<Option<Lock>, String> {
+    Lock::open(&lock_path(root, file), libc::LOCK_EX | libc::LOCK_NB)
+}
+
+// True when a process holds the lock file (a download, run or prune of that model); a missing file is not held.
+pub fn busy(path: &Path) -> bool {
+    let Ok(f) = File::open(path) else { return false };
+    // SAFETY: flock takes an open descriptor owned by f; closing f at the end of this function releases the probe.
+    unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) != 0 }
+}
+
+// Returns the lowercase hex of a digest.
+fn hex(digest: &[u8]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// Returns a file's SHA-256 as lowercase hex, reading it all.
+pub fn sha256(path: &Path) -> Result<String, String> {
+    let mut f = File::open(path).map_err(|e| format!("opening {}: {e}", path.display()))?;
+    let (mut hasher, mut buf) = (Sha256::new(), vec![0u8; CHUNK]);
+    loop {
+        match f.read(&mut buf).map_err(|e| format!("reading {}: {e}", path.display()))? {
+            0 => return Ok(hex(&hasher.finalize())),
+            k => hasher.update(&buf[..k]),
+        }
     }
 }
 
@@ -155,12 +206,12 @@ fn agent() -> ureq::Agent {
 pub fn fetch(root: &Path, want: &Want, progress: &mut dyn FnMut(u64, u64)) -> Result<PathBuf, String> {
     let dir = root.join("models");
     make_dir(&dir)?;
-    let _lock = Lock::take(&dir.join(format!(".{}.lock", want.file)))?;
+    let _lock = Lock::open(&lock_path(root, want.file), libc::LOCK_EX)?;
     let path = dir.join(want.file);
     if installed(root, want.file, want.bytes) {
         return Ok(path);
     }
-    let part = dir.join(format!(".{}.part", want.file));
+    let part = part_path(root, want.file);
     let mut hasher = Sha256::new();
     let mut done = hash_existing(&part, &mut hasher);
     if done > want.bytes {
@@ -170,7 +221,7 @@ pub fn fetch(root: &Path, want: &Want, progress: &mut dyn FnMut(u64, u64)) -> Re
     if done < want.bytes {
         done = download(want, &part, &mut hasher, done, progress)?;
     }
-    let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let got = hex(&hasher.finalize());
     if done != want.bytes || got != want.sha256 {
         let _ = std::fs::remove_file(&part);
         return Err(format!(
@@ -294,6 +345,25 @@ mod tests {
         assert_eq!(defaults(&t.0.join("sub")), d);
         assert_eq!(effort("low"), Ok("low".into()));
         assert!(effort("max").expect_err("max").contains("low medium high"));
+    }
+
+    // Checks a free lock can be taken, a held one is busy and refused, a run's shared lock refuses prune, and hold fails for a missing model.
+    #[test]
+    fn test_store_locks() {
+        let t = Tmp::new("locks");
+        std::fs::create_dir_all(t.0.join("models")).expect("models");
+        let lock = lock_path(&t.0, "m.gguf");
+        assert!(!busy(&lock));
+        let held = try_lock(&t.0, "m.gguf").expect("take").expect("free");
+        assert!(busy(&lock) && try_lock(&t.0, "m.gguf").expect("try").is_none());
+        drop(held);
+        assert!(!busy(&lock));
+        assert!(matches!(hold(&t.0, "m.gguf", 3), Err(e) if e.contains("removed while starting")));
+        std::fs::write(model_path(&t.0, "m.gguf"), b"abc").expect("model");
+        let run = hold(&t.0, "m.gguf", 3).expect("hold");
+        assert!(run.is_some() && busy(&lock) && try_lock(&t.0, "m.gguf").expect("try").is_none());
+        assert_eq!(sha256(&model_path(&t.0, "m.gguf")), Ok(sha(b"abc")));
+        assert!(sha256(&t.0.join("gone")).is_err());
     }
 
     // Checks a download installs the file, a second fetch reuses it, a partial download resumes, and a wrong hash fails and removes it.

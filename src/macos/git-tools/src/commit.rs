@@ -116,7 +116,7 @@ fn run_paths(fixed: &[&str], paths: &[String]) -> Result<(), String> {
 }
 
 // Returns a path inside the git directory.
-fn git_path(name: &str) -> Result<PathBuf, String> {
+pub fn git_path(name: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(git(&["rev-parse", "--git-path", name])?.trim()))
 }
 

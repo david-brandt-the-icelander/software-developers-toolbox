@@ -14,7 +14,7 @@
       "sensitive": false,
       "scope": "Read by ai-agent on every command.",
       "takesEffect": "per-use",
-      "details": "Holds `models/` (installed GGUF files, `.FILE.part` partial downloads and `.FILE.lock` lock files) and `defaults` (`model=` and `effort=` lines written by `llm`). Directories are created with mode 0700.",
+      "details": "Holds `models/` (installed GGUF files, `.FILE.part` partial downloads and `.FILE.lock` lock files, flocked exclusively by a download or prune and shared by a running prompt or worker; `status` reports them and `prune` deletes all but the default model) and `defaults` (`model=` and `effort=` lines written by `llm`). Directories are created with mode 0700.",
       "evidenceStatus": "source-verified",
       "sources": [
         { "path": "src/macos/ai-agent/src/store.rs", "symbol": "root" },

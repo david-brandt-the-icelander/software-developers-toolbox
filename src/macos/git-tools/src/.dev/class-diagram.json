@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "git-tools types",
   "folder": "src/macos/git-tools/src",
-  "description": "The structs, enums and the trait the library declares: the edit buffer, the editor state with its views, prompts and find bar, file marks and the git steps they become, decoded keys, file kinds, arrow taps, the terminal, the router's routes, the commit flow's options and the message command's result. Snapshot and Style are private to their modules; the binaries in bin/ declare no types.",
+  "description": "The structs, enums and the trait the library declares: the edit buffer, the editor state with its views, prompts and find bar, file marks and the git steps they become, decoded keys, file kinds, arrow taps, the terminal, the router's routes, the commit flow's options and the message command's result. Snapshot and Style are private to their modules; history.rs and the binaries in bin/ declare no types.",
   "sources": [
     {
       "path": "src/macos/git-tools/src/editor.rs",
@@ -380,9 +380,13 @@
         "Help",
         "MessageHelp",
         "CommitHelp",
+        "AmendHelp",
+        "UndoHelp",
         "Version",
         "Message(Vec<String>)",
         "Commit(Vec<String>)",
+        "Amend(Vec<String>)",
+        "Undo(Vec<String>)",
         "Git(Vec<String>)"
       ]
     },
