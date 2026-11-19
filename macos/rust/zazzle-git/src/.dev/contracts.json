@@ -90,6 +90,74 @@
         { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "run" },
         { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_offers_editor_once" }
       ]
+    },
+    {
+      "id": "commit-message-prompt-file",
+      "title": "The commit message prompt file",
+      "summary": "The agent's instructions come from the nearest .zazzle/commit-message-prompt.md, looked for from the folder the command started in upwards to the home folder, or from built-in instructions.",
+      "contractType": "file-format",
+      "consumers": ["A developer or a repository that wants its own commit message style", "The agent CLI, which receives the instructions at the start of the prompt"],
+      "definition": "Plain text, used whole as the prompt's instructions. find_prompt checks <folder>/.zazzle/commit-message-prompt.md in the starting folder and each parent, stopping at the home folder; from a folder outside the home folder it searches every parent up to the root, then ~/.zazzle/commit-message-prompt.md. The prompt is the instructions, then `Branch:`, the last ten commit subjects and `Changes:` with the marked files' changes (zazzle git commit) or the staged diff (git's editor).",
+      "guarantees": [
+        "The nearest file wins; files above the home folder are not read for folders inside it.",
+        "A missing, unreadable or blank file gives the built-in instructions (DEFAULT_PROMPT).",
+        "zazzle git commit searches from the folder it was started in, not the repository root it moves to."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "PROMPT_FILE" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "find_prompt" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "instructions" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "assemble" },
+        { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "run" },
+        { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_agent_prompt_file_and_cycling" }
+      ]
+    },
+    {
+      "id": "agent-choice-config",
+      "title": "The remembered agent and effort",
+      "summary": "Ctrl+N and Ctrl+E save the chosen agent and effort in the global git config as zazzle.agent and zazzle.effort, which the next editor reads.",
+      "contractType": "persistence",
+      "consumers": ["The next zazzle git commit or zazzle git message for a commit message", "A developer who sets or removes the keys with git config --global"],
+      "definition": "zazzle.agent is claude, codex or gemini; zazzle.effort is one of that agent's levels (claude: low, medium, high, xhigh, max; codex: low, medium, high) or empty for gemini. Both are written together, with `git config --global`, whenever either key is cycled.",
+      "guarantees": [
+        "A saved agent that is not on PATH is ignored and the first agent found is used.",
+        "A saved effort the chosen agent does not have is replaced by that agent's default (low; none for gemini).",
+        "Nothing is written until the developer presses Ctrl+N or Ctrl+E."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/message.rs", "symbol": "assistant" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::new" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::cycle_agent" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::cycle_effort" },
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "AGENTS" },
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "Agent::effort_or_default" }
+      ]
+    },
+    {
+      "id": "agent-command-lines",
+      "title": "The agent command lines",
+      "summary": "Each agent CLI is run with a fixed command line that reads the prompt on stdin and prints only the message.",
+      "contractType": "cli",
+      "consumers": ["The claude, codex and gemini CLIs on PATH"],
+      "definition": "claude: `claude -p --tools \"\" --no-session-persistence --effort <effort>`. codex: `codex exec --sandbox read-only --skip-git-repo-check --ephemeral -c model_reasoning_effort=<effort> -`. gemini: `gemini --approval-mode plan -p \"Write the commit message described above.\"`. The prompt goes to stdin, stdout is the answer, and the first non-blank stderr line is the reason shown when the exit status is not 0.",
+      "guarantees": [
+        "The agent runs in its own process group, which is killed after 300 seconds, when a new run starts, or when the editor closes.",
+        "An answer wrapped in a Markdown code fence is unwrapped and trimmed; an empty answer counts as a failure."
+      ],
+      "compatibility": "The command lines depend on each CLI's own flags; a CLI that renames one of them makes that agent fail with its error line.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "Agent::command" },
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "clean" },
+        { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "ProcessComposer" },
+        { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "kill_group" },
+        { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "AGENT_TIMEOUT" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/zazzle-git/src/.dev/decisions.json", "entityId": "agents-without-tools" }
+      ]
     }
   ]
 }

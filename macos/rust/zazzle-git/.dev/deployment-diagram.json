@@ -3,7 +3,7 @@
   "kind": "deployment",
   "title": "zazzle-git deployment diagram",
   "folder": "macos/rust/zazzle-git",
-  "description": "How zazzle-git runs: three binaries installed beside zazzle on the developer's machine, started by a developer or a coding agent through `zazzle git`, directly, or by git as its editor; the editor draws on /dev/tty and every git step runs the git on PATH. Nothing stays resident.",
+  "description": "How zazzle-git runs: three binaries installed beside zazzle on the developer's machine, started by a developer or a coding agent through `zazzle git`, directly, or by git as its editor; the editor draws on /dev/tty and every git step runs the git on PATH, and an agent CLI on PATH, if any, composes a default commit message. Nothing stays resident.",
   "sources": [
     {
       "path": "macos/rust/zazzle-git/Cargo.toml",
@@ -44,6 +44,10 @@
     {
       "path": "agents/skills/zazzle/SKILL.md",
       "symbol": "Git"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/compose.rs",
+      "symbol": "ProcessComposer"
     }
   ],
   "nodes": [
@@ -105,6 +109,13 @@
       "kind": "process",
       "description": "pbcopy and pbpaste on macOS, wl-copy and wl-paste under Wayland, xclip under X11, each with a 2-second limit; the terminal also gets OSC 52.",
       "condition": "Only on copy, cut and paste."
+    },
+    {
+      "id": "agent-cli",
+      "name": "Agent CLI (claude, codex or gemini)",
+      "kind": "process",
+      "description": "The first agent CLI found on PATH, or the one saved in zazzle.agent, started in its own process group with the prompt on stdin, without tools, and killed after 300 seconds or when the editor closes.",
+      "condition": "Only for a commit message, when one of the three is installed."
     }
   ],
   "artifacts": [
@@ -188,6 +199,30 @@
       "to": "clipboard",
       "kind": "connects-to",
       "description": "Copy and paste through the system command, falling back to an in-memory copy."
+    },
+    {
+      "from": "machine",
+      "to": "agent-cli",
+      "kind": "hosts",
+      "description": "The installed agent CLI, run as the calling user."
+    },
+    {
+      "from": "router",
+      "to": "agent-cli",
+      "kind": "connects-to",
+      "description": "Prompt on stdin, the suggested message on stdout, when `zazzle git commit` or `zazzle git message` edits a commit message."
+    },
+    {
+      "from": "commit",
+      "to": "agent-cli",
+      "kind": "connects-to",
+      "description": "Prompt with the marked files' changes on stdin, the suggested message on stdout."
+    },
+    {
+      "from": "editor",
+      "to": "agent-cli",
+      "kind": "connects-to",
+      "description": "Prompt with the staged diff on stdin, the suggested message on stdout, when git opens it for a commit message."
     }
   ]
 }

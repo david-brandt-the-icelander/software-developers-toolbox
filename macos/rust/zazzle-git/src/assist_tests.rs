@@ -86,8 +86,6 @@ fn test_assist_run_and_dots() {
     assert_eq!(a.status, Status::Failed("boom".into()));
     assert!(a.line(4100).contains("claude failed: boom"));
     assert_eq!(a.suggestion(), None);
-    a.cancel();
-    assert_eq!(state.borrow().cancels, 1);
 }
 
 // Checks cycling agents and efforts: each restarts the run and remembers the choice; single and missing agents say why not.

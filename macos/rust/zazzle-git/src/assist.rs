@@ -167,11 +167,6 @@ impl Assist {
         };
         format!("{} · effort {effort} · {state}", agent.name)
     }
-
-    // Stops a run in progress.
-    pub fn cancel(&mut self) {
-        self.composer.cancel();
-    }
 }
 
 #[cfg(test)]

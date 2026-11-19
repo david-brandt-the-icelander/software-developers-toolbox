@@ -3,7 +3,7 @@
   "kind": "state",
   "title": "Editor state diagram",
   "folder": "macos/rust/zazzle-git/src",
-  "description": "The life of one Editor while Term::run feeds it keys: the state is derived from its view, prompt and find fields, and Editor::handle checks them in that order (a prompt first, then the find bar, then the global keys Ctrl+S, Esc, F1/Ctrl+G, Tab/Shift+Tab, Ctrl+F/Ctrl+R, then the view's own keys). Any key other than an arrow resets the tap count. Outside this machine, Term::run also ends with Cancel when SIGHUP, SIGTERM or SIGINT arrives or the terminal closes, and a lone Esc is delivered only after a 25 ms wait for the rest of a sequence.",
+  "description": "The life of one Editor while Term::run feeds it keys: the state is derived from its view, prompt and find fields, and Editor::handle checks them in that order (a prompt first, then the find bar, then the global keys Ctrl+S, Esc, F1/Ctrl+G, Tab/Shift+Tab, Ctrl+F/Ctrl+R, Ctrl+N/Ctrl+E, then the view's own keys). Any key other than an arrow resets the tap count. The waiting state is the assistant's save_waiting flag (assist.rs), which Term::run advances by calling Editor::tick every 100 ms while the editor is busy; the agent's own lifecycle is in Assist.state-diagram.json. Outside this machine, Term::run also ends with Cancel when SIGHUP, SIGTERM or SIGINT arrives or the terminal closes, and a lone Esc is delivered only after a 25 ms wait for the rest of a sequence.",
   "sources": [
     {
       "path": "macos/rust/zazzle-git/src/editor.rs",
@@ -40,6 +40,18 @@
     {
       "path": "macos/rust/zazzle-git/src/editor_tests.rs",
       "symbol": "test_editor_prompts"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/editor.rs",
+      "symbol": "Editor::use_suggestion"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/editor.rs",
+      "symbol": "Editor::tick"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/editor_tests.rs",
+      "symbol": "test_editor_save_waits_for_agent"
     }
   ],
   "machine": "Editor (editor.rs), driven by Term::run through Editor::handle",
@@ -47,7 +59,7 @@
   "states": [
     {
       "id": "new",
-      "description": "Editor::new has built the editor for a buffer: the views are Edit, plus Files when changed files are given (the commit flow), plus Rebase for a git-rebase-todo file. No key handled yet."
+      "description": "Editor::new has built the editor for a buffer: the views are Edit, plus Files when changed files are given (the commit flow), plus Rebase for a git-rebase-todo file. For a commit message with an assistant, the agent starts composing when the message has only blank and comment lines. No key handled yet."
     },
     {
       "id": "editing",
@@ -55,7 +67,7 @@
     },
     {
       "id": "files",
-      "description": "View::Files with no prompt and no find bar: arrows move the list cursor and keys change file marks."
+      "description": "View::Files (the right-hand column when the terminal is at least 60 columns wide, else the whole screen) with no prompt and no find bar: arrows move the list cursor and keys change file marks."
     },
     {
       "id": "rebase",
@@ -76,6 +88,10 @@
     {
       "id": "find",
       "description": "The find bar (Editor.find is Some) is open over a view and takes every key; with replace on, over the editing view only."
+    },
+    {
+      "id": "waiting",
+      "description": "Ctrl+S on an empty commit message while the agent composes: Assist.save_waiting is set and the status line says `Saving when <agent> is done (Esc stops waiting)`. Keys still act on the current view."
     },
     {
       "id": "saved",
@@ -174,14 +190,15 @@
       "from": "editing",
       "to": "editing",
       "trigger": "Ctrl+S",
-      "guard": "problem() finds an empty commit message or a todo list starting with squash or fixup",
+      "guard": "problem() finds an empty commit message (no agent found, or it failed) or a todo list starting with squash or fixup",
       "action": "The reason is shown in the status line."
     },
     {
       "from": "editing",
       "to": "saved",
       "trigger": "Ctrl+S",
-      "guard": "No problem and no file marked [DELETE]"
+      "guard": "No problem and no file marked [DELETE]",
+      "action": "An empty commit message first takes the agent's ready suggestion (use_suggestion)."
     },
     {
       "from": "editing",
@@ -230,14 +247,15 @@
       "from": "files",
       "to": "files",
       "trigger": "Ctrl+S",
-      "guard": "problem() finds an empty commit message or a todo list starting with squash or fixup",
+      "guard": "problem() finds an empty commit message (no agent found, or it failed) or a todo list starting with squash or fixup",
       "action": "The reason is shown in the status line."
     },
     {
       "from": "files",
       "to": "saved",
       "trigger": "Ctrl+S",
-      "guard": "No problem and no file marked [DELETE]"
+      "guard": "No problem and no file marked [DELETE]",
+      "action": "An empty commit message first takes the agent's ready suggestion (use_suggestion)."
     },
     {
       "from": "files",
@@ -317,7 +335,8 @@
       "from": "editing",
       "to": "delete",
       "trigger": "Ctrl+S",
-      "guard": "No problem and some file is marked [DELETE]"
+      "guard": "No problem and some file is marked [DELETE]",
+      "action": "An empty commit message first takes the agent's ready suggestion (use_suggestion)."
     },
     {
       "from": "delete",
@@ -329,7 +348,8 @@
       "from": "files",
       "to": "delete",
       "trigger": "Ctrl+S",
-      "guard": "No problem and some file is marked [DELETE]"
+      "guard": "No problem and some file is marked [DELETE]",
+      "action": "An empty commit message first takes the agent's ready suggestion (use_suggestion)."
     },
     {
       "from": "delete",
@@ -352,6 +372,80 @@
       "from": "delete",
       "to": "saved",
       "trigger": "y or Y"
+    },
+    {
+      "from": "editing",
+      "to": "editing",
+      "trigger": "Ctrl+N or Ctrl+E",
+      "action": "cycle_assist switches to the next agent or effort, remembers it and starts composing again; without an assistant it shows `Agents only suggest commit messages`."
+    },
+    {
+      "from": "editing",
+      "to": "waiting",
+      "trigger": "Ctrl+S",
+      "guard": "A commit message with only blank and comment lines, and the agent is composing or idle",
+      "action": "use_suggestion starts an idle agent and sets save_waiting."
+    },
+    {
+      "from": "waiting",
+      "to": "editing",
+      "trigger": "Esc",
+      "guard": "The current view is the editing view",
+      "action": "save_waiting is cleared: `Stopped waiting; not saved`."
+    },
+    {
+      "from": "waiting",
+      "to": "editing",
+      "trigger": "Editor::tick",
+      "guard": "The agent failed, and the current view is the editing view",
+      "action": "save_waiting is cleared: `No suggestion: write a message (Esc cancels)`."
+    },
+    {
+      "from": "files",
+      "to": "files",
+      "trigger": "Ctrl+N or Ctrl+E",
+      "action": "cycle_assist switches to the next agent or effort, remembers it and starts composing again; without an assistant it shows `Agents only suggest commit messages`."
+    },
+    {
+      "from": "files",
+      "to": "waiting",
+      "trigger": "Ctrl+S",
+      "guard": "A commit message with only blank and comment lines, and the agent is composing or idle",
+      "action": "use_suggestion starts an idle agent and sets save_waiting."
+    },
+    {
+      "from": "waiting",
+      "to": "files",
+      "trigger": "Esc",
+      "guard": "The current view is the Files view",
+      "action": "save_waiting is cleared: `Stopped waiting; not saved`."
+    },
+    {
+      "from": "waiting",
+      "to": "files",
+      "trigger": "Editor::tick",
+      "guard": "The agent failed, and the current view is the Files view",
+      "action": "save_waiting is cleared: `No suggestion: write a message (Esc cancels)`."
+    },
+    {
+      "from": "waiting",
+      "to": "waiting",
+      "trigger": "Any other key, or Editor::tick while the agent composes",
+      "action": "The key acts on the current view (Tab switches between the message and the files); a tick adds progress dots."
+    },
+    {
+      "from": "waiting",
+      "to": "saved",
+      "trigger": "Editor::tick",
+      "guard": "The agent's answer is ready and no file is marked [DELETE]",
+      "action": "save fills a still-empty message with the suggestion; a message typed meanwhile is saved as typed."
+    },
+    {
+      "from": "waiting",
+      "to": "delete",
+      "trigger": "Editor::tick",
+      "guard": "The agent's answer is ready and some file is marked [DELETE]",
+      "action": "save fills a still-empty message with the suggestion and asks about the deletions."
     }
   ]
 }
