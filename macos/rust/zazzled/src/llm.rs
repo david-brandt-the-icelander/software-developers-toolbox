@@ -126,6 +126,7 @@ pub struct Session {
     input: std::process::ChildStdin,
     lines: std::sync::mpsc::Receiver<String>,
     err: std::sync::Arc<Mutex<String>>,
+    err_done: Option<std::thread::JoinHandle<()>>,
     limit: Duration,
     _turn: std::sync::MutexGuard<'static, ()>,
 }
@@ -159,14 +160,14 @@ impl Session {
         });
         let err = std::sync::Arc::new(Mutex::new(String::new()));
         let (sink, mut e) = (std::sync::Arc::clone(&err), child.stderr.take().ok_or("no stderr pipe")?);
-        std::thread::spawn(move || {
+        let err_done = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             while let Ok(n @ 1..) = e.read(&mut buf) {
                 sink.lock().unwrap_or_else(|p| p.into_inner()).push_str(&String::from_utf8_lossy(&buf[..n]));
             }
         });
         let input = child.stdin.take().ok_or("no stdin pipe")?;
-        let mut s = Session { child, input, lines, err, limit, _turn: turn };
+        let mut s = Session { child, input, lines, err, err_done: Some(err_done), limit, _turn: turn };
         let ready: serde_json::Value = serde_json::from_str(&s.line()?).unwrap_or_default();
         match ready["ready"].as_str() {
             Some(_) => Ok(s),
@@ -194,6 +195,10 @@ impl Session {
     // Names why the worker failed: the last line it printed to standard error, else `what`.
     fn failed(&mut self, what: &str) -> String {
         let _ = self.child.wait();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while self.err_done.as_ref().is_some_and(|h| !h.is_finished()) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
         let err = self.err.lock().unwrap_or_else(|p| p.into_inner()).clone();
         format!("local model: {}", last_reason(&err).unwrap_or_else(|| what.to_string()))
     }
