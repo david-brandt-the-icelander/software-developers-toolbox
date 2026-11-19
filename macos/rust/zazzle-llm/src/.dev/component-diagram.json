@@ -49,9 +49,15 @@
       "folder": "macos/rust/zazzle-llm/src"
     },
     {
+      "id": "worker",
+      "name": "Worker (worker.rs)",
+      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does.",
+      "folder": "macos/rust/zazzle-llm/src"
+    },
+    {
       "id": "engine",
       "name": "Engine (engine.rs)",
-      "responsibility": "Loads the GGUF model with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
+      "responsibility": "Loads the GGUF model once (load, kept as Loaded for any number of generate calls; holding back the routine startup logs of llama.cpp and the GPU backend, quiet.rs, and showing only their error lines when loading fails) with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
       "folder": "macos/rust/zazzle-llm/src"
     },
     {
@@ -74,6 +80,10 @@
     { "from": "src", "to": "template", "kind": "contains", "description": "Chat templates." },
     { "from": "src", "to": "think", "kind": "contains", "description": "The thinking filter." },
     { "from": "src", "to": "engine", "kind": "contains", "description": "Inference." },
+    { "from": "src", "to": "worker", "kind": "contains", "description": "The worker loop." },
+    { "from": "cli", "to": "worker", "kind": "depends-on", "description": "`worker` loads the model with engine::load and serves the JSON-line prompts." },
+    { "from": "worker", "to": "engine", "kind": "depends-on", "description": "Loaded::generate for each prompt." },
+    { "from": "worker", "to": "think", "kind": "depends-on", "description": "Keeps only the answer after the thinking." },
     { "from": "cli", "to": "catalog", "kind": "depends-on", "description": "find, MODELS, url and gb for listing, choosing and fetching." },
     { "from": "cli", "to": "store", "kind": "depends-on", "description": "root, defaults, save_defaults, effort, installed, fetch and remove." },
     { "from": "cli", "to": "engine", "kind": "depends-on", "description": "generate with an Ask, receiving Event::Prompt and Event::Text." },

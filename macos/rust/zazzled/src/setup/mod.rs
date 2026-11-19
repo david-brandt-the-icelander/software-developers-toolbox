@@ -23,6 +23,7 @@ Find code precisely, then read it literally: zazzle_read with symbol when you kn
 - zazzle_read returns the literal source of a range (PATH:A-B) or one symbol with its comments and attributes, with line numbers and the sha zazzle_edit needs. If it says INCOMPLETE, read the range it names.
 - Put independent lookups in one call (several paths, or parallel calls); finish reading a command's output before starting another.
 - For a task's rules, zazzle_get_rules with the paths (and a purpose) gives the instructions that apply, once per session; rules already sent stay in force. Check a plan against them, e.g. frozen published contracts.
+- Local model: read short index results (find_symbol, refs, outline) yourself. Use zazzle_investigate for a question that needs several files; it returns checked path:line citations. Use `llm` only on large outputs. Never call it just to have used it.
 - If the C# indexer fails, use zazzle_find, zazzle_read and zazzle_refs; zazzle_find_symbol needs the indexer.";
 
 // What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
@@ -33,7 +34,12 @@ zazzle (MCP server `zazzle`, or the `zazzle` command) reads, searches and edits 
 - Rules for the work at hand: `zazzle_get_rules` (or `zazzle get-rules PATH... --purpose NAME`) returns the instructions and constraints that apply to those paths, including repository-wide ones, and leaves out what this session already received; those rules still apply. Check a plan against them before acting, especially constraints such as frozen published contracts.
 - Batch independent lookups: several paths in one `zazzle_read`, several edits in one `zazzle_edit` (`edits`), and independent tool calls together.
 - Builds and tests: `zazzle run -- CMD` runs the command in the same shell with the same exit code and cleaned output. Collect a command's output before issuing the next command.
-- Output you need only part of (API responses, logs, long test runs): give the tool `llm` (or the command `--llm 'INSTRUCTION'`, also `zazzle run --llm '..' -- CMD`) and the user's local model returns just that, marked as post-processed; drop it when exact text matters. Before a task, `zazzle_brief` with your intent returns only the rule sections and skills it needs. Both need a model the user downloaded (`zazzle agent llm`).
+- The user's local model (needs `zazzle agent llm`) does work that would otherwise fill your context; use it where that saves something, not early or by quota.
+  - Short index results (find_symbol, refs, outline, a range) you read yourself: they are already small. `llm` passes output under ~400 tokens through unchanged.
+  - A question that needs evidence from several files: `zazzle_investigate` (`zazzle investigate QUESTION --path P --symbol S`). The model follows the references inside the paths and returns findings whose `path:line` citations zazzle checked and quoted, plus what it could not establish. Verify anything you act on; a run that stopped early says INCOMPLETE.
+  - Large output you need only part of (API responses, logs, long test runs): give the tool `llm` (or `--llm 'INSTRUCTION'`, also `zazzle run --llm '..' -- CMD`); the answer is marked as post-processed, so drop `llm` when exact text matters.
+  - Before a task, `zazzle_brief` with your intent returns only the rule sections and skills it needs.
+  - Rules reach you apart from the source: on the command line on standard error, so `zazzle read X | zazzle agent prompt` sends the model only the source and you still get the rules you must follow.
 - `zazzle_diff` shows what changed with stats first; `zazzle_replace` changes a pattern across files (`dry_run` first).
 - When an answer must come from a particular commit, pass `commit` (a sha, or `HEAD`); the answer ends with `[commit SHA REPO]`.
 - Edits may go anywhere in the git work tree you started in, in folders the client names and in the user's workspaces (`~/.zazzle/workspaces`).

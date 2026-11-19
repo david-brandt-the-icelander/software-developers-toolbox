@@ -1,9 +1,11 @@
 // zazzle-llm: `zazzle agent llm` lists, fetches and chooses open models; `zazzle agent prompt` asks one, downloading it first when needed.
 mod catalog;
 mod engine;
+mod quiet;
 mod store;
 mod template;
 mod think;
+mod worker;
 
 use clap::{Parser, Subcommand};
 use std::io::{IsTerminal, Read, Write};
@@ -66,6 +68,19 @@ enum Cmd {
         temp: f32,
         /// The prompt.
         text: Vec<String>,
+    },
+    /// Keep a model loaded and answer JSON-line prompts on standard input (for `zazzle investigate`).
+    #[command(hide = true)]
+    Worker {
+        /// The model to load instead of the default.
+        #[arg(long)]
+        model: Option<String>,
+        /// The effort for requests that name none.
+        #[arg(long)]
+        effort: Option<String>,
+        /// Fail with status 4 instead of downloading a missing model.
+        #[arg(long)]
+        no_download: bool,
     },
 }
 
@@ -242,6 +257,32 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     Ok(3)
 }
 
+// Runs `worker`: loads the model once (status 4 with --no-download when it is missing), then answers JSON-line prompts until standard input closes.
+fn worker(
+    root: &Path,
+    model: Option<String>,
+    effort: Option<String>,
+    no_download: bool,
+) -> Result<u8, String> {
+    let d = store::defaults(root);
+    let m = catalog::find(model.as_deref().unwrap_or(&d.model))?;
+    let effort = store::effort(effort.as_deref().unwrap_or(&d.effort))?;
+    if no_download && !store::installed(root, m.file, m.bytes) {
+        eprintln!(
+            "error: {} is not downloaded ({}): run `zazzle agent llm --model {}` first",
+            m.name,
+            catalog::gb(m.bytes),
+            m.name
+        );
+        return Ok(4);
+    }
+    let loaded = engine::load(&ensure(root, m)?)?;
+    let defaults = worker::Defaults { max_tokens: max_tokens(&effort), effort, temp: 0.7 };
+    let (stdin, stdout) = (std::io::stdin(), std::io::stdout());
+    worker::serve(&worker::Model(loaded), m.name, &defaults, &mut stdin.lock(), &mut stdout.lock())?;
+    Ok(0)
+}
+
 // Parses the command line and runs it; errors go to standard error with status 2, an answer cut short by the token limit exits 3, a missing model under --no-download exits 4.
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -264,6 +305,7 @@ fn main() -> ExitCode {
             &root,
             PromptArgs { model, effort, system, max_tokens, show_thinking, no_download, grammar, temp, text },
         ),
+        Cmd::Worker { model, effort, no_download } => worker(&root, model, effort, no_download),
     });
     match result {
         Ok(code) => ExitCode::from(code),
@@ -332,6 +374,8 @@ mod tests {
             temp: 0.7,
             text: vec!["hi".into()],
         };
+        assert_eq!(worker(&root, None, None, true), Ok(4));
+        assert!(worker(&root, Some("nope".into()), None, true).is_err());
         assert_eq!(prompt(&root, absent), Ok(4));
         let _ = std::fs::remove_dir_all(&root);
     }

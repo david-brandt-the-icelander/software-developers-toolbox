@@ -16,6 +16,7 @@ pub mod delivery;
 pub mod engine;
 pub mod hook;
 pub mod indexer;
+pub mod investigate;
 pub mod launchd;
 pub mod llm;
 pub mod locals;

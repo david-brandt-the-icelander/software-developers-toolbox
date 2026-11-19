@@ -166,9 +166,13 @@ impl Zazz {
 fn reply(r: Result<Value, Value>) -> Output {
     match r {
         Ok(v) => Output::plain(v.to_string()),
-        Err(e) => {
-            Output { text: serde_json::json!({"error": e}).to_string(), status: 2, idable: false, raw: false }
-        }
+        Err(e) => Output {
+            text: serde_json::json!({"error": e}).to_string(),
+            status: 2,
+            idable: false,
+            raw: false,
+            notes: String::new(),
+        },
     }
 }
 

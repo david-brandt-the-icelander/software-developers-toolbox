@@ -17,6 +17,7 @@ struct Session {
     entries: HashMap<String, Entry>,
     last_used: u64,
     notes: HashMap<String, u64>,
+    purposes: Vec<String>,
 }
 
 // A response already sent: its content hash, a description, the session's token count just after it, and how to produce it again.
@@ -92,6 +93,18 @@ impl Sessions {
     // Tags a response with its id, or replaces it with a short notice if the session was already sent it recently.
     pub fn apply(&self, session: &str, desc: &str, text: String, allow_dedupe: bool) -> String {
         self.apply_with(session, desc, None, text, allow_dedupe)
+    }
+
+    // Sets the purposes the session last asked rules for, which narrow the instructions added to reads and edits.
+    pub fn set_purposes(&self, session: &str, purposes: Vec<String>) {
+        let mut guard = self.inner.lock().expect("session lock");
+        guard.0.entry(session.to_string()).or_default().purposes = purposes;
+    }
+
+    // Returns the purposes the session last asked rules for; none means whole files.
+    pub fn purposes(&self, session: &str) -> Vec<String> {
+        let guard = self.inner.lock().expect("session lock");
+        guard.0.get(session).map(|s| s.purposes.clone()).unwrap_or_default()
     }
 
     // True when the session was sent the note within the recency window, without recording anything.

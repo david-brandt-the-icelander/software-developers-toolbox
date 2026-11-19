@@ -1,11 +1,17 @@
 // Adds the instructions a client loads when its own tools touch a path (nested AGENTS.md and CLAUDE.md, path-scoped rules), which reads and edits through zazzle would otherwise skip.
 use ignore::overrides::OverrideBuilder;
 use std::path::{Path, PathBuf};
+use zazzle_agent_rules_list::{Found, Kind};
 
 const NAMES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
 
-// Returns the instruction files that apply to the paths and that this session has not been sent by any route (get-rules included), whole, formatted to follow an answer.
-pub fn for_paths(cwd: &Path, paths: &[PathBuf], ledger: &crate::rules::Ledger) -> String {
+// Returns the instruction files that apply to the paths, narrowed to the active purposes, minus the files and line ranges this recipient was already sent by any route (get-rules included), formatted to follow an answer.
+pub fn for_paths(
+    cwd: &Path,
+    paths: &[PathBuf],
+    purposes: &[String],
+    ledger: &crate::rules::Ledger,
+) -> String {
     let mut files: Vec<PathBuf> = Vec::new();
     for p in paths {
         for f in nested_files(cwd, p).into_iter().chain(scoped_rules(p)) {
@@ -17,13 +23,51 @@ pub fn for_paths(cwd: &Path, paths: &[PathBuf], ledger: &crate::rules::Ledger) -
     let mut out = String::new();
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap_or_default();
-        let key = crate::rules::file_key(&crate::rules::canonical(&f), &text);
-        if text.trim().is_empty() || (ledger.has)(&key) {
-            continue;
-        }
-        (ledger.mark)(&key);
-        let shown = f.strip_prefix(cwd).unwrap_or(&f).display().to_string();
-        out.push_str(&format!("\n[instructions for this path: {shown}]\n{}\n", text.trim()));
+        let Some(found) = narrow(&f, text, purposes) else { continue };
+        let Some(part) = crate::rules::fresh(&found, ledger) else { continue };
+        out.push_str(&format_part(cwd, &part));
+    }
+    out
+}
+
+// Builds the rule file as found for the purposes: whole when none are active or it has no markers, the marked ranges otherwise, None when it is empty or has nothing for them.
+fn narrow(path: &Path, text: String, purposes: &[String]) -> Option<Found> {
+    use zazzle_agent_rules_list::purpose::{part, Part};
+    if text.trim().is_empty() {
+        return None;
+    }
+    let lines = match purposes.is_empty() {
+        true => Vec::new(),
+        false => match part(&text, purposes) {
+            Part::Whole => Vec::new(),
+            Part::Lines(l) => l,
+            Part::Nothing => return None,
+        },
+    };
+    Some(Found { kind: Kind::Rule, path: path.to_path_buf(), lines, text: Some(text) })
+}
+
+// Formats one delivered rule file or its ranges under an `[instructions for this path: FILE[:A-B]]` line, without purpose markers.
+fn format_part(cwd: &Path, f: &Found) -> String {
+    let shown = f.path.strip_prefix(cwd).unwrap_or(&f.path).display().to_string();
+    let text = f.text.as_deref().unwrap_or_default();
+    if f.lines.is_empty() {
+        return format!("\n[instructions for this path: {shown}]\n{}\n", text.trim());
+    }
+    let all: Vec<&str> = text.lines().collect();
+    let mut out = String::new();
+    for &(a, b) in &f.lines {
+        let body: Vec<&str> = all
+            .iter()
+            .take(b)
+            .skip(a.saturating_sub(1))
+            .copied()
+            .filter(|l| !zazzle_agent_rules_list::purpose::is_marker(l))
+            .collect();
+        out.push_str(&format!(
+            "\n[instructions for this path: {shown}:{a}-{b}]\n{}\n",
+            body.join("\n").trim()
+        ));
     }
     out
 }
@@ -126,7 +170,7 @@ mod tests {
         let first = crate::rules::Ledger { has: &has, mark: &mark };
         let (never, skip) = (|_: &str| false, |_: &str| {});
         let fresh = crate::rules::Ledger { has: &never, mark: &skip };
-        let out = for_paths(&root, &[root.join("api/v1/x.rs")], &first);
+        let out = for_paths(&root, &[root.join("api/v1/x.rs")], &[], &first);
         assert!(!out.contains("root rules"), "{out}");
         let (a, v) = (out.find("api rules").expect("api"), out.find("v1 rules").expect("v1"));
         assert!(
@@ -135,21 +179,21 @@ mod tests {
                 && out.contains("rust rule"),
             "{out}"
         );
-        assert_eq!(for_paths(&root, &[root.join("api/v1/x.rs")], &first), "");
-        let ts = for_paths(&root, &[root.join("web/y.ts")], &first);
+        assert_eq!(for_paths(&root, &[root.join("api/v1/x.rs")], &[], &first), "");
+        let ts = for_paths(&root, &[root.join("web/y.ts")], &[], &first);
         assert!(ts.contains("ts rule") && !ts.contains("no front matter"), "{ts}");
-        let big = for_paths(&root, &[root.join("api/v1/big/z.rs")], &first);
+        let big = for_paths(&root, &[root.join("api/v1/big/z.rs")], &[], &first);
         assert!(big.contains(&"z".repeat(5000)), "whole files, no cut");
-        assert_eq!(for_paths(&root.join("api"), &[root.join("api/AGENTS.md")], &fresh), "");
-        assert_eq!(for_paths(&root, &[PathBuf::from("/no/such/file")], &fresh), "");
+        assert_eq!(for_paths(&root.join("api"), &[root.join("api/AGENTS.md")], &[], &fresh), "");
+        assert_eq!(for_paths(&root, &[PathBuf::from("/no/such/file")], &[], &fresh), "");
         t.write("api/v1/empty/AGENTS.md", b"  \n");
         t.write("api/v1/empty/e.rs", b"e");
         let twice = [root.join("api/v1/empty/e.rs"), root.join("api/v1/empty/e.rs")];
-        let out = for_paths(&root, &twice, &fresh);
+        let out = for_paths(&root, &twice, &[], &fresh);
         assert!(out.matches("api rules").count() == 1 && !out.contains("empty/AGENTS.md"), "{out}");
-        let dir = for_paths(&root, &[root.join("api/v1")], &fresh);
+        let dir = for_paths(&root, &[root.join("api/v1")], &[], &fresh);
         assert!(dir.contains("v1 rules"), "{dir}");
-        let outside = for_paths(Path::new("/elsewhere"), &[root.join("web/y.ts")], &fresh);
+        let outside = for_paths(Path::new("/elsewhere"), &[root.join("web/y.ts")], &[], &fresh);
         assert!(outside.contains("root rules") && outside.contains("ts rule"), "{outside}");
     }
 
@@ -164,13 +208,67 @@ mod tests {
         let e = crate::engine::Engine::new();
         let first = crate::testutil::run_cmd_with(&e, &root, "s1", &["read", "sub/a.txt:1-1"]);
         assert!(
-            first.text.contains("[instructions for this path: sub/AGENTS.md]\nsub rules"),
+            first.notes.contains("[instructions for this path: sub/AGENTS.md]\nsub rules"),
             "{}",
-            first.text
+            first.notes
         );
+        assert!(!first.text.contains("sub rules"), "rules stay out of the source: {}", first.text);
         let again = crate::testutil::run_cmd_with(&e, &root, "s1", &["read", "sub/a.txt", "--source"]);
-        assert!(!again.text.contains("sub rules"), "{}", again.text);
-        assert!(!crate::testutil::run_cmd(&root, &["read", "sub/a.txt"]).text.contains("sub rules"));
+        assert!(!again.notes.contains("sub rules"), "{}", again.notes);
+        assert!(crate::testutil::run_cmd(&root, &["read", "sub/a.txt"]).notes.is_empty());
+    }
+
+    // Checks the active purpose narrows the added instructions to its marked ranges, each range goes once, and a new purpose adds only its own.
+    #[test]
+    fn test_purposes_and_ranges() {
+        let t = TempDir::new();
+        let root = t.path().canonicalize().expect("root");
+        std::fs::create_dir_all(root.join(".git")).expect("git");
+        t.write(
+            "sub/AGENTS.md",
+            b"<!-- #zazzle-purpose-begin:build -->\nbuild rule\n<!-- #zazzle-purpose-end:build -->\n<!-- #zazzle-purpose-begin:review -->\nreview rule\n<!-- #zazzle-purpose-end:review -->\n",
+        );
+        t.write("sub/a.txt", b"x\n");
+        t.write("other/AGENTS.md", b"<!-- #zazzle-purpose:deploy -->\nonly for deploys\n");
+        t.write("other/b.txt", b"y\n");
+        t.write("blank/AGENTS.md", b"  \n");
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let (has, mark) =
+            (|k: &str| seen.borrow().iter().any(|s| s == k), |k: &str| seen.borrow_mut().push(k.into()));
+        let l = crate::rules::Ledger { has: &has, mark: &mark };
+        let build = for_paths(&root, &[root.join("sub/a.txt")], &["build".into()], &l);
+        assert!(
+            build.contains("[instructions for this path: sub/AGENTS.md:2-2]\nbuild rule")
+                && !build.contains("review"),
+            "{build}"
+        );
+        assert_eq!(for_paths(&root, &[root.join("sub/a.txt")], &["build".into()], &l), "");
+        let both = for_paths(&root, &[root.join("sub/a.txt")], &["build".into(), "review".into()], &l);
+        assert!(
+            both.contains("review rule") && !both.contains("build rule") && !both.contains("#zazzle"),
+            "{both}"
+        );
+        assert_eq!(for_paths(&root, &[root.join("other/b.txt")], &["build".into()], &l), "");
+        assert!(for_paths(&root, &[root.join("other/b.txt")], &["deploy".into()], &l)
+            .contains("only for deploys"));
+        assert_eq!(for_paths(&root, &[root.join("blank/AGENTS.md")], &[], &l), "");
+    }
+
+    // Checks get-rules with a purpose makes it the session's active purpose for the instructions added to later reads.
+    #[test]
+    fn test_session_purpose() {
+        let t = TempDir::new();
+        let root = t.path().canonicalize().expect("root");
+        std::fs::create_dir_all(root.join(".git")).expect("git");
+        t.write(
+            "sub/AGENTS.md",
+            b"<!-- #zazzle-purpose-begin:build -->\nbuild rule\n<!-- #zazzle-purpose-end:build -->\n<!-- #zazzle-purpose-begin:review -->\nreview rule\n<!-- #zazzle-purpose-end:review -->\n",
+        );
+        t.write("sub/a.txt", b"x\n");
+        let e = crate::engine::Engine::new();
+        crate::testutil::run_cmd_with(&e, &root, "s1", &["get-rules", "x.txt", "--purpose", "review"]);
+        let o = crate::testutil::run_cmd_with(&e, &root, "s1", &["read", "sub/a.txt"]);
+        assert!(o.notes.contains("review rule") && !o.notes.contains("build rule"), "{}", o.notes);
     }
 
     // Checks the frontmatter forms the rules use.

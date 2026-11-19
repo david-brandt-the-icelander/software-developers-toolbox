@@ -87,6 +87,27 @@
       "members": ["close: Option<&'static str>", "held: String", "started: bool", "new(prompt) -> Filter", "push(text) -> Vec<Piece>", "finish() -> Vec<Piece>"]
     },
     {
+      "id": "Loaded",
+      "name": "Loaded",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzle-llm/src/engine.rs"],
+      "members": ["backend: LlamaBackend", "model: LlamaModel", "path: PathBuf", "generate(ask, out) -> Result<Done, String>"]
+    },
+    {
+      "id": "Request",
+      "name": "Request (worker)",
+      "kind": "struct",
+      "sources": ["macos/rust/zazzle-llm/src/worker.rs"],
+      "members": ["system: Option<&str>", "user: &str", "effort: &str", "max_tokens: usize", "grammar: Option<&str>", "temp: f32"]
+    },
+    {
+      "id": "Gen",
+      "name": "Gen",
+      "kind": "interface",
+      "sources": ["macos/rust/zazzle-llm/src/worker.rs"],
+      "members": ["ask(request) -> Result<(String, usize, bool), String>"]
+    },
+    {
       "id": "Ask",
       "name": "Ask",
       "kind": "struct",

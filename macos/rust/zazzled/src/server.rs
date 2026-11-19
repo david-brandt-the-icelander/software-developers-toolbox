@@ -213,13 +213,27 @@ fn working_dir(req: &Request, fds: &Fds) -> io::Result<PathBuf> {
 fn respond(stream: &mut UnixStream, out: &Output, fds: Fds) -> io::Result<()> {
     let Some(stdout) = fds.stdout else {
         stream.write_all(&[out.status])?;
-        return stream.write_all(out.text.as_bytes());
+        stream.write_all(out.text.as_bytes())?;
+        return stream.write_all(out.notes.as_bytes());
     };
-    let target = if out.status != 0 && !out.raw { fds.stderr.unwrap_or(stdout) } else { stdout };
+    let to_err = out.status != 0 && !out.raw;
+    let (target, notes) = match (to_err, fds.stderr) {
+        (true, Some(e)) => (e, None),
+        (false, Some(e)) => (stdout, Some(e)),
+        (_, None) => (stdout, None),
+    };
     let mut f = File::from(target);
     let _ = f.write_all(out.text.as_bytes());
     if !out.raw {
         let _ = f.write_all(b"\n");
+    }
+    if !out.notes.is_empty() {
+        match notes {
+            Some(e) => {
+                _ = File::from(e).write_all(format!("{}\n", out.notes.trim_start_matches('\n')).as_bytes())
+            }
+            None => _ = f.write_all(out.notes.as_bytes()),
+        }
     }
     drop(f);
     stream.write_all(&[out.status])
@@ -493,6 +507,17 @@ pub mod tests {
 
     // Sends a request in fd mode and returns (stdout text, stderr text, status).
     fn fd_call(sock: &Path, cwd: &Path, args: &[&str], stdin_text: &[u8]) -> (String, String, u8) {
+        fd_call_in(sock, cwd, "", args, stdin_text)
+    }
+
+    // Sends a request in fd mode under a session and returns (stdout text, stderr text, status).
+    fn fd_call_in(
+        sock: &Path,
+        cwd: &Path,
+        session: &str,
+        args: &[&str],
+        stdin_text: &[u8],
+    ) -> (String, String, u8) {
         let (mut out_r, out_w) = pipe();
         let (mut err_r, err_w) = pipe();
         let (in_r, in_w) = pipe();
@@ -502,7 +527,7 @@ pub mod tests {
         let dirfd = OwnedFd::from(File::open(cwd).expect("open cwd"));
         let req = Request {
             cwd: String::new(),
-            session: String::new(),
+            session: session.to_string(),
             args: args.iter().map(|s| s.to_string()).collect(),
         };
         let mut s = UnixStream::connect(sock).expect("connect");
@@ -530,6 +555,30 @@ pub mod tests {
         let (out, err, status) = fd_call(&srv.sock, work.path(), &["find", "needle"], b"");
         assert_eq!((status, err.as_str()), (0, ""));
         assert!(out.starts_with("a.txt\n1: needle\n-- 1 matches") && out.ends_with('\n'));
+        srv.finish().expect("finish");
+    }
+
+    // Checks a read's source goes to the passed stdout and the rules that apply to it to stderr, so a pipe gets only the source; over the socket both come back.
+    #[test]
+    fn test_rules_go_to_stderr_not_the_pipe() {
+        let work = TempDir::new();
+        std::fs::create_dir_all(work.path().join(".git")).expect("git");
+        work.write("sub/AGENTS.md", b"sub rule\n");
+        work.write("sub/a.txt", b"source line\n");
+        let srv = Running::start(Duration::from_secs(30));
+        let (out, err, status) = fd_call_in(&srv.sock, work.path(), "s1", &["read", "sub/a.txt"], b"");
+        assert_eq!(status, 0);
+        assert!(out.contains("source line") && !out.contains("sub rule"), "{out}");
+        assert!(err.starts_with("[instructions for this path: sub/AGENTS.md]\nsub rule"), "{err}");
+        work.write("sub/AGENTS.md", b"sub rule changed\n");
+        let req = Request {
+            cwd: work.path().display().to_string(),
+            session: "s1".into(),
+            args: vec!["read".into(), "sub/a.txt".into(), "--disable-session-deduping".into()],
+        };
+        let mut s = UnixStream::connect(&srv.sock).expect("connect");
+        let (_, text) = proto::roundtrip(&mut s, &req).expect("roundtrip");
+        assert!(text.contains("source line") && text.contains("sub rule changed"), "{text}");
         srv.finish().expect("finish");
     }
 

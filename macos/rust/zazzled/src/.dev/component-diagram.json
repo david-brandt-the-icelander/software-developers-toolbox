@@ -232,9 +232,15 @@
       "folder": "macos/rust/zazzled/src"
     },
     {
+      "id": "investigate",
+      "name": "Investigation (investigate/)",
+      "responsibility": "Answers `investigate`: asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs them with zazzle's own commands under a separate rules ledger, and checks and quotes each path:line the answer cites.",
+      "folder": "macos/rust/zazzled/src/investigate"
+    },
+    {
       "id": "llm",
       "name": "Local model calls (llm.rs)",
-      "responsibility": "Runs `zazzle-llm prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved.",
+      "responsibility": "Runs `zazzle-llm prompt --no-download` as a subprocess, one call at a time, with the input on standard input and a timeout (ZAZZLE_LLM_TIMEOUT); finds the program through ZAZZLE_LLM or the tools module; refuses input over 400,000 bytes; post-processes a command's output with an instruction at low effort and temperature 0 and marks the answer with the tokens it saved; Session keeps one `zazzle-llm worker --no-download` (and the one-model lock) for a multi-turn caller such as investigate, each answer bounded by the timeout.",
       "folder": "macos/rust/zazzled/src"
     },
     {
@@ -1159,6 +1165,30 @@
       "to": "brief",
       "kind": "contains",
       "description": "The brief command."
+    },
+    {
+      "from": "src",
+      "to": "investigate",
+      "kind": "contains",
+      "description": "The investigate command."
+    },
+    {
+      "from": "cmd",
+      "to": "investigate",
+      "kind": "depends-on",
+      "description": "The dispatcher runs `investigate` and `agent investigate` with investigate::run."
+    },
+    {
+      "from": "investigate",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Each turn asks the local model with llm::ask."
+    },
+    {
+      "from": "investigate",
+      "to": "cmd",
+      "kind": "depends-on",
+      "description": "Lookups run as read, refs, outline and find through cmd::run under the SESSION>local ledger."
     },
     {
       "from": "cmd",

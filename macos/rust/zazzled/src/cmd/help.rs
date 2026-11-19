@@ -27,6 +27,7 @@ pub const AGENT: &[&str] = &[
     "get-rules",
     "brief",
     "prompt",
+    "investigate",
 ];
 
 // True when agents are shown the command.
@@ -231,6 +232,20 @@ const PAGES: &[Page] = &[
         about: &["Before a task: the local model picks, from every rule section and skill that applies to the paths (default: here), the ones the intent needs; they print verbatim, with line ranges, and the rest are named in one line. Needs a downloaded model (zazzle agent llm)."],
         options: &[("--path PATH", "A file or folder the work touches (repeatable)")],
         examples: &["zazzle brief 'add a subcommand to zazzle-git' --path macos/rust/zazzle-git"],
+    },
+    Page {
+        name: "investigate",
+        group: 0,
+        brief: "investigate QUESTION..",
+        summary: "Local model answers with checked citations",
+        usage: &["zazzle investigate QUESTION.. [--path P].. [--symbol S].. [--steps N]", "zazzle agent investigate QUESTION.."],
+        about: &["Hands a question that needs several files to the local model. Starting from the symbols' references, it reads, outlines and searches inside the paths (default: here) for up to N turns, then answers. Each cited path:line is checked against the file and quoted literally; bad citations and what it could not establish are listed, and a run that stopped early says INCOMPLETE. The rules for the files it reads reach the model apart from the evidence, and you get those for the cited files. For one known symbol or a short lookup, read or refs is cheaper. Needs a downloaded model (zazzle agent llm)."],
+        options: &[
+            ("-p, --path P", "A folder or file to stay inside (repeatable)"),
+            ("-s, --symbol S", "A name to start from (repeatable)"),
+            ("--steps N", "Model turns, 1 to 12 (default 6)"),
+        ],
+        examples: &["zazzle investigate 'Where is the idempotency key validated?' --path src/Api --symbol IdempotencyFilter"],
     },
     Page {
         name: "prompt",
@@ -699,7 +714,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate"
         );
     }
 
