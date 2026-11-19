@@ -3,7 +3,7 @@
   "kind": "use-case",
   "title": "csharp-indexer command-line use cases",
   "folder": "src/macos/csharp-indexer/src/Cli",
-  "description": "Setting zazzle and csharp-indexer up in a project, being redirected to zazzle by the indexer's hook, and reading what the usage log says.",
+  "description": "Setting zazzle and csharp-indexer up in a project and taking that out again, checking and restarting the shared indexer daemon, being redirected to zazzle by the indexer's hook, and reading what the usage log says.",
   "sources": [
     {
       "path": "src/macos/csharp-indexer/src/Program.cs",
@@ -16,6 +16,18 @@
     {
       "path": "src/macos/csharp-indexer/src/Program.cs",
       "symbol": "report"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "uninit"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "status"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "restart"
     }
   ],
   "entities": [
@@ -154,6 +166,263 @@
             {
               "path": "src/macos/csharp-indexer/tests/CliTests.cs",
               "symbol": "test_init_idempotent_and_preserving"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "undo-init",
+      "name": "Take zazzle and the redirect hook out of a project",
+      "description": "A developer removes what csharp-indexer init wrote into a project, keeping everything else in its settings files.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "uninit"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Have the project's Claude Code settings as they were before init, without hand-editing JSON.",
+      "preconditions": [
+        "The developer is in the project folder, or names it."
+      ],
+      "postconditions": [
+        "The zazzle server init wrote, the csharp-indexer redirect hook, the mcp__zazzle permission and the zazzle enabled server are gone; every other byte of .mcp.json and .claude/settings.json is as it was, and a file (and .claude/) that held only init's entries is deleted."
+      ],
+      "flow": [
+        {
+          "id": "run-uninit",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer uninit, optionally with --dry-run first and a folder.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "uninit"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "find-entries",
+          "actor": "csharp-indexer",
+          "action": "Reads each file and finds init's entries by their shape: the zazzle stdio server whose command ends in daemon with args [\"mcp\"], hook commands ending in \" hook\" that name csharp-indexer, mcp__zazzle and zazzle.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.NextMcp"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.NextSettings"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "cut-entries",
+          "actor": "csharp-indexer",
+          "action": "Cuts each entry out of the file text, then each object or array that left empty, and writes the file, or deletes it when nothing else is left; prints one line per change.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/JsonText.cs",
+              "symbol": "JsonText.Remove"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.Undo"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run-uninit",
+          "condition": "--dry-run.",
+          "outcome": "The same lines start with \"would\" and nothing is written or deleted.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_dry_run"
+            }
+          ]
+        },
+        {
+          "atStep": "find-entries",
+          "condition": "Nothing of init's is there (never initialised, or uninit already ran).",
+          "outcome": "Prints \"nothing to undo in DIR\" and changes nothing.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_after_init_on_empty_project"
+            }
+          ]
+        },
+        {
+          "atStep": "find-entries",
+          "condition": "The zazzle server has keys init does not write, or a file is not JSON it can edit.",
+          "outcome": "That server or file is left as it is, with a line saying so.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_leaves_foreign_server_and_bad_json"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "manage-daemon",
+      "name": "Check on and restart the shared indexer daemon",
+      "description": "A developer sees whether the per-user indexer daemon runs and what it holds, and replaces it with one started from the installed executable, for example after an upgrade or when a client was refused for a version mismatch.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Status"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Restart"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Know what the indexer daemon is doing, and get one of the installed version running without quitting the apps that use it.",
+      "preconditions": [
+        "csharp-indexer is installed; the daemon, if one runs, uses the same state folder (ZAZZLE_INDEXER_STATE_DIR or the platform default)."
+      ],
+      "postconditions": [
+        "After status: nothing changed. After restart: one daemon of this executable's version runs, and the old one has exited or been killed."
+      ],
+      "flow": [
+        {
+          "id": "run-status",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer status (or --json).",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "status"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "ask-status",
+          "actor": "csharp-indexer",
+          "action": "Sends a command hello with no version to daemon.sock; the daemon answers with its process id, version, uptime, memory, clients and roots without starting a session.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.Query"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Status"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "print-status",
+          "actor": "csharp-indexer",
+          "action": "Prints the report and exits 0 when the daemon runs, 3 when none does.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.StatusText"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "run-restart",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer restart, optionally with --timeout SECONDS.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "restart"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "drain",
+          "actor": "csharp-indexer",
+          "action": "Sends the stop command: the daemon refuses new clients and exits once its connected clients have finished; csharp-indexer waits for the process to exit and kills it after the timeout.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.StopDaemon"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Command"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "start-fresh",
+          "actor": "csharp-indexer",
+          "action": "Starts a detached daemon from its own executable on the same state folder, waits until it answers, and prints the old and new version and process id.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.Restart"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+              "symbol": "Proxy.SpawnDaemon"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "ask-status",
+          "condition": "No daemon runs.",
+          "outcome": "status prints \"not running\" with the socket and state folder and exits 3; restart only starts one; stop says none was running.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_status_not_running"
+            }
+          ]
+        },
+        {
+          "atStep": "ask-status",
+          "condition": "The daemon is from before these commands.",
+          "outcome": "It refuses the versionless hello as too old, naming its version; status reports it running with that version and that details need a newer daemon. stop sends it the hello of a newer client, so it drains as it does for an upgrade, and finds its process with lsof if it must be killed.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_older_daemon"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.FindPid"
+            }
+          ]
+        },
+        {
+          "atStep": "drain",
+          "condition": "A client stays connected past the timeout.",
+          "outcome": "The daemon is killed, its stale socket file removed, and the line says so.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_restart_status_stop"
             }
           ]
         }
@@ -379,7 +648,7 @@
       "kind": "operation",
       "folder": "src/macos/csharp-indexer/src",
       "path": "src/macos/csharp-indexer/src/.dev/operation.json",
-      "relationship": "The init, hook and report commands these use cases call."
+      "relationship": "The init, uninit, status, stop, restart, hook and report commands these use cases call."
     },
     {
       "kind": "use-case",

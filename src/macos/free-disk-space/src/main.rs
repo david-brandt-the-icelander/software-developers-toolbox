@@ -2,13 +2,16 @@
 mod clean;
 mod compress;
 mod daemon;
+mod decompress;
 mod dedupe;
 mod lzfse;
 mod meta;
 mod repair;
 mod scan;
+mod status;
 #[cfg(test)]
 mod testkit;
+mod top;
 mod util;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -29,11 +32,13 @@ const EXAMPLES: &str = "examples:
   free-disk-space clean caches dev --apply     # actually clean just those
   free-disk-space scan --root ~ --min-size 5M  # scan for compression, duplicates, cleanup (Ctrl-C safe)
   free-disk-space resume                       # continue it later
-  free-disk-space status                       # progress, candidates, free space
+  free-disk-space status                       # progress, candidates, free space, daemon (--json for scripts)
+  free-disk-space top ~/Library --count 10     # largest folders and files, by size on disk
   free-disk-space dedupe                       # dry run: same-named identical files to clone
   free-disk-space dedupe --sample 5 --apply    # replace 5 duplicates with APFS clones
   free-disk-space compress --sample 5          # verify on 5 files first
   free-disk-space compress --limit 20G --yes   # then go bigger
+  free-disk-space decompress ~/dev/app         # dry run: what reversing compress would take
   free-disk-space daemon install               # clean caches+dev below 30G free, checked every 15m awake
   free-disk-space daemon install --threshold 10% --cadence 1h --targets caches dev trash
 
@@ -67,8 +72,10 @@ enum Cmd {
     Scan(NewArgs),
     /// continue an interrupted scan
     Resume(ResumeArgs),
-    /// show scan progress, candidates and free space
-    Status(StateArg),
+    /// show scan progress, candidates, free space and the daemon
+    Status(StatusArgs),
+    /// list the largest folders and files under a path by size on disk (read-only, one volume)
+    Top(TopArgs),
     /// list best candidates
     List(ListArgs),
     /// compress candidates in place (verified)
@@ -85,6 +92,13 @@ enum Cmd {
     /// recovered from it. A flagged file whose compressed form takes as many disk blocks as the plain
     /// file would is decompressed (a verified plain copy, flag cleared) and left alone by `compress`.
     Repair(RepairArgs),
+    /// rewrite compressed files plain again, reversing compress (dry run unless --apply)
+    ///
+    /// Every transparently compressed file under the given files or folders is rewritten as a verified plain copy
+    /// (contents, mode, owner, flags, xattrs, ACL and times checked) and swapped in, with the same skips as compress:
+    /// hard-linked, open, immutable, iCloud-placeholder files and files without a provenance. Refuses when the
+    /// volume lacks the space the plain files take. Decompressed files are recorded so compress leaves them alone.
+    Decompress(DecompressArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
     ///
     /// Files recorded by the scan that share a leaf name and size are SHA-256 hashed when at least
@@ -242,6 +256,52 @@ struct CompressArgs {
     retry_failed: bool,
 }
 
+// Options for status.
+#[derive(Args)]
+struct StatusArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// print one JSON object (tool, version, ok, problems, scan, candidates, free space, daemon)
+    #[arg(long)]
+    json: bool,
+}
+
+// Options for top.
+#[derive(Args)]
+struct TopArgs {
+    /// folder to measure (default: your home)
+    #[arg(default_value_t = util::home())]
+    path: String,
+    /// rows to show
+    #[arg(long, value_name = "N", default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..))]
+    count: u32,
+    /// deepest level listed below PATH (sizes always include everything below)
+    #[arg(long, value_name = "D", default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..))]
+    depth: u32,
+    /// print JSON
+    #[arg(long)]
+    json: bool,
+}
+
+// Options for decompress.
+#[derive(Args)]
+struct DecompressArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// files or folders to decompress (folders recursively, on their own volume)
+    #[arg(required = true, value_name = "PATH")]
+    paths: Vec<String>,
+    /// actually decompress (default is a dry run)
+    #[arg(long)]
+    apply: bool,
+    /// extra free space to keep beyond the plain files
+    #[arg(long, value_parser = size_arg, default_value = "2G")]
+    reserve: i64,
+    /// also change files without a com.apple.provenance (Apple's and system files)
+    #[arg(long)]
+    include_no_provenance: bool,
+}
+
 // Options for repair.
 #[derive(Args)]
 struct RepairArgs {
@@ -352,7 +412,20 @@ fn run(cli: Cli) {
             skip_clean: a.skip_clean,
         }),
         Cmd::Resume(a) => scan::cmd_resume(&a.state.state, a.skip_clean),
-        Cmd::Status(a) => scan::cmd_status(&a.state),
+        Cmd::Status(a) => status::cmd_status(&a.state.state, a.json),
+        Cmd::Top(a) => top::cmd_top(&top::TopOpts {
+            path: a.path,
+            count: a.count as usize,
+            depth: a.depth as usize,
+            json: a.json,
+        }),
+        Cmd::Decompress(a) => decompress::cmd_decompress(&decompress::DecompressOpts {
+            state: a.state.state,
+            paths: a.paths,
+            apply: a.apply,
+            reserve: a.reserve,
+            include_no_provenance: a.include_no_provenance,
+        }),
         Cmd::List(a) => scan::cmd_list(&a.state.state, &value_name(a.status), a.top),
         Cmd::Compress(a) => compress::cmd_compress(&compress::CompressOpts {
             state: a.state.state,
@@ -449,6 +522,9 @@ mod tests {
         assert!(Cli::try_parse_from(["fds"]).is_err());
         assert!(Cli::try_parse_from(["fds", "clean"]).is_err());
         assert!(Cli::try_parse_from(["fds", "compress", "--min-gain", "x"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "decompress"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "top", "--count", "0"]).is_err());
+        assert!(Cli::try_parse_from(["fds", "top", "--depth", "0"]).is_err());
     }
 
     // Check every subcommand dispatches to its implementation.
@@ -474,6 +550,9 @@ mod tests {
         ]);
         go(&["resume"]);
         go(&["status"]);
+        go(&["status", "--json"]);
+        go(&["top", root, "--count", "3", "--depth", "1", "--json"]);
+        go(&["decompress", root, "--reserve", "0"]);
         go(&["list", "--top", "3", "--status", "done"]);
         go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
         go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);

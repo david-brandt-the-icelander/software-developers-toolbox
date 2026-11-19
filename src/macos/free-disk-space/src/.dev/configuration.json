@@ -91,7 +91,7 @@
     {
       "id": "fds-force",
       "title": "Force macOS-only steps elsewhere",
-      "summary": "When set, compress, dedupe --apply and the Finder trash step run off macOS, where clonefile is a plain copy; meant for tests.",
+      "summary": "When set, compress, decompress, dedupe --apply and the Finder trash step run off macOS, where clonefile is a plain copy; meant for tests.",
       "key": "FDS_FORCE",
       "type": "environment variable (presence)",
       "default": "unset",
@@ -115,6 +115,10 @@
         {
           "path": "src/macos/free-disk-space/src/testkit.rs",
           "symbol": "ENV_KEYS"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
         }
       ]
     },
@@ -195,8 +199,8 @@
     {
       "id": "compress-margins",
       "title": "Compression safety margins",
-      "summary": "compress --min-age-days (14) re-checks age, --min-gain (64K) is the least verified saving worth keeping, and --reserve (2G) is free space kept beyond the temp copy.",
-      "key": "compress --min-age-days, --min-gain, --reserve",
+      "summary": "compress --min-age-days (14) re-checks age, --min-gain (64K) is the least verified saving worth keeping, and --reserve (2G) is free space kept beyond the temp copy. decompress has its own --reserve (2G): free space kept beyond all the plain files.",
+      "key": "compress --min-age-days, --min-gain, --reserve; decompress --reserve",
       "type": "command-line flags",
       "default": {
         "min-age-days": 14,
@@ -216,6 +220,10 @@
         {
           "path": "src/macos/free-disk-space/src/compress.rs",
           "symbol": "precheck"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "DecompressArgs"
         }
       ]
     },

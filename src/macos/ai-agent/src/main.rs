@@ -1,6 +1,7 @@
-// ai-agent: `zazzle agent llm` lists, fetches and chooses open models; `zazzle agent prompt` asks one, downloading it first when needed.
+// ai-agent: `zazzle agent llm` lists, fetches and chooses open models; `prompt` asks one, downloading it first when needed; `status` and `prune` report and tidy the model store.
 mod catalog;
 mod engine;
+mod inventory;
 mod quiet;
 mod store;
 mod template;
@@ -18,14 +19,14 @@ use std::process::ExitCode;
     name = "ai-agent",
     bin_name = "zazzle agent",
     version,
-    about = "Run open models locally: choose one with llm, ask it with prompt"
+    about = "Run open models locally: choose one with llm, ask it with prompt, check the store with status, free space with prune"
 )]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
 }
 
-// The two commands.
+// The commands.
 #[derive(Subcommand)]
 enum Cmd {
     /// List the models, or download one and make it (and an effort) the default.
@@ -68,6 +69,21 @@ enum Cmd {
         temp: f32,
         /// The prompt.
         text: Vec<String>,
+    },
+    /// Show the default model and effort, downloaded models (checked by size), partial downloads and disk use; exit 1 when the default is missing or a model is corrupt.
+    Status {
+        /// Print one JSON object instead of text.
+        #[arg(long)]
+        json: bool,
+        /// Also check each downloaded model's SHA-256 against the catalogue (reads every byte).
+        #[arg(long)]
+        verify: bool,
+    },
+    /// Remove every downloaded model but the default, stale partial downloads and orphaned lock files; only lists them unless --apply.
+    Prune {
+        /// Delete the files instead of only listing them.
+        #[arg(long)]
+        apply: bool,
     },
     /// Keep a model loaded and answer JSON-line prompts on standard input (for `zazzle investigate`).
     #[command(hide = true)]
@@ -218,6 +234,7 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
         return Ok(4);
     }
     let path = ensure(root, m)?;
+    let _held = store::hold(root, m.file, m.bytes)?;
     let ask = engine::Ask {
         path: &path,
         system: a.system.as_deref(),
@@ -276,14 +293,16 @@ fn worker(
         );
         return Ok(4);
     }
-    let loaded = engine::load(&ensure(root, m)?)?;
+    let path = ensure(root, m)?;
+    let _held = store::hold(root, m.file, m.bytes)?;
+    let loaded = engine::load(&path)?;
     let defaults = worker::Defaults { max_tokens: max_tokens(&effort), effort, temp: 0.7 };
     let (stdin, stdout) = (std::io::stdin(), std::io::stdout());
     worker::serve(&worker::Model(loaded), m.name, &defaults, &mut stdin.lock(), &mut stdout.lock())?;
     Ok(0)
 }
 
-// Parses the command line and runs it; errors go to standard error with status 2, an answer cut short by the token limit exits 3, a missing model under --no-download exits 4.
+// Parses the command line and runs it; errors go to standard error with status 2, an unhealthy status exits 1, an answer cut short by the token limit exits 3, a missing model under --no-download exits 4.
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = store::root().and_then(|root| match cli.cmd {
@@ -305,6 +324,15 @@ fn main() -> ExitCode {
             &root,
             PromptArgs { model, effort, system, max_tokens, show_thinking, no_download, grammar, temp, text },
         ),
+        Cmd::Status { json, verify } => inventory::status(&root, verify).map(|v| {
+            println!("{}", if json { v.to_string() } else { inventory::status_text(&v) }.trim_end());
+            u8::from(v["ok"] != true)
+        }),
+        Cmd::Prune { apply } => {
+            let (text, code) = inventory::prune(&root, apply);
+            println!("{}", text.trim_end());
+            Ok(code)
+        }
         Cmd::Worker { model, effort, no_download } => worker(&root, model, effort, no_download),
     });
     match result {
@@ -331,6 +359,20 @@ mod tests {
         );
         assert_eq!(prompt_text(&[], &mut stdin), Ok("PIPED".into()));
         assert_eq!((max_tokens("low"), max_tokens("medium"), max_tokens("high")), (4096, 8192, 32768));
+    }
+
+    // Checks status and prune parse as zazzle users type them, with their flags.
+    #[test]
+    fn test_main_cli_status_prune() {
+        let parse = |args: &[&str]| Cli::try_parse_from(args).map(|c| c.cmd);
+        assert!(matches!(
+            parse(&["ai-agent", "status", "--json", "--verify"]),
+            Ok(Cmd::Status { json: true, verify: true })
+        ));
+        assert!(matches!(parse(&["ai-agent", "status"]), Ok(Cmd::Status { json: false, verify: false })));
+        assert!(matches!(parse(&["ai-agent", "prune"]), Ok(Cmd::Prune { apply: false })));
+        assert!(matches!(parse(&["ai-agent", "prune", "--apply"]), Ok(Cmd::Prune { apply: true })));
+        assert!(parse(&["ai-agent", "prune", "--json"]).is_err());
     }
 
     // Checks `llm` lists the catalogue with the default marked, saves an effort, rejects unknown names, and removes nothing missing.

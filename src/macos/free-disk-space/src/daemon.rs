@@ -274,12 +274,12 @@ fn plist(exe: &Path, s: &Settings, log_path: &Path) -> String {
 }
 
 // Return the user's launch agent plist path.
-fn plist_path() -> PathBuf {
+pub fn plist_path() -> PathBuf {
     PathBuf::from(util::home()).join("Library/LaunchAgents").join(format!("{LABEL}.plist"))
 }
 
 // Return the daemon log path.
-fn log_path() -> PathBuf {
+pub fn log_path() -> PathBuf {
     PathBuf::from(util::home()).join("Library/Logs/free-disk-space.log")
 }
 
@@ -341,15 +341,19 @@ pub fn cmd_uninstall() {
     }
 }
 
+// Tell whether the login item is installed and whether launchd runs it.
+pub fn state() -> (bool, bool) {
+    (plist_path().exists(), launchctl(&["print", &service_target()]).0 == 0)
+}
+
 // Show whether the login item exists and is running.
 pub fn cmd_status() {
-    let path = plist_path();
+    let (installed, running) = state();
     println!(
         "login item : {} ({})",
-        if path.exists() { "installed" } else { "not installed" },
-        path.display()
+        if installed { "installed" } else { "not installed" },
+        plist_path().display()
     );
-    let running = launchctl(&["print", &service_target()]).0 == 0;
     println!("running    : {}", if running { "yes" } else { "no" });
     println!("log        : {}", log_path().display());
 }

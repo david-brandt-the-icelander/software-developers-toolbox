@@ -1,18 +1,77 @@
-// Entry point: parses the command line and starts the stdio MCP server.
+// Entry point: parses the command line and runs one command (setup, daemon control, the hook, the daemon or a stdio MCP session).
 using CSharpIndexer;
 using System.Text.Json.Nodes;
 using CSharpIndexer.Cli;
 using CSharpIndexer.Daemon;
 using CSharpIndexer.Mcp;
 
-if (args.Length == 0 || args[0] is "--help" or "-h")
+// The help text: every command, as people run it through zazzle.
+const string Usage = """
+    usage: zazzle csharp-indexer COMMAND (or csharp-indexer COMMAND)
+
+    project setup:
+      init [--dir DIR]             wire zazzle and the redirect hook into DIR's .mcp.json and .claude/settings.json (default: current folder)
+      uninit [--dry-run] [DIR]     remove what init wrote there, leaving everything else as it was
+
+    the shared daemon:
+      status [--json]              whether it runs: pid, version, uptime, socket, state folder, memory, clients and indexed roots (exit 3: not running)
+      stop [--timeout SECONDS]     let it finish its clients (default 10 s), then kill it
+      restart [--timeout SECONDS]  stop it, then start a fresh one from this executable
+      daemon                       run it in the foreground (clients start it on demand)
+      serve [--no-daemon] [--root NAME=PATH]...
+                                   an MCP session over stdio through the daemon, for debugging
+
+    other:
+      report                       what to improve next, from the usage logs
+      hook                         the Claude Code PreToolUse hook init installs (hook JSON on stdin)
+      help, --help, -h             this text
+      --version                    print the version
+    """;
+
+if (args.Length == 0)
 {
-    Console.Error.WriteLine("usage: csharp-indexer serve [--no-daemon] [--root name=path]... | daemon | report | init [--dir path] | hook");
-    return args.Length == 0 ? 2 : 0;
+    Console.Error.WriteLine(Usage);
+    return 2;
+}
+if (args[0] is "help" or "--help" or "-h")
+{
+    Console.WriteLine(Usage);
+    return 0;
 }
 if (args[0] == "--version")
 {
     Console.WriteLine("csharp-indexer " + ToolVersion.Text);
+    return 0;
+}
+if (args[0] == "status")
+{
+    if (args.Skip(1).FirstOrDefault(a => a != "--json") is { } bad)
+        return BadArgument(bad);
+    return Control.Status(UsageLog.DefaultDir(), args.Contains("--json"), Console.Out);
+}
+if (args[0] is "stop" or "restart")
+{
+    var timeout = 10.0;
+    if (args.Length > 1 && (args.Length != 3 || args[1] != "--timeout" || !double.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out timeout) || timeout < 0))
+        return BadArgument(string.Join(' ', args[1..]));
+    return args[0] == "stop"
+        ? Control.Stop(UsageLog.DefaultDir(), TimeSpan.FromSeconds(timeout), Console.Out)
+        : Control.Restart(UsageLog.DefaultDir(), Environment.ProcessPath!, TimeSpan.FromSeconds(timeout), Console.Out);
+}
+if (args[0] == "uninit")
+{
+    var dryRun = args.Contains("--dry-run");
+    var dirs = args.Skip(1).Where(a => a != "--dry-run").ToList();
+    if (dirs.Count > 1 || dirs.Any(d => d.StartsWith('-')))
+        return BadArgument(string.Join(' ', dirs));
+    var target = Path.GetFullPath(dirs.FirstOrDefault() ?? Directory.GetCurrentDirectory());
+    if (!Directory.Exists(target))
+    {
+        Console.Error.WriteLine($"not a folder: {target}");
+        return 2;
+    }
+    foreach (var line in Uninit.Apply(target, dryRun))
+        Console.WriteLine(line);
     return 0;
 }
 if (args[0] == "report")
@@ -43,7 +102,7 @@ if (args[0] == "hook")
 
 if (args[0] is not ("serve" or "daemon"))
 {
-    Console.Error.WriteLine($"unknown command: {args[0]}");
+    Console.Error.WriteLine($"unknown command: {args[0]} (run csharp-indexer help)");
     return 2;
 }
 
@@ -56,10 +115,7 @@ for (var i = 1; i < args.Length; i++)
     else if (args[i] == "--root" && i + 1 < args.Length)
         specs.Add(args[++i]);
     else
-    {
-        Console.Error.WriteLine($"bad argument: {args[i]}");
-        return 2;
-    }
+        return BadArgument(args[i]);
 }
 if (specs.Count == 0)
     specs.Add(Directory.GetCurrentDirectory());
@@ -92,6 +148,13 @@ using var local = Engine.Open();
 var roots = specs.Select(s => Root.Parse(s, local)).ToList();
 await new McpServer(roots, local.Log).RunAsync(Console.In, Console.Out);
 return 0;
+
+// Says an argument is not understood and returns the usage exit code.
+static int BadArgument(string arg)
+{
+    Console.Error.WriteLine($"bad argument: {arg} (run csharp-indexer help)");
+    return 2;
+}
 
 // Makes a root spec absolute while keeping its optional name= prefix.
 static string Absolute(string spec)

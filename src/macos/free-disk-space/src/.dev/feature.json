@@ -76,6 +76,82 @@
       ]
     },
     {
+      "id": "largest-entries",
+      "name": "Largest folders and files",
+      "description": "top shows where the space under a folder goes.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "walk_root"
+        }
+      ],
+      "behavior": "The folder's entries are shared out among threads (one per core); each walks its entries depth first, adding up allocated size (st_blocks), so compressed and sparse files count as stored. A folder's size includes everything below it; rows are kept for entries at most --depth levels below the root and sorted biggest first, then by path.",
+      "outcome": "The user sees which folders and files to clean, dedupe, compress or delete.",
+      "constraints": [
+        "Read-only.",
+        "Symlinks are never followed; a folder on another volume is not entered and is listed instead.",
+        "A hard-linked file counts once, wherever it is first met; files sharing blocks with clones count in full.",
+        "A folder that cannot be read counts as empty and is noted."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "Walk::visit"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "Walk::children"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "walk_root"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "text"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "to_json"
+        }
+      ]
+    },
+    {
+      "id": "status-report",
+      "name": "Status for people and scripts",
+      "description": "status reports the scan, candidates, free space and the daemon, as text or as one JSON object.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
+        }
+      ],
+      "behavior": "gather reads the state file when it exists, free space on the data volume and the daemon's login item, and adds a problem for each thing wrong: a state file that cannot be opened, files recorded as broken, free space that cannot be read, or a login item installed but not running. ok is true when there is no problem. The text form prints the same fields as before plus the daemon line and the problems.",
+      "outcome": "Scripts, prompts and agents can check the tool's state without parsing text, even before the first scan.",
+      "constraints": [
+        "The text form still needs a state file; --json does not.",
+        "It changes nothing and creates no state file."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "text"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "cmd_status"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "state"
+        }
+      ]
+    },
+    {
       "id": "verified-compression",
       "name": "Verified in-place compression",
       "description": "Each candidate is compressed through a temp copy that must match the original before it replaces it.",
@@ -209,6 +285,55 @@
         {
           "path": "src/macos/free-disk-space/src/meta.rs",
           "symbol": "copy_acl"
+        }
+      ]
+    },
+    {
+      "id": "decompression",
+      "name": "Verified decompression",
+      "description": "Compressed files under chosen paths are rewritten plain again, reversing compress.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "decompress_flagged"
+        }
+      ],
+      "behavior": "Every regular file carrying the compressed flag under the given files and folders is collected, without following symlinks or entering another volume. The space each would add is its length rounded up to 4 KiB blocks minus what it takes now. With --apply each is rewritten as a plain copy beside it with its mode, group, BSD flags (without the compressed flag), extended attribute values and ACL, verified (size, mode and owner, flags, every attribute value, ACL, SHA-256), given the original's access, modification and birth times and swapped in, exactly as repair does for wasteful files; when the state file exists the file is recorded as skipped ('decompressed on request') so compress and the daemon leave it alone.",
+      "outcome": "Files compress made, or any other transparently compressed files the user names, are plain again with their metadata unchanged.",
+      "constraints": [
+        "A dry run unless --apply.",
+        "macOS only, unless FDS_FORCE is set.",
+        "With --apply it refuses, changing nothing, when free space is below what the plain files need plus --reserve (default 2G); each file also needs room for its own temp copy.",
+        "A file is skipped for the same reasons as compress (links, open files, immutable, append-only or dataless flags, writable directory, free space, no provenance without --include-no-provenance), except that the compressed flag is allowed and any age is accepted."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "collect"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "preview"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "apply"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "decompress_precheck"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "plain_copy"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "record"
         }
       ]
     },

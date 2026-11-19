@@ -7,13 +7,22 @@ The C# side of zazzle: a per-user daemon that keeps an index of git work trees c
 zazzle setup --hook                   # instead, for every client and project at once: zazzle in Claude Code, the Claude desktop app and Codex, and this hook (see daemon's README)
 zazzle csharp-indexer init            # in one project: writes .mcp.json and .claude/settings.json (the zazzle server, its permission, the redirect hook)
 zazzle csharp-indexer report          # after some use: what to improve next
+zazzle csharp-indexer status          # is the shared daemon running, which roots it holds, its clients and memory
+zazzle csharp-indexer restart         # after an upgrade: replace the running daemon with this version
+zazzle csharp-indexer uninit          # in that project again: take out what init wrote
 ```
 `zazzle` is the front door: agents read, search, list and edit files through it, and ask it for structure (`zazzle_overview`, `zazzle_find_symbol`, `zazzle_changed_since`, `zazzle_git_log`, `zazzle_git_blame`, `zazzle_report_gap`), which it answers from this indexer. `init` registers `zazzle` (`zazzle daemon mcp`, found beside the indexer or on `PATH`), removes an earlier registration of this indexer's own server, and prints a snippet for `AGENTS.md`/`CLAUDE.md`. The Claude Code hook (`zazzle csharp-indexer hook`) blocks `grep`/`rg`/`find`/`cat`/`head`/`tail`/`sed -n`, the built-in Grep and Glob tools, and the built-in Read on `.cs` files, and points at the matching zazzle tool; add `# allow-raw` to a command to bypass it (logged).
 
 ## Commands
+Run as `zazzle csharp-indexer COMMAND`; `help` (or `--help`, `-h`) lists them, and an unknown command or argument exits 2.
+- `init [--dir DIR]` wires zazzle and the redirect hook into a project (default: the current folder).
+- `uninit [--dry-run] [DIR]` removes only what `init` wrote: the `zazzle` server in `.mcp.json` if it is the one init writes (stdio, a command ending in `daemon`, args `["mcp"]`), the redirect hook entry, the `mcp__zazzle` permission and the `zazzle` entry of `enabledMcpjsonServers` in `.claude/settings.json`, and any object or array that leaves empty. Every other byte of both files stays; a file left with nothing in it is deleted (and `.claude/` if that empties it). It prints each change (`--dry-run`: what it would change, writing nothing) and is safe to run twice.
+- `status [--json]` whether the shared daemon runs: pid, version, uptime, socket, state folder, memory, connected clients and the roots it has indexed with their file counts and age. Exit 0 when it runs, 3 when it does not (still printed), 1 when it does not answer. `--json` gives one object: `tool` (`csharp-indexer`), `version` (this executable's), `ok`, `running`, `socket`, `state_dir`, then the daemon's `pid`, `daemon_version`, `started`, `uptime_seconds`, `draining`, `memory`, `clients` and `roots`. A daemon from before this command is reported with its version and the note that details need a newer daemon.
+- `stop [--timeout SECONDS]` makes the daemon drain as it does for a newer version (new clients are refused, connected ones finish), waits up to the timeout (default 10 s), then kills it.
+- `restart [--timeout SECONDS]` stops the daemon (if one runs), then starts a fresh one from this executable and prints both versions and pids.
 - `serve [--root name=path]...` the daemon's MCP session over stdio (default root: current directory), for debugging; it lists no tools. Connects to the shared daemon, starting it if needed; `--no-daemon` or `ZAZZLE_INDEXER_NO_DAEMON=1` serves in-process.
 - `daemon` the shared per-user daemon on a unix socket in the state directory; exits after 30 idle minutes (`ZAZZLE_INDEXER_IDLE_MINUTES`).
-- `init [--dir path]`, `report`, `hook`, `--version`.
+- `report`, `hook` (the Claude Code hook `init` installs), `--version`.
 
 ## Internal tools
 `tools/list` is empty. `daemon` calls these by name over the daemon socket (`src/macos/daemon/src/indexer.rs`); agents reach them through zazzle:

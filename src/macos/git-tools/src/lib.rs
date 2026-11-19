@@ -1,4 +1,4 @@
-// zazzle git: a git front end with a small commit message editor (`zazzle git message`) and a commit flow (`zazzle git commit`).
+// zazzle git: a git front end with a small commit message editor (`zazzle git message`), a commit flow (`zazzle git commit`) and amend and undo for the last commit.
 
 pub mod buffer;
 pub mod clipboard;
@@ -7,6 +7,7 @@ pub mod editor;
 pub mod files;
 pub mod find;
 pub mod git;
+pub mod history;
 pub mod keys;
 pub mod kind;
 pub mod message;

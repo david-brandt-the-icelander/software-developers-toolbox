@@ -35,7 +35,7 @@
       "id": "terminal",
       "name": "Developer's terminal",
       "kind": "client",
-      "description": "Runs diagnose or fix and answers sudo's password prompt.",
+      "description": "Runs diagnose, fix or status (also from a shell prompt) and answers sudo's password prompt.",
       "actor": "Actors/developer.md"
     },
     {
@@ -56,7 +56,7 @@
       "id": "tool",
       "name": "fix-network",
       "kind": "process",
-      "description": "One run of diagnose or fix; writes its log and original settings to a private state directory under $FIXNET_STATE or ~/.local/state/fix-network."
+      "description": "One run of diagnose or fix writes its log and original settings to a private state directory under $FIXNET_STATE or ~/.local/state/fix-network; status writes nothing."
     },
     {
       "id": "commands",

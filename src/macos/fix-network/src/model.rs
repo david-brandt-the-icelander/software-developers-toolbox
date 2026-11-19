@@ -25,6 +25,27 @@ impl State {
     }
 }
 
+// An area `fix --only` can restrict repair to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Area {
+    Wifi,
+    Dns,
+    Vpn,
+    Proxy,
+}
+
+impl Area {
+    // Return the --only value that allows the area, as shown when a step is outside it.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Area::Wifi => "--only wifi",
+            Area::Dns => "--only dns",
+            Area::Vpn => "--only vpn",
+            Area::Proxy => "--only proxy",
+        }
+    }
+}
+
 // One repair action the fix command can take.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -74,6 +95,16 @@ impl Step {
             Step::ReconnectVpn(_) => Some("--vpn"),
             Step::FlushRoutes => Some("--allow-route-flush"),
             _ => None,
+        }
+    }
+
+    // Return the area the step repairs: the local link, DNS, the VPN and its routes, or proxies.
+    pub fn area(&self) -> Area {
+        match self {
+            Step::WifiOn | Step::ClearArp | Step::RenewDhcp | Step::CycleWifi => Area::Wifi,
+            Step::FlushDns => Area::Dns,
+            Step::ReconnectVpn(_) | Step::FlushRoutes => Area::Vpn,
+            Step::FixProxy => Area::Proxy,
         }
     }
 

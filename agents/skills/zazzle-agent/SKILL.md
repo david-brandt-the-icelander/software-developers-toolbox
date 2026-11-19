@@ -1,5 +1,5 @@
 ---
-name: ai-agent-rules
+name: zazzle-agent
 description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`, ask a local open model (Qwen, Gemma, gpt-oss) with `zazzle agent prompt`, shrink a command's output through it with `--llm`, get only the rules and skills a task needs with `zazzle brief INTENT`, and have it investigate a multi-file question with cited evidence (`zazzle investigate`). Use before editing in a folder you have not worked in, when starting work somewhere other than the repository root, or when the user asks for a local model's answer, a second opinion or a summary that must not leave the machine.
 ---
 
@@ -14,10 +14,13 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .clau
 - Order is farthest first, closest last; the closest file wins, and the user's chat overrides all files. A `CLAUDE.md` that only imports `@AGENTS.md` is not repeated.
 - Read a skill's file only when its description fits the task.
 - `--purpose NAME` (repeatable) keeps only files and segments marked for NAME with a marker on its own line or after a comment opener (`<!-- #zazzle-purpose:NAME -->`, or a `-begin:NAME` / `-end:NAME` pair); unmarked files stay. A segment prints as `FILE:A-B` and only those lines.
+- After editing rule or skill files, run `zazzle ai-agent-rules check [PATH]`: one `FILE:LINE: message` per `@file` import that points nowhere, `paths:` glob that matches no file, or skill front matter missing `name`/`description` or naming another folder; exit 1 when there are problems, `--json` for an array.
+- To see why a rule or skill applies to a file or not (folder level, matching or missing `paths:` glob, importing file, purpose), run `zazzle ai-agent-rules explain PATH [--purpose NAME]... [--json]`.
 
 ## Local models: llm and prompt
 - `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] TEXT..` prints a local model's answer; `-` in TEXT (or no TEXT) reads standard input: `git diff | zazzle agent prompt "Review this diff:" -`.
 - `zazzle agent llm` lists the models (size, downloaded or not, default); `--model NAME [--effort E]` downloads one and makes it the default; `--remove NAME` deletes it. Docs: `src/macos/ai-agent/README.md`.
+- `zazzle ai-agent status [--json] [--verify]` reports the default model and effort, downloaded models (checked by size, by SHA-256 with `--verify`), partial downloads and disk use; exit 1 (`"ok": false`) when the default is missing or a model is corrupt. `zazzle ai-agent prune` lists every model but the default, stale partial downloads and orphaned locks with the space they take; `--apply` deletes them (models in use are skipped). Ask the user before `--apply`.
 - The first use downloads `ai-agent` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
 - Use `--effort low` for quick factual or formatting tasks; thinking is hidden unless `--show-thinking`.
 - Exit 3 means the token limit cut the answer short: raise `--max-tokens` or lower `--effort`.

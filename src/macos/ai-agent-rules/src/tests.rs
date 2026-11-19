@@ -2,7 +2,7 @@
 use super::*;
 
 // Makes a unique empty folder under the system temp folder.
-fn temp(name: &str) -> PathBuf {
+pub(crate) fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("zalr-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp folder is creatable");
@@ -10,18 +10,18 @@ fn temp(name: &str) -> PathBuf {
 }
 
 // Writes a file, creating its folders.
-fn put(path: &Path) {
+pub(crate) fn put(path: &Path) {
     write(path, "x");
 }
 
 // Writes a file with the given text, creating its folders.
-fn write(path: &Path, text: &str) {
+pub(crate) fn write(path: &Path, text: &str) {
     fs::create_dir_all(path.parent().expect("has parent")).expect("folder is creatable");
     fs::write(path, text).expect("file is writable");
 }
 
 // Strings from literals.
-fn strs(v: &[&str]) -> Vec<String> {
+pub(crate) fn strs(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
 }
 
@@ -39,7 +39,7 @@ fn names(root: &Path, found: &[Found]) -> Vec<String> {
 }
 
 // Runs get-rules with arguments, no home and root as the top folder.
-fn run_in(root: &Path, args: &[&str]) -> (String, i32) {
+pub(crate) fn run_in(root: &Path, args: &[&str]) -> (String, i32) {
     run(&strs(args), None, root)
 }
 
@@ -425,4 +425,39 @@ fn test_run_help_spellings() {
         assert_eq!(run(&strs(args), None, top), (USAGE.to_string(), 0));
     }
     assert_eq!(run(&strs(&["get-rules", "help"]), None, top).1, 66);
+}
+
+// check and explain take only their own options, explain needs a PATH, and help works after either.
+#[test]
+fn test_run_check_and_explain_options() {
+    let root = temp("cmdopts");
+    let dir = root.to_str().expect("utf8");
+    assert!(USAGE.contains("check [PATH]") && USAGE.contains("explain PATH"));
+    assert!(run_in(&root, &["check", dir, "--name-only"]).0.starts_with("unknown option --name-only\n"));
+    assert!(run_in(&root, &["check", dir, "--json=1"]).0.starts_with("unknown option --json=1\n"));
+    assert!(run_in(&root, &["check", "--purpose=a"]).0.starts_with("unknown option --purpose=a\n"));
+    assert_eq!(run_in(&root, &["explain", dir, "--skill-bodies"]).1, 2);
+    assert!(run_in(&root, &["explain"]).0.starts_with("give a PATH\n"));
+    assert_eq!(run_in(&root, &["explain", dir, "--purpose", "a"]).1, 0);
+    assert_eq!(run_in(&root, &["get-rules", dir, "--json"]).1, 2);
+    for cmd in ["check", "explain"] {
+        assert_eq!(run_in(&root, &[cmd, "--help"]), (USAGE.to_string(), 0));
+    }
+}
+
+// JSON strings escape quotes, backslashes, newlines and other control characters.
+#[test]
+fn test_json_str_escapes() {
+    assert_eq!(json_str("a\"b\\c\nd\te"), "\"a\\\"b\\\\c\\nd\\u0009e\"");
+}
+
+// Every reason but those for applying files says the file does not apply.
+#[test]
+fn test_why_applies() {
+    let p = PathBuf::from("/x");
+    assert!(Why::Folder(p.clone()).applies() && Why::Glob(p.clone(), "g".into()).applies());
+    assert!(Why::Import(p.clone()).applies());
+    for why in [Why::NoGlob(p.clone(), Vec::new()), Why::Purpose, Why::Repeat(p), Why::OnlyImports] {
+        assert!(!why.applies());
+    }
 }

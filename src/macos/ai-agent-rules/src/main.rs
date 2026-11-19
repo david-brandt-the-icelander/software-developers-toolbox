@@ -1,7 +1,7 @@
-// The `ai-agent-rules` program behind `zazzle agent`: runs get-rules and exits with its status, without panicking on a closed pipe or a non-UTF-8 argument.
+// The `ai-agent-rules` program behind `zazzle agent`: runs get-rules, check or explain and exits with its status, without panicking on a closed pipe or a non-UTF-8 argument.
 use std::io::Write;
 
-// Reads the arguments and HOME, runs the command from `/` and prints its output.
+// Reads the arguments and HOME, runs the command from `/` and prints its output: to standard output for 0 and 1 (check's problems), else to standard error.
 fn main() {
     let mut args = Vec::new();
     for a in std::env::args_os().skip(1) {
@@ -14,7 +14,7 @@ fn main() {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let (text, code) = ai_agent_rules::run(&args, home.as_deref(), std::path::Path::new("/"));
     // Output errors (a closed pipe) are ignored: the reader has gone away.
-    let _ = if code == 0 {
+    let _ = if code <= 1 {
         std::io::stdout().lock().write_all(text.as_bytes())
     } else {
         std::io::stderr().lock().write_all(text.as_bytes())

@@ -79,7 +79,7 @@
     {"from": "source", "to": "sha2", "kind": "depends-on", "description": "util.rs sha256."},
     {"from": "source", "to": "ctrlc", "kind": "depends-on", "description": "util.rs install_sigint."},
     {"from": "source", "to": "chrono", "kind": "depends-on", "description": "daemon.rs log and clean.rs clean_dev."},
-    {"from": "source", "to": "serde-json", "kind": "depends-on", "description": "scan.rs meta_get and meta_set."},
+    {"from": "source", "to": "serde-json", "kind": "depends-on", "description": "scan.rs meta_get and meta_set; the --json output of status and top."},
     {"from": "source", "to": "libc", "kind": "depends-on", "description": "util.rs and dedupe.rs system calls."}
   ]
 }

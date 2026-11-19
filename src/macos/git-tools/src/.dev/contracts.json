@@ -13,6 +13,8 @@
       "guarantees": [
         "message: 0 saved; 1 cancelled, interrupted by a signal, or failed (file too large, not UTF-8, no terminal, write error); 2 for a wrong command line; 0 for help.",
         "commit: git commit's exit status; 1 when cancelled, when there is nothing to commit, or when a git step before the commit fails; 0 for help.",
+        "amend: git commit --amend's exit status; 1 when cancelled, when there is no commit, or when the editor or a git step fails; 2 for an argument other than --no-edit; 0 for help.",
+        "undo: 0 when the commit was undone; 1 when there is no commit, HEAD is the root commit, HEAD is already on the upstream branch without --force, or a git step fails; 2 for an argument other than --force; 0 for help.",
         "Any other command: git's own exit status, since git-tools replaces itself with git; 127 only if git cannot be started.",
         "help and version exit 0."
       ],
@@ -20,6 +22,7 @@
       "sources": [
         { "path": "src/macos/git-tools/src/message.rs", "symbol": "main" },
         { "path": "src/macos/git-tools/src/commit.rs", "symbol": "main" },
+        { "path": "src/macos/git-tools/src/history.rs", "symbol": "command" },
         { "path": "src/macos/git-tools/src/router.rs", "symbol": "main" },
         { "path": "src/macos/git-tools/src/git.rs", "symbol": "exec_git" },
         { "path": "src/macos/git-tools/src/term.rs", "symbol": "Term::run" }
@@ -48,6 +51,26 @@
         { "path": "src/macos/git-tools/src/files.rs", "symbol": "save_marks" },
         { "path": "src/macos/git-tools/src/files.rs", "symbol": "load_marks" },
         { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_commit_keeps_draft_when_git_fails" }
+      ]
+    },
+    {
+      "id": "amend-message",
+      "title": "The amend message file",
+      "summary": "zazzle git amend edits the last commit's message in ZAZZLE_AMEND_MSG inside the repository's git directory and removes it once git commit --amend succeeds.",
+      "contractType": "file-format",
+      "consumers": ["The editor, which treats the name as a commit message", "A developer who wants to recover a message after a failed amend"],
+      "definition": "The path comes from `git rev-parse --git-path`. The file holds the last commit's message, then comment lines (core.commentChar) with guidance and the staged changes from `git diff --cached --name-status`, handed to `git commit --amend --cleanup=strip -F`.",
+      "guarantees": [
+        "The file is written afresh on every amend that opens the editor.",
+        "It is removed when the editor is cancelled or fails, and when git commit --amend exits 0.",
+        "When git commit --amend fails, the file is kept and its path printed on standard error."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/src/history.rs", "symbol": "AMEND_MSG" },
+        { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend" },
+        { "path": "src/macos/git-tools/src/kind.rs", "symbol": "Kind::detect" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_cancel_and_failing_hook" }
       ]
     },
     {

@@ -189,11 +189,11 @@ impl Cfg {
 
 // Running totals of a scan.
 #[derive(Default)]
-struct Stats {
-    dirs: i64,
-    files: i64,
-    bytes: i64,
-    errors: i64,
+pub struct Stats {
+    pub dirs: i64,
+    pub files: i64,
+    pub bytes: i64,
+    pub errors: i64,
     cands: i64,
     est: i64,
 }
@@ -206,7 +206,7 @@ impl Stats {
     }
 
     // Read totals from JSON, defaulting missing fields to zero.
-    fn from_json(v: &Value) -> Self {
+    pub fn from_json(v: &Value) -> Self {
         let get = |k: &str| v[k].as_i64().unwrap_or(0);
         Self {
             dirs: get("dirs"),
@@ -224,17 +224,19 @@ pub fn open_db(path: &str, create: bool) -> Connection {
     if !create && !Path::new(path).exists() {
         die(&format!("no scan state at {path} - start one with: free-disk-space scan"));
     }
+    try_open(path).unwrap_or_else(|e| die(&format!("cannot open {path}: {e}")))
+}
+
+// Open (or create) the scan state database and its schema, returning the error instead of exiting.
+pub fn try_open(path: &str) -> rusqlite::Result<Connection> {
     if let Some(parent) = Path::new(path).parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let open = || -> rusqlite::Result<Connection> {
-        let db = Connection::open(path)?;
-        db.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(()))?;
-        db.execute_batch("PRAGMA synchronous=NORMAL;")?;
-        db.execute_batch(SCHEMA)?;
-        Ok(db)
-    };
-    open().unwrap_or_else(|e| die(&format!("cannot open {path}: {e}")))
+    let db = Connection::open(path)?;
+    db.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(()))?;
+    db.execute_batch("PRAGMA synchronous=NORMAL;")?;
+    db.execute_batch(SCHEMA)?;
+    Ok(db)
 }
 
 // Read a JSON value from the meta table.
@@ -255,7 +257,7 @@ pub fn finished(db: &Connection) -> bool {
 }
 
 // Count directories still waiting to be scanned.
-fn pending_dirs(db: &Connection) -> i64 {
+pub fn pending_dirs(db: &Connection) -> i64 {
     db.query_row("SELECT COUNT(*) FROM dirs WHERE done=0", [], |r| r.get(0)).unwrap_or(0)
 }
 
@@ -558,54 +560,6 @@ pub fn cmd_resume(state: &str, skip_clean: bool) {
     finish_scan(&db, &cfg, skip_clean);
 }
 
-// Show scan progress, candidate totals and free space.
-pub fn cmd_status(state: &str) {
-    let db = open_db(state, false);
-    let cfg = meta_get(&db, "cfg").unwrap_or(Value::Null);
-    let s = meta_get(&db, "stats").map(|v| Stats::from_json(&v)).unwrap_or_default();
-    let elapsed = meta_get(&db, "elapsed").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    println!("{}: root {}", c("1", "Scan"), cfg["root"].as_str().unwrap_or("None"));
-    let state_text = if finished(&db) {
-        "complete".to_string()
-    } else {
-        format!("in progress ({} dirs queued)", pending_dirs(&db))
-    };
-    println!("  state     : {state_text}");
-    println!(
-        "  processed : {} dirs, {} files, {}, {} errors, {} elapsed",
-        s.dirs,
-        s.files,
-        human_i(s.bytes),
-        s.errors,
-        hms(elapsed)
-    );
-    println!("{}", c("1", "Candidates"));
-    let sql =
-        "SELECT status, COUNT(*), SUM(est_saved), SUM(saved) FROM cands GROUP BY status ORDER BY status";
-    if let Ok(mut stmt) = db.prepare(sql) {
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, Option<i64>>(2)?,
-                r.get::<_, Option<i64>>(3)?,
-            ))
-        });
-        for (status, n, est, saved) in rows.into_iter().flatten().flatten() {
-            println!(
-                "  {status:<8} {n:>7} files   estimated {:<10} verified saved {}",
-                human_i(est.unwrap_or(0)),
-                human_i(saved.unwrap_or(0))
-            );
-        }
-    }
-    let (names, cloned): (i64, Option<i64>) = db
-        .query_row("SELECT COUNT(*), SUM(cloned=1) FROM files", [], |r| Ok((r.get(0)?, r.get(1)?)))
-        .unwrap_or((0, None));
-    println!("{}: {names} recorded, {} replaced by clones", c("1", "File names"), cloned.unwrap_or(0));
-    util::report_free("Current");
-}
-
 // List the best candidates by estimated savings.
 pub fn cmd_list(state: &str, status: &str, top: i64) {
     let db = open_db(state, false);
@@ -901,7 +855,7 @@ mod tests {
         assert!(finished(&db));
         drop(db);
         cmd_new(&o);
-        cmd_status(&sb.state());
+        crate::status::cmd_status(&sb.state(), false);
         cmd_list(&sb.state(), "pending", 10);
         cmd_list(&sb.state(), "done", 10);
         cmd_resume(&sb.state(), true);
@@ -938,7 +892,7 @@ mod tests {
         assert!(std::panic::catch_unwind(|| cmd_resume(&state, true)).is_err());
         util::set_stop(true);
         cmd_new(&new_opts(&sb, &root));
-        cmd_status(&sb.state());
+        crate::status::cmd_status(&sb.state(), false);
         util::set_stop(false);
         cmd_resume(&sb.state(), true);
         assert!(finished(&open_db(&sb.state(), false)));
@@ -986,7 +940,7 @@ mod tests {
     fn test_status_and_list_output() {
         let sb = Sandbox::new();
         let db = open_db(&sb.state(), true);
-        cmd_status(&sb.state());
+        crate::status::cmd_status(&sb.state(), false);
         cmd_list(&sb.state(), "pending", 5);
         meta_set(&db, "cfg", &cfg(&sb.root).to_json());
         db.execute_batch(
@@ -998,7 +952,7 @@ mod tests {
         )
         .unwrap();
         drop(db);
-        cmd_status(&sb.state());
+        crate::status::cmd_status(&sb.state(), false);
         cmd_list(&sb.state(), "pending", 5);
         cmd_list(&sb.state(), "done", 1);
     }

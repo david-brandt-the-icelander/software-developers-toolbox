@@ -21,7 +21,7 @@
       "id": "terminal",
       "name": "Developer's terminal",
       "kind": "client",
-      "description": "Runs `zazzle agent llm ..` to choose a model and `zazzle agent prompt ..` to ask it.",
+      "description": "Runs `zazzle agent llm ..` to choose a model, `zazzle agent prompt ..` to ask it, and `zazzle ai-agent status|prune ..` to check and tidy the model store.",
       "actor": "Actors/developer.md"
     },
     {
@@ -43,7 +43,7 @@
       "name": "zazzle invoker",
       "kind": "process",
       "description": "Replaces itself with `zazzle daemon llm llm|prompt ARGS` for `zazzle agent llm|prompt`, without contacting the daemon.",
-      "condition": "When run as zazzle (or z) with `agent llm` or `agent prompt`."
+      "condition": "When run as zazzle (or z) with `agent llm`, `agent prompt` or `ai-agent ..`."
     },
     {
       "id": "daemon-llm",
@@ -62,7 +62,7 @@
       "id": "llm",
       "name": "ai-agent",
       "kind": "process",
-      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; exits 0, 2 on errors, 3 when the token limit cut the answer, 4 when --no-download finds the model missing."
+      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; or reports (`status`) or prunes (`prune`) the model store; exits 0, 1 for an unhealthy status, 2 on errors, 3 when the token limit cut the answer, 4 when --no-download finds the model missing."
     },
     {
       "id": "tools",
@@ -106,7 +106,7 @@
     }
   ],
   "relationships": [
-    { "from": "terminal", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent llm|prompt ARGS`." },
+    { "from": "terminal", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent llm|prompt ARGS` or `zazzle ai-agent status|prune ARGS`." },
     { "from": "agent", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent prompt ARGS`." },
     { "from": "invoker", "to": "daemon-llm", "kind": "connects-to", "description": "exec, keeping the caller's environment, streams and exit status." },
     { "from": "daemon-llm", "to": "downloads", "kind": "connects-to", "description": "HTTPS GET of the tool, once, when it is neither beside the daemon nor in the store." },
@@ -116,6 +116,6 @@
     { "from": "daemon", "to": "llm", "kind": "connects-to", "description": "Spawns `ai-agent prompt --no-download ..` with pipes: the input on standard input, the answer on standard output, the reason on standard error, and the exit code." },
     { "from": "machine", "to": "llm", "kind": "hosts", "description": "Runs as the calling user, one process per command." },
     { "from": "llm", "to": "huggingface", "kind": "connects-to", "description": "HTTPS GET with the platform's trust store, resuming a partial download with a Range request, on first use of a model." },
-    { "from": "llm", "to": "models", "kind": "connects-to", "description": "Reads and writes the defaults; downloads under a flock and renames a model into place when its hash matches; memory-maps it to run." }
+    { "from": "llm", "to": "models", "kind": "connects-to", "description": "Reads and writes the defaults; downloads under an exclusive flock and renames a model into place when its hash matches; memory-maps it to run under a shared flock; status reads it and prune deletes files under the exclusive flock." }
   ]
 }

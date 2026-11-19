@@ -3,10 +3,11 @@
   "kind": "use-case",
   "title": "zazzle git use cases",
   "folder": "src/macos/git-tools/src",
-  "description": "What a developer does with zazzle git, step by step: write a message as git's editor, commit with a kept draft and chosen files, and reorder or squash commits in an interactive rebase; and how a coding agent commits without the editor.",
+  "description": "What a developer does with zazzle git, step by step: write a message as git's editor, commit with a kept draft and chosen files, reorder or squash commits in an interactive rebase, and amend or undo the last commit; and how a coding agent commits without the editor.",
   "sources": [
     { "path": "src/macos/git-tools/src/message.rs", "symbol": "main" },
     { "path": "src/macos/git-tools/src/commit.rs", "symbol": "run" },
+    { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend_main" },
     { "path": "src/macos/git-tools/src/router.rs", "symbol": "route" }
   ],
   "entities": [
@@ -342,6 +343,170 @@
           "sources": [
             { "path": "src/macos/git-tools/src/kind.rs", "symbol": "Kind::cancel_label" },
             { "path": "src/macos/git-tools/src/message.rs", "symbol": "HELP" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "amend-last-commit",
+      "name": "Reword the last commit and add staged changes to it",
+      "description": "A developer runs `zazzle git amend` to rewrite the last commit's message in the zazzle git editor, adding whatever is staged to the commit.",
+      "sources": [
+        { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_edits_message_and_adds_staged" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Fix the last commit's message, and fold staged changes into it, without leaving the terminal editor.",
+      "preconditions": [
+        "The working directory is inside a git repository with at least one commit.",
+        "git-tools runs in a terminal the editor can open as /dev/tty, unless --no-edit is given."
+      ],
+      "postconditions": [
+        "Saved: HEAD is replaced by a commit with the edited message and the staged changes, and ZAZZLE_AMEND_MSG is gone.",
+        "Cancelled: HEAD is unchanged, the file is gone and the exit status is 1."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Stages any changes to add and runs `zazzle git amend`.",
+          "sources": [{ "path": "src/macos/git-tools/src/router.rs", "symbol": "route" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "draft",
+          "actor": "git-tools",
+          "action": "Checks there is a commit, then writes the last message to .git/ZAZZLE_AMEND_MSG followed by guidance comments and the staged changes.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "need_commit" },
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend_draft" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "edit",
+          "actor": "Developer",
+          "action": "Edits the message in the editor and presses Ctrl+S.",
+          "sources": [{ "path": "src/macos/git-tools/src/message.rs", "symbol": "edit" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "amend",
+          "actor": "git-tools",
+          "action": "Runs `git commit --amend --cleanup=strip -F FILE` attached to the terminal, removes the file when it succeeds, and exits with git's status.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "amend" }],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "--no-edit is given.",
+          "outcome": "No editor: `git commit --amend --no-edit` runs at once, keeping the message.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend" },
+            { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_without_editor" }
+          ]
+        },
+        {
+          "atStep": "run",
+          "condition": "Any other argument.",
+          "outcome": "`unknown argument` and the help on standard error, exit 2.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "parse_flag" }]
+        },
+        {
+          "atStep": "draft",
+          "condition": "The repository has no commit yet, or the directory is not in a repository.",
+          "outcome": "`there is no commit to amend yet` (or git's error) on standard error, exit 1.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "need_commit" }]
+        },
+        {
+          "atStep": "edit",
+          "condition": "The developer cancels, or there is no terminal.",
+          "outcome": "The file is removed and HEAD is unchanged; exit 1.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "amend" },
+            { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_cancel_and_failing_hook" }
+          ]
+        },
+        {
+          "atStep": "amend",
+          "condition": "git commit --amend fails, for example a commit-msg hook rejects it.",
+          "outcome": "The file is kept, its path is printed on standard error, and git's status is returned.",
+          "sources": [{ "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_amend_cancel_and_failing_hook" }]
+        }
+      ]
+    },
+    {
+      "id": "undo-last-commit",
+      "name": "Take back the last commit, keeping its changes",
+      "description": "A developer runs `zazzle git undo` to turn the last commit back into staged changes, without rewriting history others already have.",
+      "sources": [
+        { "path": "src/macos/git-tools/src/history.rs", "symbol": "undo" },
+        { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_undo_keeps_changes" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Undo a commit made too early, keeping every change staged, and be stopped before undoing one that is already pushed.",
+      "preconditions": [
+        "The working directory is inside a git repository whose HEAD has a parent."
+      ],
+      "postconditions": [
+        "HEAD is the previous commit, the undone commit's changes are staged, and `undid HASH SUBJECT; its changes are staged` is printed; exit 0."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `zazzle git undo`, adding --force to undo a pushed commit.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "undo_main" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "check",
+          "actor": "git-tools",
+          "action": "Checks there is a commit, that it has a parent, and, without --force, that it is not already on the upstream branch.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "need_commit" },
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "pushed_to" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "reset",
+          "actor": "git-tools",
+          "action": "Runs `git reset --soft HEAD~1` and prints the short hash and subject it undid.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "undo" }],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "Any argument other than --force.",
+          "outcome": "`unknown argument` and the help on standard error, exit 2.",
+          "sources": [{ "path": "src/macos/git-tools/src/history.rs", "symbol": "parse_flag" }]
+        },
+        {
+          "atStep": "check",
+          "condition": "There is no commit, or HEAD is the root commit.",
+          "outcome": "`there is no commit to undo yet`, or that it is the first commit with `git update-ref -d HEAD` as the way to keep its changes staged with no commit; exit 1.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "undo" },
+            { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_undo_keeps_changes" }
+          ]
+        },
+        {
+          "atStep": "check",
+          "condition": "HEAD is already on the upstream branch and --force is not given.",
+          "outcome": "`... is already on UPSTREAM; undoing it rewrites shared history`, exit 1; a commit not yet pushed is undone.",
+          "sources": [
+            { "path": "src/macos/git-tools/src/history.rs", "symbol": "pushed_to" },
+            { "path": "src/macos/git-tools/tests/pty.rs", "symbol": "test_undo_pushed_commit" }
           ]
         }
       ]

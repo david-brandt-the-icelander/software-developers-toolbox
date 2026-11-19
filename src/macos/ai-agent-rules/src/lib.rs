@@ -2,13 +2,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod check;
+mod explain;
 mod front;
 mod glob;
 mod imports;
 pub mod purpose;
 
 // Usage text printed for help and for wrong arguments.
-const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]\nprints each applying file as `==> rule FILE <==` then its text, each file it imports as `==> import FILE <==`, and each skill as `==> skill FILE <==` then its description, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE`, `import FILE` or `skill FILE` lines; --skill-bodies prints whole skill files\nzazzle agent llm and zazzle agent prompt run open models locally: see zazzle agent llm --help\n";
+const USAGE: &str = "usage: zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]\n       zazzle agent check [PATH] [--json]\n       zazzle agent explain PATH [--purpose NAME]... [--json]\nget-rules prints each applying file as `==> rule FILE <==` then its text, each file it imports as `==> import FILE <==`, and each skill as `==> skill FILE <==` then its description, farthest folder first, closest last (closest wins)\nwith --purpose, files marked for other purposes are dropped and a partly marked file prints `FILE:A-B` and only those lines\n--name-only prints just the `rule FILE`, `import FILE` or `skill FILE` lines; --skill-bodies prints whole skill files\ncheck prints `FILE:LINE: problem` for each `@file` import that points nowhere, `paths:` glob that matches no file, and skill whose front matter lacks `name` or `description` or names another folder, in the files that apply at PATH (default .) and in folders below it; exit 1 when there are problems\nexplain lists each file that applies to PATH and why (its folder, the `paths:` glob that matched, the file that imported it), and each file found that does not apply and why\n--json prints a JSON array instead; --version prints the version\nzazzle agent llm and zazzle agent prompt run open models locally: see zazzle agent llm --help\n";
 // Rule files looked for in each folder, relative to it; a later one in the same folder wins over an earlier one.
 const RULE_FILES: [&str; 7] = [
     "AGENTS.md",
@@ -27,6 +29,8 @@ const SKILL_DIRS: [&str; 3] = ["agents/skills", ".agents/skills", ".claude/skill
 const RULE_DEPTH: usize = 8;
 // How many imports deep `@file` imports are followed, as Claude Code does.
 const IMPORT_DEPTH: usize = 5;
+// The commands the program runs.
+const COMMANDS: [&str; 3] = ["get-rules", "check", "explain"];
 
 // What a found file is: a rule, a file a rule imports, or a skill.
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -56,6 +60,32 @@ pub struct Found {
     pub text: Option<String>,
 }
 
+// Why a found file applies to the path (its folder, a matching `paths:` glob in that folder, or the file importing it), or why it does not (no glob matched, other purposes only, a repeat of a listed file, only imports of listed files).
+#[derive(Debug, PartialEq, Clone)]
+pub enum Why {
+    Folder(PathBuf),
+    Glob(PathBuf, String),
+    Import(PathBuf),
+    NoGlob(PathBuf, Vec<String>),
+    Purpose,
+    Repeat(PathBuf),
+    OnlyImports,
+}
+
+impl Why {
+    // Tells whether the file applies.
+    pub fn applies(&self) -> bool {
+        matches!(self, Why::Folder(_) | Why::Glob(..) | Why::Import(_))
+    }
+}
+
+// One file found for a path with why it applies or not.
+#[derive(Debug, PartialEq)]
+pub struct Traced {
+    pub found: Found,
+    pub why: Why,
+}
+
 // The path asked about: its full path (folders above it resolved, its own name kept even if a symlink), the folder it is or is in, and whether it is a folder.
 struct Target {
     path: PathBuf,
@@ -63,12 +93,13 @@ struct Target {
     is_dir: bool,
 }
 
-// Options of the get-rules command.
+// Options of a command: its PATH (if given), the wanted purposes and its flags.
 struct Opts<'a> {
-    path: &'a String,
+    path: Option<&'a String>,
     wanted: Vec<String>,
     name_only: bool,
     skill_bodies: bool,
+    json: bool,
 }
 
 // Reads a found file's text once.
@@ -98,39 +129,55 @@ fn md_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-// Tells whether a rule file applies to the target: always, unless its front matter has `paths:` globs, matched against the target relative to the folder holding the rules (or to `/` when the target is elsewhere).
-fn in_scope(f: &Found, base: &Path, t: &Target) -> bool {
+// Decides a rule file's scope: unscoped, the first of its `paths:` globs that matches the target relative to the folder holding the rules (or to `/` when the target is elsewhere), or all its globs when none matches.
+fn scope(f: &Found, base: &Path, t: &Target) -> Result<Option<String>, Vec<String>> {
     let Some(globs) = f.text.as_deref().and_then(|x| front::list(x, "paths")) else {
-        return true;
+        return Ok(None);
     };
     let rel = t.path.strip_prefix(base).or_else(|_| t.path.strip_prefix("/")).unwrap_or(&t.path);
     let rel = rel.to_string_lossy();
-    globs.iter().any(|g| glob::matches(g, &rel, t.is_dir))
+    match globs.iter().find(|g| glob::matches(g, &rel, t.is_dir)) {
+        Some(g) => Ok(Some(g.clone())),
+        None => Err(globs),
+    }
 }
 
-// Returns the rule and skill files that sit in one folder's known places and apply to the target.
-fn in_dir(dir: &Path, t: &Target) -> Vec<Found> {
-    let mut found = Vec::new();
+// Tells whether a folder has any of the rule or skill places looked for.
+fn holds_rules(dir: &Path) -> bool {
+    RULE_FILES.iter().chain(&RULE_DIRS).chain(&SKILL_DIRS).any(|n| dir.join(n).exists())
+}
+
+// Returns the rule and skill files in one folder's known places, each with why it applies to the target or not.
+fn in_dir(dir: &Path, t: &Target) -> Vec<Traced> {
+    let here = |found: Found| Traced { found, why: Why::Folder(dir.to_path_buf()) };
+    let mut out = Vec::new();
     for name in RULE_FILES {
         let path = dir.join(name);
         if path.is_file() {
-            found.push(read(Kind::Rule, path));
+            out.push(here(read(Kind::Rule, path)));
         }
     }
     for name in RULE_DIRS {
         let mut paths = Vec::new();
         md_files(&dir.join(name), RULE_DEPTH, &mut paths);
-        found.extend(paths.into_iter().map(|p| read(Kind::Rule, p)).filter(|f| in_scope(f, dir, t)));
+        for found in paths.into_iter().map(|p| read(Kind::Rule, p)) {
+            let why = match scope(&found, dir, t) {
+                Ok(None) => Why::Folder(dir.to_path_buf()),
+                Ok(Some(g)) => Why::Glob(dir.to_path_buf(), g),
+                Err(globs) => Why::NoGlob(dir.to_path_buf(), globs),
+            };
+            out.push(Traced { found, why });
+        }
     }
     for name in SKILL_DIRS {
         for child in children(&dir.join(name)) {
             let path = child.join("SKILL.md");
             if path.is_file() {
-                found.push(read(Kind::Skill, path));
+                out.push(here(read(Kind::Skill, path)));
             }
         }
     }
-    found
+    out
 }
 
 // Returns the folders to look in, from the top folder down to the start, with the home folder first when the start is not under it.
@@ -159,17 +206,17 @@ fn target(path: &Path) -> Result<Target, String> {
     Ok(Target { path: full, dir, is_dir })
 }
 
-// Keeps a file whole when no purposes are wanted, else narrows it to the parts marked for them or drops it if none are.
-fn narrow(mut found: Found, wanted: &[String]) -> Option<Found> {
+// Keeps a file whole when no purposes are wanted, else narrows it to the parts marked for them; false when none are.
+fn narrow(found: &mut Found, wanted: &[String]) -> bool {
     let Some(text) = found.text.as_deref().filter(|_| !wanted.is_empty()) else {
-        return Some(found);
+        return true;
     };
     match purpose::part(text, wanted) {
-        purpose::Part::Whole => Some(found),
-        purpose::Part::Nothing => None,
+        purpose::Part::Whole => true,
+        purpose::Part::Nothing => false,
         purpose::Part::Lines(lines) => {
             found.lines = lines;
-            Some(found)
+            true
         }
     }
 }
@@ -193,20 +240,22 @@ fn only_imports(f: &Found, own: &Path, listed: &[PathBuf], home: Option<&Path>) 
     seen
 }
 
-// Drops files that repeat another listed file: the same file reached again (a symlink) and files that only import listed files.
-fn dedupe(all: Vec<Found>, home: Option<&Path>) -> Vec<Found> {
-    let canon: Vec<PathBuf> =
-        all.iter().map(|f| fs::canonicalize(&f.path).unwrap_or_else(|_| f.path.clone())).collect();
-    let mut kept: Vec<Found> = Vec::new();
-    let mut first: Vec<PathBuf> = Vec::new();
-    for (f, c) in all.into_iter().zip(&canon) {
-        if first.contains(c) || only_imports(&f, c, &canon, home) {
-            continue;
+// Marks applying files that repeat another listed file: the same file reached again (a symlink) and files that only import listed files.
+fn dedupe(mut all: Vec<Traced>, home: Option<&Path>) -> Vec<Traced> {
+    let canon = |f: &Found| fs::canonicalize(&f.path).unwrap_or_else(|_| f.path.clone());
+    let listed: Vec<PathBuf> = all.iter().filter(|x| x.why.applies()).map(|x| canon(&x.found)).collect();
+    let mut first: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for x in all.iter_mut().filter(|x| x.why.applies()) {
+        let c = canon(&x.found);
+        if let Some((_, path)) = first.iter().find(|(f, _)| *f == c) {
+            x.why = Why::Repeat(path.clone());
+        } else if only_imports(&x.found, &c, &listed, home) {
+            x.why = Why::OnlyImports;
+        } else {
+            first.push((c, x.found.path.clone()));
         }
-        first.push(c.clone());
-        kept.push(f);
     }
-    kept
+    all
 }
 
 // Returns the lines of a text that apply: all of it, or only the given 1-based ranges.
@@ -218,13 +267,13 @@ fn selected(text: &str, lines: &[(usize, usize)]) -> String {
     lines.iter().flat_map(|&(a, b)| all[a - 1..b.min(all.len())].iter()).map(|l| format!("{l}\n")).collect()
 }
 
-// Appends the files a rule or import imports, each once and narrowed like the rest, followed by their own imports down to a depth.
+// Appends the files a rule or import imports, each once and narrowed like the rest (or marked when no wanted part applies), followed by their own imports down to a depth.
 fn add_imports(
     f: &Found,
     depth: usize,
     ctx: (Option<&Path>, &[String]),
     listed: &mut Vec<PathBuf>,
-    out: &mut Vec<Found>,
+    out: &mut Vec<Traced>,
 ) {
     let Some(text) = f.text.as_deref().filter(|_| depth > 0 && f.kind != Kind::Skill) else {
         return;
@@ -235,12 +284,46 @@ fn add_imports(
             continue;
         }
         listed.push(path.clone());
-        let Some(g) = narrow(read(Kind::Import, path), ctx.1) else { continue };
+        let mut g = read(Kind::Import, path);
+        if !narrow(&mut g, ctx.1) {
+            out.push(Traced { found: g, why: Why::Purpose });
+            continue;
+        }
         let mut sub = Vec::new();
         add_imports(&g, depth - 1, ctx, listed, &mut sub);
-        out.push(g);
+        out.push(Traced { found: g, why: Why::Import(f.path.clone()) });
         out.append(&mut sub);
     }
+}
+
+// Finds every rule, imported and skill file for a path with why it applies or not, farthest folder first, looking no higher than `top`, narrowed to the wanted purposes when given.
+fn trace(
+    path: &Path,
+    home: Option<&Path>,
+    wanted: &[String],
+    top: &Path,
+) -> Result<(Target, Vec<Traced>), String> {
+    let t = target(path)?;
+    let home = home.and_then(|h| fs::canonicalize(h).ok());
+    let home = home.as_deref();
+    let mut all = dedupe(chain(&t.dir, home, top).iter().flat_map(|d| in_dir(d, &t)).collect(), home);
+    for x in all.iter_mut().filter(|x| x.why.applies()) {
+        if !narrow(&mut x.found, wanted) {
+            x.why = Why::Purpose;
+        }
+    }
+    let mut listed: Vec<PathBuf> =
+        all.iter().filter(|x| x.why.applies()).filter_map(|x| fs::canonicalize(&x.found.path).ok()).collect();
+    let mut out = Vec::new();
+    for x in all {
+        let mut sub = Vec::new();
+        if x.why.applies() {
+            add_imports(&x.found, IMPORT_DEPTH, (home, wanted), &mut listed, &mut sub);
+        }
+        out.push(x);
+        out.append(&mut sub);
+    }
+    Ok((t, out))
 }
 
 // Lists every rule, imported and skill file that applies to a path, farthest folder first, looking no higher than `top` (`/` outside tests), limited to the wanted purposes when given.
@@ -250,28 +333,19 @@ pub fn list_rules(
     wanted: &[String],
     top: &Path,
 ) -> Result<Vec<Found>, String> {
-    let t = target(path)?;
-    let home = home.and_then(|h| fs::canonicalize(h).ok());
-    let home = home.as_deref();
-    let all = dedupe(chain(&t.dir, home, top).iter().flat_map(|d| in_dir(d, &t)).collect(), home);
-    let kept: Vec<Found> = all.into_iter().filter_map(|f| narrow(f, wanted)).collect();
-    let mut listed: Vec<PathBuf> = kept.iter().filter_map(|f| fs::canonicalize(&f.path).ok()).collect();
-    let mut out = Vec::new();
-    for f in kept {
-        let mut sub = Vec::new();
-        add_imports(&f, IMPORT_DEPTH, (home, wanted), &mut listed, &mut sub);
-        out.push(f);
-        out.append(&mut sub);
-    }
-    Ok(out)
+    let (_, all) = trace(path, home, wanted, top)?;
+    Ok(all.into_iter().filter(|x| x.why.applies()).map(|x| x.found).collect())
 }
 
-// Splits the arguments after the command into options, or says what is wrong with them.
-fn parse(args: &[String]) -> Result<Opts<'_>, String> {
-    let mut path = None;
-    let (mut wanted, mut name_only, mut skill_bodies) = (Vec::new(), false, false);
+// Splits the arguments after a command into options, accepting only the allowed flags, or says what is wrong with them.
+fn parse<'a>(args: &'a [String], allowed: &[&str]) -> Result<Opts<'a>, String> {
+    let mut o = Opts { path: None, wanted: Vec::new(), name_only: false, skill_bodies: false, json: false };
     let mut it = args.iter();
     while let Some(a) = it.next() {
+        let flag = a.split('=').next().unwrap_or(a);
+        if a.starts_with("--") && !allowed.contains(&flag) {
+            return Err(format!("unknown option {a}"));
+        }
         let value = if a == "--purpose" {
             Some(it.next().map_or("", String::as_str))
         } else {
@@ -283,27 +357,46 @@ fn parse(args: &[String]) -> Result<Opts<'_>, String> {
                     "--purpose needs a name of letters, digits, `_`, `.` and `-`, starting with a letter or digit and not ending in `-`: `{v}`"
                 ));
             }
-            wanted.push(v.to_string());
+            o.wanted.push(v.to_string());
         } else if a == "--name-only" {
-            name_only = true;
+            o.name_only = true;
         } else if a == "--skill-bodies" {
-            skill_bodies = true;
+            o.skill_bodies = true;
+        } else if a == "--json" {
+            o.json = true;
         } else if a.starts_with("--") {
             return Err(format!("unknown option {a}"));
-        } else if path.replace(a).is_some() {
+        } else if o.path.replace(a).is_some() {
             return Err("give one PATH".to_string());
         }
     }
-    let path = path.ok_or("give a PATH")?;
-    Ok(Opts { path, wanted, name_only, skill_bodies })
+    Ok(o)
 }
 
-// Tells whether the arguments ask for help: `help`, `--help` or `-h` alone or after get-rules.
+// Quotes a text as a JSON string.
+fn json_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+// Tells whether the arguments ask for help: `help`, `--help` or `-h` alone or after a command.
 fn wants_help(args: &[String]) -> bool {
     let help = |a: &String| a == "help" || a == "--help" || a == "-h";
     match args {
         [first, ..] if help(first) => true,
-        [cmd, rest @ ..] if cmd == "get-rules" => rest.iter().any(|a| a == "--help" || a == "-h"),
+        [cmd, rest @ ..] if COMMANDS.contains(&cmd.as_str()) => {
+            rest.iter().any(|a| a == "--help" || a == "-h")
+        }
         _ => false,
     }
 }
@@ -349,7 +442,16 @@ pub fn body(f: &Found, skill_bodies: bool) -> String {
     out
 }
 
-// Runs the command line (after the program name), looking no higher than `top`, and returns the text to print and the exit code.
+// Runs get-rules with its options and returns the text to print and the exit code.
+fn get_rules(o: &Opts, path: &Path, home: Option<&Path>, top: &Path) -> (String, i32) {
+    match list_rules(path, home, &o.wanted, top) {
+        Ok(found) if o.name_only => (found.iter().map(show).collect(), 0),
+        Ok(found) => (found.iter().map(|f| body(f, o.skill_bodies)).collect(), 0),
+        Err(e) => (format!("{e}\n"), 66),
+    }
+}
+
+// Runs the command line (after the program name), looking no higher than `top`, and returns the text to print and the exit code (1 only when check finds problems).
 pub fn run(args: &[String], home: Option<&Path>, top: &Path) -> (String, i32) {
     if matches!(args, [c] if c == "--version") {
         return (format!("ai-agent-rules {}\n", env!("CARGO_PKG_VERSION")), 0);
@@ -357,18 +459,24 @@ pub fn run(args: &[String], home: Option<&Path>, top: &Path) -> (String, i32) {
     if wants_help(args) {
         return (USAGE.to_string(), 0);
     }
-    let parsed = match args.split_first() {
-        Some((cmd, rest)) if cmd == "get-rules" => parse(rest),
-        _ => Err("unknown command".to_string()),
+    let (cmd, parsed) = match args.split_first() {
+        Some((cmd, rest)) if cmd == "get-rules" => {
+            ("get-rules", parse(rest, &["--purpose", "--name-only", "--skill-bodies"]))
+        }
+        Some((cmd, rest)) if cmd == "check" => ("check", parse(rest, &["--json"])),
+        Some((cmd, rest)) if cmd == "explain" => ("explain", parse(rest, &["--purpose", "--json"])),
+        _ => ("", Err("unknown command".to_string())),
     };
     let o = match parsed {
-        Ok(o) => o,
+        Ok(o) if o.path.is_some() || cmd == "check" => o,
+        Ok(_) => return (format!("give a PATH\n{USAGE}"), 2),
         Err(e) => return (format!("{e}\n{USAGE}"), 2),
     };
-    match list_rules(Path::new(o.path), home, &o.wanted, top) {
-        Ok(found) if o.name_only => (found.iter().map(show).collect(), 0),
-        Ok(found) => (found.iter().map(|f| body(f, o.skill_bodies)).collect(), 0),
-        Err(e) => (format!("{e}\n"), 66),
+    let path = Path::new(o.path.map_or(".", String::as_str));
+    match cmd {
+        "get-rules" => get_rules(&o, path, home, top),
+        "check" => check::run(path, home, top, o.json),
+        _ => explain::run(path, home, &o.wanted, top, o.json),
     }
 }
 

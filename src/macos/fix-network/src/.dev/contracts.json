@@ -30,11 +30,11 @@
     {
       "id": "exit-status",
       "title": "Exit statuses",
-      "summary": "0 healthy, 1 problems remain, 2 not macOS, as the --help text and the README say.",
+      "summary": "0 healthy, 1 problems remain (degraded, for status), 2 not macOS, as the --help text and the README say.",
       "contractType": "cli",
-      "consumers": ["Scripts and agents that run diagnose or fix"],
+      "consumers": ["Scripts and agents that run diagnose, fix or status", "Shell prompts that run status"],
       "guarantees": [
-        "0 only when no dimension is FAILED in the final report.",
+        "0 only when no dimension is FAILED in the final report; for status, only when every area is healthy.",
         "1 when a dimension is FAILED, and also when the state directory cannot be created.",
         "2 when the OS is not macOS."
       ],
@@ -43,6 +43,28 @@
         { "path": "src/macos/fix-network/src/main.rs", "symbol": "finish" },
         { "path": "src/macos/fix-network/src/main.rs", "symbol": "run" },
         { "path": "src/macos/fix-network/src/main.rs", "symbol": "Cli" }
+      ]
+    },
+    {
+      "id": "status-json",
+      "title": "The status --json object",
+      "summary": "One compact JSON object on one line from fix-network status --json, for shell prompts and scripts.",
+      "contractType": "file-format",
+      "consumers": [
+        "Shell prompts and scripts, for example with jq '.ok'",
+        "Coding agents following agents/skills/fix-network/SKILL.md"
+      ],
+      "definition": "Top-level keys: tool ('fix-network'), version (the binary's version), ok (bool, every area healthy); wifi {ok, state: on|off|not used, device}; ip {ok, interface, service, ipv4, ipv6_global}; dns {ok}; internet {ok}; vpn {ok, state: connected|tunnel|none or the stuck scutil state in lower case, name, interface}.",
+      "guarantees": [
+        "tool, version and ok are always present, and one object per area: wifi, ip, dns, internet, vpn.",
+        "ok is true exactly when the exit status is 0."
+      ],
+      "compatibility": "Nothing in the code or README versions the format; version names the binary that wrote it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "to_json" },
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "verdicts" },
+        { "path": "src/macos/fix-network/README.md", "symbol": "Status (`status`)" }
       ]
     },
     {

@@ -24,10 +24,11 @@
       ],
       "criteria": [
         "Two clients share one engine, both get answers from the same index, and their records retain the stable hello session",
-        "A client with a different version is told to restart when it is the only one connected",
+        "An older client is refused with restart: false, the daemon's version and the restart command, and the daemon stays; a newer one makes it drain: busy clients finish, new ones are refused, then it exits",
         "A root that is not a git work tree is rejected in the handshake",
         "The daemon exits after the idle period with no clients",
-        "A second daemon on the same socket refuses to start"
+        "A second daemon on the same socket refuses to start",
+        "The handshake reply is decoded as UTF-8, so an error naming a non-ASCII path arrives as sent"
       ],
       "checks": [
         {
@@ -39,8 +40,8 @@
         {
           "type": "automated",
           "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
-          "symbol": "test_version_mismatch_requests_restart",
-          "command": "dotnet test tests --filter test_version_mismatch_requests_restart"
+          "symbol": "test_version_mismatch",
+          "command": "dotnet test tests --filter test_version_mismatch"
         },
         {
           "type": "automated",
@@ -59,9 +60,82 @@
           "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
           "symbol": "test_second_daemon_refused",
           "command": "dotnet test tests --filter test_second_daemon_refused"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_hello_reply_utf8",
+          "command": "dotnet test tests --filter test_hello_reply_utf8"
         }
       ],
-      "details": "Spawning a detached daemon (Proxy.SpawnDaemon) and the stdio pump (Proxy.Pump) are not covered by these tests; the CI smoke step in .github/workflows/ci.yml runs the published binary's serve command, which goes through them.",
+      "details": "Spawning a detached daemon (Proxy.SpawnDaemon) is covered by the daemon-commands checks, which run the built executable; the stdio pump (Proxy.Pump) is not covered by these tests, and the CI smoke step in .github/workflows/ci.yml runs the published binary's serve command, which goes through it.",
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "daemon-commands",
+      "title": "status, stop and restart",
+      "summary": "The commands are checked in process against DaemonServer, against real daemon processes started from the built executable on a temporary state folder, and against a stand-in for a daemon from before the commands.",
+      "subject": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/contracts.json",
+          "entityId": "daemon-commands"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "commands-in-hello"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/.dev/use-case.json",
+          "entityId": "manage-daemon"
+        }
+      ],
+      "criteria": [
+        "the status command reports pid, version, socket, state folder, the connected session with its roots, and each root's file count, readiness and age, without opening a session",
+        "the stop command marks the daemon draining and lists the client it waits for; new clients are told to restart and the daemon exits when the client leaves; an unknown command is refused",
+        "with no daemon, status prints not running in text and JSON (tool, version, ok false, running false) and exits 3, and stop has nothing to do",
+        "restart starts a daemon when none runs; status then shows its client and root and exits 0; restart kills a daemon whose client stays past the timeout and starts a new one with another pid; stop stops a daemon without clients gracefully",
+        "a daemon from before the commands is reported running with the version from its refusal, exit 0, and stop makes it drain and exit",
+        "help and --help list every command, --version prints csharp-indexer and the version, and unknown commands or arguments exit 2"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_status_and_stop_commands",
+          "command": "dotnet test tests --filter test_status_and_stop_commands"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_status_not_running",
+          "command": "dotnet test tests --filter test_status_not_running"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_restart_status_stop",
+          "command": "dotnet test tests --filter test_restart_status_stop"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_older_daemon",
+          "command": "dotnet test tests --filter test_older_daemon"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_help_and_version",
+          "command": "dotnet test tests --filter test_help_and_version"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_duration",
+          "command": "dotnet test tests --filter test_duration"
+        }
+      ],
+      "details": "The real-process tests run src/bin/<configuration>/<framework>/<runtime>/csharp-indexer, which dotnet test builds as the test project's reference. Finding an older daemon's process with lsof was tried by hand against a build of the previous commit on Linux, not by a test.",
       "evidenceStatus": "source-verified"
     }
   ]

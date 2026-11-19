@@ -28,7 +28,7 @@
     {
       "id": "src",
       "name": "csharp-indexer executable",
-      "responsibility": "Server, daemon, index, tools and the init, hook and report commands.",
+      "responsibility": "Server, daemon, index, tools and the init, uninit, status, stop, restart, hook and report commands.",
       "folder": "src/macos/csharp-indexer/src",
       "diagram": "src/macos/csharp-indexer/src/.dev/component-diagram.json"
     },

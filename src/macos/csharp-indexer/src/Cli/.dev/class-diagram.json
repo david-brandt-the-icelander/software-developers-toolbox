@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "csharp-indexer command-line helper classes",
   "folder": "src/macos/csharp-indexer/src/Cli",
-  "description": "One static class per command and the hook's decision record. They share nothing with each other.",
+  "description": "One static class per command, the hook's decision record, and the text-level JSON editor uninit uses.",
   "sources": [
     {
       "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
@@ -16,6 +16,14 @@
     {
       "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
       "symbol": "Report"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+      "symbol": "Uninit"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Cli/JsonText.cs",
+      "symbol": "JsonText"
     }
   ],
   "types": [
@@ -68,6 +76,28 @@
         "static string FromDir(string stateDir)",
         "static string Build(List<JsonNode> all)"
       ]
+    },
+    {
+      "id": "Cli.Uninit",
+      "name": "Uninit",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/Uninit.cs"
+      ],
+      "members": [
+        "static List<string> Apply(string dir, bool dryRun)"
+      ]
+    },
+    {
+      "id": "Cli.JsonText",
+      "name": "JsonText",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Cli/JsonText.cs"
+      ],
+      "members": [
+        "static byte[]? Remove(byte[] json, IReadOnlyList<object> path)"
+      ]
     }
   ],
   "relationships": [
@@ -76,6 +106,12 @@
       "to": "Cli.HookDecision",
       "kind": "depends-on",
       "description": "Decide returns one."
+    },
+    {
+      "from": "Cli.Uninit",
+      "to": "Cli.JsonText",
+      "kind": "depends-on",
+      "description": "Cuts each of init's entries, and each container that removal empties, out of the file's bytes."
     }
   ]
 }

@@ -3,14 +3,15 @@
   "kind": "class",
   "title": "ai-agent source class diagram",
   "folder": "src/macos/ai-agent/src",
-  "description": "The types ai-agent declares. Cli and Cmd are the clap command line; PromptArgs carries prompt's options to the function that runs it, which builds an Ask for the engine. Model is one catalogue entry, and Want the download built from it; Defaults is the saved model and effort; Lock holds a flock while a model downloads. Turn is what the chat template is given; Event and Done are what generation reports; Filter splits the reported text into Piece values. The test-only Tmp directory in store.rs is left out.",
+  "description": "The types ai-agent declares. Cli and Cmd are the clap command line; PromptArgs carries prompt's options to the function that runs it, which builds an Ask for the engine. Model is one catalogue entry, and Want the download built from it; Defaults is the saved model and effort; Lock holds a flock on a model's lock file (exclusive while it downloads or prune deletes it, shared while it runs). Item is what the inventory found in models/ for one model file, and Gone a file prune removes. Turn is what the chat template is given; Event and Done are what generation reports; Filter splits the reported text into Piece values. The test-only Tmp directory in store.rs is left out.",
   "sources": [
     { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cli" },
     { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "Model" },
     { "path": "src/macos/ai-agent/src/store.rs", "symbol": "Lock" },
     { "path": "src/macos/ai-agent/src/template.rs", "symbol": "Turn" },
     { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter" },
-    { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "Ask" }
+    { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "Ask" },
+    { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "Item" }
   ],
   "types": [
     {
@@ -27,7 +28,9 @@
       "sources": ["src/macos/ai-agent/src/main.rs"],
       "members": [
         "Llm { model: Option<String>, effort: Option<String>, remove: Option<String> }",
-        "Prompt { model: Option<String>, effort: Option<String>, system: Option<String>, max_tokens: Option<usize>, show_thinking: bool, no_download: bool, grammar: Option<String>, temp: f32, text: Vec<String> }"
+        "Prompt { model: Option<String>, effort: Option<String>, system: Option<String>, max_tokens: Option<usize>, show_thinking: bool, no_download: bool, grammar: Option<String>, temp: f32, text: Vec<String> }",
+        "Status { json: bool, verify: bool }",
+        "Prune { apply: bool }"
       ]
     },
     {
@@ -63,7 +66,21 @@
       "name": "Lock",
       "kind": "struct",
       "sources": ["src/macos/ai-agent/src/store.rs"],
-      "members": ["0: File", "take(path) -> Result<Lock, String>", "drop(): releases the flock"]
+      "members": ["0: File", "open(path, op) -> Result<Option<Lock>, String>", "drop(): releases the flock"]
+    },
+    {
+      "id": "Item",
+      "name": "Item",
+      "kind": "struct",
+      "sources": ["src/macos/ai-agent/src/inventory.rs"],
+      "members": ["model: Option<u64>", "part: Option<u64>", "lock: bool"]
+    },
+    {
+      "id": "Gone",
+      "name": "Gone",
+      "kind": "struct",
+      "sources": ["src/macos/ai-agent/src/inventory.rs"],
+      "members": ["path: PathBuf", "bytes: u64", "why: String"]
     },
     {
       "id": "Turn",
@@ -137,6 +154,8 @@
     { "from": "Ask", "to": "Turn", "kind": "depends-on", "description": "generate renders the template with a Turn made from the Ask." },
     { "from": "Ask", "to": "Event", "kind": "depends-on", "description": "generate reports the rendered prompt and each piece of text as Events." },
     { "from": "Ask", "to": "Done", "kind": "depends-on", "description": "generate returns how the run ended." },
-    { "from": "Filter", "to": "Piece", "kind": "depends-on", "description": "push and finish return the pieces that can be shown." }
+    { "from": "Filter", "to": "Piece", "kind": "depends-on", "description": "push and finish return the pieces that can be shown." },
+    { "from": "Gone", "to": "Item", "kind": "depends-on", "description": "plan turns an Item's files into the Gone list prune removes." },
+    { "from": "Item", "to": "Lock", "kind": "depends-on", "description": "prune holds the Item's Lock exclusively while it deletes its files." }
   ]
 }

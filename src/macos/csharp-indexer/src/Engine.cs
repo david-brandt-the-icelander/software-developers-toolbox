@@ -75,6 +75,10 @@ public sealed class Engine : IDisposable
         })).Value;
     }
 
+    // Returns the indexes started so far, sorted by path.
+    public List<RootIndex> Indexes() =>
+        _roots.Values.Where(l => l.IsValueCreated).Select(l => l.Value).OrderBy(i => i.Path, StringComparer.Ordinal).ToList();
+
     // Returns blob facts by id.
     public BlobMeta? Blob(int id) => _byId.GetValueOrDefault(id);
 

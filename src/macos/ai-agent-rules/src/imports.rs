@@ -11,11 +11,11 @@ pub fn resolve(token: &str, dir: &Path, home: Option<&Path>) -> Option<PathBuf> 
     fs::canonicalize(path).ok().filter(|p| p.is_file())
 }
 
-// Returns the files a text imports, in order and once each: `@path` words outside fenced code blocks and code spans.
-pub fn imports(text: &str, dir: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+// Returns each `@path` word outside fenced code blocks and code spans with its 1-based line, trailing punctuation dropped.
+pub fn tokens(text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut fenced = false;
-    for line in text.lines() {
+    for (i, line) in text.lines().enumerate() {
         if line.trim_start().starts_with("```") {
             fenced = !fenced;
             continue;
@@ -23,13 +23,22 @@ pub fn imports(text: &str, dir: &Path, home: Option<&Path>) -> Vec<PathBuf> {
         if fenced {
             continue;
         }
-        let plain: Vec<&str> = line.split('`').step_by(2).collect();
-        for word in plain.join(" ").split_whitespace() {
-            let Some(token) = word.strip_prefix('@') else { continue };
-            let token = token.trim_end_matches(|c| ".,;:!?)".contains(c));
-            if let Some(path) = resolve(token, dir, home).filter(|p| !out.contains(p)) {
-                out.push(path);
+        for part in line.split('`').step_by(2) {
+            for word in part.split_whitespace() {
+                let Some(token) = word.strip_prefix('@') else { continue };
+                out.push((i + 1, token.trim_end_matches(|c| ".,;:!?)".contains(c))));
             }
+        }
+    }
+    out
+}
+
+// Returns the files a text imports, in order and once each.
+pub fn imports(text: &str, dir: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for (_, token) in tokens(text) {
+        if let Some(path) = resolve(token, dir, home).filter(|p| !out.contains(p)) {
+            out.push(path);
         }
     }
     out

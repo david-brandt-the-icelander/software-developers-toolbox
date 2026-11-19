@@ -48,6 +48,18 @@
     {
       "path": "src/macos/free-disk-space/src/repair.rs",
       "symbol": "cmd_repair"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/top.rs",
+      "symbol": "cmd_top"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/decompress.rs",
+      "symbol": "cmd_decompress"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/status.rs",
+      "symbol": "gather"
     }
   ],
   "components": [
@@ -66,7 +78,7 @@
     {
       "id": "scan",
       "name": "Scan (scan.rs)",
-      "responsibility": "Walks a root directory, recording every directory, every file's path, leaf name and size, and the compression candidates, in the state file; resumable after Ctrl-C; also status and list.",
+      "responsibility": "Walks a root directory, recording every directory, every file's path, leaf name and size, and the compression candidates, in the state file; resumable after Ctrl-C; also list.",
       "folder": "src/macos/free-disk-space/src"
     },
     {
@@ -85,6 +97,24 @@
       "id": "repair",
       "name": "Compression repair (repair.rs)",
       "responsibility": "Checks every file the scan recorded for a false compression claim: resets files recorded as compressed that are not, records flagged files with broken compressed data, and rewrites flagged files that save no space through compress's verified path.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "decompress",
+      "name": "Decompression (decompress.rs)",
+      "responsibility": "Finds the transparently compressed files under the given files and folders, reports the space they would take plain, refuses when the volume lacks it, and with --apply rewrites each through repair's plain copy and compress's verified swap, recording it so compress leaves it alone.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "top",
+      "name": "Largest entries (top.rs)",
+      "responsibility": "Walks a folder on several threads without following symlinks or leaving its volume and lists the largest folders and files by allocated size, counting hard-linked files once and noting what it cannot read.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
+      "id": "status",
+      "name": "Status (status.rs)",
+      "responsibility": "Gathers scan progress, candidates by status, recorded file names, free space and the daemon's state into one JSON value with ok and problems, and prints it as text or JSON.",
       "folder": "src/macos/free-disk-space/src"
     },
     {
@@ -217,6 +247,24 @@
     },
     {
       "from": "source",
+      "to": "decompress",
+      "kind": "contains",
+      "description": "Decompression."
+    },
+    {
+      "from": "source",
+      "to": "top",
+      "kind": "contains",
+      "description": "Largest entries."
+    },
+    {
+      "from": "source",
+      "to": "status",
+      "kind": "contains",
+      "description": "Status."
+    },
+    {
+      "from": "source",
       "to": "clean",
       "kind": "contains",
       "description": "Cleanup targets."
@@ -243,7 +291,7 @@
       "from": "cli",
       "to": "scan",
       "kind": "depends-on",
-      "description": "new, resume, status and list call cmd_new, cmd_resume, cmd_status and cmd_list."
+      "description": "new, resume and list call cmd_new, cmd_resume and cmd_list."
     },
     {
       "from": "cli",
@@ -262,6 +310,24 @@
       "to": "repair",
       "kind": "depends-on",
       "description": "repair calls cmd_repair with RepairOpts."
+    },
+    {
+      "from": "cli",
+      "to": "decompress",
+      "kind": "depends-on",
+      "description": "decompress calls cmd_decompress with DecompressOpts."
+    },
+    {
+      "from": "cli",
+      "to": "top",
+      "kind": "depends-on",
+      "description": "top calls cmd_top with TopOpts."
+    },
+    {
+      "from": "cli",
+      "to": "status",
+      "kind": "depends-on",
+      "description": "status calls cmd_status with the state path and --json."
     },
     {
       "from": "cli",
@@ -424,6 +490,60 @@
       "to": "meta",
       "kind": "depends-on",
       "description": "Reads the decmpfs header and resource fork, and copies attribute values, the ACL and flags onto the plain copy."
+    },
+    {
+      "from": "decompress",
+      "to": "compress",
+      "kind": "depends-on",
+      "description": "decompress_precheck and decompress_flagged: the same safety checks and verified swap as compress, with the compressed flag allowed."
+    },
+    {
+      "from": "decompress",
+      "to": "repair",
+      "kind": "depends-on",
+      "description": "plain_copy writes the plain copy; record marks each decompressed file as skipped."
+    },
+    {
+      "from": "decompress",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Records decompressed files as skipped when the state file exists; never creates one."
+    },
+    {
+      "from": "decompress",
+      "to": "util",
+      "kind": "depends-on",
+      "description": "BSD flags, allocated size, free space and the stop flag."
+    },
+    {
+      "from": "top",
+      "to": "util",
+      "kind": "depends-on",
+      "description": "Allocated size, ~ expansion and human-readable sizes."
+    },
+    {
+      "from": "status",
+      "to": "scan",
+      "kind": "depends-on",
+      "description": "try_open, meta_get, finished, pending_dirs and Stats read the state file."
+    },
+    {
+      "from": "status",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads progress, candidates and file names; opens it only when it exists."
+    },
+    {
+      "from": "status",
+      "to": "daemon",
+      "kind": "depends-on",
+      "description": "daemon::state, plist_path and log_path."
+    },
+    {
+      "from": "status",
+      "to": "util",
+      "kind": "depends-on",
+      "description": "Free space on the data volume."
     }
   ]
 }

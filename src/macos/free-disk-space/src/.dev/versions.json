@@ -25,7 +25,7 @@
           "symbol": "SCHEMA"
         },
         {
-          "path": "src/macos/free-disk-space/src/scan.rs",
+          "path": "src/macos/free-disk-space/src/status.rs",
           "symbol": "cmd_status"
         },
         {

@@ -20,6 +20,8 @@ public sealed class RootIndex : IDisposable
     private IChangeSource? _source;
     private long _gen;
     private long _logBase;
+    private long _indexedTicks;
+    private long _changedTicks;
     private volatile bool _stopped;
 
     public string Path { get; }
@@ -39,10 +41,26 @@ public sealed class RootIndex : IDisposable
         _periodic = new Timer(_ => Safely(Reconcile), null, Timeout.Infinite, Timeout.Infinite);
     }
 
+    // Number of files the index holds now.
+    public int FileCount => _files.Count;
+
+    // When the last full reconcile finished (in this run or a stored earlier one), or null if none has.
+    public DateTime? IndexedAt => Stamp(Interlocked.Read(ref _indexedTicks));
+
+    // When the index last applied a file change in this run, or null if none.
+    public DateTime? ChangedAt => Stamp(Interlocked.Read(ref _changedTicks));
+
+    // The later of IndexedAt and ChangedAt: how current the index is.
+    public DateTime? UpdatedAt => Stamp(Math.Max(Interlocked.Read(ref _indexedTicks), Interlocked.Read(ref _changedTicks)));
+
+    // Turns stored UTC ticks into a time, with 0 meaning never.
+    private static DateTime? Stamp(long ticks) => ticks == 0 ? null : new DateTime(ticks, DateTimeKind.Utc);
+
     // Starts the watcher and the initial reconcile; Ready completes when the index is current.
     public void Start()
     {
         var (eventId, fullScan) = _engine.Store.RootState(Id);
+        _indexedTicks = fullScan ?? 0;
         _source = _engine.Watch ? ChangeSources.Create() : null;
         var recent = fullScan is { } t && DateTime.UtcNow.Ticks - t < ReplayMaxAgeTicks;
         var replay = _source is { SupportsReplay: true } && eventId is not null && recent;
@@ -124,7 +142,9 @@ public sealed class RootIndex : IDisposable
             foreach (var known in _files.Keys.Where(k => !present.Contains(k)).ToList())
                 Remove(known);
             Parallel.ForEach(work, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) }, Analyze);
-            _engine.Store.SetFullScan(Id, DateTime.UtcNow.Ticks);
+            var now = DateTime.UtcNow.Ticks;
+            _engine.Store.SetFullScan(Id, now);
+            Interlocked.Exchange(ref _indexedTicks, now);
             Persist();
         }
     }
@@ -168,6 +188,7 @@ public sealed class RootIndex : IDisposable
     private void Log(string rel, char kind)
     {
         var gen = Interlocked.Increment(ref _gen);
+        Interlocked.Exchange(ref _changedTicks, DateTime.UtcNow.Ticks);
         lock (_logLock)
         {
             _log.Add((gen, rel, kind));

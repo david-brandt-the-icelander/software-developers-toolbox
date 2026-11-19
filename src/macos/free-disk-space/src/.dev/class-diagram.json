@@ -50,12 +50,14 @@
         "src/macos/free-disk-space/src/main.rs"
       ],
       "members": [
-        "New(NewArgs)",
-        "Resume(StateArg)",
-        "Status(StateArg)",
+        "Scan(NewArgs)",
+        "Resume(ResumeArgs)",
+        "Status(StatusArgs)",
+        "Top(TopArgs)",
         "List(ListArgs)",
         "Compress(CompressArgs)",
         "Repair(RepairArgs)",
+        "Decompress(DecompressArgs)",
         "Dedupe(DedupeArgs)",
         "Clean(CleanArgs)",
         "Daemon(DaemonArgs)"
@@ -150,6 +152,47 @@
         "min_age_days: i64",
         "min_gain: i64",
         "reserve: i64"
+      ]
+    },
+    {
+      "id": "main::StatusArgs",
+      "name": "StatusArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "json: bool"
+      ]
+    },
+    {
+      "id": "main::TopArgs",
+      "name": "TopArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "path: String",
+        "count: u32",
+        "depth: u32",
+        "json: bool"
+      ]
+    },
+    {
+      "id": "main::DecompressArgs",
+      "name": "DecompressArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "paths: Vec<String>",
+        "apply: bool",
+        "reserve: i64",
+        "include_no_provenance: bool"
       ]
     },
     {
@@ -283,14 +326,14 @@
         "src/macos/free-disk-space/src/scan.rs"
       ],
       "members": [
-        "dirs: i64",
-        "files: i64",
-        "bytes: i64",
-        "errors: i64",
+        "pub dirs: i64",
+        "pub files: i64",
+        "pub bytes: i64",
+        "pub errors: i64",
         "cands: i64",
         "est: i64",
         "fn to_json(&self) -> Value",
-        "fn from_json(v: &Value) -> Self"
+        "pub fn from_json(v: &Value) -> Self"
       ]
     },
     {
@@ -352,6 +395,98 @@
         "Unflagged",
         "Broken(String)",
         "Wasteful"
+      ]
+    },
+    {
+      "id": "decompress::DecompressOpts",
+      "name": "DecompressOpts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/decompress.rs"
+      ],
+      "members": [
+        "pub state: String",
+        "pub paths: Vec<String>",
+        "pub apply: bool",
+        "pub reserve: i64",
+        "pub include_no_provenance: bool"
+      ]
+    },
+    {
+      "id": "decompress::Found",
+      "name": "Found",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/decompress.rs"
+      ],
+      "members": [
+        "path: PathBuf",
+        "alloc: i64",
+        "plain: i64"
+      ]
+    },
+    {
+      "id": "top::TopOpts",
+      "name": "TopOpts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/top.rs"
+      ],
+      "members": [
+        "pub path: String",
+        "pub count: usize",
+        "pub depth: usize",
+        "pub json: bool"
+      ]
+    },
+    {
+      "id": "top::Row",
+      "name": "Row",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/top.rs"
+      ],
+      "members": [
+        "path: PathBuf",
+        "size: i64",
+        "dir: bool",
+        "depth: usize"
+      ]
+    },
+    {
+      "id": "top::Walk",
+      "name": "Walk",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/top.rs"
+      ],
+      "members": [
+        "dev: u64",
+        "depth: usize",
+        "seen: &Mutex<HashSet<(u64, u64)>>",
+        "rows: Vec<Row>",
+        "files: u64",
+        "skipped: Vec<(PathBuf, String)>",
+        "other_volumes: Vec<PathBuf>",
+        "fn new(dev: u64, depth: usize, seen: &Mutex<HashSet<(u64, u64)>>) -> Self",
+        "fn visit(&mut self, path: PathBuf, level: usize) -> i64",
+        "fn children(&mut self, dir: &Path, level: usize) -> i64"
+      ]
+    },
+    {
+      "id": "top::Found",
+      "name": "Found",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/top.rs"
+      ],
+      "members": [
+        "root: PathBuf",
+        "total: i64",
+        "files: u64",
+        "rows: Vec<Row>",
+        "skipped: Vec<(PathBuf, String)>",
+        "other_volumes: Vec<PathBuf>"
       ]
     },
     {
@@ -758,6 +893,66 @@
       "to": "util::Output",
       "kind": "depends-on",
       "description": "Built from the output of lsof and ps."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::StatusArgs",
+      "kind": "depends-on",
+      "description": "status's options."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::TopArgs",
+      "kind": "depends-on",
+      "description": "top's options."
+    },
+    {
+      "from": "main::Cmd",
+      "to": "main::DecompressArgs",
+      "kind": "depends-on",
+      "description": "decompress's options."
+    },
+    {
+      "from": "main::StatusArgs",
+      "to": "main::StateArg",
+      "kind": "depends-on",
+      "description": "Flattened --state."
+    },
+    {
+      "from": "main::DecompressArgs",
+      "to": "main::StateArg",
+      "kind": "depends-on",
+      "description": "Flattened --state."
+    },
+    {
+      "from": "main::TopArgs",
+      "to": "top::TopOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into TopOpts."
+    },
+    {
+      "from": "main::DecompressArgs",
+      "to": "decompress::DecompressOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into DecompressOpts."
+    },
+    {
+      "from": "decompress::DecompressOpts",
+      "to": "compress::CompressOpts",
+      "kind": "depends-on",
+      "description": "compress_opts turns them into the options compress's safety checks read."
+    },
+    {
+      "from": "top::Walk",
+      "to": "top::Row",
+      "kind": "depends-on",
+      "description": "Records a row for every entry within the depth."
+    },
+    {
+      "from": "top::Found",
+      "to": "top::Row",
+      "kind": "depends-on",
+      "description": "The merged rows, biggest first."
     }
   ]
 }

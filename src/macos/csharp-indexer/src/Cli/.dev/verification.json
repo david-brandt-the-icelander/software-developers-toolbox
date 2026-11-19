@@ -77,6 +77,81 @@
         }
       ],
       "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "uninit",
+      "title": "uninit",
+      "summary": "uninit takes out exactly what init wrote, keeps every other byte, deletes only what is left empty, and is safe to repeat; JsonText cuts items cleanly.",
+      "subject": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "uninit-edits"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/.dev/use-case.json",
+          "entityId": "undo-init"
+        }
+      ],
+      "criteria": [
+        "a property or array element is cut with its comma and its whitespace, first, middle, last or only, nested, with escaped names, and nothing is returned for a path that is not there",
+        "after init on an empty project, uninit deletes .mcp.json, .claude/settings.json and .claude/, and a second run finds nothing to undo",
+        "in hand-written files, only init's server, hook entry, permission and enabled server go (and the containers they leave empty); layout, other hooks and other keys stay byte for byte",
+        "a redirect hook sharing its entry with another hook is removed alone",
+        "a zazzle server with extra keys is kept with a note, and a file that is not JSON is left unchanged",
+        "--dry-run lists the changes and writes nothing",
+        "the command line takes a folder, defaults to the current one and refuses two folders"
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_json_text_remove_property",
+          "command": "dotnet test tests --filter test_json_text_remove_property"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_json_text_remove_nested",
+          "command": "dotnet test tests --filter test_json_text_remove_nested"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_after_init_on_empty_project",
+          "command": "dotnet test tests --filter test_uninit_after_init_on_empty_project"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_keeps_other_bytes",
+          "command": "dotnet test tests --filter test_uninit_keeps_other_bytes"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_shared_hook_entry",
+          "command": "dotnet test tests --filter test_uninit_shared_hook_entry"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_leaves_foreign_server_and_bad_json",
+          "command": "dotnet test tests --filter test_uninit_leaves_foreign_server_and_bad_json"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_dry_run",
+          "command": "dotnet test tests --filter test_uninit_dry_run"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_round_trip_and_command_line",
+          "command": "dotnet test tests --filter test_uninit_round_trip_and_command_line"
+        }
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

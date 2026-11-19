@@ -79,7 +79,7 @@
       "id": "router",
       "name": "git-tools",
       "kind": "process",
-      "description": "Answers help and version, runs the message editor or the commit flow in-process, and replaces itself with `git ARGS` for everything else."
+      "description": "Answers help and version, runs the message editor, the commit flow, amend or undo in-process, and replaces itself with `git ARGS` for everything else."
     },
     {
       "id": "commit",

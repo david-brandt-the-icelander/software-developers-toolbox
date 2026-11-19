@@ -79,7 +79,7 @@ fn check(path: &Path, md: &fs::Metadata, recorded_done: bool) -> Option<Finding>
 }
 
 // Make `tmp` a plain, uncompressed copy of `path` with its mode, group, attributes, ACL and other flags.
-fn plain_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
+pub fn plain_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
     let st = fs::symlink_metadata(path)?;
     let mut target = fs::OpenOptions::new().read(true).write(true).create_new(true).open(tmp)?;
     std::io::copy(&mut fs::File::open(path)?, &mut target)?;
@@ -91,7 +91,7 @@ fn plain_copy(path: &Path, tmp: &Path) -> std::io::Result<()> {
 }
 
 // Record a file's repair result in the state file, adding it as a candidate if the scan had not.
-fn record(db: &Connection, path: &str, status: &str, note: &str, saved: i64) {
+pub fn record(db: &Connection, path: &str, status: &str, note: &str, saved: i64) {
     let md = fs::symlink_metadata(path).ok();
     let (size, alloc, mtime, ino) =
         md.map_or((0, 0, 0, 0), |m| (m.len() as i64, util::alloc(&m), util::mtime_ns(&m), m.ino() as i64));

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::assess::{assess, Remedy, Report, Step};
 use crate::facts::{tcp_host, Facts};
+use crate::model::Area;
 use crate::parse::parse_vpn_status;
 use crate::run::capture;
 use crate::sys::Sys;
@@ -21,11 +22,15 @@ pub struct Gates {
     pub allow_route_flush: bool,
     pub allow_remote: bool,
     pub over_ssh: bool,
+    pub only: Vec<Area>,
 }
 
 impl Gates {
-    // Return the missing flag that blocks a step, if any.
+    // Return the missing flag that blocks a step, if any; a step outside --only names the --only value it needs.
     pub fn blocked(&self, s: &Step) -> Option<&'static str> {
+        if !self.only.is_empty() && !self.only.contains(&s.area()) {
+            return Some(s.area().flag());
+        }
         let given = match s.gate() {
             Some("--vpn") => self.vpn,
             Some("--fix-proxy") => self.fix_proxy,
@@ -320,7 +325,39 @@ mod tests {
         assert_eq!(Gates { allow_remote: true, ..ssh }.blocked(&Step::CycleWifi), None);
     }
 
-    // Check that plans dedupe, sort by disruption and skip manual remedies.
+    // Check that --only blocks steps outside its areas before any other gate, naming the value each step needs.
+    #[test]
+    fn test_gates_only_areas() {
+        let g = Gates { only: vec![Area::Dns, Area::Proxy], fix_proxy: true, ..Gates::default() };
+        assert_eq!(g.blocked(&Step::FlushDns), None);
+        assert_eq!(g.blocked(&Step::FixProxy), None);
+        for st in [Step::WifiOn, Step::ClearArp, Step::RenewDhcp, Step::CycleWifi] {
+            assert_eq!(g.blocked(&st), Some("--only wifi"));
+        }
+        assert_eq!(g.blocked(&Step::ReconnectVpn("W".into())), Some("--only vpn"));
+        assert_eq!(g.blocked(&Step::FlushRoutes), Some("--only vpn"));
+        let vpn = Gates { only: vec![Area::Vpn], ..Gates::default() };
+        assert_eq!(vpn.blocked(&Step::ReconnectVpn("W".into())), Some("--vpn"));
+        assert_eq!(vpn.blocked(&Step::FixProxy), Some("--only proxy"));
+        let wifi = Gates { only: vec![Area::Wifi], ..Gates::default() };
+        assert_eq!(wifi.blocked(&Step::FlushDns), Some("--only dns"));
+        assert_eq!(wifi.blocked(&Step::CycleWifi), None);
+    }
+
+    // Check that the fix loop with --only runs only steps in those areas, skipping the rest of the force ladder.
+    #[test]
+    fn test_fix_loop_only_restricts() {
+        let mut broken = healthy();
+        broken.public.dns_ok = false;
+        let mut gather = || broken.clone();
+        let g = Gates { only: vec![Area::Wifi], ..Gates::default() };
+        let skipped = RefCell::new(Vec::new());
+        let log = |m: &str| skipped.borrow_mut().push(m.to_string());
+        let (_, done) = fix_loop(&g, true, &mut gather, &mut |_, _| Ok(String::new()), &log);
+        assert!(done.iter().all(|a| a.step.area() == Area::Wifi), "{done:?}");
+        assert!(skipped.borrow().iter().any(|m| m.contains("flush DNS cache skipped (needs --only dns)")));
+    }
+
     #[test]
     fn test_plan_dedupes_and_sorts() {
         let finding = |remedy| crate::assess::Finding { code: "x", summary: String::new(), remedy };

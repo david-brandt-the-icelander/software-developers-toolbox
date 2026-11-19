@@ -33,6 +33,16 @@
           ]
         },
         {
+          "id": "find-space",
+          "context": "Wants to know where the space has gone.",
+          "touchpoint": "free-disk-space top",
+          "action": "Lists the largest folders and files under their home (or a folder they name).",
+          "outcome": "The biggest folders and files by size on disk, with notes on folders it could not read, so they know which targets to clean or compress.",
+          "sources": [
+            {"path": "src/macos/free-disk-space/src/top.rs", "symbol": "cmd_top"}
+          ]
+        },
+        {
           "id": "preview-cleanup",
           "context": "Wants to know what is safe to delete before deleting anything.",
           "touchpoint": "free-disk-space clean all",

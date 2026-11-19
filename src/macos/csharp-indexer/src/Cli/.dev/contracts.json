@@ -55,6 +55,50 @@
       ]
     },
     {
+      "id": "uninit-edits",
+      "title": "What uninit removes from a project",
+      "summary": "uninit removes from .mcp.json and .claude/settings.json only the entries init writes, recognised by their shape, and leaves every other byte of both files as it was.",
+      "contractType": "file-format",
+      "consumers": [
+        "Claude Code, which reads the project's .mcp.json and .claude/settings.json",
+        "The developer, who may have edited both files by hand"
+      ],
+      "definition": "Removed: mcpServers.zazzle when it is exactly {type: \"stdio\", command: <a path ending in daemon>, args: [\"mcp\"]} (with any other key it is kept and a line says so); in hooks.PreToolUse, each hook whose command ends in \" hook\" and contains csharp-indexer, taking its entry with it when the entry holds nothing else; \"mcp__zazzle\" from permissions.allow; \"zazzle\" from enabledMcpjsonServers. An object or array a removal leaves empty is removed too, innermost first. A file left holding nothing but empty objects and arrays is deleted, and .claude/ with it when that leaves it empty. Each item is cut out of the text with its separating comma and the whitespace that belonged to it; a UTF-8 byte-order mark is kept. Output: one line per change (\"removed X from FILE\", \"deleted FILE: nothing else is left in it\", \"deleted the empty folder DIR\"), \"would ...\" with --dry-run, or \"nothing to undo in DIR\".",
+      "guarantees": [
+        "Bytes outside the removed items are unchanged; a file with nothing to remove is not written.",
+        "Running it twice is safe: the second run finds nothing to undo.",
+        "--dry-run writes, deletes and creates nothing.",
+        "A file that is not JSON (comments, trailing commas, duplicate keys) is left unchanged with a line saying so."
+      ],
+      "compatibility": "Matches what init writes today. The indexer's own csharp-indexer server, permission and enabled server that an earlier init removed are not put back.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.NextSettings"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/JsonText.cs",
+          "symbol": "JsonText.Remove"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+          "symbol": "test_uninit_keeps_other_bytes"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "src/macos/csharp-indexer/src/Cli/.dev/contracts.json",
+          "entityId": "init-files"
+        }
+      ]
+    },
+    {
       "id": "hook-protocol",
       "title": "The hook command",
       "summary": "csharp-indexer hook reads one Claude Code PreToolUse event as JSON on standard input and answers with its exit code: 0 lets the tool call run, 2 blocks it with a message on standard error.",

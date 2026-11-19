@@ -83,7 +83,7 @@
     {
       "id": "dry-run",
       "title": "Dry run",
-      "summary": "A run that reports what it would do and changes nothing: clean and dedupe without --apply, and compress --dry-run.",
+      "summary": "A run that reports what it would do and changes nothing: clean, dedupe, repair and decompress without --apply, and compress --dry-run.",
       "evidenceStatus": "source-verified",
       "sources": [{"path": "src/macos/free-disk-space/src/clean.rs", "symbol": "cmd_clean"}, {"path": "src/macos/free-disk-space/src/dedupe.rs", "symbol": "cmd_dedupe"}, {"path": "src/macos/free-disk-space/src/compress.rs", "symbol": "cmd_compress"}]
     }

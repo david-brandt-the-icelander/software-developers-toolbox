@@ -8,8 +8,8 @@ use crate::parse::{
 };
 use crate::sys::Sys;
 
-const PUBLIC_V4: &str = "1.1.1.1";
-const PUBLIC_V6: &str = "2606:4700:4700::1111";
+pub const PUBLIC_V4: &str = "1.1.1.1";
+pub const PUBLIC_V6: &str = "2606:4700:4700::1111";
 
 // Results of the public-internet probes.
 #[derive(Clone, Debug, Default)]
@@ -269,16 +269,29 @@ fn proxy_facts(sys: &dyn Sys, f: &mut Facts) {
     }
 }
 
-// Record scutil-managed VPN services and the state and tunnel interface of active ones.
-fn vpn_facts(sys: &dyn Sys, f: &mut Facts) {
-    f.vpns = parse_vpn_list(&out(sys, &["scutil", "--nc", "list"]));
-    for v in f.vpns.iter_mut().filter(|v| v.state != "Disconnected") {
-        let (state, iface) = parse_vpn_status(&out(sys, &["scutil", "--nc", "status", &v.name]));
+// Return scutil-managed VPN services with the state and tunnel interface of active ones.
+pub fn vpn_services(sys: &dyn Sys, timeout: u64) -> Vec<VpnService> {
+    let mut vpns = parse_vpn_list(&sys.run(&["scutil", "--nc", "list"], timeout, false).1);
+    for v in vpns.iter_mut().filter(|v| v.state != "Disconnected") {
+        let (state, iface) =
+            parse_vpn_status(&sys.run(&["scutil", "--nc", "status", &v.name], timeout, false).1);
         if !state.is_empty() {
             v.state = state;
         }
         v.iface = iface;
     }
+    vpns
+}
+
+// Return each enabled network service in the service order with the status of its interface.
+pub fn service_links(sys: &dyn Sys, order: &str, timeout: u64) -> Vec<(Service, IfStatus)> {
+    parse_services(order)
+        .into_iter()
+        .map(|s| {
+            let st = parse_ifconfig(&sys.run(&["ifconfig", &s.device], timeout, false).1);
+            (s, st)
+        })
+        .collect()
 }
 
 // Split command output into words.
@@ -305,17 +318,11 @@ pub fn gather(sys: &dyn Sys, targets: &[Target]) -> Facts {
         resolvers: parse_dns(&dns),
         ..Facts::default()
     };
-    let candidates: Vec<(Service, IfStatus)> = parse_services(&order)
-        .into_iter()
-        .map(|s| {
-            let st = parse_ifconfig(&out(sys, &["ifconfig", &s.device]));
-            (s, st)
-        })
-        .collect();
+    let candidates = service_links(sys, &order, 15);
     f.phys = choose_phys(&candidates, f.default_if.as_deref()).map(|i| candidates[i].0.clone());
     link_facts(sys, &mut f, &all_ifaces);
     proxy_facts(sys, &mut f);
-    vpn_facts(sys, &mut f);
+    f.vpns = vpn_services(sys, 15);
     f.public = public_probes(sys, &f);
     f.internal = targets.iter().map(|t| probe_internal(sys, t, &f.resolvers)).collect();
     f

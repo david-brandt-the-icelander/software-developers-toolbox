@@ -3,7 +3,7 @@
   "kind": "feature",
   "title": "fix-network features",
   "folder": "src/macos/fix-network/src",
-  "description": "What the tool offers: separate health per dimension, an explanation of each failing internal host, an outcome for every finding, adaptive repair, the Wi-Fi watchdog, the after-sleep hint, the run's record and the JSON report.",
+  "description": "What the tool offers: separate health per dimension, an explanation of each failing internal host, an outcome for every finding, adaptive repair (optionally limited to some areas), the Wi-Fi watchdog, the after-sleep hint, the run's record, the JSON report and the quick status.",
   "sources": [
     { "path": "src/macos/fix-network/src/assess.rs", "symbol": "assess" },
     { "path": "src/macos/fix-network/src/repair.rs", "symbol": "fix_loop" },
@@ -95,6 +95,7 @@
         "Each step runs at most once per run.",
         "At most twelve rounds (MAX_ROUNDS).",
         "Gated steps need their flag; over SSH, disruptive steps need --allow-remote.",
+        "With --only wifi|dns|vpn|proxy, steps outside those areas never run, the --force ladder included; --only does not stand in for --vpn, --fix-proxy or --allow-route-flush.",
         "A VPN reconnect stops it if needed, waits up to 8 polls of 2 seconds for Disconnected, starts it and waits up to 15 polls for Connected."
       ],
       "implementation": [
@@ -180,6 +181,30 @@
         { "path": "src/macos/fix-network/src/report.rs", "symbol": "to_json" },
         { "path": "src/macos/fix-network/src/report.rs", "symbol": "facts_json" },
         { "path": "src/macos/fix-network/src/main.rs", "symbol": "finish" }
+      ]
+    },
+    {
+      "id": "quick-status",
+      "name": "Quick status",
+      "description": "status answers in about two seconds whether the network is healthy, as one line for a shell prompt or one JSON object for a script.",
+      "sources": [
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "probe" }
+      ],
+      "behavior": "It reuses diagnose's probes with short limits: the default route and the service order pick the service in use, ifconfig gives its address, networksetup the Wi-Fi radio's power, one system-resolver lookup of www.apple.com judges DNS, and one TCP connect to 1.1.1.1:443 (or its IPv6 address, else the looked-up address) judges the internet; scutil and the routing table give VPNs and tunnels. Each area is healthy or not: Wi-Fi on (or not used), an address, DNS, internet, and no scutil VPN stuck between states.",
+      "outcome": "A prompt, a script or an agent learns whether to look closer without waiting for a full diagnosis.",
+      "constraints": [
+        "Read-only, no root, no log or state directory.",
+        "Commands get 2 seconds, the lookup and each connection 1 second; without an address the lookup and connect are skipped.",
+        "No gateway ping, captive-portal or HTTPS check, proxies or internal hosts: diagnose covers those."
+      ],
+      "implementation": [
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "probe" },
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "reach" },
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "verdicts" },
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "line" },
+        { "path": "src/macos/fix-network/src/status.rs", "symbol": "to_json" },
+        { "path": "src/macos/fix-network/src/facts.rs", "symbol": "service_links" },
+        { "path": "src/macos/fix-network/src/facts.rs", "symbol": "vpn_services" }
       ]
     }
   ],

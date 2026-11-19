@@ -56,7 +56,7 @@
       "id": "terminal",
       "name": "Developer's terminal",
       "kind": "client",
-      "description": "Runs csharp-indexer init in a project and csharp-indexer report.",
+      "description": "Runs csharp-indexer init or uninit in a project, csharp-indexer report, and status, stop or restart for the shared daemon.",
       "actor": "Actors/developer.md"
     },
     {
@@ -70,7 +70,7 @@
       "id": "daemon",
       "name": "csharp-indexer daemon",
       "kind": "process",
-      "description": "One per state directory (per user by default), started detached by the first daemon (or serve) that finds none, holding the engine, watchers and indexes; serves every client of daemon.sock and exits after the idle period."
+      "description": "One per state directory (per user by default), started detached by the first daemon (or serve) that finds none, or by restart, holding the engine, watchers and indexes; serves every client of daemon.sock and exits after the idle period, or once stop has made it drain and its clients have left."
     },
     {
       "id": "zazzle-daemon",
@@ -88,9 +88,9 @@
     },
     {
       "id": "oneshot",
-      "name": "csharp-indexer init and report",
+      "name": "csharp-indexer init, uninit, report, status, stop and restart",
       "kind": "process",
-      "description": "One-shot commands: init writes the project's .mcp.json and .claude/settings.json, naming the daemon it finds and the hook; report reads the usage log."
+      "description": "One-shot commands: init writes the project's .mcp.json and .claude/settings.json, naming the daemon it finds and the hook, and uninit takes that out again; report reads the usage log; status asks the daemon about itself over its socket, stop makes it drain (and kills it after a timeout), and restart then starts a fresh daemon from the same executable."
     },
     {
       "id": "state",
@@ -131,7 +131,7 @@
       "from": "machine",
       "to": "daemon",
       "kind": "hosts",
-      "description": "Started detached, by daemon or by serve through /bin/sh with nohup."
+      "description": "Started detached, by daemon, by serve or by restart through /bin/sh with nohup."
     },
     {
       "from": "machine",
@@ -222,6 +222,12 @@
       "to": "serve",
       "kind": "connects-to",
       "description": "MCP on standard input and output, typed or piped by hand."
+    },
+    {
+      "from": "oneshot",
+      "to": "daemon",
+      "kind": "connects-to",
+      "description": "status and stop: one command hello and one reply over daemon.sock; stop kills the process after its timeout; restart then starts a new daemon."
     }
   ]
 }
