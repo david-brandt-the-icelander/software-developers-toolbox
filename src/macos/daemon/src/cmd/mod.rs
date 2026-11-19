@@ -276,12 +276,18 @@ fn brief(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
 fn prompt(rest: &[String]) -> Result<Output, String> {
     const USAGE: &str =
         "usage: agent prompt [--effort low|medium|high] [--max-tokens N] [--system TEXT] [--] TEXT..";
-    let (mut flags, mut words, mut it) = (Vec::<&str>::new(), Vec::new(), rest.iter());
+    let (mut req, mut words, mut it) = (serde_json::json!({"effort": "low"}), Vec::new(), rest.iter());
     while let Some(a) = it.next() {
         match a.as_str() {
             "--" => words.extend(it.by_ref().map(String::as_str)),
             f @ ("--effort" | "--max-tokens" | "--system") => {
-                flags.extend([f, it.next().ok_or_else(|| format!("{f} needs a value; {USAGE}"))?.as_str()])
+                let v = it.next().ok_or_else(|| format!("{f} needs a value; {USAGE}"))?;
+                req[&f[2..].replace('-', "_")] = match f {
+                    "--max-tokens" => {
+                        v.parse::<u64>().map_err(|_| format!("--max-tokens needs a number; {USAGE}"))?.into()
+                    }
+                    _ => v.as_str().into(),
+                };
             }
             f if f.starts_with("--") => return Err(format!("unknown flag {f}; {USAGE}")),
             w => words.push(w),
@@ -291,7 +297,8 @@ fn prompt(rest: &[String]) -> Result<Output, String> {
     if text.trim().is_empty() {
         return Err(USAGE.into());
     }
-    let reply = crate::llm::ask(&text, "", &flags)?;
+    req["user"] = text.into();
+    let reply = crate::llm::ask(None, &req)?;
     let cut = if reply.truncated { "\n[the token limit cut this answer short]" } else { "" };
     Ok(Output::plain(format!("{}{cut}", reply.text)))
 }
@@ -386,6 +393,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "brief" => brief(ctx, rest),
         "investigate" => crate::investigate::run(ctx, rest),
         "prompt" => prompt(rest),
+        "llm-chat" => crate::chat::run(rest).map(Output::plain),
         "agent" => match rest.split_first() {
             Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
                 get_rules(ctx, r)
@@ -695,8 +703,7 @@ mod tests {
             .collect();
         t.write("a.txt", long.as_bytes());
         t.write("short.txt", b"needle one\n");
-        let llm = t.write("fake-llm", b"#!/bin/sh\ncat >/dev/null; echo two matches\n");
-        std::fs::set_permissions(&llm, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        let llm = crate::testutil::fake_worker(&t, "fake-llm", &[("Count", "two matches")]);
         std::env::set_var("ZAZZLE_LLM", &llm);
         let out = run_cmd(t.path(), &["find", "needle", "a.txt", "--llm", "Count the matches"]);
         assert!(out.text.starts_with("two matches\n[post-processed by the local model: ~"), "{}", out.text);
@@ -720,8 +727,16 @@ mod tests {
         let _g = crate::testutil::env_lock();
         let t = TempDir::new();
         t.write("AGENTS.md", b"# Rules\nBe kind.\n");
-        let fake = t.write("fake-llm", b"#!/bin/sh\nfor a; do last=$a; done\ncase \"$*\" in *grammar*) seq -f %g:y -s \" \" 99;; *cut*) echo half; exit 3;; *) echo \"$last\";; esac\n");
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        let fake = crate::testutil::fake_worker(
+            &t,
+            "fake-llm",
+            &[
+                ("grammar", "1:h 2:h 3:h"),
+                ("cut", r#"{"text":"half","truncated":true}"#),
+                ("Hi there", "Hi there"),
+                ("--x y", "--x y"),
+            ],
+        );
         std::env::set_var("ZAZZLE_LLM", &fake);
         assert_eq!(run_cmd(t.path(), &["prompt", "--effort", "low", "Hi", "there"]).text, "Hi there");
         assert_eq!(

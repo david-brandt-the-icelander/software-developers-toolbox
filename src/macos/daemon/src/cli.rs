@@ -119,6 +119,49 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
     }
 }
 
+// Runs `agent chat` or `agent prompt` as a client of the daemon, which keeps this terminal's chat and the loaded model.
+fn llm_client(cmd: &str, rest: &[String]) -> ExitCode {
+    use crate::chat_client as c;
+    let sock = match crate::client::socket_path() {
+        Ok(s) => s,
+        Err(e) => return finish(Err(e.to_string())),
+    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).display().to_string();
+    let daemon = |args: &[String]| {
+        let req = crate::proto::Request { cwd: cwd.clone(), session: String::new(), args: args.to_vec() };
+        match crate::client::call_autostart(&sock, &req, &crate::client::spawn_daemon) {
+            Ok((0, text)) => Ok(text),
+            Ok((_, text)) => Err(text.strip_prefix("error: ").unwrap_or(&text).to_string()),
+            Err(e) => Err(format!("cannot reach daemon: {e}")),
+        }
+    };
+    let fetch = |model: Option<&str>| crate::llm::fetch(model);
+    let io = c::Io { daemon: &daemon, fetch: &fetch };
+    let key = c::terminal_key();
+    if cmd == "chat" {
+        let mut out = std::io::stdout();
+        let r = match c::Raw::new() {
+            Some(mut raw) => c::chat(&io, &key, &mut raw, &mut out),
+            None => c::chat(&io, &key, &mut c::Lines(std::io::stdin().lock()), &mut out),
+        };
+        return finish(r.map(|()| String::new()));
+    }
+    let mut stdin = || {
+        let mut s = String::new();
+        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut s);
+        s
+    };
+    match c::prompt(&io, &key, rest, &mut stdin) {
+        Ok((text, code)) => {
+            if !text.is_empty() {
+                println!("{}", text.trim_end());
+            }
+            ExitCode::from(code)
+        }
+        Err(e) => finish(Err(e)),
+    }
+}
+
 // Runs one command in this process and writes its output; returns the exit status.
 pub fn run_in_process(
     engine: &Engine,
@@ -369,7 +412,10 @@ pub fn main(args: Vec<String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),
-        Cli::Llm(rest) => finish(Err(crate::tools::exec("ai-agent", &rest))),
+        Cli::Llm(rest) => match rest.split_first() {
+            Some((c, r)) if c == "chat" || c == "prompt" => llm_client(c, r),
+            _ => finish(Err(crate::tools::exec("ai-agent", &rest))),
+        },
         Cli::Wrap(rest) => match wrap::main(&rest, &mut std::io::stdout()) {
             Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
             Err(e) => finish(Err(e)),
@@ -412,6 +458,45 @@ mod tests {
     }
 
     // Checks every subcommand parses.
+    // Checks `agent prompt` reaches a running daemon, joins this terminal's chat and prints the answer, runs a / command without the daemon, and fails on a bad flag.
+    #[test]
+    fn test_llm_client_through_the_daemon() {
+        let _g = crate::testutil::env_lock();
+        let t = crate::testutil::TempDir::new();
+        let llm = t.write(
+            "llm",
+            b"#!/bin/sh\ncase \"$1\" in fetch) echo qwen3.5-4b; exit 0;; esac\necho '{\"ready\":\"qwen3.5-4b\"}'\nwhile read l; do echo '{\"text\":\"pong\"}'; done\n",
+        );
+        std::fs::set_permissions(&llm, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        let srv = crate::server::tests::Running::start(Duration::from_secs(30));
+        for (k, v) in [
+            ("ZAZZLE_SOCK", srv.sock.as_os_str()),
+            ("ZAZZLE_LLM", llm.as_os_str()),
+            ("ZAZZLE_CHAT_DIR", t.path().as_os_str()),
+            ("ZAZZLE_CHAT_SESSION", "cli-test".as_ref()),
+        ] {
+            std::env::set_var(k, v);
+        }
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let codes = [
+            llm_client("prompt", &v(&["ping"])),
+            llm_client("prompt", &v(&["/help"])),
+            llm_client("prompt", &v(&["/quit"])),
+            llm_client("prompt", &v(&["--bogus"])),
+        ];
+        let chat = crate::chat::load(t.path(), "cli-test").expect("the prompt joined the terminal's chat");
+        for k in ["ZAZZLE_SOCK", "ZAZZLE_LLM", "ZAZZLE_CHAT_DIR", "ZAZZLE_CHAT_SESSION"] {
+            std::env::remove_var(k);
+        }
+        srv.finish().expect("finish");
+        crate::llm::reap(Duration::ZERO);
+        assert_eq!(codes, [ExitCode::SUCCESS, ExitCode::SUCCESS, ExitCode::SUCCESS, ExitCode::from(2)]);
+        assert_eq!(
+            chat.history,
+            [("user".to_string(), "ping".to_string()), ("assistant".to_string(), "pong".to_string())]
+        );
+    }
+
     #[test]
     fn test_parse_subcommands() {
         let _g = crate::testutil::env_lock();

@@ -624,7 +624,7 @@
       "outcome": "The agent spends one call and reads checked excerpts and explicit unknowns, not the files the model read.",
       "constraints": [
         "Only citations are checked, not the claims; the report says so.",
-        "One `ai-agent worker --no-download` serves every turn, so the model loads once per investigation; the worker holds the one-model lock until the run ends, each answer is bounded by ZAZZLE_LLM_TIMEOUT, and a ai-agent without the worker is asked once per turn instead."
+        "The daemon's shared worker serves every turn and stays loaded after the run until idle (ZAZZLE_LLM_IDLE), so the model loads once; each answer is bounded by ZAZZLE_LLM_TIMEOUT."
       ],
       "implementation": [
         {
@@ -638,6 +638,50 @@
         {
           "path": "src/macos/daemon/src/investigate/seed.rs",
           "symbol": "candidates"
+        }
+      ]
+    },
+    {
+      "id": "terminal-chat",
+      "name": "Terminal chat with the local model",
+      "description": "`zazzle agent chat` talks with the user's local model in the terminal, and `zazzle agent prompt` sends one message in the same conversation; each terminal has its own conversation, which resumes, and the daemon keeps the model loaded between messages.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/chat_client.rs",
+          "symbol": "chat"
+        },
+        {
+          "path": "src/macos/daemon/src/chat_client.rs",
+          "symbol": "prompt"
+        },
+        {
+          "path": "src/macos/daemon/src/chat.rs",
+          "symbol": "op"
+        }
+      ],
+      "behavior": "The client names the terminal by its device and shell session (ZAZZLE_CHAT_SESSION overrides) and calls the daemon's llm-chat command. Opening a chat resolves its model with `ai-agent fetch`, downloading it with progress on the first use, and chat prints a banner with the model, the effort and whether this terminal's conversation is resumed. Messages carry the chat's earlier turns to the shared worker; the turns are kept on disk, so the chat survives the worker stopping when idle and the daemon restarting. `/effort`, `/model`, `/clear`, `/new`, `/status`, `/help` and `/quit` work in both; Ctrl+K releases the chat and starts a new one with the same model and effort; Ctrl+C leaves. prompt prints no banner, applies its flags to that message only and exits 3 when the answer was cut short.",
+      "outcome": "Only the first message waits for the model to load; later ones, and later prompts in the same terminal, answer in seconds and remember the conversation.",
+      "constraints": [
+        "The answer prints when it is complete, not streamed.",
+        "Ctrl+C while the model answers stops the client; the daemon still finishes that answer, and the next call waits for it.",
+        "One model is in memory at a time: switching models, or an agent's call naming another one, reloads."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask_in"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "reap"
+        },
+        {
+          "path": "src/macos/daemon/src/chat_client.rs",
+          "symbol": "Editor"
+        },
+        {
+          "path": "src/macos/ai-agent/src/worker.rs",
+          "symbol": "answer"
         }
       ]
     }

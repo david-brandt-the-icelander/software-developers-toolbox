@@ -15,11 +15,12 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .clau
 - Read a skill's file only when its description fits the task.
 - `--purpose NAME` (repeatable) keeps only files and segments marked for NAME with a marker on its own line or after a comment opener (`<!-- #zazzle-purpose:NAME -->`, or a `-begin:NAME` / `-end:NAME` pair); unmarked files stay. A segment prints as `FILE:A-B` and only those lines.
 
-## Local models: llm and prompt
-- `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] TEXT..` prints a local model's answer; `-` in TEXT (or no TEXT) reads standard input: `git diff | zazzle agent prompt "Review this diff:" -`.
+## Local models: llm, chat and prompt
+- `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] TEXT..` prints a local model's answer; `-` in TEXT (or no TEXT) reads standard input: `git diff | zazzle agent prompt "Review this diff:" -`. It adds the message to this terminal's conversation (the flags apply to that message only), so a follow-up prompt sees the earlier ones; `zazzle agent prompt /clear` forgets them.
+- `zazzle agent chat` is the same conversation, interactive, for the user: `/effort`, `/model`, `/clear`, `/new`, `/status`, `/quit`; Ctrl+K starts a new conversation, Ctrl+C leaves. the daemon keeps the model loaded between messages, so only the first one waits for it to load.
 - `zazzle agent llm` lists the models (size, downloaded or not, default); `--model NAME [--effort E]` downloads one and makes it the default; `--remove NAME` deletes it. Docs: `src/macos/ai-agent/README.md`.
 - The first use downloads `ai-agent` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
-- Use `--effort low` for quick factual or formatting tasks; thinking is hidden unless `--show-thinking`.
+- The effort is low (no thinking) unless the chat's `/effort` or `--effort` says otherwise; thinking is never printed.
 - Exit 3 means the token limit cut the answer short: raise `--max-tokens` or lower `--effort`.
 - To spend fewer tokens on output you need only part of (an API response, a log, a test run), add `--llm 'INSTRUCTION'` to the zazzle command (`zazzle run --llm 'Only the failing tests' -- cargo test`; MCP: `llm` on reading tools). The answer is the local model's and may drop detail: rerun without `--llm` when exact text matters.
 - Before a task in an unfamiliar repository, `zazzle brief 'WHAT YOU WILL DO' --path PATH --purpose NAME` (MCP `zazzle_brief`). The paths and purposes decide what applies before the model is asked: every rule section that applies is printed verbatim, and the local model only ranks the skills. A budget (`--budget`, default 8000 tokens) drops whole skills, never part of a section or a rule. Sections this session already received (from `get-rules`, a read's notes or an earlier brief) are named, not repeated; `zazzle get-rules PATH --again` resends everything.

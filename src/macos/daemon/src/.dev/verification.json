@@ -923,7 +923,7 @@
     },
     {
       "id": "local-model",
-      "title": "Local model calls, --llm, brief and investigate",
+      "title": "Local model calls, --llm, brief, investigate and chats",
       "summary": "The ai-agent subprocess, post-processing, brief and investigate are tested against shell scripts or scripted replies standing in for the model, so no model is needed.",
       "subject": [
         {
@@ -937,30 +937,23 @@
         {
           "path": "src/macos/daemon/src/.dev/feature.json",
           "entityId": "local-investigation"
+        },
+        {
+          "path": "src/macos/daemon/src/.dev/feature.json",
+          "entityId": "terminal-chat"
         }
       ],
       "criteria": [
-        "The arguments (prompt --no-download, flags, instruction) and the input reach ai-agent, and exit 3 marks the answer cut short.",
-        "Failures name the reason: the model's error line, a bare exit code, a timeout, too much input or a missing program.",
         "The answer is marked with the tokens saved, empty output passes through, and ZAZZLE_LLM_TIMEOUT is read.",
         "--llm post-processes a daemon command's output, and a model failure becomes the command's error.",
         "`zazzle run --llm` prints the answer, or the reason and the raw output.",
         "brief applies paths and purposes before inference, splits rule files at headings inside purpose ranges without markers, always prints every rule section, asks the model only to rank skills (not at all when there are none), adds skills whole within the budget, prints the rules when the model fails, and uses the shared ledger: nothing already delivered is repeated and only what was printed is recorded.",
-        "investigate resolves a starting symbol missing from the scope before inference, with real candidate files and symbols, or a no-evidence report without asking the model; repeated lookups (also a seed the model asks for again) are not run again and two turns of only repeats end the run; an empty answer after evidence gets one repair turn, then a PARTIAL report with the evidence verbatim (the two logged failures)."
+        "investigate resolves a starting symbol missing from the scope before inference, with real candidate files and symbols, or a no-evidence report without asking the model; repeated lookups (also a seed the model asks for again) are not run again and two turns of only repeats end the run; an empty answer after evidence gets one repair turn, then a PARTIAL report with the evidence verbatim (the two logged failures).",
+        "The shared worker starts once for many calls, reuses whatever model is loaded when none is named, is replaced for another model or program, is dropped when it dies, and is stopped when idle; fetch returns the model's full name.",
+        "A terminal's chat starts at low effort, keeps its turns across calls, takes a model and effort, clears, is released, does not record a failed turn and trims its oldest turns.",
+        "The chat client prints whether a chat is resumed, runs / commands, Ctrl+K starts a new chat with the same model and effort, and prompt joins the chat without a banner, with per-message flags and exit 3 when cut short; the line editor handles UTF-8, backspace, Ctrl+U, escape sequences, Ctrl+C, Ctrl+K and Ctrl+D."
       ],
       "checks": [
-        {
-          "type": "automated",
-          "path": "src/macos/daemon/src/llm.rs",
-          "symbol": "test_llm_ask_with",
-          "command": "cargo test -p daemon (in src/macos)"
-        },
-        {
-          "type": "automated",
-          "path": "src/macos/daemon/src/llm.rs",
-          "symbol": "test_llm_ask_failures",
-          "command": "cargo test -p daemon (in src/macos)"
-        },
         {
           "type": "automated",
           "path": "src/macos/daemon/src/llm.rs",
@@ -1037,6 +1030,42 @@
           "type": "automated",
           "path": "src/macos/daemon/src/investigate/tests.rs",
           "symbol": "test_investigate_repeats_errors_and_evidence_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "test_llm_pool",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/chat.rs",
+          "symbol": "test_chat_turns_persist",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/chat.rs",
+          "symbol": "test_chat_errors_and_trim",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/chat_client/tests.rs",
+          "symbol": "test_chat_loop",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/chat_client/tests.rs",
+          "symbol": "test_prompt",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/chat_client/tests.rs",
+          "symbol": "test_editor",
           "command": "cargo test -p daemon (in src/macos)"
         }
       ]

@@ -5,7 +5,8 @@ Runs open-weight models on your own machine, so an agent (or you) can ask a loca
 ```bash
 zazzle agent llm                                        # the catalogue: size, downloaded or not, the default
 zazzle agent llm --model qwen3.5-9b --effort high       # download it (once) and make it and the effort the default
-zazzle agent prompt "Why is the sky blue?"             # ask the default model
+zazzle agent chat                                       # talk in this terminal; /help, Ctrl+K new conversation, Ctrl+C leaves
+zazzle agent prompt "Why is the sky blue?"             # one message in this terminal's conversation
 git diff | zazzle agent prompt "Review this diff:" -    # `-` is standard input; no TEXT at all reads only standard input
 zazzle agent prompt --model gpt-oss-20b --effort low --system "Answer in one line." "What is RAII?"
 zazzle agent llm --remove qwen3.5-9b                    # delete a downloaded model
@@ -34,13 +35,16 @@ zazzle agent llm --remove qwen3.5-9b                    # delete a downloaded mo
 A name may be shortened to a unique prefix (`--model gemma-4-1`). To add a model: its architecture must be one the bundled llama.cpp knows (`llama-cpp-2`), then add an entry with the repository, the commit (`https://huggingface.co/api/models/REPO`, `sha`), the file and its LFS SHA-256 and size (`/api/models/REPO/tree/COMMIT`).
 
 ## Effort
-`--effort low|medium|high` (default `medium`, or what `llm --effort` saved) is passed to the model's own chat template as `enable_thinking` (off for `low`) and `reasoning_effort` (gpt-oss and Qwen 3.8 read it). It also sets the default token limit, thinking included: 4096, 8192 and 32768 (`--max-tokens` overrides). Models without a thinking mode (`qwen3-coder-next`) answer the same at every effort.
+`zazzle agent chat` and `zazzle agent prompt` start each terminal's conversation at `low` (`/effort` changes it). `ai-agent prompt --effort low|medium|high` (default `medium`, or what `llm --effort` saved) is passed to the model's own chat template as `enable_thinking` (off for `low`) and `reasoning_effort` (gpt-oss and Qwen 3.8 read it). It also sets the default token limit, thinking included: 4096, 8192 and 32768 (`--max-tokens` overrides). Models without a thinking mode (`qwen3-coder-next`) answer the same at every effort.
 
 ## Output
-- The answer streams to standard output. Thinking is dropped, or printed to standard error with `--show-thinking`.
+- `zazzle agent prompt` and `chat` print the whole answer once it is done; thinking is dropped. `ai-agent prompt` streams it, and prints thinking to standard error with `--show-thinking`.
 - Exit 0 on a full answer; 3 when the token limit cut it short (a note on standard error says whether any answer came at all); 4 when `--no-download` finds the model missing; 2 for errors (unknown model, a failed download, a prompt longer than the model reads).
 - For programs: `--no-download` never starts a model download, `--grammar GBNF` holds the answer to a grammar (root rule `root`; use `--effort low` so no thinking comes first), and `--temp 0` always takes the likeliest token, so the same question gets the same answer. The daemon uses all three when agents ask the model (`zazzle brief`, `--llm`): see `src/macos/daemon/README.md`.
 - `ZAZZLE_LLM_LOG=1` shows llama.cpp's own log on standard error.
+
+## The worker
+`ai-agent worker [--model M] [--effort E] [--no-download]` loads a model once and answers JSON lines on standard input (`{"user", "history"?: [{"role","content"}..], "system"?, "effort"?, "max_tokens"?, "temp"?, "grammar"?}`), one JSON line each (`{"text", "tokens", "truncated"}` or `{"error"}`), after a `{"ready": MODEL}` line. daemon keeps one running for chats and agents' calls and stops it when idle (`src/macos/daemon/README.md`, "Chat and prompt"). `ai-agent fetch [--model M]` downloads a model unless it is here and prints its full name; the chat client uses it so a download shows its progress in the user's terminal.
 
 ## How it runs
 - `src/engine.rs`: llama.cpp through the `llama-cpp-2` crate. The model is memory-mapped with every layer on the GPU (Metal on Apple Silicon; the Linux and Intel macOS builds use the CPU). The context is the prompt plus the token limit, capped at what the model was trained on. Sampling: a grammar first when given, then top-k 40, top-p 0.95, min-p 0.05 and temperature 0.7 (`--temp`), or the likeliest token at `--temp 0`.

@@ -69,7 +69,14 @@ enum Cmd {
         /// The prompt.
         text: Vec<String>,
     },
-    /// Keep a model loaded and answer JSON-line prompts on standard input (for `zazzle investigate`).
+    /// Download a model (the default when none is named) unless it is here, and print its name (for `zazzle agent chat`).
+    #[command(hide = true)]
+    Fetch {
+        /// The model instead of the default.
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Keep a model loaded and answer JSON-line prompts on standard input (for daemon's local model calls and chats).
     #[command(hide = true)]
     Worker {
         /// The model to load instead of the default.
@@ -221,6 +228,7 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     let ask = engine::Ask {
         path: &path,
         system: a.system.as_deref(),
+        history: &[],
         user: &user,
         effort: &effort,
         max_tokens: a.max_tokens.unwrap_or_else(|| max_tokens(&effort)),
@@ -255,6 +263,13 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     let what = if answered { "the answer is cut short" } else { "still thinking, no answer yet" };
     eprintln!("[stopped after {} tokens, {what}: raise --max-tokens, or lower --effort]", done.tokens);
     Ok(3)
+}
+
+// Runs `fetch`: resolves the model (a prefix, or the default), downloads it unless here, and returns its full name.
+fn fetch(root: &Path, model: Option<&str>) -> Result<String, String> {
+    let m = catalog::find(model.unwrap_or(&store::defaults(root).model))?;
+    ensure(root, m)?;
+    Ok(m.name.to_string())
 }
 
 // Runs `worker`: loads the model once (status 4 with --no-download when it is missing), then answers JSON-line prompts until standard input closes.
@@ -306,6 +321,10 @@ fn main() -> ExitCode {
             PromptArgs { model, effort, system, max_tokens, show_thinking, no_download, grammar, temp, text },
         ),
         Cmd::Worker { model, effort, no_download } => worker(&root, model, effort, no_download),
+        Cmd::Fetch { model } => fetch(&root, model.as_deref()).map(|name| {
+            println!("{name}");
+            0
+        }),
     });
     match result {
         Ok(code) => ExitCode::from(code),
@@ -375,6 +394,7 @@ mod tests {
             text: vec!["hi".into()],
         };
         assert_eq!(worker(&root, None, None, true), Ok(4));
+        assert!(fetch(&root, Some("nope")).expect_err("unknown").contains("nope"));
         assert!(worker(&root, Some("nope".into()), None, true).is_err());
         assert_eq!(prompt(&root, absent), Ok(4));
         let _ = std::fs::remove_dir_all(&root);
