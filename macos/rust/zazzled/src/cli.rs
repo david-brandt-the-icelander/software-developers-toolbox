@@ -117,6 +117,9 @@ pub fn run_in_process(
         caller: std::cell::RefCell::new(None),
     };
     let o = cmd::run(&ctx, args);
+    if !o.notes.is_empty() {
+        let _ = writeln!(err, "{}", o.notes.trim_start_matches('\n'));
+    }
     if o.raw {
         let _ = write!(out, "{}", o.text);
     } else if o.status == 0 {

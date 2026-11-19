@@ -410,7 +410,7 @@
           "symbol": "for_paths"
         }
       ],
-      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; each file is sent whole, once per session and content revision, sharing the session's rule ledger with get-rules.",
+      "behavior": "In a session, the first successful read or edit of a path appends `[instructions for this path: FILE]` with each AGENTS.md and CLAUDE.md in the folders between the file and its work tree root that are below the working directory, and each `.claude/rules/*.md` (`paths:`) or `.github/instructions/*.instructions.md` (`applyTo:`) whose globs match; narrowed to the purposes the session last passed to get-rules, each file or marked range sent once per session and content revision through the ledger shared with get-rules. The instructions travel as notes, apart from the source: on the command line they go to standard error, so a pipe (for example into `zazzle agent prompt`) carries only the source while the caller still sees the rules; over MCP they follow the answer.",
       "outcome": "Sending reads through zazzle instead of the client's own tools does not lose a folder's own rules.",
       "constraints": [
         "No session, no instructions added.",

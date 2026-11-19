@@ -27,7 +27,7 @@ const RESERVED: [&str; 18] = [
 
 // A plain-text reply for humans.
 fn text(s: String, status: u8) -> Output {
-    Output { text: s, status, idable: false, raw: false }
+    Output { text: s, status, idable: false, raw: false, notes: String::new() }
 }
 
 // Checks an install name: lowercase letters, digits and dashes, not one of zazz's own words.

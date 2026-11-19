@@ -74,27 +74,29 @@ pub struct Output {
     pub status: u8,
     pub idable: bool,
     pub raw: bool,
+    // Text for the caller, not for whatever reads standard output (the rules that apply to what was read): standard error on the command line, appended over MCP.
+    pub notes: String,
 }
 
 impl Output {
     // A successful result whose text may be deduplicated within a session.
     pub fn ok(text: String) -> Output {
-        Output { text, status: 0, idable: true, raw: false }
+        Output { text, status: 0, idable: true, raw: false, notes: String::new() }
     }
 
     // A successful result that must always be sent in full.
     pub fn plain(text: String) -> Output {
-        Output { text, status: 0, idable: false, raw: false }
+        Output { text, status: 0, idable: false, raw: false, notes: String::new() }
     }
 
     // A failure with a one-line message.
     pub fn err(msg: &str) -> Output {
-        Output { text: format!("error: {msg}"), status: 2, idable: false, raw: false }
+        Output { text: format!("error: {msg}"), status: 2, idable: false, raw: false, notes: String::new() }
     }
 
     // Text written to standard output exactly as it is (no newline added), with any exit status.
     pub fn raw(text: String, status: u8) -> Output {
-        Output { text, status, idable: false, raw: true }
+        Output { text, status, idable: false, raw: true, notes: String::new() }
     }
 }
 
@@ -224,9 +226,11 @@ pub fn run(ctx: &Ctx, args: &[String]) -> Output {
     if out.status == 0 && !ctx.session.is_empty() && matches!(cmd.as_str(), "read" | "cat" | "edit") {
         let (has, mark) = ledger(ctx);
         let l = crate::rules::Ledger { has: &has, mark: &mark };
-        out.text.push_str(&crate::nested::for_paths(&ctx.cwd, &touched(&ctx.cwd, rest), &l));
+        let purposes = ctx.engine.sessions.purposes(&ctx.session);
+        out.notes.push_str(&crate::nested::for_paths(&ctx.cwd, &touched(&ctx.cwd, rest), &purposes, &l));
     }
-    ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &out.text, out.status, deduplicated);
+    let shown = format!("{}{}", out.text, out.notes);
+    ctx.engine.deliveries.record(&ctx.session, cmd, pre_dedupe_bytes, &shown, out.status, deduplicated);
     out
 }
 
@@ -244,6 +248,9 @@ fn get_rules(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
     let (has, mark) = ledger(ctx);
     let l = crate::rules::Ledger { has: &has, mark: &mark };
     let l = (!ctx.session.is_empty()).then_some(&l);
+    if let Some(p) = crate::rules::purposes(rest).filter(|_| !ctx.session.is_empty()) {
+        ctx.engine.sessions.set_purposes(&ctx.session, p);
+    }
     crate::rules::get_rules(rest, &ctx.cwd, home.as_deref(), l).map(Output::plain)
 }
 

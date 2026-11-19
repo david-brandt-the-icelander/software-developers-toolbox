@@ -13,7 +13,7 @@ fn fail(name: &str, e: &Value, status: u8) -> Output {
         e["code"].as_str().unwrap_or("failed"),
         e["message"].as_str().unwrap_or("")
     );
-    Output { text, status, idable: false, raw: false }
+    Output { text, status, idable: false, raw: false, notes: String::new() }
 }
 
 // Turns argv into the script's input: parsed by the cli spec, or {"argv": [...]} without one.
@@ -80,7 +80,7 @@ pub fn run(ctx: &Ctx, what: &str, args: &[String]) -> Output {
     let input = match input_for(&name, &meta["manifest"], &argv, &ctx.cwd.to_string_lossy()) {
         Ok(Ok(v)) => v,
         Ok(Err(help)) => return Output::raw(help + "\n", 0),
-        Err(e) => return Output { text: e, status: 2, idable: false, raw: false },
+        Err(e) => return Output { text: e, status: 2, idable: false, raw: false, notes: String::new() },
     };
     let (streams, tty) = match ctx.caller.borrow_mut().take() {
         Some(c) => {

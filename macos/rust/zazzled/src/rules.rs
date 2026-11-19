@@ -59,38 +59,35 @@ pub fn canonical(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
-// Formats the found files the session has not been sent, records them, and names the ones left out; without a ledger every file is formatted.
+// Returns the part of a found file the recipient has not been sent (the whole file, or its unsent line ranges) and records it as sent; None when nothing is new.
+pub fn fresh(f: &Found, l: &Ledger) -> Option<Found> {
+    let text = f.text.as_deref()?;
+    let canon = canonical(&f.path);
+    let whole = file_key(&canon, text);
+    if (l.has)(&whole) {
+        return None;
+    }
+    if f.lines.is_empty() {
+        (l.mark)(&whole);
+        return Some(Found { kind: f.kind, path: f.path.clone(), lines: Vec::new(), text: f.text.clone() });
+    }
+    let lines: Vec<(usize, usize)> =
+        f.lines.iter().copied().filter(|r| !(l.has)(&range_key(&canon, text, *r))).collect();
+    lines.iter().for_each(|r| (l.mark)(&range_key(&canon, text, *r)));
+    (!lines.is_empty()).then(|| Found { kind: f.kind, path: f.path.clone(), lines, text: f.text.clone() })
+}
+
+// Formats the found files the recipient has not been sent, records them, and names the ones left out; without a ledger every file is formatted.
 pub fn deliver(found: &[Found], skill_bodies: bool, ledger: Option<&Ledger>) -> (String, Vec<PathBuf>) {
     let (mut out, mut skipped) = (String::new(), Vec::new());
     for f in found {
-        let Some(text) = f.text.as_deref() else {
-            out.push_str(&body(f, skill_bodies));
-            continue;
-        };
-        let canon = canonical(&f.path);
-        let whole = file_key(&canon, text);
-        let Some(l) = ledger else {
-            out.push_str(&body(f, skill_bodies));
-            continue;
-        };
-        if (l.has)(&whole) {
-            skipped.push(f.path.clone());
-            continue;
+        match ledger {
+            Some(l) if f.text.is_some() => match fresh(f, l) {
+                Some(part) => out.push_str(&body(&part, skill_bodies)),
+                None => skipped.push(f.path.clone()),
+            },
+            _ => out.push_str(&body(f, skill_bodies)),
         }
-        if f.lines.is_empty() {
-            (l.mark)(&whole);
-            out.push_str(&body(f, skill_bodies));
-            continue;
-        }
-        let fresh: Vec<(usize, usize)> =
-            f.lines.iter().copied().filter(|r| !(l.has)(&range_key(&canon, text, *r))).collect();
-        if fresh.is_empty() {
-            skipped.push(f.path.clone());
-            continue;
-        }
-        fresh.iter().for_each(|r| (l.mark)(&range_key(&canon, text, *r)));
-        let part = Found { kind: f.kind, path: f.path.clone(), lines: fresh, text: f.text.clone() };
-        out.push_str(&body(&part, skill_bodies));
     }
     (out, skipped)
 }
@@ -152,6 +149,11 @@ fn union(paths: &[PathBuf], wanted: &[String], home: Option<&Path>) -> Result<Ve
         }
     }
     Ok(out)
+}
+
+// Returns the purposes a get-rules command line asks for, which become the session's active purposes; None when it does not parse or names none.
+pub fn purposes(argv: &[String]) -> Option<Vec<String>> {
+    parse(argv).ok().map(|a| a.wanted).filter(|w| !w.is_empty())
 }
 
 // Runs get-rules for a session: the rules, imports and skills that apply to the paths and that the session was not yet sent, then a line naming what it already has.
@@ -260,12 +262,12 @@ mod tests {
         t.write("AGENTS.md", b"root rule changed\n");
         let changed = get_rules(&args(&["web/b.ts"]), &root, None, Some(&l)).expect("changed");
         assert!(changed.contains("root rule changed"), "{changed}");
-        let (auto, _) = (crate::nested::for_paths(&root, &[root.join("web/b.ts")], &l), ());
+        let (auto, _) = (crate::nested::for_paths(&root, &[root.join("web/b.ts")], &[], &l), ());
         assert!(!auto.contains("common web rule"), "the appendix skips what get-rules sent: {auto}");
         let seen2 = RefCell::new(Vec::new());
         let (has2, mark2) = ledger(&seen2);
         let l2 = Ledger { has: &has2, mark: &mark2 };
-        let auto2 = crate::nested::for_paths(&root, &[root.join("api/a.cs")], &l2);
+        let auto2 = crate::nested::for_paths(&root, &[root.join("api/a.cs")], &[], &l2);
         assert!(auto2.contains("api rule") && !auto2.contains("root rule"), "{auto2}");
         let after = get_rules(&args(&["api/a.cs"]), &root, None, Some(&l2)).expect("after");
         assert!(
@@ -302,7 +304,10 @@ mod tests {
     fn test_daemon_route() {
         let (_t, root) = repo();
         let e = crate::engine::Engine::new();
-        let run = |s: &str, a: &[&str]| crate::testutil::run_cmd_with(&e, &root, s, a).text;
+        let run = |s: &str, a: &[&str]| {
+            let o = crate::testutil::run_cmd_with(&e, &root, s, a);
+            o.text + &o.notes
+        };
         assert!(run("s1", &["read", "api/a.cs"]).contains("api rule"));
         let rules = run("s1", &["agent", "get-rules", "api/a.cs"]);
         assert!(rules.contains("root rule") && rules.contains("not repeated: api/AGENTS.md"), "{rules}");
