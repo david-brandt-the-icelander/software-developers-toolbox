@@ -315,6 +315,8 @@ mod tests {
         run("", &["forget-sessions", "s1"]);
         assert!(run("s1", &["get-rules", "api/a.cs"]).contains("api rule"), "a reset sends again");
         assert!(run("", &["get-rules", "api/a.cs"]).contains("api rule"), "no session, no ledger");
+        assert!(run("s1", &["agent", "get-rules", "--help"]).contains("get-rules"));
+        assert!(run("s1", &["agent", "--version"]).starts_with("zazzle-agent "));
         assert!(run("s1", &["agent", "--help"]).contains("get-rules"));
         assert!(run("s1", &["agent", "nope"]).contains("unknown command"));
         let v = serde_json::json!({"paths": ["a", "b"], "purpose": ["review"], "again": true});

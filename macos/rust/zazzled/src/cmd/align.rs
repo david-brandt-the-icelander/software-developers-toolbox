@@ -95,5 +95,6 @@ mod tests {
         assert_eq!(args("outline", &v(&["--path", "a.rs", "-d", "2"])), v(&["a.rs", "-d", "2"]));
         assert_eq!(args("ls", &v(&["--path", "a"])), v(&["--path", "a"]));
         assert_eq!(args("find", &v(&["x", "a"])), v(&["x", "a"]));
+        assert_eq!(args("find", &v(&["-", "--path", "a"])), v(&["--", "-", "a"]));
     }
 }

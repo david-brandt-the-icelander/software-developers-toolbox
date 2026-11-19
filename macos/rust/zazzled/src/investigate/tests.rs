@@ -227,3 +227,34 @@ fn test_investigate_through_zazzle() {
     assert_eq!(schema()["required"][0], "question");
     assert!(tool_args(&serde_json::json!({})).is_err());
 }
+
+// Checks a refused outline, a range read, and that evidence past the cap leaves no lookups and asks for the answer.
+#[test]
+fn test_investigate_ranges_refusals_and_cap() {
+    let (t, root) = repo();
+    let big: String = (1..=1300)
+        .map(|i| format!("    var value{i} = Compute(input, {i}, \"a field that takes room\");\n"))
+        .collect();
+    t.write("api/Big.cs", big.as_bytes());
+    let e = crate::engine::Engine::new();
+    let turn = "READ api/Big.cs:1-400\nREAD api/Big.cs:401-800\nREAD api/Big.cs:801-1200";
+    let s = Script::new(vec![
+        Ok("OUTLINE sim/Fake.cs\nREAD api/Endpoint.cs:2-3\nREAD api/Endpoint.cs:x"),
+        Ok(turn),
+        Ok(turn),
+        Ok(turn),
+        Ok("ANSWER\nUNKNOWN nothing more"),
+    ]);
+    let o = go(&root, &e, &s, &["q", "--path", "api", "--steps", "12"]).expect("run");
+    let seen = s.seen.borrow();
+    assert!(
+        seen[1].1.contains("### OUTLINE sim/Fake.cs\nrefused:")
+            && seen[1].1.contains("2\t  void Handle(Request r) {"),
+        "{}",
+        seen[1].1
+    );
+    assert!(seen[1].1.contains("### READ api/Endpoint.cs:x\nrefused:"), "{}", seen[1].1);
+    let last = &seen.last().expect("last").1;
+    assert!(last.contains("No lookups left: reply with ANSWER now."), "the cap ends the lookups early");
+    assert!(seen.len() < 12 && o.text.contains("complete."), "{}", o.text);
+}
