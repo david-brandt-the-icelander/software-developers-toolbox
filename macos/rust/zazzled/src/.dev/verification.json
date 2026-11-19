@@ -1032,6 +1032,12 @@
           "path": "macos/rust/zazzled/src/investigate/seed.rs",
           "symbol": "test_seed_candidates",
           "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/investigate/tests.rs",
+          "symbol": "test_investigate_repeats_errors_and_evidence_cap",
+          "command": "cargo test -p zazzled (in macos/rust)"
         }
       ]
     }

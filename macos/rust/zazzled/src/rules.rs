@@ -129,7 +129,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
 }
 
 // Lists the union of the files that apply to several paths, each file and range once, in the order first met.
-fn union(paths: &[PathBuf], wanted: &[String], home: Option<&Path>) -> Result<Vec<Found>, String> {
+pub fn union(paths: &[PathBuf], wanted: &[String], home: Option<&Path>) -> Result<Vec<Found>, String> {
     let mut out: Vec<Found> = Vec::new();
     for p in paths {
         for f in list_rules(p, home, wanted, Path::new("/"))? {

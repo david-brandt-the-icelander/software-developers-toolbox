@@ -736,7 +736,14 @@ mod tests {
         assert!(run_cmd(t.path(), &["prompt", "--model", "m", "hi"]).text.contains("unknown flag --model"));
         assert!(run_cmd(t.path(), &["prompt"]).text.contains("usage: agent prompt"));
         let b = run_cmd(t.path(), &["agent", "brief", "be", "nice"]).text;
+        let e = Engine::new();
+        let s = |a: &[&str]| crate::testutil::run_cmd_with(&e, t.path(), "sess", a).text;
+        let first = s(&["brief", "be", "nice", "--purpose", "review", "--budget", "50"]);
+        let again = s(&["get-rules", "."]);
         std::env::remove_var("ZAZZLE_LLM");
+        assert!(first.contains("purposes: review") && first.contains("Be kind."), "{first}");
+        assert_eq!(e.sessions.purposes("sess"), ["review"], "a brief's purposes become the session's");
+        assert!(again.contains("already delivered this session") && !again.contains("Be kind."), "{again}");
         assert!(b.contains("==> rule AGENTS.md:1-2 <==\n# Rules\nBe kind."), "{b}");
         assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
     }

@@ -2,6 +2,7 @@
 use super::*;
 use crate::testutil::TempDir;
 use std::cell::RefCell;
+use zazzle_agent_rules_list::list_rules;
 
 // A rule file with a preamble, two headings, a fenced heading-like line and a purpose segment, and two skills.
 fn repo(t: &TempDir) -> PathBuf {
@@ -73,7 +74,9 @@ fn test_brief_sections() {
     let r = sections(&review);
     assert_eq!((r[0].heading.as_str(), r[0].lines, r[0].within), ("Review", (11, 12), Some((11, 12))));
     assert_eq!(verdicts(2), "root ::= \"1:\" v \" \" \"2:\" v\nv ::= \"h\" | \"m\" | \"n\"");
-    assert_eq!(ranked("1:m 2:h 2:n 3:y 9:h", 3), vec![1, 2, 0]);
+    assert_eq!(ranked("1:m 2:h 2:n 3:y 9:h 99999999999999999999999:h", 3), vec![1, 2, 0]);
+    let unreadable = Found { kind: Kind::Rule, path: root.join("x.md"), lines: Vec::new(), text: None };
+    assert!(sections(&[unreadable]).is_empty());
 }
 
 // Checks every rule section is sent whatever the model says, the model ranks only the skills, and a failing model still yields the rules.
@@ -81,12 +84,12 @@ fn test_brief_sections() {
 fn test_brief_mandatory_rules_and_ranking() {
     let t = TempDir::new();
     let root = repo(&t);
-    let (out, n) = go(&root, &["ship", "it"], None, &[], Ok("1:h 2:n"));
+    let (out, n) = go(&root, &["ship", "it", "--path", ".", "--path", "AGENTS.md"], None, &[], Ok("1:h 2:n"));
     let out = out.expect("brief");
     assert_eq!(n, 1);
     assert!(
         out.starts_with(
-            "brief for: ship it\nscope: .\n4 rule sections that apply (always sent); 1 of 2 skills"
+            "brief for: ship it\nscope: ., AGENTS.md\n4 rule sections that apply (always sent); 1 of 2 skills"
         ),
         "{out}"
     );
@@ -118,7 +121,7 @@ fn test_brief_purposes_and_paths_before_inference() {
     assert!(out.contains("==> rule api/AGENTS.md:1-2 <==\n# API\nNever change"), "{out}");
     let (session, _) = go(&root, &["review"], None, &["review"], Ok(""));
     assert!(session.expect("session").contains("purposes: review"), "the session's purposes apply");
-    assert_eq!(purposes(&["x".into(), "--purpose=review".into()]), Some(vec!["review".to_string()]));
+    assert_eq!(purposes(&["a=b".into(), "--purpose=review".into()]), Some(vec!["review".to_string()]));
     assert!(go(&root, &["x", "--purpose", "-bad"], None, &[], Ok(""))
         .0
         .expect_err("bad")

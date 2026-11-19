@@ -2,7 +2,7 @@
 use crate::rules::{canonical, file_key, range_key, Ledger};
 use regex::Regex;
 use std::path::{Path, PathBuf};
-use zazzle_agent_rules_list::{body, list_rules, purpose, Found, Kind};
+use zazzle_agent_rules_list::{body, purpose, Found, Kind};
 
 const MENU_CHARS: usize = 600;
 pub const DEFAULT_BUDGET: usize = 8000;
@@ -100,7 +100,7 @@ fn split(f: &Found, lines: &[(usize, &str)], within: Option<(usize, usize)>) -> 
 fn sections(found: &[Found]) -> Vec<Section> {
     let mut out = Vec::new();
     for f in found {
-        let Some(text) = f.text.as_deref() else { continue };
+        let text = f.text.as_deref().unwrap_or_default();
         let numbered: Vec<(usize, &str)> = text.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
         if f.kind != Kind::Skill {
             if f.lines.is_empty() {
@@ -164,18 +164,11 @@ fn delivered(s: &Section, text: &str, l: &Ledger) -> bool {
     (l.has)(&file_key(&canonical(&s.path), text)) || outer.is_some_and(|k| (l.has)(&k)) || (l.has)(&own)
 }
 
-// Records the sections sent: each one's own key, and the range or file it came from once all of that has been sent.
+// Records the sections sent: each one's own key, and for a rule section the range or file it came from, which is then complete, since every rule section not already delivered is always sent.
 fn record(all: &[Section], texts: &[&str], sent: &[usize], l: &Ledger) {
     for &i in sent {
         let (own, outer) = keys(&all[i], texts[i]);
-        (l.mark)(&own);
-        let Some(outer) = outer else { continue };
-        let complete = (0..all.len())
-            .filter(|&j| keys(&all[j], texts[j]).1.as_deref() == Some(outer.as_str()))
-            .all(|j| sent.contains(&j) || (l.has)(&keys(&all[j], texts[j]).0));
-        if complete {
-            (l.mark)(&outer);
-        }
+        std::iter::once(own).chain(outer).for_each(|k| (l.mark)(&k));
     }
 }
 
@@ -200,7 +193,7 @@ fn ranked(answer: &str, n: usize) -> Vec<usize> {
     let re = RANK.get_or_init(|| Regex::new(r"(\d+):([hmy])").expect("valid regex"));
     let (mut high, mut maybe): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
     for c in re.captures_iter(answer) {
-        let Ok(k) = c[1].parse::<usize>() else { continue };
+        let k = c[1].parse::<usize>().unwrap_or(0);
         if !(1..=n).contains(&k) || high.contains(&(k - 1)) || maybe.contains(&(k - 1)) {
             continue;
         }
@@ -368,21 +361,7 @@ pub fn run(rest: &[String], env: Env) -> Result<String, String> {
         true => vec![env.cwd.to_path_buf()],
         false => a.paths.iter().map(|p| env.cwd.join(p)).collect(),
     };
-    let mut found: Vec<Found> = Vec::new();
-    for t in &targets {
-        for f in list_rules(t, env.home, &env.purposes, Path::new("/"))? {
-            match found.iter_mut().find(|g| g.path == f.path) {
-                Some(g) if g.lines.is_empty() => {}
-                Some(g) if f.lines.is_empty() => g.lines.clear(),
-                Some(g) => {
-                    let new: Vec<(usize, usize)> =
-                        f.lines.into_iter().filter(|r| !g.lines.contains(r)).collect();
-                    g.lines.extend(new);
-                }
-                None => found.push(f),
-            }
-        }
-    }
+    let found = crate::rules::union(&targets, &env.purposes, env.home)?;
     let scope = if a.paths.is_empty() { ".".to_string() } else { a.paths.join(", ") };
     Ok(brief(&a.intent, &scope, &found, &env))
 }

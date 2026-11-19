@@ -26,7 +26,7 @@ pub fn words(name: &str) -> Vec<String> {
     out
 }
 
-// Scores how much a name resembles the seed: containment either way scores highest, else the words they share (two at least, or the seed's only word); 0 for no resemblance or the seed itself.
+// Scores how much a name resembles the seed: containment either way scores highest, else the words they share (two at least); 0 for no resemblance or the seed itself.
 pub fn score(seed: &str, name: &str) -> usize {
     let (s, n) = (seed.to_lowercase(), name.to_lowercase());
     if s == n || n.len() < 4 {
@@ -38,7 +38,7 @@ pub fn score(seed: &str, name: &str) -> usize {
     let sw: Vec<String> = words(seed).into_iter().filter(|w| w.len() >= 3).collect();
     let nw = words(name);
     let shared = sw.iter().filter(|w| nw.contains(w)).count();
-    if shared >= 2 || (sw.len() == 1 && shared == 1) {
+    if shared >= 2 {
         shared * 10
     } else {
         0
@@ -60,8 +60,7 @@ pub fn candidates(engine: &crate::engine::Engine, cwd: &Path, scope: &[PathBuf],
     let mut by_file: Vec<(usize, String)> = files
         .iter()
         .filter_map(|f| {
-            let stem = f.file_stem()?.to_str()?;
-            let s = score(name, stem);
+            let s = score(name, f.file_stem().and_then(|x| x.to_str()).unwrap_or(""));
             (s > 0).then(|| (s, format!("file {}", rel(f))))
         })
         .collect();
@@ -106,6 +105,7 @@ mod tests {
         assert_eq!(score("Handle", "Handle"), 0);
         assert_eq!(score("Store", "store"), 0);
         assert_eq!(score("Store", "StoreRequest"), 100);
+        assert_eq!(score("AuthorizeWashBySubscription", "Wash"), 0);
     }
 
     // Checks the candidates are real files and symbols inside the scope, files first, and nothing outside it.
@@ -118,6 +118,8 @@ mod tests {
             b"class WashSubscriptionService {\n  bool AuthorizeWash(int id) { return true; }\n}\n",
         );
         t.write("other/AuthorizeWashLegacy.cs", b"class AuthorizeWashLegacy {}\n");
+        t.write("api/Big.cs", &vec![b'x'; 600 * 1024]);
+        t.write("api/Bin.cs", &[0xff, 0xfe, b'A', b'u', b't', b'h']);
         t.write("api/Aaa.md", b"Docs mention AuthorizeWash first.\n");
         let e = crate::engine::Engine::new();
         let c = candidates(&e, &root, &[root.join("api")], "AuthorizeWashBySubscription");

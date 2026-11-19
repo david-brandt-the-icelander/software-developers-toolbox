@@ -385,3 +385,39 @@ fn test_investigate_regression_empty_answer() {
         o.text
     );
 }
+
+// Checks a repeated successful read is not run again, a lookup that errors counts as failed, a repair turn that asks for lookups ends PARTIAL, and the evidence is capped at whole lookups.
+#[test]
+fn test_investigate_repeats_errors_and_evidence_cap() {
+    let (t, root) = repo();
+    let big: String = (1..=900)
+        .map(|i| format!("    var value{i} = Compute(input, {i}, \"a field that takes room\");\n"))
+        .collect();
+    t.write("api/Big.cs", big.as_bytes());
+    let e = crate::engine::Engine::new();
+    let s = Script::new(vec![
+        Ok("READ api/Endpoint.cs\nREFS a|b"),
+        Ok("READ api/Endpoint.cs\nREAD api/Big.cs:1-150\nREAD api/Big.cs:151-300"),
+        Ok("READ api/Big.cs:301-450\nREAD api/Big.cs:451-600\nREAD api/Big.cs:601-750"),
+        Ok("ANSWER"),
+        Ok("READ api/Big.cs:1-10"),
+    ]);
+    let o = go(&root, &e, &s, &["q", "--path", "api"]).expect("run");
+    let seen = s.seen.borrow();
+    assert!(seen[1].1.contains("### REFS a|b\nerror:"), "{}", seen[1].1);
+    assert!(
+        seen[2].1.contains("Not run again: READ api/Endpoint.cs (its output is already above)"),
+        "{}",
+        seen[2].1
+    );
+    let text = &o.text;
+    assert!(text.contains("PARTIAL: the local model gave no answer after 6 lookups that found evidence, and none after one repair turn (it began: \"READ api/Big.cs:1-10\")"), "{text}");
+    assert!(
+        text.contains("### READ api/Endpoint.cs\n") && text.contains("### READ api/Big.cs:1-150\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("(over ~6000 tokens, not shown: ") && text.contains("READ api/Big.cs:601-750)"),
+        "{text}"
+    );
+}
