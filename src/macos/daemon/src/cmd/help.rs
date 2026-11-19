@@ -502,15 +502,17 @@ const PAGES: &[Page] = &[
         summary: "Rule files for a path; local open models",
         usage: &[
             "zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]",
+            "zazzle agent check [PATH] [--json] | explain PATH [--purpose NAME]... [--json]",
             "zazzle agent llm [--model NAME] [--effort low|medium|high] [--remove NAME]",
+            "zazzle agent status [--json] [--verify] | prune [--apply]",
             "zazzle agent chat",
             "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [TEXT.. | - | /COMMAND]",
         ],
         about: &[
-            "get-rules prints the rule and skill files that apply to a path: see zazzle help get-rules.",
-            "llm lists the open models, or downloads one and makes it and an effort the default; run zazzle agent llm --help. ai-agent is downloaded on first use, and each model on first use.",
-            "chat talks with a local model in this terminal, at low effort unless /effort changes it: /help lists the commands (/effort, /model, /clear, /new, /status, /quit), Ctrl+K starts a new conversation and Ctrl+C leaves. Each terminal has its own conversation, which daemon keeps: chat again in the same terminal to resume it.",
-            "prompt is that chat for one message: it adds the message to this terminal's conversation and prints the answer, without the banner; TEXT starting with / runs a chat command (e.g. /clear). daemon keeps the model loaded between messages and stops it after ZAZZLE_LLM_IDLE seconds unused (default 600).",
+            "get-rules prints the rule and skill files that apply to a path: see zazzle help get-rules. check reports broken @imports, paths: globs that match nothing and bad skill front matter (exit 1 when it finds any); explain says why each rule file near a path applies or not.",
+            "llm lists the open models, or downloads one and makes it and an effort the default; run zazzle agent llm --help. ai-agent is downloaded on first use, and each model on first use. status shows the default model, the downloaded ones and their disk use; prune removes every model but the default (it only lists them without --apply).",
+            "chat talks with a local model in this terminal, at low effort unless /effort changes it: /help lists the commands (/effort, /model, /clear, /new, /status, /quit), Ctrl+K starts a new conversation and Ctrl+C leaves. Each terminal has its own conversation, which the daemon keeps: chat again in the same terminal to resume it.",
+            "prompt is that chat for one message: it adds the message to this terminal's conversation and prints the answer, without the banner; TEXT starting with / runs a chat command (e.g. /clear). The daemon keeps the model loaded between messages and stops it after ZAZZLE_LLM_IDLE seconds unused (default 600).",
         ],
         options: &[],
         examples: &[
@@ -518,6 +520,7 @@ const PAGES: &[Page] = &[
             "zazzle agent llm --model qwen3.5-9b --effort high",
             "git diff | zazzle agent prompt 'Review this diff:' -",
             "zazzle agent prompt /clear",
+            "zazzle agent check",
         ],
     },
     Page {

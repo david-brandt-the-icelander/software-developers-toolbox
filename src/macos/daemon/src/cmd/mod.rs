@@ -361,6 +361,30 @@ fn command_help(cmd: &str, rest: &[String]) -> Option<String> {
     .ok()
 }
 
+// Resolves the PATH of `agent check|explain` against the caller's folder (check's default is that folder), so the
+// daemon never reads its own working directory; other commands pass through.
+fn rules_args(rest: &[String], cwd: &std::path::Path) -> Vec<String> {
+    let mut args = rest.to_vec();
+    if !matches!(args.first().map(String::as_str), Some("check" | "explain")) {
+        return args;
+    }
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--purpose" => i += 2,
+            a if a.starts_with('-') => i += 1,
+            a => {
+                args[i] = cwd.join(a).to_string_lossy().into_owned();
+                return args;
+            }
+        }
+    }
+    if args[0] == "check" {
+        args.push(cwd.to_string_lossy().into_owned());
+    }
+    args
+}
+
 // Routes the first argument to a command.
 fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
     let aligned = align::args(cmd, rest);
@@ -406,12 +430,14 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
             ),
             _ => {
                 let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-                let (text, code) =
-                    ai_agent_rules::run(rest, home.as_deref(), std::path::Path::new("/"));
-                if code == 0 {
-                    Ok(Output::plain(text.trim_end().to_string()))
-                } else {
-                    Err(text.trim_end().to_string())
+                let args = rules_args(rest, &ctx.cwd);
+                let (text, code) = ai_agent_rules::run(&args, home.as_deref(), std::path::Path::new("/"));
+                match code {
+                    0 => Ok(Output::plain(text.trim_end().to_string())),
+                    1 if args.first().is_some_and(|c| c == "check") => {
+                        Ok(Output { status: 1, ..Output::plain(text.trim_end().to_string()) })
+                    }
+                    _ => Err(text.trim_end().to_string()),
                 }
             }
         },
@@ -761,6 +787,30 @@ mod tests {
         assert!(again.contains("already delivered this session") && !again.contains("Be kind."), "{again}");
         assert!(b.contains("==> rule AGENTS.md:1-2 <==\n# Rules\nBe kind."), "{b}");
         assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
+    }
+
+    // Checks `agent check|explain` read the caller's folder, check's problems come back with exit 1, and other agent commands pass through.
+    #[test]
+    fn test_agent_rules_resolve_against_the_caller() {
+        let cwd = std::path::Path::new("/repo/sub");
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(rules_args(&v(&["check"]), cwd), v(&["check", "/repo/sub"]));
+        assert_eq!(rules_args(&v(&["check", "--json", "x"]), cwd), v(&["check", "--json", "/repo/sub/x"]));
+        assert_eq!(
+            rules_args(&v(&["explain", "--purpose", "review", "a.rs"]), cwd),
+            v(&["explain", "--purpose", "review", "/repo/sub/a.rs"])
+        );
+        assert_eq!(rules_args(&v(&["explain", "/abs.rs"]), cwd), v(&["explain", "/abs.rs"]));
+        assert_eq!(rules_args(&v(&["explain"]), cwd), v(&["explain"]));
+        assert_eq!(rules_args(&v(&["get-rules", "x"]), cwd), v(&["get-rules", "x"]));
+        let t = TempDir::new();
+        t.write("AGENTS.md", b"See @missing.md\n");
+        let o = run_cmd(t.path(), &["agent", "check"]);
+        assert_eq!(o.status, 1, "{}", o.text);
+        assert!(o.text.contains("missing.md"), "{}", o.text);
+        let o = run_cmd(t.path(), &["agent", "explain", "AGENTS.md"]);
+        assert_eq!(o.status, 0, "{}", o.text);
+        assert!(o.text.contains("AGENTS.md"), "{}", o.text);
     }
 
     // Checks the session layer through the dispatcher: ids, notices, the opt-out flag, edits unaffected.
