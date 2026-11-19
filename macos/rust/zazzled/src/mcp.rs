@@ -535,6 +535,7 @@ fn all_tools() -> impl Iterator<Item = &'static Tool> {
         .iter()
         .chain(crate::mcp_structure::TOOLS)
         .chain(crate::rules::TOOLS)
+        .chain(crate::investigate::TOOLS)
         .chain(crate::brief::TOOLS)
         .chain(crate::zazz::mcptools::TOOLS.iter())
 }
@@ -593,7 +594,10 @@ const PINNABLE: &[&str] = &[
 
 // True when a tool's output may go through the local model first: tools that only read (not edits, nor the model's own tools).
 fn takes_llm(name: &str) -> bool {
-    !matches!(name, "zazzle_edit" | "zazzle_replace" | "zazzle_prompt" | "zazzle_brief")
+    !matches!(
+        name,
+        "zazzle_edit" | "zazzle_replace" | "zazzle_prompt" | "zazzle_brief" | "zazzle_investigate"
+    )
 }
 
 // Puts `--llm INSTRUCTION` right after the command name when a reading tool is given `llm`.
@@ -1354,10 +1358,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 21);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 13);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 14);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

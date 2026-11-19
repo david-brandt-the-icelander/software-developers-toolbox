@@ -570,6 +570,38 @@
         "A flag without a value (`--effort needs a value; usage: ...`) or an unknown flag (`unknown flag --model; usage: ...`); words after `--` are text.",
         "The local model fails (no model downloaded, timeout, zazzle-llm missing or exiting with an error): `error: local model: REASON`."
       ]
+    },
+    {
+      "id": "investigate",
+      "name": "zazzle investigate",
+      "description": "Hands a repository question to the local model, which follows bounded read-only lookups inside the scope; returns findings with checked, quoted path:line citations and unknowns.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/investigate/mod.rs",
+          "symbol": "investigate"
+        },
+        {
+          "path": "macos/rust/zazzled/src/investigate/cite.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "macos/rust/zazzled/src/investigate/mod.rs",
+          "symbol": "tool_args"
+        }
+      ],
+      "entrypoint": {
+        "path": "macos/rust/zazzled/src/investigate/mod.rs",
+        "symbol": "run"
+      },
+      "action": "query",
+      "transport": "zazzle investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] | zazzle agent investigate ..; MCP tool zazzle_investigate {question, paths?, symbols?, steps?}",
+      "authorization": "Callers of the daemon's own uid; lookups are read-only and confined to the scope, and zazzle-llm runs with --no-download.",
+      "result": "`investigate: QUESTION`, the scope, `findings (N verified):` each with its claim, its `path:A-B` and the cited lines quoted from the file (at most 12, then the read that shows the rest), `rejected citations:` with the reason, `unknowns:`, and a footer naming the turns, every lookup and `complete` or `INCOMPLETE: REASON`. On the command line the rules for the cited files the caller has not been sent follow on standard error.",
+      "failures": [
+        "No question: the usage line.",
+        "--steps outside 1 to 12, a flag without a value, an unknown flag or a --path that does not exist.",
+        "The local model fails before anything was looked up: `error: local model: REASON`; a failure later ends the report as INCOMPLETE."
+      ]
     }
   ],
   "relatedViews": [

@@ -254,7 +254,8 @@ mod tests {
         let text = |name: &str, args: Value| format!("error: {}", map(name, args).unwrap_err());
         assert_eq!(text("zazzle_find_symbol", json!({})), "error: name or names is required");
         assert_eq!(
-            map("zazzle_find_symbol", json!({"names": ["A", "B"], "paths": ["src/Api"], "max": 3})).expect("args"),
+            map("zazzle_find_symbol", json!({"names": ["A", "B"], "paths": ["src/Api"], "max": 3}))
+                .expect("args"),
             ["find-symbol", "--limit", "3", "--path", "src/Api", "--", "A", "B"]
         );
         assert_eq!(

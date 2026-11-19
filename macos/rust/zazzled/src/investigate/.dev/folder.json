@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle investigate",
+  "folder": "macos/rust/zazzled/src/investigate",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle investigate",
+      "summary": "`zazzle investigate QUESTION --path P.. --symbol S..` (also `agent investigate`, MCP zazzle_investigate): the user's local model resolves a repository question with bounded read-only lookups, and the agent gets findings whose path:line citations zazzle checked against the files.",
+      "purpose": "mod.rs parses the command, runs the starting symbols' refs, then asks the local model (llm::ask, one call per turn, low effort, temperature 0) for up to three READ, REFS, OUTLINE or FIND lookups per turn, runs them through zazzle's own commands confined to the scope, and stops at ANSWER, at the turn limit, when the seen text passes ~12,000 tokens, or on an unusable reply or a model failure. The rules for files the model reads come back as notes on a separate ledger (`SESSION>local`) and go into its system message, never into the evidence; the caller's own ledger gets the rules for the cited files. cite.rs reads the ANSWER block and checks each FINDING: inside a scope entry, an existing text file, a valid line range, then quotes up to 12 cited lines.",
+      "boundaries": [
+        "Read-only: lookups are read, refs, outline and find, never edit or run.",
+        "A READ or OUTLINE outside the scope is refused and the refusal is shown to the model; REFS and FIND are run on the scope paths only.",
+        "The model's claims are not verified, only its citations: the report says so.",
+        "Each turn starts zazzle-llm again (the model is loaded per turn), so a run takes turns × the model's load and answer time."
+      ]
+    }
+  ]
+}

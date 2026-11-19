@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle investigate class diagram",
+  "folder": "macos/rust/zazzled/src/investigate",
+  "description": "The driver's plan, lookups, trail and end state, the model it asks (mod.rs), and the answer with its checked citations (cite.rs).",
+  "sources": [
+    { "path": "macos/rust/zazzled/src/investigate/mod.rs", "symbol": "investigate" },
+    { "path": "macos/rust/zazzled/src/investigate/cite.rs", "symbol": "check" }
+  ],
+  "types": [
+    { "id": "Local", "name": "Local", "kind": "interface", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["ask(system, transcript) -> Result<Reply, String>"] },
+    { "id": "Model", "name": "Model", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["ask: llm::ask at low effort, temperature 0, 1500 tokens"] },
+    { "id": "Plan", "name": "Plan", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["question: String", "scope: Vec<String>", "symbols: Vec<String>", "steps: usize"] },
+    { "id": "Lookup", "name": "Lookup", "kind": "enum", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["Read(String)", "Refs(String)", "Outline(String)", "Find(String)"] },
+    { "id": "Trail", "name": "Trail", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["seen: Vec<(String, String)>", "rules: String", "lookups: Vec<String>", "transcript(plan, left) -> String"] },
+    { "id": "Status", "name": "Status", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/mod.rs"], "members": ["stop: String", "cut: bool", "turns: usize"] },
+    { "id": "Answer", "name": "Answer", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["findings: Vec<Claim>", "unknowns: Vec<String>"] },
+    { "id": "Claim", "name": "Claim", "kind": "struct", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["path: String", "start: usize", "end: usize", "text: String"] },
+    { "id": "Checked", "name": "Checked", "kind": "enum", "sources": ["macos/rust/zazzled/src/investigate/cite.rs"], "members": ["Verified { excerpt }", "Rejected(String)"] }
+  ],
+  "relationships": [
+    { "from": "Model", "to": "Local", "kind": "implements", "description": "The user's local model through zazzle-llm." },
+    { "from": "Trail", "to": "Lookup", "kind": "depends-on", "description": "Records each lookup's label and output." },
+    { "from": "Answer", "to": "Claim", "kind": "depends-on", "description": "The FINDING lines." },
+    { "from": "Claim", "to": "Checked", "kind": "depends-on", "description": "check turns a claim into a quoted excerpt or a reason." }
+  ]
+}

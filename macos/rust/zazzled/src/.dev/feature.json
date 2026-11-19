@@ -605,6 +605,33 @@
           "symbol": "produce"
         }
       ]
+    },
+    {
+      "id": "local-investigation",
+      "name": "Local investigation with checked citations",
+      "description": "One call hands a multi-file repository question to the user's local model and returns cited evidence instead of having the agent feed it file after file.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/investigate/mod.rs",
+          "symbol": "investigate"
+        }
+      ],
+      "behavior": "The starting symbols' refs inside the scope are the first evidence; each turn the model asks for up to three READ, REFS, OUTLINE or FIND lookups, which run through zazzle's own read-only commands confined to the scope (reads at ~1,500 tokens, refs and find at 15 results), until it answers, its turns run out (default 6, at most 12) or the evidence passes ~12,000 tokens. The rules for files it reads are tracked on a separate SESSION>local ledger and put in its system message, never among the evidence. Its ANSWER's `FINDING path:A-B claim` lines are checked (inside the scope, an existing text file, a valid range) and quoted literally; the rest are rejected with a reason.",
+      "outcome": "The agent spends one call and reads checked excerpts and explicit unknowns, not the files the model read.",
+      "constraints": [
+        "Only citations are checked, not the claims; the report says so.",
+        "zazzle-llm starts once per turn and never downloads a model."
+      ],
+      "implementation": [
+        {
+          "path": "macos/rust/zazzled/src/investigate/cite.rs",
+          "symbol": "check"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "ask"
+        }
+      ]
     }
   ],
   "relatedViews": [

@@ -373,12 +373,14 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "zazz" => crate::zazz::run(ctx, rest),
         "get-rules" => get_rules(ctx, rest),
         "brief" => brief(ctx, rest),
+        "investigate" => crate::investigate::run(ctx, rest),
         "prompt" => prompt(rest),
         "agent" => match rest.split_first() {
             Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
                 get_rules(ctx, r)
             }
             Some((c, r)) if c == "brief" => brief(ctx, r),
+            Some((c, r)) if c == "investigate" => crate::investigate::run(ctx, r),
             Some((c, r)) if c == "prompt" => prompt(r),
             Some((c, _)) if c == "llm" => Err(
                 "agent llm runs as its own process: start it with `zazzle agent llm ..` (or `zazzled llm llm ..`)".into(),
@@ -495,7 +497,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -520,7 +522,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate"
         );
         assert!(!o.idable);
     }
