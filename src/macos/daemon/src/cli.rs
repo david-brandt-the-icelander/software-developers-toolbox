@@ -3,6 +3,7 @@ use crate::client;
 use crate::cmd::{self, Ctx};
 use crate::engine::Engine;
 use crate::launchd;
+use crate::lifecycle;
 use crate::mcp::{self, DaemonBackend};
 use crate::proxy::{self, Upstream};
 use crate::restart;
@@ -18,7 +19,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USAGE: &str = "usage: zazzle daemon serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | llm llm|prompt .. | install | uninstall | restart | run CMD.. | version";
+const USAGE: &str = "usage: zazzle daemon start | stop | status [--json] | restart | install | uninstall | serve [--socket PATH] [--idle SECS] | mcp | proxy .. | setup .. | wrap .. | hook .. | llm llm|prompt .. | run CMD.. | tools [--json] | version";
 const DEFAULT_IDLE_SECS: u64 = 1800;
 
 // What the binary was asked to do.
@@ -29,6 +30,10 @@ pub enum Cli {
     Install,
     Uninstall,
     Restart,
+    Start,
+    Stop,
+    Status { json: bool },
+    Tools { json: bool },
     Run(Vec<String>),
     Proxy(proxy::Opts),
     Setup(setup::Opts),
@@ -76,6 +81,17 @@ fn help_page(cmd: &str, rest: &[String]) -> Option<&'static str> {
     }
 }
 
+// Reads the only option `status` and `tools` take, --json.
+fn json_flag(rest: &[String], cmd: &str) -> Result<bool, String> {
+    match rest {
+        [] => Ok(false),
+        [j] if j == "--json" => Ok(true),
+        _ => {
+            Err(format!("usage: zazzle {} [--json]", if cmd == "tools" { "tools" } else { "daemon status" }))
+        }
+    }
+}
+
 // Parses the command line.
 pub fn parse(args: &[String]) -> Result<Cli, String> {
     let Some((cmd, rest)) = args.split_first() else { return Err(USAGE.into()) };
@@ -88,6 +104,10 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "install" => Ok(Cli::Install),
         "uninstall" => Ok(Cli::Uninstall),
         "restart" => Ok(Cli::Restart),
+        "start" => Ok(Cli::Start),
+        "stop" => Ok(Cli::Stop),
+        "status" => json_flag(rest, "status").map(|json| Cli::Status { json }),
+        "tools" => json_flag(rest, "tools").map(|json| Cli::Tools { json }),
         "run" => Ok(Cli::Run(rest.to_vec())),
         "proxy" => proxy::parse(rest).map(Cli::Proxy),
         "setup" => setup::parse(rest).map(Cli::Setup),
@@ -263,6 +283,44 @@ fn version_note() -> String {
     client::socket_path().map(|sock| restart::version_note(&sock)).unwrap_or_default()
 }
 
+// Stops the running daemon using the real environment.
+fn stop_main() -> Result<String, String> {
+    let sock = client::socket_path().map_err(|e| e.to_string())?;
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+    let agent = cfg!(target_os = "macos") && launchd::plist_path(&home).exists();
+    lifecycle::stop(lifecycle::ask(&sock), agent, &restart::stop)
+}
+
+// Builds `zazzle daemon status` using the real environment.
+fn status_main(json: bool) -> Result<(String, u8), String> {
+    let sock = client::socket_path().map_err(|e| e.to_string())?;
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?);
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::setup::stable_exe(&exe.canonicalize().unwrap_or(exe));
+    let env = lifecycle::Env { sock: &sock, exe: &exe, home: &home, macos: cfg!(target_os = "macos") };
+    Ok(lifecycle::status(&env, json))
+}
+
+// Builds `zazzle tools` for the tools' folder this daemon runs from.
+fn tools_main(json: bool) -> Result<(String, u8), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = crate::setup::stable_exe(&exe.canonicalize().unwrap_or(exe));
+    let dir = exe.parent().ok_or("the daemon has no folder")?;
+    let jit = crate::tools::find("ai-agent", Some(dir), crate::tools::store());
+    Ok(lifecycle::render_tools(&lifecycle::tools(dir, jit, &lifecycle::ask_version), dir, json))
+}
+
+// Prints a report and exits with its code, or reports the error.
+fn report(r: Result<(String, u8), String>) -> ExitCode {
+    match r {
+        Ok((text, code)) => {
+            println!("{text}");
+            ExitCode::from(code)
+        }
+        Err(e) => finish(Err(e)),
+    }
+}
+
 // Reports a result on the right stream and picks the exit code.
 fn finish(r: Result<String, String>) -> ExitCode {
     match r {
@@ -292,6 +350,14 @@ pub fn main(args: Vec<String>) -> ExitCode {
         Cli::Uninstall => finish(agent_main(false)),
         Cli::Version => finish(Ok(format!("daemon {}{}", cmd::VERSION, version_note()))),
         Cli::Restart => finish(restart_main(restart::Mode::Always)),
+        Cli::Start => finish(
+            client::socket_path()
+                .map_err(|e| e.to_string())
+                .and_then(|sock| lifecycle::start(&sock, &client::spawn_daemon)),
+        ),
+        Cli::Stop => finish(stop_main()),
+        Cli::Status { json } => report(status_main(json)),
+        Cli::Tools { json } => report(tools_main(json)),
         Cli::Help(page) => finish(cmd::help::page(page)),
         Cli::Hook(o) => {
             let mut payload = String::new();
@@ -357,6 +423,14 @@ mod tests {
         assert!(parse(&v(&["setup", "--bad"])).is_err());
         assert_eq!(parse(&v(&["uninstall"])), Ok(Cli::Uninstall));
         assert_eq!(parse(&v(&["restart"])), Ok(Cli::Restart));
+        assert_eq!(parse(&v(&["start"])), Ok(Cli::Start));
+        assert_eq!(parse(&v(&["stop"])), Ok(Cli::Stop));
+        assert_eq!(parse(&v(&["status"])), Ok(Cli::Status { json: false }));
+        assert_eq!(parse(&v(&["status", "--json"])), Ok(Cli::Status { json: true }));
+        assert_eq!(parse(&v(&["tools", "--json"])), Ok(Cli::Tools { json: true }));
+        assert_eq!(parse(&v(&["tools"])), Ok(Cli::Tools { json: false }));
+        assert_eq!(parse(&v(&["status", "-x"])).unwrap_err(), "usage: zazzle daemon status [--json]");
+        assert_eq!(parse(&v(&["tools", "a", "b"])).unwrap_err(), "usage: zazzle tools [--json]");
         assert_eq!(parse(&v(&["version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["--version"])), Ok(Cli::Version));
         assert_eq!(parse(&v(&["run", "find", "x"])), Ok(Cli::Run(v(&["find", "x"]))));

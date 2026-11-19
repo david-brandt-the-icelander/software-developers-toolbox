@@ -3,12 +3,12 @@
   "kind": "delivery",
   "title": "Where a release goes",
   "folder": "release",
-  "description": "Every tool (zazzle, the launcher, and the tools it runs: the daemon with zazz-script-runner, csharp-indexer, shell-tools, fix-network, free-disk-space, git-tools, ai-agent-rules) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from. Only zazzle (and z) goes on PATH; the tools sit in libexec/zazzle. ai-agent is not in the tarballs or the formula: it is a JIT tool that the daemon downloads from icelander.net on first use.",
+  "description": "Every tool (zazzle, the launcher, and the tools it runs: the daemon with zazz-script-runner, csharp-indexer, fix-network, free-disk-space, git-tools, ai-agent-rules) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from. Only zazzle (and z) goes on PATH; the tools sit in libexec/zazzle. ai-agent is not in the tarballs or the formula: it is a JIT tool that the daemon downloads from icelander.net on first use.",
   "entities": [
     {
       "id": "github-release",
       "title": "GitHub release",
-      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (bin/zazzle with bin/z as a relative link to it; libexec/zazzle with ten universal binaries, among them zazz-script-runner and the three git-tools programs; libexec/indexer with the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 in the same layout (zazzle and z; daemon, zazz-script-runner, csharp-indexer and cyberspace-generator), their checksums and the Homebrew bottle.",
+      "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (bin/zazzle with bin/z as a relative link to it; libexec/zazzle with nine universal binaries, among them zazz-script-runner and the three git-tools programs; libexec/indexer with the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 in the same layout (zazzle and z; daemon, zazz-script-runner, csharp-indexer and cyberspace-generator), their checksums and the Homebrew bottle.",
       "environment": "GitHub releases of this repository",
       "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
       "deployedBy": "The release workflow (macos, linux-publish and homebrew jobs)",
@@ -55,7 +55,7 @@
           "relation": "relates-to",
           "path": "src/macos/shell-tools/.dev/folder.json",
           "entityId": "folder",
-          "description": "A tool this release delivers."
+          "description": "A library this release delivers inside the daemon."
         },
         {
           "relation": "relates-to",

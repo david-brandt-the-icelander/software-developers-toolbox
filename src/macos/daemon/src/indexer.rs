@@ -77,7 +77,7 @@ pub fn root_name(root: &Path) -> String {
 }
 
 // Runs a command with a timeout and returns its standard output.
-fn output_within(cmd: &mut Command, limit: Duration) -> Result<String, String> {
+pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<String, String> {
     let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

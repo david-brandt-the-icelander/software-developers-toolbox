@@ -30,12 +30,12 @@ done
 run() {
   mkdir -p "$tmp/dist"
   printf 'binary' >"$tmp/dist/fix-network"
-  printf 'binary' >"$tmp/dist/shell-tools"
+  printf 'binary' >"$tmp/dist/git-tools"
   : >"$tmp/calls"
   set +e
   out=$(env -i PATH="$tmp/bin:$PATH" HOME="$tmp" CALLS="$tmp/calls" \
     FAKE_IDENTITY="${FAKE_IDENTITY:-Developer ID Application: Test Person (TEAM123456)}" \
-    FAKE_NOTARY="${FAKE_NOTARY:-Accepted}" "$@" bash "$script" "$tmp/dist" fix-network shell-tools 2>&1)
+    FAKE_NOTARY="${FAKE_NOTARY:-Accepted}" "$@" bash "$script" "$tmp/dist" fix-network git-tools 2>&1)
   rc=$?
   set -e
   calls=$(cat "$tmp/calls")
@@ -81,11 +81,11 @@ expect_not_in "MACOS_CERTIFICATE_P12 " "$out" "required lists only missing secre
 # 3. Everything set and Apple accepts: both binaries signed with hardened runtime, notarized, keychain removed.
 run "${secrets[@]}"
 expect_rc 0 "happy path"
-expect_in "signed and notarized: fix-network shell-tools (submission sub-42)" "$out" "happy path"
+expect_in "signed and notarized: fix-network git-tools (submission sub-42)" "$out" "happy path"
 expect_in "codesign --force --options runtime --timestamp --keychain" "$calls" "hardened runtime and timestamp"
 expect_in "--sign Developer ID Application: Test Person (TEAM123456) $tmp/dist/fix-network" "$calls" "signs fix-network"
-expect_in "$tmp/dist/shell-tools" "$calls" "signs shell-tools"
-expect_in "codesign --verify --strict --verbose=2 $tmp/dist/shell-tools" "$calls" "verifies"
+expect_in "$tmp/dist/git-tools" "$calls" "signs git-tools"
+expect_in "codesign --verify --strict --verbose=2 $tmp/dist/git-tools" "$calls" "verifies"
 expect_in "security import" "$calls" "imports the certificate"
 expect_in "-P pw -T /usr/bin/codesign" "$calls" "passes the p12 password"
 expect_in "xcrun notarytool submit" "$calls" "submits"

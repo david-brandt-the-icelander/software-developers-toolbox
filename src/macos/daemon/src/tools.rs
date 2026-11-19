@@ -49,6 +49,15 @@ pub fn path(
     Ok(p)
 }
 
+// Returns a tool's executable beside the daemon or already in the store, without downloading it.
+pub fn find(name: &str, exe_dir: Option<&Path>, store: Option<Store>) -> Option<PathBuf> {
+    beside(exe_dir, name).or_else(|| {
+        let store = store?;
+        let e = store.entry(name)?.clone();
+        store.installed(&e).then(|| store.dir.join(&e.file))
+    })
+}
+
 // Replaces this process with a tool, fetching it first when needed; returns only on failure.
 pub fn exec(name: &str, args: &[String]) -> String {
     let exe = std::env::current_exe().ok();

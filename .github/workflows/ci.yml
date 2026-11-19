@@ -78,8 +78,6 @@ jobs:
       - run: cargo build --workspace --release --locked
       - name: Smoke test CLIs
         run: |
-          ./target/release/shell-tools --help
-          ./target/release/shell-tools call '{"op":"stat","path":"."}'
           ./target/release/fix-network --help
           ./target/release/free-disk-space --help
           ./target/release/free-disk-space clean caches

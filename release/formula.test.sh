@@ -8,7 +8,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failures=0
 sha=$(printf '%064d' 7 | tr 0 a)
-tools="daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator"
+tools="daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator"
 bins="zazzle $tools"
 
 # Record a failed expectation.
@@ -205,7 +205,7 @@ run_link_steps(steps, opt)
 raise "a dangling z was not replaced" unless z.readlink == opt / "bin/zazzle"
 
 inst.instance_eval(&f.test_block)
-raise "test ran #{inst.commands}" unless inst.commands.length == 11
+raise "test ran #{inst.commands}" unless inst.commands.length == 10
 raise "test runs a tool outside the launcher" unless inst.commands.all? { |c| c.include?("/bin/zazzle") || c.include?("/libexec/zazzle/") }
 bottles = ENV.fetch("BOTTLES", "")
 spec = f.bottle_spec
@@ -261,10 +261,10 @@ grep -q ' libexec/indexer/csharp-indexer-x64.gz$' <<<"$packed" || fail "tarball 
 tar -xzf "$tmp/pack.tgz" -C "$tmp/bins" bin/zazzle
 if bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/partial" >/dev/null 2>&1; then fail "bottle.sh accepted a missing binary"; fi
 tar -xzf "$tmp/pack.tgz" -C "$tmp/bins" libexec/zazzle
-chmod 0644 "$tmp/bins/libexec/zazzle/shell-tools"
+chmod 0644 "$tmp/bins/libexec/zazzle/fix-network"
 if bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/partial" >/dev/null 2>&1; then fail "bottle.sh accepted a missing indexer"; fi
 tar -xzf "$tmp/pack.tgz" -C "$tmp/bins"
-chmod 0644 "$tmp/bins/libexec/zazzle/shell-tools"
+chmod 0644 "$tmp/bins/libexec/zazzle/fix-network"
 bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/bottles" >"$tmp/bottle.out"
 bash "$here/bottle.sh" v2.1.0 "$tmp/bins" "$tmp/again" >/dev/null
 file="$tmp/bottles/zazzle-2.1.0.all.bottle.tar.gz"
@@ -279,7 +279,7 @@ for b in $(printf '%s\n' $tools | sort); do want="${want}zazzle/2.1.0/libexec/za
 [ "$listing" = "$want" ] || fail "contents $listing"
 # Read each listing whole first: grep -q stops early, and tar's SIGPIPE would fail a pipeline under pipefail.
 verbose=$(tar tvzf "$file")
-grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/libexec/zazzle/shell-tools$" <<<"$verbose" || fail "binary not 0755 root-owned"
+grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/libexec/zazzle/fix-network$" <<<"$verbose" || fail "binary not 0755 root-owned"
 grep -q "^-rwxr-xr-x 0/0 .* zazzle/2.1.0/bin/zazzle$" <<<"$verbose" || fail "launcher not 0755 root-owned"
 if grep -q '/bin/z$' <<<"$listing"; then fail "the bottle links z itself, which post-install decides"; fi
 # Homebrew's own check (Bottle#extract_snapshot): exactly one NAME directory holding exactly one VERSION directory.

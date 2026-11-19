@@ -110,7 +110,7 @@ jobs:
           ZAZZLE_LANGUAGES_MANIFEST: ${{ github.workspace }}/src/macos/dist/languages/manifest
           ZAZZLE_TOOLS_MANIFEST: ${{ github.workspace }}/src/macos/dist/tools/manifest
         run: |
-          bins="daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor"
+          bins="daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor"
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --workspace --exclude ai-agent --release --locked --target "$t"
           done
@@ -138,11 +138,11 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
+        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
       - name: Package
         run: |
           ./dist/daemon --version
-          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
+          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:
@@ -344,7 +344,7 @@ jobs:
           export CFLAGS="-fprofile-instr-use=$PWD/dist/pgo/daemon.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
           cargo build --workspace --exclude ai-agent --release --locked --target "${{ matrix.target }}"
           mkdir -p bin
-          for b in daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
+          for b in daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
             cp "target/${{ matrix.target }}/release/$b" bin/
           done
           tar -C bin -cf bin.tar .
@@ -399,7 +399,7 @@ jobs:
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
             tar -C "bin/$t" -xf "artifacts/macos-bin-$t/bin.tar"
           done
-          for bin in daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
+          for bin in daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor; do
             lipo -create -output "dist/$bin" "bin/aarch64-apple-darwin/$bin" "bin/x86_64-apple-darwin/$bin"
           done
           cp -R artifacts/macos-languages/languages dist/languages
@@ -429,10 +429,10 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
+        run: ../../release/sign-and-notarize.sh dist zazzle daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator
       - name: Package
         run: |
-          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
+          bash ../../release/pack.sh dist zazzle-macos-universal.tar.gz zazzle daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit ai-agent-rules git-tools-commit-message-editor cyberspace-generator csharp-indexer-arm64.gz csharp-indexer-x64.gz
           shasum -a 256 zazzle-macos-universal.tar.gz > zazzle-macos-universal.tar.gz.sha256
       - uses: actions/upload-artifact@v7
         with:

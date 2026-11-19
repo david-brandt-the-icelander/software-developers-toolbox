@@ -14,7 +14,7 @@
       ],
       "guarantees": [
         "Named zazzle-VERSION.all.bottle.tar.gz (one hyphen), the name Homebrew downloads from a plain root_url",
-        "Holds exactly zazzle/VERSION/: bin/ with only zazzle, libexec/zazzle/ with daemon, zazz-script-runner, shell-tools, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules and cyberspace-generator (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
+        "Holds exactly zazzle/VERSION/: bin/ with only zazzle, libexec/zazzle/ with daemon, zazz-script-runner, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules and cyberspace-generator (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
         "Holds no z: post_install_steps decide whether to link HOMEBREW_PREFIX/bin/z",
         "Reproducible: the same files give the same archive",
         "The formula's bottle block names the release's download folder as root_url, one sha256 tagged all, with cellar :any_skip_relocation"
@@ -45,7 +45,7 @@
         "The formula's test block (brew test zazzle)"
       ],
       "guarantees": [
-        "zazzle version prints zazzle; zazzle zazz help prints zazz; zazz-script-runner version prints zazz-script-runner; zazzle TOOL --version prints the tool's name for daemon, fix-network, free-disk-space, git-tools, ai-agent-rules, shell-tools, csharp-indexer and cyberspace-generator"
+        "zazzle version prints zazzle; zazzle zazz help prints zazz; zazz-script-runner version prints zazz-script-runner; zazzle TOOL --version prints the tool's name for daemon, fix-network, free-disk-space, git-tools, ai-agent-rules, csharp-indexer and cyberspace-generator"
       ],
       "compatibility": "Renaming a crate or binary changes what it prints and breaks brew test. formula.test.sh checks that the test block runs these ten commands, but its stand-in answers for the binaries, so a mismatch with what they really print is not caught there.",
       "evidenceStatus": "source-verified",

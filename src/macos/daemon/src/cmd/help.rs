@@ -538,13 +538,32 @@ const PAGES: &[Page] = &[
     },
     Page {
         name: "daemon",
-        group: 4,
-        brief: "daemon ...",
-        summary: "Start, stop, install or restart the daemon",
-        usage: &["zazzle daemon [COMMAND] [OPTIONS]"],
-        about: &["The daemon answers every other zazzle command; zazzle starts it on demand. Run zazzle daemon help."],
+        group: 3,
+        brief: "daemon CMD",
+        summary: "Start, stop, check or install the daemon",
+        usage: &[
+            "zazzle daemon start | stop | restart",
+            "zazzle daemon status [--json]",
+            "zazzle daemon install | uninstall",
+            "zazzle daemon mcp | serve | version",
+        ],
+        about: &[
+            "The daemon answers every other zazzle command; any command starts it when none runs. status shows the running and installed versions and, on macOS, the LaunchAgent; it exits 3 when none runs. install makes launchd start it at login.",
+        ],
         options: &[],
-        examples: &[],
+        examples: &["zazzle daemon status", "zazzle daemon restart"],
+    },
+    Page {
+        name: "tools",
+        group: 3,
+        brief: "tools [--json]",
+        summary: "List the installed tools and their versions",
+        usage: &["zazzle tools [--json]"],
+        about: &[
+            "Every tool runs as zazzle TOOL ARGS from the tools' folder. tools asks each for its version and flags one that is missing or from another release; it exits 1 then.",
+        ],
+        options: &[],
+        examples: &["zazzle tools"],
     },
     Page {
         name: "shell-tools",

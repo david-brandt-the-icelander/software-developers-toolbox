@@ -244,7 +244,7 @@ static void pick_daemon(char **envp)
 
 /* The tools `zazzle TOOL ARGS` runs as their own process from the tools' folder, not through the daemon. */
 static const char *const TOOLS[] = {
-	"daemon", "shell-tools", "fix-network", "free-disk-space", "git-tools", "ai-agent-rules", "csharp-indexer",
+	"daemon", "fix-network", "free-disk-space", "git-tools", "ai-agent-rules", "csharp-indexer",
 	"cyberspace-generator", 0,
 };
 
@@ -394,7 +394,7 @@ static int zazzle_run(int argc, char **argv, char **envp)
 		const char *tool = tool_binary(argv[1]);
 		if (tool)
 			exec_tool(argv, envp, tool);
-		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup"))
+		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup") || str_eq(argv[1], "tools"))
 			exec_daemon(argv, envp, argv[1]);
 		if (str_eq(argv[1], "run"))
 			exec_daemon(argv, envp, "wrap");

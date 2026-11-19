@@ -405,7 +405,7 @@ static void test_tool_exec(void)
 	char *argv8[] = {"zazzle", "gi", 0};
 	reset();
 	CHECK(run(2, argv8, env_home) == 0 && M.exec_path[0] == 0);
-	const char *tools[] = {"daemon", "shell-tools", "ai-agent-rules", "csharp-indexer", "cyberspace-generator", 0};
+	const char *tools[] = {"daemon", "ai-agent-rules", "csharp-indexer", "cyberspace-generator", 0};
 	for (int i = 0; tools[i]; i++) {
 		char want[128] = "/opt/bin/../libexec/zazzle/";
 		strcat(want, tools[i]);
@@ -457,6 +457,9 @@ static void test_proxy_exec(void)
 	char *as_z[] = {"/opt/homebrew/bin/z", "setup", 0};
 	reset();
 	CHECK(run(2, as_z, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
+	char *tools[] = {"z", "tools", "--json", 0};
+	reset();
+	CHECK(run(3, tools, env_home) == -1000 && strcmp(M.exec_arg1, "tools") == 0 && M.connect_calls == 0);
 }
 
 /* Checks that `zazzle agent llm` and `zazzle agent prompt` exec `zazzle daemon llm`, and that other agent commands still go to the daemon. */

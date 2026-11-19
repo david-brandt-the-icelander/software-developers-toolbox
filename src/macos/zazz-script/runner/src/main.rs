@@ -78,7 +78,10 @@ fn dispatch(args: &[String]) -> Result<Option<String>, String> {
         Some("compile") => compile_cmd(&mut std::io::stdin(), &mut std::io::stdout()).map(|()| None),
         Some("serve") => serve::main().map(|()| None),
         Some("test") => test_cmd(&args[1..]).map(Some),
-        Some("version") => Ok(Some(format!("zazz-script-runner {}", env!("CARGO_PKG_VERSION")))),
+        Some("version" | "--version") => {
+            Ok(Some(format!("zazz-script-runner {}", env!("CARGO_PKG_VERSION"))))
+        }
+        Some("help" | "--help" | "-h") => Ok(Some(USAGE.trim_start_matches("usage: ").to_string())),
         _ => Err(USAGE.into()),
     }
 }
@@ -164,10 +167,16 @@ mod tests {
     // Checks dispatch for version, usage and test errors.
     #[test]
     fn test_dispatch() {
-        assert!(dispatch(&v(&["version"]))
-            .expect("version")
+        for flag in ["version", "--version"] {
+            assert!(dispatch(&v(&[flag]))
+                .expect("version")
+                .expect("text")
+                .starts_with("zazz-script-runner "));
+        }
+        assert!(dispatch(&v(&["--help"]))
+            .expect("help")
             .expect("text")
-            .starts_with("zazz-script-runner "));
+            .starts_with("zazz-script-runner compile"));
         assert!(dispatch(&v(&[])).unwrap_err().starts_with("usage"));
         assert!(dispatch(&v(&["test", "/nonexistent.wasm", "--cwd", "/tmp"])).is_err());
     }

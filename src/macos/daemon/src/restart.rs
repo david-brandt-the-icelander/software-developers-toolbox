@@ -47,7 +47,7 @@ fn alive(pid: i32) -> bool {
 }
 
 // Stops process `pid` with SIGTERM, then SIGKILL if it is still there after STOP_WAIT; returns true once it is gone.
-fn stop(pid: i32) -> bool {
+pub(crate) fn stop(pid: i32) -> bool {
     // SAFETY: sends a signal to one process id the daemon reported as its own.
     unsafe { libc::kill(pid, libc::SIGTERM) };
     let start = Instant::now();

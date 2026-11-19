@@ -102,7 +102,7 @@
       "criteria": [
         "Bad arguments are refused and write nothing",
         "One formula, valid Ruby, with the release's url, version, sha256, license, depends_on :macos and a description",
-        "It installs only bin/zazzle, the ten tools into libexec/zazzle and both gzipped indexers; the indexer step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 into libexec/zazzle and leaves no temporary file; the z steps, run against a fake prefix, link z when free, keep zazzle's own link, replace the other channel's, never touch another program's z or link beside zoxide or z.sh, and remove z on opt-out",
+        "It installs only bin/zazzle, the nine tools into libexec/zazzle and both gzipped indexers; the indexer step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 into libexec/zazzle and leaves no temporary file; the z steps, run against a fake prefix, link z when free, keep zazzle's own link, replace the other channel's, never touch another program's z or link beside zoxide or z.sh, and remove z on opt-out",
         "Its test block runs one command per binary, and release.yml builds every binary",
         "One reproducible bottle with exactly the expected files, only zazzle in bin and no z, the binaries mode 0755 and root-owned; pack.sh's tarball holds bin/zazzle, bin/z and libexec/",
         "With the bottle, the formula's bottle block matches its name and checksum; a missing bottle or bottle folder is refused"

@@ -63,7 +63,7 @@
     {
       "id": "one-formula",
       "title": "One formula for every tool, at the release's version",
-      "summary": "A single zazzle formula installs the launcher zazzle, its only linked command, and in libexec/zazzle daemon, zazz-script-runner, shell-tools, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules and cyberspace-generator and csharp-indexer; post-install links z to zazzle when nothing else uses z. It takes the release tag as its version.",
+      "summary": "A single zazzle formula installs the launcher zazzle, its only linked command, and in libexec/zazzle daemon, zazz-script-runner, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules and cyberspace-generator and csharp-indexer; post-install links z to zazzle when nothing else uses z. It takes the release tag as its version.",
       "status": "accepted",
       "context": "Every tool ships in one tarball from one tag.",
       "decision": "formula.sh writes Formula/zazzle.rb, installing all the binaries and versioned with the tag without its v.",

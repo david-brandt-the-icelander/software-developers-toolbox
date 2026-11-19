@@ -28,7 +28,7 @@
         "ZAZZLE_SOCK overrides HOME, and lookalike variables are ignored.",
         "Autostart picks ZAZZLE_DAEMON or daemon in the tools' folder, for both not-running errors, and gives up after the wait.",
         "A fast reply is read during the spin; a slow one falls back to the blocking read; an error ends the spin.",
-        "Every tool name (daemon, shell-tools, fix-network, free-disk-space, git-tools, ai-agent-rules, csharp-indexer, cyberspace-generator) and git exec the tool (git-tools for git; agent goes to the daemon, which keeps the session's rule ledger) from libexec/zazzle, or beside the launcher when there is none; run and proxy exec `daemon wrap` and `daemon proxy`, and `agent llm`, `agent prompt` and `ai-agent` (as zazzle or z) exec `daemon llm`, all without contacting a daemon, while `agent get-rules`, a bare `agent` and other commands naming llm still go to the daemon; failures exit 69.",
+        "Every tool name (daemon, fix-network, free-disk-space, git-tools, ai-agent-rules, csharp-indexer, cyberspace-generator) and git exec the tool (git-tools for git; agent goes to the daemon, which keeps the session's rule ledger) from libexec/zazzle, or beside the launcher when there is none; run and proxy exec `daemon wrap` and `daemon proxy`, and `agent llm`, `agent prompt` and `ai-agent` (as zazzle or z) exec `daemon llm`, all without contacting a daemon, while `agent get-rules`, a bare `agent` and other commands naming llm still go to the daemon; failures exit 69.",
         "A partial send is completed; every failure exits with its code and one line on standard error that starts with the whole `zazzle: ` prefix."
       ],
       "checks": [

@@ -14,7 +14,7 @@ set -euo pipefail
 
 repo="david-brandt-the-icelander/zazzle"
 # The tools in the tarball's and the keg's libexec/zazzle (the C# indexer is added by post-install).
-tools="daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator"
+tools="daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator"
 tag=${1:-}
 sha=${2:-}
 dir=${3:-}
@@ -112,7 +112,6 @@ class $class < Formula
     assert_match "free-disk-space", shell_output("#{bin}/zazzle free-disk-space --version")
     assert_match "git-tools", shell_output("#{bin}/zazzle git-tools --version")
     assert_match "ai-agent-rules", shell_output("#{bin}/zazzle ai-agent-rules --version")
-    assert_match "shell-tools", shell_output("#{bin}/zazzle shell-tools --version")
     assert_match "csharp-indexer", shell_output("#{bin}/zazzle csharp-indexer --version")
     assert_match "cyberspace-generator", shell_output("#{bin}/zazzle cyberspace-generator --version")
   end

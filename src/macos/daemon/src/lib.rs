@@ -18,6 +18,7 @@ pub mod hook;
 pub mod indexer;
 pub mod investigate;
 pub mod launchd;
+pub mod lifecycle;
 pub mod llm;
 pub mod locals;
 pub mod markup;

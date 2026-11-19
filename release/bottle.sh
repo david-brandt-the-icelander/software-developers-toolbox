@@ -30,7 +30,7 @@ mkdir -p "$root/bin" "$root/libexec/zazzle" "$root/libexec/indexer"
 # The launcher is the only command on PATH; `zazzle TOOL` runs each tool from libexec/zazzle.
 [ -f "$bin_dir/bin/zazzle" ] || { echo "missing binary: $bin_dir/bin/zazzle" >&2; exit 1; }
 install -m 0755 "$bin_dir/bin/zazzle" "$root/bin/zazzle"
-for binary in daemon zazz-script-runner shell-tools fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator; do
+for binary in daemon zazz-script-runner fix-network free-disk-space git-tools git-tools-commit git-tools-commit-message-editor ai-agent-rules cyberspace-generator; do
   [ -f "$bin_dir/libexec/zazzle/$binary" ] || { echo "missing binary: $bin_dir/libexec/zazzle/$binary" >&2; exit 1; }
   install -m 0755 "$bin_dir/libexec/zazzle/$binary" "$root/libexec/zazzle/$binary"
 done
