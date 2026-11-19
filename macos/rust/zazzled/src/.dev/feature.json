@@ -544,8 +544,8 @@
     },
     {
       "id": "brief",
-      "name": "Brief: the rules and skills a task needs",
-      "description": "`brief INTENT [--path PATH]..` (also `agent brief`, MCP zazzle_brief) prints, verbatim, only the rule sections and skills the local model judges the intended task needs, from everything get-rules would send for the paths.",
+      "name": "Brief: the rules a task must follow and the skills it needs",
+      "description": "`brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` (also `agent brief`, MCP zazzle_brief) prints, verbatim, every rule section that applies to the paths and purposes, then the skills the local model ranks as needed for the intended task.",
       "sources": [
         {
           "path": "macos/rust/zazzled/src/brief.rs",
@@ -561,15 +561,15 @@
         },
         {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
-          "symbol": "dispatch"
+          "symbol": "brief"
         }
       ],
-      "behavior": "The rule and skill files that apply to each path (default: the working directory) are listed with zazzle-agent-rules-list's list_rules, without duplicates. Rule and import files are split at their Markdown headings outside code fences; each skill stays whole and is offered by its description; rules come first. The numbered sections, each shortened to 2,500 characters, go to the local model at low effort and temperature 0 with a GBNF grammar that forces a `N:y` or `N:n` verdict for every section in turn. The chosen sections print verbatim with their path and line range (skills whole), then `left out:` names the rest in one line. A brief's default budget is 8000 tokens instead of 3000.",
+      "behavior": "Paths and purposes are applied before any inference: the rule and skill files for each path (default: the working directory) are listed with zazzle-agent-rules-list's list_rules for the given purposes (else the session's last get-rules purposes; a brief with --purpose sets them), each file and range once. Rule and import files are split at their Markdown headings outside code fences, inside the purpose ranges, without purpose marker lines; every such section is mandatory and always printed with its path and line range. Only skills not yet delivered go to the local model, by their descriptions, at low effort and temperature 0 with a GBNF grammar that forces `N:h`, `N:m` or `N:n` (needed, may help, not) for each in turn; with no skills the model is not asked. Needed skills, then those that may help, are added whole while they fit the budget (default 8000 tokens, its own --budget), so a cut falls between sections; the rest are named. Sections the session already has on the shared rule ledger (from get-rules, a read's notes or an earlier brief: the whole file, the purpose range or the section) are named, not repeated, and only what was printed is recorded: each section's range, and the whole file or purpose range once all of it has been sent.",
       "outcome": "Before a task an agent reads the rules and skills that matter for it, not every rule file that applies to the folder.",
       "constraints": [
-        "Needs a downloaded model; on failure the error says that `zazzle get-rules PATH` sends the rules without the local model.",
-        "The choice depends on the model: a small model can miss a section, so get-rules remains the complete answer.",
-        "It does not record what it sent in the session's rule ledger."
+        "Rule sections are always sent, even past the budget, which the brief then says.",
+        "If the local model fails, the rule sections are still printed and the skills named, with the error.",
+        "The skill ranking depends on the model: a small model can miss one, so `get-rules --skill-bodies` remains the complete answer."
       ],
       "implementation": [
         {
@@ -582,7 +582,19 @@
         },
         {
           "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "menu"
+          "symbol": "keys"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "delivered"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "record"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "rank"
         },
         {
           "path": "macos/rust/zazzled/src/brief.rs",
@@ -590,19 +602,11 @@
         },
         {
           "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "chosen"
+          "symbol": "ranked"
         },
         {
           "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "render"
-        },
-        {
-          "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "ask_local"
-        },
-        {
-          "path": "macos/rust/zazzled/src/cmd/mod.rs",
-          "symbol": "produce"
+          "symbol": "parse"
         }
       ]
     },
@@ -616,7 +620,7 @@
           "symbol": "investigate"
         }
       ],
-      "behavior": "The starting symbols' refs inside the scope are the first evidence; each turn the model asks for up to three READ, REFS, OUTLINE or FIND lookups, which run through zazzle's own read-only commands confined to the scope (reads at ~1,500 tokens, refs and find at 15 results), until it answers, its turns run out (default 6, at most 12) or the evidence passes ~12,000 tokens. The rules for files it reads are tracked on a separate SESSION>local ledger and put in its system message, never among the evidence. Its ANSWER's `FINDING path:A-B claim` lines are checked (inside the scope, an existing text file, a valid range) and quoted literally; the rest are rejected with a reason.",
+      "behavior": "The starting symbols' refs inside the scope are the first evidence; each turn the model asks for up to three READ, REFS, OUTLINE or FIND lookups, which run through zazzle's own read-only commands confined to the scope (reads at ~1,500 tokens, refs and find at 15 results), until it answers, its turns run out (default 6, at most 12) or the evidence passes ~12,000 tokens. The rules for files it reads are tracked on a separate SESSION>local ledger and put in its system message, never among the evidence. Its ANSWER's `FINDING path:A-B claim` lines are checked (inside the scope, an existing text file, a valid range) and quoted literally; the rest are rejected with a reason. Seeds are resolved before inference: a starting symbol with no refs in the scope gets up to eight real files and eight symbols there that resemble it, shown to the model and listed in the report, and when no symbol is there and nothing resembles any, the report says no evidence and the model is not asked. A lookup that already ran is not run again (the model is told it has the output or that it failed), and two turns of only repeats end the run. An empty answer after lookups that found evidence gets one repair turn; if it is still empty the report is PARTIAL and carries those lookups' output verbatim (up to ~6,000 tokens).",
       "outcome": "The agent spends one call and reads checked excerpts and explicit unknowns, not the files the model read.",
       "constraints": [
         "Only citations are checked, not the claims; the report says so.",
@@ -630,6 +634,10 @@
         {
           "path": "macos/rust/zazzled/src/llm.rs",
           "symbol": "ask"
+        },
+        {
+          "path": "macos/rust/zazzled/src/investigate/seed.rs",
+          "symbol": "candidates"
         }
       ]
     }

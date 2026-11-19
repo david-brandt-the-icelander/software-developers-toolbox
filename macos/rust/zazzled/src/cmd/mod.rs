@@ -27,8 +27,6 @@ pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_BUDGET: usize = 3000;
-// A brief carries whole skills, so it gets a larger default budget.
-const BRIEF_BUDGET: usize = 8000;
 const MAX_DESC: usize = 100;
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
@@ -109,9 +107,10 @@ struct Globals {
     llm: Option<String>,
 }
 
-// Pulls the global options out of a command's arguments (`--llm INSTRUCTION` among them); read keeps its own --budget.
+// Pulls the global options out of a command's arguments (`--llm INSTRUCTION` among them); read and brief keep their own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
-    let takes_budget = !matches!(cmd, "read" | "cat" | "clean" | "diff");
+    let brief = cmd == "brief" || (cmd == "agent" && args.first().is_some_and(|c| c == "brief"));
+    let takes_budget = !matches!(cmd, "read" | "cat" | "clean" | "diff") && !brief;
     let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None, commit: None, llm: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -192,9 +191,7 @@ pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String,
         };
     }
     if out.idable && !matches!(cmd, "read" | "cat" | "clean" | "diff") {
-        let brief = cmd == "brief" || rest.first().is_some_and(|c| c == "brief");
-        let default = if brief { BRIEF_BUDGET } else { DEFAULT_BUDGET };
-        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(default));
+        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
     }
     if !pinned.is_empty() {
         out.text = format!("{}\n{pinned}", out.text.trim_end());
@@ -255,10 +252,24 @@ fn get_rules(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
     crate::rules::get_rules(rest, &ctx.cwd, home.as_deref(), l).map(Output::plain)
 }
 
-// Runs brief: the rule sections and skills the local model picks for an intent.
+// Runs brief against the session's ledger and purposes: every rule section that applies and the skills the local model ranks, sized by brief itself so a cut falls between sections.
 fn brief(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    crate::brief::run(rest, &ctx.cwd, home.as_deref(), &crate::brief::ask_local).map(Output::ok)
+    let (has, mark) = ledger(ctx);
+    let l = crate::rules::Ledger { has: &has, mark: &mark };
+    let session = !ctx.session.is_empty();
+    if let Some(p) = crate::brief::purposes(rest).filter(|_| session) {
+        ctx.engine.sessions.set_purposes(&ctx.session, p);
+    }
+    let env = crate::brief::Env {
+        cwd: &ctx.cwd,
+        home: home.as_deref(),
+        purposes: ctx.engine.sessions.purposes(&ctx.session),
+        ledger: session.then_some(&l),
+        budget: crate::brief::DEFAULT_BUDGET,
+        ask: &crate::brief::ask_local,
+    };
+    crate::brief::run(rest, env).map(Output::plain)
 }
 
 // Answers `agent prompt [--effort E] TEXT..` in the daemon (for MCP): the local model's whole answer, never downloading a model.
@@ -725,7 +736,14 @@ mod tests {
         assert!(run_cmd(t.path(), &["prompt", "--model", "m", "hi"]).text.contains("unknown flag --model"));
         assert!(run_cmd(t.path(), &["prompt"]).text.contains("usage: agent prompt"));
         let b = run_cmd(t.path(), &["agent", "brief", "be", "nice"]).text;
+        let e = Engine::new();
+        let s = |a: &[&str]| crate::testutil::run_cmd_with(&e, t.path(), "sess", a).text;
+        let first = s(&["brief", "be", "nice", "--purpose", "review", "--budget", "50"]);
+        let again = s(&["get-rules", "."]);
         std::env::remove_var("ZAZZLE_LLM");
+        assert!(first.contains("purposes: review") && first.contains("Be kind."), "{first}");
+        assert_eq!(e.sessions.purposes("sess"), ["review"], "a brief's purposes become the session's");
+        assert!(again.contains("already delivered this session") && !again.contains("Be kind."), "{again}");
         assert!(b.contains("==> rule AGENTS.md:1-2 <==\n# Rules\nBe kind."), "{b}");
         assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
     }

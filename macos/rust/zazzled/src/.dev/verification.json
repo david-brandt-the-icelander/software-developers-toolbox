@@ -923,8 +923,8 @@
     },
     {
       "id": "local-model",
-      "title": "Local model calls, --llm and brief",
-      "summary": "The zazzle-llm subprocess, post-processing and brief are tested against shell scripts standing in for zazzle-llm, so no model is needed.",
+      "title": "Local model calls, --llm, brief and investigate",
+      "summary": "The zazzle-llm subprocess, post-processing, brief and investigate are tested against shell scripts or scripted replies standing in for the model, so no model is needed.",
       "subject": [
         {
           "path": "macos/rust/zazzled/src/.dev/feature.json",
@@ -933,6 +933,10 @@
         {
           "path": "macos/rust/zazzled/src/.dev/feature.json",
           "entityId": "brief"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "local-investigation"
         }
       ],
       "criteria": [
@@ -941,7 +945,8 @@
         "The answer is marked with the tokens saved, empty output passes through, and ZAZZLE_LLM_TIMEOUT is read.",
         "--llm post-processes a daemon command's output, and a model failure becomes the command's error.",
         "`zazzle run --llm` prints the answer, or the reason and the raw output.",
-        "brief splits rule files at headings outside fences and keeps skills whole, rules first; the chosen sections print verbatim with line ranges and the rest are named; the command line takes intent words and --path and finds the files through the real lister."
+        "brief applies paths and purposes before inference, splits rule files at headings inside purpose ranges without markers, always prints every rule section, asks the model only to rank skills (not at all when there are none), adds skills whole within the budget, prints the rules when the model fails, and uses the shared ledger: nothing already delivered is repeated and only what was printed is recorded.",
+        "investigate resolves a starting symbol missing from the scope before inference, with real candidate files and symbols, or a no-evidence report without asking the model; repeated lookups (also a seed the model asks for again) are not run again and two turns of only repeats end the run; an empty answer after evidence gets one repair turn, then a PARTIAL report with the evidence verbatim (the two logged failures)."
       ],
       "checks": [
         {
@@ -976,20 +981,62 @@
         },
         {
           "type": "automated",
-          "path": "macos/rust/zazzled/src/brief.rs",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
           "symbol": "test_brief_sections",
           "command": "cargo test -p zazzled (in macos/rust)"
         },
         {
           "type": "automated",
-          "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "test_brief_render",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
+          "symbol": "test_brief_mandatory_rules_and_ranking",
           "command": "cargo test -p zazzled (in macos/rust)"
         },
         {
           "type": "automated",
-          "path": "macos/rust/zazzled/src/brief.rs",
-          "symbol": "test_brief_run",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
+          "symbol": "test_brief_purposes_and_paths_before_inference",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
+          "symbol": "test_brief_shared_ledger",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
+          "symbol": "test_brief_budget_cuts_between_sections",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief/tests.rs",
+          "symbol": "test_brief_args",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/investigate/tests.rs",
+          "symbol": "test_investigate_regression_seed_miss",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/investigate/tests.rs",
+          "symbol": "test_investigate_regression_empty_answer",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/investigate/seed.rs",
+          "symbol": "test_seed_candidates",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/investigate/tests.rs",
+          "symbol": "test_investigate_repeats_errors_and_evidence_cap",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ]

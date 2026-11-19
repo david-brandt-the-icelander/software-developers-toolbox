@@ -234,7 +234,7 @@
     {
       "id": "investigate",
       "name": "Investigation (investigate/)",
-      "responsibility": "Answers `investigate`: asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs them with zazzle's own commands under a separate rules ledger, and checks and quotes each path:line the answer cites.",
+      "responsibility": "Answers `investigate`: resolves the starting symbols inside the scope before inference (real candidates for a miss, or a no-evidence report without the model), then asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs each distinct lookup once with zazzle's own commands under a separate rules ledger, gives an empty answer one repair turn before returning the evidence as PARTIAL, and checks and quotes each path:line the answer cites.",
       "folder": "macos/rust/zazzled/src/investigate"
     },
     {
@@ -246,7 +246,7 @@
     {
       "id": "brief",
       "name": "Brief (brief.rs)",
-      "responsibility": "Answers `brief INTENT [--path PATH]..` and the zazzle_brief MCP tool: splits the rule files that apply to the paths at their Markdown headings and keeps skills whole, numbers them rules first, has the local model give a y/n verdict per section under a GBNF grammar, and prints the chosen sections verbatim with line ranges, naming the rest in one line.",
+      "responsibility": "Answers `brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` and the zazzle_brief MCP tool: lists the rule and skill files for the paths and purposes, prints every rule section that applies (split at headings inside the purpose ranges), has the local model rank only the skills under a GBNF grammar, adds the ranked skills whole within the budget, and reads and records the session's shared rule ledger so nothing is repeated and only what was printed is recorded.",
       "folder": "macos/rust/zazzled/src"
     },
     {
