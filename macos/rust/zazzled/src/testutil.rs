@@ -192,6 +192,23 @@ pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+// Writes an executable stand-in for zazzle-llm's worker: a ready line, then per request the answer of the first case whose pattern the request line contains (a JSON object as given, else the text), appending a line to NAME.starts at each start.
+pub fn fake_worker(t: &TempDir, name: &str, cases: &[(&str, &str)]) -> PathBuf {
+    let mut sh = String::from("#!/bin/sh\necho start >> \"$0.starts\"\necho '{\"ready\":\"m\"}'\nwhile IFS= read -r l; do case \"$l\" in\n");
+    for (pat, answer) in cases {
+        let json = match answer.starts_with('{') {
+            true => answer.to_string(),
+            false => serde_json::json!({"text": answer}).to_string(),
+        };
+        assert!(!json.contains('\'') && !pat.contains(['\'', '*']), "keep quotes out of fake answers");
+        sh.push_str(&format!("*'{pat}'*) printf '%s\\n' '{json}';;\n"));
+    }
+    sh.push_str("*) printf '%s\\n' '{\"text\":\"\"}';;\nesac; done\n");
+    let p = t.write(name, sh.as_bytes());
+    std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+    p
+}
+
 // Backdates a file's mtime by an hour so caches will trust it.
 pub fn age(path: &Path) {
     let f = std::fs::File::open(path).expect("open for age");

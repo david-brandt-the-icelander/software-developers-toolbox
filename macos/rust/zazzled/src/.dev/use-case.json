@@ -618,6 +618,154 @@
         }
       ],
       "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "chat-in-terminal",
+      "name": "Chat with the local model in a terminal",
+      "description": "A developer runs `zazzle agent chat` (or `zazzle agent prompt`) in a terminal and talks with their local model; the conversation is this terminal's and resumes when they come back.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/chat_client.rs",
+          "symbol": "chat"
+        },
+        {
+          "path": "macos/rust/zazzled/src/chat_client.rs",
+          "symbol": "prompt"
+        },
+        {
+          "path": "macos/rust/zazzled/src/chat.rs",
+          "symbol": "op"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Ask a local model follow-up questions without waiting for it to load each time.",
+      "actorDocument": "Actors/developer.md",
+      "preconditions": [
+        "zazzle is installed; zazzle-llm and the model download on first use."
+      ],
+      "postconditions": [
+        "The conversation is kept for this terminal, and the model stays loaded until it has been unused for ZAZZLE_LLM_IDLE seconds."
+      ],
+      "flow": [
+        {
+          "id": "start",
+          "actor": "Developer",
+          "action": "Runs `zazzle agent chat`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "terminal_key"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "open",
+          "actor": "zazzled",
+          "action": "Opens this terminal's chat, resolves (and on first use downloads) its model, and prints the banner with the model, the effort and whether the conversation is resumed.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "open"
+            },
+            {
+              "path": "macos/rust/zazzled/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "fetch"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "talk",
+          "actor": "Developer",
+          "action": "Types messages and / commands; Enter sends.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "Editor"
+            },
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "command"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzled",
+          "action": "Sends each message with the earlier turns through the shared worker, prints the answer and saves the turn.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_in"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "leave",
+          "actor": "Developer",
+          "action": "Presses Ctrl+C or types /quit; the chat stays for this terminal.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "chat"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "talk",
+          "condition": "The developer presses Ctrl+K or types /new.",
+          "outcome": "The chat is released and a new one starts with the same model and effort.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "release"
+            }
+          ]
+        },
+        {
+          "atStep": "start",
+          "condition": "The developer runs `zazzle agent prompt TEXT` instead.",
+          "outcome": "The message joins this terminal's chat and the answer prints, without the banner.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat_client.rs",
+              "symbol": "prompt"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The model fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "The reason prints as an error and the turn is not recorded.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_in"
+            }
+          ]
+        }
+      ]
     }
   ],
   "relatedViews": [

@@ -13,7 +13,7 @@
         "Read-only: lookups are read, refs, outline and find, never edit or run.",
         "A READ or OUTLINE outside the scope is refused and the refusal is shown to the model; REFS and FIND are run on the scope paths only.",
         "The model's claims are not verified, only its citations: the report says so.",
-        "The model loads once per run: Model starts one `zazzle-llm worker --no-download` (llm::Session) at the first turn and keeps it, with the one-model lock, until the run ends; a zazzle-llm that has no worker is asked once per turn (llm::ask)."
+        "The model loads once: Model asks through zazzled's shared worker (llm::ask), which stays loaded across the turns and after the run until ZAZZLE_LLM_IDLE seconds unused."
       ]
     }
   ]

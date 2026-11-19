@@ -478,7 +478,7 @@
     {
       "id": "ZAZZLE_LLM_TIMEOUT",
       "title": "ZAZZLE_LLM_TIMEOUT",
-      "summary": "How many seconds one local model call for --llm, brief or prompt may take before zazzle-llm is killed.",
+      "summary": "How many seconds one local model call (chat, prompt, --llm, brief, investigate) may take before the worker is killed.",
       "key": "ZAZZLE_LLM_TIMEOUT",
       "type": "integer (seconds)",
       "default": 300,
@@ -518,6 +518,63 @@
         {
           "path": "macos/rust/zazzled/src/mcp.rs",
           "symbol": "llm_args"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_LLM_IDLE",
+      "title": "ZAZZLE_LLM_IDLE",
+      "summary": "How many seconds the daemon keeps the local model's worker loaded after its last call.",
+      "key": "ZAZZLE_LLM_IDLE",
+      "type": "integer (seconds)",
+      "default": 600,
+      "sensitive": false,
+      "scope": "Read by the daemon's reaper thread each time it checks.",
+      "takesEffect": "per-use",
+      "validation": "A positive whole number; anything else means the default.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "idle"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_CHAT_DIR",
+      "title": "ZAZZLE_CHAT_DIR",
+      "summary": "The folder the daemon keeps each terminal's chat in.",
+      "key": "ZAZZLE_CHAT_DIR",
+      "type": "path",
+      "default": "~/.zazzle/v1/chats",
+      "sensitive": false,
+      "scope": "Read by the daemon for each llm-chat operation.",
+      "takesEffect": "per-use",
+      "validation": "Any path; it is created when a chat is saved.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/chat.rs",
+          "symbol": "dir"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_CHAT_SESSION",
+      "title": "ZAZZLE_CHAT_SESSION",
+      "summary": "Names the chat `zazzle agent chat` and `zazzle agent prompt` use, instead of the terminal device and the shell's session id.",
+      "key": "ZAZZLE_CHAT_SESSION",
+      "type": "string",
+      "default": "the terminal device and session id",
+      "sensitive": false,
+      "scope": "Read by the chat client when it starts.",
+      "takesEffect": "per-use",
+      "validation": "Any text.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/chat_client.rs",
+          "symbol": "terminal_key"
         }
       ]
     }

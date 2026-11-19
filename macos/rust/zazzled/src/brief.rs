@@ -368,8 +368,9 @@ pub fn run(rest: &[String], env: Env) -> Result<String, String> {
 
 // Asks the real local model at low effort, held to the grammar.
 pub fn ask_local(instruction: &str, input: &str, grammar: &str) -> Result<String, String> {
-    crate::llm::ask(instruction, input, &["--effort", "low", "--temp", "0", "--grammar", grammar])
-        .map(|r| r.text)
+    let user = format!("{instruction}\n\n---\n{input}");
+    let req = serde_json::json!({"user": user, "effort": "low", "temp": 0, "grammar": grammar});
+    crate::llm::ask(None, &req).map(|r| r.text)
 }
 
 #[cfg(test)]

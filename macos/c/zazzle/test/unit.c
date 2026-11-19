@@ -434,7 +434,7 @@ static void test_proxy_exec(void)
 	CHECK(run(2, as_z, env_home) == -1000 && strcmp(M.exec_arg1, "setup") == 0);
 }
 
-/* Checks that `zazzle agent llm` and `zazzle agent prompt` exec `zazzled llm`, and that other agent commands still go to the daemon. */
+/* Checks that `zazzle agent llm`, `agent prompt` and `agent chat` exec `zazzled llm`, and that other agent commands still go to the daemon. */
 static void test_llm_exec(void)
 {
 	char *llm[] = {"zazzle", "agent", "llm", "--model", "qwen3.5-4b", 0};
@@ -444,6 +444,9 @@ static void test_llm_exec(void)
 	char *ask[] = {"z", "agent", "prompt", "hi", 0};
 	reset();
 	CHECK(run(4, ask, env_home) == -1000 && strcmp(M.exec_arg1, "llm") == 0);
+	char *chat[] = {"z", "agent", "chat", 0};
+	reset();
+	CHECK(run(3, chat, env_home) == -1000 && strcmp(M.exec_arg1, "llm") == 0);
 	char *rules[] = {"zazzle", "agent", "get-rules", ".", 0};
 	reset();
 	CHECK(run(4, rules, env_home) == 0 && M.exec_path[0] == 0);

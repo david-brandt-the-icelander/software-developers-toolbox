@@ -2,9 +2,10 @@
 use minijinja::{Environment, Error, ErrorKind, Value};
 use serde_json::json;
 
-// What the template is given besides the messages.
+// What the template is given: the system message, the earlier turns (role, text) of a conversation, the new user message, the effort and the special tokens.
 pub struct Turn<'a> {
     pub system: Option<&'a str>,
+    pub history: &'a [(String, String)],
     pub user: &'a str,
     pub effort: &'a str,
     pub bos: &'a str,
@@ -32,7 +33,7 @@ fn strftime_now(fmt: String) -> Result<Value, Error> {
     Ok(Value::from(String::from_utf8_lossy(&buf[..n]).into_owned()))
 }
 
-// Renders the prompt for one turn: the system and user messages, the generation prompt, and `enable_thinking` and `reasoning_effort` from the effort.
+// Renders the prompt for one turn: the system message, the earlier turns and the user message, the generation prompt, and `enable_thinking` and `reasoning_effort` from the effort.
 pub fn render(template: &str, turn: &Turn) -> Result<String, String> {
     let mut env = Environment::new();
     env.set_trim_blocks(true);
@@ -45,6 +46,9 @@ pub fn render(template: &str, turn: &Turn) -> Result<String, String> {
     let mut messages = Vec::new();
     if let Some(s) = turn.system {
         messages.push(json!({"role": "system", "content": s}));
+    }
+    for (role, content) in turn.history {
+        messages.push(json!({"role": role, "content": content}));
     }
     messages.push(json!({"role": "user", "content": turn.user}));
     let ctx = json!({
@@ -65,7 +69,7 @@ mod tests {
 
     // Returns a turn with the given effort.
     fn turn(effort: &str) -> Turn<'_> {
-        Turn { system: Some("Be brief."), user: "Hi?", effort, bos: "<s>", eos: "</s>" }
+        Turn { system: Some("Be brief."), history: &[], user: "Hi?", effort, bos: "<s>", eos: "</s>" }
     }
 
     // A Qwen-style template: ChatML with an empty thinking block when thinking is off.
@@ -78,6 +82,14 @@ mod tests {
         let on = render(QWEN, &turn("high")).expect("high");
         assert_eq!(on, "<|im_start|>system\nBe brief.<|im_end|>\n<|im_start|>user\nHi?<|im_end|>\n<|im_start|>assistant\n<think>\n");
         assert!(render(QWEN, &turn("low")).expect("low").ends_with("<think>\n\n</think>\n\n"));
+        let history = [("user".to_string(), "One?".to_string()), ("assistant".to_string(), "1".to_string())];
+        let chat = render(QWEN, &Turn { system: None, history: &history, ..turn("low") }).expect("chat");
+        assert!(
+            chat.starts_with(
+                "<|im_start|>user\nOne?<|im_end|>\n<|im_start|>assistant\n1<|im_end|>\n<|im_start|>user\nHi?"
+            ),
+            "{chat}"
+        );
     }
 
     // Checks the Python methods, tojson, raise_exception, strftime_now and the effort name reach the template.

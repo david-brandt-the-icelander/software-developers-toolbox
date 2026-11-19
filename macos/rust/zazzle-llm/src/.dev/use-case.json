@@ -36,7 +36,7 @@
           "actor": "Coding agent",
           "participantKind": "actor",
           "actorDocument": "Actors/coding-agent.md",
-          "action": "Runs `zazzle agent prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] [--show-thinking] TEXT..`, with `-` (or no TEXT) for piped standard input.",
+          "action": "Runs `zazzle-llm prompt [--model NAME] [--effort low|medium|high] [--system TEXT] [--max-tokens N] [--show-thinking] TEXT..`, with `-` (or no TEXT) for piped standard input.",
           "sources": [
             { "path": "agents/skills/zazzle-agent/SKILL.md", "symbol": "Local models: llm and prompt" },
             { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "Cmd::Prompt" }

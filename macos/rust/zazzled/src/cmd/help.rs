@@ -253,7 +253,7 @@ const PAGES: &[Page] = &[
         brief: "prompt TEXT..",
         summary: "Ask the local model; for agents",
         usage: &["zazzle prompt [--effort low|medium|high] TEXT.."],
-        about: &["Asks the default local model and prints its whole answer. Never downloads a model; zazzle agent prompt streams, reads standard input and downloads one. To shrink another command's output, give that command --llm TEXT instead."],
+        about: &["Asks the local model and prints its whole answer, outside any chat. Never downloads a model; zazzle agent prompt adds to this terminal's chat, reads standard input and downloads one. To shrink another command's output, give that command --llm TEXT instead."],
         options: &[("--effort E", "low (no thinking), medium or high; default: the saved one")],
         examples: &["zazzle prompt --effort low 'Is this a valid semver range: ^1.2.x?'", "zazzle run --llm 'Only the failing tests and their errors' -- cargo test"],
     },
@@ -500,17 +500,21 @@ const PAGES: &[Page] = &[
         usage: &[
             "zazzle agent get-rules PATH [--purpose NAME]... [--name-only] [--skill-bodies]",
             "zazzle agent llm [--model NAME] [--effort low|medium|high] [--remove NAME]",
-            "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [TEXT.. | -]",
+            "zazzle agent chat",
+            "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [TEXT.. | - | /COMMAND]",
         ],
         about: &[
             "get-rules prints the rule and skill files that apply to a path: see zazzle help get-rules.",
-            "llm lists the open models, or downloads one and makes it and an effort the default; prompt asks a model and prints its answer. Both run zazzle-llm, which zazzled downloads on first use, and which downloads each model on first use; run zazzle agent llm --help.",
+            "llm lists the open models, or downloads one and makes it and an effort the default; run zazzle agent llm --help. zazzle-llm is downloaded on first use, and each model on first use.",
+            "chat talks with a local model in this terminal, at low effort unless /effort changes it: /help lists the commands (/effort, /model, /clear, /new, /status, /quit), Ctrl+K starts a new conversation and Ctrl+C leaves. Each terminal has its own conversation, which zazzled keeps: chat again in the same terminal to resume it.",
+            "prompt is that chat for one message: it adds the message to this terminal's conversation and prints the answer, without the banner; TEXT starting with / runs a chat command (e.g. /clear). zazzled keeps the model loaded between messages and stops it after ZAZZLE_LLM_IDLE seconds unused (default 600).",
         ],
         options: &[],
         examples: &[
             "zazzle agent get-rules src/main.rs --name-only",
             "zazzle agent llm --model qwen3.5-9b --effort high",
             "git diff | zazzle agent prompt 'Review this diff:' -",
+            "zazzle agent prompt /clear",
         ],
     },
     Page {
