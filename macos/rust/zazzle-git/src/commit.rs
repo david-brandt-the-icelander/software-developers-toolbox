@@ -12,8 +12,16 @@ use std::path::{Path, PathBuf};
 pub const HELP: &str = "usage: zazzle git commit [--no-add] [GIT COMMIT OPTIONS]
 
 Opens the commit message editor on a draft kept in .git (so a failed hook or a
-cancel never loses the message), then commits. Tab opens the Files view, where
-each changed file is marked [ADD], [IGNORE], [REMOVE], [DELETE] or left out.
+cancel never loses the message), then commits. The message is on the left and
+the changed files on the right; Tab moves between them. Each file is marked
+[ADD], [IGNORE], [REMOVE], [DELETE] or left out.
+
+While you write, an agent CLI (claude, codex or gemini, whichever is installed)
+composes a suggestion; Ctrl+S with an empty message commits it (waiting for it
+if needed). Ctrl+N picks the next agent, Ctrl+E the next effort level; both are
+remembered. The agent's instructions come from the nearest
+.zazzle/commit-message-prompt.md, looking up from the current folder to your
+home folder, or a built-in default.
 
 By default changed tracked files start as [ADD], like `git commit -a`.
   --no-add   start with only what is already staged marked [ADD]
@@ -153,6 +161,7 @@ fn run(a: &Args) -> Result<i32, String> {
         args.extend(a.git_args.iter().cloned());
         return Ok(git_interactive(&args));
     }
+    let origin = std::env::current_dir().map_err(|e| e.to_string())?;
     let top = git(&["rev-parse", "--show-toplevel"])?;
     std::env::set_current_dir(top.trim()).map_err(|e| e.to_string())?;
     let draft = git_path(DRAFT)?;
@@ -168,7 +177,7 @@ fn run(a: &Args) -> Result<i32, String> {
         let text = initial_draft(&draft_start(a.amend), message::comment_char(), branch.trim());
         fs::write(&draft, text).map_err(|e| format!("{}: {e}", draft.display()))?;
     }
-    let edited = message::edit(&draft, entries)?;
+    let edited = message::edit(&draft, entries, &origin)?;
     if edited.outcome == Outcome::Cancel {
         return Ok(1);
     }

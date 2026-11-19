@@ -17,7 +17,11 @@ const RED: &str = "\x1b[31m";
 pub struct Scroll {
     pub top: usize,
     pub left: usize,
+    pub list_top: usize,
 }
+
+// Narrowest terminal that shows the message and the files side by side.
+const TWO_COLUMNS_MIN: usize = 60;
 
 // How one character is drawn.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,10 +65,11 @@ fn key_bar(ed: &Editor) -> String {
     let save = ed.kind.save_label();
     let cancel = ed.kind.cancel_label();
     let tab = if ed.views.len() > 1 { format!("Tab {}  ", next_view_name(ed)) } else { String::new() };
+    let agent = if ed.assist.is_some() { "^N Agent  ^E Effort  " } else { "" };
     match ed.view {
-        View::Edit => format!("^S {save}  Esc {cancel}  ^F Find  ^R Replace  {tab}F1/^G Help"),
+        View::Edit => format!("^S {save}  Esc {cancel}  {tab}{agent}^F Find  ^R Replace  F1/^G Help"),
         View::Files => {
-            format!("↑↓ Move  Space Cycle  A All  ⌫ Delete  {tab}^S {save}  Esc {cancel}  F1/^G Help")
+            format!("↑↓ Move  Space Cycle  A All  ⌫ Delete  {tab}^S {save}  Esc {cancel}  {agent}F1/^G Help")
         }
         View::Rebase => {
             format!("↑↓ Move  Alt↑↓ Reorder  p r e s f d Command  {tab}^S {save}  Esc {cancel}  F1/^G Help")
@@ -76,6 +81,7 @@ fn key_bar(ed: &Editor) -> String {
 fn next_view_name(ed: &Editor) -> &'static str {
     let at = ed.views.iter().position(|v| *v == ed.view).unwrap_or(0);
     match ed.views[(at + 1) % ed.views.len()] {
+        View::Edit if ed.views.contains(&View::Files) => "Message",
         View::Edit => "Edit",
         View::Files => "Files",
         View::Rebase => "Rebase",
@@ -181,10 +187,16 @@ fn edit_rows(
 ) -> (Vec<String>, Option<(usize, usize)>) {
     let x = scroll_to_cursor(ed, scroll, rows, w);
     let sel = ed.buf.selection();
-    let n = ed.buf.lines.len();
+    let ghost: Vec<&str> = match ed.assist.as_ref().and_then(|a| a.suggestion()) {
+        Some(s) if ed.message_empty() => s.lines().collect(),
+        _ => Vec::new(),
+    };
+    let n = if ghost.is_empty() { ed.buf.lines.len() } else { ghost.len() };
     let mut out = Vec::new();
     for i in scroll.top..scroll.top + rows {
-        if i < n {
+        if let Some(g) = ghost.get(i) {
+            out.push(format!("{DIM}{}{RESET}", fit(g, w)));
+        } else if i < n {
             out.push(text_row(ed, i, scroll.left, w, sel));
         } else if let Some(t) = ed.buf.tail.get(i - n) {
             out.push(format!("{DIM}{}{RESET}", fit(t, w)));
@@ -195,17 +207,25 @@ fn edit_rows(
     (out, Some((ed.buf.cursor.row - scroll.top, x)))
 }
 
-// Returns the content rows for a list view, with the cursor row highlighted.
-fn list_rows(items: &[String], cursor: usize, scroll: &mut Scroll, rows: usize, w: usize) -> Vec<String> {
-    if cursor < scroll.top {
-        scroll.top = cursor;
+// Returns the content rows for a list, scrolled to the cursor row, which is highlighted when the list has focus.
+fn list_rows(
+    items: &[String],
+    cursor: usize,
+    top: &mut usize,
+    rows: usize,
+    w: usize,
+    focused: bool,
+) -> Vec<String> {
+    if cursor < *top {
+        *top = cursor;
     }
-    if cursor >= scroll.top + rows {
-        scroll.top = cursor + 1 - rows;
+    if cursor >= *top + rows {
+        *top = cursor + 1 - rows;
     }
-    (scroll.top..scroll.top + rows)
+    (*top..*top + rows)
         .map(|i| match items.get(i) {
-            Some(t) if i == cursor => format!("{REVERSE}{}{RESET}", fit(&format!("› {t}"), w)),
+            Some(t) if i == cursor && focused => format!("{REVERSE}{}{RESET}", fit(&format!("› {t}"), w)),
+            Some(t) if i == cursor => fit(&format!("› {t}"), w),
             Some(t) => fit(&format!("  {t}"), w),
             None => String::new(),
         })
@@ -232,11 +252,23 @@ fn help_lines(ed: &Editor) -> Vec<String> {
     ];
     if ed.views.contains(&View::Files) {
         v.push(String::new());
-        v.push("Files view: Space cycles [ADD] [IGNORE] [REMOVE] and not in this commit; A toggles all to [ADD];".to_string());
         v.push(
-            "            Backspace marks [DELETE] (asked again before committing); Ctrl+Z undoes a mark"
+            "Files (right column, Tab): Space cycles [ADD] [IGNORE] [REMOVE] and not in this commit;"
                 .to_string(),
         );
+        v.push("            A toggles all to [ADD]; Backspace marks [DELETE] (asked again); Ctrl+Z undoes a mark".to_string());
+    }
+    if ed.assist.is_some() {
+        v.push(String::new());
+        v.push(
+            "Ctrl+N        next agent CLI (claude, codex, gemini); Ctrl+E  next effort; both are remembered"
+                .to_string(),
+        );
+        v.push("              Ctrl+S with an empty message commits the agent's suggestion (waits for it if needed)".to_string());
+        v.push(format!(
+            "              Instructions: the nearest {} up to your home folder",
+            crate::context::PROMPT_FILE
+        ));
     }
     if ed.views.contains(&View::Rebase) {
         v.push(String::new());
@@ -256,41 +288,21 @@ fn help_lines(ed: &Editor) -> Vec<String> {
 // Builds the whole frame for a terminal of the given size.
 pub fn frame(ed: &mut Editor, scroll: &mut Scroll, w: usize, h: usize) -> String {
     let w = w.max(10);
-    let h = h.max(3);
+    let h = h.max(4);
     let find = find_line(ed);
-    let rows = h - 2 - usize::from(find.is_some());
+    let agent = ed.assist.as_ref().map(|a| a.line(ed.now()));
+    let rows = h - 2 - usize::from(find.is_some()) - usize::from(agent.is_some());
     ed.page = rows.saturating_sub(1).max(1);
-    let (content, cursor) = if ed.prompt == Prompt::Help {
-        (help_lines(ed).iter().map(|l| fit(l, w)).collect(), None)
-    } else {
-        match ed.view {
-            View::Edit => edit_rows(ed, scroll, rows, w),
-            View::Files => (
-                list_rows(
-                    &ed.files.iter().map(|e| e.row()).collect::<Vec<_>>(),
-                    ed.list_row,
-                    scroll,
-                    rows,
-                    w,
-                ),
-                None,
-            ),
-            View::Rebase => {
-                let items: Vec<String> =
-                    ed.buf.lines.iter().map(|l| rebase::row(&l.iter().collect::<String>())).collect();
-                (list_rows(&items, ed.buf.cursor.row, scroll, rows, w), None)
-            }
-        }
-    };
+    let (content, cursor) = content(ed, scroll, rows, w);
     let mut out = String::from("\x1b[?25l\x1b[H");
     for line in content.iter().take(rows) {
-        out.push_str(&format!("{line}\x1b[K\r\n"));
-    }
-    for _ in content.len()..rows {
-        out.push_str("\x1b[K\r\n");
+        out.push_str(&format!("{line}\r\n"));
     }
     if let Some((text, _)) = &find {
         out.push_str(&format!("{BOLD}{}{RESET}\x1b[K\r\n", fit(text, w)));
+    }
+    if let Some(text) = &agent {
+        out.push_str(&format!("{DIM}{}{RESET}\x1b[K\r\n", fit(text, w)));
     }
     out.push_str(&format!("{BOLD}{}{RESET}\x1b[K\r\n", fit(&status_line(ed), w)));
     out.push_str(&format!("{REVERSE}{}\x1b[K{RESET}", fit(&key_bar(ed), w)));
@@ -300,6 +312,40 @@ pub fn frame(ed: &mut Editor, scroll: &mut Scroll, w: usize, h: usize) -> String
         (None, None) => {}
     }
     out
+}
+
+// Returns the screen rows (each ending with an erase to the line end) and the cursor: help, one view, or message and files side by side.
+fn content(ed: &Editor, scroll: &mut Scroll, rows: usize, w: usize) -> (Vec<String>, Option<(usize, usize)>) {
+    let pad = |v: Vec<String>| -> Vec<String> {
+        let mut v: Vec<String> = v.into_iter().map(|l| format!("{l}\x1b[K")).collect();
+        v.resize(rows, "\x1b[K".to_string());
+        v
+    };
+    if ed.prompt == Prompt::Help {
+        return (pad(help_lines(ed).iter().map(|l| fit(l, w)).collect()), None);
+    }
+    let file_rows: Vec<String> = ed.files.iter().map(|e| e.row()).collect();
+    if ed.view == View::Rebase {
+        let items: Vec<String> =
+            ed.buf.lines.iter().map(|l| rebase::row(&l.iter().collect::<String>())).collect();
+        return (pad(list_rows(&items, ed.buf.cursor.row, &mut scroll.top, rows, w, true)), None);
+    }
+    if file_rows.is_empty() || w < TWO_COLUMNS_MIN {
+        if ed.view == View::Files {
+            return (pad(list_rows(&file_rows, ed.list_row, &mut scroll.list_top, rows, w, true)), None);
+        }
+        let (text, cursor) = edit_rows(ed, scroll, rows, w);
+        return (pad(text), cursor);
+    }
+    let widest = file_rows.iter().map(|r| r.chars().count() + 3).max().unwrap_or(0);
+    let right = widest.clamp(24, w * 45 / 100);
+    let left = w - right - 1;
+    let (text, cursor) = edit_rows(ed, scroll, rows, left);
+    let list = list_rows(&file_rows, ed.list_row, &mut scroll.list_top, rows, right, ed.view == View::Files);
+    let lines = (0..rows)
+        .map(|i| format!("{}\x1b[K\x1b[{};{}H{DIM}│{RESET}{}", text[i], i + 1, left + 1, list[i]))
+        .collect();
+    (lines, cursor.filter(|_| ed.view == View::Edit))
 }
 
 #[cfg(test)]

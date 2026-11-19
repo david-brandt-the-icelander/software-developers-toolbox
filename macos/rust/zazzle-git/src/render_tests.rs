@@ -3,6 +3,7 @@
 use super::*;
 use crate::buffer::Buffer;
 use crate::clipboard::SystemClipboard;
+use crate::editor::Editor;
 use crate::editor::FindBar;
 use crate::files::{Entry, Mark};
 use crate::keys::{Key, KeyEvent};
@@ -11,7 +12,7 @@ use crate::kind::Kind;
 // Builds an editor for lines of a kind with optional files.
 fn editor(lines: &[&str], kind: Kind, files: Vec<Entry>) -> Editor {
     let buf = Buffer::new(lines.iter().map(|s| s.to_string()).collect(), vec!["# tail".into()]);
-    Editor::new(buf, kind, '#', files, Box::new(SystemClipboard::with_commands(None, None)))
+    Editor::new(buf, kind, '#', files, Box::new(SystemClipboard::with_commands(None, None)), None)
 }
 
 // Removes escape sequences so the visible text can be checked.
@@ -55,7 +56,7 @@ fn test_frame_edit_view() {
     let p = plain(&f);
     assert!(p.contains("# tail"));
     assert!(p.contains("subject 75/50"));
-    assert!(p.contains("^S Commit  Esc Cancel  ^F Find  ^R Replace  Tab Files  F1/^G Help"));
+    assert!(p.contains("^S Commit  Esc Cancel  Tab Files  ^F Find  ^R Replace  F1/^G Help"));
     assert!(f.ends_with("\x1b[1;1H\x1b[?25h"));
     assert_eq!(ed.page, 5);
     ed.buf.cursor = crate::buffer::Pos { row: 1, col: 0 };
@@ -84,25 +85,61 @@ fn test_frame_scrolls_to_cursor() {
     assert_eq!((s.top, s.left), (0, 0));
 }
 
-// Checks the Files view rows, the cursor row, its counter and the key bar.
+// Checks the two columns: message left, files right with a divider, focus moved by Tab, and one column on a narrow terminal.
 #[test]
-fn test_frame_files_view() {
+fn test_frame_two_columns() {
     let files = vec![
         Entry { path: "a.rs".into(), orig: None, x: ' ', y: 'M', mark: Mark::Add },
         Entry { path: "b.log".into(), orig: None, x: '?', y: '?', mark: Mark::Ignore },
     ];
-    let mut ed = editor(&["m"], Kind::Commit, files);
+    let mut ed = editor(&["msg"], Kind::Commit, files);
+    let mut s = Scroll::default();
+    let f = frame(&mut ed, &mut s, 100, 8);
+    let p = plain(&f);
+    assert!(p.contains("msg") && p.contains("│› [ADD]     M  a.rs") && p.contains("[IGNORE] ??  b.log"));
+    assert!(!f.contains(&format!("{REVERSE}› [ADD]")));
+    assert!(f.ends_with("\x1b[1;1H\x1b[?25h"));
     press(&mut ed, Key::Tab);
     press(&mut ed, Key::Down);
+    let f = frame(&mut ed, &mut s, 100, 8);
+    assert!(f.contains(&format!("{REVERSE}› [IGNORE]")));
+    assert!(!f.ends_with("\x1b[?25h"));
+    let p = plain(&f);
+    assert!(p.contains("msg") && p.contains("2 files"));
+    assert!(p.contains("Space Cycle  A All  ⌫ Delete  Tab Message  ^S Commit"));
+    let narrow = plain(&frame(&mut ed, &mut s, 50, 8));
+    assert!(!narrow.contains("│") && !narrow.contains("msg") && narrow.contains("› [IGNORE]"));
+    press(&mut ed, Key::Tab);
+    let narrow = plain(&frame(&mut ed, &mut s, 50, 8));
+    assert!(narrow.contains("msg") && !narrow.contains("[IGNORE]"));
+}
+
+// Checks the agent line, the dots, the ghost suggestion in an empty message, and the agent keys in the bars and help.
+#[test]
+fn test_frame_agent_line_and_suggestion() {
+    let (assist, state) = crate::assist::tests::fake(&["claude"], ("", ""));
+    let buf = Buffer::new(vec!["".into()], vec!["# tail".into()]);
+    let files = vec![Entry { path: "a.rs".into(), orig: None, x: ' ', y: 'M', mark: Mark::Add }];
+    let clip = Box::new(SystemClipboard::with_commands(None, None));
+    let mut ed = Editor::new(buf, Kind::Commit, '#', files, clip, Some(assist));
     let mut s = Scroll::default();
-    let p = plain(&frame(&mut ed, &mut s, 120, 3));
-    assert!(p.contains("› [IGNORE] ??  b.log"));
-    assert!(!p.contains("a.rs"));
-    assert!(p.contains("2 files"));
-    assert!(p.contains("Space Cycle  A All  ⌫ Delete  Tab Edit  ^S Commit"));
-    press(&mut ed, Key::Up);
-    let p = plain(&frame(&mut ed, &mut s, 120, 3));
-    assert!(p.contains("› [ADD]     M  a.rs"));
+    ed.tick(1200);
+    let p = plain(&frame(&mut ed, &mut s, 140, 8));
+    assert!(p.contains("claude · effort low · claude is composing default commit message..."));
+    assert!(p.contains("Tab Files  ^N Agent  ^E Effort  ^F Find"));
+    state.borrow_mut().answer = Some(Ok("Suggested subject\n\nWhy".into()));
+    ed.tick(1300);
+    let f = frame(&mut ed, &mut s, 140, 8);
+    assert!(f.contains(&format!("{DIM}Suggested subject{RESET}")));
+    assert!(plain(&f).contains("suggestion ready") && plain(&f).contains("# tail"));
+    press(&mut ed, Key::Tab);
+    assert!(plain(&frame(&mut ed, &mut s, 140, 8))
+        .contains("Tab Message  ^S Commit  Esc Cancel  ^N Agent  ^E Effort"));
+    press(&mut ed, Key::BackTab);
+    press(&mut ed, Key::Char('x'));
+    assert!(!plain(&frame(&mut ed, &mut s, 140, 8)).contains("Suggested subject"));
+    ed.prompt = Prompt::Help;
+    assert!(plain(&frame(&mut ed, &mut s, 200, 40)).contains("Ctrl+N        next agent CLI"));
 }
 
 // Checks the Rebase view rows and key bar.
@@ -155,7 +192,7 @@ fn test_frame_prompts_and_help() {
     assert!(plain(&frame(&mut ed, &mut s, 80, 6)).contains("hello"));
     ed.prompt = Prompt::Help;
     let f = frame(&mut ed, &mut s, 200, 40);
-    assert!(plain(&f).contains("Files view: Space cycles"));
+    assert!(plain(&f).contains("Files (right column, Tab): Space cycles"));
     assert!(!f.ends_with("\x1b[?25h"));
     let mut rb = editor(&["pick a"], Kind::Rebase, Vec::new());
     rb.prompt = Prompt::Help;

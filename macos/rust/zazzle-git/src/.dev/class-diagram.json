@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzle-git types",
   "folder": "macos/rust/zazzle-git/src",
-  "description": "The structs, enums and the trait the library declares: the edit buffer, the editor state with its views, prompts and find bar, file marks and the git steps they become, decoded keys, file kinds, arrow taps, the terminal, the router's routes, the commit flow's options and the message command's result. Snapshot and Style are private to their modules; the binaries in bin/ declare no types.",
+  "description": "The structs, enums and the trait the library declares: the edit buffer, the editor state with its views, prompts and find bar, file marks and the git steps they become, decoded keys, file kinds, arrow taps, the terminal, the router's routes, the agent CLIs, the assistant that composes a default commit message with its status, the composer trait and the process that runs the agent, the commit flow's options and the message command's result. Snapshot and Style are private to their modules; the binaries in bin/ declare no types.",
   "sources": [
     {
       "path": "macos/rust/zazzle-git/src/editor.rs",
@@ -40,9 +40,33 @@
     {
       "path": "macos/rust/zazzle-git/src/message.rs",
       "symbol": "Edited"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/compose.rs",
+      "symbol": "ProcessComposer"
     }
   ],
   "types": [
+    {
+      "id": "agent.Agent",
+      "name": "Agent",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzle-git/src/agent.rs"
+      ],
+      "members": [
+        "name: &'static str",
+        "efforts: &'static [&'static str]",
+        "default_effort: &'static str",
+        "command(effort: &str) -> Vec<String>",
+        "effort_or_default(saved: &str) -> String",
+        "next_effort(current: &str) -> Option<String>"
+      ]
+    },
     {
       "id": "buffer.Pos",
       "name": "Pos",
@@ -102,6 +126,51 @@
         "line_edge(p: Pos, end: bool) -> Pos",
         "text_edge(end: bool) -> Pos",
         "move_to(p: Pos, select: bool)"
+      ]
+    },
+    {
+      "id": "assist.Status",
+      "name": "Status",
+      "kind": "enum",
+      "sources": [
+        "macos/rust/zazzle-git/src/assist.rs"
+      ],
+      "members": [
+        "NoAgent",
+        "Idle",
+        "Composing { since: u64 }",
+        "Ready(String)",
+        "Failed(String)"
+      ]
+    },
+    {
+      "id": "assist.Assist",
+      "name": "Assist",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzle-git/src/assist.rs"
+      ],
+      "members": [
+        "agents: Vec<&'static Agent>",
+        "agent: usize",
+        "effort: String",
+        "status: Status",
+        "save_waiting: bool",
+        "restart_at: Option<u64>",
+        "shown_dots: u64",
+        "composer: Box<dyn Composer>",
+        "context: ContextFn",
+        "remember: RememberFn",
+        "new(agents, saved_agent, saved_effort, composer, context, remember) -> Assist",
+        "agent() -> Option<&'static Agent>",
+        "start(files: &[Entry], now: u64)",
+        "cycle_agent(files: &[Entry], now: u64) -> String",
+        "cycle_effort(files: &[Entry], now: u64) -> String",
+        "marks_changed(now: u64)",
+        "busy() -> bool",
+        "tick(files: &[Entry], now: u64) -> bool",
+        "suggestion() -> Option<&str>",
+        "line(now: u64) -> String"
       ]
     },
     {
@@ -212,9 +281,15 @@
         "tap_from: Pos",
         "tap_row: usize",
         "clipboard: Box<dyn Clipboard>",
-        "new(buf, kind, comment, files, clipboard) -> Editor",
+        "assist: Option<Assist>",
+        "now: u64",
+        "new(buf, kind, comment, files, clipboard, assist) -> Editor",
         "changed() -> bool",
-        "handle(ev: KeyEvent, now_ms: u64) -> Option<Outcome>"
+        "handle(ev: KeyEvent, now_ms: u64) -> Option<Outcome>",
+        "message_empty() -> bool",
+        "now() -> u64",
+        "busy() -> bool",
+        "tick(now_ms: u64) -> (bool, Option<Outcome>)"
       ]
     },
     {
@@ -351,7 +426,8 @@
       ],
       "members": [
         "top: usize",
-        "left: usize"
+        "left: usize",
+        "list_top: usize"
       ]
     },
     {
@@ -426,6 +502,33 @@
         "tty: File",
         "open() -> io::Result<Term>",
         "run(ed: &mut Editor) -> io::Result<Outcome>"
+      ]
+    },
+    {
+      "id": "compose.Composer",
+      "name": "Composer",
+      "kind": "interface",
+      "sources": [
+        "macos/rust/zazzle-git/src/compose.rs"
+      ],
+      "members": [
+        "start(cmd: Vec<String>, prompt: String)",
+        "poll() -> Option<Answer>",
+        "cancel()"
+      ]
+    },
+    {
+      "id": "compose.ProcessComposer",
+      "name": "ProcessComposer",
+      "kind": "struct",
+      "sources": [
+        "macos/rust/zazzle-git/src/compose.rs"
+      ],
+      "members": [
+        "rx: Option<Receiver<Answer>>",
+        "child: Arc<Mutex<Option<Child>>>",
+        "timeout: Duration",
+        "new(timeout: Duration) -> ProcessComposer"
       ]
     },
     {
@@ -606,6 +709,48 @@
       "to": "files.Entry",
       "kind": "depends-on",
       "description": "The files with their final marks."
+    },
+    {
+      "from": "assist.Assist",
+      "to": "agent.Agent",
+      "kind": "depends-on",
+      "description": "The agents found on PATH and the chosen one."
+    },
+    {
+      "from": "assist.Assist",
+      "to": "assist.Status",
+      "kind": "depends-on",
+      "description": "Where composing stands."
+    },
+    {
+      "from": "assist.Assist",
+      "to": "compose.Composer",
+      "kind": "depends-on",
+      "description": "Runs the agent in the background."
+    },
+    {
+      "from": "assist.Assist",
+      "to": "files.Entry",
+      "kind": "depends-on",
+      "description": "The files whose marks the prompt describes."
+    },
+    {
+      "from": "compose.ProcessComposer",
+      "to": "compose.Composer",
+      "kind": "implements",
+      "description": "Runs the agent CLI as a child process in its own process group, with a timeout."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "assist.Assist",
+      "kind": "depends-on",
+      "description": "The optional assistant: started when the message is empty, ticked, cycled with Ctrl+N and Ctrl+E, and told when marks change."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "assist.Status",
+      "kind": "depends-on",
+      "description": "Ctrl+S on an empty commit message uses a Ready suggestion or waits while Composing."
     }
   ]
 }

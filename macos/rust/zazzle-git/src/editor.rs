@@ -1,5 +1,6 @@
 // The editor's state and what each key does in the editing view, the Files and Rebase views, the find bar and the prompts.
 
+use crate::assist::{Assist, Status};
 use crate::buffer::{Buffer, Pos};
 use crate::clipboard::Clipboard;
 use crate::files::{self, Entry, Mark};
@@ -63,16 +64,19 @@ pub struct Editor {
     tap_from: Pos,
     tap_row: usize,
     clipboard: Box<dyn Clipboard>,
+    pub assist: Option<Assist>,
+    now: u64,
 }
 
 impl Editor {
-    // Creates an editor for a buffer; a Files view is offered when files are given, a Rebase view for todo lists.
+    // Creates an editor for a buffer; a Files column is offered when files are given, a Rebase view for todo lists, and an agent starts composing when the message is empty.
     pub fn new(
         buf: Buffer,
         kind: Kind,
         comment: char,
         files: Vec<Entry>,
         clipboard: Box<dyn Clipboard>,
+        assist: Option<Assist>,
     ) -> Editor {
         let mut views = vec![View::Edit];
         if !files.is_empty() {
@@ -82,7 +86,7 @@ impl Editor {
             views.push(View::Rebase);
         }
         let view = if kind == Kind::Rebase { View::Rebase } else { View::Edit };
-        Editor {
+        let mut ed = Editor {
             buf,
             kind,
             comment,
@@ -101,6 +105,51 @@ impl Editor {
             tap_from: Pos::default(),
             tap_row: 0,
             clipboard,
+            assist,
+            now: 0,
+        };
+        if ed.message_empty() {
+            if let Some(a) = ed.assist.as_mut() {
+                a.start(&ed.files, 0);
+            }
+        }
+        ed
+    }
+
+    // Returns true if the editable text has nothing but blank and comment lines.
+    pub fn message_empty(&self) -> bool {
+        self.buf.lines.iter().all(|l| l.first() == Some(&self.comment) || l.iter().all(|c| c.is_whitespace()))
+    }
+
+    // Returns the time of the last key press or tick, in milliseconds since the editor started.
+    pub fn now(&self) -> u64 {
+        self.now
+    }
+
+    // Returns true while the agent works or a save waits for it, so the screen keeps updating without key presses.
+    pub fn busy(&self) -> bool {
+        self.assist.as_ref().is_some_and(|a| a.busy() || a.save_waiting)
+    }
+
+    // Advances the agent at the given time; returns whether the screen changed and how editing ended, if a waiting save finished.
+    pub fn tick(&mut self, now_ms: u64) -> (bool, Option<Outcome>) {
+        self.now = now_ms;
+        let Some(a) = self.assist.as_mut() else { return (false, None) };
+        let changed = a.tick(&self.files, now_ms);
+        if !a.save_waiting {
+            return (changed, None);
+        }
+        match &a.status {
+            Status::Ready(_) => {
+                a.save_waiting = false;
+                (true, self.save())
+            }
+            Status::Failed(_) => {
+                a.save_waiting = false;
+                self.message = "No suggestion: write a message (Esc cancels)".to_string();
+                (true, None)
+            }
+            _ => (changed, None),
         }
     }
 
@@ -115,6 +164,7 @@ impl Editor {
             self.taps.reset();
         }
         self.message.clear();
+        self.now = now_ms;
         match self.prompt.clone() {
             Prompt::Help => {
                 self.prompt = Prompt::None;
@@ -136,6 +186,7 @@ impl Editor {
             Key::BackTab => self.cycle_view(self.views.len() - 1),
             Key::Ctrl('f') => self.open_find(false),
             Key::Ctrl('r') => self.open_find(true),
+            Key::Ctrl('n') | Key::Ctrl('e') => self.cycle_assist(ev.key == Key::Ctrl('n')),
             _ => match self.view {
                 View::Edit => self.edit_key(ev, now_ms),
                 View::Files => self.files_key(ev, now_ms),
@@ -151,8 +202,47 @@ impl Editor {
         matches!(ev.key, Key::Char('y') | Key::Char('Y')).then_some(outcome)
     }
 
-    // Saves unless the content would be rejected; asks first when files are marked for deletion.
+    // Switches the agent or its effort, which starts composing again.
+    fn cycle_assist(&mut self, agent: bool) {
+        let (files, now) = (&self.files, self.now);
+        self.message = match self.assist.as_mut() {
+            Some(a) if agent => a.cycle_agent(files, now),
+            Some(a) => a.cycle_effort(files, now),
+            None => "Agents only suggest commit messages".to_string(),
+        };
+    }
+
+    // Fills an empty commit message with the agent's suggestion, or waits for it; returns false while waiting.
+    fn use_suggestion(&mut self) -> bool {
+        if self.kind != Kind::Commit || !self.message_empty() {
+            return true;
+        }
+        let Some(a) = self.assist.as_mut() else { return true };
+        match a.status.clone() {
+            Status::Ready(s) => {
+                self.buf.checkpoint(false);
+                self.buf.lines = s.lines().map(|l| l.chars().collect()).collect();
+                self.buf.move_to(Pos::default(), false);
+                true
+            }
+            Status::Composing { .. } | Status::Idle => {
+                if a.status == Status::Idle {
+                    a.start(&self.files, self.now);
+                }
+                a.save_waiting = true;
+                let name = a.agent().map_or("the agent", |g| g.name);
+                self.message = format!("Saving when {name} is done (Esc stops waiting)");
+                false
+            }
+            _ => true,
+        }
+    }
+
+    // Saves unless the content would be rejected; an empty commit message takes the agent's suggestion; asks first when files are marked for deletion.
     fn save(&mut self) -> Option<Outcome> {
+        if !self.use_suggestion() {
+            return None;
+        }
         if let Some(problem) = self.problem() {
             self.message = problem;
             return None;
@@ -168,14 +258,7 @@ impl Editor {
     // Returns why saving now would fail: an empty commit message or a todo list git rejects.
     fn problem(&self) -> Option<String> {
         match self.kind {
-            Kind::Commit => {
-                let empty = self
-                    .buf
-                    .lines
-                    .iter()
-                    .all(|l| l.first() == Some(&self.comment) || l.iter().all(|c| c.is_whitespace()));
-                empty.then(|| "The message is empty (Esc cancels)".to_string())
-            }
+            Kind::Commit => self.message_empty().then(|| "The message is empty (Esc cancels)".to_string()),
             Kind::Rebase => {
                 rebase::warning(&self.buf.lines.iter().map(|l| l.iter().collect()).collect::<Vec<String>>())
             }
@@ -183,8 +266,13 @@ impl Editor {
         }
     }
 
-    // Cancels at once if nothing changed, otherwise asks first.
+    // Stops a save that waits for the agent; otherwise cancels at once if nothing changed, or asks first.
     fn cancel(&mut self) -> Option<Outcome> {
+        if let Some(a) = self.assist.as_mut().filter(|a| a.save_waiting) {
+            a.save_waiting = false;
+            self.message = "Stopped waiting; not saved".to_string();
+            return None;
+        }
         if !self.changed() {
             return Some(Outcome::Cancel);
         }
@@ -450,7 +538,10 @@ impl Editor {
         }
         if ev.key == Key::Ctrl('z') {
             match self.files_undo.pop() {
-                Some(marks) => self.files.iter_mut().zip(marks).for_each(|(e, m)| e.mark = m),
+                Some(marks) => {
+                    self.files.iter_mut().zip(marks).for_each(|(e, m)| e.mark = m);
+                    self.marks_changed();
+                }
                 None => self.message = "Nothing to undo".to_string(),
             }
             return;
@@ -467,6 +558,14 @@ impl Editor {
         }
         if self.files.iter().map(|e| e.mark).ne(snapshot.iter().copied()) {
             self.files_undo.push(snapshot);
+            self.marks_changed();
+        }
+    }
+
+    // Tells the agent the marks changed, so it composes again for the new set of files.
+    fn marks_changed(&mut self) {
+        if let Some(a) = self.assist.as_mut() {
+            a.marks_changed(self.now);
         }
     }
 

@@ -79,6 +79,56 @@
         { "path": "macos/rust/zazzle-git/src/term.rs", "symbol": "Term::open" },
         { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "parse_args" }
       ]
+    },
+    {
+      "id": "codex-effort-unverified",
+      "title": "The codex effort flag is unverified",
+      "summary": "codex gets its effort as `-c model_reasoning_effort=<effort>`, which is not taken from Codex's documentation; the tests check only that the argument is passed, to a stand-in script.",
+      "impact": "Ctrl+E may change nothing for codex, or codex may reject the setting and the run fails.",
+      "workaround": "If codex fails or ignores the effort, use another agent with Ctrl+N.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "Agent::command" },
+        { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_agent_prompt_file_and_cycling" }
+      ]
+    },
+    {
+      "id": "gemini-no-effort",
+      "title": "gemini has no effort setting",
+      "summary": "gemini has no effort levels, so Ctrl+E only says `gemini has no effort setting` and the agent line shows `effort n/a`.",
+      "impact": "How much gemini thinks cannot be chosen from the editor.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "AGENTS" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::cycle_effort" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::line" }
+      ]
+    },
+    {
+      "id": "three-agents-only",
+      "title": "Only claude, codex and gemini",
+      "summary": "The agents are a fixed list: claude, codex and gemini, found as executable files on PATH under exactly those names.",
+      "impact": "Another agent CLI, or one installed under another name or outside PATH, is never offered.",
+      "workaround": "Put a script named claude, codex or gemini first on PATH that takes the same arguments.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "AGENTS" },
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "available" }
+      ]
+    },
+    {
+      "id": "prompt-size-cut",
+      "title": "Large changes are cut in the prompt",
+      "summary": "The changes in the prompt are cut at 60,000 characters, and a new file contributes only its first 200 lines (a file that is not UTF-8 text only its name).",
+      "impact": "For a large commit the agent sees only part of the diff, and its message may miss what was cut.",
+      "workaround": "Review the suggestion, or write the message yourself.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "MAX_CHANGES" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "NEW_FILE_LINES" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "cap" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "new_file" }
+      ]
     }
   ]
 }

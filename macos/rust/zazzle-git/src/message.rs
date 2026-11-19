@@ -1,7 +1,11 @@
 // `zazzle git message FILE`: loads a file, runs the editor on the terminal and saves the result in place, atomically.
 
+use crate::agent;
+use crate::assist::Assist;
 use crate::buffer::Buffer;
 use crate::clipboard::SystemClipboard;
+use crate::compose::{ProcessComposer, AGENT_TIMEOUT};
+use crate::context;
 use crate::editor::{Editor, Outcome};
 use crate::files::Entry;
 use crate::git::git;
@@ -10,7 +14,7 @@ use crate::term::Term;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Largest file the editor opens.
 pub const MAX_BYTES: u64 = 256 * 1024;
@@ -68,14 +72,36 @@ pub fn save_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     fs::rename(&tmp, path)
 }
 
-// Opens the file in the editor on the terminal, with a Files view when files are given, and saves it if the user saves.
-pub fn edit(path: &Path, files: Vec<Entry>) -> Result<Edited, String> {
+// Returns the agent assistant for a commit message: the agents on PATH, the saved choice, and a prompt from the marked files or the staged changes.
+pub fn assistant(origin: &Path, staged: bool) -> Assist {
+    let agents = agent::available(&std::env::var_os("PATH").unwrap_or_default());
+    let saved_agent = git(&["config", "--global", "--get", "zazzle.agent"]).unwrap_or_default();
+    let saved_effort = git(&["config", "--global", "--get", "zazzle.effort"]).unwrap_or_default();
+    let origin = origin.to_path_buf();
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let has_head = git(&["rev-parse", "-q", "--verify", "HEAD"]).is_ok();
+    let context = Box::new(move |files: &[Entry]| {
+        let changes =
+            if staged { context::staged_changes() } else { context::marked_changes(files, has_head) };
+        context::prompt(&origin, home.as_deref(), &changes)
+    });
+    let remember = Box::new(|agent: &str, effort: &str| {
+        let _ = git(&["config", "--global", "zazzle.agent", agent]);
+        let _ = git(&["config", "--global", "zazzle.effort", effort]);
+    });
+    let composer = Box::new(ProcessComposer::new(AGENT_TIMEOUT));
+    Assist::new(agents, saved_agent.trim(), saved_effort.trim(), composer, context, remember)
+}
+
+// Opens the file in the editor on the terminal, with a Files column when files are given and an agent for commit messages, and saves it if the user saves.
+pub fn edit(path: &Path, files: Vec<Entry>, origin: &Path) -> Result<Edited, String> {
     let text = load(path)?;
     let kind = Kind::detect(path);
     let comment = if kind.is_git() { comment_char() } else { '#' };
     let (editable, tail) = split(&text, kind, comment);
     let buf = Buffer::new(editable, tail);
-    let mut ed = Editor::new(buf, kind, comment, files, Box::new(SystemClipboard::for_this_system()));
+    let assist = (kind == Kind::Commit).then(|| assistant(origin, files.is_empty()));
+    let mut ed = Editor::new(buf, kind, comment, files, Box::new(SystemClipboard::for_this_system()), assist);
     let outcome = {
         let mut term = Term::open().map_err(|e| format!("needs a terminal: {e}"))?;
         term.run(&mut ed).map_err(|e| e.to_string())?
@@ -111,7 +137,8 @@ pub fn main(args: &[String]) -> i32 {
             return 2;
         }
     };
-    match edit(Path::new(file), Vec::new()) {
+    let origin = std::env::current_dir().unwrap_or_default();
+    match edit(Path::new(file), Vec::new(), &origin) {
         Ok(Edited { outcome: Outcome::Save, .. }) => 0,
         Ok(_) => 1,
         Err(e) => {
@@ -188,7 +215,7 @@ mod tests {
     fn test_edit_errors() {
         let d = scratch("edit");
         fs::write(d.join("bin"), [0xff]).unwrap();
-        assert!(edit(&d.join("bin"), Vec::new()).is_err());
+        assert!(edit(&d.join("bin"), Vec::new(), &d).is_err());
         let v = vec![d.join("bin").to_string_lossy().into_owned()];
         assert_eq!(main(&v), 1);
         fs::remove_dir_all(d).unwrap();

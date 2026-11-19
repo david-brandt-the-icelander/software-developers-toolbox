@@ -3,13 +3,14 @@
   "kind": "component",
   "title": "zazzle-git component diagram",
   "folder": "macos/rust/zazzle-git",
-  "description": "The zazzle-git crate: one library in src/ behind three thin binaries, its end-to-end tests, the zazzle invoker that execs it for `zazzle git`, and the git it runs and hands everything else to.",
+  "description": "The zazzle-git crate: one library in src/ behind three thin binaries, its end-to-end tests, the zazzle invoker that execs it for `zazzle git`, the git it runs and hands everything else to, and the optional agent CLIs that compose a default commit message.",
   "sources": [
     { "path": "macos/rust/zazzle-git/Cargo.toml", "symbol": "bin" },
     { "path": "macos/rust/zazzle-git/src/lib.rs", "symbol": "args" },
     { "path": "macos/rust/zazzle-git/src/git.rs", "symbol": "exec_git" },
     { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "Pty" },
-    { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary" }
+    { "path": "macos/c/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
+    { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "AGENTS" }
   ],
   "components": [
     {
@@ -21,14 +22,14 @@
     {
       "id": "src",
       "name": "zazzle-git sources",
-      "responsibility": "Routing, the commit flow, the message editor, its terminal and git access; src/bin holds the three entry points.",
+      "responsibility": "Routing, the commit flow, the message editor, its terminal, git access and the agent that composes a default commit message; src/bin holds the three entry points.",
       "folder": "macos/rust/zazzle-git/src",
       "diagram": "macos/rust/zazzle-git/src/.dev/component-diagram.json"
     },
     {
       "id": "tests",
       "name": "Pseudo-terminal tests",
-      "responsibility": "Run the built binaries on a pseudo-terminal in scratch repositories and type keys into them: saving and cancelling a message, commits with marks, the deletion prompt, a failing hook, amend, a first commit and an interactive rebase.",
+      "responsibility": "Run the built binaries on a pseudo-terminal in scratch repositories and type keys into them: saving and cancelling a message, commits with marks, the deletion prompt, a failing hook, amend, a first commit, an interactive rebase, and agent-composed messages with stand-in claude, codex and gemini scripts first on PATH.",
       "folder": "macos/rust/zazzle-git/tests"
     },
     {
@@ -43,6 +44,12 @@
       "name": "git",
       "responsibility": "The real git on PATH: status, config, rev-parse, add, rm, reset and commit for the commit flow, and every command zazzle git does not answer itself.",
       "external": true
+    },
+    {
+      "id": "agent-clis",
+      "name": "Agent CLIs",
+      "responsibility": "claude, codex or gemini on PATH, optional: run without tools to compose a default commit message.",
+      "external": true
     }
   ],
   "relationships": [
@@ -50,6 +57,7 @@
     { "from": "crate", "to": "tests", "kind": "contains", "description": "cargo test runs them against the built binaries." },
     { "from": "invoker", "to": "crate", "kind": "depends-on", "description": "Execs the zazzle-git binary from its own directory." },
     { "from": "src", "to": "git", "kind": "depends-on", "description": "Runs git captured with a timeout, attached to the terminal for commit, or replaces itself with it (git.rs)." },
+    { "from": "src", "to": "agent-clis", "kind": "depends-on", "description": "Runs the chosen one in the background with the prompt on stdin (compose.rs), when one is installed." },
     { "from": "tests", "to": "git", "kind": "depends-on", "description": "Builds scratch repositories and runs git rebase -i with the editor as sequence editor." }
   ]
 }

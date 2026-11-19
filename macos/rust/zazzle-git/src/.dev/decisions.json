@@ -85,6 +85,25 @@
       "relationships": [
         { "relation": "relates-to", "path": "macos/rust/zazzle-git/src/.dev/limitations.json", "entityId": "tap-heuristic" }
       ]
+    },
+    {
+      "id": "agents-without-tools",
+      "title": "Agents compose without tools, from a prompt on stdin, in their own process group",
+      "summary": "The commit message agent gets everything it needs in the prompt and is run so that it cannot change files (no tools for claude, a read-only sandbox for codex, plan mode for gemini), and so that stopping it stops everything it started.",
+      "status": "accepted",
+      "context": "The agent runs while the developer is in the editor, on their working tree, without anyone watching it; it only has to write a few lines of text, and it may be restarted many times as marks change.",
+      "decision": "The prompt (instructions, branch, recent subjects, changes) goes on stdin. claude runs with `-p --tools \"\" --no-session-persistence --effort`; codex with `exec --sandbox read-only --skip-git-repo-check --ephemeral -c model_reasoning_effort=… -`; gemini with `--approval-mode plan -p …`. Each is spawned with process_group(0), and stopping it sends SIGKILL to the whole group.",
+      "rationale": "No file edits behind the developer's back, no saved sessions to clutter claude's or codex's history, no argument length limit for a large diff, and no orphaned helper processes when the agent is cancelled, restarted or times out.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "Agent::command" },
+        { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "ProcessComposer" },
+        { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "kill_group" },
+        { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "prompt" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "macos/rust/zazzle-git/src/.dev/contracts.json", "entityId": "agent-command-lines" }
+      ]
     }
   ]
 }

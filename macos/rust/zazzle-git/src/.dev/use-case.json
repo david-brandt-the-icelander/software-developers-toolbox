@@ -3,7 +3,7 @@
   "kind": "use-case",
   "title": "zazzle git use cases",
   "folder": "macos/rust/zazzle-git/src",
-  "description": "What a developer does with zazzle git, step by step: write a message as git's editor, commit with a kept draft and chosen files, and reorder or squash commits in an interactive rebase; and how a coding agent commits without the editor.",
+  "description": "What a developer does with zazzle git, step by step: write a message as git's editor, commit with a kept draft and chosen files, commit a message an agent composed, and reorder or squash commits in an interactive rebase; and how a coding agent commits without the editor.",
   "sources": [
     { "path": "macos/rust/zazzle-git/src/message.rs", "symbol": "main" },
     { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "run" },
@@ -185,10 +185,11 @@
         {
           "id": "edit",
           "actor": "Developer",
-          "action": "Writes the message, presses Tab for the Files view, marks each file with Space (blank, [ADD], [IGNORE], [REMOVE]), A or Backspace ([DELETE]), and presses Ctrl+S.",
+          "action": "Writes the message, presses Tab to move to the file list (beside the message from 60 columns, otherwise a view of its own), marks each file with Space (blank, [ADD], [IGNORE], [REMOVE]), A or Backspace ([DELETE]), and presses Ctrl+S.",
           "sources": [
             { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::files_key" },
-            { "path": "macos/rust/zazzle-git/src/files.rs", "symbol": "Entry::cycle" }
+            { "path": "macos/rust/zazzle-git/src/files.rs", "symbol": "Entry::cycle" },
+            { "path": "macos/rust/zazzle-git/src/render.rs", "symbol": "TWO_COLUMNS_MIN" }
           ],
           "participantKind": "actor",
           "actorDocument": "Actors/developer.md"
@@ -260,6 +261,149 @@
             { "path": "macos/rust/zazzle-git/src/commit.rs", "symbol": "commit" },
             { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_keeps_draft_when_git_fails" }
           ]
+        }
+      ]
+    },
+    {
+      "id": "compose-message-with-agent",
+      "name": "Commit with a message an agent composed",
+      "description": "While the developer chooses the files in zazzle git commit, or opens git's editor for a commit, an agent CLI on PATH composes a default commit message from the changes, and Ctrl+S on the empty message commits it.",
+      "sources": [
+        { "path": "macos/rust/zazzle-git/src/message.rs", "symbol": "assistant" },
+        { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist" },
+        { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_uses_agent_suggestion" }
+      ],
+      "actor": "Developer",
+      "actorDocument": "Actors/developer.md",
+      "goal": "Get a good default commit message for the changes without writing it, and choose which agent writes it and how much effort it spends.",
+      "preconditions": [
+        "The editor opens a commit message, from zazzle git commit or as git's editor, in a terminal.",
+        "claude, codex or gemini is an executable file on PATH."
+      ],
+      "postconditions": [
+        "Saved with an empty message: the agent's answer, without a surrounding code fence, is the commit message.",
+        "An agent or effort the developer switched to is saved in the global git config as zazzle.agent and zazzle.effort and chosen first next time.",
+        "No agent process is left running once the editor closes."
+      ],
+      "flow": [
+        {
+          "id": "open",
+          "actor": "zazzle-git",
+          "action": "Finds the agents on PATH, takes the saved zazzle.agent and zazzle.effort (else the first agent found and its default effort) and, when the message has only blank and comment lines, starts composing.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/message.rs", "symbol": "assistant" },
+            { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "available" },
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::new" },
+            { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::new" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "prompt",
+          "actor": "zazzle-git",
+          "action": "Builds the prompt: the nearest .zazzle/commit-message-prompt.md from the folder the command started in up to the home folder (or built-in instructions), the branch, the last ten commit subjects, and the changes: for zazzle git commit a line per marked file, the diff of tracked files against HEAD and the first 200 lines of new ones; as git's editor the staged diff.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "prompt" },
+            { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "find_prompt" },
+            { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "marked_changes" },
+            { "path": "macos/rust/zazzle-git/src/context.rs", "symbol": "staged_changes" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "compose",
+          "actor": "zazzle-git",
+          "action": "Runs the agent CLI without tools in its own process group with the prompt on stdin, and shows `<agent> · effort <e> · <agent> is composing default commit message` above the status line, with a dot more every 500 ms.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/agent.rs", "symbol": "Agent::command" },
+            { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "ProcessComposer" },
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::line" },
+            { "path": "macos/rust/zazzle-git/src/term.rs", "symbol": "TICK_MS" }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "review",
+          "actor": "Developer",
+          "action": "Marks the files in the right-hand column (Tab), may press Ctrl+N for the next agent or Ctrl+E for the next effort, and reads the suggestion shown dimmed in the empty message once it is ready.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::cycle_assist" },
+            { "path": "macos/rust/zazzle-git/src/render.rs", "symbol": "edit_rows" }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "save",
+          "actor": "Developer",
+          "action": "Presses Ctrl+S with the message still empty.",
+          "sources": [{ "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::save" }],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "use",
+          "actor": "zazzle-git",
+          "action": "Puts the suggestion in the message and saves; the commit then goes on as in commit-with-draft-and-files, or git goes on as with any saved message.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::use_suggestion" },
+            { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_git_commit_editor_uses_staged_diff" }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "open",
+          "condition": "No agent CLI is on PATH.",
+          "outcome": "The agent line says `No agent CLI found (claude, codex or gemini): write the message yourself`, and Ctrl+S on an empty message says `The message is empty`.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::line" },
+            { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_without_agents" }
+          ]
+        },
+        {
+          "atStep": "compose",
+          "condition": "The agent exits non-zero, answers nothing, cannot be started or takes longer than 300 seconds.",
+          "outcome": "Its process group is killed if still running and the agent line says `<agent> failed: <reason>`; the developer writes the message.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/compose.rs", "symbol": "AGENT_TIMEOUT" },
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::tick" }
+          ]
+        },
+        {
+          "atStep": "review",
+          "condition": "File marks change.",
+          "outcome": "The agent composes again for the new marks 1.5 seconds after the last change.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "RESTART_MS" },
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::marks_changed" }
+          ]
+        },
+        {
+          "atStep": "review",
+          "condition": "Ctrl+N or Ctrl+E.",
+          "outcome": "The running agent is stopped, the next agent or effort is saved in zazzle.agent and zazzle.effort, and composing starts again; with one agent, or gemini's lack of effort levels, a message says so instead.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::cycle_agent" },
+            { "path": "macos/rust/zazzle-git/src/assist.rs", "symbol": "Assist::cycle_effort" },
+            { "path": "macos/rust/zazzle-git/tests/pty.rs", "symbol": "test_commit_agent_prompt_file_and_cycling" }
+          ]
+        },
+        {
+          "atStep": "save",
+          "condition": "The agent is still composing.",
+          "outcome": "`Saving when <agent> is done (Esc stops waiting)`: the save happens when the answer arrives; Esc stops waiting without saving, and a failed run shows `No suggestion: write a message (Esc cancels)`.",
+          "sources": [
+            { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::tick" },
+            { "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::cancel" }
+          ]
+        },
+        {
+          "atStep": "save",
+          "condition": "The developer has written a message.",
+          "outcome": "Ctrl+S saves what they wrote; the suggestion is not used.",
+          "sources": [{ "path": "macos/rust/zazzle-git/src/editor.rs", "symbol": "Editor::use_suggestion" }]
         }
       ]
     },
@@ -399,6 +543,12 @@
       "folder": "macos/rust/zazzle-git/src",
       "path": "macos/rust/zazzle-git/src/.dev/Editor.state-diagram.json",
       "relationship": "The editor states the developer's keys move through."
+    },
+    {
+      "kind": "state",
+      "folder": "macos/rust/zazzle-git/src",
+      "path": "macos/rust/zazzle-git/src/.dev/Assist.state-diagram.json",
+      "relationship": "The agent's states while it composes the default message."
     },
     {
       "kind": "component",

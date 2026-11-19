@@ -43,6 +43,10 @@ impl Pty {
         cmd.args(args)
             .current_dir(dir)
             .env("HOME", offered_home(dir))
+            .env(
+                "PATH",
+                format!("{}:{}", agents_bin(dir, 0).display(), std::env::var("PATH").unwrap_or_default()),
+            )
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .envs(env.iter().copied());
         cmd.stdin(Stdio::from(slave.try_clone().unwrap()))
@@ -125,6 +129,25 @@ fn offered_home(dir: &Path) -> PathBuf {
     fs::create_dir_all(&home).unwrap();
     fs::write(home.join(".gitconfig"), "[zazzle]\n\teditorOffered = true\n").unwrap();
     home
+}
+
+// Writes stand-in claude, codex and gemini scripts beside the given folder: each saves its prompt and arguments in $HOME, waits, and answers.
+fn agents_bin(dir: &Path, delay: u32) -> PathBuf {
+    let bin = PathBuf::from(format!("{}-bin{delay}", dir.display()));
+    fs::create_dir_all(&bin).unwrap();
+    for name in ["claude", "codex", "gemini"] {
+        let script = format!(
+            "#!/bin/sh\ncat > \"$HOME/{name}-prompt.txt\"\necho \"$@\" > \"$HOME/{name}-args.txt\"\nsleep {delay}\necho \"Fake subject from {name}\"\n"
+        );
+        fs::write(bin.join(name), script).unwrap();
+        Command::new("chmod").arg("+x").arg(bin.join(name)).status().unwrap();
+    }
+    bin
+}
+
+// Returns a PATH holding the stand-in agents that wait the given seconds, ahead of the real PATH.
+fn path_with_agents(dir: &Path, delay: u32) -> String {
+    format!("{}:{}", agents_bin(dir, delay).display(), std::env::var("PATH").unwrap_or_default())
 }
 
 // Makes an empty scratch directory.
@@ -416,4 +439,100 @@ fn test_commit_offers_editor_once() {
         assert_eq!(q.exit(), 1);
         assert!(!screen.contains("[y/N]"));
     }
+}
+
+// Checks the default message: the agent composes while the dots grow, and Ctrl+S on the empty message commits its suggestion.
+#[test]
+fn test_commit_uses_agent_suggestion() {
+    let d = repo("agent");
+    fs::write(d.join("a.txt"), "changed line\n").unwrap();
+    let path = path_with_agents(&d, 1);
+    let mut p = Pty::spawn(ZCOMMIT, &[], &d, &[("PATH", &path)]);
+    p.expect("claude · effort low · claude is composing default commit message.");
+    p.expect("default commit message..");
+    p.expect("suggestion ready");
+    p.expect("Fake subject from claude");
+    p.keys(b"\x13");
+    assert_eq!(p.exit(), 0);
+    assert_eq!(git(&d, &["log", "-1", "--format=%s"]).trim(), "Fake subject from claude");
+    let home = offered_home(&d);
+    let prompt = fs::read_to_string(home.join("claude-prompt.txt")).unwrap();
+    assert!(
+        prompt.starts_with("Write a git commit message")
+            && prompt.contains("+changed line")
+            && prompt.contains("first")
+    );
+    let args = fs::read_to_string(home.join("claude-args.txt")).unwrap();
+    assert!(args.contains("-p --tools  --no-session-persistence --effort low"), "{args}");
+}
+
+// Checks the prompt file from the home folder, cycling agent and effort (remembered for the next run), and a save that waits for the answer.
+#[test]
+fn test_commit_agent_prompt_file_and_cycling() {
+    let d = repo("cycle");
+    let home = scratch("cycle-home");
+    fs::create_dir_all(home.join(".zazzle")).unwrap();
+    fs::write(home.join(".zazzle/commit-message-prompt.md"), "Custom instructions XYZ").unwrap();
+    fs::write(home.join(".gitconfig"), "[zazzle]\n\teditorOffered = true\n").unwrap();
+    fs::write(d.join("a.txt"), "two\n").unwrap();
+    let path = path_with_agents(&d, 1);
+    let env = [("HOME", home.to_str().unwrap()), ("PATH", path.as_str())];
+    let mut p = Pty::spawn(ZCOMMIT, &[], &d, &env);
+    p.expect("claude is composing");
+    p.keys(b"\x0e");
+    p.expect("Agent: codex");
+    p.keys(b"\x05");
+    p.expect("Effort: medium");
+    p.keys(b"\x13");
+    p.expect("Saving when codex is done");
+    assert_eq!(p.exit(), 0);
+    assert_eq!(git(&d, &["log", "-1", "--format=%s"]).trim(), "Fake subject from codex");
+    assert!(fs::read_to_string(home.join("codex-prompt.txt"))
+        .unwrap()
+        .starts_with("Custom instructions XYZ"));
+    assert!(fs::read_to_string(home.join("codex-args.txt"))
+        .unwrap()
+        .contains("model_reasoning_effort=medium"));
+    let config = fs::read_to_string(home.join(".gitconfig")).unwrap();
+    assert!(config.contains("agent = codex") && config.contains("effort = medium"), "{config}");
+    fs::write(d.join("a.txt"), "three\n").unwrap();
+    let mut q = Pty::spawn(ZCOMMIT, &[], &d, &env);
+    q.expect("codex · effort medium · codex is composing");
+    q.keys(b"\x1b");
+    assert_eq!(q.exit(), 1);
+}
+
+// Checks that without any agent CLI the editor says so and an empty message still cannot be saved.
+#[test]
+fn test_commit_without_agents() {
+    let d = repo("noagent");
+    fs::write(d.join("a.txt"), "two\n").unwrap();
+    let out = Command::new("sh").args(["-c", "command -v git"]).output().unwrap();
+    let real_git = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let bin = PathBuf::from(format!("{}-gitonly", d.display()));
+    fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(&real_git, bin.join("git")).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let mut p = Pty::spawn(ZCOMMIT, &[], &d, &[("PATH", &path)]);
+    p.expect("No agent CLI found (claude, codex or gemini): write the message yourself");
+    p.keys(b"\x13");
+    p.expect("The message is empty");
+    p.keys(b"\x1b");
+    assert_eq!(p.exit(), 1);
+}
+
+// Checks the agent when git itself opens the editor: the prompt holds the staged diff, and an empty message commits the suggestion.
+#[test]
+fn test_git_commit_editor_uses_staged_diff() {
+    let d = repo("staged");
+    fs::write(d.join("a.txt"), "staged change\n").unwrap();
+    git(&d, &["add", "a.txt"]);
+    let path = path_with_agents(&d, 0);
+    let mut p = Pty::spawn("git", &["commit"], &d, &[("GIT_EDITOR", EDITOR), ("PATH", &path)]);
+    p.expect("suggestion ready");
+    p.keys(b"\x13");
+    assert_eq!(p.exit(), 0);
+    assert_eq!(git(&d, &["log", "-1", "--format=%s"]).trim(), "Fake subject from claude");
+    let prompt = fs::read_to_string(offered_home(&d).join("claude-prompt.txt")).unwrap();
+    assert!(prompt.contains("+staged change"));
 }

@@ -1,0 +1,163 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Assist state diagram",
+  "folder": "macos/rust/zazzle-git/src",
+  "description": "Assist.status, the agent that composes a default commit message while the editor is open. The Editor drives it: Editor::new starts it for an empty message, Ctrl+N and Ctrl+E cycle the agent and effort, a change of file marks plans a restart 1.5 s later (RESTART_MS), and Editor::tick, called by Term::run every 100 ms while it is busy, takes in the composer's answer. Starting a run cancels the one still going, and the composer kills the agent's process group when the editor closes. Only commit messages get an Assist (message::assistant).",
+  "sources": [
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Status"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::new"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::start"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::tick"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::cycle_agent"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::cycle_effort"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist.rs",
+      "symbol": "Assist::marks_changed"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/compose.rs",
+      "symbol": "ProcessComposer"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/editor.rs",
+      "symbol": "Editor::new"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/editor.rs",
+      "symbol": "Editor::use_suggestion"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/message.rs",
+      "symbol": "assistant"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist_tests.rs",
+      "symbol": "test_assist_run_and_dots"
+    },
+    {
+      "path": "macos/rust/zazzle-git/src/assist_tests.rs",
+      "symbol": "test_assist_cycling"
+    }
+  ],
+  "machine": "Assist.status (assist.rs), driven by the Editor",
+  "initialState": "created",
+  "states": [
+    {
+      "id": "created",
+      "description": "message::assistant has found the agents on PATH (claude, codex, gemini, in that order) and read the saved zazzle.agent and zazzle.effort from the global git config."
+    },
+    {
+      "id": "no-agent",
+      "description": "Status::NoAgent: no agent CLI on PATH; the agent line says `No agent CLI found (claude, codex or gemini): write the message yourself`."
+    },
+    {
+      "id": "idle",
+      "description": "Status::Idle: an agent is chosen but no run has started, because the message was not empty."
+    },
+    {
+      "id": "composing",
+      "description": "Status::Composing { since }: the agent runs in the background; the agent line shows `<agent> is composing default commit message` and a dot per 500 ms (DOT_MS)."
+    },
+    {
+      "id": "ready",
+      "description": "Status::Ready: the answer, without a code fence, is the suggestion, shown dimmed in an empty message and used by Ctrl+S."
+    },
+    {
+      "id": "failed",
+      "description": "Status::Failed: the agent exited non-zero (its first error line), answered nothing, could not be started, or was killed after 300 s (AGENT_TIMEOUT); the agent line says `<agent> failed: <reason>`."
+    }
+  ],
+  "transitions": [
+    {
+      "from": "created",
+      "to": "no-agent",
+      "trigger": "Assist::new",
+      "guard": "No agent was found"
+    },
+    {
+      "from": "created",
+      "to": "idle",
+      "trigger": "Assist::new",
+      "guard": "At least one agent was found",
+      "action": "Chooses the saved agent if found, else the first; its saved effort if it has that level, else its default."
+    },
+    {
+      "from": "idle",
+      "to": "composing",
+      "trigger": "Assist::start",
+      "action": "Called by Editor::new for an empty message, by Ctrl+S on an empty message, by Ctrl+N or Ctrl+E, or by a tick when a planned restart is due; builds the prompt and starts the agent's command line."
+    },
+    {
+      "from": "composing",
+      "to": "composing",
+      "trigger": "Assist::tick",
+      "guard": "No answer yet",
+      "action": "Adds a dot every 500 ms."
+    },
+    {
+      "from": "composing",
+      "to": "ready",
+      "trigger": "Assist::tick",
+      "guard": "The agent exited 0 with a non-empty answer"
+    },
+    {
+      "from": "composing",
+      "to": "failed",
+      "trigger": "Assist::tick",
+      "guard": "The agent failed, gave an empty answer, could not be started or timed out"
+    },
+    {
+      "from": "composing",
+      "to": "composing",
+      "trigger": "Ctrl+N, Ctrl+E, or a tick 1.5 s after the last file mark change",
+      "guard": "Ctrl+N: more than one agent found; Ctrl+E: the agent has effort levels",
+      "action": "The running agent is killed and a new run starts; Ctrl+N and Ctrl+E save the choice in zazzle.agent and zazzle.effort."
+    },
+    {
+      "from": "ready",
+      "to": "composing",
+      "trigger": "Ctrl+N, Ctrl+E, or a tick 1.5 s after the last file mark change",
+      "guard": "Ctrl+N: more than one agent found; Ctrl+E: the agent has effort levels",
+      "action": "A new run starts; the choice is saved as above."
+    },
+    {
+      "from": "failed",
+      "to": "composing",
+      "trigger": "Ctrl+N, Ctrl+E, or a tick 1.5 s after the last file mark change",
+      "guard": "Ctrl+N: more than one agent found; Ctrl+E: the agent has effort levels",
+      "action": "A new run starts; the choice is saved as above."
+    },
+    {
+      "from": "idle",
+      "to": "idle",
+      "trigger": "Ctrl+N or Ctrl+E",
+      "guard": "Only one agent was found (Ctrl+N), or it has no effort levels (Ctrl+E)",
+      "action": "Shows `<agent> is the only agent CLI found` or `<agent> has no effort setting`."
+    },
+    {
+      "from": "no-agent",
+      "to": "no-agent",
+      "trigger": "Ctrl+N, Ctrl+E or a file mark change",
+      "action": "Ctrl+N and Ctrl+E show `No agent CLI found (claude, codex or gemini)`; nothing starts."
+    }
+  ]
+}

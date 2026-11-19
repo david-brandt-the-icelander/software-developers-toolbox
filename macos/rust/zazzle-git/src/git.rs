@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 pub const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Reads a pipe to the end on a thread.
-fn drain(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<String> {
+pub fn drain(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<String> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
         let _ = pipe.read_to_end(&mut bytes);

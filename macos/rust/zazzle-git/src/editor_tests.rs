@@ -21,7 +21,7 @@ fn alt(key: Key) -> KeyEvent {
 // Builds an editor for lines of a kind, with optional files and an in-memory clipboard.
 fn editor(lines: &[&str], kind: Kind, files: Vec<Entry>) -> Editor {
     let buf = Buffer::new(lines.iter().map(|s| s.to_string()).collect(), vec!["# help".into()]);
-    Editor::new(buf, kind, '#', files, Box::new(SystemClipboard::with_commands(None, None)))
+    Editor::new(buf, kind, '#', files, Box::new(SystemClipboard::with_commands(None, None)), None)
 }
 
 // Sends keys at times far enough apart that they are not taps.
@@ -304,4 +304,94 @@ fn test_editor_find_in_lists() {
     send(&mut rb, &[k(Key::Ctrl('f'))]);
     send(&mut rb, &typed("two"));
     assert_eq!(rb.buf.cursor.row, 1);
+}
+
+// Builds a commit-message editor with a stand-in agent, returning the agent's state too.
+fn with_agent(
+    lines: &[&str],
+    names: &[&str],
+) -> (Editor, std::rc::Rc<std::cell::RefCell<crate::assist::tests::Fake>>) {
+    let (assist, state) = crate::assist::tests::fake(names, ("", ""));
+    let buf = Buffer::new(lines.iter().map(|s| s.to_string()).collect(), vec!["# help".into()]);
+    let files = vec![entry("a", ' ', 'M', Mark::Add), entry("b", '?', '?', Mark::Skip)];
+    let clip = Box::new(SystemClipboard::with_commands(None, None));
+    (Editor::new(buf, Kind::Commit, '#', files, clip, Some(assist)), state)
+}
+
+// Checks that an empty message starts composing at once, a filled one does not, and Ctrl+S takes a ready suggestion.
+#[test]
+fn test_editor_uses_ready_suggestion() {
+    let (mut filled, state) = with_agent(&["Mine"], &["claude"]);
+    assert!(state.borrow().runs.is_empty() && !filled.busy());
+    assert_eq!(filled.tick(5), (false, None));
+    assert_eq!(send(&mut filled, &[k(Key::Ctrl('s'))]), Some(Outcome::Save));
+    let (mut ed, state) = with_agent(&[""], &["claude"]);
+    assert_eq!(state.borrow().runs.len(), 1);
+    assert!(ed.busy());
+    state.borrow_mut().answer = Some(Ok("Subject\n\nBody".into()));
+    assert_eq!(ed.tick(100), (true, None));
+    assert_eq!(send(&mut ed, &[k(Key::Ctrl('s'))]), Some(Outcome::Save));
+    assert_eq!(ed.buf.text(), "Subject\n\nBody\n# help\n");
+}
+
+// Checks that Ctrl+S on an empty message waits for the agent and saves when it answers; Esc stops waiting; a failure says so.
+#[test]
+fn test_editor_save_waits_for_agent() {
+    let (mut ed, state) = with_agent(&[""], &["claude"]);
+    assert_eq!(send(&mut ed, &[k(Key::Ctrl('s'))]), None);
+    assert!(ed.message.contains("Saving when claude is done"));
+    assert!(ed.busy());
+    assert_eq!(ed.tick(100), (true, None));
+    state.borrow_mut().answer = Some(Ok("Done".into()));
+    assert_eq!(ed.tick(200), (true, Some(Outcome::Save)));
+    assert_eq!(ed.buf.line(0), "Done");
+    let (mut stop, _) = with_agent(&[""], &["claude"]);
+    send(&mut stop, &[k(Key::Ctrl('s'))]);
+    assert_eq!(send(&mut stop, &[k(Key::Esc)]), None);
+    assert_eq!(stop.message, "Stopped waiting; not saved");
+    assert_eq!(send(&mut stop, &[k(Key::Esc)]), Some(Outcome::Cancel));
+    let (mut fail, state) = with_agent(&[""], &["claude"]);
+    send(&mut fail, &[k(Key::Ctrl('s'))]);
+    state.borrow_mut().answer = Some(Err("boom".into()));
+    assert_eq!(fail.tick(100), (true, None));
+    assert!(fail.message.contains("No suggestion"));
+    assert_eq!(send(&mut fail, &[k(Key::Ctrl('s'))]), None);
+    assert!(fail.message.contains("empty"));
+}
+
+// Checks that a save on a message emptied after opening starts the agent, and that no agent leaves the empty-message error.
+#[test]
+fn test_editor_save_starts_agent_when_idle() {
+    let (mut ed, state) = with_agent(&["x"], &["claude"]);
+    send(&mut ed, &[k(Key::Backspace), k(Key::Delete), k(Key::Ctrl('s'))]);
+    assert_eq!(state.borrow().runs.len(), 1);
+    assert!(ed.message.contains("Saving when claude"));
+    let (mut none, _) = with_agent(&[""], &[]);
+    assert_eq!(send(&mut none, &[k(Key::Ctrl('s'))]), None);
+    assert!(none.message.contains("empty"));
+}
+
+// Checks Ctrl+N and Ctrl+E, the message without an agent, and that changing marks plans a new run.
+#[test]
+fn test_editor_agent_keys_and_marks() {
+    let (mut ed, state) = with_agent(&[""], &["claude", "codex"]);
+    send(&mut ed, &[k(Key::Ctrl('n'))]);
+    assert_eq!(ed.message, "Agent: codex");
+    send(&mut ed, &[k(Key::Ctrl('e'))]);
+    assert_eq!(ed.message, "Effort: medium");
+    assert_eq!(state.borrow().runs.len(), 3);
+    state.borrow_mut().answer = Some(Ok("x".into()));
+    ed.tick(100);
+    assert!(!ed.busy());
+    send(&mut ed, &[k(Key::Tab), k(Key::Char(' '))]);
+    assert!(ed.busy());
+    send(&mut ed, &[k(Key::Ctrl('z'))]);
+    let t = ed.now() + 2000;
+    ed.tick(t);
+    assert_eq!(state.borrow().runs.len(), 4);
+    let mut plain = editor(&["pick a"], Kind::Rebase, Vec::new());
+    send(&mut plain, &[k(Key::Ctrl('n'))]);
+    assert!(plain.message.contains("Agents only suggest commit messages"));
+    assert_eq!(plain.tick(1), (false, None));
+    assert!(!plain.busy());
 }
