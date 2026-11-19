@@ -9,6 +9,8 @@ use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+// How often the screen updates while the agent works, so its progress dots move.
+const TICK_MS: i32 = 100;
 // How long to wait after a lone Esc for the rest of a key sequence.
 const ESC_WAIT_MS: i32 = 25;
 // Alternate screen, bracketed paste, and the kitty keyboard protocol (disambiguate keys, report repeats).
@@ -125,20 +127,28 @@ impl Term {
         let start = Instant::now();
         let mut scroll = Scroll::default();
         let mut pending: Vec<u8> = Vec::new();
+        let mut dirty = true;
         loop {
             if STOPPED.load(Ordering::SeqCst) {
                 return Ok(Outcome::Cancel);
             }
-            RESIZED.store(false, Ordering::SeqCst);
-            let (w, h) = self.size();
-            let mut out = frame(ed, &mut scroll, w, h);
-            if let Some(text) = ed.osc52.take() {
-                out.push_str(&osc52(&text));
+            let (changed, outcome) = ed.tick(start.elapsed().as_millis() as u64);
+            if let Some(o) = outcome {
+                return Ok(o);
             }
-            self.tty.write_all(out.as_bytes())?;
-            if !self.ready(-1) {
+            if dirty || changed || RESIZED.swap(false, Ordering::SeqCst) {
+                let (w, h) = self.size();
+                let mut out = frame(ed, &mut scroll, w, h);
+                if let Some(text) = ed.osc52.take() {
+                    out.push_str(&osc52(&text));
+                }
+                self.tty.write_all(out.as_bytes())?;
+                dirty = false;
+            }
+            if !self.ready(if ed.busy() { TICK_MS } else { -1 }) {
                 continue;
             }
+            dirty = true;
             let mut chunk = [0u8; 4096];
             let n = match self.tty.read(&mut chunk) {
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
