@@ -121,13 +121,17 @@ fn test_investigate_cited_findings() {
 fn test_investigate_stops() {
     let (_t, root) = repo();
     let e = crate::engine::Engine::new();
-    let o = go(&root, &e, &Script::new(vec![Ok("I think it is fine")]), &["q"]).expect("noise");
-    assert!(
-        o.text.contains("findings (0 verified):\n(none)\n")
-            && o.text.contains("INCOMPLETE: it replied with neither lookups nor an ANSWER"),
-        "{}",
-        o.text
-    );
+    let s = Script::new(vec![Ok("I think it is fine"), Ok("Still\nfine")]);
+    let o = go(&root, &e, &s, &["q"]).expect("noise");
+    assert!(o.text.contains("findings (0 verified):\n(none)\n") && o.text.contains("INCOMPLETE: it replied twice with neither lookups nor an ANSWER (the last began: \"Still fine\")"), "{}", o.text);
+    assert!(s.seen.borrow()[1].1.contains(
+        "### NOTE\nYour last reply had neither lookups nor ANSWER (it began: \"I think it is fine\")"
+    ));
+    let s = Script::new(vec![Ok("hmm"), Ok("ANSWER\nUNKNOWN all of it")]);
+    let o = go(&root, &e, &s, &["q"]).expect("recovers");
+    assert!(o.text.contains("- all of it") && o.text.contains("complete."), "{}", o.text);
+    assert_eq!(began(""), "an empty reply");
+    assert!(began(&"x".repeat(200)).ends_with("…\""));
     let o = go(
         &root,
         &e,
@@ -135,7 +139,7 @@ fn test_investigate_stops() {
         &["q", "--steps", "2"],
     )
     .expect("out");
-    assert!(o.text.contains("INCOMPLETE: it gave no ANSWER when its lookups ran out"), "{}", o.text);
+    assert!(o.text.contains("INCOMPLETE: it gave no ANSWER when its lookups ran out (its reply began: \"READ api/Endpoint.cs\")"), "{}", o.text);
     let o =
         go(&root, &e, &Script::new(vec![Ok("OUTLINE api/Endpoint.cs"), Err("local model: timeout")]), &["q"])
             .expect("fail");

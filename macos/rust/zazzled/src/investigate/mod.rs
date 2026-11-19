@@ -219,7 +219,7 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         trail.lookups.push(l.label());
         trail.seen.push((l.label(), text));
     }
-    let (mut answer, mut stop, mut cut, mut turns) = (None, String::new(), false, 0);
+    let (mut answer, mut stop, mut cut, mut turns, mut strayed) = (None, String::new(), false, 0, false);
     for step in 1..=plan.steps {
         turns = step;
         let left = if step == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step };
@@ -243,10 +243,22 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
             break;
         }
         let lookups = parse_lookups(&reply.text);
+        if lookups.is_empty() && left > 0 && !strayed {
+            strayed = true;
+            let note = format!("Your last reply had neither lookups nor ANSWER (it began: {}). Reply only with lookup lines or with ANSWER and FINDING/UNKNOWN lines.", began(&reply.text));
+            trail.seen.push(("NOTE".into(), note));
+            continue;
+        }
         if left == 0 || lookups.is_empty() {
             stop = match left {
-                0 => "it gave no ANSWER when its lookups ran out".into(),
-                _ => "it replied with neither lookups nor an ANSWER".into(),
+                0 => format!(
+                    "it gave no ANSWER when its lookups ran out (its reply began: {})",
+                    began(&reply.text)
+                ),
+                _ => format!(
+                    "it replied twice with neither lookups nor an ANSWER (the last began: {})",
+                    began(&reply.text)
+                ),
             };
             break;
         }
@@ -257,6 +269,17 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         }
     }
     Ok(report(ctx, &plan, &scope, &trail, answer, Status { stop, cut, turns }))
+}
+
+// Quotes the start of a reply on one line, for a note to the model or the report.
+fn began(reply: &str) -> String {
+    let one: String = reply.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cut: String = one.chars().take(160).collect();
+    match (one.is_empty(), cut.len() < one.len()) {
+        (true, _) => "an empty reply".into(),
+        (false, true) => format!("\"{cut}…\""),
+        (false, false) => format!("\"{cut}\""),
+    }
 }
 
 // How the run ended: why it stopped early, whether a reply was cut short, and the turns used.

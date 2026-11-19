@@ -20,10 +20,17 @@ pub struct Claim {
     pub text: String,
 }
 
-// Reads the ANSWER block: `FINDING path:A[-B] claim` and `UNKNOWN text` lines after an `ANSWER` line; None when there is no ANSWER line.
+// Reads the answer: the `FINDING path:A[-B] claim` and `UNKNOWN text` lines after an `ANSWER` line, or anywhere when the model left the ANSWER line out; None when there are neither.
 pub fn parse_answer(reply: &str) -> Option<Answer> {
-    let mut lines = reply.lines().map(str::trim).skip_while(|l| strip_word(l, "ANSWER").is_none());
-    lines.next()?;
+    let is = |l: &str, w: &str| strip_word(l.trim(), w).is_some();
+    let headed = reply.lines().any(|l| is(l, "ANSWER"));
+    if !headed && !reply.lines().any(|l| is(l, "FINDING") || is(l, "UNKNOWN")) {
+        return None;
+    }
+    let mut lines = reply.lines().map(str::trim).skip_while(|l| headed && !is(l, "ANSWER")).peekable();
+    if headed {
+        lines.next();
+    }
     let mut a = Answer::default();
     for l in lines {
         if let Some(rest) = strip_word(l, "FINDING") {
@@ -110,6 +117,8 @@ mod tests {
     #[test]
     fn test_parse_answer() {
         assert_eq!(parse_answer("READ a.rs"), None);
+        let bare = parse_answer("FINDING a.rs:2 x\nUNKNOWN y").expect("no ANSWER line");
+        assert_eq!((bare.findings.len(), bare.unknowns.len()), (1, 1));
         assert!(parse_answer("ANSWER: done").is_some());
         let a = parse_answer("thinking aloud\nanswer\nFINDING src/a.rs:3-5 — the key is checked\nfinding b.rs:7 one line\nUNKNOWN whether retries happen\nFINDING nowhere\nnoise").expect("answer");
         assert_eq!(
