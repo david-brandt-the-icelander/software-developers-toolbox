@@ -66,7 +66,11 @@ fn agent_program(home: &Path) -> Option<PathBuf> {
 
 // Builds `zazzle daemon status`, as text or with `json` as JSON, and its exit code: 0 when a daemon runs, 3 when none does.
 pub fn status(env: &Env, json: bool) -> (String, u8) {
-    let found = ask(env.sock);
+    status_from(ask(env.sock), env, json)
+}
+
+// Builds the status report for the daemon that answered (`found`), or none.
+fn status_from(found: Option<Running>, env: &Env, json: bool) -> (String, u8) {
     let agent = env.macos.then(|| agent_program(env.home));
     let current = found.as_ref().is_none_or(|r| r.version == VERSION);
     let code = if found.is_some() { 0 } else { 3 };
@@ -265,6 +269,24 @@ mod tests {
         assert_eq!((v["ok"].as_bool(), v["launch_agent"].is_null()), (Some(true), true));
     }
 
+    // Checks a running daemon of another version is reported, in text and JSON, as not ok.
+    #[test]
+    fn test_status_other_version() {
+        let t = TempDir::new();
+        let (sock, exe) = (t.path().join("s"), t.path().join("daemon"));
+        let env = Env { sock: &sock, exe: &exe, home: t.path(), macos: false };
+        let old = Running { version: "1.0.0".into(), pid: 4242, uptime: None };
+        let (text, code) = status_from(Some(old.clone()), &env, false);
+        assert_eq!(code, 0);
+        assert!(text.starts_with("running: daemon 1.0.0 (pid 4242) on ") && !text.contains(", up"), "{text}");
+        assert!(
+            text.contains("\nthe running daemon is another version: run zazzle daemon restart"),
+            "{text}"
+        );
+        let v: Value = serde_json::from_str(&status_from(Some(old), &env, true).0).expect("json");
+        assert_eq!((v["ok"].as_bool(), v["running_version"].as_str()), (Some(false), Some("1.0.0")));
+    }
+
     // Checks start reports a daemon that already runs, starts one through `spawn`, and reports a spawn that fails.
     #[test]
     fn test_start() {
@@ -295,6 +317,8 @@ mod tests {
         assert_eq!(stop(None, false, &gone).expect("none"), "no daemon is running");
         let me = Running { version: VERSION.into(), pid: std::process::id() as i32, uptime: None };
         assert!(stop(Some(me), false, &gone).expect("self").ends_with("left alone"));
+        let init = Running { version: VERSION.into(), pid: 1, uptime: None };
+        assert!(stop(Some(init), false, &gone).expect("pid 1").ends_with("left alone"));
         let other = Running { version: "1.0.0".into(), pid: 4242, uptime: Some(1) };
         let out = stop(Some(other.clone()), true, &gone).expect("stopped");
         assert!(out.starts_with("stopped daemon 1.0.0 (pid 4242)\nthe LaunchAgent"), "{out}");

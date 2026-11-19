@@ -101,6 +101,21 @@ mod tests {
         Store { entries, dir: t.path().join("tools"), base: base.into() }
     }
 
+    // Checks only an executable file beside the daemon counts, and find never downloads.
+    #[test]
+    fn test_beside_and_find() {
+        let t = TempDir::new();
+        std::fs::write(t.path().join("ai-agent"), b"x").expect("write");
+        assert_eq!(beside(Some(t.path()), "ai-agent"), None, "not executable");
+        assert_eq!(beside(None, "ai-agent"), None);
+        std::fs::set_permissions(t.path().join("ai-agent"), std::fs::Permissions::from_mode(0o755))
+            .expect("chmod");
+        assert_eq!(find("ai-agent", Some(t.path()), None), Some(t.path().join("ai-agent")));
+        assert_eq!(find("other", Some(t.path()), None), None);
+        let store = store_for(&t, b"body", "http://127.0.0.1:9");
+        assert_eq!(find("ai-agent", None, Some(store)), None, "listed but not downloaded");
+    }
+
     // Checks a tool beside the daemon wins, a missing one downloads once and is made executable, and a wrong hash or no entry fails.
     #[test]
     fn test_tools_path() {

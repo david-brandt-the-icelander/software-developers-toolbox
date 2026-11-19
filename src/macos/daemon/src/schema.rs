@@ -313,4 +313,36 @@ mod tests {
         assert!(!is_item("\"\"\"") && !is_item("/* a") && !is_item("x = <<EOT") && !is_item("a {"));
         assert!(is_item("a\\b") && is_item("\"[{(\"") && is_item("f(a[1], {b})"));
     }
+
+    // Checks which openers start a collapsible run: Protobuf and GraphQL enums, HCL lists and assigned maps, and
+    // nothing for other lines, an HCL block without `=`, or an opener with no indented items after it.
+    #[test]
+    fn test_run_openers() {
+        let body = |open: &str, item: &str| -> Vec<String> {
+            let mut v = vec![open.to_string()];
+            v.extend((0..12).map(|n| format!("  {item}{n}")));
+            v.push("}".to_string());
+            v
+        };
+        let gql = body("enum Color {", "RED");
+        assert_eq!(
+            run(&gql.iter().map(String::as_str).collect::<Vec<_>>(), 0, Kind::GraphQl).map(|r| r.2),
+            Some("enum values")
+        );
+        let proto = body("message Color {", "RED");
+        assert!(run(&proto.iter().map(String::as_str).collect::<Vec<_>>(), 0, Kind::Proto).is_none());
+        let list = body("names = [", "\"n\",");
+        assert_eq!(
+            run(&list.iter().map(String::as_str).collect::<Vec<_>>(), 0, Kind::Hcl).map(|r| r.1),
+            Some("item(s)")
+        );
+        let block = body("resource {", "a = 1");
+        assert!(run(&block.iter().map(String::as_str).collect::<Vec<_>>(), 0, Kind::Hcl).is_none());
+        assert!(run(&["enum E {", "}"], 0, Kind::GraphQl).is_none());
+        assert!(run(&["enum E {"], 0, Kind::Proto).is_none());
+        let mut open_proto = body("enum Status {", "S");
+        open_proto.pop();
+        let r = run(&open_proto.iter().map(String::as_str).collect::<Vec<_>>(), 0, Kind::Proto);
+        assert_eq!(r.map(|r| r.0.len()), Some(12), "a Protobuf enum running to the end of the file");
+    }
 }

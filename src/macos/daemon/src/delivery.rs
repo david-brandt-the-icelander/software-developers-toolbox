@@ -91,7 +91,40 @@ fn append(
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use crate::testutil::TempDir;
+    use crate::testutil::{env_lock, TempDir};
+
+    // Checks where the log goes: ZAZZLE_USAGE_LOG, nowhere when it is empty, else under HOME; and that a full log
+    // rotates and a write that cannot happen is dropped quietly.
+    #[test]
+    fn test_open_rotate_and_unwritable() {
+        let _g = env_lock();
+        let t = TempDir::new();
+        let (saved_log, saved_home) = (std::env::var_os("ZAZZLE_USAGE_LOG"), std::env::var_os("HOME"));
+        std::env::set_var("ZAZZLE_USAGE_LOG", "");
+        assert_eq!(DeliveryLog::open().path, None);
+        DeliveryLog::open().record("s", "read", 1, "x", 0, false);
+        std::env::set_var("ZAZZLE_USAGE_LOG", t.path().join("u.jsonl"));
+        assert_eq!(DeliveryLog::open().path, Some(t.path().join("u.jsonl")));
+        std::env::remove_var("ZAZZLE_USAGE_LOG");
+        std::env::set_var("HOME", t.path());
+        assert_eq!(DeliveryLog::open().path, Some(t.path().join(".zazzle/usage.jsonl")));
+        match saved_log {
+            Some(v) => std::env::set_var("ZAZZLE_USAGE_LOG", v),
+            None => std::env::remove_var("ZAZZLE_USAGE_LOG"),
+        }
+        match saved_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        let full = t.path().join("full.jsonl");
+        fs::File::create(&full).expect("create").set_len(ROTATE_BYTES + 1).expect("grow");
+        DeliveryLog::at(Some(full.clone())).record("s", "read", 1, "x", 0, false);
+        assert!(full.with_extension("jsonl.1").exists(), "the full log was rotated");
+        assert!(fs::metadata(&full).expect("new log").len() < 1024);
+        let blocked = t.write("file", b"x").join("usage.jsonl");
+        DeliveryLog::at(Some(blocked.clone())).record("s", "read", 1, "x", 0, false);
+        assert!(!blocked.exists());
+    }
 
     // Checks records keep useful dimensions and hashes while omitting response text.
     #[test]

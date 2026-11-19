@@ -793,6 +793,18 @@ mod tests {
         assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
     }
 
+    // Checks --commit takes its value in either form and refuses an empty one.
+    #[test]
+    fn test_split_globals_commit() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (rest, g) = split_globals("find", &v(&["x", "--commit=HEAD"])).expect("eq form");
+        assert_eq!((rest, g.commit.as_deref()), (v(&["x"]), Some("HEAD")));
+        let (_, g) = split_globals("find", &v(&["--commit", "abc", "x"])).expect("spaced form");
+        assert_eq!(g.commit.as_deref(), Some("abc"));
+        assert!(split_globals("find", &v(&["--commit="])).is_err());
+        assert!(split_globals("find", &v(&["--commit"])).is_err());
+    }
+
     // Checks `agent check|explain` read the caller's folder, check's problems come back with exit 1, and other agent commands pass through.
     #[test]
     fn test_agent_rules_resolve_against_the_caller() {

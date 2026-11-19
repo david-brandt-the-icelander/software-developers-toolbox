@@ -1452,4 +1452,16 @@ mod tests {
         assert!(call_args(&json!({"requests": 1})).unwrap_err().contains("'requests' is required"));
         assert!(!takes_llm("zazzle_call") && takes_llm("zazzle_stat"));
     }
+
+    // Checks zazzle_prompt's arguments with and without an effort, and a wrong type for it.
+    #[test]
+    fn test_prompt_args() {
+        assert_eq!(prompt_args(&json!({"text": "hi"})).expect("plain"), ["prompt", "hi"]);
+        assert_eq!(
+            prompt_args(&json!({"text": "hi", "effort": "high"})).expect("effort"),
+            ["prompt", "--effort", "high", "hi"]
+        );
+        assert!(prompt_args(&json!({"text": "hi", "effort": 3})).is_err());
+        assert!(prompt_args(&json!({})).is_err());
+    }
 }
