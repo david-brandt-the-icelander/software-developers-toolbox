@@ -3,35 +3,67 @@
   "kind": "component",
   "title": "shell-tools component diagram",
   "folder": "src/macos/shell-tools",
-  "description": "The shell-tools crate: the shell-tools binary's source and the tests that run the built binary. The modules inside the binary are drawn in the source folder's diagram.",
+  "description": "The crate and what crosses its boundary: the daemon links it and calls Engine.call for each `zazzle call` (and list::stat for `zazzle stat`), handing it a Host that lends the daemon's walk cache, find scan and outlines; the library reads files itself for read, stat and diff_since.",
   "sources": [
-    { "path": "src/macos/shell-tools/Cargo.toml", "symbol": "[[bin]]" },
-    { "path": "src/macos/shell-tools/tests/cli.rs", "symbol": "shell-tools" }
+    {
+      "path": "src/macos/shell-tools/Cargo.toml",
+      "symbol": "[lib]"
+    },
+    {
+      "path": "src/macos/shell-tools/src/host.rs",
+      "symbol": "Host"
+    },
+    {
+      "path": "src/macos/daemon/src/cmd/call.rs",
+      "symbol": "DaemonHost"
+    }
   ],
   "components": [
     {
       "id": "shell-tools",
-      "name": "shell-tools crate",
-      "responsibility": "Builds the shell-tools binary and its tests.",
+      "name": "shell-tools",
+      "responsibility": "The library crate: manifest, README and sources.",
       "folder": "src/macos/shell-tools"
     },
     {
       "id": "src",
-      "name": "shell-tools source",
-      "responsibility": "The command line, the MCP server, the request engine, the six operations, session state and file loading.",
+      "name": "src",
+      "responsibility": "Request parsing, the six operations, session memory, file loading and the Host interface.",
       "folder": "src/macos/shell-tools/src",
       "diagram": "src/macos/shell-tools/src/.dev/component-diagram.json"
     },
     {
-      "id": "tests",
-      "name": "End-to-end tests",
-      "responsibility": "Run the built binary through its command line, the JSONL loop and the MCP server.",
-      "folder": "src/macos/shell-tools/tests"
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "zazzle's daemon: runs the operations for `zazzle call`, `zazzle stat` and the MCP tools zazzle_call and zazzle_stat, keeps one shell-tools Engine for all sessions, and implements Host.",
+      "folder": "src/macos/daemon",
+      "diagram": "src/macos/daemon/.dev/component-diagram.json"
+    },
+    {
+      "id": "filesystem",
+      "name": "File system",
+      "responsibility": "The files and directories requests name.",
+      "external": true
     }
   ],
   "relationships": [
-    { "from": "shell-tools", "to": "src", "kind": "contains", "description": "src/main.rs is the [[bin]] target shell-tools." },
-    { "from": "shell-tools", "to": "tests", "kind": "contains", "description": "Cargo integration tests." },
-    { "from": "tests", "to": "src", "kind": "depends-on", "description": "Start the shell-tools binary (CARGO_BIN_EXE_shell-tools) and talk to it over arguments, stdin and stdout." }
+    {
+      "from": "shell-tools",
+      "to": "src",
+      "kind": "contains",
+      "description": "All of the crate's code."
+    },
+    {
+      "from": "daemon",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "A Cargo path dependency: Engine.call per request with the caller's session and working directory, list::stat for the stat command, and a Host implementation."
+    },
+    {
+      "from": "src",
+      "to": "filesystem",
+      "kind": "depends-on",
+      "description": "Reads files whole and stats paths; never writes."
+    }
   ]
 }

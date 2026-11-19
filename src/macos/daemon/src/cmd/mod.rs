@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 pub mod again;
 mod align;
+pub mod call;
 pub mod clean;
 pub mod diff;
 pub mod edit;
@@ -362,6 +363,8 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         "find" | "grep" => find::run(ctx, rest),
         "read" | "cat" => read::run(ctx, rest),
         "ls" => ls::run(ctx, rest),
+        "stat" => call::stat(ctx, rest),
+        "call" => call::run(ctx, rest),
         "outline" => outline::run(ctx, rest),
         "refs" => refs::run(ctx, rest),
         "diff" => diff::run(ctx, rest),
@@ -409,6 +412,7 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         },
         "forget-sessions" => match rest {
             [prefix] if !prefix.is_empty() => {
+                ctx.engine.calls.lock().unwrap_or_else(|e| e.into_inner()).forget_prefix(prefix);
                 Ok(Output::plain(format!("forgot {} sessions", ctx.engine.sessions.forget_prefix(prefix))))
             }
             _ => Err("usage: zazzle forget-sessions PREFIX".into()),
@@ -508,7 +512,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls stat diff run clean read-again call get-rules brief prompt investigate", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -533,7 +537,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls stat diff run clean read-again call get-rules brief prompt investigate"
         );
         assert!(!o.idable);
     }

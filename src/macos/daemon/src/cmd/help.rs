@@ -20,10 +20,12 @@ pub const AGENT: &[&str] = &[
     "edit",
     "replace",
     "ls",
+    "stat",
     "diff",
     "run",
     "clean",
     "read-again",
+    "call",
     "get-rules",
     "brief",
     "prompt",
@@ -121,6 +123,34 @@ const PAGES: &[Page] = &[
             ("-u, --no-ignore", "Also show what .gitignore ignores"),
         ],
         examples: &["zazzle ls", "zazzle ls src -d 4"],
+    },
+    Page {
+        name: "stat",
+        group: 0,
+        brief: "stat PATH...",
+        summary: "Show whether paths exist, their kind, size and time",
+        usage: &["zazzle stat PATH... [--hash]"],
+        about: &["Prints one line per path: its kind (file, dir, symlink or other; a symlink is not followed), size in bytes and modification time in UTC, or `missing`. --hash adds each file's sha, the one read shows and edit --expect takes."],
+        options: &[("--hash", "Add each file's sha")],
+        examples: &["zazzle stat Cargo.toml src --hash"],
+    },
+    Page {
+        name: "call",
+        group: 0,
+        brief: "call JSON",
+        summary: "Run JSON requests: read, search, list, stat, diffs",
+        usage: &["zazzle call 'JSON'", "zazzle call - < requests.json"],
+        about: &[
+            "JSON is one request object, or an array of them answered in order. - (or no argument) reads it from standard input. Each request names an op: read, search (or find), list (or ls), stat, outline or diff_since. Every reply has ok; a failed one carries error, and call then exits 1.",
+            "Replies carry an etag. Within a session (ZAZZLE_SESSION, or the MCP session) a repeated read, search, list or outline returns {unchanged:true, ref}, a changed whole-file read returns only hunks (apply from the last at to the first), read takes if_none_match and diff_since gives the hunks since an etag the session was sent. fresh:true sends the content again. Without a session nothing is remembered.",
+            "Fields. read: path ranges [[a,b]] max_lines max_bytes if_none_match fresh. search: pattern literal ignore_case paths glob context max_matches files_only fields (line col text) hidden no_ignore fresh. list: path glob depth long max_entries cursor hidden no_ignore fresh. stat: path hash. outline: paths max_symbols fresh. diff_since: path etag.",
+        ],
+        options: &[],
+        examples: &[
+            "zazzle call '{\"op\":\"read\",\"path\":\"src/main.rs\",\"ranges\":[[1,40]]}'",
+            "zazzle call '{\"op\":\"search\",\"pattern\":\"TODO\",\"glob\":[\"*.rs\"],\"context\":1}'",
+            "zazzle call '[{\"op\":\"list\",\"path\":\"src\",\"cursor\":500},{\"op\":\"stat\",\"path\":\"Cargo.toml\",\"hash\":true}]'",
+        ],
     },
     Page {
         name: "outline",
@@ -566,16 +596,6 @@ const PAGES: &[Page] = &[
         examples: &["zazzle tools"],
     },
     Page {
-        name: "shell-tools",
-        group: 4,
-        brief: "shell-tools ...",
-        summary: "JSON read, search and outline tool and MCP server",
-        usage: &["zazzle shell-tools [COMMAND] [OPTIONS]"],
-        about: &["shell-tools has its own help: run zazzle shell-tools --help."],
-        options: &[],
-        examples: &[],
-    },
-    Page {
         name: "ai-agent",
         group: 4,
         brief: "ai-agent ...",
@@ -796,7 +816,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt investigate"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls stat diff run clean read-again call get-rules brief prompt investigate"
         );
     }
 

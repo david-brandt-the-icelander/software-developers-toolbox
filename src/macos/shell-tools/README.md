@@ -1,69 +1,51 @@
-# shell-tools (`shell-tools`)
+# shell-tools (library)
 
-JSON-in, JSON-out replacement for the `cat`, `sed -n`, `grep -r`, `git grep` and `find` calls agents repeat. Most of an agent's context cost is re-reading the same output, so `shell-tools` remembers what each session has already received and sends only what changed.
-
-Build: `cargo build --release -p shell-tools` in `src/macos` (Linux and macOS), or download the universal macOS binary: `https://icelander.net/downloads/zazzle/latest/zazzle-macos-universal.tar.gz` (with a `.sha256` next to it; also on the GitHub releases). Or with Homebrew: `brew install zazzcat/z/zazzle` (installs every tool here). A browser download of an unsigned build makes macOS say it "could not verify" the binary; run `xattr -d com.apple.quarantine shell-tools` after unpacking.
+The JSON file operations of zazzle's daemon: `read`, `search`, `list`, `stat`, `outline` and `diff_since`, answered as JSON, with memory of what each session was already sent so a repeat costs an `unchanged` marker and a changed file costs only its diff. It is a library crate (`shell_tools`) with no program of its own; the daemon (`src/macos/daemon`) runs it for `zazzle call` and `zazzle stat` and for the MCP tools `zazzle_call` and `zazzle_stat`.
 
 ```bash
-zazzle shell-tools call '{"op":"read","path":"src/main.rs","ranges":[[1,40]]}'
-zazzle shell-tools call '{"op":"search","pattern":"TODO","glob":["*.rs"],"context":1}'
-zazzle shell-tools call '[{"op":"list","path":"src"},{"op":"outline","paths":["src"]}]'   # batch: one reply per request
-zazzle shell-tools serve    # MCP server over stdio (one session per process)
-zazzle shell-tools jsonl    # one request per stdin line, one reply per stdout line (one session)
+zazzle call '{"op":"read","path":"src/main.rs","ranges":[[1,40]]}'
+zazzle call '{"op":"search","pattern":"TODO","glob":["*.rs"],"context":1}'
+zazzle call '[{"op":"list","path":"src"},{"op":"outline","paths":["src"]}]'   # batch: one reply per request
+echo '{"op":"stat","path":"Cargo.toml","hash":true}' | zazzle call -
+zazzle stat Cargo.toml src --hash                                            # the same stat as text
 ```
 
-`zazzle shell-tools call` is one-shot, so it has no session memory; use `serve` or `jsonl` to get `unchanged` and diff replies. Replies always carry `ok`; failures are `{"ok":false,"error":...}` and exit code 1.
+Replies always carry `ok`; failures are `{"ok":false,"error":...}` and make `zazzle call` exit 1. Paths are relative to the caller's working directory.
 
 ## Operations
 
 | op | purpose | main fields |
 |---|---|---|
 | `read` | cat, head, sed -n | `path`, `ranges:[[a,b]]` (1-based), `max_lines` (400), `max_bytes` (16384), `if_none_match`, `fresh` |
-| `search` | grep -r, git grep, rg | `pattern`, `literal`, `ignore_case`, `paths`, `glob` (`!x` excludes), `context`, `max_matches` (100), `files_only`, `fields` (`line`,`col`,`text`), `hidden`, `no_ignore`, `fresh` |
-| `list` | ls, find | `path`, `glob`, `depth` (1 unless glob), `long`, `max_entries` (500), `cursor`, `hidden`, `no_ignore` |
+| `search` (or `find`) | grep -r, git grep, rg | `pattern`, `literal`, `ignore_case`, `paths`, `glob` (`!x` excludes), `context`, `max_matches` (100), `files_only`, `fields` (`line`,`col`,`text`), `hidden`, `no_ignore`, `fresh` |
+| `list` (or `ls`) | ls, find | `path`, `glob`, `depth` (1 unless glob), `long`, `max_entries` (500), `cursor`, `hidden`, `no_ignore`, `fresh` |
 | `stat` | stat, shasum | `path`, `hash` |
-| `outline` | grep for definitions | `paths`, `max_symbols` (300); returns `[start, end, kind, name]` per symbol; tree-sitter for rs py js jsx mjs ts tsx go java c cpp (+ h hh hpp), line patterns for kt cs swift scala sh md |
+| `outline` | grep for definitions | `paths`, `max_symbols` (300), `fresh`; returns `[start, end, kind, name]` per symbol, nested names dotted (`A.go`) |
 | `diff_since` | re-reading a changed file | `path`, `etag` (a version this session received) |
-
-`search` patterns are matched across the whole buffer in multi-line mode, and a match is reported on the line where it starts.
 
 ## Token savers
 
-- **Unchanged**: repeating a read or search whose answer was already sent returns `{"unchanged":true,"etag","ref"}` with no content. `fresh:true` forces the content again.
+- **Unchanged**: within a session, repeating a read, search, list or outline whose answer was already sent returns `{"unchanged":true,"etag","ref"}` with no content. `fresh:true` forces the content again. Without a session (no `ZAZZLE_SESSION`, not over MCP) nothing is remembered.
 - **Diff**: re-reading a whole file that changed since this session fully received it returns `hunks` (`at` = 1-based old line, `del` = old lines removed, `ins` = new text) when smaller than the file. Apply hunks from the last `at` to the first.
 - **Caps**: output is bounded; `truncated`, `next_ranges` (read) or `next_cursor` (list) and `bytes_omitted` say how to continue. Lines over 2000 bytes are cut (`long_lines_cut`). Binary files report `binary:true`.
 - **Compact results**: search groups by file, merges overlapping context, and `fields:["line"]` returns bare number arrays.
 
-## Caching
+## Where the work is done
 
-Session memory is bounded (64 MiB of file versions kept as diff bases, files over 8 MiB not kept, 256 cached results); how etags, stamps, the 2-second racy rule and the result cache work is in [src/.dev/component-diagram.json](src/.dev/component-diagram.json) and [src/.dev/decisions.json](src/.dev/decisions.json).
+The library parses requests, keeps the session memory and renders replies; the daemon lends it, through the `Host` trait (`src/host.rs`), the parts it already has: its stat-validated walk cache, `find`'s parallel scan and its outlines (tree-sitter through language modules). So `search` skips binary files and files over 2 MiB and counts matching lines, and `outline` covers every language the daemon's `outline` does. How the merge was decided, with the benchmark numbers, is in [src/.dev/decisions.json](src/.dev/decisions.json).
 
-## Outline
+## Memory
 
-`outline` parses with tree-sitter and returns every item with its exact line range, so an agent can `read` just `[start, end]` instead of the file. Names inside containers (impl/trait/mod, class, namespace, interface bodies) are dotted: `A.go`, `n.K.m`; Rust `impl` items read `Trait for Type`; JS/TS `const f = () => ...` counts as a function. Function bodies are not entered, so locals and nested functions are omitted. Broken syntax still yields the items that parse. Files over 2 MiB are skipped, and languages without a grammar (kt cs swift scala sh md) use line patterns where `end` equals `start`.
+Each session's table of what it was sent is its own (64 sessions kept, least recently used dropped); file versions kept as diff bases (64 MiB, files over 8 MiB not kept) and the trusted file stamps (the 2-second racy rule) are shared by all sessions. Details: [src/.dev/component-diagram.json](src/.dev/component-diagram.json).
 
-## Trigram index
+## Compatibility with the old `shell-tools` program
 
-From the second `search` on the same paths, globs and flags, a `serve` or `jsonl` session reads only the files an in-memory trigram index says can match, with results equal to a full scan; how it is built, kept up to date and dropped is in [src/.dev/TriIndex.state-diagram.json](src/.dev/TriIndex.state-diagram.json).
-
-## I/O
-
-Files are read whole with `read(2)`, never `mmap`, and search and outline load them in batches through io_uring (Linux) or POSIX AIO (macOS) only when each process finds that faster (on a 4-core VM with a hot page cache io_uring was about 1.6x *slower* than plain reads for 7k small files); the design is in [src/.dev/decisions.json](src/.dev/decisions.json), and `AFS_BATCH_IO=always|never` (default `auto`) in [src/.dev/configuration.json](src/.dev/configuration.json).
+Requests that worked with `shell-tools call` work with `zazzle call`, with these differences: the program and its `serve` (MCP, `afs_*` tools) and `jsonl` modes are gone, replaced by `zazzle call` and the `zazzle_call` tool; `search` counts matching lines, not matches, in `total_matches`, and skips files over 2 MiB; replies no longer carry `cached`; `list` shows only regular files and directories (as the walk cache sees them) and refuses a file path; `outline` reports what the daemon's outline finds, so kinds and ranges can differ from the old grammars; `AFS_BATCH_IO` is gone.
 
 ## Testing
 
-`cargo test -p shell-tools` runs unit tests beside the code and `tests/cli.rs`, which drives the real binary (arguments, stdin, exit codes, `jsonl`, MCP). CI gates `shell-tools` at 95% line and 95% branch coverage on Linux (`cargo +nightly llvm-cov -p shell-tools --branch`); measured at the time of writing: 99.0% lines, 98.7% branches (294 of 298), 98 unit tests plus 9 CLI tests. The macOS-only `aio.rs` is not compiled on Linux, so it is covered only by the macOS test job. The few uncovered branches are walker errors and io_uring ring failures, which cannot be provoked from a test. Mutation spot-checks (inverting the intersection, racy window, line counting, diff offsets) fail the suite.
-
-What each test checks is in [src/.dev/verification.json](src/.dev/verification.json) and [tests/.dev/verification.json](tests/.dev/verification.json).
-
-## Not implemented
-
-Planned work that waits for a benchmark to justify it (file-system event dirty sets, hand-written assembly) is in [src/.dev/backlog.json](src/.dev/backlog.json).
+`cargo test -p shell-tools` runs the unit tests beside the code against a plain file-system `Host`; the daemon's `src/cmd/call.rs` tests run the operations through the real daemon services. CI gates `shell-tools` at 95% line and 95% branch coverage (`cargo +nightly llvm-cov --branch -p shell-tools --summary-only`). What each test checks is in [src/.dev/verification.json](src/.dev/verification.json).
 
 ## Dependencies
 
 What each crate is used for is in [.dev/references.json](.dev/references.json).
-
-## Use from an agent
-
-Claude Code, in `.mcp.json`: `{"mcpServers":{"shell-tools":{"command":"shell-tools","args":["serve"]}}}`. Then tell the agent to prefer the `afs_*` tools over shell reads (see `agents/skills/shell-tools/SKILL.md`).

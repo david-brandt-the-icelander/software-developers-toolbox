@@ -320,6 +320,21 @@
       ]
     },
     {
+      "id": "call.DaemonHost",
+      "name": "DaemonHost",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/cmd/call.rs"
+      ],
+      "members": [
+        "engine: &Engine",
+        "files(roots, globs, no_ignore) -> Result<Vec<PathBuf>, String>",
+        "dirs(root, no_ignore) -> Result<Vec<PathBuf>, String>",
+        "search(files, re, max) -> Vec<Matches>",
+        "outline(files) -> Vec<Option<Vec<Symbol>>>"
+      ]
+    },
+    {
       "id": "help.Page",
       "name": "help.Page",
       "kind": "struct",
@@ -431,6 +446,20 @@
         "Repo",
         "No"
       ]
+    },
+    {
+      "id": "Host",
+      "name": "Host",
+      "kind": "interface",
+      "sources": [
+        "src/macos/shell-tools/src/host.rs"
+      ],
+      "members": [
+        "files",
+        "dirs",
+        "search",
+        "outline"
+      ]
     }
   ],
   "relationships": [
@@ -541,6 +570,24 @@
       "to": "Narrow",
       "kind": "depends-on",
       "description": "How a search is narrowed."
+    },
+    {
+      "from": "call.DaemonHost",
+      "to": "Host",
+      "kind": "implements",
+      "description": "The daemon's services for shell-tools' JSON operations."
+    },
+    {
+      "from": "call.DaemonHost",
+      "to": "Engine",
+      "kind": "depends-on",
+      "description": "The walk cache, find's scan and the outline cache."
+    },
+    {
+      "from": "call.DaemonHost",
+      "to": "find.Plan",
+      "kind": "depends-on",
+      "description": "Builds a plan to scan with find's search."
     }
   ]
 }

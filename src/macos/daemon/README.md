@@ -80,6 +80,8 @@ Keep everything else equal: the same model and settings, the same repository sta
 | `read [REV:]PATH[:A-B].. [--symbol NAME[#N] --around N --ctx N --head N --tail N --budget T --anchors --full --terse]` | the literal source: header with line count and sha, then `N<TAB>text`; past the budget (default 6000 tokens, at most 16000, also for MCP and `--full`) it shows the selection's leading lines, marks the header INCOMPLETE and ends with the omitted range and the read that continues it; several paths share that budget evenly, and files past a spent budget are named instead of read; a missing path is answered with up to three similar files from the work tree (also for `outline` and `ls`); `--symbol` reads one symbol with its doc comments and attributes (see [Symbols](#symbols)); `--terse` gives the lossy terse views below instead (opt-in; `--source` is accepted and changes nothing) |
 | `ls [DIR] [-d N] [-m N]` | tree with recursive file counts and line counts |
 | `outline PATH.. [-d N] [-m N]` | `start-end kind name` per symbol; tree-sitter for Rust, Python, C, C#, JS/TS/TSX up to 1 MiB; line-based for larger files, Markdown, TOML, JSON and everything else, which in C#, Java, C++, Dart, Groovy, Kotlin and Scala also finds methods and constructors (test methods under `[Fact]` or `@Test` included) when no grammar is installed |
+| `stat PATH.. [--hash]` | one line per path: kind (a symlink is not followed), size, UTC modification time, `--hash` the sha `read` shows; or `missing` |
+| `call JSON \| -` | JSON requests (one object or an array) answered as JSON, with etags and per-session memory: see [JSON requests](#json-requests) |
 | `refs SYMBOL [PATH..] [--also SYMBOL]..` | definitions first, then uses with their enclosing symbol; in C# files a mention in a comment or string is not a use (tree-sitter) |
 | `edit PATH ...` | `--old/--new` unique replace, `--lines` or `--after`, each with `--expect SHA` (from `read`) or `--at` anchors; `--create`; atomic, CRLF-preserving, confined to the working directory, its git work tree, the client's roots and your workspaces |
 | `run [--lossless --budget T --timeout SECS --profile NAME\|none] [--] CMD ARGS..` | runs a command and prints its output cleaned with a profile, then `[exit N in Ts; …]`; exits with the command's code: see [Run](#run) |
@@ -371,6 +373,12 @@ With `ZAZZLE_SESSION` set (or over MCP, where each connection is a session) ever
 
 `zazzle read-again r:ID` (MCP `zazzle_read_again`) runs the request behind a session response again, in its original working directory: the same text under the same id when nothing changed, else the current version under a new id with `r:OLD changed since it was sent`. So an agent can drop a response from its context (or lose it to compaction) and get it back exactly. The session keeps the last 512 requests; `clean`, `run` and `proxy` outputs come from the output store instead (see [Stored outputs](#stored-outputs)). Responses read again never reveal more than the original request did: a terse view stays without a sha. Edits are never deduplicated. Without a session there are no ids and no dedupe. State lives in daemon memory only.
 
+## JSON requests
+
+`zazzle call 'JSON'` (or `zazzle call -` to read stdin; MCP `zazzle_call` with `requests`) runs the operations of the [shell-tools library](../shell-tools/README.md) in the daemon: `read`, `search` (alias `find`), `list` (alias `ls`), `stat`, `outline` and `diff_since`, with the fields its README lists. One object gets one reply, an array one reply per request in order; every reply has `ok`, a failed one `error`, and `call` exits 1 if any failed. They use the daemon's own parts: the walk cache, `find`'s scan (so binary files and files over 2 MiB are skipped and `total_matches` counts matching lines) and the outlines of `outline`.
+
+Within a session (`ZAZZLE_SESSION`, or the MCP connection) the daemon remembers what each JSON reply sent: a repeated `read`, `search`, `list` or `outline` whose answer is unchanged returns `{"unchanged":true,"etag","ref"}`, a whole-file `read` of a file that changed since the session got all of it returns only `hunks`, `read` takes `if_none_match`, and `diff_since` returns the hunks between a version the session was sent (`etag`) and the file now. `fresh:true` sends the content again. File versions kept as diff bases (64 MiB, files up to 8 MiB) and trusted file stamps are shared by all sessions; 64 sessions are kept, and `forget-sessions PREFIX` clears these too. Without a session nothing is remembered, as with the old one-shot `shell-tools call`. JSON replies are not tagged with `[r:ID]` and are never cut to the budget.
+
 ## Cache
 
 The daemon keeps derived data only, never file text, in `~/.zazzle/v1/` (`ZAZZLE_CACHE_DIR`); design notes: [src/.dev/decisions.json](src/.dev/decisions.json), file format: [src/.dev/contracts.json](src/.dev/contracts.json).
@@ -385,7 +393,7 @@ The daemon answers only the same uid (`SO_PEERCRED` / `getpeereid`; the invoker 
 
 ## Limits
 
-Regex is the Rust dialect (no look-around, no backreferences). `zazzle` itself supports macOS arm64 and Linux x86_64/aarch64; on Intel Macs use `zazzle daemon mcp` or `zazzle daemon run`. Outlines are heuristic for languages without a grammar and for files over 1 MiB (tree-sitter would take about 1.5 s on an 8.7 MB generated parser). How parallel work is run (one thread pool per daemon) and why: [src/.dev/decisions.json](src/.dev/decisions.json). `shell-tools` (`shell-tools`) is a separate tool in this repository with overlapping goals.
+Regex is the Rust dialect (no look-around, no backreferences). `zazzle` itself supports macOS arm64 and Linux x86_64/aarch64; on Intel Macs use `zazzle daemon mcp` or `zazzle daemon run`. Outlines are heuristic for languages without a grammar and for files over 1 MiB (tree-sitter would take about 1.5 s on an 8.7 MB generated parser). How parallel work is run (one thread pool per daemon) and why: [src/.dev/decisions.json](src/.dev/decisions.json).
 
 ## Tests
 

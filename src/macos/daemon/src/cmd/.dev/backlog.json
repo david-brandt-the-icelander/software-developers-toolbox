@@ -41,6 +41,30 @@
           "symbol": "render_parts"
         }
       ]
+    },
+    {
+      "id": "trigram-index-on-macos",
+      "title": "Measure a trigram index for find on macOS",
+      "summary": "shell-tools' trigram index was dropped when it merged into the daemon because on Linux it saved about 40 ms per search only on an 18,000-file tree, at about 170 MB and a 1.7 s build; macOS, where stat and reads cost differently, was not measured.",
+      "type": "research",
+      "status": "open",
+      "acceptanceCriteria": [
+        "find's mean time over 20 different patterns on a large tree (such as ~/.cargo/registry/src) is measured on an Apple Silicon Mac with and without an index (git history: src/macos/shell-tools/src/index.rs before the merge), with resident memory.",
+        "An index is added to find only if it wins by more than its memory and build stall are worth, and a decision record says why either way."
+      ],
+      "origin": {
+        "kind": "agent",
+        "by": "Coding agent merging shell-tools into the daemon",
+        "date": "2026-11-19",
+        "reference": "src/macos/shell-tools/src/.dev/decisions.json (merge-into-daemon)"
+      },
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "search_all"
+        }
+      ]
     }
   ]
 }

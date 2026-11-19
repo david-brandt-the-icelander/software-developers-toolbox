@@ -44,6 +44,9 @@ tree-sitter-language = "0.1"
 # HTTPS client for the MCP proxy: blocking like the rest of the daemon, rustls with the OS trust store.
 ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
 
+# The JSON operations behind `zazzle call` and `zazzle stat` (read, search, list, stat, outline, diff_since) with their per-session memory.
+shell-tools = { path = "../shell-tools" }
+
 # The rule and skill files that apply to a path, shared with the ai-agent-rules program; daemon delivers them once per session.
 ai-agent-rules = { path = "../ai-agent-rules" }
 

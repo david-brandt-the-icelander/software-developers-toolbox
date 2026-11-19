@@ -80,7 +80,7 @@
         {
           "id": "list",
           "actor": "Coding agent",
-          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_stat, zazzle_call, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
           "sources": [
             {
               "path": "src/macos/daemon/src/mcp.rs",

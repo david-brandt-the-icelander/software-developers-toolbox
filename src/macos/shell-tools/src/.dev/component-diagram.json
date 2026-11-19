@@ -3,399 +3,240 @@
   "kind": "component",
   "title": "shell-tools source component diagram",
   "folder": "src/macos/shell-tools/src",
-  "description": "The modules of shell-tools and how a request flows through them: a front end (the command line or the MCP server) hands JSON to the engine, which runs one operation against the session state. Search, list and outline results are cached in the session together with the stamp (device, inode, size, mtime and ctime in nanoseconds) of every file and directory the walk visited, plus each visited directory's .gitignore and .ignore; a later identical request re-stats those paths and reuses the result only when every stamp is equal and none was younger than the 2-second racy window when the result was computed. A file's etag is the first 64 bits of its BLAKE3 hash. Everything runs in one process; no module is deployed on its own.",
+  "description": "The dispatcher runs each operation on the session's State; read, stat and diff_since load files themselves, while search, list and outline get files, scans and symbols from the daemon through Host.",
   "sources": [
     {
-      "path": "src/macos/shell-tools/src/main.rs",
-      "symbol": "main"
-    },
-    {
       "path": "src/macos/shell-tools/src/engine.rs",
-      "symbol": "Engine.dispatch"
+      "symbol": "dispatch"
+    },
+    {
+      "path": "src/macos/shell-tools/src/host.rs",
+      "symbol": "Host"
     },
     {
       "path": "src/macos/shell-tools/src/state.rs",
-      "symbol": "State.cached"
-    },
-    {
-      "path": "src/macos/shell-tools/src/state.rs",
-      "symbol": "State.serve_cached"
-    },
-    {
-      "path": "src/macos/shell-tools/src/fsio.rs",
-      "symbol": "etag"
-    },
-    {
-      "path": "src/macos/shell-tools/src/fsio.rs",
-      "symbol": "Ident.racy"
-    },
-    {
-      "path": "src/macos/shell-tools/src/walk.rs",
-      "symbol": "ignore_file_deps"
+      "symbol": "State.serve"
     }
   ],
   "components": [
     {
       "id": "shell-tools-src",
       "name": "shell-tools source",
-      "responsibility": "The shell-tools binary's modules, compiled into one executable.",
+      "responsibility": "The library's modules.",
       "folder": "src/macos/shell-tools/src"
     },
     {
-      "id": "cli",
-      "name": "Command line (main.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Parses `zazzle shell-tools call`, `zazzle shell-tools jsonl` and `zazzle shell-tools serve` with clap. `call` runs one request (or an array) from the argument or stdin in a fresh session and exits 1 unless every reply is ok; `jsonl` keeps one session and answers one request per stdin line; `serve` hands over to the MCP server."
-    },
-    {
-      "id": "mcp",
-      "name": "MCP server (mcp.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Newline-delimited JSON-RPC on stdin and stdout: answers initialize, ping, tools/list and tools/call, exposing each operation as a tool afs_<op> and wrapping the engine's reply as text content with isError. One session per process."
-    },
-    {
       "id": "engine",
-      "name": "Request engine (engine.rs, req.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Parses a request object into a Request by its `op` field, rejecting unknown ops and unknown fields, dispatches it to its operation, adds `ok`, and runs an array of requests in order with one reply each."
+      "name": "Dispatcher (engine.rs)",
+      "responsibility": "Keeps a Sent table per session (64, least recently used dropped) and the Shared memory, parses each request of a call and runs it with the caller's working directory and Host; replies get ok or error.",
+      "folder": "src/macos/shell-tools/src"
+    },
+    {
+      "id": "req",
+      "name": "Requests (req.rs)",
+      "responsibility": "One strict argument struct per op, selected by `op`; find and ls are aliases of search and list.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "state",
-      "name": "Session state (state.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "One session's memory: which etag and request shape each path or query was last sent with (for unchanged markers and ref ids), file contents kept as diff bases (64 MiB in all, none over 8 MiB, oldest evicted first), the stamp and etag of each file read, up to 256 cached results with the stamps they depend on, and up to 8 trigram indexes keyed by walk configuration."
+      "name": "Session memory (state.rs)",
+      "responsibility": "Sent: what a session received per subject (etag, request keys, whole or not) and its refs. Shared: trusted stamps with etags and file versions kept as diff bases (64 MiB). State.serve answers unchanged for a repeated result.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "read",
-      "name": "Read and diff (read.rs, diff.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "The read operation: ranged, capped reads that answer a repeat with an unchanged marker and a whole-file re-read of a changed file with line hunks when they are under half the file's size; and diff_since, hunks against any version the session still holds."
+      "name": "read (read.rs)",
+      "responsibility": "Capped, ranged reads with if_none_match, unchanged markers and diff replies.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "search",
-      "name": "Search (search.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Compiles the pattern as a multi-line byte regex, walks the paths in parallel, scans files in chunks of 32 on all cores, groups hits by file with merged context blocks, caps matches and caches the reply."
-    },
-    {
-      "id": "index",
-      "name": "Trigram index (index.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Maps every ASCII-case-folded three-byte sequence to the files containing it, and turns a parsed pattern into the literals every match must start or end with, so a search reads only candidate files. Its lifecycle is drawn in src/macos/shell-tools/src/.dev/TriIndex.state-diagram.json."
+      "name": "search (search.rs)",
+      "responsibility": "Compiles the pattern, filters hidden files, asks the Host to scan, then re-reads matched files to render hits, context blocks and the chosen fields.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "list",
-      "name": "List and stat (list.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Ignore-aware, sorted, paged directory listings (cached), and the metadata of one path with an optional content etag."
+      "name": "list and stat (list.rs)",
+      "responsibility": "Listings from the Host's files and directories with depth, globs, hidden, long rows and cursor paging; stat of one path with an optional content etag.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "outline",
-      "name": "Outline (outline.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Symbols with 1-based line ranges per source file: tree-sitter grammars for Rust, Python, JavaScript, TypeScript, Go, Java, C and C++, line patterns for Kotlin, C#, Swift, Scala, shell and Markdown; parsed in parallel and cached."
+      "name": "outline (outline.rs)",
+      "responsibility": "The Host's symbols per file as [start, end, kind, name], nested names dotted, capped.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
-      "id": "walk",
-      "name": "Walker (walk.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Builds the ignore crate's walker over the roots with .gitignore, .ignore, git excludes, globs, hidden files and depth; never enters .git; returns the stamps of a directory's ignore files."
+      "id": "diff",
+      "name": "Diffs (diff.rs)",
+      "responsibility": "Line hunks between two versions (similar, 250 ms timeout) and the diff_since operation.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
       "id": "fsio",
-      "name": "File loading (fsio.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Stamps, whole-file reads (O_NOATIME and a sequential-read hint on Linux), etags, binary sniffing, and load_many, which picks batched or one-by-one loading per call (AFS_BATCH_IO, or by timing both on the process's first files)."
+      "name": "File access (fsio.rs)",
+      "responsibility": "Stamps (Ident) with the racy rule, whole-file loads with read(2) (O_NOATIME and a sequential hint on Linux), etags and binary sniffing.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
-      "id": "uring",
-      "name": "io_uring loader (uring.rs, Linux)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Loads up to 64 files per batch in three ring rounds (open, with a retry round without O_NOATIME for files that refuse it; statx linked before a 64 KiB read; close), reads the rest of bigger files with pread, pools its rings, and disables itself for the process on any ring failure."
+      "id": "host",
+      "name": "Host (host.rs)",
+      "responsibility": "The interface the daemon implements (files, dirs, search, outline) and the path helpers resolve, display and hidden.",
+      "folder": "src/macos/shell-tools/src"
     },
     {
-      "id": "aio",
-      "name": "POSIX AIO loader (aio.rs, macOS)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Opens and stamps files one by one, enables read-ahead, then reads up to 16 at once with one lio_listio(LIO_WAIT); empty files, files over 4 MiB and incomplete reads use plain reads."
-    },
-    {
-      "id": "par",
-      "name": "Parallel map (par.rs)",
-      "folder": "src/macos/shell-tools/src",
-      "responsibility": "Maps a function over chunks of a slice on scoped threads, one per core, and returns the results in input order."
-    },
-    {
-      "id": "filesystem",
-      "name": "Local file system",
-      "responsibility": "The files and directories requests name, read with the permissions of the user who runs shell-tools.",
-      "external": true
+      "id": "daemon-host",
+      "name": "DaemonHost (daemon)",
+      "responsibility": "The daemon's Host: its walk cache, find's parallel scan (binary and >2 MiB files skipped) and its cached outlines.",
+      "folder": "src/macos/daemon/src/cmd",
+      "diagram": "src/macos/daemon/src/cmd/.dev/component-diagram.json"
     }
   ],
   "relationships": [
     {
       "from": "shell-tools-src",
-      "to": "cli",
-      "kind": "contains",
-      "description": "main.rs is the binary's entry point."
-    },
-    {
-      "from": "shell-tools-src",
-      "to": "mcp",
-      "kind": "contains",
-      "description": "mod mcp."
-    },
-    {
-      "from": "shell-tools-src",
       "to": "engine",
       "kind": "contains",
-      "description": "mod engine and mod req."
+      "description": "Dispatcher (engine.rs)."
+    },
+    {
+      "from": "shell-tools-src",
+      "to": "req",
+      "kind": "contains",
+      "description": "Requests (req.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "state",
       "kind": "contains",
-      "description": "mod state."
+      "description": "Session memory (state.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "read",
       "kind": "contains",
-      "description": "mod read and mod diff."
+      "description": "read (read.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "search",
       "kind": "contains",
-      "description": "mod search."
-    },
-    {
-      "from": "shell-tools-src",
-      "to": "index",
-      "kind": "contains",
-      "description": "mod index."
+      "description": "search (search.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "list",
       "kind": "contains",
-      "description": "mod list."
+      "description": "list and stat (list.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "outline",
       "kind": "contains",
-      "description": "mod outline."
+      "description": "outline (outline.rs)."
     },
     {
       "from": "shell-tools-src",
-      "to": "walk",
+      "to": "diff",
       "kind": "contains",
-      "description": "mod walk."
+      "description": "Diffs (diff.rs)."
     },
     {
       "from": "shell-tools-src",
       "to": "fsio",
       "kind": "contains",
-      "description": "mod fsio."
+      "description": "File access (fsio.rs)."
     },
     {
       "from": "shell-tools-src",
-      "to": "uring",
+      "to": "host",
       "kind": "contains",
-      "description": "mod uring, only on Linux."
+      "description": "Host (host.rs)."
     },
     {
-      "from": "shell-tools-src",
-      "to": "aio",
-      "kind": "contains",
-      "description": "mod aio, only on macOS."
-    },
-    {
-      "from": "shell-tools-src",
-      "to": "par",
-      "kind": "contains",
-      "description": "mod par."
-    },
-    {
-      "from": "cli",
-      "to": "engine",
+      "from": "engine",
+      "to": "req",
       "kind": "depends-on",
-      "description": "call_once and jsonl run requests through Engine.call; main uses all_ok for the exit code."
+      "description": "Parses each request."
     },
     {
-      "from": "cli",
-      "to": "mcp",
+      "from": "engine",
+      "to": "state",
       "kind": "depends-on",
-      "description": "`zazzle shell-tools serve` runs mcp::serve."
-    },
-    {
-      "from": "mcp",
-      "to": "engine",
-      "kind": "depends-on",
-      "description": "call_tool sets `op` from the tool name and runs Engine.call."
+      "description": "Builds the session's State."
     },
     {
       "from": "engine",
       "to": "read",
       "kind": "depends-on",
-      "description": "read::run and diff::since."
+      "description": "Runs read."
     },
     {
       "from": "engine",
       "to": "search",
       "kind": "depends-on",
-      "description": "search::run."
+      "description": "Runs search."
     },
     {
       "from": "engine",
       "to": "list",
       "kind": "depends-on",
-      "description": "list::list and list::stat."
+      "description": "Runs list and stat."
     },
     {
       "from": "engine",
       "to": "outline",
       "kind": "depends-on",
-      "description": "outline::run."
+      "description": "Runs outline."
     },
     {
       "from": "engine",
-      "to": "state",
+      "to": "diff",
       "kind": "depends-on",
-      "description": "Owns the session's State and passes it to every operation but stat."
+      "description": "Runs diff_since."
     },
     {
       "from": "read",
-      "to": "state",
+      "to": "diff",
       "kind": "depends-on",
-      "description": "trusted_etag, record, already_sent, mark_sent, complete_etag, put_content and content."
+      "description": "Hunks for a changed whole-file read."
     },
     {
       "from": "read",
       "to": "fsio",
       "kind": "depends-on",
-      "description": "fsio::load, is_binary."
+      "description": "Loads and stamps the file."
     },
     {
       "from": "search",
-      "to": "state",
+      "to": "host",
       "kind": "depends-on",
-      "description": "serve_cached, take_index and put_index."
-    },
-    {
-      "from": "search",
-      "to": "index",
-      "kind": "depends-on",
-      "description": "index::plan, TriIndex.begin, apply, finish and candidates."
-    },
-    {
-      "from": "search",
-      "to": "walk",
-      "kind": "depends-on",
-      "description": "walk::builder (parallel walk), ignore_file_deps, display."
-    },
-    {
-      "from": "search",
-      "to": "fsio",
-      "kind": "depends-on",
-      "description": "fsio::load_many per chunk of 32 files."
-    },
-    {
-      "from": "search",
-      "to": "par",
-      "kind": "depends-on",
-      "description": "par::map_chunks for scanning."
+      "description": "Files and the scan."
     },
     {
       "from": "list",
-      "to": "state",
+      "to": "host",
       "kind": "depends-on",
-      "description": "serve_cached for listings."
-    },
-    {
-      "from": "list",
-      "to": "walk",
-      "kind": "depends-on",
-      "description": "walk::builder with depth 1 unless a glob or depth is given."
-    },
-    {
-      "from": "list",
-      "to": "fsio",
-      "kind": "depends-on",
-      "description": "fsio::load and etag for stat with hash."
+      "description": "Files and directories."
     },
     {
       "from": "outline",
-      "to": "state",
+      "to": "host",
       "kind": "depends-on",
-      "description": "serve_cached for outlines."
+      "description": "Files and symbols."
     },
     {
-      "from": "outline",
-      "to": "walk",
+      "from": "host",
+      "to": "daemon-host",
       "kind": "depends-on",
-      "description": "walk::builder over the paths."
-    },
-    {
-      "from": "outline",
-      "to": "fsio",
-      "kind": "depends-on",
-      "description": "fsio::load_many per chunk of 16 files."
-    },
-    {
-      "from": "outline",
-      "to": "par",
-      "kind": "depends-on",
-      "description": "par::map_chunks for parsing."
+      "description": "Implemented by the daemon."
     },
     {
       "from": "state",
       "to": "fsio",
       "kind": "depends-on",
-      "description": "Ident stamps, etag and now_ns; a cache hit re-stats every dependency with ident_of."
-    },
-    {
-      "from": "state",
-      "to": "index",
-      "kind": "depends-on",
-      "description": "Holds TriIndex values per walk configuration."
-    },
-    {
-      "from": "fsio",
-      "to": "uring",
-      "kind": "depends-on",
-      "description": "load_batched calls uring::load_many on Linux, which returns None when io_uring is unusable."
-    },
-    {
-      "from": "fsio",
-      "to": "aio",
-      "kind": "depends-on",
-      "description": "load_batched calls aio::load_many on macOS."
-    },
-    {
-      "from": "fsio",
-      "to": "filesystem",
-      "kind": "depends-on",
-      "description": "open, fstat and read(2)."
-    },
-    {
-      "from": "uring",
-      "to": "filesystem",
-      "kind": "depends-on",
-      "description": "OpenAt, Statx, Read and Close ring operations, and pread."
-    },
-    {
-      "from": "aio",
-      "to": "filesystem",
-      "kind": "depends-on",
-      "description": "open, fcntl(F_RDAHEAD), lio_listio and aio_suspend."
-    },
-    {
-      "from": "walk",
-      "to": "filesystem",
-      "kind": "depends-on",
-      "description": "Directory walks and lstat of ignore files."
+      "description": "Stamps, etags and the racy rule."
     }
   ]
 }

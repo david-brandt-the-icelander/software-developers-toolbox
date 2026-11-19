@@ -5,33 +5,29 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "shell-tools"
-path = "src/main.rs"
+[lib]
+name = "shell_tools"
+path = "src/lib.rs"
 
+# Each dependency has one reason; std covers everything else.
 [dependencies]
+# Content hashes for etags.
 blake3 = "1"
-clap = { version = "4", features = ["derive"] }
-ignore = "0.4"
+# O_NOATIME, posix_fadvise and mkfifo (tests).
 libc = "0.2"
+# Fast newline scans for line slicing.
 memchr = "2"
+# The search pattern, compiled here and scanned by the daemon.
 regex = "1"
-regex-syntax = "0.8"
+# Request parsing.
 serde = { version = "1", features = ["derive"] }
+# Requests and replies.
 serde_json = "1"
+# Line diffs for changed files.
 similar = "2"
-tree-sitter = "0.25"
-tree-sitter-c = "0.24"
-tree-sitter-cpp = "0.23"
-tree-sitter-go = "0.23"
-tree-sitter-java = "0.23"
-tree-sitter-javascript = "0.23"
-tree-sitter-python = "0.23"
-tree-sitter-rust = "0.23"
-tree-sitter-typescript = "0.23"
 
 [dev-dependencies]
 tempfile = "3"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.7"
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

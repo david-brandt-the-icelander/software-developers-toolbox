@@ -1,12 +1,14 @@
 // Request schemas: one strict argument struct per operation, parsed from JSON.
 use serde::Deserialize;
 
-// Every operation an agent can ask for, selected by the `op` field.
+// Every operation an agent can ask for, selected by the `op` field (`find` and `ls` name search and list as the daemon commands do).
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     Read(ReadArgs),
+    #[serde(alias = "find")]
     Search(SearchArgs),
+    #[serde(alias = "ls")]
     List(ListArgs),
     Stat(StatArgs),
     Outline(OutlineArgs),

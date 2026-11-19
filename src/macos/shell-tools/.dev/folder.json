@@ -7,18 +7,31 @@
     {
       "id": "folder",
       "title": "shell-tools",
-      "summary": "The shell-tools crate, which builds the `shell-tools` binary: JSON-in, JSON-out file reading, search, listing and outlines for coding agents, with session memory that sends only what changed, as a CLI and an MCP server.",
-      "purpose": "Holds one tool of the toolbox: the crate manifest (Cargo.toml, a member of the src/macos workspace), the README a user reads to install and use it, the modules in src/ and the end-to-end tests in tests/. It replaces the cat, sed -n, grep -r, git grep and find calls an agent repeats.",
+      "summary": "The shell-tools library crate: the JSON file operations (read, search, list, stat, outline, diff_since) that zazzle's daemon runs for `zazzle call` and `zazzle stat`, with each session's memory of what it was sent, so repeats cost an unchanged marker and changed files only their diff.",
+      "purpose": "Holds one library of the toolbox: the crate manifest (Cargo.toml, a member of the src/macos workspace, no binary), the README with the request and reply reference, and the modules in src/. It used to be a program of its own (a CLI and an MCP server); its operations now run inside the daemon, which lends them its walk cache, its search scan and its outlines.",
       "boundaries": [
-        "An independent utility: it uses no other crate of the workspace, and none uses it.",
-        "How agents should use it is written for them in agents/skills/shell-tools/SKILL.md, outside this folder.",
-        "Its release build, packaging and Homebrew formula are made by .github/workflows/release.yml and release/, outside this folder."
+        "Used only by the daemon (src/macos/daemon, the `shell-tools` path dependency); it depends on no other crate of the workspace.",
+        "Has no command line, MCP server or process of its own: `zazzle call`, `zazzle stat`, zazzle_call and zazzle_stat are the daemon's (src/macos/daemon/src/cmd/call.rs, src/macos/daemon/src/mcp.rs).",
+        "How agents should use the operations is written for them in agents/skills/zazzle/SKILL.md, outside this folder."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": "src/macos/shell-tools/Cargo.toml", "symbol": "[[bin]]" },
-        { "path": "src/macos/Cargo.toml", "symbol": "workspace.members" },
-        { "path": "src/macos/shell-tools/README.md", "symbol": "shell-tools (`shell-tools`)" }
+        {
+          "path": "src/macos/shell-tools/Cargo.toml",
+          "symbol": "[lib]"
+        },
+        {
+          "path": "src/macos/Cargo.toml",
+          "symbol": "workspace.members"
+        },
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "shell-tools"
+        },
+        {
+          "path": "src/macos/shell-tools/README.md",
+          "symbol": "shell-tools (library)"
+        }
       ]
     }
   ]

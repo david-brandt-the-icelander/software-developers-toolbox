@@ -55,6 +55,7 @@ pub struct Engine {
     pub zazz: crate::zazz::Zazz,
     pub outputs: Option<PathBuf>,
     pub deliveries: crate::delivery::DeliveryLog,
+    pub calls: Mutex<shell_tools::engine::Engine>,
 }
 
 impl Default for Engine {
@@ -85,6 +86,7 @@ impl Engine {
             zazz: crate::zazz::Zazz::default(),
             outputs: None,
             deliveries: crate::delivery::DeliveryLog::default(),
+            calls: Mutex::new(shell_tools::engine::Engine::default()),
         }
     }
 

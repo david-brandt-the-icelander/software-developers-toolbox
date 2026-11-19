@@ -94,6 +94,12 @@
       "folder": "src/macos/daemon/src/cmd"
     },
     {
+      "id": "call",
+      "name": "call and stat (call.rs)",
+      "responsibility": "Runs shell-tools' JSON operations for the caller's session and renders stat as text, lending the library the walk cache, find's scan and the outlines as its Host.",
+      "folder": "src/macos/daemon/src/cmd"
+    },
+    {
       "id": "languages",
       "name": "languages (languages.rs)",
       "responsibility": "Lists the language modules this daemon trusts and which are installed, turns downloading on first use (JIT) on or off, and downloads the modules not yet installed.",
@@ -341,6 +347,24 @@
       "to": "help",
       "kind": "depends-on",
       "description": "zazzle, zazzle help [COMMAND] and COMMAND --help."
+    },
+    {
+      "from": "cmd",
+      "to": "call",
+      "kind": "contains",
+      "description": "JSON requests and stat."
+    },
+    {
+      "from": "call",
+      "to": "find",
+      "kind": "depends-on",
+      "description": "Scans files for the search operation with find's parallel search."
+    },
+    {
+      "from": "call",
+      "to": "src",
+      "kind": "depends-on",
+      "description": "The walk cache, the outlines, the engine's JSON sessions and the shell-tools library."
     }
   ]
 }

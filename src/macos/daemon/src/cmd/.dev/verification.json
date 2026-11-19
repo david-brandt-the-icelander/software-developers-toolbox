@@ -1603,6 +1603,68 @@
         "Whether the descriptions stay true when a command's options change: the pages are written by hand, beside each command's USAGE."
       ],
       "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "json-calls",
+      "title": "JSON requests and stat",
+      "summary": "call runs every shell-tools operation through the daemon's services and keeps a session's memory across calls; stat prints one line per path.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "read, search (alias find), list (alias ls), outline and stat answer through the walk cache, find's scan (binary and ignored files skipped, hidden files only on request, 1-based columns) and the daemon's outlines with dotted nested names.",
+        "Within a session a repeated read is unchanged, a changed file comes back as hunks and diff_since gives the hunks since an etag; the empty session remembers nothing; forget-sessions clears the JSON sessions too.",
+        "A batch gets one reply per request and exit status 1 when one failed; text that is not JSON is a JSON error; - reads standard input.",
+        "stat prints kind, size, UTC time and the sha read shows, or missing; UTC formatting is right before 1970 and on a leap day.",
+        "zazzle_stat and zazzle_call map to these command lines and keep the local model away from call's JSON."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_ops",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_session_memory",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_batch_errors_and_stdin",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_stat_command",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_utc",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "test_stat_and_call_args",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/walk.rs",
+          "symbol": "test_dirs",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

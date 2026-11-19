@@ -7,22 +7,25 @@
     {
       "id": "folder",
       "title": "shell-tools source",
-      "summary": "Every Rust module of the shell-tools binary, flat in one folder: the command line, the MCP server, the request engine, the six operations, the session state and the file loaders.",
-      "purpose": "Holds the whole tool. main.rs parses the command line and runs one of three front ends (call, jsonl, serve); engine.rs turns a JSON request into one of six operations (read, search, list, stat, outline, diff_since); state.rs keeps what one session has already sent, the file versions it can diff against and its cached results; fsio.rs, uring.rs and aio.rs load files; walk.rs and par.rs walk directories and spread work over the cores.",
+      "summary": "Every module of the shell-tools library, flat in one folder: the request dispatcher, the six operations, the session memory, the file loader and the Host interface the daemon implements.",
+      "purpose": "lib.rs lists the modules. engine.rs keeps one Sent table per session and the Shared memory, and runs a request (or a batch) for a session; req.rs parses requests; read.rs, search.rs, list.rs (list and stat), outline.rs and diff.rs (diff_since and line diffs) are the operations; state.rs holds what was sent, trusted stamps and diff bases; fsio.rs loads and hashes files; host.rs declares what the daemon lends (walk, scan, outlines) and the path helpers.",
       "boundaries": [
         "Only reads: no operation writes, renames or deletes a file.",
-        "A session lives in one process's memory and ends with it; nothing is written to disk.",
-        "uring.rs is compiled only on Linux and aio.rs only on macOS (the #[cfg(target_os)] attributes on their mod lines in main.rs)."
+        "Memory lives in the daemon's process and ends with it; nothing is written to disk.",
+        "Walking, scanning and outlining are the daemon's (Host); this folder renders their results as JSON."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": "src/macos/shell-tools/src/main.rs",
-          "symbol": "Command"
+          "path": "src/macos/shell-tools/src/lib.rs"
         },
         {
           "path": "src/macos/shell-tools/src/engine.rs",
-          "symbol": "Engine.dispatch"
+          "symbol": "Engine.call"
+        },
+        {
+          "path": "src/macos/shell-tools/src/host.rs",
+          "symbol": "Host"
         },
         {
           "path": "src/macos/shell-tools/src/state.rs",

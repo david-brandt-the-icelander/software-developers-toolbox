@@ -1,11 +1,11 @@
 # Coding agent
 
 **Kind:** agent
-**Evidence:** `agents/skills/zazzle/SKILL.md`, `agents/skills/shell-tools/SKILL.md`, `agents/skills/fix-network/SKILL.md`, `agents/skills/free-disk-space/SKILL.md` (written to an agent), `src/macos/daemon/src/mcp.rs`, `src/macos/daemon/src/mcp_structure.rs`, `src/macos/shell-tools/src/mcp.rs` (MCP servers over standard input and output), `src/macos/daemon/src/proxy/mod.rs` (`zazzle proxy` in front of another MCP server), `src/macos/zazzle/src/zazzle_core.h` (`ZAZZLE_SESSION`: the session a shell's commands share), `agents/skills/zazz/SKILL.md` and `src/macos/daemon/src/zazz/mcptools.rs` (zazz scripts, from a shell or as MCP tools), `src/macos/csharp-indexer/src/Cli/HookPolicy.cs` (the Claude Code hook that redirects its raw commands), `agents/skills/zazzle/SKILL.md` (`Git`: `zazzle git commit -m`, never the editor), `agents/skills/zazzle-agent/SKILL.md` (`Local models: llm and prompt`: `zazzle agent prompt`), `src/macos/daemon/src/setup/mod.rs` (`INSTRUCTIONS`: `llm` on reading tools and `zazzle_brief` before a task)
+**Evidence:** `agents/skills/zazzle/SKILL.md`, `agents/skills/fix-network/SKILL.md`, `agents/skills/free-disk-space/SKILL.md` (written to an agent), `src/macos/daemon/src/mcp.rs`, `src/macos/daemon/src/mcp_structure.rs` (MCP servers over standard input and output), `src/macos/daemon/src/proxy/mod.rs` (`zazzle proxy` in front of another MCP server), `src/macos/zazzle/src/zazzle_core.h` (`ZAZZLE_SESSION`: the session a shell's commands share), `agents/skills/zazz/SKILL.md` and `src/macos/daemon/src/zazz/mcptools.rs` (zazz scripts, from a shell or as MCP tools), `src/macos/csharp-indexer/src/Cli/HookPolicy.cs` (the Claude Code hook that redirects its raw commands), `agents/skills/zazzle/SKILL.md` (`Git`: `zazzle git commit -m`, never the editor), `agents/skills/zazzle-agent/SKILL.md` (`Local models: llm and prompt`: `zazzle agent prompt`), `src/macos/daemon/src/setup/mod.rs` (`INSTRUCTIONS`: `llm` on reading tools and `zazzle_brief` before a task)
 
 ## What they want from the system
 
-- To find and read the code it needs, and keep up with changes, without re-reading what it already has: [shell-tools journey](../agents/skills/shell-tools/.dev/user-journey.json), `explore-with-shell-tools`; [shell-tools use cases](../src/macos/shell-tools/src/.dev/use-case.json), `reread-changed-file`, `find-and-read-item`.
+- To find and read the code it needs, and keep up with changes, without re-reading what it already has: [zazzle command operations](../src/macos/daemon/src/cmd/.dev/operation.json), `read`, `find`, `outline` and `call` (JSON replies with unchanged markers and diffs: [shell-tools operations](../src/macos/shell-tools/src/.dev/operation.json)); [read-again](../src/macos/daemon/src/cmd/.dev/use-case.json), `get-a-cut-output-in-full`.
 - To search, read, outline and edit a project's files through tools, with short answers it is not sent twice: [daemon use cases](../src/macos/daemon/src/.dev/use-case.json), `use-over-mcp`; from a shell, [zazzle use cases](../src/macos/zazzle/src/.dev/use-case.json), `run-a-command`.
 - To change a file it has read without overwriting a newer version or writing outside the project: [daemon command use cases](../src/macos/daemon/src/cmd/.dev/use-case.json), `edit-a-file-safely`.
 - To learn whether a build or test passed, and why not, from a short answer: [zazzle run use cases](../src/macos/daemon/src/wrap/.dev/use-case.json), `run-a-build-or-test`.
@@ -20,7 +20,7 @@
 
 ## How they reach it
 
-An MCP client, such as Claude Code, that starts `zazzle daemon mcp`, `zazzle proxy` or `zazzle shell-tools serve` (csharp-indexer offers it no tools of its own); or a shell in which it runs `zazzle` (including `zazzle git`), `shell-tools`, `fix-network` and `free-disk-space`. The skills in `agents/skills/` and the snippet `csharp-indexer init` prints tell it how.
+An MCP client, such as Claude Code, that starts `zazzle daemon mcp` or `zazzle proxy` (csharp-indexer offers it no tools of its own); or a shell in which it runs `zazzle` (including `zazzle git` and `zazzle call`), `fix-network` and `free-disk-space`. The skills in `agents/skills/` and the snippet `csharp-indexer init` prints tell it how.
 
 ## Not to be confused with
 

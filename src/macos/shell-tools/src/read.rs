@@ -1,6 +1,8 @@
 // The read operation: capped, ranged file reads with session-aware unchanged and diff replies.
 use crate::diff;
+use crate::engine::Ctx;
 use crate::fsio::{self, Ident};
+use crate::host::resolve;
 use crate::req::ReadArgs;
 use crate::state::{Res, State};
 use memchr::{memchr, memchr_iter};
@@ -92,17 +94,24 @@ fn load(path: &Path, shown: &str) -> Res<(Ident, Vec<u8>)> {
     fsio::load(path).map_err(|e| format!("{shown}: {e}"))
 }
 
-// Reply with a diff against the version this session last received, when that is much smaller.
-fn try_diff(st: &mut State, shown: &str, etag: &str, bytes: &Arc<Vec<u8>>, key: &str) -> Option<Value> {
-    let base_etag = st.complete_etag(shown).filter(|e| e != etag)?;
-    let base = st.content(&base_etag)?;
+// Reply with a diff against the version this session last received whole, when that is much smaller.
+fn try_diff(
+    st: &mut State,
+    shown: &str,
+    subject: &str,
+    etag: &str,
+    bytes: &Arc<Vec<u8>>,
+    key: &str,
+) -> Option<Value> {
+    let base_etag = st.sent.complete_etag(subject).filter(|e| e != etag)?;
+    let base = st.shared.content(&base_etag)?;
     let hunks = diff::hunks(&base, bytes)?;
     let size: usize = hunks.iter().map(|h| h["ins"].as_str().map_or(0, str::len) + 40).sum();
     if size * 2 >= bytes.len() {
         return None;
     }
-    st.put_content(etag, Arc::clone(bytes));
-    let reference = st.mark_sent(shown, etag, key, true);
+    st.shared.put_content(etag, Arc::clone(bytes));
+    let reference = st.sent.mark_sent(subject, etag, key, true);
     Some(json!({
         "path": shown, "etag": etag, "base_etag": base_etag, "changed": true,
         "total_lines": line_count(bytes), "hunks": hunks, "ref": reference
@@ -110,8 +119,9 @@ fn try_diff(st: &mut State, shown: &str, etag: &str, bytes: &Arc<Vec<u8>>, key: 
 }
 
 // Run a read request.
-pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
-    let path = Path::new(&a.path);
+pub fn run(st: &mut State, ctx: &Ctx, a: ReadArgs) -> Res<Value> {
+    let full = resolve(ctx.cwd, &a.path);
+    let (path, subject) = (full.as_path(), full.to_string_lossy().into_owned());
     let md = std::fs::metadata(path).map_err(|e| format!("{}: {e}", a.path))?;
     if !md.is_file() {
         return Err(format!("{}: not a regular file (use list for directories)", a.path));
@@ -119,11 +129,11 @@ pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
     let caps = (a.max_lines.unwrap_or(MAX_LINES).max(1), a.max_bytes.unwrap_or(MAX_BYTES).max(1));
     let key = format!("{:?}|{}|{}", a.ranges, caps.0, caps.1);
     let mut loaded = None;
-    let mut etag = match st.trusted_etag(path, &Ident::of(&md)) {
+    let mut etag = match st.shared.trusted_etag(path, &Ident::of(&md)) {
         Some(e) => e,
         None => {
             let (id, bytes) = load(path, &a.path)?;
-            let e = st.record(path, id, &bytes);
+            let e = st.shared.record(path, id, &bytes);
             loaded = Some(bytes);
             e
         }
@@ -131,16 +141,14 @@ pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
     if a.if_none_match.as_deref() == Some(etag.as_str()) {
         return Ok(json!({"path": a.path, "etag": etag, "unchanged": true}));
     }
-    if !a.fresh {
-        if let Some(r) = st.already_sent(&a.path, &etag, &key) {
-            return Ok(json!({"path": a.path, "etag": etag, "unchanged": true, "ref": r}));
-        }
+    if let Some(r) = st.sent.already_sent(&subject, &etag, &key).filter(|_| !a.fresh) {
+        return Ok(json!({"path": a.path, "etag": etag, "unchanged": true, "ref": r}));
     }
     let bytes = match loaded {
         Some(b) => b,
         None => {
             let (id, b) = load(path, &a.path)?;
-            etag = st.record(path, id, &b);
+            etag = st.shared.record(path, id, &b);
             b
         }
     };
@@ -149,7 +157,7 @@ pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
     }
     let bytes = Arc::new(bytes);
     if a.ranges.is_empty() && !a.fresh {
-        if let Some(v) = try_diff(st, &a.path, &etag, &bytes, &key) {
+        if let Some(v) = try_diff(st, &a.path, &subject, &etag, &bytes, &key) {
             return Ok(v);
         }
     }
@@ -163,8 +171,8 @@ pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
     }
     let slice = slice_lines(&bytes, &spans, total, caps);
     let complete = a.ranges.is_empty() && slice.next.is_empty();
-    st.put_content(&etag, Arc::clone(&bytes));
-    let reference = st.mark_sent(&a.path, &etag, &key, complete);
+    st.shared.put_content(&etag, Arc::clone(&bytes));
+    let reference = st.sent.mark_sent(&subject, &etag, &key, complete);
     let mut out = json!({
         "path": a.path, "etag": etag, "total_lines": total, "chunks": slice.chunks, "ref": reference
     });
@@ -180,8 +188,11 @@ pub fn run(st: &mut State, a: ReadArgs) -> Res<Value> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+    use crate::host::testing::Plain;
+    use crate::state::{Sent, Shared};
 
     // Lines are counted with or without a final newline.
     #[test]
@@ -216,6 +227,11 @@ mod tests {
         let text = clip_line(&vec![b'x'; 2500], &mut cuts);
         assert_eq!(cuts, 1);
         assert!(text.ends_with("(+500 bytes)"));
+    }
+
+    // Runs a read with absolute paths.
+    fn go(st: &mut State, a: ReadArgs) -> Res<Value> {
+        run(st, &Ctx { cwd: Path::new("/"), host: &Plain }, a)
     }
 
     // Build read arguments from JSON.
@@ -259,25 +275,27 @@ mod tests {
     #[test]
     fn test_run_errors() {
         let (dir, path) = file(b"a\nb\n");
-        let mut st = State::new();
-        let on_dir = run(&mut st, args(json!({"path": dir.path()}))).unwrap_err();
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let mut st = State { shared: &mut sh, sent: &mut sent };
+        let on_dir = go(&mut st, args(json!({"path": dir.path()}))).unwrap_err();
         assert!(on_dir.contains("not a regular file"));
-        assert!(run(&mut st, args(json!({"path": "/no/such/file"}))).is_err());
-        assert!(run(&mut st, args(json!({"path": path, "ranges": [[3, 2]]}))).is_err());
+        assert!(go(&mut st, args(json!({"path": "/no/such/file"}))).is_err());
+        assert!(go(&mut st, args(json!({"path": path, "ranges": [[3, 2]]}))).is_err());
     }
 
     // Binary files, long lines and byte caps are reported in the reply.
     #[test]
     fn test_run_binary_long_and_caps() {
         let (_d, bin) = file(b"ab\0cd");
-        let mut st = State::new();
-        assert_eq!(run(&mut st, args(json!({"path": bin}))).unwrap()["binary"], true);
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let mut st = State { shared: &mut sh, sent: &mut sent };
+        assert_eq!(go(&mut st, args(json!({"path": bin}))).unwrap()["binary"], true);
         let long = format!("{}\nshort\n", "x".repeat(MAX_LINE_BYTES + 50));
         let (_d2, path) = file(long.as_bytes());
-        let out = run(&mut st, args(json!({"path": path}))).unwrap();
+        let out = go(&mut st, args(json!({"path": path}))).unwrap();
         assert_eq!(out["long_lines_cut"], 1);
         let (_d3, many) = file("0123456789\n".repeat(100).as_bytes());
-        let capped = run(&mut st, args(json!({"path": many, "max_bytes": 50}))).unwrap();
+        let capped = go(&mut st, args(json!({"path": many, "max_bytes": 50}))).unwrap();
         assert_eq!(capped["truncated"], true);
         assert!(capped["bytes_omitted"].as_u64().unwrap() > 900);
     }
@@ -287,14 +305,15 @@ mod tests {
     fn test_run_trusted_etag_path() {
         let (_d, path) = file("line\n".repeat(500).as_bytes());
         std::thread::sleep(std::time::Duration::from_millis(2200));
-        let mut st = State::new();
-        let first = run(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let mut st = State { shared: &mut sh, sent: &mut sent };
+        let first = go(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
         assert_eq!(first["truncated"], true);
-        let same = run(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
+        let same = go(&mut st, args(json!({"path": path, "max_lines": 100}))).unwrap();
         assert_eq!(same["unchanged"], true);
-        let other = run(&mut st, args(json!({"path": path, "max_lines": 50}))).unwrap();
+        let other = go(&mut st, args(json!({"path": path, "max_lines": 50}))).unwrap();
         assert!(other.get("chunks").is_some());
-        let tag = run(&mut st, args(json!({"path": path, "if_none_match": first["etag"]}))).unwrap();
+        let tag = go(&mut st, args(json!({"path": path, "if_none_match": first["etag"]}))).unwrap();
         assert_eq!(tag["unchanged"], true);
     }
 
@@ -302,10 +321,11 @@ mod tests {
     #[test]
     fn test_run_large_diff_falls_back() {
         let (_d, path) = file(b"one\ntwo\nthree\n");
-        let mut st = State::new();
-        run(&mut st, args(json!({"path": path}))).unwrap();
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let mut st = State { shared: &mut sh, sent: &mut sent };
+        go(&mut st, args(json!({"path": path}))).unwrap();
         std::fs::write(&path, "completely\ndifferent\ncontent\n").unwrap();
-        let out = run(&mut st, args(json!({"path": path}))).unwrap();
+        let out = go(&mut st, args(json!({"path": path}))).unwrap();
         assert!(out.get("chunks").is_some());
         assert!(out.get("hunks").is_none());
     }

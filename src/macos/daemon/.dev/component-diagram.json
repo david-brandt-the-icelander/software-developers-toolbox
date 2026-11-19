@@ -118,6 +118,13 @@
       "diagram": "src/macos/ai-agent-rules/.dev/component-diagram.json"
     },
     {
+      "id": "shell-tools",
+      "name": "shell-tools",
+      "responsibility": "The library behind `zazzle call` and `zazzle stat`: the JSON operations read, search, list, stat, outline and diff_since, and the memory of what each session was sent (etags, unchanged markers, diff bases).",
+      "folder": "src/macos/shell-tools",
+      "diagram": "src/macos/shell-tools/.dev/component-diagram.json"
+    },
+    {
       "id": "rustc",
       "name": "Rust toolchain",
       "responsibility": "The user's rustc (with the wasm32-wasip1 target): compiles the SDK, scripts and their tests, to WebAssembly or, for natively trusted scripts, to the host.",
@@ -233,6 +240,12 @@
       "to": "ai-agent-rules",
       "kind": "depends-on",
       "description": "A Cargo dependency: list_rules and body for get-rules, the instructions appended to reads and edits, and the sections brief offers the local model."
+    },
+    {
+      "from": "src",
+      "to": "shell-tools",
+      "kind": "depends-on",
+      "description": "A Cargo dependency: the call and stat commands run its operations, lending it the walk cache, find's scan and the outlines through its Host trait."
     }
   ]
 }

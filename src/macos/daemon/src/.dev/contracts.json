@@ -92,7 +92,7 @@
     {
       "id": "mcp-tools",
       "title": "MCP tools",
-      "summary": "`zazzle daemon mcp` offers twenty tools over MCP's stdio transport: zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, the six structure tools answered by csharp-indexer; then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls for zazz scripts.",
+      "summary": "`zazzle daemon mcp` offers twenty-two tools over MCP's stdio transport: zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_stat, zazzle_call, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, the six structure tools answered by csharp-indexer; then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls for zazz scripts.",
       "contractType": "mcp-server",
       "consumers": [
         "MCP clients started with `zazzle daemon mcp` (the README's example is Claude Code)",

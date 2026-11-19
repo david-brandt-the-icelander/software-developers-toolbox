@@ -3,61 +3,74 @@
   "kind": "verification",
   "title": "shell-tools verification",
   "folder": "src/macos/shell-tools",
-  "description": "Checks that cover the whole crate. What each test checks is in src/.dev/verification.json and tests/.dev/verification.json; results are readings and live with CI.",
   "entities": [
     {
       "id": "tests-on-both-platforms",
-      "title": "Tests on macOS and Linux",
-      "summary": "The unit and end-to-end tests run on both platforms the batched loaders are written for.",
+      "title": "Tests on Linux and macOS",
+      "summary": "The unit tests run in CI on Linux and macOS with the rest of the workspace.",
       "subject": [
-        { "path": "src/macos/shell-tools/src/.dev/verification.json" },
-        { "path": "src/macos/shell-tools/tests/.dev/verification.json" }
+        {
+          "path": "src/macos/shell-tools/src/.dev/verification.json"
+        }
       ],
       "criteria": [
-        "Every test passes on macOS (where aio.rs is compiled) and on Linux (where uring.rs is compiled)"
+        "cargo test -p shell-tools passes on both platforms."
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.test", "command": "cargo test --workspace --locked", "description": "Matrix of macos-latest and ubuntu-latest, on every push to main and every pull request." }
-      ]
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "cargo test",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "documented"
     },
     {
       "id": "coverage-gate",
-      "title": "Line and branch coverage of at least 95%",
-      "summary": "CI fails when the tests cover less than 95% of shell-tools's lines or branches.",
-      "criteria": [
-        "At least 95% of lines covered (cargo llvm-cov --fail-under-lines 95)",
-        "At least 95% of branches covered, counted from the lcov BRDA records"
-      ],
-      "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.coverage", "command": "cargo +nightly llvm-cov --branch -p shell-tools --summary-only", "description": "Runs on Linux only, so aio.rs is not part of the measured code." }
-      ]
-    },
-    {
-      "id": "release-binary-smoke",
-      "title": "The built binary starts and answers",
-      "summary": "The release build prints its help and answers one request.",
+      "title": "Coverage gate",
+      "summary": "CI gates the library at 95% of lines and 95% of branches, test code excluded.",
       "subject": [
-        { "path": "src/macos/shell-tools/src/.dev/contracts.json", "entityId": "cli" }
+        {
+          "path": "src/macos/shell-tools/src/.dev/verification.json"
+        }
       ],
       "criteria": [
-        "`zazzle shell-tools --help` succeeds",
-        "`zazzle shell-tools call '{\"op\":\"stat\",\"path\":\".\"}'` succeeds"
+        "Line and branch coverage of shell-tools are each at least 95%.",
+        "Test modules and the test Host are excluded with coverage(off)."
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "Smoke test CLIs", "command": "cargo build --workspace --release --locked" },
-        { "type": "automated", "path": "release/formula.sh", "symbol": "Zazzle.test", "description": "The zazzle formula's test block (brew test zazzle): `zazzle shell-tools --version` prints shell-tools." }
-      ]
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "llvm-cov",
+          "command": "cargo +nightly llvm-cov --branch -p shell-tools --summary-only (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "documented"
     },
     {
-      "id": "msrv",
-      "title": "Builds with the workspace's minimum Rust",
-      "summary": "The crate compiles with Rust 1.85, the workspace's rust-version.",
+      "id": "through-the-daemon",
+      "title": "Operations through the daemon",
+      "summary": "The daemon's own tests run every operation through its real Host and its sessions.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/verification.json",
+          "entityId": "json-calls"
+        }
+      ],
       "criteria": [
-        "cargo check succeeds with the 1.85 toolchain"
+        "See json-calls in the daemon's command verification."
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.msrv", "command": "cargo check --workspace --locked" }
-      ]
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_ops",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
     }
   ]
 }

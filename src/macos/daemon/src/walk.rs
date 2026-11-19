@@ -206,6 +206,18 @@ pub fn collect(roots: &[PathBuf], opts: &WalkOpts, cache: &WalkCache) -> Result<
     Ok(out)
 }
 
+// Returns the directories below a root, sorted, from the same cached listing collect uses; none for a file.
+pub fn dirs(root: &Path, no_ignore: bool, cache: &WalkCache) -> Result<Vec<PathBuf>, String> {
+    let meta = std::fs::metadata(root).map_err(|e| format!("{}: {}", root.display(), reason(&e)))?;
+    if !meta.is_dir() {
+        return Ok(Vec::new());
+    }
+    let listing = cache.listing(root, no_ignore);
+    let mut out: Vec<PathBuf> = listing.dirs.iter().map(|(d, _)| d.clone()).filter(|d| d != root).collect();
+    out.sort();
+    Ok(out)
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -430,5 +442,21 @@ mod tests {
         sorted.dedup();
         assert_eq!(files, sorted);
         assert_eq!(files.iter().filter(|f| f.ends_with("b.md")).count(), 1);
+    }
+
+    // Checks dirs lists the subdirectories once, sorted, without .git or ignored ones, and nothing for a file or a missing root.
+    #[test]
+    fn test_dirs() {
+        let t = tree();
+        t.write("logs.log/x.txt", b"x");
+        let c = WalkCache::default();
+        let d = dirs(t.path(), false, &c).expect("dirs");
+        assert_eq!(names(&d, t.path()), vec![".hidden", "sub"]);
+        assert_eq!(
+            names(&dirs(t.path(), true, &c).expect("dirs"), t.path()),
+            vec![".hidden", "logs.log", "sub"]
+        );
+        assert!(dirs(&t.path().join("a.rs"), false, &c).expect("file").is_empty());
+        assert!(dirs(&t.path().join("nope"), false, &c).is_err());
     }
 }

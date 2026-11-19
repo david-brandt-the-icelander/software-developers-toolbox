@@ -108,7 +108,7 @@
     {
       "id": "engine",
       "name": "Engine (engine.rs, meta.rs)",
-      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the output store's directory, the edit lock, the counters and the zazz state (script store, worker binary and warm workers).",
+      "responsibility": "Shared daemon state: loads files with their metadata (BLAKE3 hash, line starts, binary, minified and CRLF flags; line anchors on demand), keeps a hot cache validated by stat, gives ls and find a light summary without hashing, caches outlines by content hash, holds the walk cache, the session table, the JSON sessions of `zazzle call` (shell-tools), the output store's directory, the edit lock, the counters and the zazz state (script store, worker binary and warm workers).",
       "folder": "src/macos/daemon/src"
     },
     {
@@ -120,7 +120,7 @@
     {
       "id": "walk",
       "name": "Walker (walk.rs)",
-      "responsibility": "Lists the files under a root honouring .gitignore, .ignore and git's exclude file, applies globs, and reuses a listing while every directory and ignore file keeps its stat, checked on the pool.",
+      "responsibility": "Lists the files under a root honouring .gitignore, .ignore and git's exclude file, applies globs, gives the directories of the same listing (for `call` list), and reuses a listing while every directory and ignore file keeps its stat, checked on the pool.",
       "folder": "src/macos/daemon/src"
     },
     {
@@ -302,7 +302,7 @@
     {
       "id": "cmd",
       "name": "zazzle commands",
-      "responsibility": "find, read, ls, outline, refs, edit, clean, read-again and status; the dispatcher also routes get-rules, brief and prompt, and applies the global `--llm` option.",
+      "responsibility": "find, read, ls, stat, outline, refs, edit, clean, read-again, call and status; the dispatcher also routes get-rules, brief and prompt, and applies the global `--llm` option.",
       "folder": "src/macos/daemon/src/cmd",
       "diagram": "src/macos/daemon/src/cmd/.dev/component-diagram.json"
     },

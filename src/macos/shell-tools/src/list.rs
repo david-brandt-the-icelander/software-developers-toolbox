@@ -1,76 +1,75 @@
-// The list and stat operations: ignore-aware directory listings and single-path metadata.
-use crate::fsio::{self, Ident};
+// The list and stat operations: ignore-aware directory listings over the daemon's walk, and single-path metadata.
+use crate::engine::Ctx;
+use crate::fsio;
+use crate::host::{display, hidden, resolve};
 use crate::req::{ListArgs, StatArgs};
-use crate::state::{Dep, Res, State};
-use crate::walk;
+use crate::state::{Res, State};
 use serde_json::{json, Value};
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const MAX_ENTRIES: usize = 500;
 
-// One listed path with its type, size and modification time.
-struct Row {
-    path: String,
-    dir: bool,
-    size: u64,
-    mtime: i64,
+// Returns the paths to list below a directory: files matching the globs at any depth, or files and directories down to the depth.
+fn rows(ctx: &Ctx, a: &ListArgs, root: &Path) -> Res<Vec<(PathBuf, bool)>> {
+    let roots = [root.to_path_buf()];
+    let depth = a.depth.or(if a.glob.is_empty() { Some(1) } else { None });
+    let mut rows: Vec<(PathBuf, bool)> =
+        ctx.host.files(&roots, &a.glob, a.no_ignore)?.into_iter().map(|f| (f, false)).collect();
+    if a.glob.is_empty() {
+        rows.extend(ctx.host.dirs(root, a.no_ignore)?.into_iter().map(|d| (d, true)));
+    }
+    let deep = |p: &Path| p.strip_prefix(root).map_or(0, |r| r.components().count());
+    rows.retain(|(p, _)| depth.is_none_or(|d| deep(p) <= d) && (a.hidden || !hidden(p, &roots)));
+    Ok(rows)
 }
 
-// Walk the root and build the reply with its dependencies.
-fn compute(a: &ListArgs) -> Res<(Value, Vec<Dep>)> {
-    let root = a.path.clone().unwrap_or_else(|| ".".to_string());
-    let depth = a.depth.or(if a.glob.is_empty() { Some(1) } else { None });
-    let walker = walk::builder(&[root], &a.glob, a.hidden, a.no_ignore, depth)?;
-    let (mut deps, mut rows) = (vec![], vec![]);
-    for (entry, md) in walker.build().flatten().filter_map(|e| e.metadata().ok().map(|m| (e, m))) {
-        deps.push((entry.path().to_path_buf(), Some(Ident::of(&md))));
-        if md.is_dir() {
-            deps.extend(walk::ignore_file_deps(entry.path()));
-        }
-        if entry.depth() == 0 || (md.is_dir() && !a.glob.is_empty()) {
-            continue;
-        }
-        rows.push(Row {
-            path: walk::display(entry.path()),
-            dir: md.is_dir(),
-            size: md.len(),
-            mtime: md.mtime(),
-        });
+// Builds the reply: one page of sorted entries, with sizes and times in long mode.
+fn compute(ctx: &Ctx, a: &ListArgs) -> Res<Value> {
+    let shown = a.path.clone().unwrap_or_else(|| ".".to_string());
+    let root = resolve(ctx.cwd, &shown);
+    let md = std::fs::metadata(&root).map_err(|e| format!("{shown}: {e}"))?;
+    if !md.is_dir() {
+        return Err(format!("{shown}: not a directory (use stat)"));
     }
-    rows.sort_by(|x, y| x.path.cmp(&y.path));
+    let mut rows: Vec<(String, PathBuf, bool)> =
+        rows(ctx, a, &root)?.into_iter().map(|(p, dir)| (display(&p, ctx.cwd), p, dir)).collect();
+    rows.sort_by(|x, y| x.0.cmp(&y.0));
     let max = a.max_entries.unwrap_or(MAX_ENTRIES);
     let total = rows.len();
-    let shown: Vec<Value> = rows.iter().skip(a.cursor).take(max).map(|r| render(r, a.long)).collect();
+    let shown: Vec<Value> =
+        rows.iter().skip(a.cursor).take(max).map(|(name, p, dir)| render(name, p, *dir, a.long)).collect();
     let end = a.cursor + shown.len();
     let mut value = json!({"entries": shown, "total": total});
     if end < total {
         value["truncated"] = json!(true);
         value["next_cursor"] = json!(end);
     }
-    Ok((value, deps))
+    Ok(value)
 }
 
-// Render a row as a path string, or as [path, size, mtime] in long mode.
-fn render(row: &Row, long: bool) -> Value {
-    let name = if row.dir { format!("{}/", row.path) } else { row.path.clone() };
-    if long {
-        json!([name, row.size, row.mtime])
-    } else {
-        json!(name)
+// Renders an entry as a path (directories end in /), or as [path, size, mtime] in long mode.
+fn render(name: &str, path: &Path, dir: bool, long: bool) -> Value {
+    let name = if dir { format!("{name}/") } else { name.to_string() };
+    if !long {
+        return json!(name);
     }
+    let (size, mtime) = std::fs::symlink_metadata(path).map_or((0, 0), |m| (m.len(), m.mtime()));
+    json!([name, size, mtime])
 }
 
-// Run a list request through the session cache.
-pub fn list(st: &mut State, a: ListArgs) -> Res<Value> {
-    let mut keyed = a.clone();
-    keyed.fresh = false;
-    st.serve_cached(&format!("list|{keyed:?}"), a.fresh, || compute(&a))
+// Run a list request, answering unchanged when this session already has the same listing.
+pub fn list(st: &mut State, ctx: &Ctx, a: ListArgs) -> Res<Value> {
+    let value = compute(ctx, &a)?;
+    let fresh = a.fresh;
+    let keyed = ListArgs { fresh: false, ..a };
+    Ok(st.serve(&format!("list|{}|{keyed:?}", ctx.cwd.display()), fresh, value))
 }
 
 // Run a stat request.
-pub fn stat(a: StatArgs) -> Res<Value> {
-    let path = Path::new(&a.path);
+pub fn stat(ctx: &Ctx, a: StatArgs) -> Res<Value> {
+    let full = resolve(ctx.cwd, &a.path);
+    let path = full.as_path();
     let Ok(md) = std::fs::symlink_metadata(path) else {
         return Ok(json!({"path": a.path, "exists": false}));
     };
@@ -90,8 +89,20 @@ pub fn stat(a: StatArgs) -> Res<Value> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+    use crate::host::testing::Plain;
+    use crate::state::{Sent, Shared};
+
+    // Runs stat with absolute paths.
+    fn st(path: &Path, hash: bool) -> Value {
+        stat(
+            &Ctx { cwd: Path::new("/"), host: &Plain },
+            StatArgs { path: path.to_string_lossy().into_owned(), hash },
+        )
+        .unwrap()
+    }
 
     // Stat reports absence, kind and a content etag.
     #[test]
@@ -99,33 +110,52 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("f.txt");
         std::fs::write(&f, "hi").unwrap();
-        let p = |p: &Path| p.to_string_lossy().into_owned();
-        let missing = stat(StatArgs { path: p(&dir.path().join("nope")), hash: false }).unwrap();
-        assert_eq!(missing["exists"], false);
-        let file = stat(StatArgs { path: p(&f), hash: true }).unwrap();
+        assert_eq!(st(&dir.path().join("nope"), false)["exists"], false);
+        let file = st(&f, true);
         assert_eq!((file["kind"].as_str(), file["size"].as_u64()), (Some("file"), Some(2)));
         assert_eq!(file["etag"], fsio::etag(b"hi"));
-        assert_eq!(stat(StatArgs { path: p(dir.path()), hash: true }).unwrap()["kind"], "dir");
+        assert_eq!(st(dir.path(), true)["kind"], "dir");
     }
 
-    // Directories get a trailing slash in plain listings.
+    // Symlinks and device files get their own kinds, and hashing skips non-regular files.
     #[test]
-    fn test_render_dir_slash() {
-        let row = Row { path: "src".into(), dir: true, size: 0, mtime: 0 };
-        assert_eq!(render(&row, false), "src/");
-        assert_eq!(render(&row, true)[1], 0);
+    fn test_stat_symlink_and_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("l");
+        std::os::unix::fs::symlink("/nonexistent", &link).unwrap();
+        assert_eq!(st(&link, false)["kind"], "symlink");
+        assert_eq!(st(Path::new("/dev/null"), false)["kind"], "other");
+        let fifo = dir.path().join("fifo");
+        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: the path is a valid NUL-terminated string and mkfifo only creates a file.
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        assert!(st(&fifo, true).get("etag").is_none());
     }
 
-    // Build list arguments from JSON.
-    fn args(v: serde_json::Value) -> ListArgs {
-        serde_json::from_value(v).unwrap()
+    // A file that cannot be read fails a hashing stat.
+    #[test]
+    fn test_stat_hash_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("secret");
+        std::fs::write(&f, "x").unwrap();
+        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+        let ctx = Ctx { cwd: Path::new("/"), host: &Plain };
+        let r = stat(&ctx, StatArgs { path: f.to_string_lossy().into_owned(), hash: true });
+        assert!(r.is_err() || std::fs::read(&f).is_ok(), "root can read anything");
     }
 
-    // Create a small project tree.
+    // Runs a list request in a directory with a fresh session.
+    fn list_in(cwd: &Path, v: Value) -> Res<Value> {
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let a: ListArgs = serde_json::from_value(v).unwrap();
+        list(&mut State { shared: &mut sh, sent: &mut sent }, &Ctx { cwd, host: &Plain }, a)
+    }
+
+    // Create a small project tree with a hidden file.
     fn tree() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
-        for f in ["a.rs", "b.txt", "sub/c.rs"] {
+        for f in ["a.rs", "b.txt", "sub/c.rs", ".hidden"] {
             std::fs::write(dir.path().join(f), "x").unwrap();
         }
         dir
@@ -135,69 +165,43 @@ mod tests {
     #[test]
     fn test_list_glob_walks_deep() {
         let dir = tree();
-        let root = dir.path().to_string_lossy().into_owned();
-        let out = list(&mut State::new(), args(json!({"path": root, "glob": ["*.rs"]}))).unwrap();
-        let names: Vec<&str> =
-            out["entries"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
-        assert_eq!(names.len(), 2);
-        assert!(names.iter().all(|n| n.ends_with(".rs")));
+        let out = list_in(dir.path(), json!({"glob": ["*.rs"]})).unwrap();
+        assert_eq!(out["entries"], json!(["a.rs", "sub/c.rs"]));
+        let shallow = list_in(dir.path(), json!({"glob": ["*.rs"], "depth": 1})).unwrap();
+        assert_eq!(shallow["entries"], json!(["a.rs"]));
     }
 
-    // Plain listings are one level deep with directories marked, and long mode adds sizes.
+    // Plain listings are one level deep with directories marked, long mode adds sizes, hidden adds dot files.
     #[test]
-    fn test_list_default_depth_and_long() {
+    fn test_list_default_depth_long_and_hidden() {
         let dir = tree();
-        let root = dir.path().to_string_lossy().into_owned();
-        let out = list(&mut State::new(), args(json!({"path": root}))).unwrap();
-        assert_eq!(out["total"], 3);
-        assert!(out["entries"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().ends_with("sub/")));
-        let long = list(&mut State::new(), args(json!({"path": root, "long": true}))).unwrap();
+        let out = list_in(dir.path(), json!({"path": "."})).unwrap();
+        assert_eq!(out["entries"], json!(["a.rs", "b.txt", "sub/"]));
+        let long = list_in(dir.path(), json!({"long": true})).unwrap();
         assert_eq!(long["entries"][0][1], 1);
+        let all = list_in(dir.path(), json!({"hidden": true, "depth": 2})).unwrap();
+        assert_eq!(all["total"], 5);
+        let sub = list_in(dir.path(), json!({"path": "sub"})).unwrap();
+        assert_eq!(sub["entries"], json!(["sub/c.rs"]));
     }
 
     // Paging reports where to continue and the last page has no cursor.
     #[test]
     fn test_list_paging() {
         let dir = tree();
-        let root = dir.path().to_string_lossy().into_owned();
-        let first = list(&mut State::new(), args(json!({"path": root, "max_entries": 2}))).unwrap();
+        let first = list_in(dir.path(), json!({"max_entries": 2})).unwrap();
         assert_eq!((first["truncated"].as_bool(), first["next_cursor"].as_u64()), (Some(true), Some(2)));
-        let rest =
-            list(&mut State::new(), args(json!({"path": root, "max_entries": 2, "cursor": 2}))).unwrap();
+        let rest = list_in(dir.path(), json!({"max_entries": 2, "cursor": 2})).unwrap();
         assert_eq!(rest["entries"].as_array().unwrap().len(), 1);
         assert!(rest.get("truncated").is_none());
     }
 
-    // A missing root is an error.
+    // A missing root and a file root are errors, and a vanished entry lists with zero size.
     #[test]
-    fn test_list_missing_root() {
-        assert!(list(&mut State::new(), args(json!({"path": "/no/such/dir"}))).is_err());
-    }
-
-    // Symlinks and device files get their own kinds.
-    #[test]
-    fn test_stat_symlink_and_other() {
-        let dir = tempfile::tempdir().unwrap();
-        let link = dir.path().join("l");
-        std::os::unix::fs::symlink("/nonexistent", &link).unwrap();
-        let kind = |p: &str| stat(StatArgs { path: p.to_string(), hash: false }).unwrap()["kind"].clone();
-        assert_eq!(kind(&link.to_string_lossy()), "symlink");
-        assert_eq!(kind("/dev/null"), "other");
-    }
-
-    // Hashing adds an etag for regular files and not for other kinds.
-    #[test]
-    fn test_stat_hash_only_regular_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let f = dir.path().join("f");
-        std::fs::write(&f, "x").unwrap();
-        let ok = stat(StatArgs { path: f.to_string_lossy().into_owned(), hash: true }).unwrap();
-        assert!(ok["etag"].is_string());
-        let fifo = dir.path().join("fifo");
-        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
-        // SAFETY: the path is a valid NUL-terminated string and mkfifo only creates a file.
-        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
-        let other = stat(StatArgs { path: fifo.to_string_lossy().into_owned(), hash: true }).unwrap();
-        assert!(other.get("etag").is_none());
+    fn test_list_errors_and_render() {
+        let dir = tree();
+        assert!(list_in(dir.path(), json!({"path": "nope"})).is_err());
+        assert!(list_in(dir.path(), json!({"path": "a.rs"})).unwrap_err().contains("not a directory"));
+        assert_eq!(render("g", &dir.path().join("gone"), true, true), json!(["g/", 0, 0]));
     }
 }

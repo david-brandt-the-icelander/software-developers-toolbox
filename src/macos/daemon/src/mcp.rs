@@ -76,6 +76,18 @@ const TOOLS: &[Tool] = &[
     },
     Tool { name: "zazzle_ls", description: "Compact directory tree with file counts and line counts.", schema: ls_schema, map: ls_args },
     Tool {
+        name: "zazzle_stat",
+        description: "Whether paths exist, with kind, size, mtime and (hash) the sha zazzle_read shows.",
+        schema: stat_schema,
+        map: stat_args,
+    },
+    Tool {
+        name: "zazzle_call",
+        description: "JSON requests (one or an array): read, search, list (cursor paging), stat, outline, diff_since; replies carry etags, repeats in a session return unchanged, changed reads return hunks. See zazzle help call.",
+        schema: call_schema,
+        map: call_args,
+    },
+    Tool {
         name: "zazzle_diff",
         description: "What changed: per-file stats, then hunks labelled with their symbol; generated files skipped. Prefer over git diff.",
         schema: diff_schema,
@@ -244,6 +256,27 @@ fn ls_schema() -> Value {
             "no_ignore": {"type": "boolean"}, "disable_session_deduping": {"type": "boolean"}
         }),
         &[],
+    )
+}
+
+// Schema for zazzle_stat.
+fn stat_schema() -> Value {
+    object(
+        json!({
+            "paths": {"type": "array", "items": {"type": "string"}},
+            "hash": {"type": "boolean", "description": "Add each file's sha"}
+        }),
+        &["paths"],
+    )
+}
+
+// Schema for zazzle_call.
+fn call_schema() -> Value {
+    object(
+        json!({
+            "requests": {"type": ["object", "array"], "description": "One request such as {\"op\":\"read\",\"path\":\"a.rs\",\"ranges\":[[1,40]]}, or an array of them"}
+        }),
+        &["requests"],
     )
 }
 
@@ -486,6 +519,28 @@ fn refs_args(v: &Value) -> Result<Vec<String>, String> {
     Ok(a)
 }
 
+// Maps zazzle_stat arguments to a command line.
+fn stat_args(v: &Value) -> Result<Vec<String>, String> {
+    let paths = get_list(v, "paths")?;
+    if paths.is_empty() {
+        return Err("'paths' is required".into());
+    }
+    let mut a = vec!["stat".to_string()];
+    push_flag(&mut a, v, "hash", "--hash")?;
+    a.push("--".into());
+    a.extend(paths);
+    Ok(a)
+}
+
+// Maps zazzle_call arguments to a command line: the requests as one JSON argument.
+fn call_args(v: &Value) -> Result<Vec<String>, String> {
+    match v.get("requests") {
+        Some(r @ (Value::Object(_) | Value::Array(_))) => Ok(vec!["call".to_string(), r.to_string()]),
+        Some(Value::String(s)) => Ok(vec!["call".to_string(), s.clone()]),
+        _ => Err("'requests' is required: a request object or an array of them".into()),
+    }
+}
+
 // Maps zazzle_edit arguments to a command line.
 fn edit_args(v: &Value) -> Result<Vec<String>, String> {
     let mut a = vec!["edit".to_string(), need_str(v, "path")?];
@@ -596,7 +651,12 @@ const PINNABLE: &[&str] = &[
 fn takes_llm(name: &str) -> bool {
     !matches!(
         name,
-        "zazzle_edit" | "zazzle_replace" | "zazzle_prompt" | "zazzle_brief" | "zazzle_investigate"
+        "zazzle_edit"
+            | "zazzle_replace"
+            | "zazzle_prompt"
+            | "zazzle_brief"
+            | "zazzle_investigate"
+            | "zazzle_call"
     )
 }
 
@@ -1358,10 +1418,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 21);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 23);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 14);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 16);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());
@@ -1374,5 +1434,22 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    // Checks zazzle_stat and zazzle_call map to their command lines and reject missing arguments.
+    #[test]
+    fn test_stat_and_call_args() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            stat_args(&json!({"paths": ["a", "-b"], "hash": true})),
+            Ok(v(&["stat", "--hash", "--", "a", "-b"]))
+        );
+        assert_eq!(stat_args(&json!({})).unwrap_err(), "'paths' is required");
+        let one = json!({"op": "stat", "path": "a"});
+        assert_eq!(call_args(&json!({"requests": one})), Ok(v(&["call", &one.to_string()])));
+        assert_eq!(call_args(&json!({"requests": [one]})), Ok(v(&["call", &json!([one]).to_string()])));
+        assert_eq!(call_args(&json!({"requests": "{}"})), Ok(v(&["call", "{}"])));
+        assert!(call_args(&json!({"requests": 1})).unwrap_err().contains("'requests' is required"));
+        assert!(!takes_llm("zazzle_call") && takes_llm("zazzle_stat"));
     }
 }

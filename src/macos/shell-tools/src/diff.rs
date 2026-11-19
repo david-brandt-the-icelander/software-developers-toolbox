@@ -1,10 +1,11 @@
 // Line diffs between two versions of a file, and the diff_since operation.
+use crate::engine::Ctx;
 use crate::fsio;
+use crate::host::resolve;
 use crate::req::DiffArgs;
 use crate::state::{Res, State};
 use serde_json::{json, Value};
 use similar::{DiffTag, TextDiff};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,26 +29,30 @@ pub fn hunks(old: &[u8], new: &[u8]) -> Option<Vec<Value>> {
 }
 
 // Run a diff_since request against the stored version with the given etag.
-pub fn since(st: &mut State, a: DiffArgs) -> Res<Value> {
-    let base = st.content(&a.etag).ok_or("base_unavailable: that version is not held; use read")?;
-    let path = Path::new(&a.path);
-    let (id, bytes) = fsio::load(path).map_err(|e| format!("{}: {e}", a.path))?;
-    let etag = st.record(path, id, &bytes);
+pub fn since(st: &mut State, ctx: &Ctx, a: DiffArgs) -> Res<Value> {
+    let base = st.shared.content(&a.etag).ok_or("base_unavailable: that version is not held; use read")?;
+    let path = resolve(ctx.cwd, &a.path);
+    let (id, bytes) = fsio::load(&path).map_err(|e| format!("{}: {e}", a.path))?;
+    let etag = st.shared.record(&path, id, &bytes);
     if etag == a.etag {
         return Ok(json!({"path": a.path, "etag": etag, "unchanged": true}));
     }
     let hunks = hunks(&base, &bytes).ok_or("cannot diff non-UTF-8 content; use read")?;
     let total = bytes.iter().filter(|&&b| b == b'\n').count();
-    st.put_content(&etag, Arc::new(bytes));
-    let reference = st.mark_sent(&a.path, &etag, "diff", true);
+    st.shared.put_content(&etag, Arc::new(bytes));
+    let reference = st.sent.mark_sent(&path.to_string_lossy(), &etag, "diff", true);
     Ok(
         json!({"path": a.path, "base_etag": a.etag, "etag": etag, "newlines": total, "hunks": hunks, "ref": reference}),
     )
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+    use crate::host::testing::Plain;
+    use crate::state::{Sent, Shared};
+    use std::path::Path;
 
     // A replaced middle line yields one hunk with the new text.
     #[test]
@@ -80,12 +85,15 @@ mod tests {
         let p = dir.path().join("f.txt");
         std::fs::write(&p, "a\nb\n").unwrap();
         let path = p.to_string_lossy().into_owned();
-        let mut st = State::new();
+        let (mut sh, mut sent) = (Shared::default(), Sent::default());
+        let mut st = State { shared: &mut sh, sent: &mut sent };
         let (id, bytes) = fsio::load(&p).unwrap();
-        let etag = st.record(&p, id, &bytes);
-        st.put_content(&etag, Arc::new(bytes));
-        let ask =
-            |st: &mut State, etag: &str| since(st, DiffArgs { path: path.clone(), etag: etag.to_string() });
+        let etag = st.shared.record(&p, id, &bytes);
+        st.shared.put_content(&etag, Arc::new(bytes));
+        let ctx = Ctx { cwd: Path::new("/"), host: &Plain };
+        let ask = |st: &mut State, etag: &str| {
+            since(st, &ctx, DiffArgs { path: path.clone(), etag: etag.to_string() })
+        };
         assert_eq!(ask(&mut st, &etag).unwrap()["unchanged"], true);
         std::fs::write(&p, "a\nB\n").unwrap();
         assert_eq!(ask(&mut st, &etag).unwrap()["hunks"][0]["ins"], "B\n");

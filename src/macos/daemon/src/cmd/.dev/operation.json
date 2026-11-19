@@ -3,7 +3,7 @@
   "kind": "operation",
   "title": "zazzle command operations",
   "folder": "src/macos/daemon/src/cmd",
-  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzle daemon mcp` (except clean and status; the structure commands' tools are named with underscores, zazzle_find_symbol for find-symbol), or in-process as `zazzle daemon run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2. Every command but read-again also takes `--llm INSTRUCTION`, which hands a successful output to the local model (feature llm-post-processing in src/.dev/feature.json).",
+  "description": "The zazzle commands the daemon runs. Each is reached as `zazzle CMD ...` through the C invoker and the daemon's socket, as an MCP tool of `zazzle daemon mcp` (except clean and status; the structure commands' tools are named with underscores, zazzle_find_symbol for find-symbol), or in-process as `zazzle daemon run CMD ...`. help and version only print text and are left out; `zazzle run` and `zazzle proxy` are their own processes (src/wrap, src/proxy). A failure is one line starting `error:` with exit status 2, except call, whose failures are JSON replies with exit status 1. Every command but read-again also takes `--llm INSTRUCTION`, which hands a successful output to the local model (feature llm-post-processing in src/.dev/feature.json).",
   "sources": [
     {
       "path": "src/macos/daemon/src/cmd/mod.rs",
@@ -104,6 +104,37 @@
       "failures": [
         "More than one directory: the usage line.",
         "A path that does not exist."
+      ]
+    },
+    {
+      "id": "stat",
+      "name": "stat",
+      "description": "Whether paths exist, with their kind, size, modification time and, on request, the sha read shows.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "stat"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "stat_args"
+        },
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "stat"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cmd/call.rs",
+        "symbol": "stat"
+      },
+      "action": "query",
+      "transport": "zazzle stat PATH.. [--hash]; MCP tool zazzle_stat",
+      "authorization": "Callers of the daemon's own uid; any path the user can stat, and read for --hash.",
+      "result": "One line per path: `PATH KIND SIZEB YYYY-MM-DDTHH:MM:SSZ` (kind file, dir, symlink or other; a symlink is not followed) with ` sha XXXXXXXX` for a file under --hash, or `PATH missing`.",
+      "failures": [
+        "No path, or an unknown flag: the usage line.",
+        "--hash on a file that cannot be read."
       ]
     },
     {
@@ -455,6 +486,39 @@
         "--full for a session response, which was never cut: `r:ID was not cut; read-again r:ID gives it whole`.",
         "A --lines range that does not parse (`bad line range`), or starts past the last line.",
         "On a rerun, whatever the original command now refuses."
+      ]
+    },
+    {
+      "id": "call",
+      "name": "call",
+      "description": "JSON requests, one object or an array, run by the shell-tools library on the daemon's walk cache, scan and outlines, with memory of what the session was sent.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "call_args"
+        },
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine.call"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cmd/call.rs",
+        "symbol": "run"
+      },
+      "action": "query",
+      "transport": "zazzle call 'JSON' | zazzle call - (standard input); MCP tool zazzle_call with `requests`",
+      "authorization": "Callers of the daemon's own uid; reads anywhere the user can read, writes nothing.",
+      "result": "One JSON reply per request with `ok`: the operation's result (see src/macos/shell-tools/src/.dev/operation.json), or {unchanged, etag, ref} when the session already has it, or hunks for a changed whole-file read; an array of replies for an array of requests. Exit status 1 when any failed, else 0.",
+      "failures": [
+        "Text that is not JSON: a reply with ok false and `invalid JSON`, exit 1.",
+        "No argument and no standard input (MCP without requests): `no standard input available`.",
+        "More than one argument: the usage line.",
+        "A request the library rejects (unknown op or field, missing file, bad pattern): that reply has ok false and error."
       ]
     },
     {
