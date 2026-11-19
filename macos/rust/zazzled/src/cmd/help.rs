@@ -25,6 +25,8 @@ pub const AGENT: &[&str] = &[
     "clean",
     "read-again",
     "get-rules",
+    "brief",
+    "prompt",
 ];
 
 // True when agents are shown the command.
@@ -33,6 +35,7 @@ pub fn is_agent(cmd: &str) -> bool {
 }
 
 const COMMON: &[(&str, &str)] = &[
+    ("--llm TEXT", "Hand the output to the local model with this instruction and print its answer (zazzle agent llm)"),
     ("--budget T", "Cap the output at about T tokens (default 3000; read, read-again and clean have their own)"),
     ("--disable-session-deduping", "Send output again even if this session has already seen it"),
     (
@@ -218,6 +221,26 @@ const PAGES: &[Page] = &[
             ("--again", "Send everything, even what the session has"),
         ],
         examples: &["zazzle get-rules src/api src/web --purpose review"],
+    },
+    Page {
+        name: "brief",
+        group: 0,
+        brief: "brief INTENT..",
+        summary: "The rules and skills a task needs",
+        usage: &["zazzle brief INTENT.. [--path PATH]..", "zazzle agent brief INTENT.. [--path PATH].."],
+        about: &["Before a task: the local model picks, from every rule section and skill that applies to the paths (default: here), the ones the intent needs; they print verbatim, with line ranges, and the rest are named in one line. Needs a downloaded model (zazzle agent llm)."],
+        options: &[("--path PATH", "A file or folder the work touches (repeatable)")],
+        examples: &["zazzle brief 'add a subcommand to zazzle-git' --path macos/rust/zazzle-git"],
+    },
+    Page {
+        name: "prompt",
+        group: 0,
+        brief: "prompt TEXT..",
+        summary: "Ask the local model; for agents",
+        usage: &["zazzle prompt [--effort low|medium|high] TEXT.."],
+        about: &["Asks the default local model and prints its whole answer. Never downloads a model; zazzle agent prompt streams, reads standard input and downloads one. To shrink another command's output, give that command --llm TEXT instead."],
+        options: &[("--effort E", "low (no thinking), medium or high; default: the saved one")],
+        examples: &["zazzle prompt --effort low 'Is this a valid semver range: ^1.2.x?'", "zazzle run --llm 'Only the failing tests and their errors' -- cargo test"],
     },
     Page {
         name: "read-again",
@@ -676,7 +699,7 @@ mod tests {
         assert!(!page("git").expect("git").contains("--budget"));
         assert_eq!(
             page("nope").unwrap_err(),
-            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules"
+            "no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt"
         );
     }
 

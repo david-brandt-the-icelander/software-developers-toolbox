@@ -3,7 +3,7 @@
   "kind": "use-case",
   "title": "zazzled use cases",
   "folder": "macos/rust/zazzled/src",
-  "description": "Reaching the zazzle commands over MCP, and having launchd start the daemon.",
+  "description": "Reaching the zazzle commands over MCP, handing work to the local model, and having launchd start the daemon.",
   "sources": [
     {
       "path": "macos/rust/zazzled/src/mcp.rs",
@@ -80,7 +80,7 @@
         {
           "id": "list",
           "actor": "Coding agent",
-          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
           "sources": [
             {
               "path": "macos/rust/zazzled/src/mcp.rs",
@@ -208,9 +208,279 @@
               "symbol": "Sessions::apply_with"
             }
           ]
+        },
+        {
+          "atStep": "map",
+          "condition": "A tool that only reads is given `llm`.",
+          "outcome": "`--llm INSTRUCTION` goes into the command line after the command name, and the agent gets the local model's answer, marked as post-processed, instead of the output.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "llm_args"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
         }
       ],
       "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "brief-before-a-task",
+      "name": "Get only the rules and skills a task needs",
+      "description": "Before a task, a coding agent asks for a brief with its intent and gets the rule sections and skills the user's local model picked, verbatim.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "INSTRUCTIONS"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Follow the rules and skills that apply to what it is about to do without reading every rule file for the folder.",
+      "actorDocument": "Actors/coding-agent.md",
+      "preconditions": [
+        "The user has downloaded a local model (`zazzle agent llm --model NAME`).",
+        "zazzled can find zazzle-llm (ZAZZLE_LLM, beside zazzled, or the tool store)."
+      ],
+      "postconditions": [
+        "The agent has the chosen sections verbatim with their paths and line ranges, and one line naming what was left out."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "action": "Calls zazzle_brief with its intent and the paths it will touch, or runs `zazzle brief INTENT --path PATH`.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "args"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "dispatch"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "collect",
+          "actor": "zazzled",
+          "action": "Lists the rule and skill files that apply to each path and splits them into sections: rule files at their headings, skills whole, rules first.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "sections"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "judge",
+          "actor": "zazzled",
+          "action": "Hands the numbered menu to zazzle-llm at low effort and temperature 0 with a grammar that forces a y/n verdict per section.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "brief"
+            },
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "verdicts"
+            },
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "ask_local"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzled",
+          "action": "Prints the sections judged y verbatim with their line ranges and names the rest in one line, within an 8000-token budget.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "chosen"
+            },
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "render"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "collect",
+          "condition": "No rule or skill file applies to the paths.",
+          "outcome": "`no rule or skill files apply here`, without asking the model.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "brief"
+            }
+          ]
+        },
+        {
+          "atStep": "judge",
+          "condition": "No model is downloaded, zazzle-llm fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "An error naming the reason, adding that `zazzle get-rules PATH` sends the rules without the local model.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/brief.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "post-process-output",
+      "name": "Have the local model shorten an output",
+      "description": "A coding agent that needs only part of a command's output gives the command an instruction for the user's local model and reads its answer instead.",
+      "sources": [
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "macos/rust/zazzled/src/setup/mod.rs",
+          "symbol": "INSTRUCTIONS"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get the part of a large output it needs (an API response, a log, a long listing) for fewer tokens.",
+      "actorDocument": "Actors/coding-agent.md",
+      "preconditions": [
+        "The user has downloaded a local model (`zazzle agent llm --model NAME`)."
+      ],
+      "postconditions": [
+        "The agent has the model's answer, marked `[post-processed by the local model: ~N → ~M tokens ...]`, or an error naming why the model could not answer."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "action": "Runs a command with `--llm INSTRUCTION` (or gives a reading MCP tool `llm`).",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/mcp.rs",
+              "symbol": "llm_args"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "run",
+          "actor": "zazzled",
+          "action": "Takes --llm out of the command line and runs the command as usual.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "split_globals"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "post",
+          "actor": "zazzled",
+          "action": "Hands the successful output and the instruction to zazzle-llm at low effort and temperature 0, asking for the result only, one call at a time.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "post"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzled",
+          "action": "Returns the answer with the line saying how many tokens it saved, cut to the budget.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "mark"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "The command fails.",
+          "outcome": "Its error comes back unchanged; the model is not asked.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
+        },
+        {
+          "atStep": "post",
+          "condition": "No model is downloaded, the input is over 400,000 bytes, or zazzle-llm fails or times out.",
+          "outcome": "`error: ...` naming the reason, with status 2.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "ask_with"
+            },
+            {
+              "path": "macos/rust/zazzled/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "install-launch-agent",
@@ -360,6 +630,18 @@
       "folder": "macos/rust/zazzled",
       "path": "macos/rust/zazzled/.dev/deployment-diagram.json",
       "relationship": "The processes these use cases start."
+    },
+    {
+      "kind": "feature",
+      "folder": "macos/rust/zazzled/src/wrap",
+      "path": "macos/rust/zazzled/src/wrap/.dev/feature.json",
+      "relationship": "`zazzle run --llm`, the same post-processing for a command run in the caller's shell."
+    },
+    {
+      "kind": "use-case",
+      "folder": "macos/rust/zazzle-llm/src",
+      "path": "macos/rust/zazzle-llm/src/.dev/use-case.json",
+      "relationship": "zazzle-llm's prompt, which these use cases run with --no-download."
     }
   ]
 }

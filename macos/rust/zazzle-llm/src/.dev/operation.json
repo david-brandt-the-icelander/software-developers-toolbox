@@ -3,7 +3,7 @@
   "kind": "operation",
   "title": "zazzle-llm operations",
   "folder": "macos/rust/zazzle-llm/src",
-  "description": "zazzle-llm's two commands, reached as `zazzle agent llm|prompt` (the invoker execs `zazzled llm`, which execs zazzle-llm) or by running the binary directly. An error prints `error: ...` on standard error and exits 2.",
+  "description": "zazzle-llm's two commands, reached as `zazzle agent llm|prompt` (the invoker execs `zazzled llm`, which execs zazzle-llm) by zazzled running `zazzle-llm prompt --no-download` as a child for an agent's `--llm`, `brief` and `prompt` (macos/rust/zazzled/src/llm.rs), or by running the binary directly. An error prints `error: ...` on standard error and exits 2.",
   "sources": [
     { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "Cmd" },
     { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "main" }
@@ -33,20 +33,22 @@
     {
       "id": "prompt",
       "name": "zazzle agent prompt",
-      "description": "Asks a model and streams its answer, downloading the model first when it is missing.",
+      "description": "Asks a model and streams its answer, downloading the model first when it is missing unless --no-download is given.",
       "sources": [
         { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
         { "path": "macos/rust/zazzle-llm/src/engine.rs", "symbol": "generate" }
       ],
       "entrypoint": { "path": "macos/rust/zazzle-llm/src/main.rs", "symbol": "prompt" },
       "action": "query",
-      "transport": "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [TEXT.. | -] (zazzle-llm prompt ..)",
+      "transport": "zazzle agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [--no-download] [--grammar GBNF] [--temp T] [TEXT.. | -] (zazzle-llm prompt ..)",
       "authorization": "None checked: the caller's own permissions.",
-      "result": "The answer on standard output; the thinking on standard error with --show-thinking; exit 0, or 3 with a note on standard error when the token limit cut the answer short. It changes nothing but the model store, when it downloads the model.",
+      "result": "The answer on standard output; the thinking on standard error with --show-thinking; exit 0, or 3 with a note on standard error when the token limit cut the answer short. --grammar holds the answer to a GBNF grammar (root rule `root`); --temp sets the sampling temperature (default 0.7; 0 takes the likeliest token every time). It changes nothing but the model store, when it downloads the model.",
       "failures": [
         "An unknown or ambiguous model name, or an unknown effort.",
         "An empty prompt: `nothing to ask: give TEXT, or pipe it in`.",
         "A failed or mismatching model download.",
+        "With --no-download, a model that is not downloaded: `error: NAME is not downloaded (SIZE): run `zazzle agent llm --model NAME` first`, exit 4.",
+        "A grammar llama.cpp cannot parse: `error: --grammar: ...`.",
         "A model that cannot be loaded or has no usable chat template.",
         "A prompt as long as the model's training context or longer."
       ]
@@ -54,6 +56,8 @@
   ],
   "relatedViews": [
     { "kind": "use-case", "folder": "macos/rust/zazzle-llm/src", "path": "macos/rust/zazzle-llm/src/.dev/use-case.json", "relationship": "The use cases that call these commands." },
-    { "kind": "operation", "folder": "macos/rust/zazzled/src", "path": "macos/rust/zazzled/src/.dev/operation.json", "relationship": "`zazzled llm`, the way in from zazzle." }
+    { "kind": "operation", "folder": "macos/rust/zazzled/src", "path": "macos/rust/zazzled/src/.dev/operation.json", "relationship": "`zazzled llm`, the way in from zazzle." },
+    { "kind": "operation", "folder": "macos/rust/zazzled/src/cmd", "path": "macos/rust/zazzled/src/cmd/.dev/operation.json", "relationship": "zazzle's brief and prompt, which call `prompt --no-download`." },
+    { "kind": "feature", "folder": "macos/rust/zazzled/src", "path": "macos/rust/zazzled/src/.dev/feature.json", "relationship": "Post-processing with `--llm` and brief, which call `prompt --no-download` with --grammar and --temp." }
   ]
 }

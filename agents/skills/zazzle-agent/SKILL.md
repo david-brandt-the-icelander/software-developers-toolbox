@@ -1,6 +1,6 @@
 ---
 name: zazzle-agent
-description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`, and ask a local open model (Qwen, Gemma, gpt-oss) with `zazzle agent prompt`. Use before editing in a folder you have not worked in, when starting work somewhere other than the repository root, or when the user asks for a local model's answer, a second opinion or a summary that must not leave the machine.
+description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules) and skill files (SKILL.md) apply to a file or folder with `zazzle agent get-rules PATH`, ask a local open model (Qwen, Gemma, gpt-oss) with `zazzle agent prompt`, shrink a command's output through it with `--llm`, and get only the rules and skills a task needs with `zazzle brief INTENT`. Use before editing in a folder you have not worked in, when starting work somewhere other than the repository root, or when the user asks for a local model's answer, a second opinion or a summary that must not leave the machine.
 ---
 
 # zazzle agent
@@ -21,3 +21,6 @@ description: Find which rule files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, .clau
 - The first use downloads `zazzle-llm` and the model (gigabytes): tell the user before choosing a model that is not downloaded yet.
 - Use `--effort low` for quick factual or formatting tasks; thinking is hidden unless `--show-thinking`.
 - Exit 3 means the token limit cut the answer short: raise `--max-tokens` or lower `--effort`.
+- To spend fewer tokens on output you need only part of (an API response, a log, a test run), add `--llm 'INSTRUCTION'` to the zazzle command (`zazzle run --llm 'Only the failing tests' -- cargo test`; MCP: `llm` on reading tools). The answer is the local model's and may drop detail: rerun without `--llm` when exact text matters.
+- Before a task in an unfamiliar repository, `zazzle brief 'WHAT YOU WILL DO' --path PATH` (MCP `zazzle_brief`) prints only the rule sections and skills the local model judges relevant, verbatim; `zazzle get-rules PATH` is the complete list.
+- `zazzle prompt TEXT` (MCP `zazzle_prompt`) asks the local model directly. These three never download a model: if one is missing, ask the user to run `zazzle agent llm --model NAME`.

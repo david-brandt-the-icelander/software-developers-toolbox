@@ -270,7 +270,8 @@
         "Each zazz tool's arguments map to the right zazz command line.",
         "Every tool, the twenty with the zazz tools, has a schema object with its required arguments.",
         "A nonzero status or an unreachable daemon is a tool result with isError.",
-        "Notifications get no answer and a line that is not JSON gets a parse error."
+        "Notifications get no answer and a line that is not JSON gets a parse error.",
+        "Reading tools take llm, passed as --llm after the command; edits, zazzle_prompt and zazzle_brief do not, and zazzle_prompt and zazzle_brief map their arguments."
       ],
       "checks": [
         {
@@ -343,6 +344,12 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/zazz/mcptools.rs",
           "symbol": "test_mappings",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/mcp.rs",
+          "symbol": "test_llm_argument",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ]
@@ -910,6 +917,79 @@
           "type": "automated",
           "path": "macos/rust/zazzled/src/cmd/edit.rs",
           "symbol": "test_confinement",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        }
+      ]
+    },
+    {
+      "id": "local-model",
+      "title": "Local model calls, --llm and brief",
+      "summary": "The zazzle-llm subprocess, post-processing and brief are tested against shell scripts standing in for zazzle-llm, so no model is needed.",
+      "subject": [
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "llm-post-processing"
+        },
+        {
+          "path": "macos/rust/zazzled/src/.dev/feature.json",
+          "entityId": "brief"
+        }
+      ],
+      "criteria": [
+        "The arguments (prompt --no-download, flags, instruction) and the input reach zazzle-llm, and exit 3 marks the answer cut short.",
+        "Failures name the reason: the model's error line, a bare exit code, a timeout, too much input or a missing program.",
+        "The answer is marked with the tokens saved, empty output passes through, and ZAZZLE_LLM_TIMEOUT is read.",
+        "--llm post-processes a daemon command's output, and a model failure becomes the command's error.",
+        "`zazzle run --llm` prints the answer, or the reason and the raw output.",
+        "brief splits rule files at headings outside fences and keeps skills whole, rules first; the chosen sections print verbatim with line ranges and the rest are named; the command line takes intent words and --path and finds the files through the real lister."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "test_llm_ask_with",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "test_llm_ask_failures",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/llm.rs",
+          "symbol": "test_llm_mark_and_post",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "test_llm_post_processes_output",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "test_parse",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "test_brief_sections",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "test_brief_render",
+          "command": "cargo test -p zazzled (in macos/rust)"
+        },
+        {
+          "type": "automated",
+          "path": "macos/rust/zazzled/src/brief.rs",
+          "symbol": "test_brief_run",
           "command": "cargo test -p zazzled (in macos/rust)"
         }
       ]

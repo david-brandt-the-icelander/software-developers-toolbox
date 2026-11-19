@@ -29,7 +29,7 @@
           "symbol": "confine"
         }
       ],
-      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used, where is it declared, what changed, who changed this line), makes checked edits, shrinks command output an agent pipes in, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
+      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used, where is it declared, what changed, who changed this line), makes checked edits, shrinks command output an agent pipes in, picks the rule sections and skills a task needs and answers questions with the user's local model, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
       "operations": [
         {
           "path": "macos/rust/zazzled/src/cmd/find.rs",
@@ -90,6 +90,14 @@
         {
           "path": "macos/rust/zazzled/src/cmd/mod.rs",
           "symbol": "status"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "brief"
+        },
+        {
+          "path": "macos/rust/zazzled/src/cmd/mod.rs",
+          "symbol": "prompt"
         }
       ],
       "access": [

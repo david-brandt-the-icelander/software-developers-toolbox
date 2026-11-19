@@ -106,9 +106,16 @@
     {
       "id": "zazzle-llm",
       "name": "zazzle-llm",
-      "responsibility": "Runs open models locally for `zazzle agent llm|prompt`; a JIT tool zazzled finds beside itself or downloads, verifies and execs.",
+      "responsibility": "Runs open models locally: exec'd for `zazzle agent llm|prompt`, and run as a child (`prompt --no-download`) for an agent's `--llm`, `brief` and `prompt`; a JIT tool zazzled finds beside itself or downloads and verifies.",
       "folder": "macos/rust/zazzle-llm",
       "diagram": "macos/rust/zazzle-llm/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazzle-agent-rules-list",
+      "name": "zazzle-agent-rules-list",
+      "responsibility": "The library that finds the rule and skill files for a path; zazzled links it for get-rules, folder instructions and brief.",
+      "folder": "macos/rust/zazzle-agent-rules/list",
+      "diagram": "macos/rust/zazzle-agent-rules/list/.dev/component-diagram.json"
     },
     {
       "id": "rustc",
@@ -213,13 +220,19 @@
       "from": "src",
       "to": "zazzle-llm",
       "kind": "depends-on",
-      "description": "`zazzled llm` downloads zazzle-llm from icelander.net when it is not beside zazzled, checks its SHA-256 against the embedded tool manifest and execs it."
+      "description": "`zazzled llm` downloads zazzle-llm from icelander.net when it is not beside zazzled, checks its SHA-256 against the embedded tool manifest and execs it. The daemon and `zazzled wrap` also run `zazzle-llm prompt --no-download` as a child to post-process output (`--llm`), choose rule sections (`brief`) and answer `prompt`."
     },
     {
       "from": "zazz-worker",
       "to": "zazz-sdk",
       "kind": "depends-on",
       "description": "Frames, messages, the HTTP wire layout and the host allowlist."
+    },
+    {
+      "from": "src",
+      "to": "zazzle-agent-rules-list",
+      "kind": "depends-on",
+      "description": "A Cargo dependency: list_rules and body for get-rules, the instructions appended to reads and edits, and the sections brief offers the local model."
     }
   ]
 }

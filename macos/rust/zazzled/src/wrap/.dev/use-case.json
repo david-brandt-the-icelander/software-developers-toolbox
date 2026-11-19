@@ -170,6 +170,21 @@
               "symbol": "render"
             }
           ]
+        },
+        {
+          "atStep": "exit",
+          "condition": "--llm INSTRUCTION is given.",
+          "outcome": "The delivered output goes to the local model and the agent gets its answer, marked as post-processed; if the model fails, the reason and then the output as it was. The exit status is still the command's.",
+          "sources": [
+            {
+              "path": "macos/rust/zazzled/src/wrap/mod.rs",
+              "symbol": "post"
+            },
+            {
+              "path": "macos/rust/zazzled/src/llm.rs",
+              "symbol": "post"
+            }
+          ]
         }
       ],
       "actorDocument": "Actors/coding-agent.md"

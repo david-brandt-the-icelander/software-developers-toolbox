@@ -11,13 +11,15 @@ use std::path::Path;
 
 const BATCH: usize = 512;
 
-// One prompt: the model file, the messages, the effort and the most tokens to generate.
+// One prompt: the model file, the messages, the effort, the most tokens to generate, an optional GBNF grammar the answer must follow and the sampling temperature.
 pub struct Ask<'a> {
     pub path: &'a Path,
     pub system: Option<&'a str>,
     pub user: &'a str,
     pub effort: &'a str,
     pub max_tokens: usize,
+    pub grammar: Option<&'a str>,
+    pub temp: f32,
 }
 
 // What generation reports as it goes: the rendered prompt once, then each piece of text.
@@ -89,18 +91,26 @@ pub fn generate(ask: &Ask, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
     }
     let seed =
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-    let mut sampler = LlamaSampler::chain_simple([
-        LlamaSampler::top_k(40),
-        LlamaSampler::top_p(0.95, 1),
-        LlamaSampler::min_p(0.05, 1),
-        LlamaSampler::temp(0.7),
-        LlamaSampler::dist(seed),
-    ]);
+    let mut chain = Vec::new();
+    if let Some(g) = ask.grammar {
+        chain.push(LlamaSampler::grammar(&model, g, "root").map_err(|e| format!("--grammar: {e}"))?);
+    }
+    if ask.temp <= 0.0 {
+        chain.push(LlamaSampler::greedy());
+    } else {
+        chain.extend([
+            LlamaSampler::top_k(40),
+            LlamaSampler::top_p(0.95, 1),
+            LlamaSampler::min_p(0.05, 1),
+            LlamaSampler::temp(ask.temp),
+            LlamaSampler::dist(seed),
+        ]);
+    }
+    let mut sampler = LlamaSampler::chain_simple(chain);
     let (mut pos, mut made, mut pending) = (tokens.len(), 0, Vec::new());
     out(Event::Prompt(&prompt));
     while pos < n_ctx && made < ask.max_tokens {
         let t = sampler.sample(&ctx, batch.n_tokens() - 1);
-        sampler.accept(t);
         if vocab.is_eog(t) {
             break;
         }

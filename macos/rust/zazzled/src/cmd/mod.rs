@@ -26,6 +26,8 @@ pub mod structure;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_BUDGET: usize = 3000;
+// A brief carries whole skills, so it gets a larger default budget.
+const BRIEF_BUDGET: usize = 8000;
 const MAX_DESC: usize = 100;
 
 // The invoker's own standard streams and connection, for commands that hand them to a script.
@@ -101,12 +103,13 @@ struct Globals {
     dedupe: bool,
     budget: Option<usize>,
     commit: Option<String>,
+    llm: Option<String>,
 }
 
-// Pulls the global options out of a command's arguments; read keeps its own --budget.
+// Pulls the global options out of a command's arguments (`--llm INSTRUCTION` among them); read keeps its own --budget.
 fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), String> {
     let takes_budget = !matches!(cmd, "read" | "cat" | "clean" | "diff");
-    let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None, commit: None });
+    let (mut rest, mut g) = (Vec::new(), Globals { dedupe: true, budget: None, commit: None, llm: None });
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if a == "--" {
@@ -117,6 +120,13 @@ fn split_globals(cmd: &str, args: &[String]) -> Result<(Vec<String>, Globals), S
         } else if a == "--commit" || a.starts_with("--commit=") {
             let value = a.strip_prefix("--commit=").map(str::to_string).or_else(|| it.next().cloned());
             g.commit = Some(value.filter(|v| !v.is_empty()).ok_or("--commit needs a commit sha (or HEAD)")?);
+        } else if a == "--llm" || a.starts_with("--llm=") {
+            let value = a.strip_prefix("--llm=").map(str::to_string).or_else(|| it.next().cloned());
+            g.llm = Some(
+                value
+                    .filter(|v| !v.trim().is_empty())
+                    .ok_or("--llm needs an instruction for the local model")?,
+            );
         } else if takes_budget && (a == "--budget" || a.starts_with("--budget=")) {
             let value = a.strip_prefix("--budget=").map(str::to_string).or_else(|| it.next().cloned());
             let n: usize = value.and_then(|v| v.parse().ok()).ok_or("--budget needs a number")?;
@@ -172,8 +182,16 @@ pub(super) fn produce(ctx: &Ctx, cmd: &str, rest: &[String]) -> (Output, String,
         Ok(o) => o,
         Err(msg) => Output::err(&msg),
     };
+    if let Some(instruction) = globals.llm.as_deref().filter(|_| out.status == 0) {
+        out = match crate::llm::post(&out.text, instruction) {
+            Ok(text) => Output { text, ..out },
+            Err(e) => Output::err(&e),
+        };
+    }
     if out.idable && !matches!(cmd, "read" | "cat" | "clean" | "diff") {
-        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(DEFAULT_BUDGET));
+        let brief = cmd == "brief" || rest.first().is_some_and(|c| c == "brief");
+        let default = if brief { BRIEF_BUDGET } else { DEFAULT_BUDGET };
+        out.text = cut_to_budget(out.text, globals.budget.unwrap_or(default));
     }
     if !pinned.is_empty() {
         out.text = format!("{}\n{pinned}", out.text.trim_end());
@@ -227,6 +245,31 @@ fn get_rules(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
     let l = crate::rules::Ledger { has: &has, mark: &mark };
     let l = (!ctx.session.is_empty()).then_some(&l);
     crate::rules::get_rules(rest, &ctx.cwd, home.as_deref(), l).map(Output::plain)
+}
+
+// Runs brief: the rule sections and skills the local model picks for an intent.
+fn brief(ctx: &Ctx, rest: &[String]) -> Result<Output, String> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    crate::brief::run(rest, &ctx.cwd, home.as_deref(), &crate::brief::ask_local).map(Output::ok)
+}
+
+// Answers `agent prompt [--effort E] TEXT..` in the daemon (for MCP): the local model's whole answer, never downloading a model.
+fn prompt(rest: &[String]) -> Result<Output, String> {
+    let (mut effort, mut words, mut it) = (None, Vec::new(), rest.iter());
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--effort" => effort = Some(it.next().ok_or("--effort needs low, medium or high")?.as_str()),
+            _ => words.push(a.as_str()),
+        }
+    }
+    let text = words.join(" ");
+    if text.trim().is_empty() {
+        return Err("usage: agent prompt [--effort low|medium|high] TEXT..".into());
+    }
+    let flags: Vec<&str> = effort.map(|e| vec!["--effort", e]).unwrap_or_default();
+    let reply = crate::llm::ask(&text, "", &flags)?;
+    let cut = if reply.truncated { "\n[the token limit cut this answer short]" } else { "" };
+    Ok(Output::plain(format!("{}{cut}", reply.text)))
 }
 
 // Returns the existing files a read or edit names, without line ranges.
@@ -314,13 +357,17 @@ fn dispatch(ctx: &Ctx, cmd: &str, rest: &[String]) -> Result<Output, String> {
         ),
         "zazz" => crate::zazz::run(ctx, rest),
         "get-rules" => get_rules(ctx, rest),
+        "brief" => brief(ctx, rest),
+        "prompt" => prompt(rest),
         "agent" => match rest.split_first() {
             Some((c, r)) if c == "get-rules" && !r.iter().any(|a| a == "--help" || a == "-h") => {
                 get_rules(ctx, r)
             }
-            Some((c, _)) if c == "llm" || c == "prompt" => Err(format!(
-                "agent {c} runs as its own process: start it with `zazzle agent {c} ..` (or `zazzled llm {c} ..`)"
-            )),
+            Some((c, r)) if c == "brief" => brief(ctx, r),
+            Some((c, r)) if c == "prompt" => prompt(r),
+            Some((c, _)) if c == "llm" => Err(
+                "agent llm runs as its own process: start it with `zazzle agent llm ..` (or `zazzled llm llm ..`)".into(),
+            ),
             _ => {
                 let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
                 let (text, code) =
@@ -433,7 +480,7 @@ mod tests {
         let o = run_cmd(t.path(), &["help", "nope"]);
         assert_eq!(
             (o.text.as_str(), o.status),
-            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules", 2)
+            ("error: no command 'nope'; known: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt", 2)
         );
         assert_eq!(run_cmd(t.path(), &["help", "a", "b"]).text, "error: usage: zazzle help [COMMAND]");
         assert!(run_cmd(t.path(), &["frobnicate", "--help"]).text.starts_with("error: unknown command"));
@@ -458,7 +505,7 @@ mod tests {
         assert_eq!(o.status, 2);
         assert_eq!(
             o.text,
-            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules"
+            "error: unknown command 'frobnicate'; try: read outline find refs find-symbol edit replace ls diff run clean read-again get-rules brief prompt"
         );
         assert!(!o.idable);
     }
@@ -562,6 +609,16 @@ mod tests {
             split_globals("find", &v(&["--budget=0"])).err().as_deref(),
             Some("--budget must be at least 1")
         );
+        let (rest, g) = split_globals("read", &v(&["f", "--llm", "Only the imports"])).expect("llm");
+        assert_eq!((rest, g.llm.as_deref()), (v(&["f"]), Some("Only the imports")));
+        assert_eq!(
+            split_globals("ls", &v(&["--llm=sum up"])).expect("llm=").1.llm.as_deref(),
+            Some("sum up")
+        );
+        assert!(split_globals("ls", &v(&["--llm", " "]))
+            .err()
+            .expect("blank")
+            .contains("needs an instruction"));
     }
 
     // Checks output is cut at a line boundary with a note, and short output is untouched.
@@ -598,6 +655,47 @@ mod tests {
             run_cmd(t.path(), &["find", "needle", "--budget", "0"]).text,
             "error: --budget must be at least 1"
         );
+    }
+
+    // Checks --llm hands a command's output to the local model and a failure of the model becomes the command's error.
+    #[test]
+    fn test_llm_post_processes_output() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        t.write("a.txt", b"needle one\nneedle two\n");
+        let llm = t.write("fake-llm", b"#!/bin/sh\ncat >/dev/null; echo two matches\n");
+        std::fs::set_permissions(&llm, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        std::env::set_var("ZAZZLE_LLM", &llm);
+        let out = run_cmd(t.path(), &["find", "needle", "--llm", "Count the matches"]);
+        assert!(out.text.starts_with("two matches\n[post-processed by the local model: ~"), "{}", out.text);
+        let bad = t.write("bad-llm", b"#!/bin/sh\necho 'error: no model' >&2; exit 4\n");
+        std::fs::set_permissions(&bad, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        std::env::set_var("ZAZZLE_LLM", &bad);
+        let failed = run_cmd(t.path(), &["find", "needle", "--llm", "Count"]);
+        std::env::remove_var("ZAZZLE_LLM");
+        assert_eq!((failed.status, failed.text.as_str()), (2, "error: local model: no model"));
+    }
+
+    // Checks prompt and brief reach the local model through the dispatcher (also under agent), and their usage and cut-short notes.
+    #[test]
+    fn test_prompt_and_brief_dispatch() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        t.write("AGENTS.md", b"# Rules\nBe kind.\n");
+        let fake = t.write("fake-llm", b"#!/bin/sh\nfor a; do last=$a; done\ncase \"$*\" in *grammar*) seq -f %g:y -s \" \" 99;; *cut*) echo half; exit 3;; *) echo \"$last\";; esac\n");
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
+        std::env::set_var("ZAZZLE_LLM", &fake);
+        assert_eq!(run_cmd(t.path(), &["prompt", "--effort", "low", "Hi", "there"]).text, "Hi there");
+        assert_eq!(
+            run_cmd(t.path(), &["agent", "prompt", "cut"]).text,
+            "half\n[the token limit cut this answer short]"
+        );
+        assert!(run_cmd(t.path(), &["prompt", "--effort"]).text.contains("--effort needs"));
+        assert!(run_cmd(t.path(), &["prompt"]).text.contains("usage: agent prompt"));
+        let b = run_cmd(t.path(), &["agent", "brief", "be", "nice"]).text;
+        std::env::remove_var("ZAZZLE_LLM");
+        assert!(b.contains("==> rule AGENTS.md:1-2 <==\n# Rules\nBe kind."), "{b}");
+        assert!(run_cmd(t.path(), &["agent", "llm"]).text.contains("runs as its own process"));
     }
 
     // Checks the session layer through the dispatcher: ids, notices, the opt-out flag, edits unaffected.

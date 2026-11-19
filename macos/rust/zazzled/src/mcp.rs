@@ -100,12 +100,39 @@ const TOOLS: &[Tool] = &[
         map: refs_args,
     },
     Tool {
+        name: "zazzle_prompt",
+        description: "Ask the local open model (no API cost); to shrink another tool's output, give that tool `llm` instead.",
+        schema: prompt_schema,
+        map: prompt_args,
+    },
+    Tool {
         name: "zazzle_edit",
         description: "Edit one file: replace unique text or lines, or insert after a line (expect = the sha zazzle_read showed), or create a file. Writes stay in the repository, client roots and workspaces.",
         schema: edit_schema,
         map: edit_args,
     },
 ];
+
+// Schema for zazzle_prompt.
+fn prompt_schema() -> Value {
+    object(
+        json!({
+            "text": {"type": "string", "description": "The question or task"},
+            "effort": {"type": "string", "enum": ["low", "medium", "high"], "description": "low: no thinking; default: the saved one"}
+        }),
+        &["text"],
+    )
+}
+
+// Turns zazzle_prompt arguments into a command line.
+fn prompt_args(v: &Value) -> Result<Vec<String>, String> {
+    let mut a = vec!["prompt".to_string()];
+    if let Some(e) = get_str(v, "effort")? {
+        a.extend(["--effort".to_string(), e]);
+    }
+    a.push(need_str(v, "text")?);
+    Ok(a)
+}
 
 // Builds a JSON schema object from properties and required names.
 pub(crate) fn object(props: Value, required: &[&str]) -> Value {
@@ -506,6 +533,7 @@ fn all_tools() -> impl Iterator<Item = &'static Tool> {
         .iter()
         .chain(crate::mcp_structure::TOOLS)
         .chain(crate::rules::TOOLS)
+        .chain(crate::brief::TOOLS)
         .chain(crate::zazz::mcptools::TOOLS.iter())
 }
 
@@ -530,6 +558,9 @@ fn list_tools() -> Value {
             let mut schema = (t.schema)();
             if PINNABLE.contains(&t.name) {
                 schema["properties"]["commit"] = json!({"type": "string", "description": "Answer only from repositories at this commit (sha or HEAD)"});
+            }
+            if takes_llm(t.name) {
+                schema["properties"]["llm"] = json!({"type": "string", "description": "Have the local model process the output with this instruction first, returning only its answer (fewer tokens, may lose detail)"});
             }
             json!({"name": t.name, "description": t.description, "inputSchema": schema})
         })
@@ -558,6 +589,19 @@ const PINNABLE: &[&str] = &[
     "zazzle_git_blame",
 ];
 
+// True when a tool's output may go through the local model first: tools that only read (not edits, nor the model's own tools).
+fn takes_llm(name: &str) -> bool {
+    !matches!(name, "zazzle_edit" | "zazzle_replace" | "zazzle_prompt" | "zazzle_brief")
+}
+
+// Puts `--llm INSTRUCTION` right after the command name when a reading tool is given `llm`.
+fn llm_args(tool: &str, mut argv: Vec<String>, args: &Value) -> Result<Vec<String>, String> {
+    if let Some(i) = get_str(args, "llm")?.filter(|_| takes_llm(tool)) {
+        argv.splice(1..1, ["--llm".to_string(), i]);
+    }
+    Ok(argv)
+}
+
 // Wraps text as an MCP tool result.
 fn tool_result(text: &str, is_error: bool) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": is_error})
@@ -582,10 +626,11 @@ fn call_tool(params: &Value, backend: &dyn Backend) -> Result<Value, String> {
     };
     let empty = json!({});
     let args = params.get("arguments").unwrap_or(&empty);
-    let argv = match (tool.map)(args).and_then(|a| pin_args(name, a, args)) {
-        Ok(a) => a,
-        Err(e) => return Ok(tool_result(&format!("error: {e}"), true)),
-    };
+    let argv =
+        match (tool.map)(args).and_then(|a| pin_args(name, a, args)).and_then(|a| llm_args(name, a, args)) {
+            Ok(a) => a,
+            Err(e) => return Ok(tool_result(&format!("error: {e}"), true)),
+        };
     let session = args.get(SESSION_ARG).and_then(Value::as_str);
     Ok(match backend.call(argv, session) {
         Ok((status, text)) => tool_result(&text, status != 0),
@@ -1127,6 +1172,36 @@ mod tests {
         );
     }
 
+    // Checks reading tools take llm, passed as --llm after the command, edits and the model's own tools do not, and zazzle_prompt maps its arguments.
+    #[test]
+    fn test_llm_argument() {
+        let b = fake(0, "ok");
+        ask(
+            &b,
+            json!({"id":1,"method":"tools/call","params":{"name":"zazzle_find","arguments":{"pattern":"x","llm":"Only file names"}}}),
+        );
+        ask(
+            &b,
+            json!({"id":2,"method":"tools/call","params":{"name":"zazzle_prompt","arguments":{"text":"Hi?","effort":"low","llm":"x"}}}),
+        );
+        ask(
+            &b,
+            json!({"id":3,"method":"tools/call","params":{"name":"zazzle_brief","arguments":{"intent":"fix it"}}}),
+        );
+        let calls = b.calls.borrow();
+        assert_eq!(calls[0][..3], ["find", "--llm", "Only file names"]);
+        assert_eq!(calls[1], ["prompt", "--effort", "low", "Hi?"]);
+        assert_eq!(calls[2], ["brief", "fix it"]);
+        let tools = list_tools();
+        let props = |n: &str| {
+            tools["tools"].as_array().expect("tools").iter().find(|t| t["name"] == n).expect(n)["inputSchema"]
+                ["properties"]
+                .clone()
+        };
+        assert!(props("zazzle_read")["llm"].is_object() && props("zazzle_edit")["llm"].is_null());
+        assert!(props("zazzle_brief")["intent"].is_object() && props("zazzle_prompt")["llm"].is_null());
+    }
+
     // Checks write failures surface as errors.
     #[test]
     fn test_serve_write_error() {
@@ -1277,10 +1352,10 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["inputSchema"]["required"].is_array());
         }
-        assert_eq!(l["tools"].as_array().expect("tools").len(), 18);
+        assert_eq!(l["tools"].as_array().expect("tools").len(), 20);
         assert!(all_tools().all(|t| (t.schema)()["type"] == "object"));
         std::env::set_var("ZAZZLE_MCP_ZAZZ", "0");
-        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 11);
+        assert_eq!(list_tools()["tools"].as_array().expect("tools").len(), 13);
         std::env::remove_var("ZAZZLE_MCP_ZAZZ");
         let store = crate::testutil::TempDir::new();
         std::env::set_var("ZAZZ_STORE", store.path());

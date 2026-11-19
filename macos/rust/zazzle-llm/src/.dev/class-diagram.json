@@ -27,7 +27,7 @@
       "sources": ["macos/rust/zazzle-llm/src/main.rs"],
       "members": [
         "Llm { model: Option<String>, effort: Option<String>, remove: Option<String> }",
-        "Prompt { model: Option<String>, effort: Option<String>, system: Option<String>, max_tokens: Option<usize>, show_thinking: bool, text: Vec<String> }"
+        "Prompt { model: Option<String>, effort: Option<String>, system: Option<String>, max_tokens: Option<usize>, show_thinking: bool, no_download: bool, grammar: Option<String>, temp: f32, text: Vec<String> }"
       ]
     },
     {
@@ -35,7 +35,7 @@
       "name": "PromptArgs",
       "kind": "struct",
       "sources": ["macos/rust/zazzle-llm/src/main.rs"],
-      "members": ["model: Option<String>", "effort: Option<String>", "system: Option<String>", "max_tokens: Option<usize>", "show_thinking: bool", "text: Vec<String>"]
+      "members": ["model: Option<String>", "effort: Option<String>", "system: Option<String>", "max_tokens: Option<usize>", "show_thinking: bool", "no_download: bool", "grammar: Option<String>", "temp: f32", "text: Vec<String>"]
     },
     {
       "id": "Model",
@@ -91,7 +91,7 @@
       "name": "Ask",
       "kind": "struct",
       "sources": ["macos/rust/zazzle-llm/src/engine.rs"],
-      "members": ["path: &Path", "system: Option<&str>", "user: &str", "effort: &str", "max_tokens: usize"]
+      "members": ["path: &Path", "system: Option<&str>", "user: &str", "effort: &str", "max_tokens: usize", "grammar: Option<&str>", "temp: f32"]
     },
     {
       "id": "Event",

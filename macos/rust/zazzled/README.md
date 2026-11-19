@@ -88,9 +88,11 @@ Keep everything else equal: the same model and settings, the same repository sta
 | `overview`, `find-symbol`, `changed-since`, `git-log`, `git-blame`, `report-gap` | structure answered by `zazzle-csharp-indexer`: see [C# structure](#c-structure) |
 | `status` | daemon, cache and session counters |
 | `agent llm [--model NAME] [--effort low\|medium\|high]`, `agent prompt [--model NAME] [--effort E] [TEXT.. \| -]` | open models run locally: the catalogue, or download one and make it the default; ask one and stream its answer: see [Local models](#local-models) |
+| `brief INTENT.. [--path PATH]..` (also `agent brief`) | the rule sections and skills the local model picks for what the agent is about to do, verbatim with line ranges; the rest named in one line |
+| `prompt [--effort E] TEXT..` | the local model's whole answer, for agents (MCP `zazzle_prompt`); never downloads a model |
 | `languages [jit [on\|off] \| fetch [NAME..]]` | the language modules: installed and missing ones, whether they download on first use, or download the missing ones: see [Language modules](#language-modules) |
 
-Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own) and `--disable-session-deduping`.
+Any command accepts `--budget T` (caps output at about T tokens, default 8000; `read` and `clean` have their own), `--disable-session-deduping` and `--llm INSTRUCTION` (the output goes through the local model first: see [Agents asking the local model](#agents-asking-the-local-model)).
 
 `zazzle` alone (or `zazzle help`) prints an overview of the commands, grouped by purpose and wrapped to 80 columns; `zazzle help COMMAND` and `zazzle COMMAND --help` print a command's usage, options with their defaults, and examples (`src/cmd/help.rs`, one table for all of them). `run`, `proxy` and `setup` print the same pages from `zazzled`, which the invoker hands them to.
 
@@ -213,6 +215,14 @@ A `.json`, XML or SVG, `.html`/`.htm`/`.xhtml` or `.css` file is minified when m
 ## Local models
 
 `zazzle agent llm` and `zazzle agent prompt` run open-weight models (Qwen, Gemma, gpt-oss) on the machine with llama.cpp: `zazzle agent llm --model qwen3.5-9b --effort high` downloads a model and makes it the default, `git diff | zazzle agent prompt "Review this diff:" -` asks it. The program behind them, `zazzle-llm` (`macos/rust/zazzle-llm`, where the catalogue, efforts and exit codes are described), is a JIT tool: the invoker execs `zazzled llm ARGS`, which uses a `zazzle-llm` beside zazzled or else the one in `~/.zazzle/v1/tools`, downloading it first from `https://icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/` and accepting it only when its SHA-256 matches the manifest compiled into zazzled (`ZAZZLED_TOOLS_MANIFEST`; `src/tools.rs`). `ZAZZLE_TOOLS_DIR` and `ZAZZLE_TOOLS_URL` override the directory and URL. `zazzle-llm` in turn downloads each model from Hugging Face on first use, checked against the SHA-256 its catalogue pins. Through the daemon (MCP, `zazzled run`) these commands answer that they run as their own process.
+
+## Agents asking the local model
+
+An agent (Claude, Codex) can hand work to the user's local model so that less text reaches its own context. All three need a model the user already downloaded (`zazzle agent llm --model NAME`): zazzle passes `--no-download` and fails with that command instead of starting a download of gigabytes on an agent's behalf. Calls are serialized (one model in memory at a time), get `ZAZZLE_LLM_TIMEOUT` seconds (default 300), run at low effort with temperature 0, and `ZAZZLE_LLM` names another `zazzle-llm` (`src/llm.rs`).
+
+- **Post-processing:** `--llm INSTRUCTION` on any command (MCP: `llm` on every tool that only reads, zazz script tools included), and on `zazzle run --llm INSTRUCTION -- CMD` for API calls (`curl`), logs and test runs. The output goes to the local model with the instruction and a system message asking for the result only, and the agent gets the answer with `[post-processed by the local model: ~N → ~M tokens; run without --llm for the exact output]`. If the model fails, a daemon command fails with the reason; `zazzle run` prints the reason and then the output as it was, since the command already ran. Input over 400,000 bytes is refused: narrow the command first.
+- **`brief INTENT [--path PATH]..`** (MCP `zazzle_brief`): everything `get-rules` would send for the paths (default: the working directory) is split into sections, rule files at their Markdown headings and each skill whole, numbered, rules first. A GBNF grammar makes the model give a `y`/`n` verdict for every section in turn (`1:y 2:n ..`), so a small model can neither stop early nor ramble. The chosen sections print verbatim with their line ranges and skills whole, never paraphrased, and the rest are named in one line. A brief's default budget is 8000 tokens. How well it chooses depends on the model: the 4B default picks the right skill and the general rules but can miss a section, so `get-rules` remains the complete answer.
+- **`prompt [--effort E] TEXT`** (MCP `zazzle_prompt`): any question, answered whole. `zazzle agent prompt` is the same for people: it streams, reads standard input and may download.
 
 ## C# structure
 

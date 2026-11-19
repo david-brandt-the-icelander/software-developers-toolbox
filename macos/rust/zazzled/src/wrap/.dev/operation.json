@@ -35,6 +35,10 @@
         {
           "path": "macos/rust/zazzled/src/wrap/mod.rs",
           "symbol": "deliver"
+        },
+        {
+          "path": "macos/rust/zazzled/src/wrap/mod.rs",
+          "symbol": "post"
         }
       ],
       "entrypoint": {
@@ -42,13 +46,15 @@
         "symbol": "main"
       },
       "action": "command",
-      "transport": "zazzle run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--] CMD ARGS.. (exec'd as `zazzled wrap ...`)",
+      "transport": "zazzle run [--lossless] [--budget T] [--timeout SECS] [--profile NAME|none] [--llm INSTRUCTION] [--] CMD ARGS.. (exec'd as `zazzled wrap ...`)",
       "authorization": "Whoever runs it; the command runs with the caller's environment, working directory, standard input and permissions. Nothing else is checked.",
-      "result": "The command's merged standard output and error, cleaned with its profile (detected, or named with --profile) and clean's steps within --budget (default 8000), then `[exit N in Ts; ...]` naming a timeout, cut output and what the profile dropped. With an output store it starts with `[r:ID]` and, when anything was dropped or cut, ends with `[full output: read-again r:ID --full]`; a store that cannot be written leaves it untagged with `[output not stored for read-again: ...]`. The exit status is the command's: its code, 128 + N for signal N, or 124 when it was killed after --timeout (default 3600 s).",
+      "result": "The command's merged standard output and error, cleaned with its profile (detected, or named with --profile) and clean's steps within --budget (default 8000), then `[exit N in Ts; ...]` naming a timeout, cut output and what the profile dropped. With an output store it starts with `[r:ID]` and, when anything was dropped or cut, ends with `[full output: read-again r:ID --full]`; a store that cannot be written leaves it untagged with `[output not stored for read-again: ...]`. The exit status is the command's: its code, 128 + N for signal N, or 124 when it was killed after --timeout (default 3600 s). With --llm INSTRUCTION, the delivered text goes to the local model with the instruction instead, and the agent gets its answer marked `[post-processed by the local model: ~N → ~M tokens ...]`.",
       "failures": [
         "No command, an unknown option, a number below 1 for --budget or --timeout, or an unknown profile name: `zazzled: ...` with the usage or the profile names, exit 2.",
         "The command cannot be started: `zazzled: cannot run CMD: ...`, exit 2.",
-        "The pipe cannot be created: `zazzled: cannot create a pipe: ...`, exit 2."
+        "The pipe cannot be created: `zazzled: cannot create a pipe: ...`, exit 2.",
+        "--llm without an instruction: `zazzled: --llm needs an instruction for the local model`, exit 2.",
+        "With --llm, the local model fails (no model downloaded, timeout, input over 400,000 bytes): `error: REASON; the output as it is:` and then the output, with the command's exit status, since the command already ran."
       ]
     }
   ],

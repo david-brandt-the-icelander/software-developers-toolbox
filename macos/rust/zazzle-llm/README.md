@@ -38,11 +38,12 @@ A name may be shortened to a unique prefix (`--model gemma-4-1`). To add a model
 
 ## Output
 - The answer streams to standard output. Thinking is dropped, or printed to standard error with `--show-thinking`.
-- Exit 0 on a full answer; 3 when the token limit cut it short (a note on standard error says whether any answer came at all); 2 for errors (unknown model, a failed download, a prompt longer than the model reads).
+- Exit 0 on a full answer; 3 when the token limit cut it short (a note on standard error says whether any answer came at all); 4 when `--no-download` finds the model missing; 2 for errors (unknown model, a failed download, a prompt longer than the model reads).
+- For programs: `--no-download` never starts a model download, `--grammar GBNF` holds the answer to a grammar (root rule `root`; use `--effort low` so no thinking comes first), and `--temp 0` always takes the likeliest token, so the same question gets the same answer. zazzled uses all three when agents ask the model (`zazzle brief`, `--llm`): see `macos/rust/zazzled/README.md`.
 - `ZAZZLE_LLM_LOG=1` shows llama.cpp's own log on standard error.
 
 ## How it runs
-- `src/engine.rs`: llama.cpp through the `llama-cpp-2` crate. The model is memory-mapped with every layer on the GPU (Metal on Apple Silicon; the Linux and Intel macOS builds use the CPU). The context is the prompt plus the token limit, capped at what the model was trained on. Sampling: top-k 40, top-p 0.95, min-p 0.05, temperature 0.7.
+- `src/engine.rs`: llama.cpp through the `llama-cpp-2` crate. The model is memory-mapped with every layer on the GPU (Metal on Apple Silicon; the Linux and Intel macOS builds use the CPU). The context is the prompt plus the token limit, capped at what the model was trained on. Sampling: a grammar first when given, then top-k 40, top-p 0.95, min-p 0.05 and temperature 0.7 (`--temp`), or the likeliest token at `--temp 0`.
 - `src/template.rs`: the prompt is the model's own Jinja chat template (from the GGUF file), rendered with minijinja the way Hugging Face transformers renders it (`trim_blocks`, `lstrip_blocks`, Python string methods, `raise_exception`, `strftime_now`), so each family gets its exact format, including Gemma 4's and gpt-oss's.
 - `src/think.rs`: splits the streamed text into thinking and answer across the families' markers (`<think>`, Gemma 4's thought channel, gpt-oss's analysis channel), holding back text that may be the start of a marker.
 

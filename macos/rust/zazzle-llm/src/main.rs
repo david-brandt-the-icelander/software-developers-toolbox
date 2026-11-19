@@ -55,6 +55,15 @@ enum Cmd {
         /// Also print the model's thinking, to standard error.
         #[arg(long)]
         show_thinking: bool,
+        /// Fail (exit 4) instead of downloading a model that is not here; zazzle uses it for agents.
+        #[arg(long)]
+        no_download: bool,
+        /// A GBNF grammar (root rule `root`) the answer must follow; use with --effort low.
+        #[arg(long)]
+        grammar: Option<String>,
+        /// Sampling temperature; 0 always takes the likeliest token (repeatable answers).
+        #[arg(long, default_value_t = 0.7)]
+        temp: f32,
         /// The prompt.
         text: Vec<String>,
     },
@@ -169,10 +178,13 @@ struct PromptArgs {
     system: Option<String>,
     max_tokens: Option<usize>,
     show_thinking: bool,
+    no_download: bool,
+    grammar: Option<String>,
+    temp: f32,
     text: Vec<String>,
 }
 
-// Runs `prompt`: picks the model and effort, fetches the model when missing, and streams the answer to standard output; returns 3 when the token limit cut it short.
+// Runs `prompt`: picks the model and effort, fetches the model when missing, and streams the answer to standard output; returns 3 when the token limit cut it short, 4 when --no-download finds the model missing.
 fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     let d = store::defaults(root);
     let m = catalog::find(a.model.as_deref().unwrap_or(&d.model))?;
@@ -181,6 +193,15 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     if user.trim().is_empty() {
         return Err("nothing to ask: give TEXT, or pipe it in".into());
     }
+    if a.no_download && !store::installed(root, m.file, m.bytes) {
+        eprintln!(
+            "error: {} is not downloaded ({}): run `zazzle agent llm --model {}` first",
+            m.name,
+            catalog::gb(m.bytes),
+            m.name
+        );
+        return Ok(4);
+    }
     let path = ensure(root, m)?;
     let ask = engine::Ask {
         path: &path,
@@ -188,6 +209,8 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
         user: &user,
         effort: &effort,
         max_tokens: a.max_tokens.unwrap_or_else(|| max_tokens(&effort)),
+        grammar: a.grammar.as_deref(),
+        temp: a.temp,
     };
     let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr());
     let (mut filter, mut ended_nl, mut answered) = (think::Filter::new(""), true, false);
@@ -219,7 +242,7 @@ fn prompt(root: &Path, a: PromptArgs) -> Result<u8, String> {
     Ok(3)
 }
 
-// Parses the command line and runs it; errors go to standard error with status 2, an answer cut short by the token limit exits 3.
+// Parses the command line and runs it; errors go to standard error with status 2, an answer cut short by the token limit exits 3, a missing model under --no-download exits 4.
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = store::root().and_then(|root| match cli.cmd {
@@ -227,9 +250,20 @@ fn main() -> ExitCode {
             println!("{}", t.trim_end());
             0
         }),
-        Cmd::Prompt { model, effort, system, max_tokens, show_thinking, text } => {
-            prompt(&root, PromptArgs { model, effort, system, max_tokens, show_thinking, text })
-        }
+        Cmd::Prompt {
+            model,
+            effort,
+            system,
+            max_tokens,
+            show_thinking,
+            no_download,
+            grammar,
+            temp,
+            text,
+        } => prompt(
+            &root,
+            PromptArgs { model, effort, system, max_tokens, show_thinking, no_download, grammar, temp, text },
+        ),
     });
     match result {
         Ok(code) => ExitCode::from(code),
@@ -280,10 +314,25 @@ mod tests {
                 system: None,
                 max_tokens: None,
                 show_thinking: false,
+                no_download: false,
+                grammar: None,
+                temp: 0.7,
                 text: vec![" ".into()],
             },
         );
         assert!(r.expect_err("empty").contains("nothing to ask"));
+        let absent = PromptArgs {
+            model: Some("qwen3.5-2b".into()),
+            effort: None,
+            system: None,
+            max_tokens: None,
+            show_thinking: false,
+            no_download: true,
+            grammar: None,
+            temp: 0.7,
+            text: vec!["hi".into()],
+        };
+        assert_eq!(prompt(&root, absent), Ok(4));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

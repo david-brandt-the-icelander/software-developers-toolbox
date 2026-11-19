@@ -36,7 +36,7 @@
     {
       "id": "dispatch",
       "name": "Dispatcher (mod.rs)",
-      "responsibility": "Strips the global options, routes the command (with the aliases grep and cat), hands read-again to again.rs, answers status and version, hands help (and COMMAND --help or -h) to help.rs, refuses proxy and run with a pointer to their own processes, cuts output to the token budget and applies session ids, dedupe and replay records.",
+      "responsibility": "Strips the global options (`--llm` among them), routes the command (with the aliases grep and cat), hands read-again to again.rs, answers status and version, runs brief and prompt (also as `agent brief|prompt`), hands help (and COMMAND --help or -h) to help.rs, refuses proxy and run with a pointer to their own processes, hands a successful output to the local model when `--llm` asks, cuts output to the token budget (8000 tokens by default for brief) and applies session ids, dedupe and replay records.",
       "folder": "macos/rust/zazzled/src/cmd"
     },
     {
@@ -108,7 +108,7 @@
     {
       "id": "src",
       "name": "zazzled library",
-      "responsibility": "The engine, walker, outliner, symbol finder, pool, indexer bridge, session table and helpers the commands run on.",
+      "responsibility": "The engine, walker, outliner, symbol finder, pool, indexer bridge, session table, local model calls, brief and helpers the commands run on.",
       "folder": "macos/rust/zazzled/src",
       "diagram": "macos/rust/zazzled/src/.dev/component-diagram.json"
     },
@@ -268,7 +268,7 @@
       "from": "dispatch",
       "to": "src",
       "kind": "depends-on",
-      "description": "Sessions.apply_with for ids, dedupe and replay records; token estimates for the budget cut; engine counters for status."
+      "description": "Sessions.apply_with for ids, dedupe and replay records; token estimates for the budget cut; engine counters for status. llm::post for `--llm`, llm::ask for prompt, and brief::run with brief::ask_local for brief."
     },
     {
       "from": "find",
