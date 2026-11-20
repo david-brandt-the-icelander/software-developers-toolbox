@@ -275,7 +275,7 @@ const PAGES: &[Page] = &[
             ("-s, --symbol S", "A name to start from (repeatable)"),
             ("--steps N", "Model turns, 1 to 12 (default 6)"),
             ("--seconds N", "Time limit, waiting for the model included (default 90); a benchmark and a review get as long again"),
-            ("--adaptive", "Plan the question into parts, run each on the cheapest agent and effort that will do it, escalate unsettled parts with what they established"),
+            ("--adaptive", "Plan the question into parts, run them at the same time, each on the cheapest agent and effort that will do it, escalate unsettled parts with what they established"),
             ("--agents A,B..", "The adaptive ladder, cheapest first: MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: installed local models, each at low then high)"),
             ("--prose", "Adaptive: the cheapest agent adds a short summary that keeps the citations"),
             ("--json", "The structured result: status, confidence, findings with evidence, gaps, escalation, usage"),

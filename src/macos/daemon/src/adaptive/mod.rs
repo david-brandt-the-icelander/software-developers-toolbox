@@ -302,7 +302,7 @@ fn assess(plan: &Plan) -> (usize, Vec<&'static str>) {
     (why.len().min(5), why)
 }
 
-// The adaptive run: assess, plan with a planner one rung above the difficulty (or skip planning for a simple question), run each part with escalation, combine the parts and, with --prose, have the cheapest rung write a summary.
+// The adaptive run: assess, plan with a planner one rung above the difficulty (or skip planning for a simple question), run the parts at the same time (each with its own read session, so one part's reads never hide a file from another), each with escalation, combine the parts and, with --prose, have the cheapest rung write a summary.
 fn adaptive(
     ctx: &Ctx,
     b: &dyn Backend,
@@ -347,11 +347,19 @@ fn adaptive(
             head.push_str(&format!("  P{} {}: {}\n", i + 1, ladder[p.rung].label(), p.question));
         }
     }
-    let mut runs = Vec::new();
-    for (i, p) in parts.iter().enumerate() {
-        let share = deadline.saturating_duration_since(Instant::now()) / (parts.len() - i) as u32;
-        runs.push(part(ctx, b, &log, plan, scope, ladder, p, i + 1, Instant::now() + share));
-    }
+    let (engine, cwd, roots) = (ctx.engine, &ctx.cwd, &ctx.roots);
+    let base = if ctx.session.is_empty() { "investigate" } else { ctx.session.as_str() };
+    let runs = calls::all(&parts, |i, p| {
+        let own = Ctx {
+            engine,
+            cwd: cwd.clone(),
+            session: format!("{base}>P{}", i + 1),
+            roots: roots.clone(),
+            stdin: std::cell::RefCell::new(None),
+            caller: std::cell::RefCell::new(None),
+        };
+        part(&own, b, &log, plan, scope, ladder, p, i + 1, deadline)
+    });
     let mut out = head;
     out.push_str("parts:\n");
     for (i, attempts) in runs.iter().enumerate() {

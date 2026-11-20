@@ -916,3 +916,22 @@ fn test_retry_busy() {
     let other: std::io::Result<()> = agent::retry_busy(|| Err(std::io::Error::other("no")));
     assert_eq!(other.unwrap_err().to_string(), "no");
 }
+
+// Checks independent calls run at the same time and come back in order: the first waits for a message only the second sends, which one after another would never arrive.
+#[test]
+fn test_all_runs_together() {
+    let (tx, rx) = std::sync::mpsc::channel::<usize>();
+    let (tx, rx) = (Mutex::new(Some(tx)), Mutex::new(rx));
+    let got = calls::all(&[0usize, 1, 2], |i, x| match i {
+        0 => rx.lock().expect("rx").recv_timeout(Duration::from_secs(20)).map_or(99, |v| v + x),
+        _ => {
+            if let Some(t) = tx.lock().expect("tx").take() {
+                t.send(40).expect("send");
+            }
+            x * 10
+        }
+    });
+    assert_eq!(got, [40, 10, 20]);
+    assert_eq!(calls::all(&[7], |i, x| i + x), [7]);
+    assert!(calls::all(&[] as &[usize], |_, x| *x).is_empty());
+}

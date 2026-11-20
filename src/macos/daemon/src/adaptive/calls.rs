@@ -113,6 +113,18 @@ impl<'a> Ask<'a> {
 #[derive(Default)]
 pub struct Log(Mutex<Vec<Call>>);
 
+// Runs `f` on every item at the same time, one thread each (inline for a single item), and returns the results in the items' order; for calls that do not depend on each other, so the slowest sets the wall time instead of their sum (local requests still take turns on the one shared worker).
+pub fn all<T: Sync, R: Send>(items: &[T], f: impl Fn(usize, &T) -> R + Sync) -> Vec<R> {
+    if items.len() < 2 {
+        return items.iter().enumerate().map(|(i, x)| f(i, x)).collect();
+    }
+    let f = &f;
+    std::thread::scope(|s| {
+        let hs: Vec<_> = items.iter().enumerate().map(|(i, x)| s.spawn(move || f(i, x))).collect();
+        hs.into_iter().map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
+    })
+}
+
 // The estimated tokens of each section, or of the whole prompt as `prompt` when no section is named.
 fn sizes(sections: &[(&str, &str)], whole: &str) -> Vec<(String, usize)> {
     match sections.is_empty() {

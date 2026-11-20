@@ -1,7 +1,7 @@
 // `zazzle flow ci`: waits inside zazzle for a pull request's checks on its current head and returns once, with every check's result and the failures' links; a head that moves while waiting makes the result stale instead of passing old checks off as current. A failed job's log is fetched and triaged by zazzle and the local model, so the executor reads the failing test, its place and its likely cause, not the log.
 use super::deliver::run_gh;
 use crate::adaptive::agent::Rung;
-use crate::adaptive::calls::{Ask, Backend, Log};
+use crate::adaptive::calls::{self, Ask, Backend, Log};
 use serde_json::Value;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -193,7 +193,7 @@ pub fn excerpt(log: &str) -> String {
     out
 }
 
-// Fetches each failed job's log through gh, keeps the lines worth reading, and has the local model say per failure the test, the place, the cause, whose it is (this change, the base, infrastructure or a flake) and the next step; places that are not in this repository are marked.
+// Fetches the failed jobs' logs through gh at the same time, keeps the lines worth reading, and has the local model say per failure the test, the place, the cause, whose it is (this change, the base, infrastructure or a flake) and the next step; places that are not in this repository are marked.
 pub fn triage(
     top: &Path,
     failed: &[(String, String)],
@@ -203,16 +203,16 @@ pub fn triage(
     r: &Rung,
     limit: Duration,
 ) -> String {
-    let mut logs = String::new();
-    for (name, url) in failed {
+    let logs: String = calls::all(failed, |_, (name, url)| {
         let text = match job_of(url) {
             Some((run, job)) => run_gh(top, &["run", "view", &run, "--job", &job, "--log-failed"])
                 .map(|l| excerpt(&l))
                 .unwrap_or_else(|e| format!("(log not available: {e})\n")),
             None => "(no Actions job link; open the check's page)\n".to_string(),
         };
-        logs.push_str(&format!("### {name}\n{text}"));
-    }
+        format!("### {name}\n{text}")
+    })
+    .concat();
     let system = "You triage failed CI jobs from log excerpts. Be concise; reply only with lines:\nFAILURE job | test or step | path:line or - | the cause in one sentence\nOWNER this-change|base|infrastructure|flaky | why\nNEXT the smallest next step";
     let prompt = format!(
         "Files this change touches: {}\n{logs}",
