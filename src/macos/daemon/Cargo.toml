@@ -81,7 +81,7 @@ tree-sitter-bash = "0.25"
 # Dart grammar for the terse view in tests (release builds load it as a language module).
 tree-sitter-dart = "0.3"
 # Go grammar for the terse view in tests (release builds load it as a language module).
-tree-sitter-go = "0.23"
+tree-sitter-go = "0.25"
 # Java grammar for the terse view in tests (release builds load it as a language module).
 tree-sitter-java = "0.23"
 # C++ grammar for the terse view in tests (release builds load it as a language module).
