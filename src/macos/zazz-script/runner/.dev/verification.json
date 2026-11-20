@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazz-script-runner verification",
+  "folder": "src/macos/zazz-script/runner",
+  "entities": [
+    {
+      "id": "tests-and-coverage",
+      "title": "Unit tests and the branch-coverage gate",
+      "summary": "zazz-script-runner's unit tests run with the workspace's; CI fails unless its branch coverage, test code excluded, reaches 95%. daemon's zazz tests also use the release build of zazz-script-runner.",
+      "subject": [
+        { "path": "src/macos/zazz-script/runner/.dev/folder.json", "entityId": "folder" }
+      ],
+      "criteria": [
+        "Every unit test in the crate passes; the tests build their WebAssembly from hand-written text (the wat dev-dependency).",
+        "Branch coverage of the crate, test code excluded, is at least 95%.",
+        "The crate builds with its own rust-version; the rest of the workspace is checked on Rust 1.85 without it."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "command": "cargo test -p zazz-script-runner (in src/macos)",
+          "description": "CI runs it within `cargo test --workspace` on macOS and Linux, after `cargo build --release -p zazz-script-runner`, which daemon's zazz tests need."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "zazz crates branch coverage (at least 95%)",
+          "command": "sh daemon/coverage.sh 95 zazz-script-runner (in src/macos; nightly with cargo-llvm-cov and the wasm32-wasip1 target)",
+          "description": "Reads the branch percentage from cargo llvm-cov's summary and fails below 95. Test modules are marked coverage(off)."
+        },
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "msrv",
+          "description": "Checks the workspace on Rust 1.85 with zazz-script-runner excluded, since wasmtime needs a newer Rust."
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": ".github/workflows/ci.yml", "symbol": "test" },
+        { "path": ".github/workflows/ci.yml", "symbol": "coverage" },
+        { "path": "src/macos/daemon/coverage.sh", "symbol": "crate" },
+        { "path": "src/macos/zazz-script/runner/src/main.rs", "symbol": "tests" },
+        { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "[dev-dependencies]" }
+      ]
+    }
+  ]
+}

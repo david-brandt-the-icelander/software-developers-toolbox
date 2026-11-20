@@ -1,0 +1,672 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "csharp-indexer command-line use cases",
+  "folder": "src/macos/csharp-indexer/src/Cli",
+  "description": "Setting zazzle and csharp-indexer up in a project and taking that out again, checking and restarting the shared indexer daemon, being redirected to zazzle by the indexer's hook, and reading what the usage log says.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "init"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "hook"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "report"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "uninit"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "status"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "restart"
+    }
+  ],
+  "entities": [
+    {
+      "id": "wire-into-project",
+      "name": "Wire zazzle and the redirect hook into a project",
+      "description": "A developer makes Claude Code start zazzle for a project and redirect raw search and read calls to it.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.FindDaemon"
+        },
+        {
+          "path": "src/macos/csharp-indexer/README.md",
+          "symbol": "Quick start"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Have the coding agent use zazzle for files and for C# structure, which zazzle gets from csharp-indexer, in this project without further setup.",
+      "preconditions": [
+        "csharp-indexer is installed on the developer's machine, and zazzle's daemon beside it in libexec/zazzle.",
+        "The developer is in the project directory, or names it with --dir."
+      ],
+      "postconditions": [
+        "The project's .mcp.json starts zazzle daemon mcp over stdio and no longer names csharp-indexer, and .claude/settings.json enables the zazzle server, allows its tools and runs csharp-indexer hook before Bash, Grep, Glob and Read calls.",
+        "Other settings in both files are unchanged."
+      ],
+      "flow": [
+        {
+          "id": "run-init",
+          "actor": "Developer",
+          "action": "Runs csharp-indexer init, optionally with --dir <path>.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "init"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "write-mcp",
+          "actor": "csharp-indexer",
+          "action": "Looks for daemon beside its own executable, then on PATH, merges the zazzle stdio server (daemon's path, mcp) into .mcp.json and removes a csharp-indexer server an earlier init wrote.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.FindDaemon"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.Apply"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "write-settings",
+          "actor": "csharp-indexer",
+          "action": "Replaces any earlier csharp-indexer hook entry with one for Bash|Grep|Glob|Read, adds the mcp__zazzle permission and enabled server to .claude/settings.json, and removes the indexer's own.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.Apply"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "print-snippet",
+          "actor": "csharp-indexer",
+          "action": "Prints what it did, one line per file, and a snippet for AGENTS.md or CLAUDE.md telling agents to read, search, list and edit through the zazzle server's tools, that C# files read as a terse view, that [r:ID] replies come back with zazzle_read_again, to ask zazzle for C# structure and git history (zazzle_overview, zazzle_find_symbol, zazzle_refs, zazzle_changed_since, zazzle_git_log, zazzle_git_blame) and to report gaps with zazzle_report_gap.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.AgentsSnippet"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "init"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "add-snippet",
+          "actor": "Developer",
+          "action": "Adds the snippet to the project's AGENTS.md or CLAUDE.md, as the output asks.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "init"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "write-mcp",
+          "condition": "No daemon beside the indexer.",
+          "outcome": "init writes no zazzle server, permission or enabled server, and its first line of output says to install zazzle and run init again; the hook is written as usual (backlog.json, hook-without-zazzle).",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.Apply"
+            },
+            {
+              "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+              "symbol": "test_init_without_daemon"
+            }
+          ]
+        },
+        {
+          "atStep": "write-mcp",
+          "condition": "An existing .mcp.json or .claude/settings.json is not valid JSON.",
+          "outcome": "init stops with an unhandled JSON parse error; a file written before it stays written.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.Load"
+            }
+          ]
+        },
+        {
+          "atStep": "write-settings",
+          "condition": "init has run before.",
+          "outcome": "The old csharp-indexer hook entry is replaced and no permission or server is listed twice.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+              "symbol": "test_init_idempotent_and_preserving"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "undo-init",
+      "name": "Take zazzle and the redirect hook out of a project",
+      "description": "A developer removes what csharp-indexer init wrote into a project, keeping everything else in its settings files.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "uninit"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Have the project's Claude Code settings as they were before init, without hand-editing JSON.",
+      "preconditions": [
+        "The developer is in the project folder, or names it."
+      ],
+      "postconditions": [
+        "The zazzle server init wrote, the csharp-indexer redirect hook, the mcp__zazzle permission and the zazzle enabled server are gone; every other byte of .mcp.json and .claude/settings.json is as it was, and a file (and .claude/) that held only init's entries is deleted."
+      ],
+      "flow": [
+        {
+          "id": "run-uninit",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer uninit, optionally with --dry-run first and a folder.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "uninit"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "find-entries",
+          "actor": "csharp-indexer",
+          "action": "Reads each file and finds init's entries by their shape: the zazzle stdio server whose command ends in daemon with args [\"mcp\"], hook commands ending in \" hook\" that name csharp-indexer, mcp__zazzle and zazzle.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.NextMcp"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.NextSettings"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "cut-entries",
+          "actor": "csharp-indexer",
+          "action": "Cuts each entry out of the file text, then each object or array that left empty, and writes the file, or deletes it when nothing else is left; prints one line per change.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/JsonText.cs",
+              "symbol": "JsonText.Remove"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+              "symbol": "Uninit.Undo"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run-uninit",
+          "condition": "--dry-run.",
+          "outcome": "The same lines start with \"would\" and nothing is written or deleted.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_dry_run"
+            }
+          ]
+        },
+        {
+          "atStep": "find-entries",
+          "condition": "Nothing of init's is there (never initialised, or uninit already ran).",
+          "outcome": "Prints \"nothing to undo in DIR\" and changes nothing.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_after_init_on_empty_project"
+            }
+          ]
+        },
+        {
+          "atStep": "find-entries",
+          "condition": "The zazzle server has keys init does not write, or a file is not JSON it can edit.",
+          "outcome": "That server or file is left as it is, with a line saying so.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/UninitTests.cs",
+              "symbol": "test_uninit_leaves_foreign_server_and_bad_json"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "manage-daemon",
+      "name": "Check on and restart the shared indexer daemon",
+      "description": "A developer sees whether the per-user indexer daemon runs and what it holds, and replaces it with one started from the installed executable, for example after an upgrade or when a client was refused for a version mismatch.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Status"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Restart"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Know what the indexer daemon is doing, and get one of the installed version running without quitting the apps that use it.",
+      "preconditions": [
+        "csharp-indexer is installed; the daemon, if one runs, uses the same state folder (ZAZZLE_INDEXER_STATE_DIR or the platform default)."
+      ],
+      "postconditions": [
+        "After status: nothing changed. After restart: one daemon of this executable's version runs, and the old one has exited or been killed."
+      ],
+      "flow": [
+        {
+          "id": "run-status",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer status (or --json).",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "status"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "ask-status",
+          "actor": "csharp-indexer",
+          "action": "Sends a command hello with no version to daemon.sock; the daemon answers with its process id, version, uptime, memory, clients and roots without starting a session.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.Query"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Status"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "print-status",
+          "actor": "csharp-indexer",
+          "action": "Prints the report and exits 0 when the daemon runs, 3 when none does.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.StatusText"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "run-restart",
+          "actor": "Developer",
+          "action": "Runs zazzle csharp-indexer restart, optionally with --timeout SECONDS.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "restart"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "drain",
+          "actor": "csharp-indexer",
+          "action": "Sends the stop command: the daemon refuses new clients and exits once its connected clients have finished; csharp-indexer waits for the process to exit and kills it after the timeout.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.StopDaemon"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+              "symbol": "DaemonServer.Command"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "start-fresh",
+          "actor": "csharp-indexer",
+          "action": "Starts a detached daemon from its own executable on the same state folder, waits until it answers, and prints the old and new version and process id.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.Restart"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+              "symbol": "Proxy.SpawnDaemon"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "ask-status",
+          "condition": "No daemon runs.",
+          "outcome": "status prints \"not running\" with the socket and state folder and exits 3; restart only starts one; stop says none was running.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_status_not_running"
+            }
+          ]
+        },
+        {
+          "atStep": "ask-status",
+          "condition": "The daemon is from before these commands.",
+          "outcome": "It refuses the versionless hello as too old, naming its version; status reports it running with that version and that details need a newer daemon. stop sends it the hello of a newer client, so it drains as it does for an upgrade, and finds its process with lsof if it must be killed.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_older_daemon"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+              "symbol": "Control.FindPid"
+            }
+          ]
+        },
+        {
+          "atStep": "drain",
+          "condition": "A client stays connected past the timeout.",
+          "outcome": "The daemon is killed, its stale socket file removed, and the line says so.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+              "symbol": "test_restart_status_stop"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "redirect-raw-command",
+      "name": "Get redirected to zazzle from a raw search or read",
+      "description": "The coding agent tries grep, find, cat, the built-in Grep or Glob, or the built-in Read on a C# file in an initialised project and is pointed at the zazzle tool instead.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Find or read code in the project.",
+      "preconditions": [
+        "csharp-indexer init has been run in the project.",
+        "The coding agent works in Claude Code, which runs the PreToolUse hook."
+      ],
+      "postconditions": [
+        "The raw call did not run; the agent was told which zazzle tool to use and, for a command, how to bypass the hook.",
+        "The usage log has a hook record with reason blocked:<program>."
+      ],
+      "flow": [
+        {
+          "id": "try-raw",
+          "actor": "Coding agent",
+          "action": "Calls Bash with a searching or reading command, the Grep or Glob tool, or the Read tool; its harness runs csharp-indexer hook with the call as JSON on standard input.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "hook"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+              "symbol": "Init.HookMatcher"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "classify",
+          "actor": "csharp-indexer hook",
+          "action": "Classifies the call: Grep and Glob always; Read when its file_path ends in .cs; for Bash, each pipeline segment's program after wrappers and variable assignments.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.Decide"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.Classify"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "log-and-block",
+          "actor": "csharp-indexer hook",
+          "action": "Writes a hook record to the usage log, prints the message naming zazzle_find, zazzle_ls or zazzle_read (with the # allow-raw escape for Bash, Grep and Glob) on standard error, and exits with 2.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "hook"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.SearchMsg"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "use-tool",
+          "actor": "Coding agent",
+          "action": "Calls the named zazzle tool instead, through the zazzle MCP server (see daemon's MCP use case), or zazzle_find_symbol or zazzle_refs for C# declarations and uses.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.ReadMsg"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "classify",
+          "condition": "The command neither searches nor reads files (building, editing, git log, tail -f, find -exec ...), the Read is of a file not ending in .cs, or the tool is not Bash, Grep, Glob or Read.",
+          "outcome": "The hook exits 0 without a log record and the call runs.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+              "symbol": "test_hook_policy"
+            },
+            {
+              "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+              "symbol": "test_hook_read_tool"
+            }
+          ]
+        },
+        {
+          "atStep": "classify",
+          "condition": "The command contains # allow-raw.",
+          "outcome": "The call runs, and the usage log records allowed_raw:<program>.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.Decide"
+            },
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "hook"
+            }
+          ]
+        },
+        {
+          "atStep": "classify",
+          "condition": "ZAZZLE_INDEXER_HOOK is off.",
+          "outcome": "Every call is allowed and nothing is logged.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+              "symbol": "HookPolicy.Decide"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "review-usage",
+      "name": "See what to improve next",
+      "description": "A developer reads the summary of how agents used csharp-indexer.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.Build"
+        },
+        {
+          "path": "src/macos/csharp-indexer/README.md",
+          "symbol": "Quick start"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Learn which tools agents use, where the index could not answer, which commands they still ran raw and what they reported missing.",
+      "preconditions": [
+        "Agents have used csharp-indexer, so the state directory holds usage.jsonl (and possibly usage.jsonl.1)."
+      ],
+      "postconditions": [
+        "The developer has the report on standard output; nothing is changed."
+      ],
+      "flow": [
+        {
+          "id": "run-report",
+          "actor": "Developer",
+          "action": "Runs csharp-indexer report.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Program.cs",
+              "symbol": "report"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "read-log",
+          "actor": "csharp-indexer",
+          "action": "Reads usage.jsonl.1 then usage.jsonl from the state directory, skipping lines that are not JSON.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+              "symbol": "Report.FromDir"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "summarise",
+          "actor": "csharp-indexer",
+          "action": "Prints calls and sessions, per-tool counts, timings, tokens, truncations and errors, how answers were produced and why not from the index, redirected raw commands, waste signals (retries, repeats), errors and the latest 20 gap reports.",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+              "symbol": "Report.Build"
+            },
+            {
+              "path": "src/macos/csharp-indexer/tests/CliTests.cs",
+              "symbol": "test_report"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "summarise",
+          "condition": "No records.",
+          "outcome": "Prints \"no usage recorded yet\".",
+          "sources": [
+            {
+              "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+              "symbol": "Report.Build"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/csharp-indexer/src",
+      "path": "src/macos/csharp-indexer/src/.dev/operation.json",
+      "relationship": "The init, uninit, status, stop, restart, hook and report commands these use cases call."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/csharp-indexer/src",
+      "path": "src/macos/csharp-indexer/src/.dev/use-case.json",
+      "relationship": "For C# declarations and uses, the redirect message sends the agent to zazzle_find_symbol and zazzle_refs, which zazzle answers with the indexer's help."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/csharp-indexer/src",
+      "path": "src/macos/csharp-indexer/src/.dev/feature.json",
+      "relationship": "The report and the hook's log records are part of the usage-shaped improvement loop."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/use-case.json",
+      "relationship": "After a redirect, the agent uses zazzle's MCP tools, which init registers."
+    }
+  ]
+}

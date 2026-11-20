@@ -1,0 +1,809 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "daemon use cases",
+  "folder": "src/macos/daemon/src",
+  "description": "Reaching the zazzle commands over MCP, handing work to the local model, and having launchd start the daemon.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/mcp.rs",
+      "symbol": "handle_line"
+    },
+    {
+      "path": "src/macos/daemon/src/launchd.rs",
+      "symbol": "install"
+    },
+    {
+      "path": "src/macos/daemon/README.md",
+      "symbol": "Setup"
+    }
+  ],
+  "entities": [
+    {
+      "id": "use-over-mcp",
+      "name": "Use the zazzle tools over MCP",
+      "description": "A coding agent's MCP client starts `zazzle daemon mcp` and calls the zazzle tools; each call is answered by the shared daemon without a process spawn.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "serve"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "mcp_main"
+        },
+        {
+          "path": "agents/skills/zazzle/SKILL.md",
+          "symbol": "Use"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Search, read, outline and edit the project's files, ask about its C# structure and history, and build, test and call zazz scripts, through tools, with short answers it is not sent twice and can fetch again by id.",
+      "preconditions": [
+        "The MCP client is configured to start `zazzle daemon mcp` (for example `claude mcp add zazzle -- zazzle daemon mcp`), in the project directory.",
+        "The daemon binary can start `zazzle daemon serve` from its own path, or a daemon already listens on the socket."
+      ],
+      "postconditions": [
+        "Each tool call has been answered with the command's text; a zazzle query answer is tagged with a response id for this connection's session, while zazz replies never are.",
+        "One daemon serves every call; the MCP process spawns nothing per call."
+      ],
+      "flow": [
+        {
+          "id": "connect",
+          "actor": "Coding agent",
+          "action": "Its MCP client starts `zazzle daemon mcp` and sends initialize.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/cli.rs",
+              "symbol": "mcp_main"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "initialize",
+          "actor": "zazzle daemon mcp",
+          "action": "Agrees the protocol version the client asked for if it knows it (2025-06-18, 2025-03-26 or 2024-11-05), else the newest, as server `zazzle`; the process already has its random session id.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "initialize"
+            },
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "new_session_id"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "list",
+          "actor": "Coding agent",
+          "action": "Lists the tools and gets zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_stat, zazzle_call, zazzle_outline, zazzle_refs, zazzle_prompt, zazzle_edit, zazzle_get_rules, zazzle_brief, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, then zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, with their input schemas.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "list_tools"
+            },
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "all_tools"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "call",
+          "actor": "Coding agent",
+          "action": "Calls a tool with JSON arguments, for example zazzle_read with paths.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "call_tool"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "map",
+          "actor": "zazzle daemon mcp",
+          "action": "Turns the arguments into a zazzle command line.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "read_args"
+            },
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "TOOLS"
+            },
+            {
+              "path": "src/macos/daemon/src/zazz/mcptools.rs",
+              "symbol": "call_args"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "forward",
+          "actor": "zazzle daemon mcp",
+          "action": "Sends the command line with its working directory and session to the daemon in relay mode; if no daemon listens, starts `zazzle daemon serve` detached and retries with backoff for up to 3 seconds.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "DaemonBackend::call"
+            },
+            {
+              "path": "src/macos/daemon/src/client.rs",
+              "symbol": "call_autostart"
+            },
+            {
+              "path": "src/macos/daemon/src/client.rs",
+              "symbol": "spawn_daemon"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "zazzle daemon mcp",
+          "action": "Returns the daemon's text as the tool result, marked isError when the command's status is not 0.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "tool_result"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "call",
+          "condition": "The tool name is unknown.",
+          "outcome": "A JSON-RPC error -32602 `unknown tool`.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "call_tool"
+            }
+          ]
+        },
+        {
+          "atStep": "map",
+          "condition": "An argument has the wrong type, or a required one is missing.",
+          "outcome": "A tool result with isError and `error: ...`; the daemon is not called.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "get_list"
+            },
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "need_str"
+            }
+          ]
+        },
+        {
+          "atStep": "forward",
+          "condition": "The daemon cannot be started, or does not listen within 3 seconds.",
+          "outcome": "A tool result with isError and `error: cannot reach daemon: ...`.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/client.rs",
+              "symbol": "call_autostart"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The same answer was already sent in this session within the last 40,000 estimated tokens, and the call did not set disable_session_deduping.",
+          "outcome": "The result is `[r:ID] already sent: ..., unchanged. If you no longer have it: read-again r:ID` instead of the text; zazzle_read_again with that id returns it.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/session.rs",
+              "symbol": "Sessions::apply_with"
+            }
+          ]
+        },
+        {
+          "atStep": "map",
+          "condition": "A tool that only reads is given `llm`.",
+          "outcome": "`--llm INSTRUCTION` goes into the command line after the command name, and the agent gets the local model's answer, marked as post-processed, instead of the output.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "llm_args"
+            },
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/coding-agent.md"
+    },
+    {
+      "id": "brief-before-a-task",
+      "name": "Get the rules a task must follow and the skills it needs",
+      "description": "Before a task, a coding agent asks for a brief with its intent, paths and purposes and gets every rule section that applies, verbatim, plus the skills the user's local model ranked as needed.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/brief.rs",
+          "symbol": "TOOLS"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "INSTRUCTIONS"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Follow the rules and skills that apply to what it is about to do without reading every rule file for the folder.",
+      "actorDocument": "Actors/coding-agent.md",
+      "preconditions": [
+        "For skills to be ranked, the user has downloaded a local model (`zazzle agent llm --model NAME`) and the daemon can find ai-agent (ZAZZLE_LLM, beside the daemon, or the tool store)."
+      ],
+      "postconditions": [
+        "The agent has every rule section that applies, verbatim with paths and line ranges, the ranked skills that fit the budget, and one line each for what it already had and what was left out; the session's ledger records what was printed."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "action": "Calls zazzle_brief with its intent, the paths it will touch and its purposes, or runs `zazzle brief INTENT --path PATH --purpose NAME`.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "args"
+            },
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "brief"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "collect",
+          "actor": "daemon",
+          "action": "Lists the rule and skill files for the paths and purposes (the session's when none are given), splits rule files at their headings inside the purpose ranges, and sets aside what the session's ledger shows it already has.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "run"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "sections"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "delivered"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "judge",
+          "actor": "daemon",
+          "action": "Hands only the skills not yet delivered, by description, to ai-agent at low effort and temperature 0 with a grammar that forces h, m or n for each.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "rank"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "verdicts"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "ask_local"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "daemon",
+          "action": "Prints every rule section verbatim, then the needed skills whole while they fit the budget (default 8000 tokens), names what was already delivered and what was left out, and records what it printed on the shared ledger.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "brief"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "ranked"
+            },
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "record"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "collect",
+          "condition": "No rule or skill file applies to the paths.",
+          "outcome": "`no rule or skill files apply here`, without asking the model.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "brief"
+            }
+          ]
+        },
+        {
+          "atStep": "judge",
+          "condition": "There are no skills left to rank.",
+          "outcome": "The rule sections are printed without asking the model.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "rank"
+            }
+          ]
+        },
+        {
+          "atStep": "judge",
+          "condition": "No model is downloaded, ai-agent fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "The rule sections are still printed; a line names the reason and the skills are listed as not ranked.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/brief.rs",
+              "symbol": "brief"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "post-process-output",
+      "name": "Have the local model shorten an output",
+      "description": "A coding agent that needs only part of a command's output gives the command an instruction for the user's local model and reads its answer instead.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "produce"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/setup/mod.rs",
+          "symbol": "INSTRUCTIONS"
+        }
+      ],
+      "actor": "Coding agent",
+      "goal": "Get the part of a large output it needs (an API response, a log, a long listing) for fewer tokens.",
+      "actorDocument": "Actors/coding-agent.md",
+      "preconditions": [
+        "The user has downloaded a local model (`zazzle agent llm --model NAME`)."
+      ],
+      "postconditions": [
+        "The agent has the model's answer, marked `[post-processed by the local model: ~N → ~M tokens ...]`, or an error naming why the model could not answer."
+      ],
+      "flow": [
+        {
+          "id": "ask",
+          "actor": "Coding agent",
+          "action": "Runs a command with `--llm INSTRUCTION` (or gives a reading MCP tool `llm`).",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/mcp.rs",
+              "symbol": "llm_args"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/coding-agent.md"
+        },
+        {
+          "id": "run",
+          "actor": "daemon",
+          "action": "Takes --llm out of the command line and runs the command as usual.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "split_globals"
+            },
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "post",
+          "actor": "daemon",
+          "action": "Hands the successful output and the instruction to ai-agent at low effort and temperature 0, asking for the result only, one call at a time.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "post"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_with"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "answer",
+          "actor": "daemon",
+          "action": "Returns the answer with the line saying how many tokens it saved, cut to the budget.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "mark"
+            },
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "The command fails.",
+          "outcome": "Its error comes back unchanged; the model is not asked.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
+        },
+        {
+          "atStep": "post",
+          "condition": "No model is downloaded, the input is over 400,000 bytes, or ai-agent fails or times out.",
+          "outcome": "`error: ...` naming the reason, with status 2.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_with"
+            },
+            {
+              "path": "src/macos/daemon/src/cmd/mod.rs",
+              "symbol": "produce"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "install-launch-agent",
+      "name": "Have launchd start the daemon",
+      "description": "A developer installs the LaunchAgent once, and from then on launchd starts daemon when anything connects.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/launchd.rs",
+          "symbol": "install"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Setup"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "The daemon is there whenever a zazzle invoker or MCP server connects, without anyone starting it.",
+      "preconditions": [
+        "A Mac, with daemon built or installed where it will stay (the plist names its path)."
+      ],
+      "postconditions": [
+        "launchd owns the socket and starts `zazzle daemon serve` on demand; the daemon exits when idle and launchd keeps listening.",
+        "`zazzle daemon uninstall` unloads the agent and removes the plist."
+      ],
+      "flow": [
+        {
+          "id": "run",
+          "actor": "Developer",
+          "action": "Runs `zazzle daemon install` in a terminal.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/cli.rs",
+              "symbol": "agent_main"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "write",
+          "actor": "daemon",
+          "action": "Writes ~/Library/LaunchAgents/com.zazzle.daemon.plist: this executable with `serve` (Homebrew's opt path rather than the versioned Cellar path), and a listener socket at ZAZZLE_SOCK or the default path with mode 0600.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "plist"
+            },
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "plist_path"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "load",
+          "actor": "daemon",
+          "action": "Runs `launchctl bootout` for any loaded copy (ignoring failure), then `launchctl bootstrap gui/UID PLIST`, each with a 10-second limit, and prints `installed PATH`.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "install"
+            },
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "run_with_timeout"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "activate",
+          "actor": "zazzle daemon serve",
+          "action": "When launchd starts it on a connection, takes launchd's socket instead of binding one, serves, and exits when idle without removing the socket.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "activated_listener"
+            },
+            {
+              "path": "src/macos/daemon/src/cli.rs",
+              "symbol": "serve_main"
+            }
+          ],
+          "participantKind": "system"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "run",
+          "condition": "Not macOS.",
+          "outcome": "`daemon: install is for macOS launchd; elsewhere the invoker starts daemon on demand`, exit 2.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/cli.rs",
+              "symbol": "agent_cmd"
+            }
+          ]
+        },
+        {
+          "atStep": "write",
+          "condition": "The plist cannot be written.",
+          "outcome": "The path and the error, exit 2.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "install"
+            }
+          ]
+        },
+        {
+          "atStep": "load",
+          "condition": "launchctl bootstrap fails or runs past 10 seconds.",
+          "outcome": "`launchctl bootstrap ... failed` or `... timed out`, exit 2; the plist stays written.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/launchd.rs",
+              "symbol": "run_with_timeout"
+            }
+          ]
+        }
+      ],
+      "actorDocument": "Actors/developer.md"
+    },
+    {
+      "id": "chat-in-terminal",
+      "name": "Chat with the local model in a terminal",
+      "description": "A developer runs `zazzle agent chat` (or `zazzle agent prompt`) in a terminal and talks with their local model; the conversation is this terminal's and resumes when they come back.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/chat_client.rs",
+          "symbol": "chat"
+        },
+        {
+          "path": "src/macos/daemon/src/chat_client.rs",
+          "symbol": "prompt"
+        },
+        {
+          "path": "src/macos/daemon/src/chat.rs",
+          "symbol": "op"
+        }
+      ],
+      "actor": "Developer",
+      "goal": "Ask a local model follow-up questions without waiting for it to load each time.",
+      "actorDocument": "Actors/developer.md",
+      "preconditions": [
+        "zazzle is installed; ai-agent and the model download on first use."
+      ],
+      "postconditions": [
+        "The conversation is kept for this terminal, and the model stays loaded until it has been unused for ZAZZLE_LLM_IDLE seconds."
+      ],
+      "flow": [
+        {
+          "id": "start",
+          "actor": "Developer",
+          "action": "Runs `zazzle agent chat`.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "terminal_key"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "open",
+          "actor": "daemon",
+          "action": "Opens this terminal's chat, resolves (and on first use downloads) its model, and prints the banner with the model, the effort and whether the conversation is resumed.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "open"
+            },
+            {
+              "path": "src/macos/daemon/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "fetch"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "talk",
+          "actor": "Developer",
+          "action": "Types messages and / commands; Enter sends.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "Editor"
+            },
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "command"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        },
+        {
+          "id": "answer",
+          "actor": "daemon",
+          "action": "Sends each message with the earlier turns through the shared worker, prints the answer and saves the turn.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_in"
+            }
+          ],
+          "participantKind": "system"
+        },
+        {
+          "id": "leave",
+          "actor": "Developer",
+          "action": "Presses Ctrl+C or types /quit; the chat stays for this terminal.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "chat"
+            }
+          ],
+          "participantKind": "actor",
+          "actorDocument": "Actors/developer.md"
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "talk",
+          "condition": "The developer presses Ctrl+K or types /new.",
+          "outcome": "The chat is released and a new one starts with the same model and effort.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "release"
+            }
+          ]
+        },
+        {
+          "atStep": "start",
+          "condition": "The developer runs `zazzle agent prompt TEXT` instead.",
+          "outcome": "The message joins this terminal's chat and the answer prints, without the banner.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat_client.rs",
+              "symbol": "prompt"
+            }
+          ]
+        },
+        {
+          "atStep": "answer",
+          "condition": "The model fails or takes longer than ZAZZLE_LLM_TIMEOUT.",
+          "outcome": "The reason prints as an error and the turn is not recorded.",
+          "sources": [
+            {
+              "path": "src/macos/daemon/src/chat.rs",
+              "symbol": "op"
+            },
+            {
+              "path": "src/macos/daemon/src/llm.rs",
+              "symbol": "ask_in"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/operation.json",
+      "relationship": "The mcp and install operations these use cases call."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The commands behind the MCP tools."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/feature.json",
+      "relationship": "Session ids, dedupe and read-again, which the MCP use case relies on."
+    },
+    {
+      "kind": "deployment",
+      "folder": "src/macos/daemon",
+      "path": "src/macos/daemon/.dev/deployment-diagram.json",
+      "relationship": "The processes these use cases start."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src/wrap",
+      "path": "src/macos/daemon/src/wrap/.dev/feature.json",
+      "relationship": "`zazzle run --llm`, the same post-processing for a command run in the caller's shell."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/ai-agent/src",
+      "path": "src/macos/ai-agent/src/.dev/use-case.json",
+      "relationship": "ai-agent's prompt, which these use cases run with --no-download."
+    }
+  ]
+}

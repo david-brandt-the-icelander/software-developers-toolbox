@@ -1,0 +1,108 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "ai-agent source component diagram",
+  "folder": "src/macos/ai-agent/src",
+  "description": "The parts of ai-agent. The command line picks a model from the catalogue and the defaults from the store, has the store download the model when it is missing, and hands the prompt to the engine, which renders the model's chat template and streams generated text back; the thinking filter decides which of it is the answer. The inventory reports and prunes what the store holds. All of it is one binary.",
+  "sources": [
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "ensure" },
+    { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" },
+    { "path": "src/macos/ai-agent/src/store.rs", "symbol": "defaults" },
+    { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status" },
+    { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" }
+  ],
+  "components": [
+    {
+      "id": "src",
+      "name": "ai-agent source",
+      "responsibility": "The ai-agent binary.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "cli",
+      "name": "Command line (main.rs)",
+      "responsibility": "Parses `llm [--model] [--effort] [--remove]`, `prompt [--model] [--effort] [--system] [--max-tokens] [--show-thinking] [TEXT.. | -]`, `status [--json] [--verify]` and `prune [--apply]` with clap; lists the catalogue, saves defaults or removes a model; for a prompt, picks the model and effort, joins the words with standard input, fetches the model with progress on standard error, streams the answer to standard output (thinking to standard error with --show-thinking) under a shared lock on the model, and exits 0, 2 on errors or 3 when the token limit cut the answer; prints status (exit 1 when unhealthy) and prune's report.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "catalog",
+      "name": "Model catalogue (catalog.rs)",
+      "responsibility": "The ten models, smallest first, each pinned to a Hugging Face repository, commit, GGUF file, size and SHA-256; the default model; resolving a name exactly or by a unique prefix; the download URL.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "store",
+      "name": "Model store (store.rs)",
+      "responsibility": "The directory (ZAZZLE_LLM_DIR or ~/.zazzle/v1/llm), the defaults file (model and effort), whether a model is installed, removing one, a file's SHA-256, each model's lock (exclusive for a download or prune, shared while a prompt or worker runs it, probed without waiting by status and prune), and fetch: under the exclusive lock, resumes a partial download with an HTTP Range request, hashes as it goes and renames the file into place only when size and SHA-256 match.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "inventory",
+      "name": "Inventory (inventory.rs)",
+      "responsibility": "Scans models/ into model files, partial downloads and lock files; `status` checks each model by size (or SHA-256 with --verify) against the catalogue and reports the defaults, partial downloads, disk use and problems as JSON or text; `prune` lists or deletes every model but the default, stale partial downloads and orphaned locks, skipping models whose lock is held.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "template",
+      "name": "Chat template (template.rs)",
+      "responsibility": "Renders the model's own Jinja chat template the way transformers does (trim_blocks, lstrip_blocks, Python string methods, raise_exception, strftime_now), with the system and user messages, the generation prompt, and enable_thinking and reasoning_effort from the effort.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "think",
+      "name": "Thinking filter (think.rs)",
+      "responsibility": "Splits streamed text into answer and thinking pieces across Qwen's `<think>`, Gemma 4's thought channel and gpt-oss's analysis channel, dropping gpt-oss's message headers and holding back text that may begin a marker.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "worker",
+      "name": "Worker (worker.rs)",
+      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does. Requests may carry `history` (earlier turns as role and content), rendered before the new message, for daemon's per-terminal chats. The hidden `fetch [--model]` command downloads a model unless it is here and prints its full name.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "engine",
+      "name": "Engine (engine.rs)",
+      "responsibility": "Loads the GGUF model once (load, kept as Loaded for any number of generate calls; holding back the routine startup logs of llama.cpp and the GPU backend, quiet.rs, and showing only their error lines when loading fails) with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
+      "folder": "src/macos/ai-agent/src"
+    },
+    {
+      "id": "llama",
+      "name": "llama.cpp (llama-cpp-2)",
+      "responsibility": "Model loading, tokenization, decoding and sampling, with Metal on Apple Silicon when built with the `metal` feature.",
+      "external": true
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "responsibility": "Serves the pinned model files over HTTPS.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "src", "to": "cli", "kind": "contains", "description": "The entry point." },
+    { "from": "src", "to": "catalog", "kind": "contains", "description": "The models." },
+    { "from": "src", "to": "store", "kind": "contains", "description": "Directory, defaults and downloads." },
+    { "from": "src", "to": "template", "kind": "contains", "description": "Chat templates." },
+    { "from": "src", "to": "think", "kind": "contains", "description": "The thinking filter." },
+    { "from": "src", "to": "engine", "kind": "contains", "description": "Inference." },
+    { "from": "src", "to": "worker", "kind": "contains", "description": "The worker loop." },
+    { "from": "src", "to": "inventory", "kind": "contains", "description": "status and prune." },
+    { "from": "cli", "to": "inventory", "kind": "depends-on", "description": "status, status_text and prune." },
+    { "from": "inventory", "to": "store", "kind": "depends-on", "description": "defaults, the model, partial and lock paths, busy, try_lock and sha256." },
+    { "from": "inventory", "to": "catalog", "kind": "depends-on", "description": "Each file's catalogue entry, size and SHA-256, the default model's file and gb." },
+    { "from": "cli", "to": "worker", "kind": "depends-on", "description": "`worker` loads the model with engine::load and serves the JSON-line prompts." },
+    { "from": "worker", "to": "engine", "kind": "depends-on", "description": "Loaded::generate for each prompt." },
+    { "from": "worker", "to": "think", "kind": "depends-on", "description": "Keeps only the answer after the thinking." },
+    { "from": "cli", "to": "catalog", "kind": "depends-on", "description": "find, MODELS, url and gb for listing, choosing and fetching." },
+    { "from": "cli", "to": "store", "kind": "depends-on", "description": "root, defaults, save_defaults, effort, installed, fetch, remove and hold." },
+    { "from": "cli", "to": "engine", "kind": "depends-on", "description": "generate with an Ask, receiving Event::Prompt and Event::Text." },
+    { "from": "cli", "to": "think", "kind": "depends-on", "description": "A Filter made from the rendered prompt splits each piece of text." },
+    { "from": "store", "to": "catalog", "kind": "depends-on", "description": "The default model when the defaults file names none." },
+    { "from": "engine", "to": "template", "kind": "depends-on", "description": "render with a Turn built from the Ask and the model's BOS and EOS text." },
+    { "from": "engine", "to": "llama", "kind": "depends-on", "description": "LlamaBackend, LlamaModel, LlamaBatch, contexts and LlamaSampler." },
+    { "from": "store", "to": "huggingface", "kind": "depends-on", "description": "HTTPS GET with ureq and the platform's trust store." }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "zazzle run features",
+  "folder": "src/macos/daemon/src/wrap",
+  "description": "What `zazzle run` does to a command's output.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/wrap/mod.rs",
+      "symbol": "render"
+    }
+  ],
+  "entities": [
+    {
+      "id": "profiled-output",
+      "name": "Command output cleaned with a profile",
+      "description": "A build, test or install command's output reaches the agent with the noise its tool is known to print dropped and counted, failures and warnings kept, and a footer with the exit code.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/profile.rs",
+          "symbol": "Profile::apply"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Run"
+        }
+      ],
+      "behavior": "Standard output and error go through one pipe, so their order is kept; standard input is the caller's. When the command ends, its output is stripped of terminal escapes and redraws and tidied, then a profile drops lines it knows are noise and counts them by kind: cargo (progress such as Compiling and Running, `test ... ok`, nextest PASS, empty test runs, std and core frames in backtraces), pytest (session header, PASSED, progress-only lines), go (ok packages, --- PASS, === RUN, packages without tests), dotnet (restore and `->` build lines, banners, Passed tests, System, Microsoft, xUnit and NUnit frames, warnings and errors repeated at the end), js-test (PASS files, ✓ tests, banners), tsc (build progress and the summary table, with diagnostics grouped under their file) and install (download and resolve progress). The profile is detected from the program and subcommand, looking through npx, bunx, env, uv/poetry/pdm/pipenv run, pnpm/yarn exec or dlx and python -m, or named with --profile (none for no profile). Lines a profile does not recognise are always kept. clean's steps and budget follow, and the footer reads like `[exit 101 in 8.4s; cargo profile dropped 6 progress lines, 333 passing tests]`. With an output store, the result starts with `[r:ID]` and is kept with the raw output for an hour; when output was cut, a profile dropped lines or a lossy step or the budget removed something, it ends with `[full output: read-again r:ID --full]`.",
+      "outcome": "An agent sees why a build or test failed without reading every passing test and progress line, and still gets the command's own exit code.",
+      "constraints": [
+        "--lossless turns off the profile and clean's lossy steps.",
+        "At most 64 MiB of output is kept; the footer says when more was not read.",
+        "--timeout (default 3600 s) kills the command and exits 124.",
+        "The store is the one in the caller's environment (ZAZZLE_OUTPUTS_DIR, else ~/.zazzle/outputs); `zazzle read-again` finds the output only through a daemon that uses the same one."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "run_command"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "render"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/profile.rs",
+          "symbol": "detect"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/profile.rs",
+          "symbol": "unwrap_launcher"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/profile.rs",
+          "symbol": "PROFILES"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "tidy_lines"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "render_parts"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "deliver"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "store"
+        }
+      ]
+    },
+    {
+      "id": "llm-post-processing",
+      "name": "Command output answered by the local model",
+      "description": "`zazzle run --llm INSTRUCTION -- CMD` hands the cleaned output of an API call, log or test run to the user's local model, and the agent reads only the model's answer.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Agents asking the local model"
+        }
+      ],
+      "behavior": "After the output is rendered and stored as usual, the delivered text goes to ai-agent with the instruction, a system message asking for the result only, low effort and temperature 0, and the answer is printed with a line naming the tokens before and after. If the model cannot answer, the reason is printed followed by the output as it was; the exit status stays the command's.",
+      "outcome": "An agent that needs only part of a long output spends fewer tokens on it, and still gets the exact output when the model is not available.",
+      "constraints": [
+        "Needs a model the user already downloaded: ai-agent runs with --no-download.",
+        "Input over 400,000 bytes is refused.",
+        "One local model call at a time, for at most ZAZZLE_LLM_TIMEOUT seconds (default 300).",
+        "The answer may lose detail; the stored raw output stays available through read-again."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "parse"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "post"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "mark"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/wrap",
+      "path": "src/macos/daemon/src/wrap/.dev/operation.json",
+      "relationship": "The operation that carries it."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src/wrap",
+      "path": "src/macos/daemon/src/wrap/.dev/use-case.json",
+      "relationship": "The use case it serves."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+      "relationship": "clean's steps, which run after the profile."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/feature.json",
+      "relationship": "Stored outputs, which keep the result and the raw output for read-again."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/feature.json",
+      "relationship": "Post-processing by the local model, which `--llm` on daemon commands shares."
+    }
+  ]
+}

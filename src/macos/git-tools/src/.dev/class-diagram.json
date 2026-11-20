@@ -1,0 +1,615 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "git-tools types",
+  "folder": "src/macos/git-tools/src",
+  "description": "The structs, enums and the trait the library declares: the edit buffer, the editor state with its views, prompts and find bar, file marks and the git steps they become, decoded keys, file kinds, arrow taps, the terminal, the router's routes, the commit flow's options and the message command's result. Snapshot and Style are private to their modules; history.rs and the binaries in bin/ declare no types.",
+  "sources": [
+    {
+      "path": "src/macos/git-tools/src/editor.rs",
+      "symbol": "Editor"
+    },
+    {
+      "path": "src/macos/git-tools/src/buffer.rs",
+      "symbol": "Buffer"
+    },
+    {
+      "path": "src/macos/git-tools/src/files.rs",
+      "symbol": "Entry"
+    },
+    {
+      "path": "src/macos/git-tools/src/keys.rs",
+      "symbol": "KeyEvent"
+    },
+    {
+      "path": "src/macos/git-tools/src/clipboard.rs",
+      "symbol": "Clipboard"
+    },
+    {
+      "path": "src/macos/git-tools/src/term.rs",
+      "symbol": "Term"
+    },
+    {
+      "path": "src/macos/git-tools/src/router.rs",
+      "symbol": "Route"
+    },
+    {
+      "path": "src/macos/git-tools/src/commit.rs",
+      "symbol": "Args"
+    },
+    {
+      "path": "src/macos/git-tools/src/message.rs",
+      "symbol": "Edited"
+    }
+  ],
+  "types": [
+    {
+      "id": "buffer.Pos",
+      "name": "Pos",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/buffer.rs"
+      ],
+      "members": [
+        "row: usize",
+        "col: usize"
+      ]
+    },
+    {
+      "id": "buffer.Snapshot",
+      "name": "Snapshot",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/buffer.rs"
+      ],
+      "members": [
+        "lines: Vec<Vec<char>>",
+        "cursor: Pos"
+      ]
+    },
+    {
+      "id": "buffer.Buffer",
+      "name": "Buffer",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/buffer.rs"
+      ],
+      "members": [
+        "lines: Vec<Vec<char>>",
+        "tail: Vec<String>",
+        "cursor: Pos",
+        "anchor: Option<Pos>",
+        "original: Vec<Vec<char>>",
+        "undo: Vec<Snapshot>",
+        "redo: Vec<Snapshot>",
+        "typing: bool",
+        "new(editable: Vec<String>, tail: Vec<String>) -> Buffer",
+        "text() -> String",
+        "changed() -> bool",
+        "checkpoint(typing: bool)",
+        "undo() -> bool",
+        "redo() -> bool",
+        "selection() -> Option<(Pos, Pos)>",
+        "insert(text: &str)",
+        "backspace()",
+        "delete()",
+        "kill_to_end()",
+        "move_line(up: bool) -> bool",
+        "set_line(row: usize, text: &str)",
+        "word_left(p: Pos) -> Pos",
+        "word_right(p: Pos) -> Pos",
+        "vertical(p: Pos, rows: isize) -> Pos",
+        "line_edge(p: Pos, end: bool) -> Pos",
+        "text_edge(end: bool) -> Pos",
+        "move_to(p: Pos, select: bool)"
+      ]
+    },
+    {
+      "id": "clipboard.Clipboard",
+      "name": "Clipboard",
+      "kind": "interface",
+      "sources": [
+        "src/macos/git-tools/src/clipboard.rs"
+      ],
+      "members": [
+        "copy(text: &str)",
+        "paste() -> Option<String>"
+      ]
+    },
+    {
+      "id": "clipboard.SystemClipboard",
+      "name": "SystemClipboard",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/clipboard.rs"
+      ],
+      "members": [
+        "copy_cmd: Option<Vec<String>>",
+        "paste_cmd: Option<Vec<String>>",
+        "memory: Option<String>",
+        "with_commands(copy_cmd, paste_cmd) -> SystemClipboard",
+        "detect(macos: bool, wayland: bool, x11: bool) -> SystemClipboard",
+        "for_this_system() -> SystemClipboard"
+      ]
+    },
+    {
+      "id": "editor.View",
+      "name": "View",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/editor.rs"
+      ],
+      "members": [
+        "Edit",
+        "Files",
+        "Rebase"
+      ]
+    },
+    {
+      "id": "editor.Outcome",
+      "name": "Outcome",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/editor.rs"
+      ],
+      "members": [
+        "Save",
+        "Cancel"
+      ]
+    },
+    {
+      "id": "editor.Prompt",
+      "name": "Prompt",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/editor.rs"
+      ],
+      "members": [
+        "None",
+        "Discard",
+        "Delete(Vec<String>)",
+        "Help"
+      ]
+    },
+    {
+      "id": "editor.FindBar",
+      "name": "FindBar",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/editor.rs"
+      ],
+      "members": [
+        "query: String",
+        "with: String",
+        "replace: bool",
+        "on_with: bool",
+        "origin: Pos"
+      ]
+    },
+    {
+      "id": "editor.Editor",
+      "name": "Editor",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/editor.rs"
+      ],
+      "members": [
+        "buf: Buffer",
+        "kind: Kind",
+        "comment: char",
+        "files: Vec<Entry>",
+        "files_start: Vec<Mark>",
+        "files_undo: Vec<Vec<Mark>>",
+        "views: Vec<View>",
+        "view: View",
+        "list_row: usize",
+        "prompt: Prompt",
+        "find: Option<FindBar>",
+        "message: String",
+        "page: usize",
+        "osc52: Option<String>",
+        "taps: Taps",
+        "tap_from: Pos",
+        "tap_row: usize",
+        "clipboard: Box<dyn Clipboard>",
+        "new(buf, kind, comment, files, clipboard) -> Editor",
+        "changed() -> bool",
+        "handle(ev: KeyEvent, now_ms: u64) -> Option<Outcome>"
+      ]
+    },
+    {
+      "id": "files.Mark",
+      "name": "Mark",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/files.rs"
+      ],
+      "members": [
+        "Skip",
+        "Add",
+        "Ignore",
+        "Remove",
+        "Delete",
+        "label() -> &'static str"
+      ]
+    },
+    {
+      "id": "files.Entry",
+      "name": "Entry",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/files.rs"
+      ],
+      "members": [
+        "path: String",
+        "orig: Option<String>",
+        "x: char",
+        "y: char",
+        "mark: Mark",
+        "tracked() -> bool",
+        "staged() -> bool",
+        "cycle()",
+        "row() -> String"
+      ]
+    },
+    {
+      "id": "files.Action",
+      "name": "Action",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/files.rs"
+      ],
+      "members": [
+        "DeleteFile(String)",
+        "AppendIgnore(String)",
+        "RmCached(String)",
+        "Add(Vec<String>)",
+        "Unstage(Vec<String>)"
+      ]
+    },
+    {
+      "id": "keys.Key",
+      "name": "Key",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/keys.rs"
+      ],
+      "members": [
+        "Char(char)",
+        "Ctrl(char)",
+        "Alt(char)",
+        "Enter",
+        "Tab",
+        "BackTab",
+        "Backspace",
+        "Delete",
+        "Esc",
+        "Up",
+        "Down",
+        "Left",
+        "Right",
+        "PageUp",
+        "PageDown",
+        "F1",
+        "Paste(String)",
+        "Ignored"
+      ]
+    },
+    {
+      "id": "keys.KeyEvent",
+      "name": "KeyEvent",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/keys.rs"
+      ],
+      "members": [
+        "key: Key",
+        "shift: bool",
+        "alt: bool",
+        "repeat: bool"
+      ]
+    },
+    {
+      "id": "keys.Decoded",
+      "name": "Decoded",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/keys.rs"
+      ],
+      "members": [
+        "Key(KeyEvent, usize)",
+        "Release(usize)",
+        "Incomplete"
+      ]
+    },
+    {
+      "id": "kind.Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/kind.rs"
+      ],
+      "members": [
+        "Commit",
+        "Rebase",
+        "PullRequest",
+        "Changelog",
+        "Text",
+        "detect(path: &Path) -> Kind",
+        "is_git() -> bool",
+        "limits(row: usize) -> Option<(usize, usize)>",
+        "save_label() -> &'static str",
+        "cancel_label() -> &'static str"
+      ]
+    },
+    {
+      "id": "render.Scroll",
+      "name": "Scroll",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/render.rs"
+      ],
+      "members": [
+        "top: usize",
+        "left: usize"
+      ]
+    },
+    {
+      "id": "render.Style",
+      "name": "Style",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/render.rs"
+      ],
+      "members": [
+        "Normal",
+        "Dim",
+        "Soft",
+        "Hard",
+        "Selected"
+      ]
+    },
+    {
+      "id": "router.Route",
+      "name": "Route",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/router.rs"
+      ],
+      "members": [
+        "Help",
+        "MessageHelp",
+        "CommitHelp",
+        "AmendHelp",
+        "UndoHelp",
+        "Version",
+        "Message(Vec<String>)",
+        "Commit(Vec<String>)",
+        "Amend(Vec<String>)",
+        "Undo(Vec<String>)",
+        "Git(Vec<String>)"
+      ]
+    },
+    {
+      "id": "tap.Dir",
+      "name": "Dir",
+      "kind": "enum",
+      "sources": [
+        "src/macos/git-tools/src/tap.rs"
+      ],
+      "members": [
+        "Up",
+        "Down",
+        "Left",
+        "Right"
+      ]
+    },
+    {
+      "id": "tap.Taps",
+      "name": "Taps",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/tap.rs"
+      ],
+      "members": [
+        "last: Option<(Dir, u64)>",
+        "count: u8",
+        "held: bool",
+        "press(dir: Dir, now_ms: u64, repeat: bool) -> u8",
+        "reset()"
+      ]
+    },
+    {
+      "id": "term.Term",
+      "name": "Term",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/term.rs"
+      ],
+      "members": [
+        "tty: File",
+        "open() -> io::Result<Term>",
+        "run(ed: &mut Editor) -> io::Result<Outcome>"
+      ]
+    },
+    {
+      "id": "commit.Args",
+      "name": "Args",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/commit.rs"
+      ],
+      "members": [
+        "no_add: bool",
+        "help: bool",
+        "amend: bool",
+        "has_message: bool",
+        "git_args: Vec<String>"
+      ]
+    },
+    {
+      "id": "message.Edited",
+      "name": "Edited",
+      "kind": "struct",
+      "sources": [
+        "src/macos/git-tools/src/message.rs"
+      ],
+      "members": [
+        "outcome: Outcome",
+        "files: Vec<Entry>"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "buffer.Buffer",
+      "to": "buffer.Pos",
+      "kind": "depends-on",
+      "description": "Cursor and selection anchor."
+    },
+    {
+      "from": "buffer.Buffer",
+      "to": "buffer.Snapshot",
+      "kind": "depends-on",
+      "description": "Undo and redo history (at most 200 steps)."
+    },
+    {
+      "from": "buffer.Snapshot",
+      "to": "buffer.Pos",
+      "kind": "depends-on",
+      "description": "Cursor before the edit."
+    },
+    {
+      "from": "clipboard.SystemClipboard",
+      "to": "clipboard.Clipboard",
+      "kind": "implements",
+      "description": "Copy and paste through the system command."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "buffer.Buffer",
+      "kind": "depends-on",
+      "description": "The text being edited."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "kind.Kind",
+      "kind": "depends-on",
+      "description": "Which views, limits and save checks apply."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "files.Entry",
+      "kind": "depends-on",
+      "description": "The Files view's rows."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "files.Mark",
+      "kind": "depends-on",
+      "description": "Starting marks and the Files view's undo."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "editor.View",
+      "kind": "depends-on",
+      "description": "The views offered and the current one."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "editor.Prompt",
+      "kind": "depends-on",
+      "description": "The prompt shown over the view."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "editor.FindBar",
+      "kind": "depends-on",
+      "description": "The open find bar."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "editor.Outcome",
+      "kind": "depends-on",
+      "description": "What handle returns when editing ends."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "tap.Taps",
+      "kind": "depends-on",
+      "description": "Arrow tap counting."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "clipboard.Clipboard",
+      "kind": "depends-on",
+      "description": "Copy, cut and paste."
+    },
+    {
+      "from": "editor.Editor",
+      "to": "keys.KeyEvent",
+      "kind": "depends-on",
+      "description": "handle takes one."
+    },
+    {
+      "from": "editor.FindBar",
+      "to": "buffer.Pos",
+      "kind": "depends-on",
+      "description": "Where the bar opened."
+    },
+    {
+      "from": "files.Entry",
+      "to": "files.Mark",
+      "kind": "depends-on",
+      "description": "Each file's mark."
+    },
+    {
+      "from": "keys.KeyEvent",
+      "to": "keys.Key",
+      "kind": "depends-on",
+      "description": "The key pressed."
+    },
+    {
+      "from": "keys.Decoded",
+      "to": "keys.KeyEvent",
+      "kind": "depends-on",
+      "description": "A decoded press."
+    },
+    {
+      "from": "tap.Taps",
+      "to": "tap.Dir",
+      "kind": "depends-on",
+      "description": "The last direction pressed."
+    },
+    {
+      "from": "term.Term",
+      "to": "editor.Editor",
+      "kind": "depends-on",
+      "description": "run feeds it keys until it returns an Outcome."
+    },
+    {
+      "from": "term.Term",
+      "to": "render.Scroll",
+      "kind": "depends-on",
+      "description": "Kept between frames."
+    },
+    {
+      "from": "term.Term",
+      "to": "keys.Decoded",
+      "kind": "depends-on",
+      "description": "Decodes pending bytes."
+    },
+    {
+      "from": "message.Edited",
+      "to": "editor.Outcome",
+      "kind": "depends-on",
+      "description": "How editing ended."
+    },
+    {
+      "from": "message.Edited",
+      "to": "files.Entry",
+      "kind": "depends-on",
+      "description": "The files with their final marks."
+    }
+  ]
+}

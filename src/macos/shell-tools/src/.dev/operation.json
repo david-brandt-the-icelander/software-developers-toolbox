@@ -1,0 +1,200 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "shell-tools operations",
+  "folder": "src/macos/shell-tools/src",
+  "description": "The JSON operations, selected by `op`. Each reply carries ok; a failure is {ok: false, error}. Paths are relative to the caller's working directory. Every field is listed in the README.",
+  "sources": [
+    {
+      "path": "src/macos/shell-tools/src/engine.rs",
+      "symbol": "dispatch"
+    },
+    {
+      "path": "src/macos/shell-tools/src/req.rs",
+      "symbol": "Request"
+    }
+  ],
+  "entities": [
+    {
+      "id": "read",
+      "name": "read",
+      "description": "A file's lines, whole or in ranges, capped.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/read.rs",
+        "symbol": "run"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"read\",...}' (or stdin with -); MCP tool zazzle_call",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "path, etag, total_lines, chunks [{start, end, text}], ref; truncated, next_ranges and bytes_omitted when capped; long_lines_cut; or unchanged, or hunks with changed and base_etag, or binary with size.",
+      "failures": [
+        "A path that is not a regular file.",
+        "A range with start 0 or end before start."
+      ]
+    },
+    {
+      "id": "search",
+      "name": "search",
+      "description": "A regex or literal search grouped by file.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/search.rs",
+        "symbol": "run"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"search\",...}' (or stdin with -); MCP tool zazzle_call",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "results [{path, hits | blocks}], files_matched, total_matches (matching lines), truncated; with files_only, files instead of results; etag and ref, or unchanged.",
+      "failures": [
+        "A pattern that does not compile.",
+        "An unknown field name.",
+        "A path that does not exist."
+      ]
+    },
+    {
+      "id": "list",
+      "name": "list",
+      "description": "Files and directories below a directory, paged.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "list"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/list.rs",
+        "symbol": "list"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"list\",...}' (or stdin with -); MCP tool zazzle_call",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "entries (directories end in /; [path, size, mtime] with long), total, truncated and next_cursor; etag and ref, or unchanged.",
+      "failures": [
+        "A path that does not exist or is not a directory."
+      ]
+    },
+    {
+      "id": "stat",
+      "name": "stat",
+      "description": "One path's metadata.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "stat"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/list.rs",
+        "symbol": "stat"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"stat\",...}' (or stdin with -); MCP tool zazzle_call; also zazzle stat PATH.. [--hash] and MCP zazzle_stat",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "path, exists, kind (file, dir, symlink, other), size, mtime, and etag of the content with hash.",
+      "failures": [
+        "hash on a file that cannot be read."
+      ]
+    },
+    {
+      "id": "outline",
+      "name": "outline",
+      "description": "Symbols per file.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/outline.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/outline.rs",
+        "symbol": "run"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"outline\",...}' (or stdin with -); MCP tool zazzle_call",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "files [{path, symbols [[start, end, kind, name]]}], total_symbols, truncated; etag and ref, or unchanged.",
+      "failures": [
+        "A path that does not exist."
+      ]
+    },
+    {
+      "id": "diff_since",
+      "name": "diff_since",
+      "description": "Hunks since a version the session was sent.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "since"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "run"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/shell-tools/src/diff.rs",
+        "symbol": "since"
+      },
+      "action": "query",
+      "transport": "zazzle call '{\"op\":\"diff_since\",...}' (or stdin with -); MCP tool zazzle_call",
+      "authorization": "Callers of the daemon's own uid; any path the user can read.",
+      "result": "path, base_etag, etag, newlines, hunks, ref; or unchanged.",
+      "failures": [
+        "base_unavailable: the version is not held.",
+        "Content that is not UTF-8.",
+        "A file that cannot be read."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "src/macos/shell-tools/src",
+      "path": "src/macos/shell-tools/src/.dev/capability.json",
+      "relationship": "The capability these operations reach."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/shell-tools/src",
+      "path": "src/macos/shell-tools/src/.dev/feature.json",
+      "relationship": "How their replies stay small."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The call and stat commands that run them."
+    }
+  ]
+}

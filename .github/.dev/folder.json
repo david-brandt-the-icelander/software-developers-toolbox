@@ -10,7 +10,7 @@
       "summary": "The workflows that check every change, release the tools on a tag and benchmark zazzle, and the weekly dependency updates.",
       "purpose": "Holds ci.yml (checks on pushes to main and pull requests), release.yml (the release of every tool on v* tags), zazzle-bench.yml (latency and refs readings for zazzle) and dependabot.yml. What each runs is in the pipeline record; the release is a use case.",
       "boundaries": [
-        "The scripts the release runs (bottle, formula, PGO training, signing) live in macos/release/, with their tests.",
+        "The scripts the release runs (bottle, formula, PGO training, signing) live in release/, with their tests.",
         "The Homebrew formula is pushed to the external tap zazzcat/homebrew-z, not kept here.",
         "The rules that protect main and the repository's secrets are set on GitHub, not here."
       ],
@@ -36,7 +36,7 @@
       "relationships": [
         {
           "relation": "relates-to",
-          "path": "macos/release/.dev/folder.json",
+          "path": "release/.dev/folder.json",
           "entityId": "folder",
           "description": "The scripts the release workflow runs."
         }

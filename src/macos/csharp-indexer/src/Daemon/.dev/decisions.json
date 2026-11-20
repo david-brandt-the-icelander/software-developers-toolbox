@@ -1,0 +1,154 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "Shared daemon decisions",
+  "folder": "src/macos/csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "one-daemon-per-user",
+      "title": "One daemon per user, shared by every session",
+      "summary": "Each serve process is a thin proxy to one daemon per state directory, which holds the engine, the store, the watchers and every root's index for all sessions.",
+      "status": "accepted",
+      "context": "Several agent sessions, often on the same work trees, each start their own MCP server process; each would otherwise build and watch its own index.",
+      "options": [
+        {
+          "title": "Index in every serve process",
+          "consequences": "Every session pays for the initial index and runs its own watchers. Still available with --no-daemon or ZAZZLE_INDEXER_NO_DAEMON=1."
+        },
+        {
+          "title": "Shared per-user daemon behind a unix socket",
+          "consequences": "One index per work tree, kept current between sessions; serve needs a running daemon, which it starts itself."
+        }
+      ],
+      "decision": "serve connects to <state dir>/daemon.sock, starting `csharp-indexer daemon` detached when nothing answers, and falls back to an in-process server when no daemon can be reached.",
+      "rationale": "Sessions share one engine (Engine's own comment: it owns everything a daemon shares between sessions), so a second session on a work tree finds it indexed and current.",
+      "origin": "README.md, intro and Commands.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SpawnDaemon"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Engine.cs",
+          "symbol": "Engine"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_two_clients_share_engine"
+        }
+      ]
+    },
+    {
+      "id": "idle-exit",
+      "title": "Exit when idle",
+      "summary": "The daemon stops once it has had no clients for the idle period, 30 minutes by default.",
+      "status": "accepted",
+      "context": "The daemon is started on demand by daemon (or serve) and nothing else stops it.",
+      "decision": "DaemonServer.IdleLoop checks every quarter of the idle period (between 50 ms and 30 s) and stops the daemon when no client is connected and the last one left longer ago than the period. The period comes from ZAZZLE_INDEXER_IDLE_MINUTES.",
+      "rationale": "No resident process or watchers when nobody is using it; the next zazzle call that needs it (or serve) starts it again and FSEvents replay (on macOS) or a reconcile brings the index up to date.",
+      "origin": "README.md, Commands.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.IdleLoop"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "ZAZZLE_INDEXER_IDLE_MINUTES"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_idle_exit"
+        }
+      ]
+    },
+    {
+      "id": "version-restart",
+      "title": "Replace an older daemon once its clients finish",
+      "summary": "A newer client makes an older daemon drain and stop when its last client leaves; the client then starts a new daemon from its own executable.",
+      "status": "accepted",
+      "context": "After an upgrade, the daemon still running may be the old binary.",
+      "decision": "The handshake compares versions; a newer client puts the daemon into draining, in which every new client is told restart: true and the daemon stops when its client count reaches zero, while clients retry with backoff. An older client is refused with restart: false, so two versions never take turns replacing each other.",
+      "rationale": "Sessions already connected to the old daemon are not cut off, and an older daemon still running elsewhere cannot restart the newer daemon in a loop (the agent reports showed repeated restart failures).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_version_mismatch"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "src/macos/csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    },
+    {
+      "id": "commands-in-hello",
+      "title": "Daemon commands ride on the hello line, without a version",
+      "summary": "status and stop are hellos with a command key and no version, answered in one reply, so the protocol needs no second socket and every older daemon refuses them harmlessly.",
+      "status": "accepted",
+      "context": "The daemon had no way to report on itself or be stopped except idling out, quitting the apps or a newer client making it drain; status and restart had to work against daemons already installed, which do not know any command.",
+      "options": [
+        {
+          "title": "A JSON-RPC method on an MCP session",
+          "consequences": "A session needs a matching version, so a status request from another version would make an older daemon drain, or be refused by a newer one."
+        },
+        {
+          "title": "A command key in the hello, with no version",
+          "consequences": "New daemons answer before the version check; old daemons see an empty version, refuse it as too old and name their own version in the error, and keep running."
+        }
+      ],
+      "decision": "Control sends {\"command\": \"status\"|\"stop\"} with no version; DaemonServer answers commands before the version check. To stop an older daemon, Control sends the hello of a client of version 99999.0.0-dev, which every version drains for. After the timeout Control kills the process the daemon reported, or for an older daemon the one lsof names as holding the socket whose command line ends in daemon.",
+      "rationale": "Backward compatible in both directions without a protocol version, and stop reuses the drain that already lets connected sessions finish.",
+      "origin": {
+        "kind": "request",
+        "by": "owner",
+        "date": "2026-11-19",
+        "reference": "status, stop, restart commands for zazzle csharp-indexer"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.DrainVersion"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.FindPid"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_older_daemon"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/decisions.json",
+          "entityId": "version-restart"
+        }
+      ]
+    }
+  ]
+}

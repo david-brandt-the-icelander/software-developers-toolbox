@@ -1,0 +1,421 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "shell-tools source types",
+  "folder": "src/macos/shell-tools/src",
+  "description": "The types of the library: the per-session and shared memory, the request structs, the Host interface with what it returns, and the rows the operations render.",
+  "sources": [
+    {
+      "path": "src/macos/shell-tools/src/engine.rs",
+      "symbol": "Engine"
+    },
+    {
+      "path": "src/macos/shell-tools/src/state.rs",
+      "symbol": "State"
+    },
+    {
+      "path": "src/macos/shell-tools/src/host.rs",
+      "symbol": "Host"
+    },
+    {
+      "path": "src/macos/shell-tools/src/req.rs",
+      "symbol": "Request"
+    }
+  ],
+  "types": [
+    {
+      "id": "engine.Engine",
+      "name": "Engine",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/engine.rs"
+      ],
+      "members": [
+        "shared: Shared",
+        "sessions: HashMap<String, (u64, Sent)>",
+        "clock: u64",
+        "call(session, ctx, input) -> Value",
+        "forget_prefix(prefix) -> usize"
+      ]
+    },
+    {
+      "id": "engine.Ctx",
+      "name": "Ctx",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/engine.rs"
+      ],
+      "members": [
+        "cwd: &Path",
+        "host: &dyn Host"
+      ]
+    },
+    {
+      "id": "state.Sent",
+      "name": "Sent",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/state.rs"
+      ],
+      "members": [
+        "next_ref: u64",
+        "subjects: HashMap<String, Subject>",
+        "already_sent(subject, etag, key) -> Option<String>",
+        "mark_sent(subject, etag, key, complete) -> String",
+        "complete_etag(subject) -> Option<String>"
+      ]
+    },
+    {
+      "id": "state.Subject",
+      "name": "Subject",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/state.rs"
+      ],
+      "members": [
+        "etag: String",
+        "keys: HashMap<String, String>",
+        "complete: bool"
+      ]
+    },
+    {
+      "id": "state.Shared",
+      "name": "Shared",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/state.rs"
+      ],
+      "members": [
+        "store: HashMap<String, Arc<Vec<u8>>>",
+        "order: VecDeque<String>",
+        "store_bytes: usize",
+        "idx: HashMap<PathBuf, (Ident, String, i128)>",
+        "trusted_etag(path, id) -> Option<String>",
+        "record(path, id, bytes) -> String",
+        "put_content(etag, bytes)",
+        "content(etag) -> Option<Arc<Vec<u8>>>"
+      ]
+    },
+    {
+      "id": "state.State",
+      "name": "State",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/state.rs"
+      ],
+      "members": [
+        "shared: &mut Shared",
+        "sent: &mut Sent",
+        "serve(key, fresh, value) -> Value"
+      ]
+    },
+    {
+      "id": "state.Res",
+      "name": "Res",
+      "kind": "type",
+      "sources": [
+        "src/macos/shell-tools/src/state.rs"
+      ],
+      "members": [
+        "Result<T, String>"
+      ]
+    },
+    {
+      "id": "host.Host",
+      "name": "Host",
+      "kind": "interface",
+      "sources": [
+        "src/macos/shell-tools/src/host.rs"
+      ],
+      "members": [
+        "files(roots, globs, no_ignore) -> Res<Vec<PathBuf>>",
+        "dirs(root, no_ignore) -> Res<Vec<PathBuf>>",
+        "search(files, re, max) -> Vec<Matches>",
+        "outline(files) -> Vec<Option<Vec<Symbol>>>"
+      ]
+    },
+    {
+      "id": "host.Matches",
+      "name": "Matches",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/host.rs"
+      ],
+      "members": [
+        "path: PathBuf",
+        "count: usize",
+        "hits: Vec<(usize, usize)>"
+      ]
+    },
+    {
+      "id": "host.Symbol",
+      "name": "Symbol",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/host.rs"
+      ],
+      "members": [
+        "start: usize",
+        "end: usize",
+        "depth: usize",
+        "kind: String",
+        "name: String"
+      ]
+    },
+    {
+      "id": "req.Request",
+      "name": "Request",
+      "kind": "enum",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "Read(ReadArgs)",
+        "Search(SearchArgs)",
+        "List(ListArgs)",
+        "Stat(StatArgs)",
+        "Outline(OutlineArgs)",
+        "DiffSince(DiffArgs)"
+      ]
+    },
+    {
+      "id": "req.ReadArgs",
+      "name": "ReadArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "path",
+        "ranges",
+        "max_lines",
+        "max_bytes",
+        "if_none_match",
+        "fresh"
+      ]
+    },
+    {
+      "id": "req.SearchArgs",
+      "name": "SearchArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "pattern",
+        "literal",
+        "ignore_case",
+        "paths",
+        "glob",
+        "context",
+        "max_matches",
+        "files_only",
+        "fields",
+        "hidden",
+        "no_ignore",
+        "fresh"
+      ]
+    },
+    {
+      "id": "req.ListArgs",
+      "name": "ListArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "path",
+        "glob",
+        "depth",
+        "hidden",
+        "no_ignore",
+        "long",
+        "max_entries",
+        "cursor",
+        "fresh"
+      ]
+    },
+    {
+      "id": "req.StatArgs",
+      "name": "StatArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "path",
+        "hash"
+      ]
+    },
+    {
+      "id": "req.OutlineArgs",
+      "name": "OutlineArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "paths",
+        "max_symbols",
+        "fresh"
+      ]
+    },
+    {
+      "id": "req.DiffArgs",
+      "name": "DiffArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/req.rs"
+      ],
+      "members": [
+        "path",
+        "etag"
+      ]
+    },
+    {
+      "id": "fsio.Ident",
+      "name": "Ident",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/fsio.rs"
+      ],
+      "members": [
+        "dev: u64",
+        "ino: u64",
+        "size: u64",
+        "mtime_ns: i128",
+        "ctime_ns: i128",
+        "of(md) -> Ident",
+        "racy(at_ns) -> bool"
+      ]
+    },
+    {
+      "id": "read.Slice",
+      "name": "Slice",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/read.rs"
+      ],
+      "members": [
+        "chunks: Vec<Value>",
+        "next: Vec<[usize; 2]>",
+        "omitted: usize",
+        "cut_lines: usize"
+      ]
+    },
+    {
+      "id": "search.Hit",
+      "name": "Hit",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/search.rs"
+      ],
+      "members": [
+        "line: usize",
+        "col: usize",
+        "text: String"
+      ]
+    },
+    {
+      "id": "search.Block",
+      "name": "Block",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/search.rs"
+      ],
+      "members": [
+        "start: usize",
+        "lines: Vec<String>",
+        "hits: Vec<usize>"
+      ]
+    },
+    {
+      "id": "search.FileHits",
+      "name": "FileHits",
+      "kind": "struct",
+      "sources": [
+        "src/macos/shell-tools/src/search.rs"
+      ],
+      "members": [
+        "path: String",
+        "count: usize",
+        "hits: Vec<Hit>",
+        "blocks: Vec<Block>"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "engine.Engine",
+      "to": "state.Shared",
+      "kind": "depends-on",
+      "description": "Owns the memory every session shares."
+    },
+    {
+      "from": "engine.Engine",
+      "to": "state.Sent",
+      "kind": "depends-on",
+      "description": "Owns one table per session."
+    },
+    {
+      "from": "engine.Engine",
+      "to": "req.Request",
+      "kind": "depends-on",
+      "description": "Parses each request."
+    },
+    {
+      "from": "engine.Ctx",
+      "to": "host.Host",
+      "kind": "depends-on",
+      "description": "The daemon services a request runs on."
+    },
+    {
+      "from": "state.State",
+      "to": "state.Shared",
+      "kind": "depends-on",
+      "description": "Borrows the shared memory for one request."
+    },
+    {
+      "from": "state.State",
+      "to": "state.Sent",
+      "kind": "depends-on",
+      "description": "Borrows the asking session's table."
+    },
+    {
+      "from": "state.Sent",
+      "to": "state.Subject",
+      "kind": "depends-on",
+      "description": "One record per path or query."
+    },
+    {
+      "from": "state.Shared",
+      "to": "fsio.Ident",
+      "kind": "depends-on",
+      "description": "Trusted stamps."
+    },
+    {
+      "from": "host.Host",
+      "to": "host.Matches",
+      "kind": "depends-on",
+      "description": "What a scan returns."
+    },
+    {
+      "from": "host.Host",
+      "to": "host.Symbol",
+      "kind": "depends-on",
+      "description": "What an outline returns."
+    },
+    {
+      "from": "search.FileHits",
+      "to": "search.Hit",
+      "kind": "depends-on",
+      "description": "Hits of one file."
+    },
+    {
+      "from": "search.FileHits",
+      "to": "search.Block",
+      "kind": "depends-on",
+      "description": "Context blocks of one file."
+    }
+  ]
+}

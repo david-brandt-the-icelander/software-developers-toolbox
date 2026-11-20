@@ -1,0 +1,100 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/references.schema.json",
+  "kind": "references",
+  "title": "shell-tools dependencies",
+  "folder": "src/macos/shell-tools",
+  "description": "The crates shell-tools depends on and why; each has one reason.",
+  "entities": [
+    {
+      "id": "blake3",
+      "title": "blake3",
+      "summary": "Content hashes for etags.",
+      "relevance": "fsio::etag hashes file bytes and reply values; the first 8 hex digits equal the sha zazzle read shows.",
+      "url": "https://crates.io/crates/blake3",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "etag"
+        }
+      ]
+    },
+    {
+      "id": "libc",
+      "title": "libc",
+      "summary": "O_NOATIME, posix_fadvise and, in tests, mkfifo.",
+      "relevance": "fsio opens files without updating access times on Linux and hints sequential reads.",
+      "url": "https://crates.io/crates/libc",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "open"
+        }
+      ]
+    },
+    {
+      "id": "memchr",
+      "title": "memchr",
+      "summary": "Fast newline scans.",
+      "relevance": "read slices lines and search finds line starts with it.",
+      "url": "https://crates.io/crates/memchr",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "line_start"
+        }
+      ]
+    },
+    {
+      "id": "regex",
+      "title": "regex",
+      "summary": "The search pattern.",
+      "relevance": "search compiles the pattern (literal, ignore_case, multi-line) and hands it to the daemon's scan; the same crate the daemon uses.",
+      "url": "https://crates.io/crates/regex",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "build_regex"
+        }
+      ]
+    },
+    {
+      "id": "serde",
+      "title": "serde and serde_json",
+      "summary": "Requests and replies.",
+      "relevance": "req.rs derives one strict argument struct per operation; replies are serde_json values.",
+      "url": "https://crates.io/crates/serde",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/req.rs",
+          "symbol": "Request"
+        }
+      ]
+    },
+    {
+      "id": "similar",
+      "title": "similar",
+      "summary": "Line diffs.",
+      "relevance": "diff::hunks turns a stored version into the current one, with a 250 ms timeout.",
+      "url": "https://crates.io/crates/similar",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "hunks"
+        }
+      ]
+    },
+    {
+      "id": "tempfile",
+      "title": "tempfile (tests only)",
+      "summary": "Temporary directories for tests.",
+      "relevance": "Unit tests write their files under a fresh directory.",
+      "url": "https://crates.io/crates/tempfile",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/Cargo.toml",
+          "symbol": "dev-dependencies"
+        }
+      ]
+    }
+  ]
+}

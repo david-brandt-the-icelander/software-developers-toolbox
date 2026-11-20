@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazzle invoker",
+  "folder": "src/macos/zazzle",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazzle invoker",
+      "summary": "The client half of zazzle/daemon: a tiny C program that hands its command line, standard streams and working directory to the zazzle daemon and exits with the daemon's status, or replaces itself with daemon or a standalone tool for the commands that run as their own process. Run as `zazz`, or under an installed zazz script's name, it sends zazz requests instead.",
+      "purpose": "Builds `zazzle` with make, without libc on Linux and with only what libSystem must provide on macOS, so that each zazzle command costs little more than starting a process. Holds the Makefile, the README (what it does, build and test), the source in src/, the tests in test/ and the latency benchmarks in bench/.",
+      "boundaries": [
+        "The daemon, its commands and the wire protocol live in src/macos/daemon; the daemon must be built before the smoke test or the benchmarks can run.",
+        "`zazzle TOOL` runs each tool of src/macos (`daemon`, `fix-network`, `free-disk-space`, `git-tools`, `ai-agent-rules`, `csharp-indexer` and `cyberspace-generator`; `git` is short for git-tools) from the tools' folder: libexec/zazzle beside the launcher's bin/ in an install, else the launcher's own folder; this folder only execs them. `zazzle agent get-rules` goes to the daemon; `zazzle agent llm|prompt` and `zazzle ai-agent` exec `daemon llm`, which runs ai-agent (src/macos/ai-agent).",
+        "The release ships the same build twice, as zazzle and as zazz, and `zazz install` links script commands to it; what zazz requests do is daemon's (src/macos/daemon/src/zazz).",
+        "build/ is build output and is ignored by git."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/Makefile",
+          "symbol": "LINK"
+        },
+        {
+          "path": "src/macos/zazzle/README.md",
+          "symbol": "What it does"
+        },
+        {
+          "path": "src/macos/zazzle/.gitignore",
+          "symbol": "build/"
+        },
+        {
+          "path": "src/macos/zazzle/README.md",
+          "symbol": "Looks at its own name"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "src/macos/daemon/.dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

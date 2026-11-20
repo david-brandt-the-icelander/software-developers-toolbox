@@ -1,0 +1,121 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-deployment-diagram/schema.json",
+  "kind": "deployment",
+  "title": "ai-agent deployment diagram",
+  "folder": "src/macos/ai-agent",
+  "description": "How ai-agent gets to a developer's machine and runs there. It is not installed with zazzle: the first `zazzle agent llm` or `zazzle agent prompt` makes the invoker exec `zazzle daemon llm`, which downloads the binary for its own release from icelander.net/downloads/zazzle/vX.Y.Z/tools/PLATFORM/ into ~/.zazzle/v1/tools, checks its SHA-256 against the manifest compiled into daemon and execs it. ai-agent then downloads the chosen model from huggingface.co into ~/.zazzle/v1/llm/models, runs it in its own process with llama.cpp (on the GPU through Metal on Apple Silicon) and exits. Nothing stays resident. For an agent's `--llm`, `brief` and `prompt` the zazzle daemon (or `zazzle daemon wrap`) runs `ai-agent prompt --no-download` as a child instead, which fails with exit 4 rather than download a missing model.",
+  "sources": [
+    { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "is_llm" },
+    { "path": "src/macos/daemon/src/tools.rs", "symbol": "store" },
+    { "path": "src/macos/daemon/src/tools.rs", "symbol": "path" },
+    { "path": "src/macos/daemon/src/llm.rs", "symbol": "run" },
+    { "path": "src/macos/ai-agent/src/store.rs", "symbol": "root" },
+    { "path": "src/macos/ai-agent/src/store.rs", "symbol": "fetch" },
+    { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "url" },
+    { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" },
+    { "path": "release/tools.sh", "symbol": "features" },
+    { "path": ".github/workflows/release.yml", "symbol": "Build, sign and list the JIT tools" }
+  ],
+  "nodes": [
+    {
+      "id": "terminal",
+      "name": "Developer's terminal",
+      "kind": "client",
+      "description": "Runs `zazzle agent llm ..` to choose a model, `zazzle agent prompt ..` to ask it, and `zazzle ai-agent status|prune ..` to check and tidy the model store.",
+      "actor": "Actors/developer.md"
+    },
+    {
+      "id": "agent",
+      "name": "Coding agent's shell",
+      "kind": "client",
+      "description": "Runs `zazzle agent prompt ..`, often with standard input piped in, as agents/skills/zazzle-agent/SKILL.md says.",
+      "actor": "Actors/coding-agent.md",
+      "condition": "When a coding agent follows the ai-agent-rules skill."
+    },
+    {
+      "id": "machine",
+      "name": "Developer's machine",
+      "kind": "host",
+      "description": "A Mac (universal binary; Metal on Apple Silicon, the CPU on Intel) or a Linux machine (x86_64 or aarch64, the CPU)."
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "kind": "process",
+      "description": "Replaces itself with `zazzle daemon llm llm|prompt ARGS` for `zazzle agent llm|prompt`, without contacting the daemon.",
+      "condition": "When run as zazzle (or z) with `agent llm`, `agent prompt` or `ai-agent ..`."
+    },
+    {
+      "id": "daemon-llm",
+      "name": "zazzle daemon llm",
+      "kind": "process",
+      "description": "The same process after exec: finds ai-agent beside the daemon or in the tool store, downloading it first, and replaces itself with it."
+    },
+    {
+      "id": "daemon",
+      "name": "zazzle daemon serve (or zazzle daemon wrap)",
+      "kind": "process",
+      "description": "The zazzle daemon, or `zazzle daemon wrap` for `zazzle run --llm`: runs ai-agent as a child for an agent's `--llm`, `brief` and `prompt`, one at a time, killing it after ZAZZLE_LLM_TIMEOUT (src/macos/daemon/.dev/deployment-diagram.json).",
+      "condition": "When an agent uses `--llm`, `brief` or `prompt` (or their MCP tools)."
+    },
+    {
+      "id": "llm",
+      "name": "ai-agent",
+      "kind": "process",
+      "description": "Lists or chooses models, or loads one, renders its chat template and streams the answer to the caller's standard output; or reports (`status`) or prunes (`prune`) the model store; exits 0, 1 for an unhealthy status, 2 on errors, 3 when the token limit cut the answer, 4 when --no-download finds the model missing."
+    },
+    {
+      "id": "tools",
+      "name": "Tool store (~/.zazzle/v1/tools)",
+      "kind": "database",
+      "description": "Downloaded JIT tools, made executable after their hash matched; ZAZZLE_TOOLS_DIR moves it."
+    },
+    {
+      "id": "models",
+      "name": "Model store (~/.zazzle/v1/llm)",
+      "kind": "database",
+      "description": "models/ with the installed GGUF files, partial downloads and lock files, and the `defaults` file with the chosen model and effort (0700 directories); ZAZZLE_LLM_DIR moves it."
+    },
+    {
+      "id": "downloads",
+      "name": "icelander.net downloads",
+      "kind": "external-service",
+      "description": "The R2 bucket behind icelander.net/downloads/zazzle, holding each release's tools under vX.Y.Z/tools/{macos-universal,linux-x86_64,linux-aarch64}/ with their manifest; ZAZZLE_TOOLS_URL replaces it."
+    },
+    {
+      "id": "huggingface",
+      "name": "huggingface.co",
+      "kind": "external-service",
+      "description": "Serves each model file at the repository, commit and file name the catalogue pins (`/REPO/resolve/COMMIT/FILE`)."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "binary",
+      "name": "ai-agent",
+      "source": "src/macos/ai-agent/Cargo.toml",
+      "deployedTo": "downloads",
+      "description": "Built by release/tools.sh: universal with lipo on macOS (Metal on the aarch64 half), signed and notarized when configured, one per Linux architecture; listed with its SHA-256 in the tool manifest the release compiles into daemon. Also built with cargo build --release -p ai-agent and put beside the daemon."
+    },
+    {
+      "id": "model",
+      "name": "Model file (GGUF)",
+      "source": "src/macos/ai-agent/src/catalog.rs",
+      "deployedTo": "huggingface",
+      "description": "One of the ten catalogue entries, a 4-bit (or MXFP4) quantization from 1.3 to 63 GB, accepted only with the size and SHA-256 the catalogue pins."
+    }
+  ],
+  "relationships": [
+    { "from": "terminal", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent llm|prompt ARGS` or `zazzle ai-agent status|prune ARGS`." },
+    { "from": "agent", "to": "invoker", "kind": "connects-to", "description": "`zazzle agent prompt ARGS`." },
+    { "from": "invoker", "to": "daemon-llm", "kind": "connects-to", "description": "exec, keeping the caller's environment, streams and exit status." },
+    { "from": "daemon-llm", "to": "downloads", "kind": "connects-to", "description": "HTTPS GET of the tool, once, when it is neither beside the daemon nor in the store." },
+    { "from": "daemon-llm", "to": "tools", "kind": "connects-to", "description": "Stores the verified tool and sets it executable." },
+    { "from": "daemon-llm", "to": "llm", "kind": "connects-to", "description": "exec with the arguments after `llm`." },
+    { "from": "agent", "to": "daemon", "kind": "connects-to", "description": "`zazzle CMD --llm ..`, `zazzle brief ..`, `zazzle prompt ..` or their MCP tools, through the zazzle socket or `zazzle daemon mcp`." },
+    { "from": "daemon", "to": "llm", "kind": "connects-to", "description": "Spawns `ai-agent prompt --no-download ..` with pipes: the input on standard input, the answer on standard output, the reason on standard error, and the exit code." },
+    { "from": "machine", "to": "llm", "kind": "hosts", "description": "Runs as the calling user, one process per command." },
+    { "from": "llm", "to": "huggingface", "kind": "connects-to", "description": "HTTPS GET with the platform's trust store, resuming a partial download with a Range request, on first use of a model." },
+    { "from": "llm", "to": "models", "kind": "connects-to", "description": "Reads and writes the defaults; downloads under an exclusive flock and renames a model into place when its hash matches; memory-maps it to run under a shared flock; status reads it and prune deletes files under the exclusive flock." }
+  ]
+}

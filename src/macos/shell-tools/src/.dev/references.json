@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/references.schema.json",
+  "kind": "references",
+  "title": "shell-tools source references",
+  "folder": "src/macos/shell-tools/src",
+  "entities": [
+    {
+      "id": "racy-git",
+      "title": "Racy Git",
+      "summary": "Git's explanation of why a file modified in the same timestamp tick as its index entry cannot be trusted by its stat data.",
+      "url": "https://git-scm.com/docs/racy-git",
+      "relevance": "The racy-window rule (Ident.racy) follows it.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "Ident.racy"
+        }
+      ]
+    }
+  ]
+}

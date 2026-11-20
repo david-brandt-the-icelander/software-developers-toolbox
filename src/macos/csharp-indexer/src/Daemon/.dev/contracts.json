@@ -1,0 +1,122 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "Shared daemon contracts",
+  "folder": "src/macos/csharp-indexer/src/Daemon",
+  "entities": [
+    {
+      "id": "handshake",
+      "title": "Daemon socket handshake",
+      "summary": "A client opens <state dir>/daemon.sock, sends one JSON line naming its version, roots and stable session, reads one JSON reply line, and then speaks MCP over the same connection; a hello with a command gets one reply and the connection closes.",
+      "contractType": "message",
+      "consumers": [
+        "csharp-indexer serve (Proxy.Connect), from the same or another build of the binary",
+        "daemon (src/macos/daemon/), which connects to call the view tool when zazzle reads a .cs file"
+      ],
+      "definition": "Hello: {\"version\": ToolVersion.Text, \"roots\": [\"name=/abs/path\" | \"/abs/path\", ...], \"session\": stable-caller-session}. Reply: {\"ok\": true}, or {\"ok\": false, \"error\": text} when a root is rejected, or {\"ok\": false, \"restart\": bool, \"error\": text} when the versions differ; a refusal of an older client also carries the daemon's \"version\", and its error says \"the indexer daemon is version X, newer than this client's Y: restart it with `zazzle csharp-indexer restart`\". Session is optional for older clients; the server creates a random fallback. After ok, newline-delimited JSON-RPC as in src/Mcp/.dev/contracts.json until the client closes. A hello with a \"command\" key is a daemon command instead (daemon-commands).",
+      "guarantees": [
+        "The socket file is readable and writable by its owner only (not set on Windows).",
+        "The hello session is used for every usage record produced over the connection, so calls from one agent conversation can be grouped.",
+        "A daemon older than the client (ToolVersion.Newer; a -dev build counts as newest) starts draining: it replies restart: true to that client and every later one, and stops once its last client disconnects. A daemon newer than the client replies restart: false with an error telling the user to restart daemon, and keeps running.",
+        "A daemon older than the client (ToolVersion.Newer; a -dev build counts as newest) starts draining: it replies restart: true to that client and every later one, and stops once its last client disconnects. A daemon newer than the client replies restart: false with an error telling the user to run zazzle csharp-indexer restart, and keeps running.",
+        "A second daemon refuses to start while one answers on the socket; a stale socket file with nothing behind it is deleted.",
+        "Every daemon version says \"daemon is version X, newer than\" when it refuses a client as too old; Control reads an older daemon's version from that text."
+      ],
+      "compatibility": "The version check is an exact string match on ToolVersion.Text, which every release takes from its tag (src/macos/csharp-indexer/.dev/decisions.json, tool-version-source), so a released change to the handshake or to MCP behaviour reaches clients once the old daemon is idle. Builds outside a release all say 0.0.0-dev and are not told apart.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Handshake"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Start"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Hello"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "src/macos/csharp-indexer/README.md",
+          "symbol": "zazzle read"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Exchange"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "src/macos/csharp-indexer/src/Mcp/.dev/contracts.json",
+          "entityId": "mcp-stdio"
+        },
+        {
+          "relation": "relates-to",
+          "path": "src/macos/csharp-indexer/.dev/decisions.json",
+          "entityId": "tool-version-source"
+        }
+      ]
+    },
+    {
+      "id": "daemon-commands",
+      "title": "Daemon commands: status and stop",
+      "summary": "A hello of the form {\"command\": \"status\"} or {\"command\": \"stop\"}, with no version, gets one reply line describing the daemon and then the connection closes; stop also makes the daemon drain.",
+      "contractType": "message",
+      "consumers": [
+        "csharp-indexer status, stop and restart (Control), from the same or another build"
+      ],
+      "definition": "Reply: {\"ok\": true, \"status\": {pid, version, started (ISO 8601 UTC), uptime_seconds, socket, state_dir, draining, memory: {working_set_bytes, managed_heap_bytes}, clients: [{session, roots: [names], connected_at, connected_seconds}], roots: [{path, files, ready, indexed_at, changed_at, age_seconds}]}}; for an unknown command {\"ok\": false, \"restart\": false, \"version\", \"error\": \"unknown command: NAME\"}. indexed_at is the last full reconcile (also from an earlier run), changed_at the last file change applied in this run, age_seconds the time since the later of the two (null when neither). For stop the status is taken after draining starts, so draining is true and clients lists the sessions it waits for.",
+      "guarantees": [
+        "Commands are answered before the version check and never start a session, so a status request never makes a daemon drain.",
+        "The hello names no version, so a daemon from before the commands refuses it as too old (restart: false, naming its own version) and keeps running.",
+        "After stop, every new client is told restart: true, and the daemon exits once its last session closes, as when a newer client asks it to make way.",
+        "Control waits on the reported process id, kills it after the timeout, and removes the stale socket file."
+      ],
+      "compatibility": "Adding fields to status is compatible; Control copies every field it gets into status --json. An older daemon has no stop command: Control sends it the hello of a client of version 99999.0.0-dev (Control.DrainVersion), which every version treats as newer and drains for.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Command"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Status"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Query"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.StopDaemon"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/DaemonTests.cs",
+          "symbol": "test_status_and_stop_commands"
+        },
+        {
+          "path": "src/macos/csharp-indexer/tests/ControlTests.cs",
+          "symbol": "test_older_daemon"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "extends",
+          "path": "src/macos/csharp-indexer/src/Daemon/.dev/contracts.json",
+          "entityId": "handshake"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "ai-agent",
+  "folder": "src/macos/ai-agent",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "ai-agent",
+      "summary": "`zazzle agent llm` and `zazzle agent prompt`: runs open-weight models (Qwen, Gemma 4, gpt-oss) on the developer's own machine with llama.cpp. `llm` lists a pinned catalogue of ten GGUF models, downloads one and makes it and an effort the default, or removes one; `prompt` asks a model and streams its answer, downloading the model first when it is missing; `status` reports the model store (default, downloaded models checked by size or SHA-256, partial downloads, disk use) as text or JSON; `prune` removes every model but the default, stale partial downloads and orphaned locks.",
+      "purpose": "The crate of the ai-agent binary: Cargo.toml (each dependency commented with its one reason, and the `metal` feature for GPU inference on Apple Silicon), the user README, and the binary and its unit tests in src/. It is one member of the Cargo workspace in src/macos.",
+      "boundaries": [
+        "It is a JIT tool: not in the release tarball, the bottle or the formula. The zazzle invoker (src/macos/zazzle) execs `zazzle daemon llm llm|prompt ..`, and daemon (src/macos/daemon/src/tools.rs) uses a ai-agent beside itself or downloads it from icelander.net, checks it against the manifest compiled into daemon and execs it.",
+        "It downloads model files itself, from huggingface.co at the commit and SHA-256 its catalogue pins, into its own directory (~/.zazzle/v1/llm by default); the daemon never sees a model.",
+        "release/tools.sh builds it (universal on macOS, with Metal for Apple Silicon) and writes the tool manifest; the release workflow signs and uploads it. Workspace release builds leave it out (`--exclude ai-agent`)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/ai-agent/Cargo.toml", "symbol": "[[bin]]" },
+        { "path": "src/macos/ai-agent/README.md", "symbol": "Two downloads on first use" },
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd" },
+        { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "MODELS" },
+        { "path": "src/macos/daemon/src/tools.rs", "symbol": "path" },
+        { "path": "release/tools.sh", "symbol": "names" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "src/macos/daemon/.dev/folder.json", "entityId": "folder", "description": "The daemon binary that downloads and execs ai-agent for `zazzle daemon llm`." },
+        { "relation": "relates-to", "path": "src/macos/zazzle/.dev/folder.json", "entityId": "folder", "description": "The invoker that hands `zazzle agent llm|prompt` to `zazzle daemon llm`." },
+        { "relation": "relates-to", "path": "release/.dev/delivery.json", "entityId": "jit-tools", "description": "Where each release puts the ai-agent binaries." }
+      ]
+    }
+  ]
+}

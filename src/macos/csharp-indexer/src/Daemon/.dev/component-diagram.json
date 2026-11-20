@@ -1,0 +1,119 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "csharp-indexer shared daemon component diagram",
+  "folder": "src/macos/csharp-indexer/src/Daemon",
+  "description": "The daemon server, the proxy that serve runs in front of it, and the commands that check, stop and restart it. All are in the same binary; they talk over a unix socket in the state directory.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+      "symbol": "DaemonServer.Serve"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy.Connect"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy.Pump"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+      "symbol": "Control.StopDaemon"
+    }
+  ],
+  "components": [
+    {
+      "id": "daemon-folder",
+      "name": "Shared daemon",
+      "responsibility": "Both ends of the daemon connection.",
+      "folder": "src/macos/csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "server",
+      "name": "Daemon server (Daemon.cs)",
+      "responsibility": "Binds daemon.sock (owner read and write only), accepts clients, answers the status and stop commands, checks the version in the handshake, attaches roots, runs one MCP session per client and exits after the idle period with no clients, or once drained.",
+      "folder": "src/macos/csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "proxy",
+      "name": "Proxy (Proxy.cs)",
+      "responsibility": "Connects to the socket, starts a detached daemon from the same executable when nothing answers, sends the hello line, retries after a version restart, then copies standard input to the socket and the socket to standard output.",
+      "folder": "src/macos/csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "control",
+      "name": "Daemon commands (Control.cs)",
+      "responsibility": "status, stop and restart: send a command hello and print the reply, wait for a draining daemon to exit, kill it after the timeout (finding an older daemon's process with lsof), and start a fresh daemon from this executable.",
+      "folder": "src/macos/csharp-indexer/src/Daemon"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP server",
+      "responsibility": "One session per client connection.",
+      "folder": "src/macos/csharp-indexer/src/Mcp"
+    },
+    {
+      "id": "engine",
+      "name": "Engine and roots",
+      "responsibility": "The one engine the daemon holds; Root.Parse validates and attaches each root the client names.",
+      "folder": "src/macos/csharp-indexer/src"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "daemon-folder",
+      "to": "server",
+      "kind": "contains",
+      "description": "The daemon command's process."
+    },
+    {
+      "from": "daemon-folder",
+      "to": "proxy",
+      "kind": "contains",
+      "description": "The serve command's side."
+    },
+    {
+      "from": "proxy",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "Unix socket: hello line, reply line, then MCP lines (contracts.json, handshake)."
+    },
+    {
+      "from": "server",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "Proxy.TryConnect, to refuse to start when another daemon already answers on the socket."
+    },
+    {
+      "from": "server",
+      "to": "engine",
+      "kind": "depends-on",
+      "description": "Root.Parse against the shared engine for each client's roots."
+    },
+    {
+      "from": "server",
+      "to": "mcp",
+      "kind": "depends-on",
+      "description": "McpServer.RunAsync over the connection, logging to the engine's usage log."
+    },
+    {
+      "from": "daemon-folder",
+      "to": "control",
+      "kind": "contains",
+      "description": "The status, stop and restart commands' side."
+    },
+    {
+      "from": "control",
+      "to": "server",
+      "kind": "depends-on",
+      "description": "Unix socket: one command hello, one reply line (contracts.json, daemon-commands); a kill signal after the timeout."
+    },
+    {
+      "from": "control",
+      "to": "proxy",
+      "kind": "depends-on",
+      "description": "TryConnect, Exchange and SpawnDaemon."
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "zazz-script-runner component diagram",
+  "folder": "src/macos/zazz-script/runner",
+  "description": "The zazz-script-runner crate and what crosses its boundary: daemon's zazz module starts it and talks to it; it runs scripts on wasmtime with WASI preview 1, shares frames, messages and the HTTP layout with zazz-script-engine, and sends allowed HTTPS requests for scripts. Its modules are in the src/ diagram.",
+  "sources": [
+    { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "[dependencies]" },
+    { "path": "src/macos/daemon/src/zazz/pool.rs", "symbol": "spawn" },
+    { "path": "src/macos/daemon/src/zazz/compile.rs", "symbol": "aot" },
+    { "path": "src/macos/daemon/src/zazz/pipeline.rs", "symbol": "run_tests" }
+  ],
+  "components": [
+    {
+      "id": "zazz-script-runner",
+      "name": "zazz-script-runner crate",
+      "responsibility": "Builds the zazz-script-runner binary: a workspace member with its own rust-version, because wasmtime follows recent Rust releases.",
+      "folder": "src/macos/zazz-script/runner"
+    },
+    {
+      "id": "src",
+      "name": "zazz-script-runner source",
+      "responsibility": "The subcommands, the engine, per-call instances with the zazz_host imports, serve mode, test mode and the network backends.",
+      "folder": "src/macos/zazz-script/runner/src",
+      "diagram": "src/macos/zazz-script/runner/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "zazz-script-engine",
+      "name": "zazz-script-engine (lib zazz)",
+      "responsibility": "Frames and messages (proto), descriptor passing (fdpass), JSON, errors and the HTTP request, response and host allowlist (http), shared with the scripts.",
+      "folder": "src/macos/zazz-script/engine",
+      "diagram": "src/macos/zazz-script/engine/.dev/component-diagram.json"
+    },
+    {
+      "id": "daemon-zazz",
+      "name": "daemon zazz module",
+      "responsibility": "Finds zazz-script-runner beside the daemon (or $ZAZZ_WORKER), runs compile and test for builds, and keeps serve workers warm for calls.",
+      "folder": "src/macos/daemon/src/zazz",
+      "diagram": "src/macos/daemon/src/zazz/.dev/component-diagram.json"
+    },
+    {
+      "id": "wasmtime",
+      "name": "wasmtime and wasmtime-wasi",
+      "responsibility": "The WebAssembly runtime (Cranelift AOT compilation, epoch interruption, store limits) and WASI preview 1 (stdio, preopened directories, clocks, random).",
+      "external": true
+    },
+    {
+      "id": "https",
+      "name": "HTTPS servers",
+      "responsibility": "Hosts a script is allowed to reach, through ureq with bundled roots and no redirects.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "zazz-script-runner", "to": "src", "kind": "contains", "description": "src/main.rs is the [[bin]] target." },
+    { "from": "daemon-zazz", "to": "src", "kind": "depends-on", "description": "Runs `zazz-script-runner compile` (WASM on stdin, module on stdout) and `zazz-script-runner test`, and spawns `zazz-script-runner serve` with the control socket on fd 3 and the module on fd 4." },
+    { "from": "src", "to": "zazz-script-engine", "kind": "depends-on", "description": "Path dependency: proto, fdpass, Json, Error and http (NetPolicy, Request, Response, check)." },
+    { "from": "src", "to": "wasmtime", "kind": "depends-on", "description": "Compiles, loads and instantiates modules; links WASI preview 1." },
+    { "from": "src", "to": "https", "kind": "depends-on", "description": "Sends a script's allowed requests in serve mode; test mode answers from a replay file instead." }
+  ]
+}

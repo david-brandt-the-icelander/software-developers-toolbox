@@ -1,0 +1,1670 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle command verification",
+  "folder": "src/macos/daemon/src/cmd",
+  "entities": [
+    {
+      "id": "edit-safety",
+      "title": "Checked, confined, atomic edits",
+      "summary": "Unit tests in edit.rs check every refusal and the write path; the invoker's smoke test repeats the sha requirement, confinement and stdin end to end.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "safe-edits"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/use-case.json",
+          "entityId": "edit-a-file-safely"
+        }
+      ],
+      "criteria": [
+        "Paths outside the working directory are refused, whether given directly, through .. or through a symlink; a symlink to a file inside is edited on the real file.",
+        "Every edit except --create needs --expect or --at, and a stale sha or anchor is refused without writing or revealing the current one.",
+        "A file changed between loading and writing is not overwritten.",
+        "CRLF files stay CRLF; permissions and hard links are kept; a failed write leaves no temporary file.",
+        "An edit drops the cached record, so the next read shows the new content."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_confinement",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_symlink_inside_is_followed",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_replace_text_needs_current_hash",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_line_edit_errors",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_replace_lines_with_anchors",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_concurrent_change_is_detected",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_crlf_is_preserved",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_hard_links_are_kept",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_permissions_are_kept",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_write_failure_cleans_up",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "test_edit_updates_cache",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in src/macos/zazzle, after building daemon)",
+          "description": "Through the invoker: an edit without the sha is refused, an edit with the sha from `read --source` and the new text on standard input lands, and an edit of /etc/hosts is refused."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "output-caps",
+      "title": "Capped, ranked output",
+      "summary": "Each command's cap, footer and ordering has a unit test, as has the global budget cut.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "capped-output"
+        }
+      ],
+      "criteria": [
+        "find stops at its cap with a footer saying how to narrow, clips long lines and lists tests last.",
+        "read elides the middle beyond its budget and names the range to read next.",
+        "ls, outline and refs stop at their caps with a note of what was left out.",
+        "Any other answer is cut at a line boundary at the --budget estimate."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_cap_and_footer",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_clips_long_lines",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_ranks_tests_last",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_read_budget_elides_middle",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_read_default_budget",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/ls.rs",
+          "symbol": "test_ls_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/outline.rs",
+          "symbol": "test_outline_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/refs.rs",
+          "symbol": "test_refs_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/refs.rs",
+          "symbol": "test_refs_definition_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_cut_to_budget",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_budget_applies_to_find",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "commands",
+      "title": "Command answers and errors",
+      "summary": "Each command's normal output and its one-line errors have unit tests, including the parallel paths; the smoke test checks find, read and an unknown command through the real invoker.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "find groups by file, merges context windows, counts a line once however many matches it has, and keeps file order when searching on the pool.",
+        "read selects ranges, --around, --head and --tail, and summarises binary and empty files.",
+        "refs lists definitions before uses, with each use's enclosing symbol.",
+        "In C# files refs leaves out mentions in comments and strings, and a file with only those.",
+        "An unknown command is one `error:` line with status 2 that lists the commands; proxy and run point at their own processes."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_groups_by_file",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_counts_each_line_once",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_parallel_ordering",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "test_find_remembers_binary_files",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_read_around_head_tail",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_read_special_files",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/refs.rs",
+          "symbol": "test_refs_defs_then_uses",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/refs.rs",
+          "symbol": "test_refs_csharp_skips_comments_and_strings",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/outline.rs",
+          "symbol": "test_csharp_identifier_lines",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_unknown_command",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_proxy_points_to_own_process",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_run_points_to_own_process",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in src/macos/zazzle, after building daemon)",
+          "description": "Runs version, find, read and an unknown command through the invoker against a real daemon and compares the output and exit status."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "symbol-read",
+      "title": "Reading one symbol",
+      "summary": "Unit tests resolve names, qualified names, case, parameter types and #N picks, list candidates for misses, take doc comments and attributes with the symbol, and refuse conflicting flags.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "symbol-read"
+        }
+      ],
+      "criteria": [
+        "A name or the last parts of a qualified name resolve to one symbol, exact case first; parameter types, then #N, pick among several.",
+        "Parameter types match declarations as written, ignoring spaces, defaults, attributes, modifiers and receivers, in both `Type name` and `name: Type` forms; untyped parameters match by name; a list that fits no overload lists the overloads.",
+        "No match lists similar names; several matches are listed numbered.",
+        "Doc comments, comments and attributes directly above the symbol are included.",
+        "--symbol with a range, --around, --head or --tail is refused."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/symbols.rs",
+          "symbol": "test_find_resolves",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/symbols.rs",
+          "symbol": "test_find_misses",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/symbols.rs",
+          "symbol": "test_lead_start",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_symbol_reads_with_docs",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_symbol_misses",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_symbol_conflicts_and_files",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/symbols.rs",
+          "symbol": "test_find_by_parameter_types",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/symbols.rs",
+          "symbol": "test_parse_query",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/params.rs",
+          "symbol": "test_split",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/params.rs",
+          "symbol": "test_split_query",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/params.rs",
+          "symbol": "test_declared",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/params.rs",
+          "symbol": "test_parts",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/params.rs",
+          "symbol": "test_matches",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "csharp-terse-view",
+      "title": "Terse C# view",
+      "summary": "read is tested against a stand-in indexer that answers the version check and the view call, and without one, where the source comes back with the reason; the bridge itself is tested in indexer.rs.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "csharp-terse-view"
+        }
+      ],
+      "criteria": [
+        "A C# file read without --source shows the view's lines for the range, with no sha, under a header that names --source.",
+        "Without a view the source is shown with a line saying why.",
+        "View keys `N`, `N~` and `A-B` map to the source lines they cover."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_csharp_terse_view",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_csharp_view_unavailable",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_view_key",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/macos/daemon/src/.dev/verification.json",
+          "entityId": "indexer-bridge"
+        }
+      ]
+    },
+    {
+      "id": "markup-terse-view",
+      "title": "Terse HTML and Razor view",
+      "summary": "markup.rs is tested rule by rule on small HTML and Razor texts, and read is tested end to end on files of each kind.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "markup-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each hiding rule turns its lines into one `A-B ⋯ note` line with the source numbers.",
+        "Long class and style values are shortened and marked `N~`; dynamic values are not.",
+        "Script, pre and Razor @{ } blocks with markup are unchanged; Razor @code, @functions and multi-line @{ } blocks take the C# view's lines and steps, @{ } locals the page names keep their names, or the blocks stay unchanged without a view.",
+        "Blocks that do not close cleanly, and files with nothing to shorten, come back as source with a sha."
+      ],
+      "checks": [
+        {"type": "manual", "path": "src/macos/daemon/src/markup.rs", "symbol": "keep_names", "command": "Ran the Razor view over the 137 .cshtml and .razor files with multi-line @{ } blocks in the ASP.NET Core 8 project and item templates and Identity UI, with csharp-indexer's real view behind it: blocks with markup stay as they are, no C# view line changed what it should not, and on a page whose block declares locals the markup reads (`@displayName`, `@totalAmount`) those keep their names while the others get short names and a debug log line goes."},
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_view_html",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_view_razor",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_shorten",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_verbatim",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_unclosed",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_markup_terse_view",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/markup.rs",
+          "symbol": "test_razor_code_view",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "test_view_text",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "style-terse-view",
+      "title": "Terse CSS, SCSS, Sass and Less view",
+      "summary": "styles.rs is tested on a stylesheet that exercises every rule, on SCSS, and on what must be kept; read is tested end to end on a CSS file and on a SCSS file with nothing to shorten.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "style-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each rule turns its lines into one `A-B ⋯ note` line, hides prefixed duplicates or marks shortened data URIs `N~`, with source line numbers.",
+        "Short comments, single imports, blocks that share lines, prefixes without a plain property in the same block and short data URIs are kept.",
+        "A file with nothing to shorten comes back as source with a sha.",
+        "Sass blocks, comments and prefix duplicates are found by indentation, Less follows the SCSS rules, and blank lines inside Sass blocks keep them together."
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/daemon/src/styles.rs", "symbol": "test_declarations_and_selectors", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "manual", "path": "src/macos/daemon/src/styles.rs", "symbol": "declaration_run", "command": "Ran the CSS view over the same 759 stylesheets with declaration runs, selector cutting and banner-tolerant minified detection: 312 minified files got a view, 6.1 MB becoming 2.1 MB (Bulma 678 KB to 209 KB, Bootstrap 232 KB to 137 KB with its 115 :root custom properties as one note, animate.css 72 KB to 18 KB); declaration notes cover only declaration lines of one block, and cut selector lists keep whole selectors, :not(..) arguments included."},
+        {"type": "manual", "path": "src/macos/daemon/src/styles.rs", "symbol": "rule_run", "command": "Ran the CSS view over 759 stylesheets from Bootstrap, Bulma, Font Awesome, animate.css, highlight.js, Primer, swagger-ui, Inkscape and the icon sets: rule-run notes cover only plain rules of one indentation, and stop at at-rules, nested blocks and rules of three or more declarations; 94 of the minified ones got a view, 4.4 MB becoming 3.5 MB (Primer's utilities.css 118 KB to 30 KB)."},
+        {"type": "automated", "path": "src/macos/daemon/src/styles.rs", "symbol": "test_rule_runs", "command": "cargo test -p daemon (in src/macos)"},
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_view_css",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_view_scss",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_kept",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_style_terse_view",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_view_sass",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_view_less",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/styles.rs",
+          "symbol": "test_sass_blank_lines",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "data-terse-view",
+      "title": "Terse JSON, YAML and TOML view",
+      "summary": "data.rs is tested on JSON arrays of scalars and objects, lock files, YAML sequences and block scalars, TOML tables, arrays and strings, and on what must be kept; read is tested end to end on a JSON file and a TOML file with nothing to shorten.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "data-terse-view"
+        }
+      ],
+      "criteria": [
+        "Runs of 10+ list items, lock entries and 6+ TOML tables keep their first and last and collapse the rest with source line numbers.",
+        "Lists of multi-line items naming different keys, short lists, short texts and short strings are kept.",
+        "Runs nested in a hidden item go with it, and brackets and escapes inside strings do not end items."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "test_json_lists",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "test_lock_yaml_toml",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "test_shorten_strings",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "test_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/data.rs",
+          "symbol": "view",
+          "command": "Ran the view over 1,067 JSON, YAML, TOML, lock and Markdown files on the build machine (Cargo registry manifests, READMEs and changelogs, package-lock.json, Cargo.lock, rustup manifests, tree-sitter grammars, CI configs) and reviewed samples of every note in context: each collapse starts and ends on item boundaries; this found and fixed CI step lists collapsing and a short TOML string's closing line read as an opener. A 1.4 MB package-lock.json reads as 47 lines in 0.7 s (debug build)."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "markdown-terse-view",
+      "title": "Terse Markdown view",
+      "summary": "md.rs is tested on a README with front matter, comments, badges, a table of contents, fenced code and link definitions, on fence edge cases and on each line kind; read is tested end to end on a Markdown file.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "markdown-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments, badge lines, link definitions and tables of contents become notes or disappear with source line numbers.",
+        "Front matter, fenced code, prose links, short lists of anchors and non-badge images are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/md.rs",
+          "symbol": "test_view_markdown",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/md.rs",
+          "symbol": "test_line_kinds",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "xml-terse-view",
+      "title": "Terse XML view",
+      "summary": "xml.rs is tested on a project file with comments, a run of one-line elements, a run of multi-line elements separated by blank lines and a base64 value, and on what must be kept; read is tested end to end on an XML file.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "xml-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments of 3+ lines and runs of 10+ same-tag siblings become notes, keeping the first and last element and the lines between items, with source line numbers.",
+        "Short comments, mixed tags, short runs, unclosed elements and unclosed comments are kept."
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/daemon/src/xml.rs", "symbol": "test_view_svg", "command": "cargo test -p daemon (in src/macos)"},
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/xml.rs",
+          "symbol": "test_view_xml",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/xml.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "config-terse-view",
+      "title": "Terse INI and Dockerfile view",
+      "summary": "config.rs is tested on INI comment blocks and long values and on a Dockerfile with a directive, comments, labels and package lists; read is tested end to end on both.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "config-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comment blocks of 4+ lines, LABEL runs and package lists become notes with source line numbers.",
+        "Directives, short comments, short package lists and the commands after a package list are kept."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/config.rs",
+          "symbol": "test_kind_of",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/config.rs",
+          "symbol": "test_view_ini",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/config.rs",
+          "symbol": "test_view_dockerfile",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/config.rs",
+          "symbol": "view",
+          "command": "Ran the XML, INI and Dockerfile views over 500 files on the build machine (.NET XML docs, nuspecs, fontconfig and D-Bus XML, Java .properties, setup.cfg, php-style .ini, .editorconfig, Dockerfiles) and reviewed samples of every note in context: element runs start and end on element boundaries, comment notes cover only comment lines, and package notes only package lines."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "schema-terse-view",
+      "title": "Terse HCL/Terraform, Protobuf and GraphQL view",
+      "summary": "schema.rs is tested on a Terraform file, a Protobuf file and a GraphQL schema covering every rule and what stays; read is tested end to end on each kind; the view was run over about 3,000 real files.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "schema-terse-view"
+        }
+      ],
+      "criteria": [
+        "Comments, descriptions and heredoc bodies of 3+ lines, Protobuf import and option runs, and the middle of 10+ item runs become notes with source line numbers.",
+        "Block attributes, message fields, type fields, short comments, one-line descriptions, short heredocs, short enums and unclosed comments or heredocs are kept."
+      ],
+      "checks": [
+        {"type": "manual", "path": "src/macos/daemon/src/schema.rs", "symbol": "description_note", "command": "Ran the GraphQL view over GitHub's 64,309-line schema and gqlgen's 142 schemas: every multi-line description became a note quoting its first line, enums whose values carry descriptions collapse, and GitHub's schema reads in 36,736 view lines with its documentation's first lines kept (38,138 when descriptions were hidden)."},
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/schema.rs",
+          "symbol": "test_view_hcl",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/schema.rs",
+          "symbol": "test_view_proto",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/schema.rs",
+          "symbol": "test_view_graphql",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/schema.rs",
+          "symbol": "test_schema_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_line_terse_views",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/schema.rs",
+          "symbol": "view",
+          "command": "Ran the view over about 3,000 files on the build machine (Terratest's examples and test fixtures, Terraform's and HCL's test data, Terraform lock files, protobuf's and googleapis' .proto files, grpc-gateway, GitHub's 64,000-line GraphQL schema, gqlgen's schemas) and reviewed samples of every note in context: item runs start and end on items inside their list, map or enum, heredoc notes cover only the body and terminator, comment and description notes only comments and descriptions. GitHub's schema went from 64,309 to 38,138 lines; no file took over 200 ms."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "buildfile-terse-view",
+      "title": "Terse CMake and Makefile view",
+      "summary": "buildfile.rs is tested on a CMakeLists.txt and a Makefile covering every rule and what stays, and on its edges; read is tested end to end on both; the view was run over about 4,000 real build files.",
+      "subject": [
+        {"path": "src/macos/daemon/src/cmd/.dev/feature.json", "entityId": "buildfile-terse-view"}
+      ],
+      "criteria": [
+        "Comments of 3+ lines, include runs, the middle of 6+ item lists and status logging become notes or disappear, with source line numbers.",
+        "Signatures, command lines, keywords, warnings and errors, short lists and recipes are kept."
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/daemon/src/buildfile.rs", "symbol": "test_view_cmake", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/buildfile.rs", "symbol": "test_view_make", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/buildfile.rs", "symbol": "test_buildfile_edges", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/cmd/read.rs", "symbol": "test_line_terse_views", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "manual", "path": "src/macos/daemon/src/buildfile.rs", "symbol": "view", "command": "Ran the view over 4,130 build files on the build machine (the Linux 6.8 kernel's Makefiles and .mk files, CMake 3.28's modules, pybind11, xgboost with dmlc-core, and LightGBM) and reviewed samples of every note in context: lists start and end on items and stop at keywords and multi-word lines, function signatures and custom command lines stay whole, hidden messages are only STATUS-style ones, and comment notes cover only comments. 1,970 files had something to shorten, and 178,147 lines became 137,669; no file took over 200 ms."}
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "minified-terse-view",
+      "title": "Terse view of minified JSON and XML",
+      "summary": "minified.rs is tested on one-line JSON records, objects with many members, a one-line XML document with every token kind, a one-line HTML page and one-line CSS; read is tested end to end on each and on the budget footer; the view was run over 1,488 real minified JSON and XML files and over 3,000 SVG, 517 HTML and 317 CSS files.",
+      "subject": [
+        {"path": "src/macos/daemon/src/cmd/.dev/feature.json", "entityId": "minified-terse-view"}
+      ],
+      "criteria": [
+        "Reformatted lines keep the source text of strings, numbers and tags, and every view line is keyed to the source line its first token is on.",
+        "Malformed text, and text with nothing to shorten, falls back to the line-based view; a hand-written file with long lines (an SVG's path data) is not taken for minified."
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/daemon/src/minified.rs", "symbol": "test_html_view", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/minified.rs", "symbol": "test_css_view", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "manual", "path": "src/macos/daemon/src/minified.rs", "symbol": "html_view", "command": "Ran the views over 3,000 SVG files from Inkscape 1.2's share folder, bootstrap-icons, flag-icons and @mdi/svg (2,746 got a view, 6.3 MB becoming 2.6 MB; 329 had editor metadata hidden), over 517 Python 3.12 documentation pages minified by stripping indentation and newlines between tags (all got a view, 44 MB becoming 34 MB: head tags, inline styles and SVGs hidden), and over 317 minified CSS files from Bootstrap, Bulma, Font Awesome, animate.css, highlight.js, Primer and swagger-ui (71 got a view: icon fonts shrink to 1-14% of their size, utility CSS such as Primer's shrinks to 25-55% with the small-rule runs; the rest had nothing to shorten). No file took over 55 ms. Reviewed samples in context: element and rule notes cover only siblings of one kind, script text is cut at 80 characters, and Inkscape SVGs with long path data stay on their own lines."},
+        {"type": "automated", "path": "src/macos/daemon/src/minified.rs", "symbol": "test_json_view", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/minified.rs", "symbol": "test_pretty_json", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/minified.rs", "symbol": "test_xml_view", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "automated", "path": "src/macos/daemon/src/cmd/read.rs", "symbol": "test_line_terse_views", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "manual", "path": "src/macos/daemon/src/minified.rs", "symbol": "json_view", "command": "Ran the view over 1,488 minified files on the build machine: emojibase data, MDN browser-compat-data, caniuse-lite, CLDR, flag-icons and timezone JSON, and the XML parts of the .docx, .xlsx and .pptx files in python-docx, python-pptx, openpyxl and XlsxWriter. All of them parsed. All 153 JSON files got a view, 72 MB in all becoming 125 KB (MDN's 20 MB data.json became 38 KB in 1.5 s in a release build). 150 XML files got a view, 1.9 MB becoming 371 KB; the rest were small parts with nothing to collapse, or views no shorter than the file. Reviewed samples in context: notes cover only the siblings they name, and member notes list the hidden keys."}
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "code-terse-view",
+      "title": "Terse Python, JavaScript, TypeScript, Dart, Rust, Go, Java, Kotlin, Swift, C, C++, Ruby, PHP, Scala, Perl, Lua, Elixir, Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL, Visual Basic, Fortran, Pascal, COBOL, Nim and shell view",
+      "summary": "terse.rs is tested on a whole class per language and rule by rule on snippets, and read is tested end to end on files of each language.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "code-terse-view"
+        }
+      ],
+      "criteria": [
+        "Each language's sample class shows imports, logging, regions, the constructor and the log-and-rethrow catch collapsed with source line numbers.",
+        "Logging with side effects, print, and calls on non-loggers are kept.",
+        "Constructors and catches that do anything else are kept.",
+        "Code that shares a line with what a rule would hide is kept.",
+        "Files with nothing to shorten, or too big to parse, come back as source with a sha.",
+        "Long locals are renamed at every use, and names that cannot be renamed everywhere safely keep theirs.",
+        "Rust, Go and Java sample files show imports, logging, the field-only constructor, Go error returns, the rethrowing Java catch, access modifiers and short locals with source line numbers, and JavaScript follows the TypeScript rules.",
+        "Kotlin, Swift, C, C++, Ruby, PHP, Scala and shell sample files show imports, logging, the field-only init or constructor, the rethrowing catch, regions, access modifiers and short locals with source line numbers, and keep prints, side effects and catches that do more.",
+        "Ruby, PHP, Scala and shell sample files show imports, logging, the field-only initialize or constructor, the re-raising rescue or rethrowing catch, access modifiers and short locals, and keep prints, side effects and catches that do more.",
+        "A shell script shows source runs, logging helpers and long heredoc bodies collapsed, and keeps echo, pipelines and commands with subcommands.",
+        "Perl, Lua and Elixir sample files show imports, logging, regions and short locals with source line numbers, keep prints and non-logger calls, and keep names used inside their own declaration, before it, through other Perl sigils, in Elixir heads and patterns, or in functions that use string eval, load or quote.",
+        "Haskell, OCaml, F#, Clojure, Erlang, R, Julia, Zig, Objective-C, Groovy, PowerShell, SQL and Visual Basic sample files show imports, logging, regions, Groovy and Visual Basic field-only constructors, rethrowing catches, access modifiers, SQL row lists and Zig and Objective-C short locals with source line numbers; a block's last expression, logging inside arguments or pipes, other receivers and catches that do more are kept; a Nim file shows imports, logging and regions line by line, and a SQL file its regions and long INSERT row lists.",
+        "A Fortran file shows use runs, `call log_*` statements and `! region` comments collapsed; a Pascal file its uses clause, a field-only constructor, logging, a re-raising handler and {$REGION} lines; a fixed-format COBOL file drops its sequence areas and collapses comment banners, COPY runs and debugging lines."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_python",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_typescript",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_dart",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_logging",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_constructor_kept",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_catch",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_shared_lines",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_is_region",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_render_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_lang_of",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "test_code_terse_view",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_abbreviate",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_python",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_python_unsafe",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_typescript",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_nested_scopes",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_dart",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_rust",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_go",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_java",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_javascript",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_logging_kept",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_kept_new_languages",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_more_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_rust",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_go",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_java",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_javascript",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_kotlin",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_swift",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_cpp",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_c",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_kept_kotlin_swift_c",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_cpp_swift_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_kotlin",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_swift",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_c_cpp",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_ruby",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_php",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_scala",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_kept_ruby_php_scala",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_ruby_scala_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_ruby",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_php",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_scala",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_php_scala_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_shell",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_perl_lua_elixir",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_kept_perl_lua_elixir",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_perl",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_lua",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_elixir",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "renames",
+          "command": "Renamed only the locals in 9 Perl core modules (Text::Wrap, Text::ParseWords, Text::Balanced, Text::Abbrev, File::Basename, Getopt::Long, JSON::PP, Time::Local, Pod::Usage; 136 locals) and in Penlight (39 files, 193 locals): each passes perl -c or luac -p, and a script exercising the modules prints the same output with the original and renamed copies; an Elixir sample module also runs the same."
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_more_languages",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_kept_more_languages",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_more_language_edges",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_zig",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_objc",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "test_groovy",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/nim.rs",
+          "symbol": "test_view_nim",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {"type": "automated", "path": "src/macos/daemon/src/locals.rs", "symbol": "test_plain_renames", "command": "cargo test -p daemon (in src/macos)"},
+        {"type": "manual", "path": "src/macos/daemon/src/locals.rs", "symbol": "plain_renames", "command": "Renamed only the locals in Erlang/OTP 25's sources (1,247 files, 106,015 locals), mono-basic 4.0.1's VB.NET (2,880 files, 1,660 locals), Free Pascal 3.2.2's .pas sources (2,284 files, 12,349 locals) and LAPACK 3.9's Fortran: every renamed file parses to the same tree shape. Each of the 593 renamed Erlang modules that compiles here compiles with erlc +deterministic too: 585 to identical BEAM files, 8 differing only in register order and in the generated names of named funs. LAPACK's fixed-form .f files parse with errors and keep their names. A scan of the Visual Basic renames found `NewDate` misread as `New Date`, which led to the text-count check."},
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/locals.rs",
+          "symbol": "renames",
+          "command": "Renamed only the locals in GNUstep base 1.29's Tools and Tests (617 locals; the 106 changed files of the 389 that pass gcc -fsyntax-only still pass), in Groovy 2.4.21's main sources (108 locals, reviewed with a scan for leftover old names) and in the Zig 0.17.1 standard library (13,251 locals; a scan finds no renamed field, enum literal or label). Ran every view over Erlang/OTP, OCaml Logs, R logger and futile.logger, mono-basic (VB.NET), Nim 2.2, F# 4.0, PostgreSQL 16's SQL tests, Clojure 1.12 and monad-logger: every hidden line belongs to a logging call or a region marker, and each note covers imports, a constructor, a catch or SQL rows."
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/sql.rs",
+          "symbol": "test_view_sql",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/terse.rs",
+          "symbol": "test_view_fortran_pascal",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cobol.rs",
+          "symbol": "test_view_fixed",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cobol.rs",
+          "symbol": "test_view_free",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "csharp-structure",
+      "title": "C# structure commands",
+      "summary": "The structure commands are tested against a stand-in indexer daemon that echoes each call, and their MCP tools against the argument mapping.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "csharp-structure"
+        },
+        {
+          "path": "src/macos/daemon/src/.dev/contracts.json",
+          "entityId": "mcp-tools"
+        }
+      ],
+      "criteria": [
+        "Each command calls the indexer tool of the same name with its arguments, and path arguments become relative to the work tree, also from a subdirectory.",
+        "Usage errors, paths outside the work tree, a working directory outside any work tree and a missing indexer are one `error:` line.",
+        "root:path references at the start of a line, or after a change mark, become paths relative to the working directory; other lines are kept.",
+        "Each structure tool's MCP arguments map to the command line, with wrong types as tool errors."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "test_structure_commands_call_the_indexer",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "test_structure_command_errors",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "test_ask_passes_arguments",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "test_localize",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/mcp_structure.rs",
+          "symbol": "test_structure_tools_map_arguments",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/mcp_structure.rs",
+          "symbol": "test_structure_tool_errors_and_schemas",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "details": "The real indexer was asked through daemon end to end on a sample C# work tree when this was written; no automated test runs both programs together.",
+      "evidenceStatus": "source-verified",
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "src/macos/daemon/src/.dev/verification.json",
+          "entityId": "indexer-bridge"
+        }
+      ]
+    },
+    {
+      "id": "clean",
+      "title": "Cleaning piped output",
+      "summary": "Each cleaning step has a unit test, and run is tested end to end for grep output with --stats, JSON, --lossless, the budget, the input cap and its errors.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "clean-output"
+        }
+      ],
+      "criteria": [
+        "Escapes, redraws, whitespace, JSON, grep output, repeats, progress bars, blobs and long lines are each handled and marked.",
+        "--lossless keeps progress lines, blobs and long lines.",
+        "The output is never longer than the input before the budget, and the budget keeps head and tail.",
+        "Input past 64 MiB is cut with a note."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_strip_ansi",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_group_grep_numbered",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_minify_json",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_run_grep_with_stats",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_run_lossless",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_clean_never_larger",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_run_budget_empty_and_never_larger",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_run_input_cap",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "test_run_errors",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "read-again",
+      "title": "read-again",
+      "summary": "again.rs's tests rerun session responses, return stored clean outputs as shown and in full, and check misses, usage errors and a store that cannot be written; the smoke test reads a response again through the invoker.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+          "entityId": "read-again"
+        },
+        {
+          "path": "src/macos/daemon/src/.dev/feature.json",
+          "entityId": "read-again"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/use-case.json",
+          "entityId": "get-a-cut-output-in-full"
+        }
+      ],
+      "criteria": [
+        "An unchanged session response comes back identical under its id, written `r:ID` or `[r:ID]`; a changed one comes back current under a new id naming the old.",
+        "--full on a session response says it was not cut; an unknown id, with or without a session, and a bad option are refused with one line.",
+        "A clean answer is stored under an id, ends with the --full hint only when something was cut, and comes back as shown; --full gives numbered lines without terminal escapes, --lines a range clamped to the end, --budget elides the middle with the command for it, and an empty input says so.",
+        "A range past the end or one that does not parse is refused.",
+        "A store that cannot be written leaves clean's answer untagged with a note, instead of failing."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "test_rerun_session_response",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "test_misses",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "test_stored_clean_output",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "test_unwritable_store",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/smoke.sh",
+          "command": "sh test/smoke.sh (in src/macos/zazzle, after building daemon)",
+          "description": "`zazzle read-again r:ID` after a read in one ZAZZLE_SESSION returns the first answer exactly."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "language-modules",
+      "title": "Language modules downloaded on demand",
+      "summary": "modules.rs is tested on manifest parsing, the JIT setting, a real Lua module downloaded from a local HTTP server, hash mismatches, JIT off and non-modules; the languages command is tested on listing, the JIT setting, failed and successful fetches and a development build.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "language-modules"
+        }
+      ],
+      "criteria": [
+        "A module with the manifest's SHA-256 downloads, loads and parses; one with another SHA-256 is refused and not stored.",
+        "With JIT off a missing module is not downloaded.",
+        "Files that are not modules, and unreachable servers, fail with a message."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/modules.rs",
+          "symbol": "test_parse_and_platform",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/modules.rs",
+          "symbol": "test_jit_setting",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/modules.rs",
+          "symbol": "test_fetch_and_load",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/modules.rs",
+          "symbol": "test_language_without_manifest",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/languages.rs",
+          "symbol": "test_languages_command",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/languages.rs",
+          "symbol": "test_languages_fetch",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/modules.rs",
+          "symbol": "language",
+          "command": "Built all 25 modules and a release daemon with their manifest on Linux, served them over local HTTP and ran `zazzle daemon run languages`, `languages jit off`, `read a.kt` (source), `languages jit on`, `read a.kt` (downloaded kotlin, terse view) and `languages fetch` (the other 24); a byte appended to a served module was refused with both hashes, and a corrupted local copy was replaced before loading."
+        },
+        {
+          "type": "manual",
+          "path": "src/macos/daemon/src/outline.rs",
+          "symbol": "grammar",
+          "command": "Built all 34 modules, trained pgo.sh with PGO_LANGUAGES pointing at them (the profile counts 193 ts_parser_parse calls), built the profiled daemon (6.8 MB) with their manifest, and on fresh state ran `outline a.rs` (downloaded rust, tree-sitter outline), `read a.rs` and `read b.f90` (downloaded fortran, terse views) through a local HTTP server."
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "human-help",
+      "title": "Help for people",
+      "summary": "Unit tests check the overview and the pages and how a command line reaches them; the invoker's smoke test runs bare zazzle, find --help and run --help end to end.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+          "entityId": "human-help"
+        }
+      ],
+      "criteria": [
+        "No line of the overview or of any page is wider than 80 columns, except usage and example lines, and every summary fits on its line.",
+        "The overview starts with the version and lists every command once, under its group.",
+        "A page has its usage, options and examples; a term too long for the left column puts its description on the next line.",
+        "Bare zazzle, help, --help and -h print the overview; help COMMAND, COMMAND --help and the grep and cat aliases print the page; an unknown command, or help with two arguments, is an error.",
+        "The daemon answers --help after run (wrap), proxy and setup with their pages, but not --help after a command given to run."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/help.rs",
+          "symbol": "test_help_fits_width",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/help.rs",
+          "symbol": "test_help_overview_lists_commands",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/help.rs",
+          "symbol": "test_help_page",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "test_help_variants",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "test_parse_help",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/smoke.sh",
+          "symbol": "help overview",
+          "command": "sh test/smoke.sh (in src/macos/zazzle, after building daemon)"
+        }
+      ],
+      "notChecked": [
+        "Whether the descriptions stay true when a command's options change: the pages are written by hand, beside each command's USAGE."
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "json-calls",
+      "title": "JSON requests and stat",
+      "summary": "call runs every shell-tools operation through the daemon's services and keeps a session's memory across calls; stat prints one line per path.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "read, search (alias find), list (alias ls), outline and stat answer through the walk cache, find's scan (binary and ignored files skipped, hidden files only on request, 1-based columns) and the daemon's outlines with dotted nested names.",
+        "Within a session a repeated read is unchanged, a changed file comes back as hunks and diff_since gives the hunks since an etag; the empty session remembers nothing; forget-sessions clears the JSON sessions too.",
+        "A batch gets one reply per request and exit status 1 when one failed; text that is not JSON is a JSON error; - reads standard input.",
+        "stat prints kind, size, UTC time and the sha read shows, or missing; UTC formatting is right before 1970 and on a leap day.",
+        "zazzle_stat and zazzle_call map to these command lines and keep the local model away from call's JSON."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_ops",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_session_memory",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_batch_errors_and_stdin",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_stat_command",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_utc",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "test_stat_and_call_args",
+          "command": "cargo test -p daemon (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/walk.rs",
+          "symbol": "test_dirs",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

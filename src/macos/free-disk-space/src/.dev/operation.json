@@ -1,0 +1,486 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "free-disk-space commands",
+  "folder": "src/macos/free-disk-space/src",
+  "description": "The subcommands of the free-disk-space binary, as main.rs parses and dispatches them. Errors print `error: ...` to stderr and exit with status 1 (util::die); a second Ctrl-C exits with 130. Nothing checks who the caller is: every command runs with the invoking user's permissions, and the file system decides what it may read or change. The same commands can be run as `zazzle free-disk-space ...`: the zazzle invoker in src/macos/zazzle/ replaces itself with this binary, found beside it, and passes the arguments on unchanged.",
+  "sources": [
+    {
+      "path": "src/macos/free-disk-space/src/main.rs",
+      "symbol": "Cmd"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/main.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/util.rs",
+      "symbol": "die"
+    },
+    {
+      "path": "src/macos/free-disk-space/src/util.rs",
+      "symbol": "interrupt"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "exec_tool"
+    }
+  ],
+  "entities": [
+    {
+      "id": "scan",
+      "name": "Start a scan",
+      "description": "Starts a new scan of a directory tree for compression candidates and duplicates (by name and size) and runs it until it finishes or is stopped; when it finishes it also previews the cleanup targets (`new` is an alias).",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "NewArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "cmd_new"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/scan.rs",
+        "symbol": "cmd_new"
+      },
+      "action": "command",
+      "transport": "free-disk-space scan [--root DIR] [--min-size SIZE] [--min-age-days N] [--min-savings-pct N] [--cross-devices] [--exclude PATH]... [--force] [--skip-clean] [--state FILE]",
+      "authorization": "None checked; it reads what the invoking user can read, and directories it cannot read are counted as errors.",
+      "result": "A new state file; progress on one line with fixed-width numbers, then `Scan complete.` with one line each for compression (candidates, estimated saving), duplicates (copies beyond the first of same-named, same-sized files and their bytes, an upper bound) and cleanup (clean all's dry-run preview unless --skip-clean), each naming the next command; or `Scan paused` after Ctrl-C.",
+      "failures": [
+        "--root is not a directory: exits with an error.",
+        "An unfinished scan exists and --force is not given: exits with an error naming the pending directory count.",
+        "--min-size is not a size: exits with an error.",
+        "The state file cannot be opened: exits with an error."
+      ]
+    },
+    {
+      "id": "resume",
+      "name": "Resume a scan",
+      "description": "Continues an interrupted scan with the settings it was started with.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "cmd_resume"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/scan.rs",
+        "symbol": "cmd_resume"
+      },
+      "action": "command",
+      "transport": "free-disk-space resume [--state FILE]",
+      "authorization": "None checked.",
+      "result": "The same output as new, starting from the pending directories; `Scan already complete` if nothing is pending.",
+      "failures": [
+        "No state file: exits with an error pointing at new.",
+        "The state file holds no scan configuration: exits with an error."
+      ]
+    },
+    {
+      "id": "status",
+      "name": "Show status",
+      "description": "Shows the scan's root, progress, candidates by status, recorded file names, current free space and whether the daemon is installed and running; with --json, all of it as one object with ok and problems.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "cmd_status"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/status.rs",
+          "symbol": "gather"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/status.rs",
+        "symbol": "cmd_status"
+      },
+      "action": "query",
+      "transport": "free-disk-space status [--json] [--state FILE]",
+      "authorization": "None checked.",
+      "result": "Root; complete or in progress with queued directories; directories, files, bytes, errors and elapsed time; per status the file count, estimated and verified savings; file names recorded and replaced by clones; free space on the data volume; the daemon's login item installed or not and running or not; one 'problem:' line per problem. With --json, one compact object: tool, version, ok, problems, state_file, scan (null without a state file), candidates, file_names, free_space and daemon.",
+      "failures": [
+        "No state file: the text form exits with an error pointing at scan; --json reports scan as null and ok stays true.",
+        "The state file cannot be opened: the text form exits with the error; --json reports ok false with the error in problems."
+      ]
+    },
+    {
+      "id": "top",
+      "name": "List the largest folders and files",
+      "description": "Walks a folder and lists the largest folders and files under it by allocated size, biggest first.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "TopArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "cmd_top"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/top.rs",
+          "symbol": "walk_root"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/top.rs",
+        "symbol": "cmd_top"
+      },
+      "action": "query",
+      "transport": "free-disk-space top [PATH] [--count N] [--depth D] [--json]",
+      "authorization": "None checked; it sees what the invoking user can read and changes nothing.",
+      "result": "A header with the total allocated size, the number of files and the depth, then up to N rows (default 20) of size and path relative to PATH (folders end in /), at most D levels (default 3) below PATH; a note with the number of folders it could not read and an example, and one line per other volume it did not enter. With --json, one object: tool, version, root, total, files, depth, entries [{path, size, kind, depth}], skipped [{path, error}] and other_volumes.",
+      "failures": [
+        "PATH missing, unreadable or not a folder: exits with an error.",
+        "--count or --depth 0: clap's usage error."
+      ]
+    },
+    {
+      "id": "list",
+      "name": "List candidates",
+      "description": "Lists candidates of one status, largest estimated saving first.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "ListArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/scan.rs",
+          "symbol": "cmd_list"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/scan.rs",
+        "symbol": "cmd_list"
+      },
+      "action": "query",
+      "transport": "free-disk-space list [--top N] [--status pending|done|skipped|failed] [--state FILE]",
+      "authorization": "None checked.",
+      "result": "One line per candidate: size, estimated saving, path and its note; `(none with status ...)` when empty.",
+      "failures": [
+        "No state file: exits with an error pointing at new."
+      ]
+    },
+    {
+      "id": "compress",
+      "name": "Compress candidates",
+      "description": "Compresses pending candidates in place with APFS compression, each through a verified temp copy.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "CompressArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "cmd_compress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "precheck"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compress_verified"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/compress.rs",
+          "symbol": "compression_works"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/compress.rs",
+        "symbol": "cmd_compress"
+      },
+      "action": "command",
+      "transport": "free-disk-space compress [--sample N] [--max-files N] [--limit SIZE] [--min-age-days N] [--min-gain SIZE] [--reserve SIZE] [--dry-run] [--yes] [--state FILE]",
+      "authorization": "None checked beyond the file system: a file is skipped unless its directory is writable. On a terminal it asks `Compress these files in place? [y/N]` unless --yes; when stdout is not a terminal it does not ask.",
+      "result": "The plan (file count and estimated saving); a progress line with the position in the plan, the files compressed and not compressed, the saving so far and the elapsed time; a FAILED line with a note for each failed file; then the initial and final free space, counts, how many files were skipped for each reason (with a pointer to list --status skipped), the verified allocated-space saving and the overall free-space change, which it says can differ.",
+      "failures": [
+        "Not macOS and FDS_FORCE unset: exits with an error.",
+        "On macOS, not --dry-run, a compressed probe copy does not read back as compressed and unchanged: exits with an error before asking; nothing changed.",
+        "The clone or a library step fails for one file: that file is recorded failed with the step named (for example lzfse: setting com.apple.decmpfs: <reason>), the original is untouched and the temp copy removed.",
+        "No state file: exits with an error pointing at new.",
+        "--limit is not a size: exits with an error.",
+        "No pending candidates: prints so and stops.",
+        "The scan has not finished: warns and works from the candidates found so far.",
+        "A file fails verification: prints NOT COMPRESSIBLE with the reason, leaves it as it was, records it as failed so later runs skip it, and carries on; the summary groups these files by reason."
+      ]
+    },
+    {
+      "id": "repair",
+      "name": "Repair false compression claims",
+      "description": "Finds files recorded or flagged as compressed that are not really compressed and, with --apply, repairs them.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "RepairArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "cmd_repair"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/repair.rs",
+          "symbol": "repair_one"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/repair.rs",
+        "symbol": "cmd_repair"
+      },
+      "action": "command",
+      "transport": "free-disk-space repair [--apply] [--min-age-days N] [--min-gain SIZE] [--reserve SIZE] [--state FILE]",
+      "authorization": "None checked beyond the file system; a rewrite needs a writable directory and a file no process has open.",
+      "result": "Each finding on its own line (BROKEN in red), then the number of files checked and a count per kind of finding; a dry run says nothing changed; with --apply, the verified saving from rewrites and a reminder to run compress for files reset to pending.",
+      "failures": [
+        "Off macOS without FDS_FORCE: exits with an error.",
+        "No state file: exits with an error pointing at new.",
+        "--apply and the compressed probe copy does not read back as compressed and unchanged: exits before changing anything.",
+        "A rewrite fails verification: prints FAILED with the reason, records failed and keeps the original."
+      ]
+    },
+    {
+      "id": "decompress",
+      "name": "Decompress files",
+      "description": "Reverses compress for the given files and folders: rewrites each transparently compressed file as a verified plain copy.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "DecompressArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "cmd_decompress"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "apply"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/decompress.rs",
+        "symbol": "cmd_decompress"
+      },
+      "action": "command",
+      "transport": "free-disk-space decompress PATH... [--apply] [--reserve SIZE] [--include-no-provenance] [--state FILE]",
+      "authorization": "None checked beyond the file system; a rewrite needs a writable directory, a single-link file no process has open, and no immutable, append-only or dataless flag.",
+      "result": "The number of compressed files with their size on disk now and plain; a dry run lists each with the space it would add or the reason it would be skipped and says nothing changed; with --apply, one line per file (decompressed, skipped or FAILED), the counts, the growth on disk and the change in free space.",
+      "failures": [
+        "Off macOS without FDS_FORCE: exits with an error.",
+        "--apply and free space below what the plain files need plus --reserve: exits before changing anything; a dry run only warns.",
+        "A path that is missing or unreadable, or a folder on another volume: a warning, and the rest goes on.",
+        "A rewrite fails verification: prints FAILED with the reason and keeps the original."
+      ]
+    },
+    {
+      "id": "dedupe",
+      "name": "Replace duplicates with clones",
+      "description": "Finds byte-identical same-named, same-sized files the scan recorded and, with --apply, replaces all but one with copy-on-write clones of the kept copy.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "DedupeArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "cmd_dedupe"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/dedupe.rs",
+          "symbol": "dedupe_group"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/dedupe.rs",
+        "symbol": "cmd_dedupe"
+      },
+      "action": "command",
+      "transport": "free-disk-space dedupe [--apply] [--include-system] [--min-size SIZE] [--sample N] [--state FILE]",
+      "authorization": "None checked beyond the file system; without --include-system it leaves out files owned by root or by another user and files under system paths (is_system_file).",
+      "result": "A dry run unless --apply: the number of name groups, then each clone made (or, dry, up to 50 that would be, followed by a line saying it is still hashing and the totals come at the end), the counts, and the allocated size of the replaced files as an upper bound on the saving; with --apply also the free-space change on the volume.",
+      "failures": [
+        "--apply off macOS without FDS_FORCE: exits with an error.",
+        "No state file: exits with an error pointing at new.",
+        "No file names recorded in the state: exits with an error asking for a new scan.",
+        "--apply and lsof gives no snapshot of open files: exits with an error; nothing changed.",
+        "The scan has not finished: warns and works from the file names found so far.",
+        "A clone fails verification: prints NOT DEDUPLICATED with the reason, keeps the original, records it (cloned = 2) so later runs leave it alone, and carries on."
+      ]
+    },
+    {
+      "id": "clean",
+      "name": "Clean regenerable files",
+      "description": "Deletes caches, Xcode derived data, Downloads, Trash contents, old dev build artifacts, Homebrew's cache and Docker's images and build cache, as chosen.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "CleanArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "cmd_clean"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "ordered_targets"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/clean.rs",
+          "symbol": "Progress::load"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/clean.rs",
+        "symbol": "cmd_clean"
+      },
+      "action": "command",
+      "transport": "free-disk-space clean TARGET... [--apply] [--dev-root DIR] [--docker-stop-timeout SECONDS], TARGET one of all, caches, downloads, trash, dev, docker, brew, xcode (all = caches, downloads, trash, dev, docker)",
+      "authorization": "None checked; deletions the user may not make are listed as protected and skipped. A dry run unless --apply.",
+      "result": "Per folder and per dev artifact what was (or would be) removed, its size and the running total; with --apply after an interrupted run, a line saying how many steps are already done and `done before the interruption` for each folder or target it skips; after each target the elapsed time and free space; initial and final free space; the sum of sizes seen and, with --apply, the actual free-space change; Docker's state; protected, failed and uncertain entries, 30 at most each.",
+      "failures": [
+        "No target given: clap refuses the command line.",
+        "A file or directory cannot be removed: listed as protected; the run goes on.",
+        "Finder's empty trash fails, a docker prune or stop fails, or Docker does not quit: listed under failures.",
+        "A dev artifact cannot be proved regenerable: listed as uncertain and left alone."
+      ]
+    },
+    {
+      "id": "daemon-run",
+      "name": "Run the daemon",
+      "description": "Runs in the foreground, checking free space every cadence of awake time and cleaning when it is below the threshold; this is what the login item executes.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "DaemonOpts"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_run"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "run_loop"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "check"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/daemon.rs",
+        "symbol": "cmd_run"
+      },
+      "action": "command",
+      "transport": "free-disk-space daemon run [--threshold SIZE|PCT%] [--clean-only] [--cadence 90s|15m|2h] [--targets TARGET...] [--dev-root DIR]; started by launchd at login once installed",
+      "authorization": "None checked; it deletes with the invoking user's permissions, as clean --apply does.",
+      "result": "Timestamped log lines: started, then per check ok, below threshold (followed by clean's output) or skipped; stopped on Ctrl-C; when still below the threshold after cleaning (unless --clean-only), it runs scan or resume, dedupe --apply and compress --yes --limit with the amount still missing, as child processes, and logs each.",
+      "failures": [
+        "The threshold is not a positive size or a percentage between 0 and 100, or the cadence is not a positive number of s, m or h: exits with an error.",
+        "The display is asleep or the volume cannot be read: the check is logged as skipped and the next one waits a full cadence."
+      ]
+    },
+    {
+      "id": "daemon-install",
+      "name": "Install the daemon",
+      "description": "Writes the launchd plist for this binary's path and settings, and starts it as a login item.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_install"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "plist"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/daemon.rs",
+        "symbol": "cmd_install"
+      },
+      "action": "command",
+      "transport": "free-disk-space daemon install [--threshold SIZE|PCT%] [--cadence 90s|15m|2h] [--targets TARGET...] [--dev-root DIR]",
+      "authorization": "None checked; launchd accepts it in the invoking user's gui domain.",
+      "result": "~/Library/LaunchAgents/local.free-disk-space.plist written, any earlier instance booted out and the new one bootstrapped; prints the plist path, the settings, the log path and how to remove it.",
+      "failures": [
+        "Invalid threshold or cadence: exits with an error before writing anything.",
+        "The binary cannot find its own path: exits with an error.",
+        "The LaunchAgents or Logs directory cannot be created, or the plist cannot be written: exits with an error.",
+        "launchctl bootstrap fails: removes the plist and exits with launchctl's output."
+      ]
+    },
+    {
+      "id": "daemon-uninstall",
+      "name": "Uninstall the daemon",
+      "description": "Stops the login item and removes its plist.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_uninstall"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/daemon.rs",
+        "symbol": "cmd_uninstall"
+      },
+      "action": "command",
+      "transport": "free-disk-space daemon uninstall",
+      "authorization": "None checked.",
+      "result": "`Removed <plist path>`, or `Not installed.`; the log file is kept.",
+      "failures": [
+        "The plist exists but cannot be removed: exits with an error."
+      ]
+    },
+    {
+      "id": "daemon-status",
+      "name": "Show daemon status",
+      "description": "Shows whether the login item is installed and running, and where it logs.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/daemon.rs",
+          "symbol": "cmd_status"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/daemon.rs",
+        "symbol": "cmd_status"
+      },
+      "action": "query",
+      "transport": "free-disk-space daemon status",
+      "authorization": "None checked.",
+      "result": "Login item installed or not (with the plist path), running yes or no (launchctl print), and the log path.",
+      "failures": []
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "capability",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/capability.json",
+      "relationship": "The capabilities these commands belong to."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/use-case.json",
+      "relationship": "The use cases that call these commands."
+    },
+    {
+      "kind": "state",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/ScanState.state-diagram.json",
+      "relationship": "new and resume drive the scan's lifecycle."
+    },
+    {
+      "kind": "state",
+      "folder": "src/macos/free-disk-space/src",
+      "path": "src/macos/free-disk-space/src/.dev/Cand.state-diagram.json",
+      "relationship": "compress moves candidates out of pending."
+    }
+  ]
+}

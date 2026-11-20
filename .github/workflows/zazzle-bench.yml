@@ -3,7 +3,7 @@ name: zazzle bench
 
 on:
   pull_request:
-    paths: ["macos/c/zazzle/**", "macos/rust/zazzled/**", "macos/rust/zazzle-lang/**", "macos/release/pgo.sh", "macos/release/language-modules.sh", ".github/workflows/zazzle-bench.yml"]
+    paths: ["src/macos/zazzle/**", "src/macos/daemon/**", "src/macos/language-modules/**", "release/pgo.sh", "release/language-modules.sh", ".github/workflows/zazzle-bench.yml"]
   workflow_dispatch:
     inputs:
       runs:
@@ -22,34 +22,34 @@ jobs:
           - macos-latest
           - ubuntu-24.04
     runs-on: ${{ matrix.os }}
-    # zazzled links no grammar: every build here embeds the manifest of the outline modules built below and loads them from there.
+    # daemon links no grammar: every build here embeds the manifest of the outline modules built below and loads them from there.
     env:
-      ZAZZLED_LANGUAGES_MANIFEST: ${{ github.workspace }}/macos/rust/dist/languages/manifest
-      ZAZZLE_LANGUAGES_DIR: ${{ github.workspace }}/macos/rust/dist/languages
+      ZAZZLE_LANGUAGES_MANIFEST: ${{ github.workspace }}/src/macos/dist/languages/manifest
+      ZAZZLE_LANGUAGES_DIR: ${{ github.workspace }}/src/macos/dist/languages
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Build the language modules outlines use
-        working-directory: macos/rust
+        working-directory: src/macos
         env:
           LANGUAGES: rust python c javascript typescript tsx csharp
         run: |
-          bash ../release/language-modules.sh dist/languages
-          bash ../release/language-modules.sh --manifest dist/languages
+          bash ../../release/language-modules.sh dist/languages
+          bash ../../release/language-modules.sh --manifest dist/languages
       - name: Build daemon
-        working-directory: macos/rust
-        run: cargo build --release -p zazzled
+        working-directory: src/macos
+        run: cargo build --release -p daemon
       - name: Build invoker
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: make
       - name: Smoke test
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: sh test/smoke.sh
       - name: Benchmark
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: sh bench/run.sh ${{ inputs.runs || '3000' }}
       - name: Benchmark refs over the crate sources (cold, then warm)
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         run: sh bench/refs.sh 20 100
       - name: Install clang, LLVM and clang's profile runtime for PGO
         if: runner.os == 'Linux'
@@ -60,16 +60,16 @@ jobs:
           sudo apt-get install -y -qq "libclang-rt-$v-dev"
       - name: Train the PGO profile (same script as the release)
         env:
-          PGO_LANGUAGES: macos/rust/dist/languages
-        run: sh macos/release/pgo.sh >> "$GITHUB_ENV"
-      - name: Build zazzled with the profile
-        working-directory: macos/rust
+          PGO_LANGUAGES: src/macos/dist/languages
+        run: sh release/pgo.sh >> "$GITHUB_ENV"
+      - name: Build daemon with the profile
+        working-directory: src/macos
         env:
           CC: clang
           CFLAGS: ${{ env.PGO_CFLAGS }}
-        run: cargo build --release -p zazzled --locked --target-dir target/pgo-use
+        run: cargo build --release -p daemon --locked --target-dir target/pgo-use
       - name: Benchmark refs with PGO (trained on the same crate sources, so an upper bound)
-        working-directory: macos/c/zazzle
+        working-directory: src/macos/zazzle
         env:
-          ZAZZLED: ../../rust/target/pgo-use/release/zazzled
+          DAEMON: ../target/pgo-use/release/daemon
         run: sh bench/refs.sh 20 100

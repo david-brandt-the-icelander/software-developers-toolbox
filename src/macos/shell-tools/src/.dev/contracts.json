@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "shell-tools contracts",
+  "folder": "src/macos/shell-tools/src",
+  "entities": [
+    {
+      "id": "request-protocol",
+      "title": "JSON request and reply protocol",
+      "summary": "The request objects the library accepts and the reply fields callers act on, through `zazzle call` and the MCP tool zazzle_call.",
+      "contractType": "json-protocol",
+      "consumers": [
+        "Coding agents, through MCP or a shell, guided by agents/skills/zazzle/SKILL.md",
+        "Developers' shells and scripts using `zazzle call`",
+        "The daemon (src/macos/daemon/src/cmd/call.rs), which passes requests and replies through unchanged"
+      ],
+      "guarantees": [
+        "A request is an object whose `op` is read, search (alias find), list (alias ls), stat, outline or diff_since; unknown ops and unknown fields are rejected. An array of requests gets an array of replies in the same order.",
+        "Every reply carries `ok`; a failure is {\"ok\": false, \"error\": <message>}.",
+        "Line numbers and ranges are 1-based and inclusive.",
+        "An etag is `b3:` followed by the first 16 hex digits (64 bits) of the content's BLAKE3 hash; equal etags mean equal content.",
+        "Within a session, replies of read, search, list, outline and diff_since that carry content also carry a `ref` (r1, r2, … per session); a repeat already received is {etag, unchanged: true, ref} with the earlier ref, and `fresh: true` always sends content. Without a session there is no memory.",
+        "A diff reply carries changed: true, base_etag and hunks of {at, del, new_at, ins}: at is the 1-based old line, del the old lines removed, ins the new text (absent for a pure deletion).",
+        "A capped reply carries truncated with next_ranges and bytes_omitted (read) or next_cursor (list); outline and search say truncated."
+      ],
+      "compatibility": "Not stated; waiting on the owner (decisions.json, protocol-compatibility).",
+      "definition": "src/macos/shell-tools/src/req.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/req.rs",
+          "symbol": "Request"
+        },
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "call_one"
+        },
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "etag"
+        },
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "hunks"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State.serve"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "blocked-by",
+          "path": "src/macos/shell-tools/src/.dev/decisions.json",
+          "entityId": "protocol-compatibility"
+        }
+      ]
+    },
+    {
+      "id": "library-api",
+      "title": "Library interface to the daemon",
+      "summary": "What the daemon calls and implements: Engine::call(session, Ctx {cwd, host}, request), Engine::forget_prefix, list::stat and the Host trait (files, dirs, search, outline).",
+      "contractType": "library-api",
+      "consumers": [
+        "src/macos/daemon (cmd/call.rs, cmd/mod.rs, engine.rs)"
+      ],
+      "guarantees": [
+        "Host::files returns regular files sorted; Host::search returns only files with matches, in the given order, with 1-based columns; Host::outline returns one entry per file, None for a file without an outline.",
+        "Engine::call never panics on bad input; it answers with ok false."
+      ],
+      "compatibility": "Internal to the repository: change both crates in one commit.",
+      "definition": "src/macos/shell-tools/src/host.rs",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/host.rs",
+          "symbol": "Host"
+        },
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine.call"
+        }
+      ]
+    }
+  ]
+}

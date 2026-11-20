@@ -1,5 +1,5 @@
 # Open a pull request that pins the newest cyberspace-generator release (a generator-v* tag in
-# david-brandt-the-icelander/cyberspace-explorer) in macos/release/cyberspace-generator.version, so the next zazzle release
+# david-brandt-the-icelander/cyberspace-explorer) in release/cyberspace-generator.version, so the next zazzle release
 # ships it. Runs daily and on demand; a repository_dispatch of type cyberspace-generator-released also starts it.
 # Uses GITHUB_TOKEN only. Pull requests it opens do not start CI by themselves, so it dispatches ci.yml on the branch,
 # whose checks then show on the pull request. Needs Settings → Actions → "Allow GitHub Actions to create and approve pull requests".
@@ -26,7 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pin=macos/release/cyberspace-generator.version
+          pin=release/cyberspace-generator.version
           latest=$(gh release list -R david-brandt-the-icelander/cyberspace-explorer --exclude-drafts --exclude-pre-releases \
             --json tagName,createdAt --jq '[.[] | select(.tagName | startswith("generator-v"))] | sort_by(.createdAt) | last | .tagName // ""')
           current=$(tr -d '[:space:]' <"$pin")
@@ -35,7 +35,7 @@ jobs:
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then echo "$branch already open"; exit 0; fi
           echo "$latest" >"$pin"
           # Check that the release has every binary the zazzle release needs, with matching checksums.
-          bash macos/release/fetch-cyberspace-generator.sh "$RUNNER_TEMP/cg" \
+          bash release/fetch-cyberspace-generator.sh "$RUNNER_TEMP/cg" \
             aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

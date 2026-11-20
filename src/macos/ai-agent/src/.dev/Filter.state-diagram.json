@@ -1,0 +1,93 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-state-diagram/schema.json",
+  "kind": "state",
+  "title": "Filter state diagram",
+  "folder": "src/macos/ai-agent/src",
+  "description": "The life of one thinking Filter while prompt feeds it generated text. Its state is the close marker of the thinking span it is inside (`close`): none means the text is answer, some means it is thinking until that marker. Two details ride along in every state: `held`, the end of the text that may begin a marker and waits for the next push, and `started`, which turns true with the first non-blank answer text and stops leading blank space from being shown. The spans are Qwen's `<think>`..`</think>`, Gemma 4's `<|channel>thought`..`<channel|>` and gpt-oss's `<|channel|>analysis<|message|>`..`<|end|>`; gpt-oss's `<|channel|>final<|message|>` and `<|start|>assistant` headers are dropped from the answer. prompt starts with Filter::new(\"\") and replaces it with Filter::new(rendered prompt) when the engine reports Event::Prompt, before any text; finish is called once when generation ends, and the filter is then dropped.",
+  "sources": [
+    { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter::new" },
+    { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter::push" },
+    { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter::answer" },
+    { "path": "src/macos/ai-agent/src/think.rs", "symbol": "Filter::finish" },
+    { "path": "src/macos/ai-agent/src/think.rs", "symbol": "partial" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" }
+  ],
+  "machine": "Filter (think.rs), driven by prompt in main.rs through push and finish",
+  "initialState": "new",
+  "states": [
+    {
+      "id": "new",
+      "description": "Filter::new is looking at the rendered prompt for a span the template opened and did not close."
+    },
+    {
+      "id": "answer",
+      "description": "Outside any span (close is None): text is shown as Piece::Answer, except a tail that may begin an open marker or a dropped header, which is held."
+    },
+    {
+      "id": "thinking",
+      "description": "Inside a span (close is Some): text is Piece::Thought, except a tail that may begin the close marker, which is held."
+    }
+  ],
+  "transitions": [
+    {
+      "from": "new",
+      "to": "thinking",
+      "trigger": "Filter::new",
+      "guard": "The prompt's last open marker of a span comes after that span's last close marker (a template that starts the thinking itself)",
+      "action": "close is set to that span's close marker."
+    },
+    {
+      "from": "new",
+      "to": "answer",
+      "trigger": "Filter::new",
+      "guard": "No span is left open by the prompt"
+    },
+    {
+      "from": "answer",
+      "to": "thinking",
+      "trigger": "push",
+      "guard": "The earliest marker in the held and new text opens a span",
+      "action": "The text before it becomes an Answer piece (leading blank space dropped until the answer starts); the rest is examined again inside the span."
+    },
+    {
+      "from": "answer",
+      "to": "answer",
+      "trigger": "push",
+      "guard": "The earliest marker is a dropped gpt-oss header (preferred over an open marker at the same place)",
+      "action": "The text before it becomes an Answer piece, the header is discarded, and the rest is examined again."
+    },
+    {
+      "from": "answer",
+      "to": "answer",
+      "trigger": "push",
+      "guard": "No marker in the text",
+      "action": "All but a tail that may begin a marker becomes an Answer piece; the tail is held."
+    },
+    {
+      "from": "thinking",
+      "to": "answer",
+      "trigger": "push",
+      "guard": "The text holds the span's close marker",
+      "action": "The text before it becomes a Thought piece; close is cleared and the rest is examined again as answer."
+    },
+    {
+      "from": "thinking",
+      "to": "thinking",
+      "trigger": "push",
+      "guard": "No close marker in the text",
+      "action": "All but a tail that may begin the close marker becomes a Thought piece; the tail is held."
+    },
+    {
+      "from": "answer",
+      "to": "answer",
+      "trigger": "finish",
+      "action": "The held text is shown as answer (blank space dropped if the answer has not started)."
+    },
+    {
+      "from": "thinking",
+      "to": "thinking",
+      "trigger": "finish",
+      "action": "Generation ended inside a span: the held text becomes a Thought piece."
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/glossary.schema.json",
+  "kind": "glossary",
+  "title": "shell-tools glossary",
+  "folder": "src/macos/shell-tools/src",
+  "entities": [
+    {
+      "id": "session",
+      "title": "Session",
+      "summary": "What one caller's JSON requests share: the daemon's session key (ZAZZLE_SESSION, or the MCP connection) selects a Sent table; the empty session has none.",
+      "notToBeConfusedWith": [
+        "An MCP client's conversation, which may restart shell-tools and so start a new session"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine"
+        }
+      ]
+    },
+    {
+      "id": "etag",
+      "title": "Etag",
+      "summary": "`b3:` and the first 64 bits of a BLAKE3 hash in hex: of a file's bytes for read, stat and diff_since, or of the reply value for search, list and outline. Its first 8 hex digits are the sha zazzle read shows.",
+      "notToBeConfusedWith": [
+        "Stamp: file metadata, compared without reading the file"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "etag"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Shared.trusted_etag"
+        }
+      ]
+    },
+    {
+      "id": "stamp",
+      "title": "Stamp",
+      "summary": "A file's device, inode, size, mtime and ctime (in nanoseconds), the Ident type; equal stamps outside the racy window are taken to mean unchanged content.",
+      "aliases": [
+        "Ident",
+        "identity stamp"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "Ident"
+        }
+      ]
+    },
+    {
+      "id": "racy-window",
+      "title": "Racy window",
+      "summary": "The 2 seconds after a file's mtime or ctime during which its stamp proves nothing; the term comes from git.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "Ident.racy"
+        }
+      ]
+    },
+    {
+      "id": "ref",
+      "title": "Ref",
+      "summary": "r1, r2, …: the session's id for a reply that carried content; an unchanged marker names the ref of the reply that holds the content.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Sent.mark_sent"
+        }
+      ]
+    },
+    {
+      "id": "unchanged-marker",
+      "title": "Unchanged marker",
+      "summary": "A reply {etag, unchanged: true, ref} sent instead of content the session already sent for the same request shape.",
+      "notToBeConfusedWith": [
+        "cached: true, which says the result was reused from the cache but is still sent in full"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State.serve"
+        },
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "run"
+        }
+      ]
+    },
+    {
+      "id": "hunk",
+      "title": "Hunk",
+      "summary": "One change in a diff reply: at (1-based old line), del (old lines removed), new_at (1-based new line) and ins (the new text, absent for a pure deletion).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "hunks"
+        }
+      ]
+    },
+    {
+      "id": "diff-base",
+      "title": "Diff base",
+      "summary": "A version of a file whose bytes the daemon holds (shared by sessions) and that a session received in full, so a later whole-file read can be answered with hunks.",
+      "notToBeConfusedWith": [
+        "Any version diff_since can use: diff_since accepts every held version, complete or not"
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State.complete_etag"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State.put_content"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "title": "Host",
+      "summary": "The interface through which the daemon lends the operations its walk cache, find scan and outlines.",
+      "notToBeConfusedWith": [
+        "The machine the daemon runs on."
+      ]
+    }
+  ]
+}

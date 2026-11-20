@@ -1,0 +1,181 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/decisions.schema.json",
+  "kind": "decisions",
+  "title": "shell-tools source decisions",
+  "folder": "src/macos/shell-tools/src",
+  "entities": [
+    {
+      "id": "merge-into-daemon",
+      "title": "One implementation per operation, the daemon's where both had one",
+      "summary": "shell-tools became a library of the daemon; walking, searching and outlining use the daemon's walk cache, find scan and language-module outlines, and shell-tools keeps the JSON protocol, session memory, stat and diff_since.",
+      "status": "accepted",
+      "context": "shell-tools and the daemon each walked, searched, listed, outlined, read and remembered what a session had seen. The owner asked to turn shell-tools into a library the daemon includes, merging their implementations, and to decide on evidence. Benchmarks on 2026-11-19 (Linux VM, 4 cores, 15 GiB, warm page cache), one process linking both crates, over ~/.cargo/registry/src (18,432 files, 786 MB) and src/macos/daemon (181 files): walk - the daemon's validated walk cache 72-84 ms cold and 5-9 ms warm, shell-tools' walk 85-145 ms on every search; search, 19 different patterns after a warm-up - daemon find 81-100 ms mean, the trigram index over the walk cache 44-57 ms mean (25-32 ms of it stat-ing every file to prove the index current) after a one-time 1.7 s build, about 170 MB more resident memory (210 MB vs 38 MB), and 2.2 ms vs 1.1 ms on the 181-file tree; whole-file reads of all 18,432 files - std::fs::read on 4 threads 233-342 ms, io_uring batches 217-260 ms, fsio's plain batches 240-476 ms, io_uring 2-11 ms vs 1 ms on the small tree.",
+      "options": [
+        {
+          "title": "Keep shell-tools' trigram index for find",
+          "consequences": "About 2x faster warm searches on a large tree, 1 ms on a typical one; a 1.7 s stall on the build, about 170 MB per indexed tree in a long-lived daemon, and a stat of every file on every search."
+        },
+        {
+          "title": "Keep io_uring and POSIX AIO batched loading",
+          "consequences": "Within noise of parallel std reads on a big tree, slower on a small one; 470 lines of unsafe platform code."
+        },
+        {
+          "title": "Use the daemon's walk cache, find scan and outlines",
+          "consequences": "One walk, one scan and one outline per daemon, shared by text and JSON answers; search skips files over 2 MiB and counts matching lines."
+        }
+      ],
+      "decision": "The daemon's walk cache, find scan (with its binary-file memory) and outlines serve JSON requests through the Host trait; shell-tools' walk.rs, index.rs (TriIndex), uring.rs, aio.rs, par.rs, batched loading (AFS_BATCH_IO), result cache and tree-sitter grammars were removed. shell-tools keeps the JSON protocol and its rendering, the etag memory (now shared by a daemon's sessions, with a table per session), JSON read with its diff replies, stat and diff_since, which the daemon lacked: its read-again resends a whole reply and its diff is git's. The daemon's text commands keep their own reply dedupe (Sessions), which hashes rendered text; the library's memory tracks file versions so it can skip loading a file and send hunks.",
+      "rationale": "The walk cache wins clearly (5-9 ms vs 85-145 ms per walk). The index wins about 40 ms per search only on large trees, at a cost in memory and a build stall that a daemon serving many trees for hours pays everywhere; io_uring does not win. One walk and one scan also mean one listing cache and one set of skip rules for every answer.",
+      "decidedBy": "agent, on the owner's request",
+      "decidedOn": "2026-11-19",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/host.rs",
+          "symbol": "Host"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "DaemonHost"
+        },
+        {
+          "path": "src/macos/daemon/src/walk.rs",
+          "symbol": "WalkCache"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "search_all"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "related-to",
+          "path": "src/macos/daemon/src/cmd/.dev/backlog.json",
+          "entityId": "trigram-index-on-macos"
+        }
+      ]
+    },
+    {
+      "id": "no-mmap",
+      "title": "Whole-file reads, not mmap",
+      "summary": "Files are read into a buffer with read(2); mmap is deliberately not used.",
+      "status": "accepted",
+      "context": "The daemon is a long-lived process that reads files other programs may be editing at the same moment; read, stat and diff_since load files in this library.",
+      "options": [
+        {
+          "title": "mmap",
+          "consequences": "No copy, but truncating a mapped file while it is read raises SIGBUS and kills the process."
+        },
+        {
+          "title": "read(2) into a buffer",
+          "consequences": "One copy per file; a file changed mid-read gives stale or partial bytes, which the stamps and the racy window catch, never a crash."
+        }
+      ],
+      "decision": "Read whole files with read(2). On Linux, open with O_NOATIME (retried without it when the kernel refuses with EPERM because the caller does not own the file) and hint posix_fadvise(SEQUENTIAL).",
+      "rationale": "Truncating a mapped file raises SIGBUS and would kill the daemon.",
+      "origin": "src/macos/shell-tools/README.md, section I/O, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "open"
+        },
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "retry_without_noatime"
+        },
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "advise_sequential"
+        }
+      ]
+    },
+    {
+      "id": "racy-window",
+      "title": "Stamps younger than 2 seconds prove nothing",
+      "summary": "A file's stamp is trusted to mean \"unchanged\" only once its mtime and ctime are more than 2 seconds older than the moment the stamp was taken.",
+      "status": "accepted",
+      "context": "read skips re-reading and re-hashing a file whose stamp (device, inode, size, mtime and ctime in nanoseconds) is unchanged. A file edited twice within one timestamp tick, with the same size, keeps the same stamp.",
+      "decision": "Ident.racy marks a stamp racy when max(mtime, ctime) + 2 s is later than the time it was taken. A racy stamp never lets read skip loading the file. The daemon's walk cache applies the same rule to its listings.",
+      "rationale": "The rule git uses for its index: same-tick edits cannot serve stale data.",
+      "origin": "src/macos/shell-tools/README.md, section Caching, before it moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/fsio.rs",
+          "symbol": "Ident.racy"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Shared.trusted_etag"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "depends-on",
+          "path": "src/macos/shell-tools/src/.dev/references.json",
+          "entityId": "racy-git"
+        }
+      ]
+    },
+    {
+      "id": "restat-not-watchers",
+      "title": "Staleness by re-stat, not file-system events",
+      "summary": "Trusted file stamps are checked by stat-ing the file on each read; no inotify, fanotify or FSEvents watcher keeps a dirty set.",
+      "status": "accepted",
+      "context": "read answers unchanged without loading a file whose stamp still matches the one recorded with its etag.",
+      "options": [
+        {
+          "title": "Re-stat the file on each read",
+          "consequences": "One stat per read; nothing platform-specific."
+        },
+        {
+          "title": "File-system event watchers",
+          "consequences": "Three platform APIs for a saving of one stat per read."
+        }
+      ],
+      "decision": "Re-stat.",
+      "origin": "src/macos/shell-tools/README.md, sections Caching and Not implemented, before they moved here.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Shared.trusted_etag"
+        }
+      ]
+    },
+    {
+      "id": "protocol-compatibility",
+      "title": "What may change in the JSON request protocol",
+      "summary": "Agents rely on op and field names and on reply fields such as unchanged, ref, hunks, next_ranges and next_cursor through `zazzle call` and zazzle_call; nothing says which of them may change.",
+      "status": "open",
+      "context": "The request-protocol contract in src/macos/shell-tools/src/.dev/contracts.json is relied on by coding agents through `zazzle call`, the MCP tool zazzle_call and agents/skills/zazzle/SKILL.md. The merge into the daemon kept the op and field names and already changed some replies (README section Compatibility); the repository states no compatibility policy.",
+      "options": [
+        {
+          "title": "Additive only",
+          "consequences": "Fields and tools are only added; a rename or removal needs a new name."
+        },
+        {
+          "title": "Change freely with the skill",
+          "consequences": "Any change is allowed if the skill and the README change in the same commit; agents with older instructions may break."
+        }
+      ],
+      "waitingOn": "owner",
+      "blocks": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/contracts.json",
+          "entityId": "request-protocol"
+        }
+      ],
+      "evidenceStatus": "documented"
+    }
+  ]
+}

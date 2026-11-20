@@ -1,0 +1,421 @@
+/* The invoker's logic: builds a request from argv and the environment, sends it with the standard streams and cwd, and returns the daemon's status. */
+#pragma once
+#include "sys.h"
+
+#define REQ_MAX 262144
+#define NFDS 4
+#define START_WAIT_MS 3000
+#define EXE_MAX 512
+#define SPIN_US 25
+
+static char req[REQ_MAX + 4] __attribute__((aligned(8)));
+static char sockpath[ZAZZLE_SUN_PATH_MAX];
+static char daemon_path[EXE_MAX];
+static char exe_path[EXE_MAX];
+static struct zazzle_sockaddr_un addr;
+static struct zazzle_msghdr msg;
+static struct zazzle_iovec iov;
+static union { struct zazzle_cmsghdr h; char raw[64]; } ctl;
+
+/* Returns the length of s. */
+static size_t str_len(const char *s)
+{
+	size_t n = 0;
+	while (s[n])
+		n++;
+	return n;
+}
+
+/* Returns true if a and b are equal strings. */
+static int str_eq(const char *a, const char *b)
+{
+	size_t i = 0;
+	while (a[i] && a[i] == b[i])
+		i++;
+	return a[i] == b[i];
+}
+
+/* Prints a one-line error to stderr and exits with code. */
+static __attribute__((noreturn)) void die(const char *m, int code)
+{
+	sys_write(2, "zazzle: ", 8);
+	sys_write(2, m, str_len(m));
+	sys_write(2, "\n", 1);
+	sys_exit(code);
+}
+
+/* Prints a one-line error with a decimal error number and exits with code. */
+static __attribute__((noreturn)) void die_errno(const char *m, long err, int code)
+{
+	char digits[24];
+	size_t n = 0;
+	sys_write(2, "zazzle: ", 8);
+	sys_write(2, m, str_len(m));
+	sys_write(2, " (error ", 8);
+	do {
+		digits[n++] = (char)('0' + err % 10);
+		err /= 10;
+	} while (err > 0);
+	while (n > 0)
+		sys_write(2, &digits[--n], 1);
+	sys_write(2, ")\n", 2);
+	sys_exit(code);
+}
+
+/* Returns the value of NAME in envp, or 0. */
+static const char *env_get(char **envp, const char *name)
+{
+	size_t n = str_len(name);
+	for (; *envp; envp++) {
+		size_t i = 0;
+		while (i < n && (*envp)[i] == name[i])
+			i++;
+		if (i == n && (*envp)[n] == '=')
+			return *envp + n + 1;
+	}
+	return 0;
+}
+
+/* Appends s to buf at offset *at, failing with code if it does not fit in cap bytes including the NUL. */
+static void append(char *buf, size_t cap, size_t *at, const char *s, const char *what, int code)
+{
+	size_t n = str_len(s);
+	if (*at + n + 1 > cap)
+		die(what, code);
+	for (size_t i = 0; i < n; i++)
+		buf[*at + i] = s[i];
+	*at += n;
+	buf[*at] = 0;
+}
+
+/* Builds the socket path from ZAZZLE_SOCK or $HOME/.zazzle/sock. */
+static size_t build_path(char **envp)
+{
+	size_t at = 0;
+	const char *s = env_get(envp, "ZAZZLE_SOCK");
+	if (s) {
+		append(sockpath, sizeof sockpath, &at, s, "socket path too long", 78);
+		return at;
+	}
+	s = env_get(envp, "HOME");
+	if (!s)
+		die("HOME is not set", 78);
+	append(sockpath, sizeof sockpath, &at, s, "socket path too long", 78);
+	append(sockpath, sizeof sockpath, &at, "/.zazzle/sock", "socket path too long", 78);
+	return at;
+}
+
+/* Appends one NUL-terminated request field at offset at and returns the new offset. */
+static size_t put_field(size_t at, const char *s)
+{
+	size_t n = str_len(s) + 1;
+	if (at + n > REQ_MAX + 4)
+		die("arguments too long", 64);
+	for (size_t j = 0; j < n; j++)
+		req[at + j] = s[j];
+	return at + n;
+}
+
+/* Returns the part of a path after its last slash. */
+static const char *base_name(const char *p)
+{
+	const char *b = p;
+	for (; *p; p++)
+		if (*p == '/')
+			b = p + 1;
+	return b;
+}
+
+/* The name the invoker was started under, without its directory ("zazzle" when there is none). */
+static const char *own_name(int argc, char **argv)
+{
+	return argc > 0 ? base_name(argv[0]) : "zazzle";
+}
+
+/* Tells whether the invoker runs as zazzle itself, under its own name or the short name "z". */
+static int is_zazzle_name(const char *me)
+{
+	return str_eq(me, "zazzle") || str_eq(me, "z");
+}
+
+/* Tells whether an agent started the invoker: Claude Code or Codex left their marker in the environment. */
+static int is_agent(char **envp)
+{
+	return env_get(envp, "CLAUDECODE") || env_get(envp, "CODEX_SANDBOX") || env_get(envp, "CODEX_THREAD_ID");
+}
+
+/* Builds the request: length, empty cwd (the daemon uses the passed descriptor), session, then argv[1..].
+   Run as "zazz" the arguments go to the zazz command; run under any name but "zazzle", "z" and "zazz" (an
+   installed script's shim) they go to that script. */
+static size_t build_request(int argc, char **argv, char **envp)
+{
+	size_t at = 4;
+	const char *session = env_get(envp, "ZAZZLE_SESSION");
+	const char *me = own_name(argc, argv);
+	at = put_field(at, "");
+	at = put_field(at, session ? session : "");
+	if (!is_zazzle_name(me)) {
+		at = put_field(at, "zazz");
+		if (!str_eq(me, "zazz")) {
+			at = put_field(at, "exec-name");
+			at = put_field(at, me);
+		}
+	}
+	/* An agent asking for help with no command gets only the commands meant for agents. */
+	if (is_zazzle_name(me) && is_agent(envp) && (argc == 1 || (argc == 2 && str_eq(argv[1], "help")))) {
+		at = put_field(at, "help");
+		at = put_field(at, "--agent");
+		argc = 1;
+	}
+	for (int i = 1; i < argc; i++)
+		at = put_field(at, argv[i]);
+	*(uint32_t *)req = (uint32_t)(at - 4);
+	return at;
+}
+
+/* Makes one connection attempt and returns the descriptor, or a negative errno from connect. */
+static long try_connect(size_t pathlen)
+{
+	long fd = sys_socket_unix();
+	if (fd < 0)
+		die("socket failed", 69);
+	for (size_t i = 0; i <= pathlen; i++)
+		addr.path[i] = sockpath[i];
+	uint32_t len = sys_fill_addr(&addr, pathlen);
+	long r = sys_connect((int)fd, &addr, len);
+	if (r < 0) {
+		sys_close((int)fd);
+		return r;
+	}
+	return fd;
+}
+
+/* Returns true if the errno means no daemon is listening yet. */
+static int not_running(long r)
+{
+	return r == -SYS_ENOENT || r == -SYS_ECONNREFUSED;
+}
+
+/* Writes the directory of this executable, with a trailing slash, into exe_path; returns false if unknown. */
+static int exe_dir(void)
+{
+	long n = sys_self_exe(exe_path, sizeof exe_path);
+	if (n <= 0)
+		return 0;
+	while (n > 0 && exe_path[n - 1] != '/')
+		n--;
+	exe_path[n] = 0;
+	return 1;
+}
+
+/* The tools' folder relative to the launcher's own folder in an install (bin/zazzle beside libexec/zazzle/). */
+#define TOOLS_SUBDIR "../libexec/zazzle/"
+
+/* Writes the folder that holds the tools into exe_path: libexec/zazzle beside an installed launcher's bin, else the
+   launcher's own folder (a development build); returns false if the launcher's path is unknown. */
+static int tools_dir(void)
+{
+	if (!exe_dir())
+		return 0;
+	size_t at = str_len(exe_path);
+	if (at + sizeof TOOLS_SUBDIR > sizeof exe_path)
+		return 1;
+	for (size_t i = 0; i < sizeof TOOLS_SUBDIR; i++)
+		exe_path[at + i] = TOOLS_SUBDIR[i];
+	if (sys_exists(exe_path) != 0)
+		exe_path[at] = 0;
+	return 1;
+}
+
+/* Chooses the daemon executable: $ZAZZLE_DAEMON, else "daemon" in the tools' folder. */
+static void pick_daemon(char **envp)
+{
+	size_t at = 0;
+	const char *s = env_get(envp, "ZAZZLE_DAEMON");
+	if (s) {
+		append(daemon_path, sizeof daemon_path, &at, s, "ZAZZLE_DAEMON too long", 78);
+		return;
+	}
+	if (!tools_dir())
+		die("daemon not running", 69);
+	append(daemon_path, sizeof daemon_path, &at, exe_path, "daemon path too long", 78);
+	append(daemon_path, sizeof daemon_path, &at, "daemon", "daemon path too long", 78);
+}
+
+/* The tools `zazzle TOOL ARGS` runs as their own process from the tools' folder, not through the daemon. */
+static const char *const TOOLS[] = {
+	"daemon", "fix-network", "free-disk-space", "git-tools", "ai-agent-rules", "csharp-indexer",
+	"cyberspace-generator", 0,
+};
+
+/* Returns the executable of the standalone tool the argument names (`git` is short for git-tools), or 0. */
+static const char *tool_binary(const char *a)
+{
+	for (int i = 0; TOOLS[i]; i++)
+		if (str_eq(a, TOOLS[i]))
+			return TOOLS[i];
+	if (str_eq(a, "git"))
+		return "git-tools";
+	return 0;
+}
+
+/* Replaces this process with the tool executable, found in the tools' folder, passing the arguments after argv[1]; returns only on failure. */
+static void exec_tool(char **argv, char **envp, const char *tool)
+{
+	size_t at = 0;
+	if (!tools_dir())
+		die("cannot find the tool", 69);
+	append(daemon_path, sizeof daemon_path, &at, exe_path, "tool path too long", 78);
+	append(daemon_path, sizeof daemon_path, &at, tool, "tool path too long", 78);
+	argv[1] = daemon_path;
+	long r = sys_exec(daemon_path, argv + 1, envp);
+	die_errno("cannot run the tool", -r, 69);
+}
+
+/* Returns true for `agent llm|prompt|chat|status|prune ..`, which the daemon runs as its own process (llm, status and prune exec ai-agent; prompt and chat are clients of the daemon's per-terminal chat). */
+static int is_llm(int argc, char **argv)
+{
+	if (argc < 3 || !str_eq(argv[1], "agent"))
+		return 0;
+	const char *c = argv[2];
+	return str_eq(c, "llm") || str_eq(c, "prompt") || str_eq(c, "chat") || str_eq(c, "status") || str_eq(c, "prune");
+}
+
+/* Replaces this process with `daemon SUB ARGS`, for commands that need the caller's environment (the MCP proxy, setup, run, the ai-agent tool), so they are not daemon requests. */
+static void exec_daemon(char **argv, char **envp, const char *sub)
+{
+	pick_daemon(envp);
+	argv[0] = daemon_path;
+	argv[1] = (char *)sub;
+	long r = sys_exec(daemon_path, argv, envp);
+	die_errno("cannot run daemon", -r, 69);
+}
+
+/* Connects to the daemon, starting it and retrying with backoff if it is not running. */
+static int connect_daemon(size_t pathlen, char **envp)
+{
+	long fd = try_connect(pathlen);
+	if (fd < 0 && !not_running(fd))
+		die("cannot connect to daemon", 69);
+	if (fd < 0) {
+		pick_daemon(envp);
+		long pid = sys_spawn_daemon(daemon_path, envp);
+		if (pid < 0)
+			die_errno("cannot start daemon", -pid, 69);
+	}
+	long waited = 0, step = 2;
+	while (fd < 0 && waited < START_WAIT_MS) {
+		sys_sleep_ms(step);
+		waited += step;
+		step = step < 100 ? step * 2 : step;
+		fd = try_connect(pathlen);
+		if (fd < 0 && !not_running(fd))
+			die("cannot connect to daemon", 69);
+	}
+	if (fd < 0)
+		die("daemon did not start", 69);
+	if (sys_peer_uid((int)fd) != sys_getuid())
+		die("daemon runs as another user", 77);
+	return (int)fd;
+}
+
+/* Sends the whole request, attaching the standard streams and cwd descriptor on the first message. */
+static void send_request(int fd, size_t total)
+{
+	long cwd = sys_open_cwd();
+	if (cwd < 0)
+		die("cannot open cwd", 66);
+	iov.base = req;
+	iov.len = total;
+	msg.iov = &iov;
+	msg.iovlen = 1;
+	int *fds = (int *)(ctl.raw + ZAZZLE_CMSG_HDR);
+	ctl.h.len = ZAZZLE_CMSG_HDR + NFDS * 4;
+	ctl.h.level = ZAZZLE_SOL_SOCKET;
+	ctl.h.type = 1;
+	fds[0] = 0;
+	fds[1] = 1;
+	fds[2] = 2;
+	fds[3] = (int)cwd;
+	msg.control = &ctl;
+	msg.controllen = ctl.h.len;
+	long sent = sys_sendmsg(fd, &msg);
+	if (sent < 0)
+		die("send failed", 74);
+	while ((size_t)sent < total) {
+		long w = sys_write(fd, req + sent, total - (size_t)sent);
+		if (w <= 0)
+			die("send failed", 74);
+		sent += w;
+	}
+}
+
+/* Reads the daemon's one-byte exit status, polling without sleeping for up to SPIN_US first so a fast reply skips the wake-up. */
+static int read_status(int fd)
+{
+	unsigned char b;
+	uint64_t end = sys_clock_after_us(SPIN_US);
+	do {
+		long r = sys_recv_nowait(fd, &b);
+		if (r == 1)
+			return b;
+		if (r != -SYS_EAGAIN)
+			break;
+		sys_cpu_relax();
+	} while (sys_clock_now() < end);
+	if (sys_read(fd, &b, 1) != 1)
+		die("daemon closed without answering", 70);
+	return b;
+}
+
+/* A retiring daemon's reply instead of a status (daemon's server::RESTART): this byte, then RESTART_TAG. */
+#define RESTART_STATUS 0xFE
+#define RESTART_TAG "daemon-restart"
+
+/* Tells whether a reply that began with RESTART_STATUS goes on with RESTART_TAG, reading the rest of it. */
+static int is_restart(int fd)
+{
+	const char *tag = RESTART_TAG;
+	char got[sizeof RESTART_TAG - 1];
+	size_t n = 0;
+	while (n < sizeof got) {
+		long r = sys_read(fd, got + n, sizeof got - n);
+		if (r <= 0)
+			return 0;
+		n += (size_t)r;
+	}
+	for (size_t i = 0; i < sizeof got; i++)
+		if (got[i] != tag[i])
+			return 0;
+	return 1;
+}
+
+/* Runs a tool, the MCP proxy, setup, run or agent llm/prompt as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
+static int zazzle_run(int argc, char **argv, char **envp)
+{
+	if (argc > 1 && is_zazzle_name(own_name(argc, argv))) {
+		const char *tool = tool_binary(argv[1]);
+		if (tool)
+			exec_tool(argv, envp, tool);
+		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup") || str_eq(argv[1], "tools"))
+			exec_daemon(argv, envp, argv[1]);
+		if (str_eq(argv[1], "run"))
+			exec_daemon(argv, envp, "wrap");
+		/* `ai-agent ARGS` is the downloaded tool, which `daemon llm ARGS` fetches and execs: argv[1] becomes "llm". */
+		if (is_llm(argc, argv) || str_eq(argv[1], "ai-agent"))
+			exec_daemon(argv, envp, "llm");
+	}
+	size_t total = build_request(argc, argv, envp);
+	size_t pathlen = build_path(envp);
+	int fd = connect_daemon(pathlen, envp);
+	send_request(fd, total);
+	int status = read_status(fd);
+	/* A daemon replaced by an upgrade did not run the request: send it once more, to the daemon that replaces it. */
+	if (status == RESTART_STATUS && is_restart(fd)) {
+		sys_close(fd);
+		fd = connect_daemon(pathlen, envp);
+		send_request(fd, total);
+		status = read_status(fd);
+	}
+	return status;
+}

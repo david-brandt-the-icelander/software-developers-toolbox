@@ -1,0 +1,151 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-feature/schema.json",
+  "kind": "feature",
+  "title": "shell-tools features",
+  "folder": "src/macos/shell-tools/src",
+  "description": "What makes the JSON operations cheap for an agent's context: unchanged markers, diffs, bounded output and batches.",
+  "sources": [
+    {
+      "path": "src/macos/shell-tools/src/state.rs",
+      "symbol": "State.serve"
+    },
+    {
+      "path": "src/macos/shell-tools/src/read.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "unchanged-replies",
+      "name": "Unchanged replies",
+      "description": "A repeat whose answer the session already received costs a marker.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State.serve"
+        },
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "run"
+        }
+      ],
+      "behavior": "Within a session, a read with the same ranges and caps of an unchanged file, or a search, list or outline with an equal result, returns {etag, unchanged: true, ref}. read answers from a trusted stamp without loading the file; if_none_match answers unchanged for any session. fresh:true sends the content again.",
+      "outcome": "An agent does not pay twice for content it has.",
+      "constraints": [
+        "The empty session remembers nothing.",
+        "A stamp inside the racy window is never trusted."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Sent.already_sent"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Shared.trusted_etag"
+        }
+      ]
+    },
+    {
+      "id": "diff-replies",
+      "name": "Diff replies",
+      "description": "A whole-file read of a changed file returns only hunks when they are much smaller.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "try_diff"
+        },
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "since"
+        }
+      ],
+      "behavior": "When the session last received the whole file and holds that version, read returns hunks (at, del, new_at, ins) if they are under half the file. diff_since returns the hunks between any version the session was sent (etag) and the file now.",
+      "outcome": "Re-reading a changed file costs its change, not its size.",
+      "constraints": [
+        "Diff bases are shared by sessions, 64 MiB in all, files over 8 MiB not kept.",
+        "Non-UTF-8 content is not diffed."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "Shared.put_content"
+        },
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "hunks"
+        }
+      ]
+    },
+    {
+      "id": "bounded-output",
+      "name": "Bounded output",
+      "description": "Every reply is capped and says how to continue.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "slice_lines"
+        },
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "compute"
+        },
+        {
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "render"
+        }
+      ],
+      "behavior": "read stops at max_lines (400) or max_bytes (16384) with next_ranges and bytes_omitted; lines over 2000 bytes are cut. search keeps max_matches (100) hits and says truncated; list pages with max_entries (500) and next_cursor; outline keeps max_symbols (300).",
+      "outcome": "A large answer never floods the context.",
+      "constraints": [
+        "Binary files report binary and size only."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "clip_line"
+        },
+        {
+          "path": "src/macos/shell-tools/src/outline.rs",
+          "symbol": "compute"
+        }
+      ]
+    },
+    {
+      "id": "request-batches",
+      "name": "Request batches",
+      "description": "An array of requests is answered in order, one reply each.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine.call"
+        }
+      ],
+      "behavior": "Each request is parsed and run on its own; one failing does not stop the rest. all_ok tells whether every reply succeeded; zazzle call exits 1 otherwise.",
+      "outcome": "Several lookups cost one call.",
+      "constraints": [
+        "Requests in a batch run one after another."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "all_ok"
+        }
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/shell-tools/src",
+      "path": "src/macos/shell-tools/src/.dev/operation.json",
+      "relationship": "The operations these features shape."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The call and stat commands that reach them."
+    }
+  ]
+}

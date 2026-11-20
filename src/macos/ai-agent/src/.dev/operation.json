@@ -1,0 +1,104 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "ai-agent operations",
+  "folder": "src/macos/ai-agent/src",
+  "description": "ai-agent's commands, reached as `zazzle agent llm|prompt` or `zazzle ai-agent COMMAND` (the invoker execs `zazzle daemon llm`, which execs ai-agent; `zazzle agent status|prune` is not routed there and reaches ai-agent-rules instead), by daemon running `ai-agent prompt --no-download` as a child for an agent's `--llm`, `brief` and `prompt` (src/macos/daemon/src/llm.rs), or by running the binary directly. An error prints `error: ...` on standard error and exits 2.",
+  "sources": [
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "main" }
+  ],
+  "entities": [
+    {
+      "id": "llm",
+      "name": "zazzle agent llm",
+      "description": "Lists the model catalogue; or downloads a model and makes it, and an effort, the default; or removes a downloaded model.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "list" }
+      ],
+      "entrypoint": { "path": "src/macos/ai-agent/src/main.rs", "symbol": "llm" },
+      "action": "command",
+      "transport": "zazzle agent llm [--model NAME] [--effort low|medium|high] | --remove NAME (ai-agent llm ..)",
+      "authorization": "None checked: the caller's own permissions on the model directory.",
+      "result": "With no option, the catalogue (name, size, downloaded or not, what it is for, the default marked) with the default model, effort and model directory; with --model or --effort, `default: MODEL at effort EFFORT`; with --remove, `removed NAME` or `NAME was not downloaded`.",
+      "failures": [
+        "An unknown or ambiguous model name.",
+        "An effort other than low, medium or high.",
+        "--remove together with --model or --effort (clap refuses it).",
+        "A failed or mismatching model download.",
+        "The directory or defaults file cannot be written; HOME is unset and ZAZZLE_LLM_DIR is not given."
+      ]
+    },
+    {
+      "id": "prompt",
+      "name": "zazzle agent prompt",
+      "description": "Asks a model and streams its answer, downloading the model first when it is missing unless --no-download is given.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+        { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" }
+      ],
+      "entrypoint": { "path": "src/macos/ai-agent/src/main.rs", "symbol": "prompt" },
+      "action": "query",
+      "transport": "ai-agent prompt [--model NAME] [--effort E] [--system TEXT] [--max-tokens N] [--show-thinking] [--no-download] [--grammar GBNF] [--temp T] [TEXT.. | -] (people use `zazzle agent prompt`, daemon's chat client)",
+      "authorization": "None checked: the caller's own permissions.",
+      "result": "The answer on standard output; the thinking on standard error with --show-thinking; exit 0, or 3 with a note on standard error when the token limit cut the answer short. --grammar holds the answer to a GBNF grammar (root rule `root`); --temp sets the sampling temperature (default 0.7; 0 takes the likeliest token every time). It changes nothing but the model store, when it downloads the model; while it runs it holds a shared lock on the model's lock file, so prune leaves the model alone.",
+      "failures": [
+        "An unknown or ambiguous model name, or an unknown effort.",
+        "An empty prompt: `nothing to ask: give TEXT, or pipe it in`.",
+        "A failed or mismatching model download.",
+        "With --no-download, a model that is not downloaded: `error: NAME is not downloaded (SIZE): run `zazzle agent llm --model NAME` first`, exit 4.",
+        "A grammar llama.cpp cannot parse: `error: --grammar: ...`.",
+        "A model that cannot be loaded or has no usable chat template.",
+        "A prompt as long as the model's training context or longer.",
+        "prune removed the model between the download check and the shared lock: `error: FILE was removed while starting; run again`."
+      ]
+    },
+    {
+      "id": "status",
+      "name": "zazzle ai-agent status",
+      "description": "Reports the model store: the default model and effort, each downloaded model with its size and check, partial downloads, the store path and disk use, and this program's version.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status" },
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status_text" },
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "check" },
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Status" }
+      ],
+      "entrypoint": { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "status" },
+      "action": "query",
+      "transport": "zazzle ai-agent status [--json] [--verify] (ai-agent status ..)",
+      "authorization": "None checked: the caller's own permissions on the model directory.",
+      "result": "Text: `default: MODEL at effort E (downloaded|not downloaded)`, one line per model file in models/ (`*` marks the default; `ok (size)`, `ok (sha256)`, `CORRUPT: ..` or `not in the catalogue`, `, in use` when its lock is held), partial downloads with their size, the expected size and `stale` or `downloading`, `store: PATH (N GB on disk)`, `problem: ..` lines and `ai-agent VERSION`. --json prints one object: tool `ai-agent`, version, ok, store, disk_bytes, default {model, effort, downloaded}, models [{name, file, bytes, expected_bytes, check (size, sha256, corrupt or unknown), default, in_use}], partials [{name, file, bytes, expected_bytes, downloading}] and problems. A model is checked by size; --verify also hashes it against the catalogue's SHA-256. Exit 0 when ok, 1 when the default model is not downloaded (or not in the catalogue) or a model is corrupt. Nothing is written.",
+      "failures": [
+        "With --verify, a model file that cannot be read: `error: reading PATH: ..`, exit 2.",
+        "HOME is unset and ZAZZLE_LLM_DIR is not given: exit 2."
+      ]
+    },
+    {
+      "id": "prune",
+      "name": "zazzle ai-agent prune",
+      "description": "Frees disk space in the model store: every downloaded model except the default, partial downloads (except the missing default's, which resumes) and lock files of models with nothing left; a dry run unless --apply.",
+      "sources": [
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" },
+        { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "plan" },
+        { "path": "src/macos/ai-agent/src/store.rs", "symbol": "try_lock" },
+        { "path": "src/macos/ai-agent/src/store.rs", "symbol": "busy" },
+        { "path": "src/macos/ai-agent/src/main.rs", "symbol": "Cmd::Prune" }
+      ],
+      "entrypoint": { "path": "src/macos/ai-agent/src/inventory.rs", "symbol": "prune" },
+      "action": "command",
+      "transport": "zazzle ai-agent prune [--apply] (ai-agent prune ..)",
+      "authorization": "None checked beyond the locks: a model whose lock a download, prompt or worker holds is skipped; with --apply prune takes each model's lock exclusively without waiting while it deletes that model's files.",
+      "result": "`would remove:` (or with --apply `removed:`) and one line per file: size, path and why (`model NAME`, `stale partial download of NAME`, `orphaned lock of NAME`); `skipped: NAME (in use: ..)` for a held lock; `kept: NAME (the default)`; then `would free N GB: run `zazzle ai-agent prune --apply` to delete`, `freed N GB` or `nothing to prune`. Exit 0, or 2 when a file could not be removed; the default model is never deleted.",
+      "failures": [
+        "A file that cannot be removed or a lock that cannot be opened: `error: ..` lines after the report, the rest still pruned, exit 2."
+      ]
+    }
+  ],
+  "relatedViews": [
+    { "kind": "use-case", "folder": "src/macos/ai-agent/src", "path": "src/macos/ai-agent/src/.dev/use-case.json", "relationship": "The use cases that call these commands." },
+    { "kind": "operation", "folder": "src/macos/daemon/src", "path": "src/macos/daemon/src/.dev/operation.json", "relationship": "`zazzle daemon llm`, the way in from zazzle." },
+    { "kind": "operation", "folder": "src/macos/daemon/src/cmd", "path": "src/macos/daemon/src/cmd/.dev/operation.json", "relationship": "zazzle's brief and prompt, which call `prompt --no-download`." },
+    { "kind": "feature", "folder": "src/macos/daemon/src", "path": "src/macos/daemon/src/.dev/feature.json", "relationship": "Post-processing with `--llm` and brief, which call `prompt --no-download` with --grammar and --temp." }
+  ]
+}

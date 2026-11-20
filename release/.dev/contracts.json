@@ -1,0 +1,63 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/contracts.schema.json",
+  "kind": "contracts",
+  "title": "What Homebrew relies on",
+  "folder": "release",
+  "entities": [
+    {
+      "id": "homebrew-bottle",
+      "title": "Bottle archive",
+      "summary": "The archive brew pours for the zazzle formula: its name, its layout and its checksum in the formula's bottle block.",
+      "contractType": "file format",
+      "consumers": [
+        "Homebrew, when a user runs brew install or brew upgrade on zazzcat/z/zazzle"
+      ],
+      "guarantees": [
+        "Named zazzle-VERSION.all.bottle.tar.gz (one hyphen), the name Homebrew downloads from a plain root_url",
+        "Holds exactly zazzle/VERSION/: bin/ with only zazzle, libexec/zazzle/ with daemon, zazz-script-runner, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules and cyberspace-generator (mode 0755, owned by 0:0), and libexec/indexer/ with the two gzipped indexers",
+        "Holds no z: post_install_steps decide whether to link HOMEBREW_PREFIX/bin/z",
+        "Reproducible: the same files give the same archive",
+        "The formula's bottle block names the release's download folder as root_url, one sha256 tagged all, with cellar :any_skip_relocation"
+      ],
+      "compatibility": "Fixed by Homebrew (Bottle::Filename#url_encode and Bottle#extract_snapshot); a change here breaks brew install.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "release/bottle.sh",
+          "symbol": "root"
+        },
+        {
+          "path": "release/formula.sh",
+          "symbol": "bottle_block"
+        },
+        {
+          "path": "release/formula.test.sh",
+          "symbol": "4. Bottle"
+        }
+      ]
+    },
+    {
+      "id": "formula-version-name",
+      "title": "Each binary names itself in its version output",
+      "summary": "The formula's test block runs zazzle version, zazzle daemon --version, zazzle zazz help, libexec/zazzle/zazz-script-runner version and zazzle TOOL --version for the other tools, and expects each output to contain the tool's name.",
+      "contractType": "command-line output",
+      "consumers": [
+        "The formula's test block (brew test zazzle)"
+      ],
+      "guarantees": [
+        "zazzle version prints zazzle; zazzle zazz help prints zazz; zazz-script-runner version prints zazz-script-runner; zazzle TOOL --version prints the tool's name for daemon, fix-network, free-disk-space, git-tools, ai-agent-rules, csharp-indexer and cyberspace-generator"
+      ],
+      "compatibility": "Renaming a crate or binary changes what it prints and breaks brew test. formula.test.sh checks that the test block runs these ten commands, but its stand-in answers for the binaries, so a mismatch with what they really print is not caught there.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "release/formula.sh"
+        },
+        {
+          "path": "release/formula.test.sh",
+          "symbol": "check"
+        }
+      ]
+    }
+  ]
+}

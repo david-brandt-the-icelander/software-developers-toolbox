@@ -1,0 +1,49 @@
+// Tools for commit history and line authorship, answered by git and kept compact.
+using System.Text.Json.Nodes;
+
+namespace CSharpIndexer.Tools;
+
+// Short commit list, optionally for one path.
+public sealed class GitLogTool(RootSet roots) : ITool
+{
+    public string Name => "git_log";
+
+    // Runs git log with a compact format.
+    public string Run(JsonNode? args, CallInfo info)
+    {
+        info.Path = "run:git";
+        info.Reason = "git";
+        var (root, rel) = Args.OptStr(args, "path") is { } p ? roots.Split(p) : (roots.Select(Args.OptStr(args, "root")).First(), "");
+        var cmd = new List<string> { "-C", root.Path, "log", $"-{Args.Int(args, "n", 20)}", "--date=short", "--format=%h %ad %an %s" };
+        if (Args.OptStr(args, "grep") is { } g)
+            cmd.AddRange(["--grep", g, "-i"]);
+        if (rel != "")
+            cmd.AddRange(["--", rel]);
+        var r = Proc.Run("git", cmd, 30);
+        if (r.ExitCode != 0)
+            throw new ToolException("git_failed", r.Stderr.Trim());
+        info.Results = r.Stdout.Count(c => c == '\n');
+        return r.Stdout.TrimEnd();
+    }
+}
+
+// Line authorship for a range of a file.
+public sealed class GitBlameTool(RootSet roots) : ITool
+{
+    public string Name => "git_blame";
+
+    // Runs git blame for the range.
+    public string Run(JsonNode? args, CallInfo info)
+    {
+        info.Path = "run:git";
+        info.Reason = "git";
+        var (root, rel) = roots.Split(Args.Str(args, "path"));
+        var start = Math.Max(1, Args.Int(args, "start_line", 1));
+        var end = Args.Int(args, "end_line", start + 39);
+        var r = Proc.Run("git", ["-C", root.Path, "blame", "-w", "--date=short", "--abbrev=7", "-L", $"{start},{end}", "--", rel], 30);
+        if (r.ExitCode != 0)
+            throw new ToolException("git_failed", r.Stderr.Trim());
+        info.Results = end - start + 1;
+        return r.Stdout.TrimEnd();
+    }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "shell-tools",
+  "folder": "src/macos/shell-tools",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "shell-tools",
+      "summary": "The shell-tools library crate: the JSON file operations (read, search, list, stat, outline, diff_since) that zazzle's daemon runs for `zazzle call` and `zazzle stat`, with each session's memory of what it was sent, so repeats cost an unchanged marker and changed files only their diff.",
+      "purpose": "Holds one library of the toolbox: the crate manifest (Cargo.toml, a member of the src/macos workspace, no binary), the README with the request and reply reference, and the modules in src/. It used to be a program of its own (a CLI and an MCP server); its operations now run inside the daemon, which lends them its walk cache, its search scan and its outlines.",
+      "boundaries": [
+        "Used only by the daemon (src/macos/daemon, the `shell-tools` path dependency); it depends on no other crate of the workspace.",
+        "Has no command line, MCP server or process of its own: `zazzle call`, `zazzle stat`, zazzle_call and zazzle_stat are the daemon's (src/macos/daemon/src/cmd/call.rs, src/macos/daemon/src/mcp.rs).",
+        "How agents should use the operations is written for them in agents/skills/zazzle/SKILL.md, outside this folder."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/Cargo.toml",
+          "symbol": "[lib]"
+        },
+        {
+          "path": "src/macos/Cargo.toml",
+          "symbol": "workspace.members"
+        },
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "shell-tools"
+        },
+        {
+          "path": "src/macos/shell-tools/README.md",
+          "symbol": "shell-tools (library)"
+        }
+      ]
+    }
+  ]
+}

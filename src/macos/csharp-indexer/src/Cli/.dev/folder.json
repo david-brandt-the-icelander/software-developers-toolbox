@@ -1,0 +1,42 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Command-line helpers",
+  "folder": "src/macos/csharp-indexer/src/Cli",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Command-line helpers",
+      "summary": "The logic behind the init, uninit, hook and report commands: wiring zazzle and the indexer's redirect hook into a project's Claude Code settings and taking them out again, deciding which raw reads and searches to redirect to zazzle, and summarising the usage log.",
+      "purpose": "Holds the static classes src/Program.cs calls: Init merges zazzle's server when the daemon is installed, the hook and zazzle's permission into .mcp.json and .claude/settings.json; Uninit removes exactly those entries again, cutting them out of the file text with JsonText so every other byte stays; HookPolicy classifies a Claude Code tool call; Report aggregates usage.jsonl into what to improve next.",
+      "boundaries": [
+        "Reading standard input, writing the usage-log record for the hook and choosing the exit code are in src/Program.cs.",
+        "The usage log's format belongs to src/UsageLog.cs (src/.dev/observability.json); Report only reads it.",
+        "The daemon commands (status, stop, restart) are client code of the daemon protocol and live in src/Daemon/Control.cs."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.FromDir"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        }
+      ]
+    }
+  ]
+}

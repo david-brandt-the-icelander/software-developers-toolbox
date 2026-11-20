@@ -1,0 +1,31 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "Source",
+  "folder": "src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "Source",
+      "summary": "All of zazzle's source code, by platform; today only macos/.",
+      "purpose": "Groups the source by the platform the tools target first. Release scripts live outside it, in release/.",
+      "boundaries": [
+        "A grouping folder: it has no code of its own."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "symbol": "Layout"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "part-of",
+          "path": ".dev/folder.json",
+          "entityId": "folder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/limitations.schema.json",
+  "kind": "limitations",
+  "title": "zazzle invoker limitations",
+  "folder": "src/macos/zazzle/src",
+  "entities": [
+    {
+      "id": "platforms",
+      "title": "macOS arm64 and Linux x86_64/aarch64 only",
+      "summary": "The invoker has syscall backends for those three targets; any other fails to compile.",
+      "impact": "There is no zazzle for Intel Macs or other systems.",
+      "workaround": "Use `zazzle daemon mcp`, `zazzle daemon run`, `zazzle daemon wrap` or `zazzle daemon proxy`, which need no invoker.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/src/sys.h",
+          "symbol": "#error"
+        },
+        {
+          "path": "src/macos/daemon/README.md",
+          "symbol": "Limits"
+        }
+      ]
+    },
+    {
+      "id": "argument-size",
+      "title": "Command lines up to 256 KiB",
+      "summary": "The session and all arguments, each with its NUL, must fit a 256 KiB request buffer.",
+      "impact": "A longer command line exits 64 with `arguments too long`.",
+      "workaround": "Pass a long --new text on standard input with `--new -`.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "REQ_MAX"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "put_field"
+        }
+      ]
+    },
+    {
+      "id": "socket-path-length",
+      "title": "Short socket paths only",
+      "summary": "The socket path must fit a unix socket address: 103 bytes on macOS, 107 on Linux.",
+      "impact": "A longer ZAZZLE_SOCK, or a deep HOME, exits 78 with `socket path too long`.",
+      "workaround": "Point ZAZZLE_SOCK at a shorter path.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "build_path"
+        },
+        {
+          "path": "src/macos/zazzle/src/sys_linux.h",
+          "symbol": "ZAZZLE_SUN_PATH_MAX"
+        },
+        {
+          "path": "src/macos/zazzle/src/sys_darwin_arm64.h",
+          "symbol": "ZAZZLE_SUN_PATH_MAX"
+        }
+      ]
+    },
+    {
+      "id": "tools-beside-invoker",
+      "title": "Tools only from the tools' folder",
+      "summary": "`zazzle TOOL` runs the tool from libexec/zazzle beside the launcher's bin/ (found from the launcher's real path), else from the launcher's own folder; PATH and ZAZZLE_DAEMON are not consulted. Only the invoker run as zazzle does this; as zazz or a shim those words are arguments to a zazz request.",
+      "impact": "If the tool is installed elsewhere, the subcommand fails with `cannot run the tool (error N)`, exit 69.",
+      "workaround": "Run the tool directly, or install it in libexec/zazzle (the release tarballs and the formula do).",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "tool_binary"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "exec_tool"
+        },
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h",
+          "symbol": "zazzle_run"
+        }
+      ]
+    }
+  ]
+}

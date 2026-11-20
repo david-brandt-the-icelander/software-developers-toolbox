@@ -1,0 +1,37 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "shell-tools source",
+  "folder": "src/macos/shell-tools/src",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "shell-tools source",
+      "summary": "Every module of the shell-tools library, flat in one folder: the request dispatcher, the six operations, the session memory, the file loader and the Host interface the daemon implements.",
+      "purpose": "lib.rs lists the modules. engine.rs keeps one Sent table per session and the Shared memory, and runs a request (or a batch) for a session; req.rs parses requests; read.rs, search.rs, list.rs (list and stat), outline.rs and diff.rs (diff_since and line diffs) are the operations; state.rs holds what was sent, trusted stamps and diff bases; fsio.rs loads and hashes files; host.rs declares what the daemon lends (walk, scan, outlines) and the path helpers.",
+      "boundaries": [
+        "Only reads: no operation writes, renames or deletes a file.",
+        "Memory lives in the daemon's process and ends with it; nothing is written to disk.",
+        "Walking, scanning and outlining are the daemon's (Host); this folder renders their results as JSON."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/lib.rs"
+        },
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine.call"
+        },
+        {
+          "path": "src/macos/shell-tools/src/host.rs",
+          "symbol": "Host"
+        },
+        {
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "State"
+        }
+      ]
+    }
+  ]
+}

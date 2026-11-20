@@ -1,0 +1,70 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Knowledge/schemas/backlog.schema.json",
+  "kind": "backlog",
+  "title": "zazzle command backlog",
+  "folder": "src/macos/daemon/src/cmd",
+  "entities": [
+    {
+      "id": "unused-clean-shrink",
+      "title": "clean::shrink has no caller left",
+      "summary": "Since the MCP proxy and `zazzle run` moved to clean::shrink_steps, clean::shrink is called only by its own test, and its comment still names the proxy as its caller.",
+      "type": "debt",
+      "status": "open",
+      "compromise": "shrink was kept beside the new shrink_steps (which also returns the steps, so callers can tell whether anything was cut) instead of being removed; its comment says it is for \"callers other than the command line such as the MCP proxy\", which no longer holds.",
+      "cost": "A public function and a test to keep in step with clean, and a comment that points a reader at a caller that does not use it.",
+      "acceptanceCriteria": [
+        "clean::shrink is removed with its test, or has a caller again and a comment that names it.",
+        "`cargo test -p daemon` and the branch-coverage gate still pass."
+      ],
+      "origin": {
+        "kind": "review",
+        "by": "Coding agent reconciling the daemon .dev files with commit 5ea503c",
+        "date": "2026-11-13",
+        "reference": "src/macos/daemon/src/cmd/clean.rs (shrink, shrink_steps); src/macos/daemon/src/proxy/mod.rs (Filter::text); src/macos/daemon/src/wrap/mod.rs (render_parts)"
+      },
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "shrink"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "shrink_steps"
+        },
+        {
+          "path": "src/macos/daemon/src/proxy/mod.rs",
+          "symbol": "Filter::text"
+        },
+        {
+          "path": "src/macos/daemon/src/wrap/mod.rs",
+          "symbol": "render_parts"
+        }
+      ]
+    },
+    {
+      "id": "trigram-index-on-macos",
+      "title": "Measure a trigram index for find on macOS",
+      "summary": "shell-tools' trigram index was dropped when it merged into the daemon because on Linux it saved about 40 ms per search only on an 18,000-file tree, at about 170 MB and a 1.7 s build; macOS, where stat and reads cost differently, was not measured.",
+      "type": "research",
+      "status": "open",
+      "acceptanceCriteria": [
+        "find's mean time over 20 different patterns on a large tree (such as ~/.cargo/registry/src) is measured on an Apple Silicon Mac with and without an index (git history: src/macos/shell-tools/src/index.rs before the merge), with resident memory.",
+        "An index is added to find only if it wins by more than its memory and build stall are worth, and a decision record says why either way."
+      ],
+      "origin": {
+        "kind": "agent",
+        "by": "Coding agent merging shell-tools into the daemon",
+        "date": "2026-11-19",
+        "reference": "src/macos/shell-tools/src/.dev/decisions.json (merge-into-daemon)"
+      },
+      "evidenceStatus": "documented",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "search_all"
+        }
+      ]
+    }
+  ]
+}

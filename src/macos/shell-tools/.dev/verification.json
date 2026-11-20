@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "shell-tools verification",
+  "folder": "src/macos/shell-tools",
+  "entities": [
+    {
+      "id": "tests-on-both-platforms",
+      "title": "Tests on Linux and macOS",
+      "summary": "The unit tests run in CI on Linux and macOS with the rest of the workspace.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/verification.json"
+        }
+      ],
+      "criteria": [
+        "cargo test -p shell-tools passes on both platforms."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "cargo test",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "documented"
+    },
+    {
+      "id": "coverage-gate",
+      "title": "Coverage gate",
+      "summary": "CI gates the library at 95% of lines and 95% of branches, test code excluded.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/verification.json"
+        }
+      ],
+      "criteria": [
+        "Line and branch coverage of shell-tools are each at least 95%.",
+        "Test modules and the test Host are excluded with coverage(off)."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": ".github/workflows/ci.yml",
+          "symbol": "llvm-cov",
+          "command": "cargo +nightly llvm-cov --branch -p shell-tools --summary-only (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "documented"
+    },
+    {
+      "id": "through-the-daemon",
+      "title": "Operations through the daemon",
+      "summary": "The daemon's own tests run every operation through its real Host and its sessions.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/cmd/.dev/verification.json",
+          "entityId": "json-calls"
+        }
+      ],
+      "criteria": [
+        "See json-calls in the daemon's command verification."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/cmd/call.rs",
+          "symbol": "test_call_ops",
+          "command": "cargo test -p daemon (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

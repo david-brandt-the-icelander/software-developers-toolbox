@@ -1,0 +1,31 @@
+{
+  "$schema": "../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "git-tools",
+  "folder": "src/macos/git-tools",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "git-tools",
+      "summary": "`zazzle git`: a small git front end with a modeless terminal editor made for commit messages, pull request bodies, changelog entries and rebase todo lists, a commit flow that keeps a draft message and lets the developer choose the files, `amend` to reword the last commit (adding what is staged) and `undo` to take it back keeping its changes. One Rust package, three binaries.",
+      "purpose": "The crate of the git-tools, git-tools-commit and git-tools-commit-message-editor binaries: Cargo.toml, the user README, the library and binaries in src/, and the pseudo-terminal end-to-end tests in tests/. It is one member of the Cargo workspace in src/macos.",
+      "boundaries": [
+        "It uses no other crate in the repository. The zazzle invoker (src/macos/zazzle) runs it for `zazzle git ARGS` by exec'ing the git-tools binary from the tools' folder (libexec/zazzle); it never goes through the zazzle daemon.",
+        "Everything except help, version, `message`, `commit`, `amend` and `undo` is handed to the real git unchanged; the crate only runs git as a separate program.",
+        "Building, CI (including its 95% line and branch coverage gate) and publishing the binaries are the workspace's and the workflows' concern, not this folder's."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/git-tools/Cargo.toml", "symbol": "package" },
+        { "path": "src/macos/git-tools/README.md", "symbol": "Programs" },
+        { "path": "src/macos/git-tools/src/lib.rs", "symbol": "args" },
+        { "path": "src/macos/git-tools/src/router.rs", "symbol": "route" },
+        { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
+        { "path": ".github/workflows/ci.yml", "symbol": "coverage" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "src/macos/zazzle/.dev/folder.json", "entityId": "folder", "description": "The invoker that execs git-tools for `zazzle git`." }
+      ]
+    }
+  ]
+}

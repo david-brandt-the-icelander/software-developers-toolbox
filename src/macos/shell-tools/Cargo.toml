@@ -1,0 +1,37 @@
+[package]
+name = "shell-tools"
+version = "0.0.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "shell_tools"
+path = "src/lib.rs"
+
+# Each dependency has one reason; std covers everything else.
+[dependencies]
+# Content hashes for etags.
+blake3 = "1"
+# Fast newline scans for line slicing.
+memchr = "2"
+# The search pattern, compiled here and scanned by the daemon.
+regex = "1"
+# Request parsing.
+serde = { version = "1", features = ["derive"] }
+# Requests and replies.
+serde_json = "1"
+# Line diffs for changed files.
+similar = "2"
+
+[dev-dependencies]
+# mkfifo in the tests.
+libc = "0.2"
+tempfile = "3"
+
+# O_NOATIME and posix_fadvise, used on Linux only.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

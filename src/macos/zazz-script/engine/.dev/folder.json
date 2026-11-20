@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/folder.schema.json",
+  "kind": "folder",
+  "title": "zazz-script-engine",
+  "folder": "src/macos/zazz-script/engine",
+  "entities": [
+    {
+      "id": "folder",
+      "title": "zazz-script-engine",
+      "summary": "The zazz-script-engine crate, library name zazz: the SDK zazz scripts are written and tested with, and the protocol code daemon and zazz-script-runner share with them.",
+      "purpose": "Holds the one copy of the script-side API (handlers, the call context, JSON, errors, HTTP), the launcher protocol both sides speak and the zazz::test harness, so a script, its tests, daemon and zazz-script-runner agree by construction. Contains the crate manifest (Cargo.toml, a member of the src/macos workspace) and the source in src/.",
+      "boundaries": [
+        "No dependencies, only std: the daemon compiles the source files itself with rustc for each script build (Cargo.toml comment; src/macos/daemon/src/zazz/sdk.rs).",
+        "A library only: nothing is installed or released from this folder.",
+        "Building, sandboxing and calling scripts belong to daemon and zazz-script-runner; the .zazz file and zazz.json belong to zazz-script-packaging (src/macos/zazz-script/packaging)."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        { "path": "src/macos/zazz-script/engine/Cargo.toml", "symbol": "[lib]" },
+        { "path": "src/macos/zazz-script/engine/src/lib.rs", "symbol": "serve" },
+        { "path": "src/macos/daemon/src/zazz/sdk.rs", "symbol": "FILES" }
+      ],
+      "relationships": [
+        { "relation": "relates-to", "path": "src/macos/zazz-script/packaging/.dev/folder.json", "entityId": "folder", "description": "The archive format the scripts built with this SDK are shipped in." }
+      ]
+    }
+  ]
+}

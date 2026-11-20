@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "ai-agent component diagram",
+  "folder": "src/macos/ai-agent",
+  "description": "The ai-agent crate: one binary in src/, the daemon that downloads and execs it for `zazzle agent llm|prompt` and `zazzle ai-agent ..` (status and prune among them) and runs `prompt --no-download` for agents' `--llm`, `brief` and `prompt`, llama.cpp, which it links to run the models, and Hugging Face, from which it downloads them.",
+  "sources": [
+    { "path": "src/macos/ai-agent/Cargo.toml", "symbol": "[[bin]]" },
+    { "path": "src/macos/ai-agent/Cargo.toml", "symbol": "llama-cpp-2" },
+    { "path": "src/macos/ai-agent/src/main.rs", "symbol": "main" },
+    { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "url" },
+    { "path": "src/macos/daemon/src/tools.rs", "symbol": "exec" },
+    { "path": "src/macos/daemon/src/cli.rs", "symbol": "Cli::Llm" },
+    { "path": "src/macos/daemon/src/llm.rs", "symbol": "ask_with" }
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "ai-agent",
+      "responsibility": "The package and its binary ai-agent, with the `metal` feature for Apple Silicon.",
+      "folder": "src/macos/ai-agent"
+    },
+    {
+      "id": "src",
+      "name": "ai-agent sources",
+      "responsibility": "The command line, the model catalogue, the model store and its downloads, chat templates, the thinking splitter and the llama.cpp engine.",
+      "folder": "src/macos/ai-agent/src",
+      "diagram": "src/macos/ai-agent/src/.dev/component-diagram.json"
+    },
+    {
+      "id": "daemon",
+      "name": "daemon",
+      "responsibility": "`zazzle daemon llm ARGS` finds ai-agent beside itself or downloads and verifies it (JIT tools), then execs it with the arguments; the daemon and `zazzle daemon wrap` also run it as a child (`prompt --no-download`, with --grammar and --temp for brief and post-processing).",
+      "folder": "src/macos/daemon",
+      "diagram": "src/macos/daemon/.dev/component-diagram.json"
+    },
+    {
+      "id": "llama",
+      "name": "llama.cpp (llama-cpp-2)",
+      "responsibility": "Loads GGUF models and decodes tokens on the CPU, or the GPU through Metal on Apple Silicon; compiled into the binary.",
+      "external": true
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "responsibility": "Hosts the model files; ai-agent downloads each one over HTTPS at the commit its catalogue pins.",
+      "external": true
+    }
+  ],
+  "relationships": [
+    { "from": "crate", "to": "src", "kind": "contains", "description": "Built into the binary." },
+    { "from": "daemon", "to": "crate", "kind": "depends-on", "description": "Execs the ai-agent binary beside it or from its tool store, or runs it as a child and reads its answer and exit code (src/llm.rs)." },
+    { "from": "src", "to": "llama", "kind": "depends-on", "description": "engine.rs loads the model, tokenizes, decodes and samples through llama-cpp-2." },
+    { "from": "src", "to": "huggingface", "kind": "depends-on", "description": "store.rs downloads a model file with ureq, resuming with HTTP Range." }
+  ]
+}

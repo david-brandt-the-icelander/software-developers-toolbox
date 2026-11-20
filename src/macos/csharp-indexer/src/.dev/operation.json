@@ -1,0 +1,321 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "csharp-indexer commands",
+  "folder": "src/macos/csharp-indexer/src",
+  "description": "The command lines Program.cs accepts. help, --help and -h print the usage text, listing every command, on standard output and exit 0; with no arguments the same text goes to standard error with exit 2; an unknown command or argument exits with 2.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/Program.cs",
+      "symbol": "Usage"
+    }
+  ],
+  "entities": [
+    {
+      "id": "serve",
+      "name": "csharp-indexer serve",
+      "description": "The daemon's MCP session over standard input and output, for debugging: it lists no tools, and the internal tools answer when called by name.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "serve"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.Connect"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "serve"
+      },
+      "action": "query",
+      "transport": "Command line: csharp-indexer serve [--no-daemon] [--root name=path]...; MCP on standard input and output",
+      "authorization": "None; runs as the user who starts it. Every root must be inside a git work tree.",
+      "result": "An MCP session over the roots (default: the working directory, named after its last path component) until standard input closes.",
+      "failures": [
+        "An argument other than --no-daemon or --root: \"bad argument\", exit 2.",
+        "No daemon reachable, or one of another version still serving other clients: a note on standard error, then the in-process server.",
+        "A root that is not a directory or not inside a git work tree: the in-process server stops with that error."
+      ]
+    },
+    {
+      "id": "daemon",
+      "name": "csharp-indexer daemon",
+      "description": "The shared per-user daemon zazzle's daemon talks to, started by it (or serve, or restart) when nothing listens.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "daemon"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Start"
+        },
+        {
+          "path": "src/macos/daemon/src/indexer.rs",
+          "symbol": "Indexer::start_daemon"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "daemon"
+      },
+      "action": "command",
+      "transport": "Command line: csharp-indexer daemon; clients (daemon for the view and structure tools, and serve) connect on <state dir>/daemon.sock",
+      "authorization": "None checked; the socket is created readable and writable by its owner only.",
+      "result": "Runs until it has had no clients for the idle period, or until stop (or restart) has made it drain and its last client has left, then removes the socket and exits 0.",
+      "failures": [
+        "Another daemon answers on the socket: it stops with \"a daemon is already running\"."
+      ]
+    },
+    {
+      "id": "status",
+      "name": "csharp-indexer status",
+      "description": "Whether the shared daemon runs, and what it holds: process id, version, uptime, socket, state folder, memory, connected clients and indexed roots with their file counts and age.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "status"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Status"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+          "symbol": "DaemonServer.Status"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "status"
+      },
+      "action": "query",
+      "transport": "Command line: csharp-indexer status [--json]; asks the daemon over <state dir>/daemon.sock with a command hello",
+      "authorization": "None; reads the invoking user's state directory and socket.",
+      "result": "Readable lines, or with --json one object: tool (\"csharp-indexer\"), version (this executable's), ok, running, socket, state_dir, then the daemon's pid, daemon_version, started, uptime_seconds, draining, memory {working_set_bytes, managed_heap_bytes}, clients [{session, roots, connected_at, connected_seconds}] and roots [{path, files, ready, indexed_at, changed_at, age_seconds}]. Exit 0 when the daemon runs and answers, 3 when none runs (the report still printed).",
+      "failures": [
+        "A daemon from before the status command: running, its version as daemon_version and a note that details need a newer daemon; exit 0.",
+        "Something listens but does not answer within 5 s: ok false with the error; exit 1.",
+        "An argument other than --json: \"bad argument\", exit 2."
+      ]
+    },
+    {
+      "id": "stop",
+      "name": "csharp-indexer stop",
+      "description": "Stops the shared daemon the way a newer version replaces it: it refuses new clients, lets connected ones finish, then exits; after the timeout it is killed.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "stop"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Stop"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "stop"
+      },
+      "action": "command",
+      "transport": "Command line: csharp-indexer stop [--timeout SECONDS] (default 10)",
+      "authorization": "None; signals only the daemon of the invoking user's state directory.",
+      "result": "\"no csharp-indexer daemon was running\", \"stopped csharp-indexer daemon VERSION (pid N)\" or \"killed ... : it had not finished within N s\", after a \"waiting up to N s for M client(s)\" line when clients are connected; exit 0.",
+      "failures": [
+        "The daemon neither exits nor can be found to kill (an older daemon when lsof does not name it): a message saying to quit the apps that use it, exit 1.",
+        "A bad --timeout: \"bad argument\", exit 2."
+      ]
+    },
+    {
+      "id": "restart",
+      "name": "csharp-indexer restart",
+      "description": "stop, then a fresh daemon started from this executable on the same state folder.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "restart"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+          "symbol": "Control.Restart"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+          "symbol": "Proxy.SpawnDaemon"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "restart"
+      },
+      "action": "command",
+      "transport": "Command line: csharp-indexer restart [--timeout SECONDS] (default 10)",
+      "authorization": "None; as for stop.",
+      "result": "The stop lines, then \"started csharp-indexer daemon VERSION (pid N)\" once the new daemon answers; exit 0.",
+      "failures": [
+        "The old daemon could not be stopped: as for stop, exit 1, and nothing is started.",
+        "The new daemon does not answer within 10 s: a message naming the executable, exit 1.",
+        "A bad --timeout: \"bad argument\", exit 2."
+      ]
+    },
+    {
+      "id": "init",
+      "name": "csharp-indexer init",
+      "description": "Wires zazzle's server (when the daemon is installed), the redirect hook and their permissions into a project's Claude Code settings, and removes an earlier registration of the indexer's own server.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "init"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Init.cs",
+          "symbol": "Init.FindDaemon"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "init"
+      },
+      "action": "command",
+      "transport": "Command line: csharp-indexer init [--dir path]",
+      "authorization": "None; writes as the user who runs it.",
+      "result": "Writes .mcp.json and .claude/settings.json in the directory, prints one line per file and the snippet for AGENTS.md or CLAUDE.md.",
+      "failures": [
+        "An existing settings file that is not valid JSON: the command stops with the parse error.",
+        "No daemon beside the indexer: not an error; the zazzle entries are left out and the first line of output says to install zazzle and run init again."
+      ]
+    },
+    {
+      "id": "uninit",
+      "name": "csharp-indexer uninit",
+      "description": "Removes what init wrote into a project's .mcp.json and .claude/settings.json and nothing else.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "uninit"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Uninit.cs",
+          "symbol": "Uninit.Apply"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/JsonText.cs",
+          "symbol": "JsonText.Remove"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "uninit"
+      },
+      "action": "command",
+      "transport": "Command line: csharp-indexer uninit [--dry-run] [DIR] (default: the current folder)",
+      "authorization": "None; writes as the user who runs it.",
+      "result": "One line per change on standard output (\"removed ...\", \"deleted ...\", or with --dry-run \"would remove ...\" and nothing written), or \"nothing to undo in DIR\"; exit 0. Running it again finds nothing to undo.",
+      "failures": [
+        "More than one folder, or an option other than --dry-run: \"bad argument\", exit 2.",
+        "DIR is not a folder: \"not a folder\", exit 2.",
+        "A settings file that is not JSON it can edit: a \"left ... unchanged\" line, exit 0."
+      ]
+    },
+    {
+      "id": "report",
+      "name": "csharp-indexer report",
+      "description": "A summary of the usage log.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "report"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/Report.cs",
+          "symbol": "Report.FromDir"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "report"
+      },
+      "action": "query",
+      "transport": "Command line: csharp-indexer report",
+      "authorization": "None; reads the invoking user's state directory.",
+      "result": "The report text on standard output, or \"no usage recorded yet\".",
+      "failures": []
+    },
+    {
+      "id": "hook",
+      "name": "csharp-indexer hook",
+      "description": "Claude Code's PreToolUse hook: decides whether a Bash, Grep, Glob or Read call runs.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/Program.cs",
+          "symbol": "hook"
+        },
+        {
+          "path": "src/macos/csharp-indexer/src/Cli/HookPolicy.cs",
+          "symbol": "HookPolicy.Decide"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "hook"
+      },
+      "action": "query",
+      "transport": "Command line: csharp-indexer hook, with the PreToolUse event as JSON on standard input",
+      "authorization": "None; runs as the user Claude Code runs as.",
+      "result": "Exit 0 to allow; exit 2 with a message naming the zazzle tool to use on standard error to block. Blocks and raw allowances are logged.",
+      "failures": [
+        "Input that is not JSON: the command stops with the parse error."
+      ]
+    },
+    {
+      "id": "version",
+      "name": "csharp-indexer --version",
+      "description": "Prints the tool version: the release's version, from its tag, or 0.0.0-dev for any other build. zazzle's daemon reads its last word to greet the indexer daemon.",
+      "sources": [
+        {
+          "path": "src/macos/csharp-indexer/src/ToolVersion.cs",
+          "symbol": "ToolVersion.Text"
+        },
+        {
+          "path": "src/macos/csharp-indexer/Directory.Build.props",
+          "symbol": "Version"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/csharp-indexer/src/Program.cs",
+        "symbol": "--version"
+      },
+      "action": "query",
+      "transport": "Command line: csharp-indexer --version",
+      "authorization": "None.",
+      "result": "csharp-indexer followed by ToolVersion.Text, on one line on standard output.",
+      "failures": []
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "use-case",
+      "folder": "src/macos/csharp-indexer/src",
+      "path": "src/macos/csharp-indexer/src/.dev/use-case.json",
+      "relationship": "daemon carries the code-question use case, with daemon as its client."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/csharp-indexer/src/Cli",
+      "path": "src/macos/csharp-indexer/src/Cli/.dev/use-case.json",
+      "relationship": "init, uninit, status, stop, restart, hook and report carry the command-line use cases."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/csharp-indexer/src/Tools",
+      "path": "src/macos/csharp-indexer/src/Tools/.dev/operation.json",
+      "relationship": "The internal tools a session answers by name."
+    }
+  ]
+}

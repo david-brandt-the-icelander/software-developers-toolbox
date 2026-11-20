@@ -1,0 +1,218 @@
+{
+  "$schema": "../../../../Meta/Agents/Skills/describe-component-diagram/schema.json",
+  "kind": "component",
+  "title": "ai-agent-rules component diagram",
+  "folder": "src/macos/ai-agent-rules",
+  "description": "The ai-agent-rules crate: a library that finds the rule and skill files for a path, scopes rules by their `paths:` globs, follows `@file` imports and filters by purpose markers, records why each file applies or not, checks the files for broken references and explains the result, a thin binary, and the zazzle invoker that execs it for `zazzle agent`.",
+  "sources": [
+    {
+      "path": "src/macos/ai-agent-rules/Cargo.toml",
+      "symbol": "bin"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/lib.rs",
+      "symbol": "list_rules"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/purpose.rs",
+      "symbol": "part"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/check.rs",
+      "symbol": "problems"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/explain.rs",
+      "symbol": "run"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/front.rs",
+      "symbol": "field"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/glob.rs",
+      "symbol": "matches"
+    },
+    {
+      "path": "src/macos/ai-agent-rules/src/imports.rs",
+      "symbol": "imports"
+    },
+    {
+      "path": "src/macos/zazzle/src/zazzle_core.h",
+      "symbol": "tool_binary"
+    }
+  ],
+  "components": [
+    {
+      "id": "crate",
+      "name": "ai-agent-rules",
+      "responsibility": "The package and its binary ai-agent-rules.",
+      "folder": "src/macos/ai-agent-rules"
+    },
+    {
+      "id": "finder",
+      "name": "Rule finder",
+      "responsibility": "Walks the home folder and every folder down to the path for AGENTS.md, CLAUDE.md, CLAUDE.local.md, .claude/rules (at any depth) and SKILL.md files, drops repeats, adds imported files after their rule, and prints names or text; it traces why each file applies (its folder, a matching `paths:` glob, the importing file) or not (no glob matches, other purposes only, a repeat), and routes get-rules, check and explain.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "check",
+      "name": "Checker",
+      "responsibility": "check.rs: walks the folders below PATH for rule places, collects the applying files, and reports `@file` imports that point nowhere, `paths:` globs that match no file under the repository and skills whose front matter lacks `name` or `description` or names another folder, as lines or JSON.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "explain",
+      "name": "Explainer",
+      "responsibility": "explain.rs: turns the finder's trace into one line or JSON object per file, saying which folder level it came from, which glob matched or failed, which file imported it, or that its purposes or a repeat left it out.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "purpose",
+      "name": "Purpose markers",
+      "responsibility": "Reads #zazzle-purpose markers and decides which whole files or line ranges match the wanted purposes.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "front",
+      "name": "Front matter",
+      "responsibility": "Reads YAML front-matter fields: skill descriptions on one line and rule `paths:` lists.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "glob",
+      "name": "Path globs",
+      "responsibility": "Matches `paths:` globs (`*`, `?`, `**`, `{a,b}`) against the path, letting a folder match when files under it could.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "imports",
+      "name": "Imports",
+      "responsibility": "Finds and resolves `@file` imports outside code, relative to the rule, under home or absolute.",
+      "folder": "src/macos/ai-agent-rules/src"
+    },
+    {
+      "id": "invoker",
+      "name": "zazzle invoker",
+      "responsibility": "Execs ai-agent-rules from the tools' folder (libexec/zazzle) for `zazzle ai-agent-rules ARGS`.",
+      "folder": "src/macos/zazzle",
+      "diagram": "src/macos/zazzle/.dev/component-diagram.json"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "crate",
+      "to": "finder",
+      "kind": "contains",
+      "description": "lib.rs and main.rs."
+    },
+    {
+      "from": "crate",
+      "to": "purpose",
+      "kind": "contains",
+      "description": "purpose.rs."
+    },
+    {
+      "from": "crate",
+      "to": "check",
+      "kind": "contains",
+      "description": "check.rs."
+    },
+    {
+      "from": "crate",
+      "to": "explain",
+      "kind": "contains",
+      "description": "explain.rs."
+    },
+    {
+      "from": "finder",
+      "to": "check",
+      "kind": "depends-on",
+      "description": "run hands `check` to it."
+    },
+    {
+      "from": "finder",
+      "to": "explain",
+      "kind": "depends-on",
+      "description": "run hands `explain` to it."
+    },
+    {
+      "from": "check",
+      "to": "finder",
+      "kind": "depends-on",
+      "description": "trace for the applying files and their reasons; children and holds_rules to walk folders."
+    },
+    {
+      "from": "check",
+      "to": "imports",
+      "kind": "depends-on",
+      "description": "tokens and resolve to find imports that point nowhere."
+    },
+    {
+      "from": "check",
+      "to": "glob",
+      "kind": "depends-on",
+      "description": "Whether any file under a rule's folder matches each `paths:` glob."
+    },
+    {
+      "from": "check",
+      "to": "front",
+      "kind": "depends-on",
+      "description": "Skill `name` and `description`, and rule `paths:` lists."
+    },
+    {
+      "from": "explain",
+      "to": "finder",
+      "kind": "depends-on",
+      "description": "trace for every file found and why it applies or not."
+    },
+    {
+      "from": "crate",
+      "to": "front",
+      "kind": "contains",
+      "description": "front.rs."
+    },
+    {
+      "from": "crate",
+      "to": "glob",
+      "kind": "contains",
+      "description": "glob.rs."
+    },
+    {
+      "from": "crate",
+      "to": "imports",
+      "kind": "contains",
+      "description": "imports.rs."
+    },
+    {
+      "from": "finder",
+      "to": "purpose",
+      "kind": "depends-on",
+      "description": "Asks which part of each file applies when --purpose is given."
+    },
+    {
+      "from": "finder",
+      "to": "front",
+      "kind": "depends-on",
+      "description": "Reads skill descriptions and rule `paths:` lists."
+    },
+    {
+      "from": "finder",
+      "to": "glob",
+      "kind": "depends-on",
+      "description": "Asks whether a scoped rule's globs match the path."
+    },
+    {
+      "from": "finder",
+      "to": "imports",
+      "kind": "depends-on",
+      "description": "Asks which files a rule imports, and whether a file only imports listed files."
+    },
+    {
+      "from": "invoker",
+      "to": "crate",
+      "kind": "depends-on",
+      "description": "Execs the ai-agent-rules binary from the tools' folder (libexec/zazzle)."
+    }
+  ]
+}

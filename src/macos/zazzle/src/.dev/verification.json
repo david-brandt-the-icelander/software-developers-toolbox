@@ -1,0 +1,111 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "zazzle invoker verification",
+  "folder": "src/macos/zazzle/src",
+  "entities": [
+    {
+      "id": "invoker-logic",
+      "title": "Invoker logic against a mock syscall layer",
+      "summary": "test/unit.c compiles zazzle_core.h against test/sys_mock.h and drives every path: request layout, the name it runs under, socket path, autostart, waiting, the spin, sending, resending once after a retiring daemon's restart reply, the execs and every failure with its exit code.",
+      "subject": [
+        {
+          "path": "src/macos/zazzle/src/.dev/use-case.json",
+          "entityId": "run-a-command"
+        },
+        {
+          "path": "src/macos/zazzle/src/.dev/contracts.json",
+          "entityId": "exit-status"
+        },
+        {
+          "path": "src/macos/zazzle/src/.dev/decisions.json",
+          "entityId": "spin-before-block"
+        }
+      ],
+      "criteria": [
+        "The request carries an empty cwd field, the session and the arguments, and the four descriptors.",
+        "Run as zazz the arguments follow a `zazz` field, under any other name `zazz exec-name NAME`; as zazzle or z (or with no argv[0]) they go as they are, and only zazzle or z execs the standalone tools, `zazzle daemon wrap` and `zazzle daemon proxy` (`zazz run NAME` and a script given `proxy` are zazz requests).",
+        "ZAZZLE_SOCK overrides HOME, and lookalike variables are ignored.",
+        "Autostart picks ZAZZLE_DAEMON or daemon in the tools' folder, for both not-running errors, and gives up after the wait.",
+        "A fast reply is read during the spin; a slow one falls back to the blocking read; an error ends the spin.",
+        "Every tool name (daemon, fix-network, free-disk-space, git-tools, ai-agent-rules, csharp-indexer, cyberspace-generator) and git exec the tool (git-tools for git; agent goes to the daemon, which keeps the session's rule ledger) from libexec/zazzle, or beside the launcher when there is none; run and proxy exec `daemon wrap` and `daemon proxy`, and `agent llm`, `agent prompt` and `ai-agent` (as zazzle or z) exec `daemon llm`, all without contacting a daemon, while `agent get-rules`, a bare `agent` and other commands naming llm still go to the daemon; failures exit 69.",
+        "A partial send is completed; every failure exits with its code and one line on standard error that starts with the whole `zazzle: ` prefix."
+      ],
+      "checks": [
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_happy_path", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_no_session_no_args", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_argv0_dispatch", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_restart_resends", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_zazzle_sock_override", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_path_errors", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_arguments_too_long", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_basic_failures", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_autostart_paths", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_zazzle_daemon_override", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_autostart_failures", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_exe_without_slash", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_wait_failures", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_send_paths", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_read_status_failure", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_spin_wait", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_tool_exec", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_proxy_exec", "command": "make unit (in src/macos/zazzle)" },
+        { "type": "automated", "path": "src/macos/zazzle/test/unit.c", "symbol": "test_llm_exec", "command": "make unit (in src/macos/zazzle)" }
+      ]
+    },
+    {
+      "id": "branch-coverage",
+      "title": "Branch coverage of the invoker logic",
+      "summary": "`make coverage` builds the unit tests with gcov and fails unless the branches of zazzle_core.h taken at least once reach 95%.",
+      "subject": [
+        {
+          "path": "src/macos/zazzle/src/zazzle_core.h"
+        }
+      ],
+      "criteria": [
+        "At least 95% of zazzle_core.h's branches are taken by the unit tests."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/coverage.sh",
+          "command": "make coverage (in src/macos/zazzle)",
+          "description": "Reads gcov's \"Taken at least once\" for zazzle_core.h; CI runs it in the coverage job."
+        }
+      ]
+    },
+    {
+      "id": "end-to-end",
+      "title": "The real invoker against the real daemon",
+      "summary": "test/smoke.sh runs build/zazzle against a freshly built daemon: output, help, exit status, errors, session dedupe and read-again, standard input, the sha requirement, write confinement, autostart, the execs of the standalone tools, run and proxy, and the invoker run as zazz and as a script's shim.",
+      "subject": [
+        {
+          "path": "src/macos/zazzle/src/.dev/use-case.json",
+          "entityId": "run-a-command"
+        },
+        {
+          "path": "src/macos/daemon/src/.dev/contracts.json",
+          "entityId": "wire-protocol"
+        }
+      ],
+      "criteria": [
+        "Without a daemon that ever listens, zazzle gives up with exactly `zazzle: daemon did not start`, and a missing tool with `zazzle: cannot run the tool (error N)`.",
+        "`zazzle version` prints `zazzle` and the version `zazzle daemon version` reports (the release tag's, `0.0.0-dev` in the repository), not a fixed number.",
+        "find and read print the expected text; an unknown command exits 2 with its error on standard error.",
+        "`zazzle` alone prints the help overview, `zazzle find --help` the find page from the daemon, and `zazzle run --help` the run page from daemon.",
+        "A daemon zazzle autostarts does not keep zazzle's standard output open.",
+        "Linked as `zazz` the invoker reaches the zazz command (`zazz help`); linked under an unknown script's name it fails with `NAME: not_found` on standard error.",
+        "A stand-in tool beside the launcher, a stand-in tool in an installed libexec/zazzle reached through a link (as Homebrew's z), and a stand-in daemon named by ZAZZLE_DAEMON, get the arguments and pass their exit status back; a missing tool fails.",
+        "The platform backends work on the machine running the test (the unit tests replace them with the mock)."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/zazzle/test/smoke.sh",
+          "command": "make && sh test/smoke.sh (in src/macos/zazzle, after `cargo build --release -p daemon` in src/macos; DAEMON names another daemon)",
+          "description": "CI's zazzle-c job runs it on macos-latest and ubuntu-24.04; the release workflow runs it again on macOS and on Linux x86_64 and aarch64."
+        }
+      ]
+    }
+  ]
+}

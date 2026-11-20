@@ -1,0 +1,183 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "csharp-indexer shared daemon classes",
+  "folder": "src/macos/csharp-indexer/src/Daemon",
+  "description": "The daemon server, the static client helpers, and the daemon commands with what they find.",
+  "sources": [
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Daemon.cs",
+      "symbol": "DaemonServer"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
+      "symbol": "Proxy"
+    },
+    {
+      "path": "src/macos/csharp-indexer/src/Daemon/Control.cs",
+      "symbol": "Control"
+    }
+  ],
+  "types": [
+    {
+      "id": "Daemon.DaemonServer",
+      "name": "DaemonServer",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Daemon.cs"
+      ],
+      "members": [
+        "DaemonServer(Engine engine, string socketPath, TimeSpan idleExit, string? version = null)",
+        "Task Done",
+        "void Start()",
+        "JsonObject Status()",
+        "void Dispose()"
+      ]
+    },
+    {
+      "id": "Daemon.Proxy",
+      "name": "Proxy",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Proxy.cs"
+      ],
+      "members": [
+        "static Socket? TryConnect(string socketPath)",
+        "static string SocketPath(string stateDir)",
+        "static void SpawnDaemon(string? exe = null, string? stateDir = null)",
+        "static Socket? Connect(string stateDir, IEnumerable<string> rootSpecs, out string? error)",
+        "static JsonNode Hello(Socket socket, IEnumerable<string> rootSpecs, string? session = null)",
+        "static JsonNode Exchange(Socket socket, JsonObject message)",
+        "static Task Pump(Socket socket)"
+      ]
+    },
+    {
+      "id": "CSharpIndexer.Engine",
+      "name": "Engine",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Engine.cs"
+      ],
+      "members": [
+        "UsageLog Log",
+        "string StateDir",
+        "List<RootIndex> Indexes()"
+      ],
+      "external": true
+    },
+    {
+      "id": "CSharpIndexer.Root",
+      "name": "Root",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Root.cs"
+      ],
+      "members": [
+        "static Root Parse(string spec, Engine engine)"
+      ],
+      "external": true
+    },
+    {
+      "id": "Mcp.McpServer",
+      "name": "McpServer",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Mcp/McpServer.cs"
+      ],
+      "members": [
+        "Task RunAsync(TextReader input, TextWriter output)"
+      ],
+      "external": true
+    },
+    {
+      "id": "Daemon.ClientInfo",
+      "name": "ClientInfo",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Daemon.cs"
+      ],
+      "members": [
+        "string Session",
+        "string[] Roots",
+        "DateTime Since"
+      ]
+    },
+    {
+      "id": "Daemon.Control",
+      "name": "Control",
+      "kind": "class",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Control.cs"
+      ],
+      "members": [
+        "const int NotRunning",
+        "const string DrainVersion",
+        "static Probe Query(string stateDir)",
+        "static int Status(string stateDir, bool json, TextWriter output)",
+        "static JsonObject StatusJson(string stateDir, Probe probe)",
+        "static string StatusText(JsonObject r)",
+        "static int Stop(string stateDir, TimeSpan timeout, TextWriter output)",
+        "static int Restart(string stateDir, string exe, TimeSpan timeout, TextWriter output)",
+        "static string Duration(long seconds)"
+      ]
+    },
+    {
+      "id": "Daemon.Probe",
+      "name": "Probe",
+      "kind": "record",
+      "sources": [
+        "src/macos/csharp-indexer/src/Daemon/Control.cs"
+      ],
+      "members": [
+        "bool Running",
+        "JsonObject? Status",
+        "string? Version",
+        "string? Error"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Daemon.Proxy",
+      "kind": "depends-on",
+      "description": "TryConnect checks for a live daemon before binding."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "CSharpIndexer.Engine",
+      "kind": "depends-on",
+      "description": "The engine every session shares."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "CSharpIndexer.Root",
+      "kind": "depends-on",
+      "description": "Parses the roots named in the hello line."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Mcp.McpServer",
+      "kind": "depends-on",
+      "description": "One per connection."
+    },
+    {
+      "from": "Daemon.DaemonServer",
+      "to": "Daemon.ClientInfo",
+      "kind": "depends-on",
+      "description": "One per connected session, listed by Status."
+    },
+    {
+      "from": "Daemon.Control",
+      "to": "Daemon.Proxy",
+      "kind": "depends-on",
+      "description": "TryConnect and Exchange for the command hellos, SpawnDaemon for restart."
+    },
+    {
+      "from": "Daemon.Control",
+      "to": "Daemon.Probe",
+      "kind": "depends-on",
+      "description": "Query returns one."
+    }
+  ]
+}

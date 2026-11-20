@@ -1,0 +1,140 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "zazzle command capabilities",
+  "folder": "src/macos/daemon/src/cmd",
+  "description": "What the zazzle commands do for a caller, and who may ask.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/cmd/mod.rs",
+      "symbol": "run"
+    }
+  ],
+  "entities": [
+    {
+      "id": "file-operations",
+      "name": "File operations for agents",
+      "description": "Searching, reading, listing, outlining and editing files, asking about C# structure and history, and shrinking piped command output, with short, capped answers.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "dispatch"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "handle"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "confine"
+        }
+      ],
+      "responsibility": "Answers file questions (where is this text, what is in these lines or this symbol, what is in this tree, what symbols does this file have, where is this symbol used, where is it declared, what changed, who changed this line), makes checked edits, shrinks command output an agent pipes in, picks the rule sections and skills a task needs and answers questions with the user's local model, and gives back an earlier answer by its id (in full, for a stored output that was cut), in output sized for an agent's context.",
+      "operations": [
+        {
+          "path": "src/macos/daemon/src/cmd/find.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/ls.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/outline.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/refs.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/edit.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/clean.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/again.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "overview"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "find_symbol"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "changed_since"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "git_log"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "git_blame"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/structure.rs",
+          "symbol": "report_gap"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "status"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "brief"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "prompt"
+        }
+      ],
+      "access": [
+        "Over the socket, only a peer running as the daemon's own uid is served (server.rs handle, peer_uid); the socket is created mode 0600 (server.rs bind).",
+        "Searches, reads and listings reach anything the user can read; nothing narrows them further.",
+        "Edits write only inside the caller's working directory, after resolving symlinks (edit.rs confine).",
+        "read-again reruns only ids of the caller's own session, in the working directory the request first ran in (again.rs rerun); a stored clean, run or proxy output is given to any caller that may use the daemon and names its id, from the store that process uses (again.rs run, outputs.rs load).",
+        "Over MCP the working directory of `zazzle daemon mcp` is the root for relative paths and for edits (cli.rs mcp_main).",
+        "`zazzle daemon run` runs the command in its own process with the caller's permissions.",
+        "The structure commands answer for the git work tree that holds the working directory (or --repo's, a path's, or those below a folder that is not one), through csharp-indexer's daemon socket, which only the user can open."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The operations through which the capability is reached."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/feature.json",
+      "relationship": "The behavior this capability offers."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/feature.json",
+      "relationship": "Session ids, dedupe, read-again and stored outputs, applied to the commands' output."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/use-case.json",
+      "relationship": "A use case built on it."
+    }
+  ]
+}

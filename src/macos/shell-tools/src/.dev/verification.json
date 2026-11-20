@@ -1,0 +1,265 @@
+{
+  "$schema": "../../../../../Meta/Agents/Knowledge/schemas/verification.schema.json",
+  "kind": "verification",
+  "title": "shell-tools source verification",
+  "folder": "src/macos/shell-tools/src",
+  "description": "The unit tests beside the code, run with `cargo test -p shell-tools` in src/macos against a plain file-system Host (host::testing::Plain); the daemon's src/cmd/call.rs tests run the same operations through its real Host. test_retry_without_noatime is compiled only on Linux.",
+  "entities": [
+    {
+      "id": "read-unchanged-and-diff",
+      "title": "Read: unchanged, diffs and caps",
+      "summary": "read answers repeats with markers, changed files with hunks, and caps with continuations.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "A repeated read in a session is unchanged; a changed whole file comes back as hunks unless they are not much smaller; fresh sends content.",
+        "Ranges, max_lines, max_bytes, long-line cuts, binary files and bad ranges behave as documented.",
+        "A stamp is trusted only outside the racy window."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "test_read_unchanged_then_diff",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "test_run_trusted_etag_path",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "test_run_large_diff_falls_back",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "test_slice_lines_caps",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "test_run_binary_long_and_caps",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "test_run_errors",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "test_trusted_etag_requires_old_stamp",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "session-memory",
+      "title": "Session memory",
+      "summary": "Sessions are separate, bounded and forgettable; shared memory is bounded.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "Two sessions do not see each other's replies; the empty session remembers nothing.",
+        "The least recently used of 64 sessions is dropped; forget_prefix drops sessions by prefix.",
+        "Diff bases are evicted oldest first past the budget; tables reset at their limit."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "test_sessions_are_separate",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "test_session_eviction",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "test_store_evicts_oldest",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "test_table_limits",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/state.rs",
+          "symbol": "test_serve_unchanged_marker",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "search-shapes",
+      "title": "Search replies",
+      "summary": "search renders the Host's scan as grouped, capped JSON.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "Context blocks merge, files_only lists files, fields select line, col or text, max_matches truncates, hidden files only on request, globs and literal patterns apply.",
+        "Bad patterns, fields and paths are errors; a file gone since the scan is dropped."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "test_search_shapes",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "test_search_errors",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "test_build_blocks_merges",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "test_render_budget",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "test_detail_missing_and_shrunk",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "list-stat-outline",
+      "title": "List, stat and outline",
+      "summary": "list pages the Host's walk, stat reports one path, outline dots nested names.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "list defaults to one level, globs walk deep without directories, long adds size and mtime, cursor pages, a file or missing root is an error.",
+        "stat reports missing, file, dir, symlink and other, and an etag only for regular files.",
+        "outline dots nested names, skips files without symbols and caps the total."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "test_list_default_depth_long_and_hidden",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "test_list_glob_walks_deep",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "test_list_paging",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "test_stat_kinds",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "test_stat_symlink_and_other",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/outline.rs",
+          "symbol": "test_outline_files_dirs_and_cap",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/outline.rs",
+          "symbol": "test_rows_dotted_names",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
+      "id": "batches-and-errors",
+      "title": "Batches, dispatch and diff_since",
+      "summary": "Every op dispatches, batches answer in order, and diff_since needs a held version.",
+      "subject": [
+        {
+          "path": "src/macos/shell-tools/src/.dev/operation.json"
+        }
+      ],
+      "criteria": [
+        "An array gets one reply per request and all_ok reflects failures; unknown ops and fields are rejected; find and ls are aliases.",
+        "diff_since answers unchanged, hunks, or base_unavailable, and refuses non-UTF-8 content."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "test_every_op_and_errors",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "test_batch_and_all_ok",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "test_since_cases",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "test_hunks_replace_line",
+          "command": "cargo test -p shell-tools (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    }
+  ]
+}

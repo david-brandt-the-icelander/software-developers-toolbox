@@ -1,0 +1,255 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-operation/schema.json",
+  "kind": "operation",
+  "title": "daemon operations",
+  "folder": "src/macos/daemon/src",
+  "description": "The daemon binary's own subcommands. The zazzle commands they serve are described in cmd/; `zazzle daemon proxy` and `zazzle daemon wrap` in proxy/ and wrap/. A failure prints `daemon: ...` on standard error and exits 2.",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/cli.rs",
+      "symbol": "main"
+    },
+    {
+      "path": "src/macos/daemon/src/cli.rs",
+      "symbol": "finish"
+    }
+  ],
+  "entities": [
+    {
+      "id": "serve",
+      "name": "zazzle daemon serve",
+      "description": "Runs the daemon on the unix socket until it has been idle long enough.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "serve_main"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "serve"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cli.rs",
+        "symbol": "serve_main"
+      },
+      "action": "command",
+      "transport": "zazzle daemon serve [--socket PATH] [--idle SECS]; started by the invoker, by the MCP front end or by launchd",
+      "authorization": "Whoever can run the binary; the socket it creates is mode 0600 in a 0700 directory, and each connection is served only if its peer has the daemon's uid.",
+      "result": "Serves connections; exits after --idle seconds (default from ZAZZLE_IDLE_SECS, else 1800) with no connection open, flushing the cache and removing a socket it bound itself (launchd's socket stays). It also retires once an upgrade has replaced its binary (the program the LaunchAgent plist names under launchd, else the Homebrew opt path of its own binary): on its own socket it removes the socket and answers queued connections with RESTART; under launchd it exits without accepting, so launchd starts the new binary.",
+      "failures": [
+        "A daemon already answers on the socket: `a daemon is already running`.",
+        "The socket cannot be bound, or HOME is unset when no socket is given.",
+        "A bad --socket or --idle value, or an unknown option."
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "zazzle daemon mcp",
+      "description": "An MCP server on standard input and output in front of the daemon.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "mcp_main"
+        },
+        {
+          "path": "src/macos/daemon/src/mcp.rs",
+          "symbol": "handle_line"
+        },
+        {
+          "path": "src/macos/daemon/src/zazz/mcptools.rs",
+          "symbol": "TOOLS"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cli.rs",
+        "symbol": "mcp_main"
+      },
+      "action": "command",
+      "transport": "zazzle daemon mcp, started by an MCP client; newline-delimited JSON-RPC: initialize, ping, tools/list, tools/call",
+      "authorization": "The MCP client that started the process; tool calls go to the daemon as the same user, with this process's working directory as the root.",
+      "result": "Tools zazzle_find, zazzle_read, zazzle_read_again, zazzle_ls, zazzle_stat, zazzle_call, zazzle_outline, zazzle_refs, zazzle_edit, zazzle_overview, zazzle_find_symbol, zazzle_changed_since, zazzle_git_log, zazzle_git_blame and zazzle_report_gap, and the zazz script tools zazz_new, zazz_test, zazz_pack, zazz_add, zazz_call, zazz_describe and zazz_ls, each answered with the command's text and isError when its status is not 0; runs until standard input closes.",
+      "failures": [
+        "A line that is not JSON: error -32700.",
+        "An unknown method: -32601; an unknown tool: -32602.",
+        "A wrong argument type or a missing required argument: a tool result with isError and `error: ...`.",
+        "The daemon cannot be reached or started: a tool result with isError and `error: cannot reach daemon: ...`."
+      ]
+    },
+    {
+      "id": "install",
+      "name": "zazzle daemon install",
+      "description": "Installs the LaunchAgent so launchd owns the socket and starts the daemon on demand.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "agent_cmd"
+        },
+        {
+          "path": "src/macos/daemon/src/launchd.rs",
+          "symbol": "install"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/launchd.rs",
+        "symbol": "install"
+      },
+      "action": "command",
+      "transport": "zazzle daemon install",
+      "authorization": "The user, in their own gui launchd domain; nothing else is checked.",
+      "result": "Writes ~/Library/LaunchAgents/com.zazzle.daemon.plist for this executable (Homebrew's opt path instead of its versioned Cellar path, so upgrades keep working) and the socket path, unloads any loaded copy and bootstraps it; prints `installed PATH`.",
+      "failures": [
+        "Not macOS: `install is for macOS launchd; elsewhere the invoker starts daemon on demand`.",
+        "The plist cannot be written.",
+        "launchctl bootstrap fails or takes more than 10 seconds."
+      ]
+    },
+    {
+      "id": "uninstall",
+      "name": "zazzle daemon uninstall",
+      "description": "Unloads the LaunchAgent and removes its plist.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/launchd.rs",
+          "symbol": "uninstall"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/launchd.rs",
+        "symbol": "uninstall"
+      },
+      "action": "command",
+      "transport": "zazzle daemon uninstall",
+      "authorization": "The user, in their own gui launchd domain.",
+      "result": "`removed PATH`, or `not installed` when there was no plist.",
+      "failures": [
+        "Not macOS.",
+        "The plist exists but cannot be removed."
+      ]
+    },
+    {
+      "id": "run",
+      "name": "zazzle daemon run",
+      "description": "Runs one zazzle command in this process, without a daemon.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "run_in_process"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "main"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cli.rs",
+        "symbol": "run_in_process"
+      },
+      "action": "command",
+      "transport": "zazzle daemon run CMD .. (not `zazzle run`, which is `zazzle daemon wrap`)",
+      "authorization": "The caller's own permissions; edits are confined to the current directory as for any caller.",
+      "result": "The command's output on standard output, or its error on standard error, and its status as the exit code; uses ZAZZLE_SESSION, standard input and the current directory but no persistent cache. clean outputs go to the output store, and read-again finds them there.",
+      "failures": [
+        "Whatever the command itself refuses (see cmd/)."
+      ]
+    },
+    {
+      "id": "version",
+      "name": "zazzle daemon version",
+      "description": "Prints the daemon's version.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "src/macos/daemon/Cargo.toml",
+          "symbol": "version"
+        },
+        {
+          "path": "src/macos/daemon/src/cmd/mod.rs",
+          "symbol": "VERSION"
+        },
+        {
+          "path": "release/set-version.sh",
+          "symbol": "version"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/cli.rs",
+        "symbol": "main"
+      },
+      "action": "query",
+      "transport": "zazzle daemon version, zazzle daemon --version",
+      "authorization": "None.",
+      "result": "`daemon VERSION`: the crate's version, `0.0.0-dev` in the repository; release builds write the tag's version into it first (release/set-version.sh). `zazzle version` is answered by the daemon as `zazzle VERSION`, with the same version.",
+      "failures": []
+    },
+    {
+      "id": "llm",
+      "name": "zazzle daemon llm",
+      "description": "Runs ai-agent for `zazzle agent llm|prompt`, downloading it first when it is neither beside the daemon nor in the tool store.",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "main"
+        },
+        {
+          "path": "src/macos/daemon/src/tools.rs",
+          "symbol": "path"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/daemon/src/tools.rs",
+        "symbol": "exec"
+      },
+      "action": "command",
+      "transport": "zazzle daemon llm llm|prompt ARGS, which the invoker execs for `zazzle agent llm|prompt ARGS`; through the daemon (MCP, `zazzle daemon run`) `agent llm|prompt` answers that it runs as its own process",
+      "authorization": "The caller's own permissions; a downloaded tool is accepted only with the SHA-256 of the manifest compiled into daemon.",
+      "result": "The process becomes ai-agent with the arguments, so its output and exit status are ai-agent's; on the first use `fetching ai-agent for this zazzle (once)` on standard error, and the verified binary is stored with mode 755.",
+      "failures": [
+        "No ai-agent beside the daemon and no entry in the embedded manifest (a development build): `ai-agent is not part of this build: ..`.",
+        "The download fails or its SHA-256 does not match the manifest.",
+        "The tool cannot be made executable or run: `running PATH: ..`."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/ai-agent/src",
+      "path": "src/macos/ai-agent/src/.dev/operation.json",
+      "relationship": "What ai-agent does once `zazzle daemon llm` has exec'd it."
+    },
+    {
+      "kind": "use-case",
+      "folder": "src/macos/daemon/src",
+      "path": "src/macos/daemon/src/.dev/use-case.json",
+      "relationship": "The use cases that call mcp and install."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/cmd",
+      "path": "src/macos/daemon/src/cmd/.dev/operation.json",
+      "relationship": "The zazzle commands that serve, mcp and run carry."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/proxy",
+      "path": "src/macos/daemon/src/proxy/.dev/operation.json",
+      "relationship": "`zazzle daemon proxy`."
+    },
+    {
+      "kind": "operation",
+      "folder": "src/macos/daemon/src/wrap",
+      "path": "src/macos/daemon/src/wrap/.dev/operation.json",
+      "relationship": "`zazzle daemon wrap`, which `zazzle run` execs."
+    },
+    {
+      "kind": "deployment",
+      "folder": "src/macos/daemon",
+      "path": "src/macos/daemon/.dev/deployment-diagram.json",
+      "relationship": "Where each of these runs."
+    }
+  ]
+}

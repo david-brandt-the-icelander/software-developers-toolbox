@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../../Meta/Agents/Skills/describe-capability/schema.json",
+  "kind": "capability",
+  "title": "shell-tools capability",
+  "folder": "src/macos/shell-tools/src",
+  "description": "What the library lets the daemon offer.",
+  "sources": [
+    {
+      "path": "src/macos/shell-tools/src/engine.rs",
+      "symbol": "Engine.call"
+    }
+  ],
+  "entities": [
+    {
+      "id": "session-aware-file-access",
+      "name": "Session-aware file access as JSON",
+      "description": "Read, search, list, stat and outline files as JSON, with a session's memory of what it was sent.",
+      "sources": [
+        {
+          "path": "src/macos/shell-tools/src/engine.rs",
+          "symbol": "Engine.call"
+        }
+      ],
+      "responsibility": "Parse JSON requests, run them on the daemon's services, and answer with capped JSON that repeats nothing the session has.",
+      "operations": [
+        {
+          "path": "src/macos/shell-tools/src/read.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/shell-tools/src/search.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "list"
+        },
+        {
+          "path": "src/macos/shell-tools/src/list.rs",
+          "symbol": "stat"
+        },
+        {
+          "path": "src/macos/shell-tools/src/outline.rs",
+          "symbol": "run"
+        },
+        {
+          "path": "src/macos/shell-tools/src/diff.rs",
+          "symbol": "since"
+        }
+      ],
+      "access": [
+        "Only through the daemon: `zazzle call`, `zazzle stat`, and the MCP tools zazzle_call and zazzle_stat.",
+        "Callers of the daemon's own uid; any path that user can read."
+      ]
+    }
+  ],
+  "relatedViews": [
+    {
+      "kind": "operation",
+      "folder": "src/macos/shell-tools/src",
+      "path": "src/macos/shell-tools/src/.dev/operation.json",
+      "relationship": "The operations."
+    },
+    {
+      "kind": "feature",
+      "folder": "src/macos/shell-tools/src",
+      "path": "src/macos/shell-tools/src/.dev/feature.json",
+      "relationship": "What makes them cheap."
+    }
+  ]
+}

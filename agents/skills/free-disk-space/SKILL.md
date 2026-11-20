@@ -1,14 +1,18 @@
 ---
 name: free-disk-space
-description: Reclaim disk space on a Mac (APFS). Use when asked to free space, clean caches/Downloads/Trash/dev build artifacts/Docker, deduplicate identical files into APFS clones, or find files to transparently compress. Wraps the `free-disk-space` Rust binary in macos/rust/free-disk-space.
+description: Reclaim disk space on a Mac (APFS). Use when asked to free space, find what takes space (largest folders), clean caches/Downloads/Trash/dev build artifacts/Docker, deduplicate identical files into APFS clones, transparently compress files or decompress them again. Wraps the `free-disk-space` Rust binary in src/macos/free-disk-space.
 ---
 
 # free-disk-space
 
-Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, started from the `zazzle` binary's directory, including `daemon install` for the scheduled run); built at `macos/rust/target/release/free-disk-space` (build: `cd macos/rust && cargo build --release`; macOS only for compress/dedupe/Finder/Docker steps).
+Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, started from the `zazzle` binary's directory, including `daemon install` for the scheduled run); built at `src/macos/target/release/free-disk-space` (build: `cd src/macos && cargo build --release`; macOS only for compress/dedupe/Finder/Docker steps).
+
+## Where the space goes (read-only)
+1. `... top [PATH] [--count 20] [--depth 3]`: largest folders and files under PATH (default home) by size on disk, biggest first; it stays on PATH's volume and notes folders it cannot read. `--json` to parse.
+2. `... status --json`: one object with `tool`, `version`, `ok`, `problems`, scan progress, candidates, free space and the daemon; works without a scan.
 
 ## Cleanup (dry run by default)
-1. Preview: `macos/rust/target/release/free-disk-space clean all`
+1. Preview: `src/macos/target/release/free-disk-space clean all`
 2. Apply only what the user authorized: `... clean caches dev --apply` (targets: caches downloads trash dev docker brew xcode all).
 3. `downloads` empties ~/Downloads fully; apply only with explicit user authorization.
 4. `dev` keeps files modified today (Atlantic/Reykjavik), non-git-ignored, tracked, or in-use dirs; `--dev-root` sets the tree.
@@ -24,6 +28,10 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 1. After a scan: `... repair` lists files recorded as compressed that are not, flagged files with broken compressed data, and flagged files that save no space; nothing changes.
 2. `... repair --apply` resets the first kind to pending, records broken files as `broken` and decompresses the wasteful ones (a compressed form that takes as many disk blocks as the plain file; small files compressed inside their attribute are fine); then run `... compress` for the reset files.
 3. Broken files cannot be recovered (`list --status broken`); tell the user to restore them from a backup and never delete them.
+
+## Decompress (reverse compress)
+1. Preview: `... decompress PATH...` lists each compressed file under the files or folders with the space it would add, or why it would be skipped, and the free space needed; nothing changes.
+2. `... decompress PATH... --apply` rewrites each one plain through a verified copy (same skips as compress: hard-linked, open, immutable, iCloud placeholders; `--include-no-provenance` for Apple's and system files) and records it so `compress` and the daemon leave it alone. It refuses when free space is below what the plain files need plus `--reserve` (2G).
 
 ## Dedupe (after a scan, before compress)
 1. Preview: `... dedupe` hashes same-named, same-sized files and lists identical ones; nothing changes.
