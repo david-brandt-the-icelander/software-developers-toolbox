@@ -1,6 +1,7 @@
 // `zazzle investigate .. --adaptive`: the cheapest planner sure to be overkill for the question splits it into parts and gives each the cheapest agent and effort that will do it; every executor answers in short structured lines that say how sure it is and whether to escalate, zazzle checks their citations and hands an unsettled part, with what it established, to the next rung; `--review-*` has another agent judge the results and `--benchmark-*` compares them with the question answered by one agent alone.
 pub mod agent;
 pub mod calls;
+pub mod record;
 pub mod work;
 
 use crate::cmd::{Ctx, Output};
@@ -17,6 +18,8 @@ use work::Work;
 const FLAGS: &[&str] = &[
     "--adaptive",
     "--agents",
+    "--orchestrator",
+    "--orchestrator-effort",
     "--benchmark-model",
     "--benchmark-effort",
     "--review-model",
@@ -69,6 +72,7 @@ impl investigate::Local for OnRung<'_> {
 struct Opts {
     adaptive: bool,
     agents: Vec<String>,
+    orchestrator: (Option<String>, Option<String>),
     bench: Option<(Option<String>, Option<String>)>,
     review: Option<(Option<String>, Option<String>)>,
     no_review: bool,
@@ -96,6 +100,8 @@ fn options(argv: &[String]) -> Result<Opts, String> {
             "--agents" => {
                 o.agents.extend(value()?.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
             }
+            "--orchestrator" => o.orchestrator.0 = Some(value()?),
+            "--orchestrator-effort" => o.orchestrator.1 = Some(value()?),
             "--benchmark-model" => o.bench.get_or_insert((None, None)).0 = Some(value()?),
             "--benchmark-effort" => o.bench.get_or_insert((None, None)).1 = Some(value()?),
             "--review-model" => o.review.get_or_insert((None, None)).0 = Some(value()?),
@@ -112,6 +118,12 @@ fn options(argv: &[String]) -> Result<Opts, String> {
     }
     if o.prose && !o.adaptive {
         return Err("--prose summarizes the adaptive mode's result: add --adaptive".into());
+    }
+    if o.orchestrator != (None, None) && !o.adaptive {
+        return Err("--orchestrator sets who plans and combines the adaptive mode: add --adaptive".into());
+    }
+    if o.orchestrator.0.is_none() && o.orchestrator.1.is_some() {
+        return Err("--orchestrator-effort needs --orchestrator MODEL".into());
     }
     Ok(o)
 }
@@ -157,7 +169,10 @@ struct Run {
 
 // Runs the adaptive mode, a review or a benchmark with the real agents.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
-    run_with(ctx, argv, &calls::Real)
+    match argv.iter().any(|a| a == "--adaptive") {
+        true => run_with(ctx, &crate::orchestrator::with_env(argv), &calls::Real),
+        false => run_with(ctx, argv, &calls::Real),
+    }
 }
 
 // Runs the command line with the given agents under one deadline for the whole job: the main run (adaptive, or the plain local investigation) with a hosted benchmark beside it, then a local benchmark and a review, each stage ending by its share of the time left.
@@ -190,6 +205,10 @@ pub fn run_at(
     if ladder.is_empty() {
         ladder = vec![Rung::parse("", Some("low"))?, Rung::parse("", Some("high"))?];
     }
+    let orchestrator = match &o.orchestrator.0 {
+        Some(m) => Some(Rung::parse(m, o.orchestrator.1.as_deref())?),
+        None => None,
+    };
     let bench = o.bench.as_ref().map(|p| chosen(p, &ladder)).transpose()?;
     let picked = o.review.is_none() && bench.is_some() && !o.no_review;
     let reviewer = match &o.review {
@@ -206,7 +225,7 @@ pub fn run_at(
             s.spawn(move || crate::budget::carry(job, || pure_hosted(b, r, plan, cwd, scope, main_end, sink)))
         });
         let main = match o.adaptive {
-            true => adaptive(ctx, b, &plan, &scope, &ladder, o.prose, main_end, sink),
+            true => adaptive(ctx, b, &plan, &scope, &ladder, orchestrator.as_ref(), o.prose, main_end, sink),
             false => plain(ctx, b, &o.rest, main_end, sink),
         };
         let bench_run = match (hosted, &bench) {
@@ -330,7 +349,7 @@ fn assess(plan: &Plan) -> (usize, Vec<&'static str>) {
     (why.len().min(5), why)
 }
 
-// The adaptive run: assess, plan with a planner one rung above the difficulty (or skip planning for a simple question), run the parts at the same time (each with its own read session, so one part's reads never hide a file from another), each with escalation, combine the parts and, with --prose, have the cheapest rung write a summary.
+// The adaptive run: assess, plan with the orchestrator, or else a planner one rung above the difficulty (no plan for a simple question), run the parts at the same time (each with its own read session, so one part's reads never hide a file from another), each with escalation, combine the parts and, with --prose, summarize; the orchestrator, when named, plans, combines and summarizes.
 #[allow(clippy::too_many_arguments)]
 fn adaptive(
     ctx: &Ctx,
@@ -338,6 +357,7 @@ fn adaptive(
     plan: &Plan,
     scope: &[PathBuf],
     ladder: &[Rung],
+    orchestrator: Option<&Rung>,
     prose: bool,
     deadline: Instant,
     sink: &Sink,
@@ -345,9 +365,10 @@ fn adaptive(
     let (t, log) = (Instant::now(), Log::to(sink.clone()));
     let (score, why) = assess(plan);
     let mut head = format!(
-        "investigate (adaptive): {}\nscope: {}\nladder: {}\ndifficulty: {score} of 5 ({})\n",
+        "investigate (adaptive): {}\nscope: {}\norchestrator: {}\nladder: {}\ndifficulty: {score} of 5 ({})\n",
         plan.question,
         plan.scope.join(", "),
+        orchestrator.map_or("none (the ladder plans)".to_string(), Rung::label),
         ladder
             .iter()
             .enumerate()
@@ -357,21 +378,28 @@ fn adaptive(
         if why.is_empty() { "a short question about named symbols".to_string() } else { why.join(", ") }
     );
     let whole = Part { question: plan.question.clone(), symbols: plan.symbols.clone(), rung: 0 };
-    let (parts, planner) = match score == 0 || ladder.len() == 1 {
+    let skipped = score == 0 || ladder.len() == 1;
+    let (parts, planner, planned) = match skipped {
         true => {
             head.push_str(&format!("plan: one part on {}, no planner call\n", ladder[0].label()));
-            (vec![whole], None)
+            (vec![whole], None, false)
         }
         false => {
-            let (parts, planner, note) =
-                make_plan(b, &log, plan, &ctx.cwd, ladder, (score + 1).min(ladder.len() - 1), deadline);
+            let planners: Vec<Rung> = match orchestrator {
+                Some(o) => vec![o.clone()],
+                None => {
+                    ladder.iter().skip((score + 1).min(ladder.len() - 1)).take(PLANNERS).cloned().collect()
+                }
+            };
+            let (parts, planner, note) = make_plan(b, &log, plan, &ctx.cwd, ladder, &planners, deadline);
             head.push_str(&note);
             match parts.is_empty() {
-                true => (vec![whole], planner),
-                false => (parts, planner),
+                true => (vec![whole], planner, false),
+                false => (parts, planner, true),
             }
         }
     };
+    let orchestrating = orchestrator.or(planner.as_ref()).unwrap_or(&ladder[0]);
     if planner.is_some() {
         for (i, p) in parts.iter().enumerate() {
             head.push_str(&format!("  P{} {}: {}\n", i + 1, ladder[p.rung].label(), p.question));
@@ -399,13 +427,11 @@ fn adaptive(
         runs.iter().map(|a| a.last().map(|x| x.work.clone()).unwrap_or_default()).collect();
     let (work, by) = match finals.len() {
         1 => (finals[0].clone(), String::new()),
-        _ => {
-            combine(b, &log, plan, &ctx.cwd, scope, &finals, planner.as_ref().unwrap_or(&ladder[0]), deadline)
-        }
+        _ => combine(b, &log, plan, &ctx.cwd, scope, &finals, orchestrating, deadline),
     };
     out.push_str(&format!("answer{by}:\n{}", work.render()));
     if prose && !work.findings.is_empty() {
-        out.push_str(&summary(b, &log, plan, &ctx.cwd, &ladder[0], &work, deadline));
+        out.push_str(&summary(b, &log, plan, &ctx.cwd, orchestrator.unwrap_or(&ladder[0]), &work, deadline));
     }
     let calls = log.calls();
     let state = match work.trigger() {
@@ -415,8 +441,34 @@ fn adaptive(
     out.push_str(&format!(
         "-- adaptive: {state}. Excerpts are read from the files; claims are the models'.\n"
     ));
+    let secs = t.elapsed().as_secs_f64();
+    let facts = record::Facts {
+        question: plan.question.clone(),
+        scope: plan.scope.len(),
+        symbols: plan.symbols.len(),
+        difficulty: score,
+        reasons: why.iter().map(|w| w.to_string()).collect(),
+        ladder: ladder.iter().map(Rung::label).collect(),
+        orchestrator: orchestrator.map(Rung::label),
+        planner: planner.as_ref().map(Rung::label),
+        plan: match (skipped, planned) {
+            (true, _) => "skipped",
+            (false, true) => "planned",
+            (false, false) => "fallback",
+        },
+        parts: parts.iter().zip(&runs).map(|(p, a)| attempts_record(p, a, ladder)).collect(),
+        combine: match by.as_str() {
+            "" => "single",
+            s if s.starts_with(" (combined") => "combined",
+            _ => "merged",
+        },
+        result: work.json(),
+    };
+    b.record(&record::build(&facts, &calls, secs));
     let json = json!({
         "difficulty": score,
+        "orchestrator": orchestrator.map(|r| r.label()),
+        "orchestration": calls::orchestration(orchestrator.or(planner.as_ref()).map(Rung::label).as_deref(), &calls),
         "planner": planner.as_ref().map(|r| r.label()),
         "parts": parts.iter().zip(&runs).map(|(p, a)| json!({
             "question": p.question,
@@ -424,7 +476,7 @@ fn adaptive(
         })).collect::<Vec<_>>(),
         "result": work.json(),
     });
-    Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs: t.elapsed().as_secs_f64(), json })
+    Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs, json })
 }
 
 // Asks the planner for parts, moving to the next rung when it fails, gives no parts, rates its understanding low or asks to escalate; returns the parts, the planner that made them and the report lines.
@@ -434,7 +486,7 @@ fn make_plan(
     plan: &Plan,
     cwd: &Path,
     ladder: &[Rung],
-    first: usize,
+    planners: &[Rung],
     deadline: Instant,
 ) -> (Vec<Part>, Option<Rung>, String) {
     let menu: String = ladder
@@ -461,9 +513,7 @@ fn make_plan(
         plan.symbols.join(", ")
     );
     let mut note = String::new();
-    let tries: Vec<usize> = (first..ladder.len()).take(PLANNERS).collect();
-    for (k, &idx) in tries.iter().enumerate() {
-        let r = &ladder[idx];
+    for (k, r) in planners.iter().enumerate() {
         let reply = match log.text(
             b,
             r,
@@ -487,7 +537,7 @@ fn make_plan(
             }
             _ => None,
         };
-        match (why, k + 1 == tries.len()) {
+        match (why, k + 1 == planners.len()) {
             (Some(w), false) => note.push_str(&format!("planner {} escalated: {w}\n", r.label())),
             (Some(w), true) if parts.is_empty() => {
                 note.push_str(&format!(
@@ -625,6 +675,27 @@ fn part(
             }
         }
     }
+}
+
+// A part's attempts for the orchestration log: the rung it started on and, per attempt, the agent, its levels, counts and why it moved up (the reason's kind only, never model text).
+fn attempts_record(p: &Part, attempts: &[Attempt], ladder: &[Rung]) -> Value {
+    json!({
+        "start": ladder[p.rung].label(),
+        "attempts": attempts.iter().map(|a| json!({
+            "agent": a.rung.agent(),
+            "effort": a.rung.effort,
+            "hosted": a.rung.hosted(),
+            "status": a.work.status,
+            "understanding": a.work.understanding,
+            "confidence": a.work.confidence,
+            "findings": a.work.findings.len(),
+            "rejected": a.work.rejected.len(),
+            "gaps": a.work.gaps.len(),
+            "turns": a.work.turns,
+            "needs_user": a.work.blocked.is_some(),
+            "escalated_because": a.why.as_deref().and_then(|w| w.split([':', ';']).next()),
+        })).collect::<Vec<_>>(),
+    })
 }
 
 // One line on how a part went: each rung it ran on and why it moved up, then how the last attempt ended.
@@ -970,6 +1041,9 @@ fn text(main: &Run, bench: Option<&Run>, review: Option<&Review>) -> String {
     let mut out = main.text.trim_end().to_string();
     out.push_str(&format!("\nusage: {}\n", calls::usage_line(&main.calls, main.secs)));
     out.push_str(&calls::phases(&main.calls, main.secs));
+    if let Some(o) = main.json.get("orchestration") {
+        out.push_str(&format!("orchestration:\n{}\n", serde_json::to_string_pretty(o).unwrap_or_default()));
+    }
     if let Some(b) = bench {
         out.push_str(&compare(main, b));
         out.push_str(&format!("usage ({}): {}\n", b.label, calls::usage_line(&b.calls, b.secs)));
@@ -989,7 +1063,7 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
     };
     v["question"] = plan.question.clone().into();
     if main.json.get("result").is_some() {
-        for k in ["difficulty", "planner", "parts"] {
+        for k in ["difficulty", "orchestrator", "orchestration", "planner", "parts"] {
             v[k] = main.json[k].clone();
         }
     }

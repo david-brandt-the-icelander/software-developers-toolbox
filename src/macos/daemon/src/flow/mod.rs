@@ -20,7 +20,7 @@ pub mod write;
 use crate::adaptive::agent::{self, Rung};
 use crate::adaptive::calls::{self, Backend, Log};
 use policy::Policy;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|deps|generate|headers|update|merge|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
@@ -183,7 +183,25 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
     let top = repo::top(cwd)?;
     let p = policy::load(&top)?;
     let log = Log::default();
-    match cmd.as_str() {
+    let started = Instant::now();
+    let result = command(cmd, rest, top, p, &log, b);
+    let calls = log.calls();
+    if !calls.is_empty() {
+        b.record(&crate::adaptive::record::flow(cmd, &calls, started.elapsed().as_secs_f64()));
+    }
+    result
+}
+
+// Runs one subcommand of a repository, with its policy and the log of the agent calls it makes.
+fn command(
+    cmd: &str,
+    rest: &[String],
+    top: PathBuf,
+    p: Policy,
+    log: &Log,
+    b: &dyn Backend,
+) -> Result<(String, i32), String> {
+    match cmd {
         "preview" => {
             let a = Args::parse(rest, &[])?;
             a.only(&["--base"])?;
@@ -235,7 +253,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 &a.all("--paths"),
                 b,
                 &writer,
-                &log,
+                log,
                 limit(&a, "--seconds", AGENT_SECS)?,
             )?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
@@ -265,7 +283,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let compat = a.one("--compat");
             let f = write::Facts { kind, intent: &intent, compat: compat.as_deref(), base: &base };
             let deadline = Instant::now() + limit(&a, "--seconds", AGENT_SECS)?;
-            let (draft, left) = write::write(&top, &p, &f, b, &writer, &log, deadline)?;
+            let (draft, left) = write::write(&top, &p, &f, b, &writer, log, deadline)?;
             let mut out = draft.clone();
             if !left.is_empty() {
                 out.push_str(&format!(
@@ -293,7 +311,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let started = Instant::now();
             let fixer = (!a.on("--no-agent")).then_some(&fixer);
             let (mut out, ok) =
-                tidy::tidy(&top, &p, base.as_deref(), b, &log, fixer, limit(&a, "--seconds", AGENT_SECS)?)?;
+                tidy::tidy(&top, &p, base.as_deref(), b, log, fixer, limit(&a, "--seconds", AGENT_SECS)?)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -344,7 +362,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
             };
             let started = Instant::now();
-            let mut out = testfirst::run(&top, &p, &spec, b, &log)?;
+            let mut out = testfirst::run(&top, &p, &spec, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             let code = if out.contains("-- done:") || out.contains("-- test accepted") { 0 } else { 1 };
             Ok((out, code))
@@ -366,7 +384,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                     &failed,
                     &changed,
                     b,
-                    &log,
+                    log,
                     &r,
                     limit(&a, "--seconds", AGENT_SECS)?,
                 ));
@@ -405,7 +423,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
             };
             let started = Instant::now();
-            let (mut out, ok) = update::update(&top, &p, &ask, b, &log)?;
+            let (mut out, ok) = update::update(&top, &p, &ask, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -420,7 +438,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", verify::CHECK_SECS)?,
             };
             let started = Instant::now();
-            let (mut out, ok) = deps::deps(&top, &p, &ask, b, &log)?;
+            let (mut out, ok) = deps::deps(&top, &p, &ask, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -485,7 +503,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 author.as_ref(),
                 &a.all("--tests"),
                 b,
-                &log,
+                log,
                 limit(&a, "--seconds", AGENT_SECS)?,
             )?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
@@ -542,7 +560,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
                 bench: a.on("--bench"),
             };
-            let out = review::run(&top, &p, &o, b, &log, a.on("--json"))?;
+            let out = review::run(&top, &p, &o, b, log, a.on("--json"))?;
             let code = if out.contains("still open") || out.contains("checks not green") { 1 } else { 0 };
             Ok((out, code))
         }

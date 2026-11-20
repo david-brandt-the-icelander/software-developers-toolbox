@@ -281,6 +281,11 @@ fn test_investigate_through_zazzle() {
             "q"
         ]
     );
+    let v = serde_json::json!({"question": "q", "adaptive": true, "orchestrator": "claude:opus", "orchestrator_effort": "high"});
+    assert_eq!(
+        tool_args(&v).expect("orchestrator args"),
+        ["investigate", "--adaptive", "--orchestrator", "claude:opus", "--orchestrator-effort", "high", "q"]
+    );
     assert!(tool_args(&serde_json::json!({"question": "q", "review_model": 3})).is_err());
     assert_eq!(
         tool_args(

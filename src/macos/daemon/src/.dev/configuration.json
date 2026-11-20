@@ -321,6 +321,66 @@
       ]
     },
     {
+      "id": "ZAZZLE_ORCHESTRATOR",
+      "title": "ZAZZLE_ORCHESTRATOR",
+      "summary": "The agent that does zazzle's own housekeeping instead of the local model: `[local:|claude:|codex:]MODEL[@EFFORT]`.",
+      "key": "ZAZZLE_ORCHESTRATOR",
+      "type": "string",
+      "default": "unset (the local model)",
+      "sensitive": false,
+      "scope": "Read by `investigate --adaptive` (unless a flag names the orchestrator), `zazzle brief` and `--llm` post-processing.",
+      "takesEffect": "on-next-run",
+      "validation": "Parsed as an agent spec; an unknown kind or effort fails the commands that use an orchestrator, no others. A flag wins.",
+      "details": "A hosted agent (`claude`, `codex`) receives what zazzle sends it: for `--llm` and `zazzle brief` that is the command output and the skill menu.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/orchestrator.rs",
+          "symbol": "from_env"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_ORCHESTRATOR_EFFORT",
+      "title": "ZAZZLE_ORCHESTRATOR_EFFORT",
+      "summary": "The orchestrator's effort, which wins over `@EFFORT` in ZAZZLE_ORCHESTRATOR.",
+      "key": "ZAZZLE_ORCHESTRATOR_EFFORT",
+      "type": "string",
+      "default": "the agent's default (low for a local model, medium for claude and codex)",
+      "sensitive": false,
+      "scope": "Read by `investigate --adaptive` (unless a flag names the orchestrator), `zazzle brief` and `--llm` post-processing.",
+      "takesEffect": "on-next-run",
+      "validation": "Must be an effort the agent takes; without ZAZZLE_ORCHESTRATOR it is refused where an orchestrator is used.",
+      "details": "See ZAZZLE_ORCHESTRATOR.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/orchestrator.rs",
+          "symbol": "from_env"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_ORCHESTRATION_LOG",
+      "title": "ZAZZLE_ORCHESTRATION_LOG",
+      "summary": "Where the text-free record of each `investigate --adaptive` run is appended.",
+      "key": "ZAZZLE_ORCHESTRATION_LOG",
+      "type": "path",
+      "default": "$HOME/.zazzle/orchestration.jsonl",
+      "sensitive": false,
+      "scope": "Read by each adaptive run.",
+      "takesEffect": "on-next-run",
+      "validation": "An empty value disables the log. If its folder or file cannot be created or written, the record is dropped without failing the command.",
+      "details": "Records hold counts, hashes, agents, efforts, tokens and seconds; no question, path, claim or response text.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/record.rs",
+          "symbol": "path"
+        }
+      ]
+    },
+    {
       "id": "ZAZZLE_USAGE_LOG",
       "title": "ZAZZLE_USAGE_LOG",
       "summary": "Where privacy-preserving final response delivery metrics are appended.",

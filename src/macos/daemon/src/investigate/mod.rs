@@ -7,7 +7,7 @@ use crate::llm::Reply;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--adaptive] [--agents A,B..] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--prose] [--json]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--adaptive] [--agents A,B..] [--orchestrator M] [--orchestrator-effort E] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--no-review] [--prose] [--json]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
 // The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
@@ -917,6 +917,8 @@ fn schema() -> serde_json::Value {
             "seconds": {"type": "integer", "description": "Time limit for the whole job, 1 to 600 (default 90): planning, waiting for and starting models, lookups, escalation, a benchmark and a review all end by it, and a partial result is kept"},
             "adaptive": {"type": "boolean", "description": "Plan the question into parts, give each the cheapest agent and effort that will do it, and escalate a part that is not settled"},
             "agents": {"type": "array", "items": {"type": "string"}, "description": "The adaptive ladder, cheapest first: MODEL, local:MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: the installed local models)"},
+            "orchestrator": {"type": "string", "description": "Adaptive only: the agent that plans, combines and summarizes, instead of the ladder: MODEL, local:MODEL, claude:MODEL or codex:MODEL, optionally @EFFORT; the report lists each step, its agent and tokens as JSON"},
+            "orchestrator_effort": {"type": "string"},
             "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder); a judge compares the two on quality, wall-clock time and tokens, by default claude:opus at high effort"},
             "benchmark_effort": {"type": "string"},
             "review_model": {"type": "string", "description": "Have this agent judge the results and each finding"},
@@ -946,7 +948,14 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     if !agents.is_empty() {
         a.extend(["--agents".to_string(), agents.join(",")]);
     }
-    for key in ["benchmark_model", "benchmark_effort", "review_model", "review_effort"] {
+    for key in [
+        "orchestrator",
+        "orchestrator_effort",
+        "benchmark_model",
+        "benchmark_effort",
+        "review_model",
+        "review_effort",
+    ] {
         if let Some(x) = crate::mcp::get_str(v, key)? {
             a.extend([format!("--{}", key.replace('_', "-")), x]);
         }

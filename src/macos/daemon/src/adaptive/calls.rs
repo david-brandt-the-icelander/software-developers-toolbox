@@ -28,6 +28,9 @@ pub trait Backend: Sync {
     fn can_host(&self, kind: agent::Kind) -> bool {
         agent::program(kind).is_ok()
     }
+
+    // Appends one run's record to the orchestration log; the default drops it.
+    fn record(&self, _rec: &Value) {}
 }
 
 // The real agents: daemon's shared local worker, and `claude` or `codex` found on this machine.
@@ -62,6 +65,11 @@ impl Backend for Real {
         });
         let v = out.and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok()).unwrap_or_default();
         agent::installed_models(&v)
+    }
+
+    // Appends the record to `~/.zazzle/orchestration.jsonl` unless that log is disabled.
+    fn record(&self, rec: &Value) {
+        super::record::write(rec);
     }
 }
 
@@ -129,6 +137,11 @@ impl Call {
             secs: v["seconds"].as_f64().unwrap_or(0.0),
             ok: v["outcome"] == "answered",
         }
+    }
+
+    // Tells whether the call is the orchestrator's own work (planning, combining, summarizing) rather than an agent it delegated to.
+    pub fn orchestrates(&self) -> bool {
+        matches!(self.phase(), "planner" | "combine" | "summary")
     }
 }
 
@@ -342,6 +355,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
             .filter(|c| c.hosted == hosted && phase.is_none_or(|p| c.phase() == p))
             .collect::<Vec<_>>()
     };
+    let by =
+        |orchestrator: bool| calls.iter().filter(|c| c.orchestrates() == orchestrator).collect::<Vec<_>>();
     json!({
         "calls": calls.len(),
         "failed_calls": calls.iter().filter(|c| !c.ok).count(),
@@ -352,6 +367,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
         "cost_usd": side(pick(true, None))["cost_usd"].clone(),
         "hosted": side(pick(true, None)),
         "local": side(pick(false, None)),
+        "orchestrator": side(by(true)),
+        "executors": side(by(false)),
         "phases": phases.iter().map(|p| json!({"phase": p, "hosted": side(pick(true, Some(p))), "local": side(pick(false, Some(p)))})).collect::<Vec<_>>(),
     })
 }
@@ -428,4 +445,65 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
         u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], uncounted(h), l["calls"], l["queued_seconds"], l["seconds"]
     ));
     out
+}
+
+// Where a step belongs in the report, since parts run at the same time and end in any order: planning, then each part in part order (its escalations after it, in the order they ran), then combining and the summary; any other step keeps its place among its kind.
+fn step_order(role: &str) -> (u8, usize) {
+    let part =
+        |r: &str| r.split_whitespace().nth(1).and_then(|p| p.strip_prefix('P')).and_then(|n| n.parse().ok());
+    match role.split_whitespace().next().unwrap_or_default() {
+        "planner" => (0, 0),
+        "part" | "escalation" => (1, part(role).unwrap_or(0)),
+        "combine" => (2, 0),
+        "summary" => (3, 0),
+        _ => (1, usize::MAX),
+    }
+}
+
+// The structured account of a run: the orchestrator, every step it performed or orchestrated with the agent that did it and the tokens in and out (input reported by hosted agents, else the estimate of what was sent; cached and output tokens null when the agent reported none), and the totals of the orchestrator apart from the agents it delegated to.
+pub fn orchestration(orchestrator: Option<&str>, calls: &[Call]) -> Value {
+    let mut ordered: Vec<&Call> = calls.iter().collect();
+    ordered.sort_by_key(|c| step_order(&c.role));
+    let steps: Vec<Value> = ordered
+        .into_iter()
+        .map(|c| {
+            let (agent, effort) = c.rung.rsplit_once(' ').unwrap_or((&c.rung, ""));
+            let reported = c.input.filter(|n| *n > 0);
+            json!({
+                "step": c.role,
+                "by": if c.orchestrates() { "orchestrator" } else { "delegated" },
+                "agent": agent,
+                "effort": effort,
+                "hosted": c.hosted,
+                "input_tokens": reported.unwrap_or_else(|| c.sent.iter().map(|(_, n)| n).sum()),
+                "input_estimated": reported.is_none(),
+                "cached_tokens": c.cached,
+                "output_tokens": c.tokens,
+                "cost_usd": c.cost,
+                "seconds": tenth(c.secs),
+                "ok": c.ok,
+            })
+        })
+        .collect();
+    let u = usage(calls, 0.0);
+    let total = |by: &str, side: &Value| {
+        let sum = |field: &str| {
+            steps.iter().filter(|s| s["by"] == by).filter_map(|s| s[field].as_u64()).sum::<u64>()
+        };
+        json!({
+            "steps": side["calls"],
+            "input_tokens": sum("input_tokens"),
+            "cached_tokens": sum("cached_tokens"),
+            "output_tokens": sum("output_tokens"),
+            "cost_usd": side["cost_usd"],
+        })
+    };
+    json!({
+        "orchestrator": orchestrator,
+        "steps": steps,
+        "totals": {
+            "orchestrator": total("orchestrator", &u["orchestrator"]),
+            "delegated": total("delegated", &u["executors"]),
+        },
+    })
 }
