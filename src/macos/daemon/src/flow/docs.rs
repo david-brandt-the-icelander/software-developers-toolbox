@@ -67,6 +67,7 @@ fn problems(top: &Path, p: &Policy, changed: &[String], limit: Duration) -> Resu
             kind: "script".into(),
             paths: Vec::new(),
             fix: None,
+            report: None,
         };
         let o = verify::run_check(top, &c, &logs.join(format!("docs-check-{}.log", i + 1)), limit);
         if o.status != "passed" {

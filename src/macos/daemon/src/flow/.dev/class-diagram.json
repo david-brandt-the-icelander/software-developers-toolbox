@@ -53,7 +53,8 @@
         "dir",
         "kind (build, test, coverage, format, lint, script)",
         "paths",
-        "fix: Option<String>"
+        "fix: Option<String>",
+        "report: Option<String>"
       ]
     },
     {
@@ -218,6 +219,19 @@
         "values",
         "switches",
         "words"
+      ]
+    },
+    {
+      "id": "Gap",
+      "name": "Gap",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/coverage.rs"
+      ],
+      "members": [
+        "path",
+        "lines",
+        "branches: Vec<(line, taken, total)>"
       ]
     }
   ],

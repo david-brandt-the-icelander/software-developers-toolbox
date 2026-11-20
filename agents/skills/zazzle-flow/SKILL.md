@@ -1,6 +1,6 @@
 ---
 name: zazzle-flow
-description: Verify, tidy, write up, deliver and review a change with zazzle instead of doing each step by hand - `zazzle flow verify` (tree-pinned test receipts), `zazzle flow tidy` (formatters and linters with the local agent), `zazzle flow write commit|changelog|pr|docs` (a cheap writer drafts the prose and updates the docs), `zazzle flow deliver` (stage, commit, push, pull request, safe to retry), `zazzle flow test-first`, `zazzle flow ci` and `zazzle review` (multi-viewpoint review that fixes what it finds). Use when a change is ready to test, describe, commit, push, open as a pull request, or review.
+description: Verify, tidy, write up, deliver and review a change with zazzle instead of doing each step by hand - `zazzle flow verify` (tree-pinned test receipts), `zazzle flow tidy` (formatters and linters with the local agent), `zazzle flow coverage` (uncovered lines and branches, tests written for them), `zazzle flow write commit|changelog|pr|docs` (a cheap writer drafts the prose and updates the docs), `zazzle flow deliver` (stage, commit, push, pull request, safe to retry), `zazzle flow test-first`, `zazzle flow ci` and `zazzle review` (multi-viewpoint review that fixes what it finds). Use when a change is ready to test, describe, commit, push, open as a pull request, or review.
 ---
 
 # zazzle flow and zazzle review
@@ -20,6 +20,10 @@ description: Verify, tidy, write up, deliver and review a change with zazzle ins
 ## Tidy
 - `zazzle flow tidy` runs the formatters' and linters' fix commands (`format` and `lint` checks; discovered for Cargo, Go, .NET and npm), checks again, and gives lint that still needs an edit to the local agent. What is left after that is yours.
 
+## Coverage
+- `zazzle flow coverage` runs the `coverage` checks, reads their report (lcov, Cobertura, a Go profile, coverage.py JSON or llvm-cov missing lines) and lists the changed files' uncovered lines and partial branches with tests to model on. Read that instead of judging coverage yourself.
+- `--author AGENT --tests PATH` has a cheap agent write tests for the gaps; they stay only if every coverage check still passes. Check that their assertions match the behavior you want.
+
 ## Write
 - `zazzle flow write docs --intent 'TEXT'` has the cheap writer update the READMEs and `.dev` records beside and above the changed files (add `--paths` for others); JSON stays valid and the repository's `docs.check` commands must pass, or its changes are put back.
 - You decide the intent and the compatibility decision; the writer only phrases them: `zazzle flow write pr --intent 'TEXT' --compat 'none: no client sees a change'`.
@@ -29,7 +33,7 @@ description: Verify, tidy, write up, deliver and review a change with zazzle ins
 ## Deliver
 - `zazzle flow deliver --paths P.. -m 'MESSAGE' --pr --draft [--body-file F] [--require-verified]`: only the named paths are committed. Running it again after a partial failure reuses the commit, the push and the open pull request.
 - A remote with commits the branch lacks is reported, never forced: fetch and merge, then deliver again.
-- `zazzle flow ci` waits for the pull request's checks on its current head and reports once. Do not poll yourself.
+- `zazzle flow ci` waits for the pull request's checks on its current head and reports once. Do not poll yourself. A failed job's log comes back cut to its errors and triaged by the local model (`FAILURE job | test | path:line | cause`, `OWNER`, `NEXT`): act on that, and read the full log only if the triage is unsure.
 
 ## Test first
 - Settle the behavior, the test paths and a nearby reference test first: `zazzle flow test-first --behavior 'TEXT' --tests PATH --reference FILE --run 'CMD' --expect 'TEXT'`.

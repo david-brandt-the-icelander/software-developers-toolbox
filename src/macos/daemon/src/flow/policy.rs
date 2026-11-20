@@ -11,7 +11,7 @@ pub const LEVELS: &[&str] = &["feature", "development", "staging", "production"]
 const BRANCHES: &[&str] =
     &["main", "master", "dev", "develop", "development", "staging", "stage", "production", "prod", "release"];
 
-// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage, format, lint or script), the paths whose change makes it apply (none: always), and the command that fixes what it finds (formatters, linters' fix modes).
+// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage, format, lint or script), the paths whose change makes it apply (none: always), the command that fixes what it finds (formatters, linters' fix modes), and for coverage the report file it writes (lcov, Cobertura XML, a Go cover profile or coverage.py JSON), relative to its folder.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Check {
     pub name: String,
@@ -20,6 +20,7 @@ pub struct Check {
     pub kind: String,
     pub paths: Vec<String>,
     pub fix: Option<String>,
+    pub report: Option<String>,
 }
 
 // The check kinds.
@@ -177,6 +178,7 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
             kind: kind.to_string(),
             paths: strs(&c["paths"]),
             fix: c["fix"].as_str().map(str::to_string),
+            report: c["report"].as_str().map(str::to_string),
         });
     }
     if checks.is_empty() {
@@ -255,6 +257,7 @@ pub fn discover(top: &Path) -> Vec<Check> {
                 kind: kind.into(),
                 paths,
                 fix: fix.map(str::to_string),
+                report: None,
             });
         };
         if has("Cargo.toml") && !inside {

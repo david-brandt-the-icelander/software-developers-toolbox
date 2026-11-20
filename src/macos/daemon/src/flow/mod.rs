@@ -1,5 +1,6 @@
 // `zazzle flow` and `zazzle review`: the repository workflow zazzle runs for an agent, opt-in per repository (`.zazzle/flow.json`): preview what applies, verify with tree-pinned receipts, write the commit message, changelog entry or pull request text, deliver (stage, commit, push, pull request) safely repeatable, write a failing test first and then the fix, wait for CI once, and review from several viewpoints with fixes before handing back. They run as their own process, in the caller's environment.
 pub mod ci;
+pub mod coverage;
 pub mod deliver;
 pub mod docs;
 pub mod edit;
@@ -17,7 +18,7 @@ use policy::Policy;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
+pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
@@ -34,7 +35,12 @@ pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzl
                                      A writes a test that fails for the stated reason, B makes it pass, zazzle verifies
   tidy [--all] [--base B] [--fixer AGENT] [--no-agent]
                                      run the formatters' and linters' fix commands, re-check, and give lint left over to the local agent
-  ci [--pr N] [--timeout S]          wait for the pull request's checks on its head and report once
+  coverage [--all] [--base B] [--author AGENT --tests P..]
+                                     measure coverage and list the changed files' uncovered lines and branches with tests
+                                     to model on; with --author a cheap agent writes tests for them, kept only if they pass
+  ci [--pr N] [--timeout S] [--triager AGENT] [--no-triage]
+                                     wait for the pull request's checks on its head and report once; failed jobs' logs
+                                     are cut to what matters and triaged by the local model
 zazzle review [--into BRANCH] [--level feature|development|staging|production] [--base B] [--viewpoints V,..] [--intent TEXT]
               [--reviewers A,..] [--final A] [--fix-agent A] [--writer A] [--read-only] [--rounds N] [--bench] [--json]
                                      multi-viewpoint review at the level of the branch the change goes into (--into; default: this branch's,
@@ -327,11 +333,54 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             Ok((out, code))
         }
         "ci" => {
-            let a = Args::parse(rest, &[])?;
-            a.only(&["--pr", "--timeout"])?;
-            let (text, green) =
+            let a = Args::parse(rest, &["--no-triage"])?;
+            a.only(&["--pr", "--timeout", "--triager", "--agents", "--seconds"])?;
+            let (mut text, green, failed) =
                 ci::wait(&top, &a.one("--pr").unwrap_or_default(), limit(&a, "--timeout", 3600)?)?;
+            if !failed.is_empty() && !a.on("--no-triage") {
+                let ladder = ladder(&p, &a, b)?;
+                let r = one_agent(&a, "--triager", &p, "triage", &ladder[0])?;
+                let changed = repo::base(&top, &p.target)
+                    .ok()
+                    .and_then(|bb| repo::changed(&top, &bb, "HEAD").ok())
+                    .unwrap_or_default();
+                text.push_str(&ci::triage(
+                    &top,
+                    &failed,
+                    &changed,
+                    b,
+                    &log,
+                    &r,
+                    limit(&a, "--seconds", AGENT_SECS)?,
+                ));
+            }
             Ok((text, if green { 0 } else { 1 }))
+        }
+        "coverage" => {
+            let a = Args::parse(rest, &["--all"])?;
+            a.only(&["--base", "--author", "--tests", "--agents", "--seconds"])?;
+            let base = match (a.on("--all"), a.one("--base")) {
+                (true, _) => None,
+                (false, Some(bb)) => Some(bb),
+                (false, None) => repo::base(&top, &p.target).ok(),
+            };
+            let author = match a.one("--author") {
+                Some(s) => Some(Rung::parse(&s, None)?),
+                None => None,
+            };
+            let started = Instant::now();
+            let (mut out, ok) = coverage::run(
+                &top,
+                &p,
+                base.as_deref(),
+                author.as_ref(),
+                &a.all("--tests"),
+                b,
+                &log,
+                limit(&a, "--seconds", AGENT_SECS)?,
+            )?;
+            out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
+            Ok((out, if ok { 0 } else { 1 }))
         }
         "review" => {
             let a = Args::parse(rest, &["--read-only", "--bench", "--json"])?;
@@ -411,6 +460,7 @@ fn apply(top: &Path, p: &Policy, kind: write::Kind, draft: &str) -> Result<Strin
                     kind: "script".into(),
                     paths: Vec::new(),
                     fix: None,
+                    report: None,
                 };
                 let o = verify::run_check(
                     top,

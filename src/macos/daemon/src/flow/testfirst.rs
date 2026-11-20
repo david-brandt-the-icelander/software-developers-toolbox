@@ -56,6 +56,7 @@ fn focused(top: &Path, s: &Spec, name: &str) -> Result<(Outcome, String), String
         kind: "test".into(),
         paths: Vec::new(),
         fix: None,
+        report: None,
     };
     let o = verify::run_check(top, &c, &log, s.limit);
     let out = std::fs::read_to_string(&log).unwrap_or_default();

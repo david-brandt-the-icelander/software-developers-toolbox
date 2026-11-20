@@ -352,6 +352,7 @@ fn test_verify_and_receipts() {
         kind: "test".into(),
         paths: Vec::new(),
         fix: None,
+        report: None,
     };
     let log = root.join("c.log");
     let ok = verify::run_check(
@@ -386,6 +387,7 @@ fn test_verify_and_receipts() {
         kind: "script".into(),
         paths: vec!["docs/".into()],
         fix: None,
+        report: None,
     });
     let base = g(&root, &["rev-parse", "main"]);
     let r = verify::verify(&root, &p, Some(&base), &[], Duration::from_secs(10)).expect("verify");
@@ -655,7 +657,8 @@ fn test_ci_wait() {
     let junk = ci::wait(&root, "", Duration::from_secs(1));
     std::env::remove_var("ZAZZLE_GH");
     std::env::remove_var("ZAZZLE_CI_POLL_SECS");
-    let r: Vec<(String, bool)> = results.into_iter().map(|r| r.expect("ci")).collect();
+    let r: Vec<(String, bool)> =
+        results.into_iter().map(|r| r.expect("ci")).map(|(t, g, _)| (t, g)).collect();
     assert!(
         r[0].1
             && r[0].0.contains("✓ test: success")
@@ -1195,6 +1198,7 @@ fn test_parse_and_discover_variants() {
         kind: "test".into(),
         paths: Vec::new(),
         fix: None,
+        report: None,
     };
     let o = verify::run_check(&root, &c, &root.join("x.log"), Duration::from_secs(10));
     assert_eq!((o.status.as_str(), o.failed), ("failed", 1), "exit 0 with a failed test is a failure");
@@ -1750,4 +1754,150 @@ fn test_tools_more() {
         f.prompts("claude:w medium")[0].contains("Fix these confirmed documentation findings")
             && f.prompts("claude:w medium")[0].contains("Edit the files directly")
     );
+}
+
+// Checks reading coverage reports: lcov lines and branches, Cobertura lines and conditions, a Go profile, coverage.py JSON and llvm-cov's missing lines, the format told by content, and line ranges.
+#[test]
+fn test_coverage_parsers() {
+    let lcov = "TN:\nSF:src/a.rs\nDA:1,3\nDA:2,0\nDA:3,0\nBRDA:5,0,0,1\nBRDA:5,0,1,0\nBRDA:6,0,0,-\nBRDA:6,0,1,2\nBRDA:7,0,0,1\nBRDA:x\nend_of_record\nSF:src/b.rs\nDA:1,1\nend_of_record\nSF:src/a.rs\nDA:9,0\nend_of_record\n";
+    assert_eq!(
+        coverage::parse(lcov),
+        [coverage::Gap {
+            path: "src/a.rs".into(),
+            lines: vec![2, 3, 9],
+            branches: vec![(5, 1, 2), (6, 1, 2)]
+        }]
+    );
+    let xml = r#"<?xml version="1.0"?><coverage><packages><package><classes><class name="A" filename="src/A.cs"><lines><line number="3" hits="0"/><line number="4" hits="2" branch="True" condition-coverage="50% (1/2)"/><line number="4" hits="2" condition-coverage="50% (1/2)"/><line number="5" hits="1" condition-coverage="100% (2/2)"/><line hits="0"/></lines></class><class name="B" filename="src/B.cs"></class></classes></package></packages></coverage>"#;
+    assert_eq!(
+        coverage::parse(xml),
+        [coverage::Gap { path: "src/A.cs".into(), lines: vec![3], branches: vec![(4, 1, 2)] }]
+    );
+    let go = "mode: set\nexample.com/m/pkg/a.go:3.10,5.2 2 0\nexample.com/m/pkg/a.go:7.1,7.9 1 1\nbad line\nexample.com/m/pkg/a.go:x 1 0\n";
+    assert_eq!(coverage::parse(go)[0].lines, [3, 4, 5]);
+    let py = r#"{"files": {"app/x.py": {"missing_lines": [4, 5], "missing_branches": [[7, 9], [7, -1], ["x", 1]]}}}"#;
+    assert_eq!(
+        coverage::parse(py),
+        [coverage::Gap { path: "app/x.py".into(), lines: vec![4, 5], branches: vec![(7, 1, 3)] }]
+    );
+    let missing = "Filename  Regions\n/repo/src/a.rs: 12-14, 20\nnot a path: 1\nsrc/b.rs: 3-1\nsrc/c.rs: x\n";
+    assert_eq!(
+        coverage::parse(missing),
+        [coverage::Gap { path: "/repo/src/a.rs".into(), lines: vec![12, 13, 14, 20], branches: vec![] }]
+    );
+    assert_eq!(
+        (coverage::ranges(&[1, 2, 3, 5, 7, 8]), coverage::ranges(&[])),
+        ("1-3, 5, 7-8".to_string(), String::new())
+    );
+}
+
+// Checks closing coverage gaps: none configured, gaps listed with tests to model on, an author's tests kept when they pass and lower the gaps, an author's change outside tests put back, failing tests put back, no tests written, and a coverage check that fails first.
+#[test]
+fn test_coverage_gaps() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["coverage"]).0.contains("no coverage check applies"));
+    let gen = "if [ -f tests/bad_test.sh ]; then exit 1; fi; if [ -f tests/add_test.sh ]; then printf 'SF:src/lib.rs\\nDA:2,1\\nend_of_record\\n' > lcov.info; else printf 'SF:src/lib.rs\\nDA:2,0\\nBRDA:2,0,0,0\\nBRDA:2,0,1,1\\nend_of_record\\nSF:src/other.rs\\nDA:1,0\\nend_of_record\\n' > lcov.info; fi";
+    let cfg = serde_json::json!({"branches": {"target": "main"}, "checks": [{"name": "cov", "run": gen, "kind": "coverage", "report": "lcov.info"}]});
+    t.write(".zazzle/flow.json", cfg.to_string().as_bytes());
+    t.write(".gitignore", b"lcov.info\n");
+    t.write("tests/lib_test.sh", b"# exercises lib\n");
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "coverage policy"]);
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    if a > 0 { a + b } else { b }\n}\n");
+    let (out, code) = flow(&root, &none, &["coverage"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("  src/lib.rs: uncovered lines 2; partial branches at 2 (1 of 2)\n    tests to model on: tests/lib_test.sh") && !out.contains("src/other.rs") && out.contains("pass --author AGENT"), "{out}");
+    let f = Fake::new(vec![("qwen-a low", say("FILE tests/add_test.sh\n```\nexit 0\n```\nFILE src/lib.rs\n```\nno\n```\nGAP the else branch looks wrong"))]);
+    let (out, code) = flow(&root, &f, &["coverage", "--author", "qwen-a", "--tests", "tests"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("put back: src/lib.rs")
+            && out.contains("the author doubts: the else branch looks wrong")
+            && out.contains("after qwen-a low wrote tests/add_test.sh")
+            && out.contains("-- gaps 2 → 0"),
+        "{out}"
+    );
+    let sent = &f.prompts("qwen-a low")[0];
+    assert!(
+        sent.contains("2\t    if a > 0 { a + b } else { b }")
+            && sent.contains("Existing test to model on (tests/lib_test.sh)")
+            && sent.contains("do not run the tests"),
+        "{sent}"
+    );
+    std::fs::remove_file(root.join("tests/add_test.sh")).expect("rm");
+    let f = Fake::new(vec![("qwen-a low", say("FILE tests/bad_test.sh\n```\nexit 1\n```"))]);
+    let (out, code) = flow(&root, &f, &["coverage", "--author", "qwen-a"]);
+    assert!(
+        code == 1 && out.contains("they were put back") && !root.join("tests/bad_test.sh").exists(),
+        "{out}"
+    );
+    let f = Fake::new(vec![("claude:t medium", edits(&[], "STATUS complete"))]);
+    let (out, code) = flow(&root, &f, &["coverage", "--author", "claude:t"]);
+    assert!(
+        code == 1
+            && out.contains("-- claude:t medium wrote no tests")
+            && f.prompts("claude:t medium")[0].contains("Edit the files"),
+        "{out}"
+    );
+    t.write("tests/bad_test.sh", b"exit 1\n");
+    let (out, code) = flow(&root, &none, &["coverage", "--all"]);
+    assert!(code == 1 && out.contains("a coverage check failed"), "{out}");
+    std::fs::remove_file(root.join("tests/bad_test.sh")).expect("rm");
+    g(&root, &["checkout", "-q", "--", "src/lib.rs"]);
+    assert!(
+        flow(&root, &none, &["coverage"]).0.contains("no coverage check applies")
+            || flow(&root, &none, &["coverage"]).0.contains("no gaps")
+    );
+    t.write("src/lib.rs", b"// covered now\n");
+    t.write("tests/add_test.sh", b"exit 0\n");
+    assert!(flow(&root, &none, &["coverage"]).0.contains("-- no gaps in the changed files"));
+}
+
+// Checks CI triage: job links, log excerpts without gh's prefixes, the local model's lines with places checked against the repository, a failed triage, and the whole path through `flow ci` with a failed job.
+#[test]
+fn test_ci_triage() {
+    let _g = crate::testutil::env_lock();
+    let (t, root) = repo_on_feature();
+    assert_eq!(
+        ci::job_of("https://github.com/o/r/actions/runs/12/job/34?pr=1"),
+        Some(("12".into(), "34".into()))
+    );
+    assert_eq!((ci::job_of("https://x/checks/1"), ci::job_of("https://x/actions/runs/1/job/")), (None, None));
+    let log = "test\tRun tests\t2026-11-20T10:00:00.1234567Z running 3 tests\ntest\tRun tests\t2026-11-20T10:00:01.0000000Z test a::b ... FAILED\nok line\nthread 'a::b' panicked at src/lib.rs:2:5:\nleft: 1\nright: 2\nmore\nmore2\nmore3\nerror: test failed\n";
+    let x = ci::excerpt(log);
+    assert!(x.starts_with("running 3 tests\ntest a::b ... FAILED\nok line\nthread 'a::b' panicked at src/lib.rs:2:5:\nleft: 1\nright: 2\n…\nmore3\nerror: test failed\n"), "{x}");
+    assert_eq!(ci::excerpt("just\nnoise\n"), "just\nnoise\n");
+    assert!(ci::excerpt(&"error: x\n".repeat(200)).ends_with("[more cut]\n"));
+    let gh = exe(&t, "gh", &format!("case \"$1 $2\" in\n 'run view') printf '%s' '{}';;\n 'pr view') echo '{{\"number\":5,\"url\":\"u\",\"headRefOid\":\"abcdefabcd\",\"isDraft\":false,\"statusCheckRollup\":[{{\"name\":\"test\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\",\"detailsUrl\":\"https://github.com/o/r/actions/runs/12/job/34\"}},{{\"name\":\"ext\",\"status\":\"COMPLETED\",\"conclusion\":\"FAILURE\",\"detailsUrl\":\"https://ci.example/9\"}}]}}';;\nesac\n", log.replace('\'', "")));
+    std::env::set_var("ZAZZLE_GH", &gh);
+    let f = Fake::new(vec![("qwen-a low", say("FAILURE test | a::b | src/lib.rs:2 | adding returns the wrong sum\nFAILURE ext | - | nope.rs:1 | unknown\nOWNER this-change | the diff touches src/lib.rs\nNEXT fix add\nchatter"))]);
+    let (out, code) = flow(&root, &f, &["ci", "--agents", "qwen-a"]);
+    let failing = Fake::new(vec![("qwen-a low", fails("busy"))]);
+    let r = Rung::parse("qwen-a", None).expect("rung");
+    let failed_triage = ci::triage(
+        &root,
+        &[("test".into(), "https://github.com/o/r/actions/runs/12/job/34".into())],
+        &[],
+        &failing,
+        &Log::default(),
+        &r,
+        Duration::from_secs(5),
+    );
+    let skipped = flow(&root, &Fake::new(vec![]), &["ci", "--no-triage"]);
+    std::env::remove_var("ZAZZLE_GH");
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("log excerpts, cut by zazzle:\n### test\nrunning 3 tests")
+            && out.contains("### ext\n(no Actions job link"),
+        "{out}"
+    );
+    assert!(out.contains("triage by qwen-a low:\n  FAILURE test | a::b | src/lib.rs:2 | adding returns the wrong sum\n  FAILURE ext | - | nope.rs:1 | unknown (not a file in this repository)\n  OWNER this-change") && !out.contains("chatter"), "{out}");
+    assert!(out.contains("ci triage: local 1 call(s)") || f.prompts("qwen-a low").len() == 1, "{out}");
+    assert!(
+        failed_triage.contains("triage by qwen-a low failed: busy; read the excerpts above"),
+        "{failed_triage}"
+    );
+    assert!(!skipped.0.contains("triage"), "{}", skipped.0);
 }
