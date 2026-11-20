@@ -282,7 +282,7 @@ const PAGES: &[Page] = &[
             ("--prose", "Adaptive: the cheapest agent adds a short summary that keeps the citations"),
             ("--json", "The structured result: status, confidence, findings with evidence, gaps, escalation, usage"),
             ("--benchmark-model M, --benchmark-effort E", "Also answer with that agent alone and compare state, findings, calls, time, tokens and cost"),
-            ("--review-model M, --review-effort E", "Have that agent judge each result's quality and each finding"),
+            ("--review-model M, --review-effort E", "Have that agent judge each result's quality and each finding; with a benchmark it also compares the two on quality, wall-clock time and tokens (from what zazzle measured) and says which is better overall"),
         ],
         examples: &["zazzle investigate 'Where is the idempotency key validated?' --path src/Api --symbol IdempotencyFilter", "zazzle investigate 'Why are blank keys accepted, and should they be?' --adaptive --agents qwen3.5-4b,qwen3.5-9b,claude:sonnet@medium --review-model claude:opus"],
     },

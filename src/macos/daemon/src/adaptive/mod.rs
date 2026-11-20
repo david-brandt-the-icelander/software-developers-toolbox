@@ -751,13 +751,15 @@ struct Review {
     quality: Vec<(String, String, String)>,
     findings: Vec<(String, String, String)>,
     missing: Vec<(String, String)>,
+    compared: Vec<(String, String, String)>,
+    uncompared: Vec<&'static str>,
     better: Option<(String, String)>,
     understanding: String,
     confidence: String,
     error: Option<String>,
 }
 
-// Has the reviewer judge the main result (A) and the benchmark's (B) when there is one: quality, each finding, what is missing and which is better.
+// Has the reviewer judge the main result (A) and the benchmark's (B) when there is one: quality, each finding and what is missing, and with a benchmark a comparison on each of quality, wall-clock time and tokens (from what zazzle measured) and which is better overall.
 #[allow(clippy::too_many_arguments)]
 fn review(
     b: &dyn Backend,
@@ -771,12 +773,18 @@ fn review(
 ) -> Review {
     let log = Log::to(sink.clone());
     let reads = if r.hosted() { " You may read the files to check them; change nothing." } else { "" };
-    let both = bench
-        .map_or("", |_| "MISSING B ...\nQUALITY B ...\nFINDING B1 ...\nBETTER A|B|tie one-line reason\n");
+    let both = bench.map_or("", |_| "MISSING B ...\nQUALITY B ...\nFINDING B1 ...\nCOMPARE quality A|B|tie one-line reason (which answers the question more correctly and completely, checked against the files)\nCOMPARE time A|B|tie one-line reason (from the wall-clock seconds measured below)\nCOMPARE tokens A|B|tie one-line reason (from the tokens and cost measured below)\nBETTER A|B|tie one-line reason weighing quality, time and tokens together\n");
     let system = format!("You review the results of answering a question about the repository in the current directory.{reads} Be concise; reply only with lines:\nQUALITY A good|fair|poor one-line reason\nFINDING A1 supported|unsupported|unclear one-line reason (one per finding)\nMISSING A what the question needs that the result lacks\n{both}CONFIDENCE understanding=high|medium|low result=high|medium|low");
     let mut prompt = format!("Question: {}\n\nResult A:\n{}", plan.question, main.work.listing("A", 6));
     if let Some(bn) = bench {
         prompt.push_str(&format!("\nResult B:\n{}", bn.work.listing("B", 6)));
+        prompt.push_str(&format!(
+            "\nMeasured by zazzle, not estimated:\nA ({}): {}\nB ({}): {}\n",
+            main.label,
+            measured(main),
+            bn.label,
+            measured(bn)
+        ));
     }
     match log.text(
         b,
@@ -785,13 +793,34 @@ fn review(
         cwd,
         deadline,
     ) {
-        Ok(t) => parse_review(&r.label(), &t),
+        Ok(t) => parse_review(&r.label(), &t, bench.is_some()),
         Err(e) => Review { rung: r.label(), error: Some(e), ..Review::default() },
     }
 }
 
-// Reads a review's lines.
-fn parse_review(rung: &str, reply: &str) -> Review {
+// What zazzle measured of a run for the reviewer: wall-clock seconds, calls, tokens (with any left unknown) and cost.
+fn measured(run: &Run) -> String {
+    let u = calls::usage(&run.calls, run.secs);
+    let unknown = match u["uncounted_calls"].as_u64().unwrap_or(0) {
+        0 => String::new(),
+        n => format!(" (unknown for {n} call(s))"),
+    };
+    let cost = u["cost_usd"].as_f64().map_or("not reported".to_string(), |c| format!("${c:.4}"));
+    format!(
+        "{} s wall clock, {} calls, {} input, {} cached and {} output tokens{unknown}, cost {cost}",
+        u["seconds"],
+        u["calls"],
+        u["hosted"]["input_tokens"],
+        u["hosted"]["cached_tokens"],
+        u["output_tokens"]
+    )
+}
+
+// The axes a benchmark's reviewer must compare the two results on.
+const AXES: [&str; 3] = ["quality", "time", "tokens"];
+
+// Reads a review's lines; with a benchmark, notes each of quality, time and tokens the reviewer did not compare.
+fn parse_review(rung: &str, reply: &str, with_bench: bool) -> Review {
     let mut v = Review { rung: rung.into(), ..Review::default() };
     let split = |s: &str| {
         let mut w = s.splitn(3, char::is_whitespace);
@@ -810,6 +839,8 @@ fn parse_review(rung: &str, reply: &str) -> Review {
         } else if let Some(rest) = word("MISSING") {
             let (tag, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
             v.missing.push((tag.to_string(), text.trim().to_string()));
+        } else if let Some(rest) = word("COMPARE") {
+            v.compared.push(split(rest));
         } else if let Some(rest) = word("BETTER") {
             let (tag, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
             v.better = Some((tag.to_string(), text.trim().to_string()));
@@ -817,6 +848,12 @@ fn parse_review(rung: &str, reply: &str) -> Review {
     }
     let a = investigate::cite::parse_answer(reply).unwrap_or_default();
     (v.understanding, v.confidence) = (a.understanding, a.confidence);
+    if with_bench {
+        v.uncompared = AXES
+            .into_iter()
+            .filter(|x| !v.compared.iter().any(|(axis, ..)| axis.eq_ignore_ascii_case(x)))
+            .collect();
+    }
     if v.quality.is_empty() && v.findings.is_empty() {
         v.error = Some(format!(
             "the review had none of the required lines (it began: {})",
@@ -840,6 +877,12 @@ fn review_text(v: &Review) -> String {
     }
     for (tag, what) in &v.missing {
         out.push_str(&format!("- {tag} misses: {what}\n"));
+    }
+    for (axis, tag, why) in &v.compared {
+        out.push_str(&format!("- {axis}: {}: {why}\n", tag.to_uppercase()));
+    }
+    if !v.uncompared.is_empty() {
+        out.push_str(&format!("- not compared by the reviewer: {}\n", v.uncompared.join(", ")));
     }
     if let Some((tag, why)) = &v.better {
         out.push_str(&format!("- better: {tag}: {why}\n"));
@@ -869,7 +912,17 @@ fn compare(main: &Run, bench: &Run) -> String {
     ));
     out.push_str(&row("gaps", main.work.gaps.len().to_string(), bench.work.gaps.len().to_string()));
     out.push_str(&row("calls", a["calls"].to_string(), b["calls"].to_string()));
-    out.push_str(&row("seconds", a["seconds"].to_string(), b["seconds"].to_string()));
+    out.push_str(&row("wall seconds", a["seconds"].to_string(), b["seconds"].to_string()));
+    out.push_str(&row(
+        "input tokens",
+        a["hosted"]["input_tokens"].to_string(),
+        b["hosted"]["input_tokens"].to_string(),
+    ));
+    out.push_str(&row(
+        "cached tokens",
+        a["hosted"]["cached_tokens"].to_string(),
+        b["hosted"]["cached_tokens"].to_string(),
+    ));
     out.push_str(&row("output tokens", a["output_tokens"].to_string(), b["output_tokens"].to_string()));
     let cost = |v: &Value| v["cost_usd"].as_f64().map_or("-".to_string(), |c| format!("${c:.4}"));
     out.push_str(&row("cost", cost(&a), cost(&b)));
@@ -920,6 +973,7 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
         v["review"] = json!({
             "agent": r.rung, "error": r.error, "quality": triple(&r.quality), "findings": triple(&r.findings),
             "missing": r.missing.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
+            "compared": triple(&r.compared), "not_compared": r.uncompared,
             "better": r.better.as_ref().map(|(a, b)| json!([a, b])),
             "task_understanding": r.understanding, "result_confidence": r.confidence,
         });

@@ -578,7 +578,11 @@ fn test_off_on_uninstall() {
     let applied = std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex");
     let off = run(&opts(&["--off"]), &env).expect("off");
     assert!(
-        off.starts_with("zazzle setup --off: zazzle is out of the way") && off.contains("- removed zazzle"),
+        off.starts_with("zazzle setup --off: zazzle is out of the way")
+            && off.contains("- removed zazzle")
+            && off.contains("compare each side's token usage")
+            && off.contains("its wall-clock time")
+            && off.contains("the quality of that result"),
         "{off}"
     );
     assert_eq!(std::fs::read_to_string(env.config_path(Client::Codex)).expect("codex"), before);
@@ -590,6 +594,7 @@ fn test_off_on_uninstall() {
     let on = run(&opts(&["--on"]), &env).expect("on");
     assert!(
         on.starts_with("zazzle setup --on: the setup from before --off is back.")
+            && on.ends_with(BENCH_NOTE)
             && on.contains("+ added the hook"),
         "{on}"
     );

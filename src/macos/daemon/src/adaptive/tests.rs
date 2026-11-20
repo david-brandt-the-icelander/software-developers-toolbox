@@ -528,7 +528,7 @@ fn test_review_and_hosted_benchmark() {
     let script = [
         ("local default low", Ok(KEY)),
         ("claude:opus medium", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked\nFINDING api/Endpoint.cs:40 beyond the file\nCONFIDENCE understanding=high result=high")),
-        ("codex:gpt high", Ok("QUALITY A good cites the check\nQUALITY B fair one bad citation\nFINDING A1 supported matches line 3\nFINDING B1 unclear\nMISSING A nothing\nBETTER A more precise\nCONFIDENCE understanding=high result=medium")),
+        ("codex:gpt high", Ok("QUALITY A good cites the check\nQUALITY B fair one bad citation\nFINDING A1 supported matches line 3\nFINDING B1 unclear\nMISSING A nothing\nCOMPARE quality A no bad citation\nCOMPARE time b fewer seconds\nBETTER A more precise\nCONFIDENCE understanding=high result=medium")),
     ];
     let f = Fake::new(&script);
     let argv = [
@@ -564,12 +564,24 @@ fn test_review_and_hosted_benchmark() {
         out.contains("usage (claude:opus medium): 1 calls (benchmark 1), ") && out.contains("$0.0100"),
         "{out}"
     );
-    assert!(out.contains("review (by codex:gpt high):\n- A quality good: cites the check\n- B quality fair: one bad citation\n- finding A1 supported: matches line 3\n- finding B1 unclear: \n- A misses: nothing\n- better: A: more precise\n"), "{out}");
+    assert!(out.contains("review (by codex:gpt high):\n- A quality good: cites the check\n- B quality fair: one bad citation\n- finding A1 supported: matches line 3\n- finding B1 unclear: \n- A misses: nothing\n- quality: A: no bad citation\n- time: B: fewer seconds\n- not compared by the reviewer: tokens\n- better: A: more precise\n"), "{out}");
+    assert!(
+        out.contains("  wall seconds ")
+            && out.contains("  input tokens   0                      100\n")
+            && out.contains("  cached tokens  0                      40\n"),
+        "{out}"
+    );
     let rp = &f.prompts("codex:gpt high")[0];
     assert!(
         rp.contains("You may read the files")
             && rp.contains("A1 api/Endpoint.cs:2-3")
-            && rp.contains("Result B:\nB1 "),
+            && rp.contains("Result B:\nB1 ")
+            && rp.contains("COMPARE quality A|B|tie")
+            && rp.contains("COMPARE time A|B|tie")
+            && rp.contains("COMPARE tokens A|B|tie")
+            && rp.contains("Measured by zazzle, not estimated:\nA (zazzle): ")
+            && rp.contains("s wall clock, 1 calls, 0 input, 0 cached and 7 output tokens, cost not reported\nB (claude:opus medium): ")
+            && rp.contains("100 input, 40 cached and 11 output tokens, cost $0.0100"),
         "{rp}"
     );
     assert!(
@@ -589,6 +601,8 @@ fn test_review_and_hosted_benchmark() {
     assert_eq!(v["benchmark"]["result"]["rejected"].as_array().map(Vec::len), Some(1));
     assert_eq!(v["benchmark"]["usage"]["cost_usd"], 0.01);
     assert_eq!(v["review"]["better"], json!(["A", "more precise"]));
+    assert_eq!(v["review"]["compared"][1], json!(["time", "b", "fewer seconds"]));
+    assert_eq!(v["review"]["not_compared"], json!(["tokens"]));
     assert_eq!(v["review"]["result_confidence"], "medium");
 }
 
