@@ -293,6 +293,26 @@
       ]
     },
     {
+      "id": "ZAZZLE_ORCHESTRATION_LOG",
+      "title": "ZAZZLE_ORCHESTRATION_LOG",
+      "summary": "Where the text-free record of each `investigate --adaptive` run is appended.",
+      "key": "ZAZZLE_ORCHESTRATION_LOG",
+      "type": "path",
+      "default": "$HOME/.zazzle/orchestration.jsonl",
+      "sensitive": false,
+      "scope": "Read by each adaptive run.",
+      "takesEffect": "on-next-run",
+      "validation": "An empty value disables the log. If its folder or file cannot be created or written, the record is dropped without failing the command.",
+      "details": "Records hold counts, hashes, agents, efforts, tokens and seconds; no question, path, claim or response text.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/record.rs",
+          "symbol": "path"
+        }
+      ]
+    },
+    {
       "id": "ZAZZLE_USAGE_LOG",
       "title": "ZAZZLE_USAGE_LOG",
       "summary": "Where privacy-preserving final response delivery metrics are appended.",

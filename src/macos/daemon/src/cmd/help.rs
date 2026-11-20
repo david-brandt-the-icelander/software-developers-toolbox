@@ -268,7 +268,7 @@ const PAGES: &[Page] = &[
         group: 0,
         brief: "investigate QUESTION..",
         summary: "Local model answers with checked citations",
-        usage: &["zazzle investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N]", "zazzle investigate QUESTION.. --adaptive [--agents A,B..] [--prose] [--json]", "zazzle investigate QUESTION.. [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E]", "zazzle agent investigate QUESTION.."],
+        usage: &["zazzle investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N]", "zazzle investigate QUESTION.. --adaptive [--agents A,B..] [--orchestrator M [--orchestrator-effort E]] [--prose] [--json]", "zazzle investigate QUESTION.. [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E]", "zazzle agent investigate QUESTION.."],
         about: &["Hands a question that needs several files to the local model. Starting from the symbols' references, it reads, outlines and searches inside the paths (default: here) for up to N turns, then answers. Each cited path:line is checked against the file and quoted literally; bad citations and what it could not establish are listed, and a run that stopped early says INCOMPLETE. The rules for the files it reads reach the model apart from the evidence, and you get those for the cited files. For one known symbol or a short lookup, read or refs is cheaper. Needs a downloaded model (zazzle agent llm)."],
         options: &[
             ("-p, --path P", "A folder or file to stay inside (repeatable)"),
@@ -277,12 +277,13 @@ const PAGES: &[Page] = &[
             ("--seconds N", "Time limit, waiting for the model included (default 90); a benchmark and a review get as long again"),
             ("--adaptive", "Plan the question into parts, run each on the cheapest agent and effort that will do it, escalate unsettled parts with what they established"),
             ("--agents A,B..", "The adaptive ladder, cheapest first: MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: installed local models, each at low then high)"),
+            ("--orchestrator M, --orchestrator-effort E", "Adaptive: this agent (claude:MODEL, codex:MODEL or a local model, optionally @EFFORT) plans, combines and summarizes in place of the ladder; its tokens are reported apart from the executors'"),
             ("--prose", "Adaptive: the cheapest agent adds a short summary that keeps the citations"),
             ("--json", "The structured result: status, confidence, findings with evidence, gaps, escalation, usage"),
             ("--benchmark-model M, --benchmark-effort E", "Also answer with that agent alone and compare state, findings, calls, time, tokens and cost"),
             ("--review-model M, --review-effort E", "Have that agent judge each result's quality and each finding"),
         ],
-        examples: &["zazzle investigate 'Where is the idempotency key validated?' --path src/Api --symbol IdempotencyFilter", "zazzle investigate 'Why are blank keys accepted, and should they be?' --adaptive --agents qwen3.5-4b,qwen3.5-9b,claude:sonnet@medium --review-model claude:opus"],
+        examples: &["zazzle investigate 'Where is the idempotency key validated?' --path src/Api --symbol IdempotencyFilter", "zazzle investigate 'Why are blank keys accepted, and should they be?' --adaptive --agents qwen3.5-4b,qwen3.5-9b,claude:sonnet@medium --review-model claude:opus", "zazzle investigate 'Why are blank keys accepted?' --adaptive --agents qwen3.5-4b,qwen3.5-9b --orchestrator claude:opus --orchestrator-effort high"],
     },
     Page {
         name: "prompt",

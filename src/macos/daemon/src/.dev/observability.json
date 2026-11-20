@@ -58,6 +58,55 @@
       ]
     },
     {
+      "id": "orchestration-log",
+      "title": "Adaptive investigation records",
+      "summary": "One text-free JSON line per `zazzle investigate --adaptive` run: how the question was rated and planned, how each part fared on each rung, how the parts were combined, and every call's tokens and time, with the orchestrator's usage apart from the executors'.",
+      "signalType": "event",
+      "name": "orchestration.jsonl",
+      "meaning": "Shows which questions needed a planner, how often parts escalate and from which rung, what the orchestrator costs against the executors, and where time goes (queue or run), so the ladder, orchestrator and difficulty rating can be tuned.",
+      "unit": "one record per adaptive run",
+      "dimensions": [
+        "v: record version (1) and ts_ms",
+        "question_hash (12-hex BLAKE3 prefix), question_words, scope_paths, symbols",
+        "difficulty and reasons; ladder, orchestrator and planner labels",
+        "plan: skipped, planned or fallback; combine: single, combined or merged",
+        "parts: start rung and per attempt agent, effort, status, understanding, confidence, findings, rejected, gaps, turns, needs_user and escalated_because (its kind only)",
+        "result: the final structured result's status, levels and counts",
+        "calls: phase, role, orchestrator flag, agent, hosted, tokens sent by section, input, cached and output tokens, rounds, cost_usd, queued and run seconds, ok",
+        "usage: totals with hosted, local, orchestrator and executors apart"
+      ],
+      "access": "The user who owns ~/.zazzle; the folder is mode 0700 and a new log is mode 0600.",
+      "retention": "At 20 MiB the log is renamed to orchestration.jsonl.1, replacing the prior rotated file.",
+      "cadence": "Per adaptive run.",
+      "excludes": [
+        "The question, paths, symbols, claims, citations, gap text and agent replies are never written."
+      ],
+      "details": "ZAZZLE_ORCHESTRATION_LOG moves the file; an empty value disables it. Write failures do not fail the command. The review and the benchmark are separate runs and are not in the record.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/record.rs",
+          "symbol": "build"
+        },
+        {
+          "path": "src/macos/daemon/src/adaptive/mod.rs",
+          "symbol": "adaptive"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "verified-by",
+          "path": "src/macos/daemon/src/.dev/verification.json",
+          "entityId": "orchestration-log"
+        },
+        {
+          "relation": "configured-by",
+          "path": "src/macos/daemon/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_ORCHESTRATION_LOG"
+        }
+      ]
+    },
+    {
       "id": "delivery-log",
       "title": "Final response delivery log",
       "summary": "One privacy-preserving JSON line per zazzle command response after budgeting and session dedupe, correlated by the caller's stable session.",

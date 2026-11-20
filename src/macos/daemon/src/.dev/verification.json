@@ -546,6 +546,41 @@
       ]
     },
     {
+      "id": "orchestration-log",
+      "title": "Adaptive investigation records",
+      "summary": "An adaptive run's record is parsed to verify its plan, parts, calls and orchestrator/executor split and the absence of question text; the log's location, rotation and quiet failure are exercised.",
+      "subject": [
+        {
+          "path": "src/macos/daemon/src/.dev/observability.json",
+          "entityId": "orchestration-log"
+        },
+        {
+          "path": "src/macos/daemon/src/.dev/configuration.json",
+          "entityId": "ZAZZLE_ORCHESTRATION_LOG"
+        }
+      ],
+      "criteria": [
+        "The record names the orchestrator, planner, plan and combine outcomes, each part's attempts and every call with its tokens and seconds.",
+        "The orchestrator's calls are flagged and summed apart from the executors'.",
+        "Neither the question nor any reply text appears in the record."
+      ],
+      "checks": [
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/adaptive/tests.rs",
+          "symbol": "test_orchestrator",
+          "command": "cargo test -p daemon adaptive::tests (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/adaptive/tests.rs",
+          "symbol": "test_orchestration_log",
+          "command": "cargo test -p daemon adaptive::tests (in src/macos)"
+        }
+      ],
+      "evidenceStatus": "source-verified"
+    },
+    {
       "id": "delivery-log",
       "title": "Final response delivery records",
       "summary": "A delivery record is parsed to verify stable correlation, pre- and post-dedupe sizes, token estimates, hashing and absence of response text.",

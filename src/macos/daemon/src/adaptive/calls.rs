@@ -24,6 +24,8 @@ pub trait Backend: Sync {
     ) -> Result<Said, String>;
     // The installed local models, smallest first.
     fn installed(&self) -> Vec<String>;
+    // Appends one run's record to the orchestration log; the default drops it.
+    fn record(&self, _rec: &Value) {}
 }
 
 // The real agents: daemon's shared local worker, and `claude` or `codex` found on this machine.
@@ -59,6 +61,11 @@ impl Backend for Real {
         let v = out.and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok()).unwrap_or_default();
         agent::installed_models(&v)
     }
+
+    // Appends the record to `~/.zazzle/orchestration.jsonl` unless that log is disabled.
+    fn record(&self, rec: &Value) {
+        super::record::write(rec);
+    }
 }
 
 // One model call: its role (its first word is the phase), the rung, whether it was hosted, the estimated tokens of
@@ -84,6 +91,11 @@ impl Call {
     // The phase: the role's first word.
     pub fn phase(&self) -> &str {
         self.role.split_whitespace().next().unwrap_or_default()
+    }
+
+    // Tells whether the call is the orchestrator's work (planning, combining, summarizing) rather than an executor's.
+    pub fn orchestrates(&self) -> bool {
+        matches!(self.phase(), "planner" | "combine" | "summary")
     }
 }
 
@@ -257,6 +269,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
             .filter(|c| c.hosted == hosted && phase.is_none_or(|p| c.phase() == p))
             .collect::<Vec<_>>()
     };
+    let by =
+        |orchestrator: bool| calls.iter().filter(|c| c.orchestrates() == orchestrator).collect::<Vec<_>>();
     json!({
         "calls": calls.len(),
         "failed_calls": calls.iter().filter(|c| !c.ok).count(),
@@ -266,6 +280,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
         "cost_usd": side(pick(true, None))["cost_usd"].clone(),
         "hosted": side(pick(true, None)),
         "local": side(pick(false, None)),
+        "orchestrator": side(by(true)),
+        "executors": side(by(false)),
         "phases": phases.iter().map(|p| json!({"phase": p, "hosted": side(pick(true, Some(p))), "local": side(pick(false, Some(p)))})).collect::<Vec<_>>(),
     })
 }
@@ -280,12 +296,35 @@ pub fn usage_line(calls: &[Call], secs: f64) -> String {
         .map(|x| format!("{} {}", x["role"].as_str().unwrap_or_default(), x["calls"]))
         .collect();
     let cost = u["cost_usd"].as_f64().map(|c| format!(", ${c:.4} reported")).unwrap_or_default();
+    let split = match u["orchestrator"]["calls"].as_u64() > Some(0) {
+        true => format!(
+            "; orchestrator {} output tokens, executors {}",
+            u["orchestrator"]["output_tokens"], u["executors"]["output_tokens"]
+        ),
+        false => String::new(),
+    };
     format!(
-        "{} calls ({}), {} s, {} output tokens{cost}",
+        "{} calls ({}), {} s, {} output tokens{cost}{split}",
         u["calls"],
         roles.join(", "),
         u["seconds"],
         u["output_tokens"]
+    )
+}
+
+// One side of the orchestrator and executors split: its agents, calls, reported input, cached and output tokens, rounds, cost and seconds.
+fn side_line(name: &str, s: &Value) -> String {
+    let agents: Vec<&str> = s["agents"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let cost = s["cost_usd"].as_f64().map(|c| format!(", ${c:.4}")).unwrap_or_default();
+    format!(
+        "  {name}: {} call(s) to {}; {} in, {} cached, {} out, {} rounds{cost}, {} s\n",
+        s["calls"],
+        agents.join(", "),
+        s["input_tokens"],
+        s["cached_tokens"],
+        s["output_tokens"],
+        s["rounds"],
+        s["seconds"]
     )
 }
 
@@ -328,5 +367,10 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
         "  total: {} s; hosted {} calls, {} in, {} cached, {} out; local {} calls, {} s queued, {} s in all\n",
         u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], l["calls"], l["queued_seconds"], l["seconds"]
     ));
+    if u["orchestrator"]["calls"].as_u64() > Some(0) {
+        out.push_str("  tokens kept apart:\n");
+        out.push_str(&side_line("orchestrator", &u["orchestrator"]));
+        out.push_str(&side_line("executors", &u["executors"]));
+    }
     out
 }
