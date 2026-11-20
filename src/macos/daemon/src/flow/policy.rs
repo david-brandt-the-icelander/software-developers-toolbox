@@ -24,9 +24,9 @@ pub struct Check {
 }
 
 // The check kinds.
-pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "script"];
+pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "audit", "script"];
 
-// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the documentation paths and the commands that check documentation, the effects deliver may have, the configured agents, and the conflicts found in guidance.
+// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the documentation paths and the commands that check documentation, the lockfiles' regeneration commands it adds to the usual ones, the effects deliver may have, the configured agents, and the conflicts found in guidance.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Policy {
     pub opted_in: bool,
@@ -40,6 +40,7 @@ pub struct Policy {
     pub pr_template: Option<String>,
     pub docs: Vec<String>,
     pub docs_checks: Vec<String>,
+    pub lockfiles: Vec<(String, String)>,
     pub effects: Vec<String>,
     pub agents: Value,
     pub conflicts: Vec<String>,
@@ -87,6 +88,25 @@ impl Policy {
             || [".md", ".mdx", ".rst", ".txt"].iter().any(|e| low.ends_with(e))
             || low.starts_with(".dev/")
             || low.contains("/.dev/")
+    }
+
+    // The command that regenerates a lockfile from its manifest, by file name: the policy's own, else the usual one for Cargo, npm, Yarn, pnpm, Go, Poetry, Composer or Bundler.
+    pub fn regenerate(&self, path: &str) -> Option<String> {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if let Some((_, c)) = self.lockfiles.iter().find(|(f, _)| f == name || f == path) {
+            return Some(c.clone());
+        }
+        let usual = [
+            ("Cargo.lock", "cargo metadata --format-version 1 > /dev/null"),
+            ("package-lock.json", "npm install --package-lock-only --ignore-scripts"),
+            ("yarn.lock", "yarn install --mode update-lockfile"),
+            ("pnpm-lock.yaml", "pnpm install --lockfile-only"),
+            ("go.sum", "go mod tidy"),
+            ("poetry.lock", "poetry lock --no-update"),
+            ("composer.lock", "composer update --lock"),
+            ("Gemfile.lock", "bundle lock"),
+        ];
+        usual.iter().find(|(f, _)| *f == name).map(|(_, c)| c.to_string())
     }
 
     // The checks that apply to a set of changed paths.
@@ -213,6 +233,12 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
         pr_template: v["pr_template"].as_str().map(str::to_string),
         docs: strs(&v["docs"]["paths"]),
         docs_checks: strs(&v["docs"]["check"]),
+        lockfiles: v["lockfiles"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, c)| Some((k.clone(), c.as_str()?.to_string())))
+            .collect(),
         effects,
         agents: v["agents"].clone(),
         ..Policy::default()
@@ -232,7 +258,7 @@ fn default_branch(top: &Path) -> String {
     "main".into()
 }
 
-// Finds the projects' checks without running anything: tests for Cargo workspaces, npm packages with a test script, Go modules, Python projects, .NET solutions and Makefiles with a test target, and the formatters and linters with their fix commands for Cargo (rustfmt, clippy), Go (gofmt, vet), .NET (dotnet format) and npm (a lint script), up to three folders deep, a folder inside a found Rust workspace skipped.
+// Finds the projects' checks without running anything (dependency audits apply when a manifest or lockfile changes): tests for Cargo workspaces, npm packages with a test script, Go modules, Python projects, .NET solutions and Makefiles with a test target, and the formatters and linters with their fix commands for Cargo (rustfmt, clippy), Go (gofmt, vet), .NET (dotnet format) and npm (a lint script), up to three folders deep, a folder inside a found Rust workspace skipped.
 pub fn discover(top: &Path) -> Vec<Check> {
     let mut out: Vec<Check> = Vec::new();
     let mut dirs = vec![(top.to_path_buf(), 0)];
@@ -248,8 +274,13 @@ pub fn discover(top: &Path) -> Vec<Check> {
             .any(|c| c.run.starts_with("cargo") && c.dir != "." && rel.starts_with(&format!("{}/", c.dir)))
             || out.iter().any(|c| c.run.starts_with("cargo") && c.dir == "." && rel != ".");
         let has = |f: &str| d.join(f).is_file();
-        let mut add = |name: &str, run: String, kind: &str, fix: Option<&str>| {
-            let paths = if rel == "." { Vec::new() } else { vec![format!("{rel}/")] };
+        let mut add = |name: &str, run: String, kind: &str, fix: Option<&str>, files: &[&str]| {
+            let under = |f: &str| if rel == "." { f.to_string() } else { format!("{rel}/{f}") };
+            let paths = match (files.is_empty(), rel == ".") {
+                (true, true) => Vec::new(),
+                (true, false) => vec![format!("{rel}/")],
+                (false, _) => files.iter().map(|f| under(f)).collect(),
+            };
             out.push(Check {
                 name: if rel == "." { name.into() } else { format!("{name} {rel}") },
                 run,
@@ -261,13 +292,15 @@ pub fn discover(top: &Path) -> Vec<Check> {
             });
         };
         if has("Cargo.toml") && !inside {
-            add("cargo", "cargo test --workspace".into(), "test", None);
-            add("rustfmt", "cargo fmt --all --check".into(), "format", Some("cargo fmt --all"));
+            add("cargo", "cargo test --workspace".into(), "test", None, &[]);
+            add("rustfmt", "cargo fmt --all --check".into(), "format", Some("cargo fmt --all"), &[]);
+            add("cargo audit", "cargo-audit audit".into(), "audit", None, &["Cargo.toml", "Cargo.lock"]);
             add(
                 "clippy",
                 "cargo clippy --workspace --all-targets -- -D warnings".into(),
                 "lint",
                 Some("cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged"),
+                &[],
             );
         }
         let scripts = std::fs::read_to_string(d.join("package.json"))
@@ -276,7 +309,7 @@ pub fn discover(top: &Path) -> Vec<Check> {
             .map(|v| v["scripts"].clone())
             .unwrap_or_default();
         if scripts["test"].is_string() {
-            add("npm", "npm test".into(), "test", None);
+            add("npm", "npm test".into(), "test", None, &[]);
         }
         if scripts["lint"].is_string() {
             add(
@@ -284,34 +317,54 @@ pub fn discover(top: &Path) -> Vec<Check> {
                 "npm run lint".into(),
                 "lint",
                 scripts["lint:fix"].is_string().then_some("npm run lint:fix"),
+                &[],
+            );
+        }
+        if has("package-lock.json") {
+            add(
+                "npm audit",
+                "npm audit --audit-level=high".into(),
+                "audit",
+                Some("npm audit fix"),
+                &["package.json", "package-lock.json"],
             );
         }
         if has("go.mod") {
-            add("go", "go test ./...".into(), "test", None);
-            add("gofmt", "test -z \"$(gofmt -l .)\"".into(), "format", Some("gofmt -w ."));
-            add("go vet", "go vet ./...".into(), "lint", None);
+            add("go", "go test ./...".into(), "test", None, &[]);
+            add("gofmt", "test -z \"$(gofmt -l .)\"".into(), "format", Some("gofmt -w ."), &[]);
+            add("go vet", "go vet ./...".into(), "lint", None, &[]);
+            add("govulncheck", "govulncheck ./...".into(), "audit", None, &["go.mod", "go.sum"]);
         }
         if has("pyproject.toml") || has("pytest.ini") || has("setup.cfg") {
-            add("pytest", "python3 -m pytest -q".into(), "test", None);
+            add("pytest", "python3 -m pytest -q".into(), "test", None, &[]);
+            add(
+                "pip-audit",
+                "pip-audit".into(),
+                "audit",
+                None,
+                &["pyproject.toml", "requirements.txt", "poetry.lock"],
+            );
         }
         let mut entries: Vec<PathBuf> =
             std::fs::read_dir(&d).into_iter().flatten().flatten().map(|e| e.path()).collect();
         entries.sort();
         if let Some(sln) = entries.iter().find(|p| p.extension().is_some_and(|e| e == "sln")) {
             let sln = sln.file_name().unwrap_or_default().to_string_lossy().to_string();
-            add("dotnet", format!("dotnet test {sln}"), "test", None);
+            add("dotnet", format!("dotnet test {sln}"), "test", None, &[]);
             add(
                 "dotnet format",
                 format!("dotnet format {sln} --verify-no-changes"),
                 "format",
                 Some(&format!("dotnet format {sln}")),
+                &[],
             );
+            add("dotnet audit", format!("! dotnet list {sln} package --vulnerable --include-transitive | grep -q 'has the following vulnerable packages'"), "audit", None, &[]);
         }
         if has("Makefile")
             && std::fs::read_to_string(d.join("Makefile"))
                 .is_ok_and(|t| t.lines().any(|l| l.starts_with("test:")))
         {
-            add("make", "make test".into(), "test", None);
+            add("make", "make test".into(), "test", None, &[]);
         }
         if depth < 3 {
             for e in entries.iter().rev().filter(|p| p.is_dir()) {

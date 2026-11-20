@@ -157,6 +157,11 @@ fn mark(status: &str) -> &'static str {
     }
 }
 
+// A name made safe for a file name: every character that is not a letter or digit becomes `-`.
+pub fn safe(name: &str) -> String {
+    name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { '-' }).collect()
+}
+
 // The first eight characters of an id.
 pub fn short(id: &str) -> &str {
     id.get(..8).unwrap_or(id)
@@ -351,7 +356,7 @@ pub fn verify(
             });
             continue;
         }
-        let safe: String = c.name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { '-' }).collect();
+        let safe = safe(&c.name);
         r.checks.push(run_check(top, c, &logs.join(format!("{}-{safe}.log", short(&tree))), limit));
     }
     let path = receipts(top)?.join(format!("{tree}.json"));

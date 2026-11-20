@@ -179,15 +179,19 @@ fn test_discover() {
     let names: Vec<(String, String)> = found.iter().map(|c| (c.name.clone(), c.run.clone())).collect();
     let expect: Vec<(String, String)> = [
         ("cargo", "cargo test --workspace"),
+        ("cargo audit", "cargo-audit audit"),
         ("clippy", "cargo clippy --workspace --all-targets -- -D warnings"),
         ("rustfmt", "cargo fmt --all --check"),
         ("make c", "make test"),
+        ("dotnet audit cs", "! dotnet list App.sln package --vulnerable --include-transitive | grep -q 'has the following vulnerable packages'"),
         ("dotnet cs", "dotnet test App.sln"),
         ("dotnet format cs", "dotnet format App.sln --verify-no-changes"),
+        ("pip-audit py", "pip-audit"),
         ("pytest py", "python3 -m pytest -q"),
         ("go svc", "go test ./..."),
         ("go vet svc", "go vet ./..."),
         ("gofmt svc", "test -z \"$(gofmt -l .)\""),
+        ("govulncheck svc", "govulncheck ./..."),
         ("npm lint web", "npm run lint"),
         ("npm web", "npm test"),
     ]
@@ -206,8 +210,8 @@ fn test_discover() {
     let found = policy::discover(sub.path());
     assert_eq!(
         (found.len(), found[0].paths.clone()),
-        (3, vec!["rust/".to_string()]),
-        "test, rustfmt and clippy for the outer workspace only"
+        (4, vec!["rust/Cargo.toml".to_string(), "rust/Cargo.lock".to_string()]),
+        "test, audit, rustfmt and clippy for the outer workspace only; the audit applies when its manifest or lockfile changes"
     );
 }
 
@@ -238,8 +242,8 @@ fn test_policy_file() {
     };
     assert!(bad("{").contains(".zazzle/flow.json"));
     assert!(bad(r#"{"checks": [{"name": "x"}]}"#).contains("has no `run`"));
-    assert!(bad(r#"{"checks": [{"run": "x", "kind": "audit"}]}"#)
-        .contains("one of build, test, coverage, format, lint, script"));
+    assert!(bad(r#"{"checks": [{"run": "x", "kind": "deploy"}]}"#)
+        .contains("one of build, test, coverage, format, lint, audit, script"));
     assert!(bad(r#"{"branches": {"levels": {"qa": "uat"}}}"#).contains("branches.levels.qa"));
     assert!(bad(r#"{"effects": ["deploy"]}"#).contains("not `deploy`"));
     t.write(".zazzle/flow.json", br#"{"branches": {"levels": {"qa": "staging"}, "protected": ["release"]}}"#);
@@ -1216,7 +1220,16 @@ fn test_parse_and_discover_variants() {
     let found: Vec<String> = policy::discover(d.path()).into_iter().map(|c| c.name).collect();
     assert_eq!(
         found,
-        ["pytest a", "pytest b", "go c/d/e", "go vet c/d/e", "gofmt c/d/e"],
+        [
+            "pip-audit a",
+            "pytest a",
+            "pip-audit b",
+            "pytest b",
+            "go c/d/e",
+            "go vet c/d/e",
+            "gofmt c/d/e",
+            "govulncheck c/d/e"
+        ],
         "four folders down is not searched"
     );
     t.write(
@@ -1900,4 +1913,228 @@ fn test_ci_triage() {
         "{failed_triage}"
     );
     assert!(!skipped.0.contains("triage"), "{}", skipped.0);
+}
+
+// Checks dependency audits: advisory ids read once each, none configured, none applying until a lockfile changes, advisories listed with their lines, and a fix command that clears them.
+#[test]
+fn test_audit() {
+    let ids = audit::advisories("crate foo 1.0 RUSTSEC-2024-0001\nsee RUSTSEC-2024-0001 again\nGHSA-abcd-1234-efgh in bar\nCVE-x is not one\nGO-2023-2153 pkg\n");
+    assert_eq!(
+        ids.iter().map(|(i, _)| i.as_str()).collect::<Vec<_>>(),
+        ["RUSTSEC-2024-0001", "GHSA-abcd-1234-efgh", "GO-2023-2153"]
+    );
+    assert_eq!(ids[0].1, "crate foo 1.0 RUSTSEC-2024-0001");
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["audit"]).0.contains("no audit check is configured or found"));
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "deps", "run": "cat audit.txt; ! grep -q RUSTSEC audit.txt", "kind": "audit", "paths": ["deps.lock"], "fix": "echo clean > audit.txt"}]}"#);
+    t.write("audit.txt", b"foo 1.0 RUSTSEC-2024-0001 unsound\n");
+    t.write("deps.lock", b"foo 1.0\n");
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "audit policy"]);
+    assert!(flow(&root, &none, &["audit", "--base", "HEAD"])
+        .0
+        .contains("no dependency manifest or lockfile changed"));
+    let (out, code) = flow(&root, &none, &["audit", "--all"]);
+    assert!(
+        code == 1
+            && out.contains("✗ deps: failed")
+            && out.contains("1 advisory")
+            && out.contains("RUSTSEC-2024-0001: foo 1.0 RUSTSEC-2024-0001 unsound")
+            && out.contains("`--fix` runs"),
+        "{out}"
+    );
+    t.write("deps.lock", b"foo 1.1\n");
+    let (out, code) = flow(&root, &none, &["audit", "--fix"]);
+    assert!(
+        code == 0
+            && out.contains("ran `echo clean > audit.txt`: passed")
+            && out.contains("no known vulnerable dependencies"),
+        "{out}"
+    );
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "deps", "run": "echo GHSA-aaaa-1111-bbbb; echo GHSA-cccc-2222-dddd; exit 1", "kind": "audit", "fix": "true"}]}"#);
+    let (out, _) = flow(&root, &none, &["audit", "--fix", "--all"]);
+    assert!(out.contains("2 advisories") && out.contains("advisories remain after the fixes"), "{out}");
+    let p = policy::load(&root).expect("p");
+    assert_eq!(
+        (p.regenerate("a/Cargo.lock").as_deref(), p.regenerate("go.sum").is_some(), p.regenerate("x.txt")),
+        (Some("cargo metadata --format-version 1 > /dev/null"), true, None)
+    );
+}
+
+// Checks branch updates: refused on a protected branch or a dirty tree, nothing to do when current, a clean merge committed after the checks, a textual conflict resolved by the local agent, a lockfile regenerated, and every way it aborts leaving the branch as it was.
+#[test]
+fn test_update() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, ", \"lockfiles\": {\"deps.lock\": \"echo regenerated > deps.lock\"}");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["update"]).0.contains("already has every commit of main"));
+    let on_main = |f: &dyn Fn()| {
+        g(&root, &["checkout", "-q", "main"]);
+        f();
+        g(&root, &["commit", "-qam", "main moves"]);
+        g(&root, &["checkout", "-q", "feature/x"]);
+    };
+    on_main(&|| {
+        t.write("README.md", b"# demo on main\n");
+    });
+    t.write("src/lib.rs", b"dirty\n");
+    assert!(flow(&root, &none, &["update"]).0.contains("uncommitted changes"));
+    g(&root, &["checkout", "-q", "--", "."]);
+    let (out, code) = flow(&root, &none, &["update"]);
+    assert!(
+        code == 0
+            && out.contains("merging main (1 commit(s)) into feature/x")
+            && out.contains("✓ unit")
+            && out.contains("(merge of main)")
+            && out.contains("-- the branch is current"),
+        "{out}"
+    );
+    assert_eq!(g(&root, &["log", "-1", "--format=%p"]).split(' ').count(), 2, "a merge commit, not a rebase");
+    let conflict = |main: &str, ours: &str, file: &str| {
+        on_main(&|| {
+            t.write(file, main.as_bytes());
+            g(&root, &["add", file]);
+        });
+        t.write(file, ours.as_bytes());
+        g(&root, &["add", file]);
+        g(&root, &["commit", "-qm", "ours"]);
+    };
+    conflict(
+        "pub fn add(a: i32, b: i32) -> i32 { a + b + 1 }\n",
+        "pub fn add(a: i32, b: i32) -> i32 { a.wrapping_add(b) }\n",
+        "src/lib.rs",
+    );
+    let head = g(&root, &["rev-parse", "HEAD"]);
+    let (out, code) = flow(&root, &none, &["update", "--no-agent"]);
+    assert!(
+        code == 1
+            && out.contains("src/lib.rs: a textual conflict, and no resolver was given")
+            && out.contains("-- merge aborted"),
+        "{out}"
+    );
+    assert_eq!(
+        (g(&root, &["rev-parse", "HEAD"]), g(&root, &["status", "--porcelain", "--untracked-files=no"])),
+        (head.clone(), String::new()),
+        "aborted cleanly"
+    );
+    let f = Fake::new(vec![(
+        "qwen-a low",
+        say("FILE src/lib.rs\n```\n<<<<<<< HEAD\nstill\n=======\nboth\n>>>>>>> origin\n```"),
+    )]);
+    assert!(flow(&root, &f, &["update", "--agents", "qwen-a"])
+        .0
+        .contains("qwen-a low left conflict markers"));
+    let f = Fake::new(vec![("qwen-a low", say("GAP one side adds 1, the other wraps: which is meant?"))]);
+    assert!(flow(&root, &f, &["update", "--agents", "qwen-a"])
+        .0
+        .contains("says the sides contradict: one side adds 1"));
+    let f = Fake::new(vec![("qwen-a low", say("FILE src/lib.rs\n```\npub fn add(a: i32, b: i32) -> i32 { a.wrapping_add(b).wrapping_add(1) }\n```"))]);
+    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a"]);
+    assert!(
+        code == 0
+            && out.contains("src/lib.rs: resolved by qwen-a low")
+            && out.contains("-- the branch is current"),
+        "{out}"
+    );
+    let sent = &f.prompts("qwen-a low")[0];
+    assert!(
+        sent.contains("<<<<<<< HEAD")
+            && sent.contains("This branch's commits to it:\n- ours")
+            && sent.contains("The target's commits to it:\n- main moves")
+            && sent.contains(TOOLS_NOTE),
+        "{sent}"
+    );
+    conflict("main\n", "ours\n", "deps.lock");
+    let (out, code) = flow(&root, &none, &["update"]);
+    assert!(code == 0 && out.contains("deps.lock: regenerated with `echo regenerated > deps.lock`"), "{out}");
+    assert_eq!(std::fs::read_to_string(root.join("deps.lock")).expect("lock"), "regenerated\n");
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "lockfiles": {"deps.lock": "false"}, "checks": [{"name": "unit", "run": "sh tests/check.sh"}]}"#);
+    g(&root, &["commit", "-qam", "lock regen fails"]);
+    conflict("main 2\n", "ours 2\n", "deps.lock");
+    assert!(flow(&root, &none, &["update"]).0.contains("deps.lock: `false` failed"));
+    on_main(&|| {
+        t.write("tests/check.sh", b"exit 1\n");
+    });
+    g(&root, &["checkout", "-q", "--theirs", "--", "."]);
+    let red = flow(&root, &none, &["update", "--no-agent"]);
+    assert!(red.0.contains("not resolved") || red.0.contains("does not pass the checks"), "{}", red.0);
+    g(&root, &["checkout", "-q", "main"]);
+    assert!(flow(&root, &none, &["update"]).0.contains("main is a production branch"));
+    g(&root, &["checkout", "-q", "feature/x"]);
+    assert!(flow(&root, &none, &["update", "--target", "nope"]).0.contains("no branch `nope`"));
+}
+
+// Checks an update against a remote: the target fetched from origin, the merged tree failing the checks aborted, then with --no-verify committed and pushed.
+#[test]
+fn test_update_remote() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let bare = TempDir::new();
+    g(bare.path(), &["init", "-q", "--bare"]);
+    g(&root, &["remote", "add", "origin", &bare.path().display().to_string()]);
+    g(&root, &["push", "-q", "origin", "main", "feature/x"]);
+    let other = TempDir::new();
+    g(other.path(), &["clone", "-q", &bare.path().display().to_string(), "c"]);
+    let c = other.path().join("c");
+    g(&c, &["config", "user.email", "t@t"]);
+    g(&c, &["config", "user.name", "t"]);
+    g(&c, &["checkout", "-q", "main"]);
+    std::fs::write(c.join("tests/check.sh"), "exit 1\n").expect("check");
+    g(&c, &["commit", "-qam", "break the check on main"]);
+    g(&c, &["push", "-q", "origin", "main"]);
+    let none = Fake::new(vec![]);
+    let (out, code) = flow(&root, &none, &["update"]);
+    assert!(
+        code == 1
+            && out.contains("merging origin/main (1 commit(s))")
+            && out.contains("✗ unit")
+            && out.contains("does not pass the checks"),
+        "{out}"
+    );
+    let (out, code) = flow(&root, &none, &["update", "--no-verify", "--push"]);
+    assert!(code == 0 && out.contains("push: pushed to origin/feature/x"), "{out}");
+}
+
+// Checks small cases of the newer tools: conflict markers of each kind, Cobertura without an XML header, missing-lines text that is not a report, a log line without a timestamp, a hosted resolver, and an audit that fails without a fix command.
+#[test]
+fn test_tool_edges() {
+    assert!(
+        update::has_markers(">>>>>>> theirs\n")
+            && update::has_markers("a\n=======\nb\n")
+            && !update::has_markers("== not a marker\n")
+    );
+    assert_eq!(
+        coverage::parse(r#"<coverage><class filename="a.cs"><line number="1" hits="0"/></class></coverage>"#)
+            [0]
+        .lines,
+        [1]
+    );
+    assert!(coverage::parse("some words: 1-2\nnoext: 3\n").is_empty());
+    assert_eq!(ci::excerpt("job\tstep\tnot-a-timestamp error: boom\n"), "not-a-timestamp error: boom\n");
+    assert_eq!(verify::safe("npm lint web"), "npm-lint-web");
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    g(&root, &["checkout", "-q", "main"]);
+    t.write("src/lib.rs", b"main side\n");
+    g(&root, &["commit", "-qam", "main side"]);
+    g(&root, &["checkout", "-q", "feature/x"]);
+    t.write("src/lib.rs", b"our side\n");
+    g(&root, &["commit", "-qam", "our side"]);
+    let f = Fake::new(vec![("claude:m medium", edits(&[("src/lib.rs", "both sides\n")], "STATUS complete"))]);
+    let (out, code) = flow(&root, &f, &["update", "--resolver", "claude:m"]);
+    assert!(
+        code == 0
+            && out.contains("src/lib.rs: resolved by claude:m medium")
+            && f.prompts("claude:m medium")[0].contains("Edit the file"),
+        "{out}"
+    );
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "deps", "run": "echo CVE-2024-12345; exit 1", "kind": "audit"}]}"#);
+    let none = Fake::new(vec![]);
+    let (out, code) = flow(&root, &none, &["audit", "--all", "--fix"]);
+    assert!(
+        code == 1 && !out.contains("ran `") && out.contains("CVE-2024-12345"),
+        "no fix command to run: {out}"
+    );
 }

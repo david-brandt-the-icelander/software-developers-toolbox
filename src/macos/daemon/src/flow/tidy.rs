@@ -22,7 +22,7 @@ fn applicable<'a>(top: &Path, p: &'a Policy, base: Option<&str>) -> Result<Vec<&
 fn run(top: &Path, c: &Check, fix: bool, tag: &str, limit: Duration) -> Result<Outcome, String> {
     let cmd = if fix { c.fix.clone().unwrap_or_default() } else { c.run.clone() };
     let one = Check { run: cmd, ..c.clone() };
-    let safe: String = c.name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { '-' }).collect();
+    let safe = verify::safe(&c.name);
     Ok(verify::run_check(top, &one, &repo::state(top, "logs")?.join(format!("tidy-{tag}-{safe}.log")), limit))
 }
 

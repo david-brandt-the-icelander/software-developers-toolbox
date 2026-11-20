@@ -131,7 +131,7 @@ pub fn deliver(top: &Path, p: &Policy, a: &Ask) -> Result<String, String> {
 }
 
 // Pushes the branch, retrying network failures; a remote that has commits the branch lacks is reported, never forced.
-fn push(top: &Path, branch: &str) -> Result<String, String> {
+pub fn push(top: &Path, branch: &str) -> Result<String, String> {
     let ahead = repo::git(top, &["rev-list", "--count", &format!("origin/{branch}..HEAD")]).ok();
     if ahead.as_deref() == Some("0") {
         return Ok("up to date (nothing to push)".into());

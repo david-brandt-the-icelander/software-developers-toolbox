@@ -231,7 +231,7 @@ pub fn measure(
     let logs = repo::state(top, "logs")?;
     let (mut gaps, mut out, mut ok) = (Vec::new(), String::new(), true);
     for c in checks {
-        let safe: String = c.name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { '-' }).collect();
+        let safe = verify::safe(&c.name);
         let log = logs.join(format!("coverage-{safe}.log"));
         let o = verify::run_check(top, c, &log, limit);
         ok &= o.status == "passed";

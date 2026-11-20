@@ -1,4 +1,5 @@
 // `zazzle flow` and `zazzle review`: the repository workflow zazzle runs for an agent, opt-in per repository (`.zazzle/flow.json`): preview what applies, verify with tree-pinned receipts, write the commit message, changelog entry or pull request text, deliver (stage, commit, push, pull request) safely repeatable, write a failing test first and then the fix, wait for CI once, and review from several viewpoints with fixes before handing back. They run as their own process, in the caller's environment.
+pub mod audit;
 pub mod ci;
 pub mod coverage;
 pub mod deliver;
@@ -9,6 +10,7 @@ pub mod repo;
 pub mod review;
 pub mod testfirst;
 pub mod tidy;
+pub mod update;
 pub mod verify;
 pub mod write;
 
@@ -18,7 +20,7 @@ use policy::Policy;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
+pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|update|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
@@ -38,6 +40,9 @@ pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzl
   coverage [--all] [--base B] [--author AGENT --tests P..]
                                      measure coverage and list the changed files' uncovered lines and branches with tests
                                      to model on; with --author a cheap agent writes tests for them, kept only if they pass
+  audit [--all] [--fix] [--base B]   run the dependency audits that apply (a manifest or lockfile changed; --all: every one)
+  update [--target B] [--resolver AGENT] [--no-agent] [--no-verify] [--push]
+                                     merge the target in; lockfiles regenerated, other conflicts to the local agent; committed only if checks pass
   ci [--pr N] [--timeout S] [--triager AGENT] [--no-triage]
                                      wait for the pull request's checks on its head and report once; failed jobs' logs
                                      are cut to what matters and triaged by the local model
@@ -48,7 +53,7 @@ zazzle review [--into BRANCH] [--level feature|development|staging|production] [
 AGENT is MODEL (local), claude:MODEL or codex:MODEL, optionally @EFFORT; --seconds S limits each agent call (default 300).";
 
 // What every execution agent is told it does not do: zazzle's tools and its cheap writer do those after it.
-pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests or measure coverage, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
+pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests, measure coverage or audit dependencies, do not merge the target branch in, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
 
 // Agent calls' default time limit.
 const AGENT_SECS: u64 = 300;
@@ -355,6 +360,40 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 ));
             }
             Ok((text, if green { 0 } else { 1 }))
+        }
+        "audit" => {
+            let a = Args::parse(rest, &["--all", "--fix"])?;
+            a.only(&["--base", "--timeout"])?;
+            let base = match (a.on("--all"), a.one("--base")) {
+                (true, _) => None,
+                (false, Some(bb)) => Some(bb),
+                (false, None) => repo::base(&top, &p.target).ok(),
+            };
+            let (out, ok) = audit::audit(
+                &top,
+                &p,
+                base.as_deref(),
+                a.on("--fix"),
+                limit(&a, "--timeout", verify::CHECK_SECS)?,
+            )?;
+            Ok((out, if ok { 0 } else { 1 }))
+        }
+        "update" => {
+            let a = Args::parse(rest, &["--no-verify", "--push", "--no-agent"])?;
+            a.only(&["--target", "--resolver", "--agents", "--seconds"])?;
+            let ladder = ladder(&p, &a, b)?;
+            let resolver = one_agent(&a, "--resolver", &p, "resolver", &ladder[0])?;
+            let ask = update::Ask {
+                target: a.one("--target"),
+                resolver: (!a.on("--no-agent")).then_some(resolver),
+                no_verify: a.on("--no-verify"),
+                push: a.on("--push"),
+                limit: limit(&a, "--seconds", AGENT_SECS)?,
+            };
+            let started = Instant::now();
+            let (mut out, ok) = update::update(&top, &p, &ask, b, &log)?;
+            out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
+            Ok((out, if ok { 0 } else { 1 }))
         }
         "coverage" => {
             let a = Args::parse(rest, &["--all"])?;

@@ -31,6 +31,7 @@
         "changelog, changelog_script",
         "pr_template",
         "docs, docs_checks",
+        "lockfiles: Vec<(file, command)>",
         "effects",
         "agents",
         "conflicts",
@@ -51,7 +52,7 @@
         "name",
         "run",
         "dir",
-        "kind (build, test, coverage, format, lint, script)",
+        "kind (build, test, coverage, format, lint, audit, script)",
         "paths",
         "fix: Option<String>",
         "report: Option<String>"
@@ -232,6 +233,21 @@
         "path",
         "lines",
         "branches: Vec<(line, taken, total)>"
+      ]
+    },
+    {
+      "id": "UpdateAsk",
+      "name": "update::Ask",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/update.rs"
+      ],
+      "members": [
+        "target",
+        "resolver: Option<Rung>",
+        "no_verify",
+        "push",
+        "limit"
       ]
     }
   ],
