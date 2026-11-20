@@ -329,7 +329,8 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("problem: qwen3.5-2b is corrupt") && text.ends_with("ai-agent 0.0.0-dev\n"),
+            text.contains("problem: qwen3.5-2b is corrupt")
+                && text.ends_with(&format!("ai-agent {}\n", env!("CARGO_PKG_VERSION"))),
             "{text}"
         );
 
