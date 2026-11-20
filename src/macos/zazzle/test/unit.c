@@ -431,7 +431,7 @@ static void test_tools_beside(void)
 	CHECK(run(1, bare, env_home) == 0 && strcmp(M.spawn_path, "/opt/bin/daemon") == 0);
 }
 
-/* Checks that `zazzle proxy`, `zazzle setup` and `zazzle run` exec `zazzle daemon proxy`, `zazzle daemon setup` and `zazzle daemon wrap`, from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */
+/* Checks that `zazzle proxy`, `setup`, `tools`, `flow`, `review` and `run` exec the daemon with the same command (`wrap` for run), from $ZAZZLE_DAEMON or beside the invoker, and the failure path. */
 static void test_proxy_exec(void)
 {
 	char *argv[] = {"zazzle", "proxy", "--", "srv", 0};
@@ -460,6 +460,12 @@ static void test_proxy_exec(void)
 	char *tools[] = {"z", "tools", "--json", 0};
 	reset();
 	CHECK(run(3, tools, env_home) == -1000 && strcmp(M.exec_arg1, "tools") == 0 && M.connect_calls == 0);
+	char *flow[] = {"zazzle", "flow", "preview", 0};
+	reset();
+	CHECK(run(3, flow, env_home) == -1000 && strcmp(M.exec_arg1, "flow") == 0 && M.connect_calls == 0);
+	char *review[] = {"z", "review", "--read-only", 0};
+	reset();
+	CHECK(run(3, review, env_home) == -1000 && strcmp(M.exec_arg1, "review") == 0 && M.connect_calls == 0);
 }
 
 /* Checks that `zazzle agent llm`, `prompt`, `chat`, `status` and `prune` exec `daemon llm`, and that other agent commands still go to the daemon. */

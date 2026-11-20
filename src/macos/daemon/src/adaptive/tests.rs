@@ -1,8 +1,10 @@
 // Tests for the adaptive mode with scripted agents: options, assessment, planning, escalation with handoff, combining, the summary, the review, the benchmark, and the real command lines through stand-in programs.
 use super::*;
 use crate::testutil::TempDir;
+use agent::Said;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
 
 // Agents that reply from a script per rung label (`qwen-a low`, `claude:sonnet high`), recording each rung's prompts.
 #[derive(Default)]
@@ -51,12 +53,31 @@ impl Backend for Fake {
             req["system"].as_str().unwrap_or_default(),
             req["user"].as_str().unwrap_or_default()
         );
-        self.next(r.label(), prompt).map(|text| Reply { truncated: text.contains("CUT"), text, tokens: 7 })
+        self.next(r.label(), prompt).map(|text| Reply {
+            truncated: text.contains("CUT"),
+            text,
+            tokens: 7,
+            queued_ms: 0,
+        })
     }
 
     // Replies for the hosted rung, with eleven tokens and a cent.
-    fn hosted(&self, rung: &Rung, prompt: &str, _cwd: &Path, _deadline: Instant) -> Result<Said, String> {
-        self.next(rung.label(), prompt.into()).map(|text| Said { text, tokens: 11, cost: Some(0.01) })
+    fn hosted(
+        &self,
+        rung: &Rung,
+        prompt: &str,
+        _cwd: &Path,
+        _deadline: Instant,
+        _write: bool,
+    ) -> Result<Said, String> {
+        self.next(rung.label(), prompt.into()).map(|text| Said {
+            text,
+            tokens: 11,
+            input: 100,
+            cached: 40,
+            rounds: 2,
+            cost: Some(0.01),
+        })
     }
 
     // The scripted installed models.
@@ -686,20 +707,30 @@ fn test_said() {
     use agent::{said, Kind};
     let c = said(
         Kind::Claude,
-        r#"{"result":"STATUS complete","usage":{"output_tokens":42},"total_cost_usd":0.5}"#,
+        r#"{"result":"STATUS complete","usage":{"output_tokens":42,"input_tokens":5,"cache_read_input_tokens":20},"num_turns":3,"total_cost_usd":0.5}"#,
         "",
     )
     .expect("claude");
-    assert_eq!(c, Said { text: "STATUS complete".into(), tokens: 42, cost: Some(0.5) });
+    assert_eq!(
+        c,
+        Said {
+            text: "STATUS complete".into(),
+            tokens: 42,
+            input: 25,
+            cached: 20,
+            rounds: 3,
+            cost: Some(0.5)
+        }
+    );
     assert_eq!(
         said(Kind::Claude, r#"{"result":"rate limited","is_error":true}"#, ""),
         Err("claude failed: rate limited".into())
     );
     assert!(said(Kind::Claude, "not json", "").unwrap_err().contains("no JSON result"));
-    let events = "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"from events\"}}\nnoise\n{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":9}}";
+    let events = "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"from events\"}}\nnoise\n{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":9,\"input_tokens\":30,\"cached_input_tokens\":12}}";
     assert_eq!(
         said(Kind::Codex, events, "from file").expect("file"),
-        Said { text: "from file".into(), tokens: 9, cost: None }
+        Said { text: "from file".into(), tokens: 9, input: 30, cached: 12, rounds: 1, cost: None }
     );
     assert_eq!(said(Kind::Codex, events, " ").expect("events").text, "from events");
     assert_eq!(said(Kind::Codex, "", ""), Err("codex gave no final message".into()));
@@ -718,26 +749,35 @@ fn test_ask_hosted() {
     let far = Instant::now() + Duration::from_secs(30);
     let claude = exe("claude", "echo \"$@\" > \"$0.args\"\ncat > \"$0.in\"\necho '{\"result\":\"STATUS complete\",\"usage\":{\"output_tokens\":3}}'\n");
     let r = Rung::parse("claude:sonnet@high", None).expect("rung");
-    let s = agent::ask_hosted(&r, &claude, "the prompt", t.path(), far).expect("claude");
+    let s = agent::ask_hosted(&r, &claude, "the prompt", t.path(), far, false).expect("claude");
     assert_eq!((s.text.as_str(), s.tokens), ("STATUS complete", 3));
     let args = std::fs::read_to_string(t.path().join("claude.args")).expect("args");
     assert_eq!(args.trim(), "-p --model sonnet --effort high --permission-mode dontAsk --allowedTools Read,Grep,Glob --output-format json");
     assert_eq!(std::fs::read_to_string(t.path().join("claude.in")).expect("in"), "the prompt");
     let codex = exe("codex", "echo \"$@\" > \"$0.args\"\ncat > /dev/null\nfor a; do last=$prev; prev=$a; done\nprintf 'GAP from codex' > \"$last\"\n");
     let r = Rung::parse("codex:gpt@low", None).expect("rung");
-    assert_eq!(agent::ask_hosted(&r, &codex, "p", t.path(), far).expect("codex").text, "GAP from codex");
+    assert_eq!(
+        agent::ask_hosted(&r, &codex, "p", t.path(), far, false).expect("codex").text,
+        "GAP from codex"
+    );
     let args = std::fs::read_to_string(t.path().join("codex.args")).expect("args");
     assert!(args.starts_with("exec --model gpt -c model_reasoning_effort=\"low\" --sandbox read-only --skip-git-repo-check --json --output-last-message ") && args.trim_end().ends_with(" -"), "{args}");
     let bad = exe("bad", "echo 'first' >&2\necho 'quota exceeded' >&2\nexit 3\n");
-    let err = agent::ask_hosted(&r, &bad, "p", t.path(), far).unwrap_err();
+    let err = agent::ask_hosted(&r, &bad, "p", t.path(), far, true).unwrap_err();
     assert!(err.starts_with("codex:gpt low failed (") && err.ends_with(": quota exceeded"), "{err}");
     let slow = exe("slow", "sleep 5\n");
     let t0 = Instant::now();
-    let err =
-        agent::ask_hosted(&r, &slow, "p", t.path(), Instant::now() + Duration::from_millis(200)).unwrap_err();
+    let err = agent::ask_hosted(&r, &slow, "p", t.path(), Instant::now() + Duration::from_millis(200), false)
+        .unwrap_err();
     assert_eq!(err, "the time limit ran out while codex:gpt low worked");
     assert!(t0.elapsed() < Duration::from_secs(4));
-    assert!(agent::ask_hosted(&r, &t.path().join("missing"), "p", t.path(), far)
+    let w = Rung::parse("claude:sonnet@low", None).expect("rung");
+    agent::ask_hosted(&w, &claude, "edit", t.path(), far, true).expect("write mode");
+    let args = std::fs::read_to_string(t.path().join("claude.args")).expect("args");
+    assert!(args.contains("--allowedTools Read,Grep,Glob,Edit,Write"), "{args}");
+    let wc = agent::command(&r, &codex, Path::new("o"), true);
+    assert!(wc.get_args().any(|a| a == "workspace-write"), "codex writes in a workspace sandbox");
+    assert!(agent::ask_hosted(&r, &t.path().join("missing"), "p", t.path(), far, false)
         .unwrap_err()
         .starts_with("starting "));
 }
@@ -786,9 +826,10 @@ fn test_real_agents_through_zazzle() {
         ],
     );
     std::env::remove_var("ZAZZLE_CLAUDE");
-    let _ = Real.hosted(&Rung::parse("codex:x", None).expect("rung"), "p", &root, Instant::now());
+    let _ =
+        calls::Real.hosted(&Rung::parse("codex:x", None).expect("rung"), "p", &root, Instant::now(), false);
     std::env::set_var("ZAZZLE_LLM", t.path().join("none"));
-    let empty = Real.installed();
+    let empty = calls::Real.installed();
     std::env::remove_var("ZAZZLE_LLM");
     assert!(o.text.contains("ladder: 1 qwen-a low, 2 qwen-a high\n"), "{}", o.text);
     assert!(o.text.contains("  P1 qwen-a low: complete, 1 verified"), "{}", o.text);
@@ -851,4 +892,27 @@ fn test_failing_agents() {
         ("qwen-c low", Ok("QUALITY A poor")),
     ]);
     assert!(go(&root, &f, &argv[..5]).expect("bare escalate").contains("escalate: who knows?\n"));
+}
+
+// Checks a spawn is retried while the program is busy, then given up, and other errors returned at once.
+#[test]
+fn test_retry_busy() {
+    let mut n = 0;
+    let r = agent::retry_busy(|| {
+        n += 1;
+        if n < 3 {
+            Err(std::io::Error::from_raw_os_error(26))
+        } else {
+            Ok(n)
+        }
+    });
+    assert_eq!(r.expect("third try"), 3);
+    let mut m = 0;
+    let busy: std::io::Result<()> = agent::retry_busy(|| {
+        m += 1;
+        Err(std::io::Error::from_raw_os_error(26))
+    });
+    assert!(busy.is_err() && m == 11);
+    let other: std::io::Result<()> = agent::retry_busy(|| Err(std::io::Error::other("no")));
+    assert_eq!(other.unwrap_err().to_string(), "no");
 }

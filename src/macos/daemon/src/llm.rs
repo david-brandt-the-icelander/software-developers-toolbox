@@ -9,12 +9,13 @@ const MAX_INPUT: usize = 400_000;
 const DEFAULT_TIMEOUT: u64 = 300;
 const DEFAULT_IDLE: u64 = 600;
 
-// The local model's answer, whether its token limit cut it short and the tokens it generated.
+// The local model's answer, whether its token limit cut it short, the tokens it generated and how long it waited for the shared worker.
 #[derive(Debug, PartialEq)]
 pub struct Reply {
     pub text: String,
     pub truncated: bool,
     pub tokens: usize,
+    pub queued_ms: u64,
 }
 
 // Returns how long one local model call may take: ZAZZLE_LLM_TIMEOUT seconds, default 300.
@@ -136,6 +137,7 @@ impl Session {
                 text: v["text"].as_str().unwrap_or_default().trim().to_string(),
                 truncated: v["truncated"] == true,
                 tokens: v["tokens"].as_u64().unwrap_or_default() as usize,
+                queued_ms: 0,
             }),
         }
     }
@@ -208,7 +210,9 @@ pub fn ask_in_until(
     limit: Duration,
     deadline: Option<Instant>,
 ) -> Result<Reply, String> {
+    let asked = Instant::now();
     let mut pool = lock_until(deadline)?;
+    let queued_ms = asked.elapsed().as_millis() as u64;
     let limit = match deadline.map(|d| d.saturating_duration_since(Instant::now())) {
         Some(left) if left.is_zero() => {
             return Err("the time limit ran out before the local model was asked".into())
@@ -228,7 +232,7 @@ pub fn ask_in_until(
     }
     let live = pool.as_mut().expect("started above");
     live.session.limit = limit;
-    let r = live.session.ask(req);
+    let r = live.session.ask(req).map(|r| Reply { queued_ms, ..r });
     live.last = Instant::now();
     if r.is_err() && !live.session.alive() {
         *pool = None;
@@ -423,7 +427,7 @@ mod tests {
     #[test]
     fn test_llm_mark_and_post() {
         let long = "word ".repeat(400);
-        let m = mark(&long, &Reply { text: "short".into(), truncated: true, tokens: 0 });
+        let m = mark(&long, &Reply { text: "short".into(), truncated: true, tokens: 0, queued_ms: 0 });
         assert!(m.starts_with("short\n[post-processed by the local model: ~") && m.contains("cut short"));
         assert_eq!(post("  \n", "x"), Ok("  \n".into()));
         let huge = "word ".repeat(MAX_INPUT / 4);
@@ -445,11 +449,11 @@ mod tests {
         let mut s = Session::start_with(&worker, &["--effort", "low"], d).expect("start");
         assert_eq!(
             s.ask(&serde_json::json!({"user": "a"})),
-            Ok(Reply { text: "ok".into(), truncated: false, tokens: 0 })
+            Ok(Reply { text: "ok".into(), truncated: false, tokens: 0, queued_ms: 0 })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "long"})),
-            Ok(Reply { text: "half".into(), truncated: true, tokens: 0 })
+            Ok(Reply { text: "half".into(), truncated: true, tokens: 0, queued_ms: 0 })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "fail"})).err().as_deref(),

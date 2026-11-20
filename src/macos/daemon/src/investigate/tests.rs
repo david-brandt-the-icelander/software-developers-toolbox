@@ -17,7 +17,7 @@ impl Script {
             .into_iter()
             .rev()
             .map(|r| {
-                r.map(|t| Reply { text: t.into(), truncated: t.contains("CUT"), tokens: 0 })
+                r.map(|t| Reply { text: t.into(), truncated: t.contains("CUT"), tokens: 0, queued_ms: 0 })
                     .map_err(String::from)
             })
             .collect();
@@ -32,7 +32,7 @@ impl Local for Script {
         self.replies
             .borrow_mut()
             .pop()
-            .unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false, tokens: 0 }))
+            .unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false, tokens: 0, queued_ms: 0 }))
     }
 }
 
@@ -597,7 +597,7 @@ impl Local for Slow {
     // Asks for a lookup after the deadline has passed.
     fn ask(&self, _system: &str, _transcript: &str, deadline: Instant) -> Result<Reply, String> {
         std::thread::sleep(deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(20));
-        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false, tokens: 0 })
+        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false, tokens: 0, queued_ms: 0 })
     }
 }
 

@@ -40,6 +40,7 @@ pub enum Cli {
     Wrap(Vec<String>),
     Hook(crate::hook::Opts),
     Llm(Vec<String>),
+    Flow(Vec<String>),
     Help(&'static str),
     Version,
 }
@@ -114,6 +115,10 @@ pub fn parse(args: &[String]) -> Result<Cli, String> {
         "wrap" => Ok(Cli::Wrap(rest.to_vec())),
         "hook" => crate::hook::parse(rest).map(Cli::Hook),
         "llm" => Ok(Cli::Llm(rest.to_vec())),
+        "flow" => Ok(Cli::Flow(rest.to_vec())),
+        "review" => {
+            Ok(Cli::Flow(std::iter::once("review".to_string()).chain(rest.iter().cloned()).collect()))
+        }
         "version" | "--version" => Ok(Cli::Version),
         "help" | "--help" | "-h" => Ok(Cli::Help("daemon")),
         _ => Err(USAGE.into()),
@@ -413,6 +418,15 @@ pub fn main(args: Vec<String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Cli::Setup(o) => finish(setup::Env::detect().and_then(|env| setup::run(&o, &env))),
+        Cli::Flow(rest) => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+            let (text, code) = crate::flow::main(&cwd, &rest);
+            match code {
+                2 => eprintln!("{text}"),
+                _ => println!("{}", text.trim_end()),
+            }
+            ExitCode::from(code.clamp(0, 255) as u8)
+        }
         Cli::Llm(rest) => match rest.split_first() {
             Some((c, r)) if c == "chat" || c == "prompt" => llm_client(c, r),
             _ => finish(Err(crate::tools::exec("ai-agent", &rest))),

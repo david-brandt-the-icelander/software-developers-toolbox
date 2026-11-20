@@ -390,14 +390,15 @@ static int is_restart(int fd)
 	return 1;
 }
 
-/* Runs a tool, the MCP proxy, setup, run or agent llm/prompt as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
+/* Runs a tool, the MCP proxy, setup, flow, review, run or agent llm/prompt as its own process (exec) when invoked as zazzle, or else one request/answer round trip (so `zazz run` and a script's own `run` argument reach the daemon), resent once to a new daemon if the old one retired, and returns the daemon's exit status. */
 static int zazzle_run(int argc, char **argv, char **envp)
 {
 	if (argc > 1 && is_zazzle_name(own_name(argc, argv))) {
 		const char *tool = tool_binary(argv[1]);
 		if (tool)
 			exec_tool(argv, envp, tool);
-		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup") || str_eq(argv[1], "tools"))
+		if (str_eq(argv[1], "proxy") || str_eq(argv[1], "setup") || str_eq(argv[1], "tools") || str_eq(argv[1], "flow") ||
+		    str_eq(argv[1], "review"))
 			exec_daemon(argv, envp, argv[1]);
 		if (str_eq(argv[1], "run"))
 			exec_daemon(argv, envp, "wrap");

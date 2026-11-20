@@ -244,6 +244,12 @@
       "folder": "src/macos/daemon/src/adaptive"
     },
     {
+      "id": "flow",
+      "name": "Repository workflow (flow/)",
+      "responsibility": "Answers `flow preview|init|verify|write|deliver|test-first|ci` and `review` as its own process in the caller's environment: reads the opt-in policy or discovers checks, runs them with receipts pinned to the tree, has a cheap writer draft validated prose, delivers exactly the named paths (commit, push, pull request through gh) safely repeatable, accepts a test only when it fails for the stated reason before a fixer may change production code, waits once for CI on the head, and reviews from the viewpoints a branch level calls for with a final adjudicator, remediation and re-review, reporting every phase's hosted and local cost.",
+      "folder": "src/macos/daemon/src/flow"
+    },
+    {
       "id": "llm",
       "name": "Local model calls (llm.rs)",
       "responsibility": "Keeps one shared `ai-agent worker --no-download` (one model in memory, calls taking turns) for every local model call in the daemon: chats, --llm post-processing, brief, investigate and MCP zazzle_prompt; starts it on first use, replaces it for another model or program, drops it when it dies or times out (ZAZZLE_LLM_TIMEOUT), and stops it after ZAZZLE_LLM_IDLE seconds unused; finds the program through ZAZZLE_LLM or the tools module; runs `ai-agent fetch` for the chat client; refuses input over 400,000 bytes; marks post-processed answers with the tokens they saved.",
@@ -1333,6 +1339,30 @@
       "to": "llm",
       "kind": "depends-on",
       "description": "Local rungs ask the shared worker with llm::ask_until for a named model."
+    },
+    {
+      "from": "src",
+      "to": "flow",
+      "kind": "contains",
+      "description": "The repository workflow."
+    },
+    {
+      "from": "cli",
+      "to": "flow",
+      "kind": "depends-on",
+      "description": "`daemon flow ARGS` and `daemon review ARGS` run flow::main in the caller's working directory."
+    },
+    {
+      "from": "flow",
+      "to": "adaptive",
+      "kind": "depends-on",
+      "description": "Agents are rungs called through adaptive's Backend and Log, which record each phase's sections, tokens, rounds and time."
+    },
+    {
+      "from": "flow",
+      "to": "investigate",
+      "kind": "depends-on",
+      "description": "Review findings' citations are checked with investigate's cite module."
     }
   ]
 }

@@ -615,6 +615,42 @@
           "symbol": "terminal_key"
         }
       ]
+    },
+    {
+      "id": "ZAZZLE_GH",
+      "title": "ZAZZLE_GH",
+      "summary": "The gh program zazzle flow deliver and ci run.",
+      "key": "ZAZZLE_GH",
+      "type": "path",
+      "default": "`gh` on PATH",
+      "sensitive": false,
+      "scope": "Read by `zazzle flow` each run.",
+      "takesEffect": "per-use",
+      "details": "Used to find, open and update pull requests and read their checks.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/flow/deliver.rs"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_CI_POLL_SECS",
+      "title": "ZAZZLE_CI_POLL_SECS",
+      "summary": "Seconds between looks at a pull request's checks while zazzle flow ci waits.",
+      "key": "ZAZZLE_CI_POLL_SECS",
+      "type": "number",
+      "default": "15",
+      "sensitive": false,
+      "scope": "Read by `zazzle flow` each run.",
+      "takesEffect": "per-use",
+      "details": "zazzle waits inside one call and reports once; the caller does not poll.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/flow/ci.rs"
+        }
+      ]
     }
   ]
 }
