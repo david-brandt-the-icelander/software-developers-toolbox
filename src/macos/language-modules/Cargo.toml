@@ -55,7 +55,7 @@ tree-sitter-bash = { version = "0.25", optional = true }
 # The dart grammar, for the dart module.
 tree-sitter-dart = { version = "0.3", optional = true }
 # The go grammar, for the go module.
-tree-sitter-go = { version = "0.23", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
 # The java grammar, for the java module.
 tree-sitter-java = { version = "0.23", optional = true }
 # The cpp grammar, for the cpp module.
