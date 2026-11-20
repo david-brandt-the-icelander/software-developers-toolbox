@@ -55,6 +55,7 @@ fn focused(top: &Path, s: &Spec, name: &str) -> Result<(Outcome, String), String
         dir: ".".into(),
         kind: "test".into(),
         paths: Vec::new(),
+        fix: None,
     };
     let o = verify::run_check(top, &c, &log, s.limit);
     let out = std::fs::read_to_string(&log).unwrap_or_default();
@@ -110,7 +111,8 @@ pub fn run(top: &Path, p: &Policy, s: &Spec, b: &dyn Backend, log: &Log) -> Resu
         .collect();
     let mut out = format!("test-first: {}\nbase tree {}\n", s.behavior, verify::short(&base));
     let mut prompt = format!(
-        "Write one regression test that proves this behavior: {}\nRun now, it must fail with: {}\nWrite only inside: {}. Do not change production code.\nThe test must compile and fail for that behavioral reason; a placeholder that throws or is marked TODO is not a regression test. Make meaningful assertions.\nFocused command: {}\nModel it on this reference test ({}):\n```\n{reference}```\n{existing}{}",
+        "Write one regression test that proves this behavior: {}\nRun now, it must fail with: {}\nWrite only inside: {}. Do not change production code.\nThe test must compile and fail for that behavioral reason; a placeholder that throws or is marked TODO is not a regression test. Make meaningful assertions. {}\nFocused command: {}\nModel it on this reference test ({}):\n```\n{reference}```\n{existing}{}",
+        super::TOOLS_NOTE,
         s.behavior, s.expect, s.tests.join(", "), s.run, s.reference, if s.test_agent.hosted() { "Reply with the STATUS and CONFIDENCE lines when done." } else { FILES }
     );
     let mut red = None;
@@ -189,8 +191,9 @@ pub fn run(top: &Path, p: &Policy, s: &Spec, b: &dyn Backend, log: &Log) -> Resu
     let tail: String =
         red_text.lines().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
     let mut fix_prompt = format!(
-        "Make this failing regression test pass by changing production code only.\nBehavior: {}\nFocused command: {}\nIts failure now:\n{tail}\nThe test (read-only; do not change it — if its assertion is wrong, say so in a GAP line instead):\n{patch}\nYou may change: {}.\n{}",
-        s.behavior, s.run, if s.prod.is_empty() { "anything outside the test paths".to_string() } else { s.prod.join(", ") }, if fixer.hosted() { "Reply with the STATUS and CONFIDENCE lines when done." } else { FILES }
+        "Make this failing regression test pass by changing production code only.\nBehavior: {}\nFocused command: {}\nIts failure now:\n{tail}\nThe test (read-only; do not change it — if its assertion is wrong, say so in a GAP line instead):\n{patch}\nYou may change: {}.\n{}\n{}",
+        s.behavior, s.run, if s.prod.is_empty() { "anything outside the test paths".to_string() } else { s.prod.join(", ") }, super::TOOLS_NOTE,
+        if fixer.hosted() { "Reply with the STATUS and CONFIDENCE lines when done." } else { FILES }
     );
     let mut green = None;
     for round in 0..2 {
@@ -244,6 +247,7 @@ pub fn run(top: &Path, p: &Policy, s: &Spec, b: &dyn Backend, log: &Log) -> Resu
         return Ok(out);
     };
     out.push_str(&format!("green: `{}` passes ({})\n", s.run, g.summary()));
+    out.push_str(&super::tidy::format(top, p, Some(&base), s.limit)?);
     let r = verify::verify(top, p, Some(&base), &[], s.limit)?;
     out.push_str(&r.text());
     out.push_str(&format!("-- {}: the test failed for the stated reason before the change and passes after it, the assertion unchanged\n", if r.green() { "done" } else { "done, but the broader checks are not green" }));

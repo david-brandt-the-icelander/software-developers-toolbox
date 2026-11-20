@@ -217,12 +217,14 @@ pub fn parse(out: &str) -> (usize, usize, usize, Option<f64>, Vec<String>) {
     (passed, failed, skipped, cov, fails)
 }
 
-// Tells whether the program a command line starts with can be found: a path that exists, a shell builtin, or a name on PATH.
+// Tells whether the program a command line starts with can be found: a path, a shell keyword, builtin or group, or a name on PATH.
 fn installed(run: &str) -> bool {
+    const SHELL: &[&str] = &[
+        "sh", "bash", "cd", "env", "make", "true", "false", "test", "[", "[[", "!", "(", "{", "if", "for",
+        "while", "exec", "echo", "printf", "set", "export",
+    ];
     let first = run.split_whitespace().find(|w| !w.contains('=')).unwrap_or_default();
-    if first.contains('/')
-        || ["sh", "bash", "cd", "env", "make", "true", "false", "test", "["].contains(&first)
-    {
+    if first.contains('/') || first.starts_with(['(', '{', '$']) || SHELL.contains(&first) {
         return true;
     }
     std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(first).is_file()))

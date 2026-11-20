@@ -11,17 +11,21 @@ pub const LEVELS: &[&str] = &["feature", "development", "staging", "production"]
 const BRANCHES: &[&str] =
     &["main", "master", "dev", "develop", "development", "staging", "stage", "production", "prod", "release"];
 
-// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage or script) and the paths whose change makes it apply (none: always).
-#[derive(Debug, Clone, PartialEq)]
+// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage, format, lint or script), the paths whose change makes it apply (none: always), and the command that fixes what it finds (formatters, linters' fix modes).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Check {
     pub name: String,
     pub run: String,
     pub dir: String,
     pub kind: String,
     pub paths: Vec<String>,
+    pub fix: Option<String>,
 }
 
-// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the effects deliver may have, the configured agents, and the conflicts found in guidance.
+// The check kinds.
+pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "script"];
+
+// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the documentation paths and the commands that check documentation, the effects deliver may have, the configured agents, and the conflicts found in guidance.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Policy {
     pub opted_in: bool,
@@ -33,6 +37,8 @@ pub struct Policy {
     pub changelog: Option<String>,
     pub changelog_script: Option<String>,
     pub pr_template: Option<String>,
+    pub docs: Vec<String>,
+    pub docs_checks: Vec<String>,
     pub effects: Vec<String>,
     pub agents: Value,
     pub conflicts: Vec<String>,
@@ -71,6 +77,15 @@ impl Policy {
             Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
             _ => Vec::new(),
         }
+    }
+
+    // Tells whether a path is documentation the writer keeps: under a configured docs path, or Markdown, reStructuredText or text, or a `.dev` record.
+    pub fn is_doc(&self, path: &str) -> bool {
+        let low = path.to_lowercase();
+        (!self.docs.is_empty() && repo::under(path, &self.docs))
+            || [".md", ".mdx", ".rst", ".txt"].iter().any(|e| low.ends_with(e))
+            || low.starts_with(".dev/")
+            || low.contains("/.dev/")
     }
 
     // The checks that apply to a set of changed paths.
@@ -152,8 +167,8 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
     for (i, c) in v["checks"].as_array().into_iter().flatten().enumerate() {
         let run = c["run"].as_str().ok_or_else(|| format!("{FILE}: checks[{i}] has no `run`"))?;
         let kind = c["kind"].as_str().unwrap_or("test");
-        if !["build", "test", "coverage", "script"].contains(&kind) {
-            return Err(format!("{FILE}: checks[{i}].kind is build, test, coverage or script, not `{kind}`"));
+        if !KINDS.contains(&kind) {
+            return Err(format!("{FILE}: checks[{i}].kind is one of {}, not `{kind}`", KINDS.join(", ")));
         }
         checks.push(Check {
             name: c["name"].as_str().map_or_else(|| format!("check{}", i + 1), str::to_string),
@@ -161,6 +176,7 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
             dir: c["dir"].as_str().unwrap_or(".").to_string(),
             kind: kind.to_string(),
             paths: strs(&c["paths"]),
+            fix: c["fix"].as_str().map(str::to_string),
         });
     }
     if checks.is_empty() {
@@ -193,6 +209,8 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
         changelog: v["changelog"]["path"].as_str().map(str::to_string),
         changelog_script: v["changelog"]["script"].as_str().map(str::to_string),
         pr_template: v["pr_template"].as_str().map(str::to_string),
+        docs: strs(&v["docs"]["paths"]),
+        docs_checks: strs(&v["docs"]["check"]),
         effects,
         agents: v["agents"].clone(),
         ..Policy::default()
@@ -212,7 +230,7 @@ fn default_branch(top: &Path) -> String {
     "main".into()
 }
 
-// Finds the projects' checks without running anything: Cargo workspaces, npm packages with a test script, Go modules, Python projects, .NET solutions and Makefiles with a test target, up to three folders deep, a folder inside a found Rust workspace skipped.
+// Finds the projects' checks without running anything: tests for Cargo workspaces, npm packages with a test script, Go modules, Python projects, .NET solutions and Makefiles with a test target, and the formatters and linters with their fix commands for Cargo (rustfmt, clippy), Go (gofmt, vet), .NET (dotnet format) and npm (a lint script), up to three folders deep, a folder inside a found Rust workspace skipped.
 pub fn discover(top: &Path) -> Vec<Check> {
     let mut out: Vec<Check> = Vec::new();
     let mut dirs = vec![(top.to_path_buf(), 0)];
@@ -228,44 +246,69 @@ pub fn discover(top: &Path) -> Vec<Check> {
             .any(|c| c.run.starts_with("cargo") && c.dir != "." && rel.starts_with(&format!("{}/", c.dir)))
             || out.iter().any(|c| c.run.starts_with("cargo") && c.dir == "." && rel != ".");
         let has = |f: &str| d.join(f).is_file();
-        let mut add = |name: &str, run: String| {
+        let mut add = |name: &str, run: String, kind: &str, fix: Option<&str>| {
             let paths = if rel == "." { Vec::new() } else { vec![format!("{rel}/")] };
             out.push(Check {
                 name: if rel == "." { name.into() } else { format!("{name} {rel}") },
                 run,
                 dir: rel.clone(),
-                kind: "test".into(),
+                kind: kind.into(),
                 paths,
+                fix: fix.map(str::to_string),
             });
         };
         if has("Cargo.toml") && !inside {
-            add("cargo", "cargo test --workspace".into());
+            add("cargo", "cargo test --workspace".into(), "test", None);
+            add("rustfmt", "cargo fmt --all --check".into(), "format", Some("cargo fmt --all"));
+            add(
+                "clippy",
+                "cargo clippy --workspace --all-targets -- -D warnings".into(),
+                "lint",
+                Some("cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged"),
+            );
         }
-        if has("package.json")
-            && std::fs::read_to_string(d.join("package.json"))
-                .ok()
-                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-                .is_some_and(|v| v["scripts"]["test"].is_string())
-        {
-            add("npm", "npm test".into());
+        let scripts = std::fs::read_to_string(d.join("package.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .map(|v| v["scripts"].clone())
+            .unwrap_or_default();
+        if scripts["test"].is_string() {
+            add("npm", "npm test".into(), "test", None);
+        }
+        if scripts["lint"].is_string() {
+            add(
+                "npm lint",
+                "npm run lint".into(),
+                "lint",
+                scripts["lint:fix"].is_string().then_some("npm run lint:fix"),
+            );
         }
         if has("go.mod") {
-            add("go", "go test ./...".into());
+            add("go", "go test ./...".into(), "test", None);
+            add("gofmt", "test -z \"$(gofmt -l .)\"".into(), "format", Some("gofmt -w ."));
+            add("go vet", "go vet ./...".into(), "lint", None);
         }
         if has("pyproject.toml") || has("pytest.ini") || has("setup.cfg") {
-            add("pytest", "python3 -m pytest -q".into());
+            add("pytest", "python3 -m pytest -q".into(), "test", None);
         }
         let mut entries: Vec<PathBuf> =
             std::fs::read_dir(&d).into_iter().flatten().flatten().map(|e| e.path()).collect();
         entries.sort();
         if let Some(sln) = entries.iter().find(|p| p.extension().is_some_and(|e| e == "sln")) {
-            add("dotnet", format!("dotnet test {}", sln.file_name().unwrap_or_default().to_string_lossy()));
+            let sln = sln.file_name().unwrap_or_default().to_string_lossy().to_string();
+            add("dotnet", format!("dotnet test {sln}"), "test", None);
+            add(
+                "dotnet format",
+                format!("dotnet format {sln} --verify-no-changes"),
+                "format",
+                Some(&format!("dotnet format {sln}")),
+            );
         }
         if has("Makefile")
             && std::fs::read_to_string(d.join("Makefile"))
                 .is_ok_and(|t| t.lines().any(|l| l.starts_with("test:")))
         {
-            add("make", "make test".into());
+            add("make", "make test".into(), "test", None);
         }
         if depth < 3 {
             for e in entries.iter().rev().filter(|p| p.is_dir()) {

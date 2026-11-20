@@ -30,6 +30,7 @@
         "protected",
         "changelog, changelog_script",
         "pr_template",
+        "docs, docs_checks",
         "effects",
         "agents",
         "conflicts",
@@ -50,8 +51,9 @@
         "name",
         "run",
         "dir",
-        "kind",
-        "paths"
+        "kind (build, test, coverage, format, lint, script)",
+        "paths",
+        "fix: Option<String>"
       ]
     },
     {
@@ -170,7 +172,7 @@
         "base, into, level",
         "viewpoints",
         "intent",
-        "reviewers, planner, last, fixer",
+        "reviewers, planner, last, fixer, writer",
         "read_only, rounds, limit, bench"
       ]
     },

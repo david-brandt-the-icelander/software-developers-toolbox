@@ -1,9 +1,13 @@
 ---
 name: zazzle-flow
-description: Verify, write up, deliver and review a change with zazzle instead of doing each step by hand - `zazzle flow verify` (tree-pinned test receipts), `zazzle flow write commit|changelog|pr` (a cheap writer drafts the prose), `zazzle flow deliver` (stage, commit, push, pull request, safe to retry), `zazzle flow test-first`, `zazzle flow ci` and `zazzle review` (multi-viewpoint review that fixes what it finds). Use when a change is ready to test, describe, commit, push, open as a pull request, or review.
+description: Verify, tidy, write up, deliver and review a change with zazzle instead of doing each step by hand - `zazzle flow verify` (tree-pinned test receipts), `zazzle flow tidy` (formatters and linters with the local agent), `zazzle flow write commit|changelog|pr|docs` (a cheap writer drafts the prose and updates the docs), `zazzle flow deliver` (stage, commit, push, pull request, safe to retry), `zazzle flow test-first`, `zazzle flow ci` and `zazzle review` (multi-viewpoint review that fixes what it finds). Use when a change is ready to test, describe, commit, push, open as a pull request, or review.
 ---
 
 # zazzle flow and zazzle review
+
+## Leave to zazzle
+- Spend your effort on the change. Do not format, lint, run builds, tests or coverage, write or update documentation, changelogs, commit messages or pull request text, or wait for CI yourself: zazzle's tools and its local agent do those after you.
+- Do not judge coverage or style by reading code; read the receipt `verify` and `tidy` give.
 
 ## Before
 - `zazzle flow preview` shows what applies: checks, the branch pull requests target and its review level, the effects delivery may have, and conflicts in the repository's guidance. Settle a conflict with the user before delivering.
@@ -13,7 +17,11 @@ description: Verify, write up, deliver and review a change with zazzle instead o
 - `zazzle flow verify` runs the repository's own checks that apply to the change. The receipt names the tree it ran on; a changed tree has no receipt until you verify again.
 - A missing program, a skip or a check that does not apply is listed, never counted as a pass. Logs are cited by path; read them only for a failure.
 
+## Tidy
+- `zazzle flow tidy` runs the formatters' and linters' fix commands (`format` and `lint` checks; discovered for Cargo, Go, .NET and npm), checks again, and gives lint that still needs an edit to the local agent. What is left after that is yours.
+
 ## Write
+- `zazzle flow write docs --intent 'TEXT'` has the cheap writer update the READMEs and `.dev` records beside and above the changed files (add `--paths` for others); JSON stays valid and the repository's `docs.check` commands must pass, or its changes are put back.
 - You decide the intent and the compatibility decision; the writer only phrases them: `zazzle flow write pr --intent 'TEXT' --compat 'none: no client sees a change'`.
 - `changelog --apply` adds the entry under Unreleased; commit it with the change it describes. `commit` and `pr` with `--apply` save the draft for `deliver`.
 - A draft that says `MISSING:` or fails validation comes back with exit 1: supply the fact and run it again.
@@ -29,5 +37,5 @@ description: Verify, write up, deliver and review a change with zazzle instead o
 
 ## Review
 - `zazzle review --into BRANCH --intent 'TEXT'` reviews at that branch's level (feature, development, staging, production; default: this branch's). Earlier levels are brief because each later merge gets a stricter pass.
-- It fixes confirmed findings, re-verifies and re-reviews before reporting. What is left is a decision for the user, missing access, or blocked verification. Use `--read-only` for findings without edits.
+- It fixes confirmed findings, re-verifies and re-reviews before reporting. Documentation findings go to the cheap writer, code findings to the fixer, and the formatter runs after each fix. What is left is a decision for the user, missing access, or blocked verification. Use `--read-only` for findings without edits.
 - `--bench` reports each phase with what went to hosted agents (charged) and what ran locally.

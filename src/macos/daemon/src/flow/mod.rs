@@ -1,11 +1,13 @@
 // `zazzle flow` and `zazzle review`: the repository workflow zazzle runs for an agent, opt-in per repository (`.zazzle/flow.json`): preview what applies, verify with tree-pinned receipts, write the commit message, changelog entry or pull request text, deliver (stage, commit, push, pull request) safely repeatable, write a failing test first and then the fix, wait for CI once, and review from several viewpoints with fixes before handing back. They run as their own process, in the caller's environment.
 pub mod ci;
 pub mod deliver;
+pub mod docs;
 pub mod edit;
 pub mod policy;
 pub mod repo;
 pub mod review;
 pub mod testfirst;
+pub mod tidy;
 pub mod verify;
 pub mod write;
 
@@ -15,7 +17,7 @@ use policy::Policy;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|write commit|changelog|pr|deliver|test-first|ci .. (zazzle flow help)";
+pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
@@ -24,16 +26,23 @@ pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzl
                                      run the checks that apply to the change; the receipt is pinned to the tree
   write commit|changelog|pr --intent TEXT [--compat TEXT] [--writer AGENT] [--apply] [--base B]
                                      a cheap writer drafts it from the diff, the intent, the compatibility decision and the receipt
+  write docs --intent TEXT [--paths P..] [--writer AGENT] [--base B]
+                                     the cheap writer updates the READMEs and .dev records the change makes stale, checked
   deliver --paths P.. -m MESSAGE [--push] [--pr] [--draft] [--title T] [--body-file F] [--base B] [--require-verified]
                                      stage exactly those paths, commit, push, open or update the pull request; safe to repeat
   test-first --behavior TEXT --tests P.. --reference FILE --run CMD --expect TEXT [--prod P..] [--test-agent A] [--fix-agent A|--no-fix]
                                      A writes a test that fails for the stated reason, B makes it pass, zazzle verifies
+  tidy [--all] [--base B] [--fixer AGENT] [--no-agent]
+                                     run the formatters' and linters' fix commands, re-check, and give lint left over to the local agent
   ci [--pr N] [--timeout S]          wait for the pull request's checks on its head and report once
 zazzle review [--into BRANCH] [--level feature|development|staging|production] [--base B] [--viewpoints V,..] [--intent TEXT]
-              [--reviewers A,..] [--final A] [--fix-agent A] [--read-only] [--rounds N] [--bench] [--json]
+              [--reviewers A,..] [--final A] [--fix-agent A] [--writer A] [--read-only] [--rounds N] [--bench] [--json]
                                      multi-viewpoint review at the level of the branch the change goes into (--into; default: this branch's,
                                      feature for a feature branch); confirmed findings are fixed, verified and re-reviewed unless --read-only
 AGENT is MODEL (local), claude:MODEL or codex:MODEL, optionally @EFFORT; --seconds S limits each agent call (default 300).";
+
+// What every execution agent is told it does not do: zazzle's tools and its cheap writer do those after it.
+pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests or measure coverage, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
 
 // Agent calls' default time limit.
 const AGENT_SECS: u64 = 300;
@@ -184,6 +193,31 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             };
             Ok((text, if r.green() { 0 } else { 1 }))
         }
+        "write" if rest.first().is_some_and(|w| w == "docs") => {
+            let a = Args::parse(&rest[1..], &[])?;
+            a.only(&["--intent", "--writer", "--base", "--seconds", "--paths", "--agents"])?;
+            let ladder = ladder(&p, &a, b)?;
+            let writer = one_agent(&a, "--writer", &p, "writer", &ladder[0])?;
+            let base = match a.one("--base") {
+                Some(bb) => bb,
+                None => repo::base(&top, &p.target).unwrap_or_else(|_| "HEAD".into()),
+            };
+            let intent = a.one("--intent").unwrap_or_default();
+            let started = Instant::now();
+            let (mut out, ok) = docs::update(
+                &top,
+                &p,
+                &intent,
+                &base,
+                &a.all("--paths"),
+                b,
+                &writer,
+                &log,
+                limit(&a, "--seconds", AGENT_SECS)?,
+            )?;
+            out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
+            Ok((out, if ok { 0 } else { 1 }))
+        }
         "write" => {
             let a = Args::parse(rest, &["--apply"])?;
             a.only(&["--intent", "--compat", "--writer", "--base", "--seconds"])?;
@@ -193,7 +227,8 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 Some("pr") => write::Kind::Pr,
                 _ => {
                     return Err(
-                        "usage: zazzle flow write commit|changelog|pr --intent TEXT [--compat TEXT]".into()
+                        "usage: zazzle flow write commit|changelog|pr|docs --intent TEXT [--compat TEXT]"
+                            .into(),
                     )
                 }
             };
@@ -221,6 +256,23 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 out = apply(&top, &p, kind, &draft)?;
             }
             Ok((out, 0))
+        }
+        "tidy" => {
+            let a = Args::parse(rest, &["--all", "--no-agent"])?;
+            a.only(&["--base", "--fixer", "--agents", "--seconds"])?;
+            let ladder = ladder(&p, &a, b)?;
+            let fixer = one_agent(&a, "--fixer", &p, "lint", &ladder[0])?;
+            let base = match (a.on("--all"), a.one("--base")) {
+                (true, _) => None,
+                (false, Some(bb)) => Some(bb),
+                (false, None) => repo::base(&top, &p.target).ok(),
+            };
+            let started = Instant::now();
+            let fixer = (!a.on("--no-agent")).then_some(&fixer);
+            let (mut out, ok) =
+                tidy::tidy(&top, &p, base.as_deref(), b, &log, fixer, limit(&a, "--seconds", AGENT_SECS)?)?;
+            out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
+            Ok((out, if ok { 0 } else { 1 }))
         }
         "deliver" => {
             let a = Args::parse(rest, &["--push", "--pr", "--draft", "--require-verified"])?;
@@ -292,6 +344,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 "--reviewers",
                 "--final",
                 "--fix-agent",
+                "--writer",
                 "--rounds",
                 "--agents",
                 "--seconds",
@@ -325,6 +378,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 planner: ladder[0].clone(),
                 last: one_agent(&a, "--final", &p, "final", &top_rung)?,
                 fixer: one_agent(&a, "--fix-agent", &p, "fix", &top_rung)?,
+                writer: one_agent(&a, "--writer", &p, "writer", &ladder[0])?,
                 read_only: a.on("--read-only"),
                 rounds,
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
@@ -356,6 +410,7 @@ fn apply(top: &Path, p: &Policy, kind: write::Kind, draft: &str) -> Result<Strin
                     dir: ".".into(),
                     kind: "script".into(),
                     paths: Vec::new(),
+                    fix: None,
                 };
                 let o = verify::run_check(
                     top,

@@ -25,7 +25,7 @@ pub const VIEWPOINTS: &[(&str, &str)] = &[
 // The most tokens of diff a reviewer is sent.
 const DIFF_TOKENS: usize = 12_000;
 
-// What a review was asked: the base, the branch the change goes into (None: the review is of the current branch), the level (None: that branch's), the viewpoints (empty: zazzle picks), the intent, the reviewers, the final reviewer, the fixer, whether it may edit, its remediation rounds, each call's time limit, and whether to report the benchmark questions.
+// What a review was asked: the base, the branch the change goes into (None: the review is of the current branch), the level (None: that branch's), the viewpoints (empty: zazzle picks), the intent, the reviewers, the final reviewer, the fixer, the writer for documentation findings, whether it may edit, its remediation rounds, each call's time limit, and whether to report the benchmark questions.
 pub struct Opts {
     pub base: Option<String>,
     pub into: Option<String>,
@@ -36,6 +36,7 @@ pub struct Opts {
     pub planner: Rung,
     pub last: Rung,
     pub fixer: Rung,
+    pub writer: Rung,
     pub read_only: bool,
     pub rounds: usize,
     pub limit: Duration,
@@ -421,7 +422,7 @@ impl Run<'_> {
             .map(|f| format!("{} [{}] {} {}: {}\n", f.id, f.viewpoint, f.severity, f.cite, f.issue))
             .collect();
         let reads = if r.hosted() { " You may read any file in the repository; change nothing." } else { "" };
-        let system = format!("You review one change at the {} level: {}.{reads} Report only concrete issues you can show, each with evidence (path:A-B in the current files), impact and a suggested fix; a clean change gets no FINDING lines. Be concise; reply only with lines:\nFINDING blocker|major|minor | path:A-B | the issue | its impact | the suggested fix\nRESOLVED Fn yes|no | evidence (one per earlier finding shown, if any)\nSCOPE what you checked\nCONFIDENCE understanding=high|medium|low result=high|medium|low", self.level, level_text(&self.level));
+        let system = format!("You review one change at the {} level: {}.{reads} Report only concrete issues that need judgment, not formatting, lint or style a formatter or linter catches, and not coverage numbers: zazzle runs those tools. Do not run builds or tests. Show each issue with evidence (path:A-B in the current files), impact and a suggested fix; a clean change gets no FINDING lines. Be concise; reply only with lines:\nFINDING blocker|major|minor | path:A-B | the issue | its impact | the suggested fix\nRESOLVED Fn yes|no | evidence (one per earlier finding shown, if any)\nSCOPE what you checked\nCONFIDENCE understanding=high|medium|low result=high|medium|low", self.level, level_text(&self.level));
         let mut prompt = format!(
             "Viewpoints:\n{views}Revision: base {} → tree {} (branch {})\nIntent: {}\nVerification:\n{}\n",
             verify::short(&self.base),
@@ -631,10 +632,64 @@ impl Run<'_> {
             .unwrap_or_else(|| self.o.planner.clone())
     }
 
-    // Fixes the open findings (and adds regression tests where they apply), within the changed paths and test paths; returns whether anything changed.
+    // Fixes the open findings: documentation findings (cognitive load, or a cited documentation file) go to the cheap writer, limited to documentation paths; the rest go to the fixer, limited to the change's other files and test files, adding regression tests where they apply; returns whether anything changed.
     fn remediate(&mut self) -> Result<bool, String> {
         let open: Vec<Finding> = self.findings.iter().filter(|f| f.status == "open").cloned().collect();
-        let list: String = open
+        let is_doc = |f: &Finding| {
+            f.viewpoint.split('+').all(|v| v == "cognitive-load")
+                || self.p.is_doc(f.cite.rsplit_once(':').map_or(f.cite.as_str(), |(p, _)| p))
+        };
+        let (docs, code): (Vec<Finding>, Vec<Finding>) = open.into_iter().partition(is_doc);
+        let mut changed = false;
+        if !code.is_empty() {
+            let paths: Vec<String> = self.paths.iter().filter(|p| !self.p.is_doc(p)).cloned().collect();
+            let p = self.p;
+            let allowed =
+                |x: &str| !p.is_doc(x) && (paths.iter().any(|y| y == x) || x.to_lowercase().contains("test"));
+            let how = if self.o.fixer.hosted() {
+                "Reply with a line `FIXED Fn how` per finding, then STATUS and CONFIDENCE."
+            } else {
+                FILES
+            };
+            let intro = format!("Fix these confirmed review findings in the repository. For each, make the smallest change that removes the defect and, where it applies, add a meaningful regression test. Change only these files of the change ({}) or test files; leave documentation alone, the writer updates it. {} Keep the intent: {}", paths.join(", "), super::TOOLS_NOTE, self.o.intent);
+            changed |=
+                self.fix_with(&code, &self.o.fixer.clone(), "remediate", &intro, how, &allowed, "the fixer")?;
+        }
+        if !docs.is_empty() {
+            let p = self.p;
+            let allowed = |x: &str| p.is_doc(x);
+            let how = if self.o.writer.hosted() {
+                "Edit the files directly, then reply with STATUS."
+            } else {
+                FILES
+            };
+            let intro = format!("Fix these confirmed documentation findings. Shorten or correct the text while keeping decisions, constraints and useful rationale; change only documentation files. Keep the intent: {}", self.o.intent);
+            changed |= self.fix_with(
+                &docs,
+                &self.o.writer.clone(),
+                "remediate docs",
+                &intro,
+                how,
+                &allowed,
+                "the writer",
+            )?;
+        }
+        Ok(changed)
+    }
+
+    // Has one agent fix a set of findings within `allowed`, noting what it changed outside it; returns whether it changed anything.
+    #[allow(clippy::too_many_arguments)]
+    fn fix_with(
+        &mut self,
+        findings: &[Finding],
+        r: &Rung,
+        role: &str,
+        intro: &str,
+        how: &str,
+        allowed: &dyn Fn(&str) -> bool,
+        who: &str,
+    ) -> Result<bool, String> {
+        let list: String = findings
             .iter()
             .map(|f| {
                 format!(
@@ -650,26 +705,22 @@ impl Run<'_> {
                 )
             })
             .collect();
-        let paths = self.paths.clone();
-        let allowed = move |p: &str| paths.iter().any(|x| x == p) || p.to_lowercase().contains("test");
-        let prompt = format!("Fix these confirmed review findings in the repository. For each, make the smallest change that removes the defect and, where it applies, add a meaningful regression test. Change only the files of this change ({}) or test files. Keep the intent: {}\n{list}{}", self.paths.join(", "), self.o.intent, if self.o.fixer.hosted() { "Reply with a line `FIXED Fn how` per finding, then STATUS and CONFIDENCE." } else { FILES });
-        let sections = [("brief", "fix the findings"), ("findings", list.as_str())];
+        let prompt = format!("{intro}\n{list}{how}");
+        let sections = [("brief", intro), ("findings", list.as_str())];
         let e = edit::edit(
             self.top,
             self.b,
             self.log,
-            &self.o.fixer,
-            "remediate",
+            r,
+            role,
             &prompt,
             &sections,
-            &allowed,
+            allowed,
             Instant::now() + self.o.limit,
         )?;
         if !e.reverted.is_empty() {
-            self.gaps.push(format!(
-                "the fixer changed paths outside the change, put back: {}",
-                e.reverted.join(", ")
-            ));
+            self.gaps
+                .push(format!("{who} changed paths outside its scope, put back: {}", e.reverted.join(", ")));
         }
         Ok(!e.changed.is_empty())
     }
@@ -755,6 +806,9 @@ pub fn run(
                 run.gaps.push(format!("remediation failed: {e}"));
                 break;
             }
+        }
+        if let Err(e) = super::tidy::format(top, p, Some(&run.base), o.limit) {
+            run.gaps.push(format!("formatting the fixes failed: {e}"));
         }
         run.pin()?;
         let touched: Vec<String> = run

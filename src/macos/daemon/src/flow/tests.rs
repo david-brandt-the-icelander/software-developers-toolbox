@@ -171,24 +171,44 @@ fn test_discover() {
     t.write("cs/App.sln", b"");
     t.write("c/Makefile", b"all:\ntest:\n\tcc t.c\n");
     t.write("d/Makefile", b"all:\n");
-    let names: Vec<(String, String)> =
-        policy::discover(t.path()).into_iter().map(|c| (c.name, c.run)).collect();
+    t.write(
+        "web/package.json",
+        br#"{"scripts": {"test": "jest", "lint": "eslint .", "lint:fix": "eslint --fix ."}}"#,
+    );
+    let found = policy::discover(t.path());
+    let names: Vec<(String, String)> = found.iter().map(|c| (c.name.clone(), c.run.clone())).collect();
+    let expect: Vec<(String, String)> = [
+        ("cargo", "cargo test --workspace"),
+        ("clippy", "cargo clippy --workspace --all-targets -- -D warnings"),
+        ("rustfmt", "cargo fmt --all --check"),
+        ("make c", "make test"),
+        ("dotnet cs", "dotnet test App.sln"),
+        ("dotnet format cs", "dotnet format App.sln --verify-no-changes"),
+        ("pytest py", "python3 -m pytest -q"),
+        ("go svc", "go test ./..."),
+        ("go vet svc", "go vet ./..."),
+        ("gofmt svc", "test -z \"$(gofmt -l .)\""),
+        ("npm lint web", "npm run lint"),
+        ("npm web", "npm test"),
+    ]
+    .iter()
+    .map(|(a, b)| (a.to_string(), b.to_string()))
+    .collect();
+    assert_eq!(names, expect);
+    let fix = |n: &str| found.iter().find(|c| c.name == n).and_then(|c| c.fix.clone());
     assert_eq!(
-        names,
-        [
-            ("cargo".to_string(), "cargo test --workspace".to_string()),
-            ("make c".into(), "make test".into()),
-            ("dotnet cs".into(), "dotnet test App.sln".into()),
-            ("pytest py".into(), "python3 -m pytest -q".into()),
-            ("go svc".into(), "go test ./...".into()),
-            ("npm web".into(), "npm test".into()),
-        ]
+        (fix("rustfmt").as_deref(), fix("npm lint web").as_deref(), fix("go vet svc")),
+        (Some("cargo fmt --all"), Some("npm run lint:fix"), None)
     );
     let sub = TempDir::new();
     sub.write("rust/Cargo.toml", b"");
     sub.write("rust/inner/Cargo.toml", b"");
     let found = policy::discover(sub.path());
-    assert_eq!((found.len(), found[0].paths.clone()), (1, vec!["rust/".to_string()]));
+    assert_eq!(
+        (found.len(), found[0].paths.clone()),
+        (3, vec!["rust/".to_string()]),
+        "test, rustfmt and clippy for the outer workspace only"
+    );
 }
 
 // Checks the opt-in file: checks, levels, protection, effects and agents, and each kind of error in it.
@@ -218,7 +238,8 @@ fn test_policy_file() {
     };
     assert!(bad("{").contains(".zazzle/flow.json"));
     assert!(bad(r#"{"checks": [{"name": "x"}]}"#).contains("has no `run`"));
-    assert!(bad(r#"{"checks": [{"run": "x", "kind": "lint"}]}"#).contains("build, test, coverage or script"));
+    assert!(bad(r#"{"checks": [{"run": "x", "kind": "audit"}]}"#)
+        .contains("one of build, test, coverage, format, lint, script"));
     assert!(bad(r#"{"branches": {"levels": {"qa": "uat"}}}"#).contains("branches.levels.qa"));
     assert!(bad(r#"{"effects": ["deploy"]}"#).contains("not `deploy`"));
     t.write(".zazzle/flow.json", br#"{"branches": {"levels": {"qa": "staging"}, "protected": ["release"]}}"#);
@@ -330,6 +351,7 @@ fn test_verify_and_receipts() {
         dir: ".".into(),
         kind: "test".into(),
         paths: Vec::new(),
+        fix: None,
     };
     let log = root.join("c.log");
     let ok = verify::run_check(
@@ -363,6 +385,7 @@ fn test_verify_and_receipts() {
         dir: ".".into(),
         kind: "script".into(),
         paths: vec!["docs/".into()],
+        fix: None,
     });
     let base = g(&root, &["rev-parse", "main"]);
     let r = verify::verify(&root, &p, Some(&base), &[], Duration::from_secs(10)).expect("verify");
@@ -754,6 +777,10 @@ fn test_test_first() {
     assert!(a.contains("Model it on this reference test (tests/check.sh)") && a.contains("FILE path"), "{a}");
     let b = &f.prompts("claude:b medium")[0];
     assert!(b.contains("expected fixed in flag") && b.contains("read-only"), "{b}");
+    assert!(
+        a.contains(TOOLS_NOTE) && b.contains(TOOLS_NOTE),
+        "execution agents are told to leave tools to zazzle"
+    );
 }
 
 // Checks test-first refusing what proves nothing: a test that passes already, a placeholder, one that does not compile, one that fails for another reason, no test at all; and B that never makes it pass, and --no-fix.
@@ -949,7 +976,7 @@ fn test_review_with_remediation() {
             && out.contains("the file does not exist"),
         "{out}"
     );
-    assert!(out.contains("gap: the fixer changed paths outside the change, put back: README.md"), "{out}");
+    assert!(out.contains("gap: the fixer changed paths outside its scope, put back: README.md"), "{out}");
     assert!(out.contains("benchmark:\n  1. local work:") && out.contains("  2. handoff: 3 confirmed finding(s), 1 fixed and verified before handoff, 0 left open, 1 for the user to decide") && out.contains("  3. levels: no lower level reviewed this tree"), "{out}");
     assert!(out.contains("-- review done: 1 decision(s) for you"), "{out}");
     assert_eq!(std::fs::read_to_string(root.join("README.md")).expect("readme"), "# demo\n");
@@ -1070,6 +1097,7 @@ fn test_review_read_only_and_levels() {
 // Checks the command line: help, preview, init, verify with JSON and --all, deliver through the dispatcher, unknown flags and subcommands, and the phase table.
 #[test]
 fn test_dispatch_preview_init() {
+    let _g = crate::testutil::env_lock();
     let (t, root) = repo_on_feature();
     let f = Fake { installed: vec!["qwen-a".into()], ..Fake::new(vec![]) };
     assert!(flow(&root, &f, &["help"]).0.contains("zazzle flow: the repository workflow"));
@@ -1166,6 +1194,7 @@ fn test_parse_and_discover_variants() {
         dir: ".".into(),
         kind: "test".into(),
         paths: Vec::new(),
+        fix: None,
     };
     let o = verify::run_check(&root, &c, &root.join("x.log"), Duration::from_secs(10));
     assert_eq!((o.status.as_str(), o.failed), ("failed", 1), "exit 0 with a failed test is a failure");
@@ -1181,7 +1210,11 @@ fn test_parse_and_discover_variants() {
     d.write("c/d/e/f/go.mod", b"");
     d.write("c/d/e/go.mod", b"");
     let found: Vec<String> = policy::discover(d.path()).into_iter().map(|c| c.name).collect();
-    assert_eq!(found, ["pytest a", "pytest b", "go c/d/e"], "four folders down is not searched");
+    assert_eq!(
+        found,
+        ["pytest a", "pytest b", "go c/d/e", "go vet c/d/e", "gofmt c/d/e"],
+        "four folders down is not searched"
+    );
     t.write(
         "AGENTS.md",
         b"A pr line without a branch.\nPRs target 'dev' here.\nThe PR goes into `dev` too.\n",
@@ -1479,4 +1512,242 @@ fn test_write_more() {
             "a bare or unclosed fence is kept as written"
         );
     }
+}
+
+// Checks the docs writer: the README and .dev records beside and above a changed file, an invalid JSON record fixed on the second round, a code path it may not touch put back, a docs check that keeps failing undone, and the cases with nothing to do.
+#[test]
+fn test_write_docs() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    t.write("src/.dev/folder.json", b"{\"kind\": \"folder\"}\n");
+    t.write("src/big.md", "x".repeat(50_000).as_bytes());
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "docs"]);
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["write", "docs", "--intent", "x"]).0.contains("touches no code"));
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a.wrapping_add(b)\n}\n");
+    assert!(flow(&root, &none, &["write", "docs"]).0.contains("--intent"));
+    let p = policy::load(&root).expect("p");
+    let changed = vec!["src/lib.rs".to_string(), "docs/new.md".to_string()];
+    assert_eq!(
+        docs::candidates(&root, &p, &changed, &["src/big.md".into()]),
+        ["src/.dev/folder.json", "README.md"],
+        "closest first; missing and oversized files left out"
+    );
+    let f = Fake::new(vec![
+        ("local default low", say("FILE README.md\n```\n# demo\nAdding wraps on overflow.\n```\nFILE src/.dev/folder.json\n```\n{broken\n```\nFILE src/lib.rs\n```\nnope\n```")),
+        ("local default low", say("FILE src/.dev/folder.json\n```\n{\"kind\": \"folder\", \"summary\": \"wrapping add\"}\n```")),
+    ]);
+    let (out, code) = flow(&root, &f, &["write", "docs", "--intent", "avoid overflow"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("docs by local default low: updated README.md, src/.dev/folder.json (looked at src/.dev/folder.json, README.md)"), "{out}");
+    assert!(
+        out.contains("the writer changed paths it may not, put back: src/lib.rs")
+            && out.contains("round 1: src/.dev/folder.json is not valid JSON"),
+        "{out}"
+    );
+    assert!(out.contains("docs: local 2 call(s)"), "{out}");
+    assert!(
+        std::fs::read_to_string(root.join("src/lib.rs")).expect("lib").contains("wrapping_add"),
+        "the change itself is kept"
+    );
+    let sent = &f.prompts("local default low")[0];
+    assert!(
+        sent.contains("a.wrapping_add(b)")
+            && sent.contains("Current README.md")
+            && sent.contains("Intent: avoid overflow"),
+        "{sent}"
+    );
+    g(&root, &["checkout", "-q", "--", "README.md", "src/.dev/folder.json"]);
+    t.write(".zazzle/flow.json", br#"{"checks": [], "branches": {"target": "main"}, "docs": {"paths": ["guide/"], "check": ["grep -q OK README.md"]}}"#);
+    let p = policy::load(&root).expect("docs policy");
+    assert!(p.is_doc("guide/setup.html") && p.is_doc(".dev/x.json") && !p.is_doc("src/lib.rs"));
+    let f = Fake::new(vec![
+        ("local default low", say("FILE README.md\n```\nno\n```")),
+        ("local default low", say("FILE README.md\n```\nstill no\n```")),
+    ]);
+    let (out, code) = flow(&root, &f, &["write", "docs", "--intent", "x"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.starts_with("docs by local default low: not applied")
+            && out.contains("`grep -q OK README.md` failed")
+            && out.contains("were put back"),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("README.md")).expect("readme"), "# demo\n");
+    let f = Fake::new(vec![("claude:w medium", edits(&[], "STATUS complete"))]);
+    t.write(".zazzle/flow.json", br#"{"checks": [], "branches": {"target": "main"}}"#);
+    let (out, code) = flow(&root, &f, &["write", "docs", "--intent", "x", "--writer", "claude:w"]);
+    assert!(
+        code == 0
+            && out.contains("nothing needed changing")
+            && f.prompts("claude:w medium")[0].contains("Edit the files directly"),
+        "{out}"
+    );
+    std::fs::remove_file(root.join("README.md")).expect("rm");
+    std::fs::remove_dir_all(root.join("src/.dev")).expect("rm dev");
+    assert!(flow(&root, &none, &["write", "docs", "--intent", "x"]).0.contains("no README or .dev record"));
+}
+
+// Checks that a review sends a documentation finding to the cheap writer, kept to documentation files, and code findings to the fixer.
+#[test]
+fn test_review_routes_docs_to_writer() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a + b + 0\n}\n");
+    t.write(
+        "README.md",
+        b"# demo\nThis README explains, at great and needless length, that the library adds numbers.\n",
+    );
+    let f = Fake::new(vec![
+        ("qwen-a low", say("")),
+        ("qwen-a low", say("FINDING minor | README.md:2 | wordy | slows readers | shorten it")),
+        ("claude:z high", say("KEEP R1 | minor | real")),
+        ("qwen-a low", say("FILE README.md\n```\n# demo\nAdds numbers.\n```\nFILE src/lib.rs\n```\nno\n```")),
+        ("qwen-a low", say("RESOLVED F1 yes | short now")),
+    ]);
+    let (out, code) = flow(&root, &f, &["review", "--agents", "qwen-a,claude:z@high"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("fixed and verified on tree")
+            && out.contains("F1 [correctness+testing] minor README.md:2: wordy"),
+        "{out}"
+    );
+    assert!(out.contains("gap: the writer changed paths outside its scope, put back: src/lib.rs"), "{out}");
+    assert!(out.contains("remediate: local 1 call(s)"), "the writer, not the hosted fixer, did it: {out}");
+    assert!(f.prompts("qwen-a low")[2].contains("Fix these confirmed documentation findings"));
+    assert!(f.prompts("claude:z high").len() == 1, "the fixer was not asked");
+}
+
+// Checks tidy: the format fix runs, a lint failure left over goes to the local agent and is fixed, a path outside the change is put back, and the report when no agent is asked, the agent fails or the lint stays red, and when no format or lint check applies.
+#[test]
+fn test_tidy() {
+    let (t, root) = repo_on_feature();
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["tidy"]).0.contains("no format or lint check applies"));
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [
+        {"name": "fmt", "run": "grep -q formatted src/lib.rs", "kind": "format", "fix": "echo formatted >> src/lib.rs"},
+        {"name": "lint", "run": "! grep -q BAD src/lib.rs", "kind": "lint", "paths": ["src/"]},
+        {"name": "unit", "run": "true", "kind": "test"}]}"#);
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "tidy policy"]);
+    t.write("src/lib.rs", b"BAD\n");
+    let (out, code) = flow(&root, &none, &["tidy", "--no-agent"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("fixed with `echo formatted >> src/lib.rs`: passed")
+            && out.contains("✓ fmt (format)")
+            && out.contains("✗ lint (lint)")
+            && out.contains("nothing was asked to fix it"),
+        "{out}"
+    );
+    let f =
+        Fake::new(vec![("qwen-a low", say("FILE src/lib.rs\n```\nfine\n```\nFILE README.md\n```\nno\n```"))]);
+    let (out, code) = flow(&root, &f, &["tidy", "--agents", "qwen-a"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("qwen-a low changed paths outside the change, put back: README.md")
+            && out.contains("formatted by zazzle: fmt passed")
+            && out.contains("after qwen-a low: lint passed")
+            && out.contains("fixed by the local agent"),
+        "{out}"
+    );
+    assert!(out.contains("lint: local 1 call(s)"), "{out}");
+    assert!(
+        f.prompts("qwen-a low")[0].contains("do not reformat")
+            && f.prompts("qwen-a low")[0].contains("! grep -q BAD src/lib.rs")
+    );
+    t.write("src/lib.rs", b"BAD\n");
+    let f = Fake::new(vec![("qwen-a low", fails("busy"))]);
+    let (out, code) = flow(&root, &f, &["tidy", "--agents", "qwen-a", "--all"]);
+    assert!(
+        code == 1
+            && out.contains("qwen-a low failed: busy")
+            && out.contains("these findings need the executor"),
+        "{out}"
+    );
+    let p = policy::load(&root).expect("p");
+    assert_eq!(
+        tidy::format(&root, &p, None, Duration::from_secs(10)).expect("format"),
+        "formatted by zazzle: fmt passed\n"
+    );
+    let base = g(&root, &["rev-parse", "HEAD"]);
+    g(&root, &["checkout", "-q", "--", "."]);
+    assert_eq!(
+        tidy::format(&root, &p, Some(&base), Duration::from_secs(10)).expect("nothing"),
+        "formatted by zazzle: fmt passed\n",
+        "a check without paths always applies"
+    );
+}
+
+// Checks the remaining tool paths: a clean tidy, a hosted lint fixer over the whole tree, a docs update whose check passes, docs named with no code change, help after a subcommand, a shell group as a check, and a cognitive-load finding fixed by a hosted writer.
+#[test]
+fn test_tools_more() {
+    let (t, root) = repo_on_feature();
+    t.write(
+        ".zazzle/flow.json",
+        br#"{"branches": {"target": "main"}, "docs": {"check": ["grep -q demo README.md"]}, "checks": [
+        {"name": "fmt", "run": "true", "kind": "format", "fix": "true"},
+        {"name": "lint", "run": "( ! grep -q BAD src/lib.rs )", "kind": "lint"}]}"#,
+    );
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "policy"]);
+    let none = Fake::new(vec![]);
+    let (out, code) = flow(&root, &none, &["tidy", "--no-agent"]);
+    assert!(code == 0 && out.contains("-- format and lint clean, by the tools"), "{out}");
+    assert!(flow(&root, &none, &["verify", "--help"]).0.contains("zazzle flow: the repository workflow"));
+    t.write("src/lib.rs", b"BAD\n");
+    let f = Fake::new(vec![("claude:l medium", edits(&[("src/lib.rs", "good\n")], "STATUS complete"))]);
+    let (out, code) = flow(&root, &f, &["tidy", "--all", "--fixer", "claude:l"]);
+    assert!(code == 0 && out.contains("after claude:l medium: lint passed"), "{out}");
+    assert!(
+        f.prompts("claude:l medium")[0].contains("the files named in the findings")
+            && f.prompts("claude:l medium")[0].contains("Edit the files")
+    );
+    let f =
+        Fake::new(vec![("local default low", say("FILE README.md\n```\n# demo\nIt says good now.\n```"))]);
+    let (out, code) = flow(&root, &f, &["write", "docs", "--intent", "good"]);
+    assert!(code == 0 && out.contains("updated README.md"), "{out}");
+    g(&root, &["checkout", "-q", "--", "."]);
+    t.write("docs/guide.md", b"# Guide\n");
+    let f = Fake::new(vec![("local default low", say("FILE docs/guide.md\n```\n# Guide\nShorter.\n```"))]);
+    let (out, code) =
+        flow(&root, &f, &["write", "docs", "--intent", "tidy the guide", "--paths", "docs/guide.md"]);
+    assert!(code == 0 && out.contains("updated docs/guide.md"), "{out}");
+    std::fs::remove_dir_all(root.join("docs")).expect("rm");
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    // Adds. This comment explains, at length, that the function adds two numbers together.\n    a + b\n}\n");
+    let f = Fake::new(vec![
+        ("qwen-a low", say("")),
+        ("qwen-a low", say("FINDING minor | src/lib.rs:2 | a wordy comment | slows readers | shorten it")),
+        ("claude:z high", say("KEEP R1 | minor | real")),
+        (
+            "claude:w medium",
+            edits(&[("src/lib.rs", "shorter\n"), ("README.md", "# demo\nok\n")], "STATUS complete"),
+        ),
+        ("qwen-a low", say("RESOLVED F1 no | the comment is still there")),
+    ]);
+    let (out, _) = flow(
+        &root,
+        &f,
+        &[
+            "review",
+            "--agents",
+            "qwen-a,claude:z@high",
+            "--viewpoints",
+            "cognitive-load",
+            "--writer",
+            "claude:w",
+            "--rounds",
+            "1",
+        ],
+    );
+    assert!(
+        out.contains("gap: the writer changed paths outside its scope, put back: src/lib.rs")
+            && out.contains("  open:"),
+        "{out}"
+    );
+    assert!(
+        f.prompts("claude:w medium")[0].contains("Fix these confirmed documentation findings")
+            && f.prompts("claude:w medium")[0].contains("Edit the files directly")
+    );
 }
