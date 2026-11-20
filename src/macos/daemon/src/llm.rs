@@ -9,11 +9,12 @@ const MAX_INPUT: usize = 400_000;
 const DEFAULT_TIMEOUT: u64 = 300;
 const DEFAULT_IDLE: u64 = 600;
 
-// The local model's answer and whether its token limit cut it short.
+// The local model's answer, whether its token limit cut it short and the tokens it generated.
 #[derive(Debug, PartialEq)]
 pub struct Reply {
     pub text: String,
     pub truncated: bool,
+    pub tokens: usize,
 }
 
 // Returns how long one local model call may take: ZAZZLE_LLM_TIMEOUT seconds, default 300.
@@ -134,6 +135,7 @@ impl Session {
             None => Ok(Reply {
                 text: v["text"].as_str().unwrap_or_default().trim().to_string(),
                 truncated: v["truncated"] == true,
+                tokens: v["tokens"].as_u64().unwrap_or_default() as usize,
             }),
         }
     }
@@ -155,7 +157,7 @@ impl Drop for Session {
 }
 
 // Returns ai-agent: $ZAZZLE_LLM, else beside the daemon or from the tool store (downloading the program, never a model).
-fn program() -> Result<PathBuf, String> {
+pub fn program() -> Result<PathBuf, String> {
     if let Some(p) = std::env::var_os("ZAZZLE_LLM") {
         return Ok(PathBuf::from(p));
     }
@@ -421,7 +423,7 @@ mod tests {
     #[test]
     fn test_llm_mark_and_post() {
         let long = "word ".repeat(400);
-        let m = mark(&long, &Reply { text: "short".into(), truncated: true });
+        let m = mark(&long, &Reply { text: "short".into(), truncated: true, tokens: 0 });
         assert!(m.starts_with("short\n[post-processed by the local model: ~") && m.contains("cut short"));
         assert_eq!(post("  \n", "x"), Ok("  \n".into()));
         let huge = "word ".repeat(MAX_INPUT / 4);
@@ -443,11 +445,11 @@ mod tests {
         let mut s = Session::start_with(&worker, &["--effort", "low"], d).expect("start");
         assert_eq!(
             s.ask(&serde_json::json!({"user": "a"})),
-            Ok(Reply { text: "ok".into(), truncated: false })
+            Ok(Reply { text: "ok".into(), truncated: false, tokens: 0 })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "long"})),
-            Ok(Reply { text: "half".into(), truncated: true })
+            Ok(Reply { text: "half".into(), truncated: true, tokens: 0 })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "fail"})).err().as_deref(),

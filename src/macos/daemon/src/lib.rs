@@ -2,6 +2,7 @@
 #![cfg_attr(all(coverage_nightly, test), feature(coverage_attribute))]
 
 pub mod activity;
+pub mod adaptive;
 pub mod arena;
 pub mod args;
 pub mod brief;

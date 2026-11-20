@@ -4,11 +4,17 @@ use std::path::{Path, PathBuf};
 // Cited lines shown at most per finding; the rest are counted.
 const EXCERPT: usize = 12;
 
-// The model's final answer: its findings and what it could not establish.
-#[derive(Debug, Default, PartialEq)]
+// The model's final answer: its findings, what it could not establish, and its report on itself: its status, how well it understood the task and how well its results are supported (high, medium or low), the open question a stronger model should take over with the context it would need, and what only the user can give.
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Answer {
     pub findings: Vec<Claim>,
     pub unknowns: Vec<String>,
+    pub status: String,
+    pub understanding: String,
+    pub confidence: String,
+    pub escalate: Option<String>,
+    pub context: Vec<String>,
+    pub blocked: Option<String>,
 }
 
 // One cited claim as the model wrote it.
@@ -20,11 +26,14 @@ pub struct Claim {
     pub text: String,
 }
 
-// Reads the answer: the `FINDING path:A[-B] claim` and `UNKNOWN text` lines after an `ANSWER` line, or anywhere when the model left the ANSWER line out; None when there are neither.
+// Reads the answer: the `FINDING path:A[-B] claim`, `UNKNOWN text` (or `GAP text`) and self-report lines after an `ANSWER` line, or anywhere when the model left the ANSWER line out; None when there are none of them.
 pub fn parse_answer(reply: &str) -> Option<Answer> {
     let is = |l: &str, w: &str| strip_word(l.trim(), w).is_some();
     let headed = reply.lines().any(|l| is(l, "ANSWER"));
-    if !headed && !reply.lines().any(|l| is(l, "FINDING") || is(l, "UNKNOWN")) {
+    let keyed = |l: &str| {
+        ["FINDING", "UNKNOWN", "GAP", "STATUS", "CONFIDENCE", "ESCALATE", "BLOCKED"].iter().any(|w| is(l, w))
+    };
+    if !headed && !reply.lines().any(keyed) {
         return None;
     }
     let mut lines = reply.lines().map(str::trim).skip_while(|l| headed && !is(l, "ANSWER")).peekable();
@@ -38,11 +47,52 @@ pub fn parse_answer(reply: &str) -> Option<Answer> {
                 Some(c) => a.findings.push(c),
                 None => a.unknowns.push(format!("unreadable finding: {rest}")),
             }
-        } else if let Some(rest) = strip_word(l, "UNKNOWN") {
+        } else if let Some(rest) = strip_word(l, "UNKNOWN").or_else(|| strip_word(l, "GAP")) {
             a.unknowns.push(rest.to_string());
+        } else if let Some(rest) = strip_word(l, "STATUS") {
+            a.status = word_of(rest, &["complete", "partial", "failed"]);
+        } else if let Some(rest) = strip_word(l, "CONFIDENCE") {
+            (a.understanding, a.confidence) = levels(rest);
+        } else if let Some(rest) = strip_word(l, "ESCALATE").filter(|r| !r.is_empty() && !is(r, "no")) {
+            a.escalate = Some(rest.to_string());
+        } else if let Some(rest) = strip_word(l, "CONTEXT").filter(|r| !r.is_empty()) {
+            a.context.push(rest.to_string());
+        } else if let Some(rest) = strip_word(l, "BLOCKED").filter(|r| !r.is_empty() && !is(r, "no")) {
+            a.blocked = Some(rest.to_string());
         }
     }
     Some(a)
+}
+
+// The first word of `s` when it is one of `allowed` (any case), lowercased; else empty.
+fn word_of(s: &str, allowed: &[&str]) -> String {
+    let w = s.split_whitespace().next().unwrap_or_default().to_lowercase();
+    if allowed.contains(&w.as_str()) {
+        w
+    } else {
+        String::new()
+    }
+}
+
+// Reads `understanding=high result=medium` (or two bare levels in that order) into the two levels; one not given is empty.
+fn levels(s: &str) -> (String, String) {
+    const L: &[&str] = &["high", "medium", "low"];
+    let (mut u, mut r, mut bare) = (String::new(), String::new(), Vec::new());
+    for part in s.split([' ', ',', ';']).filter(|p| !p.is_empty()) {
+        match part.split_once(['=', ':']) {
+            Some((k, v)) if k.to_lowercase().starts_with("under") => u = word_of(v, L),
+            Some((_, v)) => r = word_of(v, L),
+            None => bare.push(word_of(part, L)),
+        }
+    }
+    let mut bare = bare.into_iter().filter(|w| !w.is_empty());
+    if u.is_empty() {
+        u = bare.next().unwrap_or_default();
+    }
+    if r.is_empty() {
+        r = bare.next().unwrap_or_default();
+    }
+    (u, r)
 }
 
 // Returns what follows a leading keyword (any case), or None.
@@ -166,5 +216,28 @@ mod tests {
                 Checked::Verified { .. } => panic!("{why}"),
             }
         }
+    }
+
+    // Checks the self-report lines: status, both confidence spellings, ESCALATE with its context, BLOCKED, GAP, and that `no` and unknown words are dropped.
+    #[test]
+    fn test_parse_self_report() {
+        let a = parse_answer("STATUS partial now\nCONFIDENCE understanding=high result=low\nGAP the retry path\nESCALATE Should enforcement need a new version?\nCONTEXT the frozen contract rule\nCONTEXT \nBLOCKED decision which version to ship").expect("report");
+        assert_eq!(
+            (a.status.as_str(), a.understanding.as_str(), a.confidence.as_str()),
+            ("partial", "high", "low")
+        );
+        assert_eq!(a.unknowns, ["the retry path"]);
+        assert_eq!(a.escalate.as_deref(), Some("Should enforcement need a new version?"));
+        assert_eq!(a.context, ["the frozen contract rule"]);
+        assert_eq!(a.blocked.as_deref(), Some("decision which version to ship"));
+        let b = parse_answer("ANSWER\nSTATUS done\nCONFIDENCE medium, high\nESCALATE no\nBLOCKED no")
+            .expect("bare");
+        assert_eq!(
+            (b.status.as_str(), b.understanding.as_str(), b.confidence.as_str()),
+            ("", "medium", "high")
+        );
+        assert_eq!((b.escalate, b.blocked), (None, None));
+        assert_eq!(levels("result:high"), (String::new(), "high".into()));
+        assert_eq!(levels("sure"), (String::new(), String::new()));
     }
 }

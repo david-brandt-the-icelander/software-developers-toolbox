@@ -476,6 +476,44 @@
       ]
     },
     {
+      "id": "ZAZZLE_CODEX",
+      "title": "ZAZZLE_CODEX",
+      "summary": "The `codex` program the adaptive mode runs for its `codex:` rungs, reviews and benchmarks.",
+      "key": "ZAZZLE_CODEX",
+      "type": "path",
+      "default": "`codex` on PATH, else in /opt/homebrew/bin, /usr/local/bin, ~/.local/bin, ~/.claude/local or ~/.npm-global/bin",
+      "sensitive": false,
+      "scope": "Read by the daemon each time the adaptive mode asks a hosted agent.",
+      "takesEffect": "per-use",
+      "details": "Only used when --agents, --review-model or --benchmark-model names a hosted agent; it runs read-only in the working directory.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/agent.rs",
+          "symbol": "program"
+        }
+      ]
+    },
+    {
+      "id": "ZAZZLE_CLAUDE",
+      "title": "ZAZZLE_CLAUDE",
+      "summary": "The `claude` program the adaptive mode runs for its `claude:` rungs, reviews and benchmarks.",
+      "key": "ZAZZLE_CLAUDE",
+      "type": "path",
+      "default": "`claude` on PATH, else in /opt/homebrew/bin, /usr/local/bin, ~/.local/bin, ~/.claude/local or ~/.npm-global/bin",
+      "sensitive": false,
+      "scope": "Read by the daemon each time the adaptive mode asks a hosted agent.",
+      "takesEffect": "per-use",
+      "details": "Only used when --agents, --review-model or --benchmark-model names a hosted agent; it runs read-only in the working directory.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/agent.rs",
+          "symbol": "program"
+        }
+      ]
+    },
+    {
       "id": "ZAZZLE_LLM_TIMEOUT",
       "title": "ZAZZLE_LLM_TIMEOUT",
       "summary": "How many seconds one local model call (chat, prompt, --llm, brief, investigate) may take before the worker is killed.",

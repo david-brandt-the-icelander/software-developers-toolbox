@@ -1,5 +1,5 @@
 // `zazzle investigate QUESTION --path P.. --symbol S..`: the local model resolves a repository question with bounded read-only lookups inside the scope, and its answer comes back as findings whose `path:line` citations zazzle has checked and quoted, plus what it could not establish.
-mod cite;
+pub mod cite;
 mod seed;
 
 use crate::cmd::{Ctx, Output};
@@ -7,7 +7,7 @@ use crate::llm::Reply;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--context TEXT].. [--adaptive] [--agents A,B..] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--prose] [--json]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
 // The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
@@ -28,7 +28,7 @@ const SEEN_TOKENS: usize = 12_000;
 const REPLY_TOKENS: usize = 1500;
 
 // What the model is told on its one answer-only turn, after a reason the run could not go on.
-const FINAL: &str = "No more lookups will run. Reply now with ANSWER, then FINDING lines citing only lines shown above (path:A-B, or E1:A-B for lines A to B of excerpt E1), and UNKNOWN lines for what the evidence does not show. Nothing else.";
+const FINAL: &str = "No more lookups will run. Reply now with ANSWER, then FINDING lines citing only lines shown above (path:A-B, or E1:A-B for lines A to B of excerpt E1), UNKNOWN lines for what the evidence does not show, and the CONFIDENCE line. Nothing else.";
 
 // Words of a question too common to pick out its evidence.
 const COMMON: &[&str] = &[
@@ -49,6 +49,8 @@ FIND text            lines containing the text
 Answer: a line ANSWER, then one line per fact:
 FINDING path:A-B one sentence that the cited lines show
 UNKNOWN something the question needs that you could not establish
+CONFIDENCE understanding=high|medium|low result=high|medium|low
+and only when needed: ESCALATE the exact open question a stronger model should take over, CONTEXT lines it would need, BLOCKED access|decision what only the user can give.
 Cite only lines you have seen, with the line numbers shown to you. Lookups that found something are numbered E1, E2 and so on; E2:A-B cites lines A to B of E2's file. Prefer a few exact findings over many vague ones. Stay inside the scope.";
 
 // Something an investigation asks: the local model through ai-agent, or a script in tests.
@@ -64,29 +66,35 @@ pub struct Model;
 impl Local for Model {
     // Asks at low effort and temperature 0, with whatever model is loaded, else the default.
     fn ask(&self, system: &str, transcript: &str, deadline: Instant) -> Result<Reply, String> {
-        let user = format!("Reply with your next lookups, or ANSWER.\n\n---\n{transcript}");
-        let req = serde_json::json!({"system": system, "user": user, "max_tokens": REPLY_TOKENS, "temp": 0, "effort": "low"});
-        crate::llm::ask_until(None, &req, deadline)
+        crate::llm::ask_until(None, &request(system, transcript, "low"), deadline)
     }
 }
 
-// The parsed command line.
-struct Plan {
-    question: String,
-    scope: Vec<String>,
-    symbols: Vec<String>,
-    steps: usize,
-    seconds: u64,
+// The local model request for one turn at an effort, temperature 0.
+pub fn request(system: &str, transcript: &str, effort: &str) -> serde_json::Value {
+    let user = format!("Reply with your next lookups, or ANSWER.\n\n---\n{transcript}");
+    serde_json::json!({"system": system, "user": user, "max_tokens": REPLY_TOKENS, "temp": 0, "effort": effort})
+}
+
+// The parsed command line; `context` is what an earlier attempt established, shown to the model apart from the question.
+pub struct Plan {
+    pub question: String,
+    pub scope: Vec<String>,
+    pub symbols: Vec<String>,
+    pub steps: usize,
+    pub seconds: u64,
+    pub context: Vec<String>,
 }
 
 // Parses the question words and the flags.
-fn parse(argv: &[String]) -> Result<Plan, String> {
+pub fn parse(argv: &[String]) -> Result<Plan, String> {
     let mut p = Plan {
         question: String::new(),
         scope: Vec::new(),
         symbols: Vec::new(),
         steps: DEFAULT_STEPS,
         seconds: DEFAULT_SECONDS,
+        context: Vec::new(),
     };
     let (mut words, mut it) = (Vec::new(), argv.iter());
     while let Some(a) = it.next() {
@@ -94,6 +102,7 @@ fn parse(argv: &[String]) -> Result<Plan, String> {
         match a.as_str() {
             "--path" | "-p" => p.scope.push(value()?),
             "--symbol" | "-s" => p.symbols.push(value()?),
+            "--context" => p.context.push(value()?),
             "--steps" => {
                 let v = value()?;
                 p.steps = v
@@ -182,6 +191,12 @@ impl Trail {
         let mut t = format!("Question: {}\nScope: {}\n", plan.question, plan.scope.join(", "));
         if !plan.symbols.is_empty() {
             t.push_str(&format!("Starting symbols: {}\n", plan.symbols.join(", ")));
+        }
+        if !plan.context.is_empty() {
+            t.push_str(
+                "Established by an earlier attempt (build on it; cite lines only once you have seen them):\n",
+            );
+            t.push_str(&plan.context.iter().map(|c| format!("- {c}\n")).collect::<String>());
         }
         t.push_str(&match left {
             0 => "No lookups left: reply with ANSWER now.\n".to_string(),
@@ -373,8 +388,29 @@ fn empty(r: &Reply) -> bool {
     }
 }
 
+// What one run of the lookup loop left: the plan, the scope, the trail of lookups, the answer and how the run ended; `nothing` when no starting symbol was in scope and the model was not asked.
+pub struct Explored {
+    pub plan: Plan,
+    scope: Vec<PathBuf>,
+    trail: Trail,
+    answer: Option<cite::Answer>,
+    st: Status,
+    nothing: bool,
+}
+
 // Investigates with the given local model and returns the report, with the rules for the cited and read files as notes for the caller.
 pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Output, String> {
+    finish(ctx, explore(ctx, argv, local)?).map(|(o, _)| o)
+}
+
+// The report of a run and its structured result.
+pub fn finish(ctx: &Ctx, e: Explored) -> Result<(Output, crate::adaptive::work::Work), String> {
+    let w = work(ctx, &e);
+    Ok((if e.nothing { no_evidence(&e.plan) } else { report(ctx, e) }, w))
+}
+
+// Runs the lookup loop for a command line with the given model, up to its answer or a stop.
+pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored, String> {
     let plan = parse(argv)?;
     let mut scope = Vec::new();
     for s in &plan.scope {
@@ -402,14 +438,15 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
     };
     let deadline = Instant::now() + Duration::from_secs(plan.seconds);
     let missed = seeds(&lctx, &scope, &plan, &mut trail);
-    if !plan.symbols.is_empty()
+    let nothing = !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
-        && missed.iter().all(|(_, c)| c.is_empty())
-    {
-        return Ok(no_evidence(&plan));
-    }
+        && missed.iter().all(|(_, c)| c.is_empty());
     let mut st =
         Status { stop: String::new(), cut: false, turns: 0, answer_only: false, recovered: None, missed };
+    if nothing {
+        st.stop = "none of the starting symbols occurs inside the scope".into();
+        return Ok(Explored { plan, scope, trail, answer: None, st, nothing });
+    }
     let (mut answer, mut strayed, mut stalled, mut retry) = (None, false, false, None);
     for step_no in 1..=plan.steps {
         st.turns = step_no;
@@ -488,7 +525,7 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
     if let Some(why) = retry.filter(|_| !trail.evidence.is_empty()) {
         answer = final_turn(local, &plan, &mut trail, &mut st, why, deadline).or(answer);
     }
-    Ok(report(ctx, &plan, &scope, &trail, answer, st))
+    Ok(Explored { plan, scope, trail, answer, st, nothing })
 }
 
 // The system message, with the rules that apply to what the lookups read, kept apart from the evidence.
@@ -559,39 +596,24 @@ struct Status {
 }
 
 // Formats the checked findings, rejected citations and unknowns, with the caller's rules for the files involved as notes; when no finding is verified, ranked excerpts of the evidence and the lookups that found nothing come back instead.
-fn report(
-    ctx: &Ctx,
-    plan: &Plan,
-    scope: &[PathBuf],
-    trail: &Trail,
-    answer: Option<cite::Answer>,
-    st: Status,
-) -> Output {
+fn report(ctx: &Ctx, e: Explored) -> Output {
+    let Explored { plan, scope, trail, answer, st, .. } = e;
+    let (plan, trail) = (&plan, &trail);
     let answer = answer.unwrap_or_default();
+    let (checked, rejects) = checked(ctx, &scope, trail, &answer);
     let (mut found, mut rejected, mut files) = (String::new(), String::new(), Vec::new());
-    let mut n = 0;
-    for c in &answer.findings {
-        let file = trail.file_of(&c.path);
-        let c = &cite::Claim { path: file.clone().unwrap_or_else(|| c.path.clone()), ..c.clone() };
-        let cited = format!(
-            "{}:{}{}",
-            c.path,
-            c.start,
-            if c.end > c.start { format!("-{}", c.end) } else { String::new() }
-        );
-        match cite::check(&ctx.cwd, scope, c) {
-            cite::Checked::Verified { excerpt } => {
-                n += 1;
-                let unread = if trail.seen.iter().any(|(l, t)| l.contains(&c.path) || t.contains(&c.path)) {
-                    ""
-                } else {
-                    " (not among the lookups)"
-                };
-                found.push_str(&format!("{n}. {}\n   {cited}{unread}\n{excerpt}", c.text));
-                files.push(ctx.cwd.join(&c.path));
-            }
-            cite::Checked::Rejected(why) => rejected.push_str(&format!("- {cited} {}: {why}\n", c.text)),
-        }
+    let n = checked.len();
+    for (i, f) in checked.iter().enumerate() {
+        let unread = if trail.seen.iter().any(|(l, t)| l.contains(&f.path) || t.contains(&f.path)) {
+            ""
+        } else {
+            " (not among the lookups)"
+        };
+        found.push_str(&format!("{}. {}\n   {}{unread}\n{}", i + 1, f.claim, f.cite, f.excerpt));
+        files.push(ctx.cwd.join(&f.path));
+    }
+    for r in &rejects {
+        rejected.push_str(&format!("- {r}\n"));
     }
     let fallback = n == 0 && !trail.evidence.is_empty();
     let mut out = format!("investigate: {}\nscope: {}\n", plan.question, plan.scope.join(", "));
@@ -616,6 +638,7 @@ fn report(
         let alts = if c.is_empty() { "nothing in scope resembles it".to_string() } else { c.join("; ") };
         out.push_str(&format!("starting symbol not in scope: {name} (candidates: {alts})\n"));
     }
+    out.push_str(&self_report(&answer));
     if fallback {
         out.push_str(&excerpts(trail, plan));
         out.push_str(&gaps(trail));
@@ -656,6 +679,98 @@ fn report(
         o.notes = crate::nested::for_paths(&ctx.cwd, &files, &purposes, &l);
     }
     o
+}
+
+// Checks an answer's citations, resolving excerpt ids to their files: the verified findings and, for each rejected
+// one, `path:A-B claim: why`.
+fn checked(ctx: &Ctx, scope: &[PathBuf], trail: &Trail, answer: &cite::Answer) -> (Vec<Found>, Vec<String>) {
+    let (mut found, mut rejected) = (Vec::new(), Vec::new());
+    for c in &answer.findings {
+        let c = &cite::Claim { path: trail.file_of(&c.path).unwrap_or_else(|| c.path.clone()), ..c.clone() };
+        let (f, r) = verify(&ctx.cwd, scope, c);
+        found.extend(f);
+        rejected.extend(r);
+    }
+    (found, rejected)
+}
+
+// One finding whose citation zazzle checked: the claim, the file, `path:A-B` and the cited lines.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Found {
+    pub claim: String,
+    pub path: String,
+    pub cite: String,
+    pub excerpt: String,
+}
+
+// Checks one claim against its file: a Found, or the rejection line `path:A-B claim: why`.
+pub fn verify(cwd: &Path, scope: &[PathBuf], c: &cite::Claim) -> (Option<Found>, Option<String>) {
+    let tail = if c.end > c.start { format!("-{}", c.end) } else { String::new() };
+    let cite = format!("{}:{}{tail}", c.path, c.start);
+    match cite::check(cwd, scope, c) {
+        cite::Checked::Verified { excerpt } => {
+            (Some(Found { claim: c.text.clone(), path: c.path.clone(), cite, excerpt }), None)
+        }
+        cite::Checked::Rejected(why) => (None, Some(format!("{cite} {}: {why}", c.text))),
+    }
+}
+
+// The answer's report on itself as lines for the report: its confidence, the question it would escalate with its
+// context, and what it needs from the user; nothing for what it did not say.
+fn self_report(a: &cite::Answer) -> String {
+    let mut out = String::new();
+    if !a.understanding.is_empty() || !a.confidence.is_empty() {
+        let or = |s: &str| if s.is_empty() { "not given".to_string() } else { s.to_string() };
+        out.push_str(&format!(
+            "confidence: understanding {}, result {}\n",
+            or(&a.understanding),
+            or(&a.confidence)
+        ));
+    }
+    if let Some(q) = &a.escalate {
+        let ctx = if a.context.is_empty() {
+            String::new()
+        } else {
+            format!(" (context: {})", a.context.join("; "))
+        };
+        out.push_str(&format!("escalate: {q}{ctx}\n"));
+    }
+    if let Some(b) = &a.blocked {
+        out.push_str(&format!("needs the user: {b}\n"));
+    }
+    out
+}
+
+// The checked, structured result of a run, for the adaptive mode: verified findings, rejected citations, gaps (the
+// unknowns, the stop and the lookups that found nothing) and the model's report on itself; `status` is complete
+// only for an answer with nothing stopping it, partial when something was verified, else failed.
+pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
+    let answer = e.answer.clone().unwrap_or_default();
+    let (findings, rejected) = checked(ctx, &e.scope, &e.trail, &answer);
+    let mut gaps = answer.unknowns.clone();
+    if !e.st.stop.is_empty() {
+        gaps.push(format!("the run stopped early: {}", e.st.stop));
+    }
+    let failed = e.trail.lookups.iter().zip(&e.trail.done);
+    gaps.extend(failed.filter_map(|(l, (_, why))| why.as_ref().map(|w| format!("{l} found nothing: {w}"))));
+    let status = match (e.answer.is_some() && e.st.stop.is_empty() && !e.st.cut, findings.is_empty()) {
+        (true, _) if !answer.status.is_empty() => answer.status.clone(),
+        (true, _) => "complete".into(),
+        (false, false) => "partial".into(),
+        (false, true) => "failed".into(),
+    };
+    crate::adaptive::work::Work {
+        status,
+        understanding: answer.understanding,
+        confidence: answer.confidence,
+        findings,
+        rejected,
+        gaps,
+        escalate: answer.escalate,
+        context: answer.context,
+        blocked: answer.blocked,
+        turns: e.st.turns + usize::from(e.st.answer_only),
+    }
 }
 
 // The lowercase words that pick out a question's evidence: the starting symbols and their words, and the question's
@@ -749,7 +864,7 @@ fn gaps(trail: &Trail) -> String {
 // The MCP tool for investigate.
 pub(crate) const TOOLS: &[crate::mcp::Tool] = &[crate::mcp::Tool {
     name: "zazzle_investigate",
-    description: "Hand a repository question needing several files to the user's local model: it follows read-only lookups inside paths from the symbols, and returns findings whose path:line citations zazzle checked and quoted, plus unknowns. For one known symbol or a short lookup, use zazzle_read or zazzle_refs directly.",
+    description: "Hand a repository question needing several files to the user's local model: it follows read-only lookups inside paths from the symbols, and returns findings whose path:line citations zazzle checked and quoted, plus unknowns. adaptive splits it into parts for the cheapest agent and effort that will do each, escalating unsettled parts; review_model judges the results, benchmark_model compares them with one agent alone. For one known symbol or a short lookup, use zazzle_read or zazzle_refs directly.",
     schema,
     map: tool_args,
 }];
@@ -762,7 +877,14 @@ fn schema() -> serde_json::Value {
             "paths": {"type": "array", "items": {"type": "string"}, "description": "Folders or files to stay inside (default: the working directory)"},
             "symbols": {"type": "array", "items": {"type": "string"}, "description": "Names to start from"},
             "steps": {"type": "integer", "description": "Model turns, 1 to 12 (default 6)"},
-            "seconds": {"type": "integer", "description": "Time limit for the whole call, waiting for the local model included, 1 to 600 (default 90)"}
+            "seconds": {"type": "integer", "description": "Time limit for the whole call, waiting for the local model included, 1 to 600 (default 90); a benchmark and a review each get as long again"},
+            "adaptive": {"type": "boolean", "description": "Plan the question into parts, give each the cheapest agent and effort that will do it, and escalate a part that is not settled"},
+            "agents": {"type": "array", "items": {"type": "string"}, "description": "The adaptive ladder, cheapest first: MODEL, local:MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: the installed local models)"},
+            "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder)"},
+            "benchmark_effort": {"type": "string"},
+            "review_model": {"type": "string", "description": "Have this agent judge the results and each finding"},
+            "review_effort": {"type": "string"},
+            "prose": {"type": "boolean", "description": "Adaptive only: the cheapest agent adds a short summary that keeps the citations"}
         }),
         &["question"],
     )
@@ -779,12 +901,26 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     }
     crate::mcp::push_num(&mut a, v, "steps", "--steps")?;
     crate::mcp::push_num(&mut a, v, "seconds", "--seconds")?;
+    crate::mcp::push_flag(&mut a, v, "adaptive", "--adaptive")?;
+    crate::mcp::push_flag(&mut a, v, "prose", "--prose")?;
+    let agents = crate::mcp::get_list(v, "agents")?;
+    if !agents.is_empty() {
+        a.extend(["--agents".to_string(), agents.join(",")]);
+    }
+    for key in ["benchmark_model", "benchmark_effort", "review_model", "review_effort"] {
+        if let Some(x) = crate::mcp::get_str(v, key)? {
+            a.extend([format!("--{}", key.replace('_', "-")), x]);
+        }
+    }
     a.push(crate::mcp::need_str(v, "question")?);
     Ok(a)
 }
 
-// Runs `investigate` with the user's local model.
+// Runs `investigate` with the user's local model, or in the adaptive mode when any of its flags is given.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
+    if crate::adaptive::wanted(argv) {
+        return crate::adaptive::run(ctx, argv);
+    }
     investigate(ctx, argv, &Model)
 }
 

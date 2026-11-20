@@ -13,7 +13,7 @@ fn echo(model: Option<&str>, req: &Value) -> Result<Reply, String> {
         req["effort"].as_str().unwrap_or("-"),
         req["user"].as_str().unwrap_or("")
     );
-    Ok(Reply { text, truncated: req["user"] == "long" })
+    Ok(Reply { text, truncated: req["user"] == "long", tokens: 0 })
 }
 
 // Resolves a name prefix to a full model name, `qwen3.5-4b` by default, and fails on `nope`.

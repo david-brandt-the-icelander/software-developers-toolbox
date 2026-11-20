@@ -238,6 +238,12 @@
       "folder": "src/macos/daemon/src/investigate"
     },
     {
+      "id": "adaptive",
+      "name": "Adaptive mode (adaptive/)",
+      "responsibility": "Answers `investigate .. --adaptive`, `--review-*` and `--benchmark-*`: builds the ladder of agent and effort rungs (installed local models, or `claude:` and `codex:` command lines run read-only), rates the question without a model, has a planner one rung above the difficulty split it into parts, runs each part through investigate's lookup loop or a hosted agent, checks every citation, escalates an unsettled part with what it established, combines the parts, and reports usage, a review and a side-by-side benchmark as text or JSON.",
+      "folder": "src/macos/daemon/src/adaptive"
+    },
+    {
       "id": "llm",
       "name": "Local model calls (llm.rs)",
       "responsibility": "Keeps one shared `ai-agent worker --no-download` (one model in memory, calls taking turns) for every local model call in the daemon: chats, --llm post-processing, brief, investigate and MCP zazzle_prompt; starts it on first use, replaces it for another model or program, drops it when it dies or times out (ZAZZLE_LLM_TIMEOUT), and stops it after ZAZZLE_LLM_IDLE seconds unused; finds the program through ZAZZLE_LLM or the tools module; runs `ai-agent fetch` for the chat client; refuses input over 400,000 bytes; marks post-processed answers with the tokens they saved.",
@@ -1303,6 +1309,30 @@
       "to": "chat",
       "kind": "depends-on",
       "description": "The dispatcher answers llm-chat with chat::run."
+    },
+    {
+      "from": "src",
+      "to": "adaptive",
+      "kind": "contains",
+      "description": "The adaptive mode."
+    },
+    {
+      "from": "investigate",
+      "to": "adaptive",
+      "kind": "depends-on",
+      "description": "investigate::run hands a command line with an adaptive, review or benchmark flag to adaptive::run."
+    },
+    {
+      "from": "adaptive",
+      "to": "investigate",
+      "kind": "depends-on",
+      "description": "Local parts and benchmarks run the lookup loop (explore, work); hosted replies are checked with cite."
+    },
+    {
+      "from": "adaptive",
+      "to": "llm",
+      "kind": "depends-on",
+      "description": "Local rungs ask the shared worker with llm::ask_until for a named model."
     }
   ]
 }

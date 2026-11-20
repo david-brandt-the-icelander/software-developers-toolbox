@@ -16,7 +16,10 @@ impl Script {
         let replies = replies
             .into_iter()
             .rev()
-            .map(|r| r.map(|t| Reply { text: t.into(), truncated: t.contains("CUT") }).map_err(String::from))
+            .map(|r| {
+                r.map(|t| Reply { text: t.into(), truncated: t.contains("CUT"), tokens: 0 })
+                    .map_err(String::from)
+            })
             .collect();
         Script { replies: RefCell::new(replies), seen: RefCell::new(Vec::new()) }
     }
@@ -26,7 +29,10 @@ impl Local for Script {
     // Gives the next scripted reply.
     fn ask(&self, system: &str, transcript: &str, _deadline: Instant) -> Result<Reply, String> {
         self.seen.borrow_mut().push((system.into(), transcript.into()));
-        self.replies.borrow_mut().pop().unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false }))
+        self.replies
+            .borrow_mut()
+            .pop()
+            .unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false, tokens: 0 }))
     }
 }
 
@@ -248,6 +254,23 @@ fn test_investigate_through_zazzle() {
     );
     assert_eq!(schema()["required"][0], "question");
     assert!(tool_args(&serde_json::json!({})).is_err());
+    let v = serde_json::json!({"question": "q", "adaptive": true, "prose": true, "agents": ["qwen", "claude:opus@high"], "benchmark_model": "codex:gpt", "review_effort": "high"});
+    assert_eq!(
+        tool_args(&v).expect("adaptive args"),
+        [
+            "investigate",
+            "--adaptive",
+            "--prose",
+            "--agents",
+            "qwen,claude:opus@high",
+            "--benchmark-model",
+            "codex:gpt",
+            "--review-effort",
+            "high",
+            "q"
+        ]
+    );
+    assert!(tool_args(&serde_json::json!({"question": "q", "review_model": 3})).is_err());
 }
 
 // Checks a refused outline, a range read, and that evidence past the cap leaves no lookups and asks for the answer.
@@ -574,7 +597,7 @@ impl Local for Slow {
     // Asks for a lookup after the deadline has passed.
     fn ask(&self, _system: &str, _transcript: &str, deadline: Instant) -> Result<Reply, String> {
         std::thread::sleep(deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(20));
-        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false })
+        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false, tokens: 0 })
     }
 }
 

@@ -1,0 +1,278 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle investigate --adaptive class diagram",
+  "folder": "src/macos/daemon/src/adaptive",
+  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs).",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/adaptive/mod.rs",
+      "symbol": "run_with"
+    },
+    {
+      "path": "src/macos/daemon/src/adaptive/agent.rs",
+      "symbol": "ask_hosted"
+    },
+    {
+      "path": "src/macos/daemon/src/adaptive/work.rs",
+      "symbol": "Work"
+    }
+  ],
+  "types": [
+    {
+      "id": "Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": [
+        "src/macos/daemon/src/adaptive/agent.rs"
+      ],
+      "members": [
+        "Local",
+        "Claude",
+        "Codex"
+      ]
+    },
+    {
+      "id": "Rung",
+      "name": "Rung",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/agent.rs"
+      ],
+      "members": [
+        "kind: Kind",
+        "model: String",
+        "effort: String"
+      ]
+    },
+    {
+      "id": "Said",
+      "name": "Said",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/agent.rs"
+      ],
+      "members": [
+        "text: String",
+        "tokens: usize",
+        "cost: Option<f64>"
+      ]
+    },
+    {
+      "id": "Work",
+      "name": "Work",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/work.rs"
+      ],
+      "members": [
+        "status: String",
+        "understanding: String",
+        "confidence: String",
+        "findings: Vec<Found>",
+        "rejected: Vec<String>",
+        "gaps: Vec<String>",
+        "escalate: Option<String>",
+        "context: Vec<String>",
+        "blocked: Option<String>",
+        "turns: usize",
+        "trigger() -> Option<String>",
+        "handoff(who, why) -> Vec<String>"
+      ]
+    },
+    {
+      "id": "Backend",
+      "name": "Backend",
+      "kind": "interface",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "local(model, req, deadline) -> Result<Reply, String>",
+        "hosted(rung, prompt, cwd, deadline) -> Result<Said, String>",
+        "installed() -> Vec<String>"
+      ]
+    },
+    {
+      "id": "Real",
+      "name": "Real",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "local: llm::ask_until",
+        "hosted: agent::ask_hosted",
+        "installed: ai-agent status --json"
+      ]
+    },
+    {
+      "id": "Call",
+      "name": "Call",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "role: String",
+        "rung: String",
+        "secs: f64",
+        "tokens: usize",
+        "cost: Option<f64>",
+        "ok: bool"
+      ]
+    },
+    {
+      "id": "Log",
+      "name": "Log",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "Mutex<Vec<Call>>"
+      ]
+    },
+    {
+      "id": "OnRung",
+      "name": "OnRung",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "b: &dyn Backend",
+        "rung: &Rung",
+        "log: &Log",
+        "role: &str"
+      ]
+    },
+    {
+      "id": "Opts",
+      "name": "Opts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "adaptive: bool",
+        "agents: Vec<String>",
+        "bench: Option<(model, effort)>",
+        "review: Option<(model, effort)>",
+        "prose: bool",
+        "json: bool",
+        "rest: Vec<String>"
+      ]
+    },
+    {
+      "id": "Part",
+      "name": "Part",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "question: String",
+        "symbols: Vec<String>",
+        "rung: usize"
+      ]
+    },
+    {
+      "id": "Attempt",
+      "name": "Attempt",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "rung: Rung",
+        "work: Work",
+        "why: Option<String>"
+      ]
+    },
+    {
+      "id": "Run",
+      "name": "Run",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "label: String",
+        "work: Work",
+        "text: String",
+        "calls: Vec<Call>",
+        "secs: f64",
+        "json: Value"
+      ]
+    },
+    {
+      "id": "Review",
+      "name": "Review",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/mod.rs"
+      ],
+      "members": [
+        "rung: String",
+        "quality",
+        "findings",
+        "missing",
+        "better",
+        "understanding",
+        "confidence",
+        "error"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Rung",
+      "to": "Kind",
+      "kind": "depends-on",
+      "description": "Which program answers and which efforts it takes."
+    },
+    {
+      "from": "Real",
+      "to": "Backend",
+      "kind": "implements",
+      "description": "The shared local worker and the hosted command lines."
+    },
+    {
+      "from": "OnRung",
+      "to": "Backend",
+      "kind": "depends-on",
+      "description": "Investigate's Local for one rung's local model, each turn logged."
+    },
+    {
+      "from": "Log",
+      "to": "Call",
+      "kind": "depends-on",
+      "description": "Records each model call."
+    },
+    {
+      "from": "Attempt",
+      "to": "Work",
+      "kind": "depends-on",
+      "description": "An attempt's checked result and why it was escalated."
+    },
+    {
+      "from": "Part",
+      "to": "Rung",
+      "kind": "depends-on",
+      "description": "The ladder index a part starts on."
+    },
+    {
+      "from": "Run",
+      "to": "Call",
+      "kind": "depends-on",
+      "description": "A run's calls, for its usage."
+    },
+    {
+      "from": "Backend",
+      "to": "Said",
+      "kind": "depends-on",
+      "description": "What a hosted call returns."
+    }
+  ]
+}
