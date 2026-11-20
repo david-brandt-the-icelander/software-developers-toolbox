@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzle investigate --adaptive class diagram",
   "folder": "src/macos/daemon/src/adaptive",
-  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs), and the backend, call log and usage shared with zazzle flow (calls.rs).",
+  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs), the backend, call log and usage shared with zazzle flow (calls.rs), and the text-free orchestration log of each run (record.rs).",
   "sources": [
     {
       "path": "src/macos/daemon/src/adaptive/mod.rs",
@@ -90,7 +90,8 @@
       "members": [
         "local(model, req, deadline) -> Result<Reply, String>",
         "hosted(rung, prompt, cwd, deadline, write) -> Result<Said, String>",
-        "installed() -> Vec<String>"
+        "installed() -> Vec<String>",
+        "record(rec)"
       ]
     },
     {
@@ -121,7 +122,8 @@
         "input, cached, tokens, rounds: usize",
         "cost: Option<f64>",
         "queued, secs: f64",
-        "ok: bool"
+        "ok: bool",
+        "orchestrates() -> bool"
       ]
     },
     {
@@ -159,6 +161,7 @@
       "members": [
         "adaptive: bool",
         "agents: Vec<String>",
+        "orchestrator: (model, effort)",
         "bench: Option<(model, effort)>",
         "review: Option<(model, effort)>",
         "prose: bool",
@@ -241,6 +244,22 @@
         "write: bool",
         "max_tokens"
       ]
+    },
+    {
+      "id": "Facts",
+      "name": "Facts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/record.rs"
+      ],
+      "members": [
+        "question, scope, symbols, difficulty, reasons",
+        "ladder, orchestrator, planner: labels",
+        "plan, combine: outcomes",
+        "parts: Vec<Value>, result: Value",
+        "build(calls, secs) -> Value",
+        "write(rec), append(path, rec)"
+      ]
     }
   ],
   "relationships": [
@@ -297,6 +316,12 @@
       "to": "Ask",
       "kind": "depends-on",
       "description": "What one call sends, by section, and whether it may edit."
+    },
+    {
+      "from": "Facts",
+      "to": "Call",
+      "kind": "depends-on",
+      "description": "A record joins a run's facts with every call's tokens and seconds."
     }
   ]
 }

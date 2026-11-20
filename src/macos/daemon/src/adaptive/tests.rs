@@ -12,6 +12,7 @@ struct Fake {
     replies: Mutex<HashMap<String, VecDeque<Result<String, String>>>>,
     seen: Mutex<Vec<(String, String)>>,
     installed: Vec<String>,
+    records: Mutex<Vec<Value>>,
 }
 
 impl Fake {
@@ -84,6 +85,11 @@ impl Backend for Fake {
     fn installed(&self) -> Vec<String> {
         self.installed.clone()
     }
+
+    // Keeps the orchestration records for the tests to read.
+    fn record(&self, rec: &Value) {
+        self.records.lock().expect("lock").push(rec.clone());
+    }
 }
 
 // Builds a repository with an API endpoint that checks a key and a simulator.
@@ -141,6 +147,14 @@ fn test_options() {
     assert_eq!(o.rest, ["q", "--path", "api"]);
     assert!(options(&a(&["q", "--agents", "a"])).unwrap_err().contains("add --adaptive"));
     assert!(options(&a(&["q", "--prose"])).unwrap_err().contains("add --adaptive"));
+    assert!(options(&a(&["q", "--orchestrator", "claude:opus"])).unwrap_err().contains("add --adaptive"));
+    assert!(options(&a(&["q", "--adaptive", "--orchestrator-effort", "high"]))
+        .unwrap_err()
+        .contains("needs --orchestrator"));
+    let o =
+        options(&a(&["q", "--adaptive", "--orchestrator", "claude:opus", "--orchestrator-effort", "max"]))
+            .expect("orchestrator");
+    assert_eq!(o.orchestrator, (Some("claude:opus".into()), Some("max".into())));
     assert!(options(&a(&["q", "--review-effort"])).unwrap_err().contains("--review-effort needs a value"));
     let ladder = agent::ladder(&a(&["qwen-a", "claude:opus@high"])).expect("ladder");
     assert_eq!(chosen(&(None, None), &ladder).expect("top").label(), "claude:opus high");
@@ -292,6 +306,152 @@ fn test_adaptive_plan_escalate_combine() {
     assert_eq!(v["parts"][1]["attempts"][0]["result"]["needs_user"], "decision which version may enforce it");
     assert_eq!(v["parts"][1]["attempts"][0]["result"]["escalation"]["recommended"], false);
     assert_eq!(v["usage"]["calls"], 6);
+}
+
+// Checks the orchestrator plans, combines and summarizes in place of the ladder, its tokens are reported apart from the executors', and the run is logged without the question's text.
+#[test]
+fn test_orchestrator() {
+    let (_t, root) = repo();
+    let other =
+        "ANSWER\nFINDING api/Endpoint.cs:4 the request is stored\nCONFIDENCE understanding=high result=high";
+    let script = [
+        ("claude:opus high", Ok("PART 1 | Where is the key checked? | Handle\nPART 1 | Where is it stored? | Store\nCONFIDENCE understanding=high result=high")),
+        ("qwen-a low", Ok(KEY)),
+        ("qwen-a low", Ok(other)),
+        ("claude:opus high", Ok("ANSWER\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
+        ("claude:opus high", Ok("Handle checks the key [1].")),
+    ];
+    let f = Fake::new(&script);
+    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let mut argv = q.to_vec();
+    argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--prose"]);
+    argv.extend(["--orchestrator", "claude:opus", "--orchestrator-effort", "high"]);
+    let out = go(&root, &f, &argv).expect("run");
+    assert!(out.contains("orchestrator: claude:opus high\nladder: 1 qwen-a low"), "{out}");
+    assert!(out.contains("plan: 2 parts by claude:opus high\n"), "{out}");
+    assert!(out.contains("answer (combined by claude:opus high):"), "{out}");
+    assert!(out.contains("summary (by claude:opus high):\nHandle checks the key [1]."), "{out}");
+    assert!(f.prompts("claude:sonnet high").is_empty(), "the ladder did not plan");
+    assert!(out.contains("orchestration:\n{\n  \"orchestrator\": \"claude:opus high\""), "{out}");
+
+    let records = f.records.lock().expect("lock").clone();
+    assert_eq!(records.len(), 1);
+    let r = &records[0];
+    assert_eq!(
+        (r["orchestrator"].as_str(), r["plan"].as_str(), r["combine"].as_str()),
+        (Some("claude:opus high"), Some("planned"), Some("combined"))
+    );
+    assert_eq!(
+        (r["v"].as_u64(), r["difficulty"].as_u64(), r["parts"].as_array().map(Vec::len)),
+        (Some(1), Some(3), Some(2))
+    );
+    assert_eq!(r["calls"].as_array().map(Vec::len), Some(5));
+    assert_eq!(r["calls"][0]["orchestrator"], true);
+    assert_eq!(r["calls"][1]["orchestrator"], false);
+    assert_eq!(r["usage"]["orchestrator"]["output_tokens"], 33);
+    assert_eq!(r["parts"][0]["attempts"][0]["findings"], 1);
+    assert_eq!(r["question_hash"].as_str().map(str::len), Some(12));
+    assert!(!r.to_string().contains("checked and should"), "no question text is logged");
+
+    let f = Fake::new(&script);
+    argv.push("--json");
+    let v: Value = serde_json::from_str(&go(&root, &f, &argv).expect("json")).expect("parse");
+    assert_eq!(v["orchestrator"], "claude:opus high");
+    let o = &v["orchestration"];
+    assert_eq!(o["orchestrator"], "claude:opus high");
+    let steps: Vec<(&str, &str, &str)> = o["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|x| {
+            (
+                x["step"].as_str().unwrap_or_default(),
+                x["by"].as_str().unwrap_or_default(),
+                x["agent"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            ("planner", "orchestrator", "claude:opus"),
+            ("part P1", "delegated", "qwen-a"),
+            ("part P2", "delegated", "qwen-a"),
+            ("combine", "orchestrator", "claude:opus"),
+            ("summary", "orchestrator", "claude:opus"),
+        ]
+    );
+    assert_eq!(
+        (
+            o["steps"][0]["input_tokens"].as_u64(),
+            o["steps"][0]["output_tokens"].as_u64(),
+            o["steps"][0]["input_estimated"].as_bool()
+        ),
+        (Some(100), Some(11), Some(false))
+    );
+    assert_eq!(
+        (o["steps"][1]["input_estimated"].as_bool(), o["steps"][1]["output_tokens"].as_u64()),
+        (Some(true), Some(7))
+    );
+    assert_eq!(
+        (
+            o["totals"]["orchestrator"]["output_tokens"].as_u64(),
+            o["totals"]["delegated"]["output_tokens"].as_u64(),
+            o["totals"]["orchestrator"]["steps"].as_u64()
+        ),
+        (Some(33), Some(14), Some(3))
+    );
+
+    let f = Fake::new(&[("claude:opus high", Err("down")), ("qwen-a low", Ok(KEY))]);
+    let out = go(
+        &root,
+        &f,
+        &["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--orchestrator", "claude:opus@high"]
+            .iter()
+            .chain(&q)
+            .copied()
+            .collect::<Vec<_>>(),
+    )
+    .expect("fallback");
+    assert!(out.contains("planner claude:opus high failed: down\n"), "{out}");
+    assert!(out.contains("plan: one part on qwen-a low (no planner answered)"), "{out}");
+    assert_eq!(f.records.lock().expect("lock")[0]["plan"], "fallback");
+    let bad = ["--adaptive", "--orchestrator", "claude:opus", "--orchestrator-effort", "huge", "q"];
+    assert!(go(&root, &Fake::default(), &bad).unwrap_err().contains("takes effort"));
+}
+
+// Checks the orchestration log's location and privacy, its rotation and that an unwritable log is dropped quietly.
+#[test]
+fn test_orchestration_log() {
+    let _g = crate::testutil::env_lock();
+    let t = TempDir::new();
+    let (saved_log, saved_home) = (std::env::var_os("ZAZZLE_ORCHESTRATION_LOG"), std::env::var_os("HOME"));
+    std::env::set_var("ZAZZLE_ORCHESTRATION_LOG", "");
+    assert_eq!(record::path(), None);
+    record::write(&json!({"v": 1}));
+    std::env::set_var("ZAZZLE_ORCHESTRATION_LOG", t.path().join("o.jsonl"));
+    record::write(&json!({"v": 1}));
+    assert_eq!(std::fs::read_to_string(t.path().join("o.jsonl")).expect("written").trim(), "{\"v\":1}");
+    std::env::remove_var("ZAZZLE_ORCHESTRATION_LOG");
+    assert_eq!(record::path(), None, "tests never write to the real home");
+    assert_eq!(
+        record::locate(None, Some(t.path().into())),
+        Some(t.path().join(".zazzle/orchestration.jsonl"))
+    );
+    match saved_log {
+        Some(v) => std::env::set_var("ZAZZLE_ORCHESTRATION_LOG", v),
+        None => std::env::remove_var("ZAZZLE_ORCHESTRATION_LOG"),
+    }
+    match saved_home {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+    let full = t.path().join("full.jsonl");
+    std::fs::File::create(&full).expect("create").set_len(21 * 1024 * 1024).expect("grow");
+    record::append(&full, &json!({"v": 1})).expect("append");
+    assert!(full.with_extension("jsonl.1").exists() && std::fs::metadata(&full).expect("new").len() < 64);
+    let blocked = t.write("file", b"x").join("o.jsonl");
+    assert!(record::append(&blocked, &json!({})).is_err());
 }
 
 // Checks the planner's failures: an error, then a planner with no parts moves up; a last planner without parts leaves one part on the cheapest rung; a kept plan notes its doubt; no answering planner at all.
@@ -809,6 +969,7 @@ fn test_real_agents_through_zazzle() {
     std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("chmod");
     std::env::set_var("ZAZZLE_LLM", &llm);
     std::env::set_var("ZAZZLE_CLAUDE", &claude);
+    std::env::set_var("ZAZZLE_ORCHESTRATION_LOG", t.path().join("orchestration.jsonl"));
     let o = crate::testutil::run_cmd(
         &root,
         &[
@@ -826,6 +987,9 @@ fn test_real_agents_through_zazzle() {
         ],
     );
     std::env::remove_var("ZAZZLE_CLAUDE");
+    std::env::remove_var("ZAZZLE_ORCHESTRATION_LOG");
+    let logged = std::fs::read_to_string(t.path().join("orchestration.jsonl")).expect("the run was logged");
+    assert_eq!(logged.lines().count(), 1, "{logged}");
     let _ =
         calls::Real.hosted(&Rung::parse("codex:x", None).expect("rung"), "p", &root, Instant::now(), false);
     std::env::set_var("ZAZZLE_LLM", t.path().join("none"));

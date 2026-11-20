@@ -19,7 +19,7 @@ pub struct Reply {
 }
 
 // Returns how long one local model call may take: ZAZZLE_LLM_TIMEOUT seconds, default 300.
-fn timeout() -> Duration {
+pub fn timeout() -> Duration {
     secs("ZAZZLE_LLM_TIMEOUT", DEFAULT_TIMEOUT)
 }
 
@@ -292,12 +292,16 @@ pub fn ask_until(model: Option<&str>, req: &serde_json::Value, deadline: Instant
 }
 
 // Formats a post-processed answer with a line saying how much it saved.
-pub fn mark(input: &str, reply: &Reply) -> String {
+pub fn mark(input: &str, reply: &crate::orchestrator::Answer) -> String {
     let (a, b) = (crate::tokens::estimate(input), crate::tokens::estimate(&reply.text));
     let cut = if reply.truncated { "; the answer was cut short" } else { "" };
+    let step = crate::orchestrator::take_step()
+        .map(|s| format!("\norchestration: {}", crate::orchestrator::report(reply.who.as_deref(), s)))
+        .unwrap_or_default();
     format!(
-        "{}\n[post-processed by the local model: ~{a} → ~{b} tokens{cut}; run without --llm for the exact output]",
-        reply.text
+        "{}\n[post-processed by {}: ~{a} → ~{b} tokens{cut}; run without --llm for the exact output]{step}",
+        reply.text,
+        reply.who.as_ref().map_or("the local model".to_string(), |w| format!("the orchestrator {w}"))
     )
 }
 
@@ -326,8 +330,7 @@ pub fn post(input: &str, instruction: &str) -> Result<String, String> {
         ));
     }
     let user = format!("{instruction}\n\n---\n{input}");
-    let req = serde_json::json!({"system": POST_SYSTEM, "user": user, "effort": "low", "temp": 0});
-    ask(None, &req).map(|r| mark(input, &r))
+    crate::orchestrator::ask("post", POST_SYSTEM, &user, None, timeout()).map(|r| mark(input, &r))
 }
 
 #[cfg(test)]
@@ -427,7 +430,10 @@ mod tests {
     #[test]
     fn test_llm_mark_and_post() {
         let long = "word ".repeat(400);
-        let m = mark(&long, &Reply { text: "short".into(), truncated: true, tokens: 0, queued_ms: 0 });
+        let m = mark(
+            &long,
+            &crate::orchestrator::Answer { text: "short".into(), truncated: true, ..Default::default() },
+        );
         assert!(m.starts_with("short\n[post-processed by the local model: ~") && m.contains("cut short"));
         assert_eq!(post("  \n", "x"), Ok("  \n".into()));
         let huge = "word ".repeat(MAX_INPUT / 4);

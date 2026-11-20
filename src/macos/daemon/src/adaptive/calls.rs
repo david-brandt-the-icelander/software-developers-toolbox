@@ -24,6 +24,8 @@ pub trait Backend: Sync {
     ) -> Result<Said, String>;
     // The installed local models, smallest first.
     fn installed(&self) -> Vec<String>;
+    // Appends one run's record to the orchestration log; the default drops it.
+    fn record(&self, _rec: &Value) {}
 }
 
 // The real agents: daemon's shared local worker, and `claude` or `codex` found on this machine.
@@ -59,6 +61,11 @@ impl Backend for Real {
         let v = out.and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok()).unwrap_or_default();
         agent::installed_models(&v)
     }
+
+    // Appends the record to `~/.zazzle/orchestration.jsonl` unless that log is disabled.
+    fn record(&self, rec: &Value) {
+        super::record::write(rec);
+    }
 }
 
 // One model call: its role (its first word is the phase), the rung, whether it was hosted, the estimated tokens of
@@ -84,6 +91,11 @@ impl Call {
     // The phase: the role's first word.
     pub fn phase(&self) -> &str {
         self.role.split_whitespace().next().unwrap_or_default()
+    }
+
+    // Tells whether the call is the orchestrator's own work (planning, combining, summarizing) rather than an agent it delegated to.
+    pub fn orchestrates(&self) -> bool {
+        matches!(self.phase(), "planner" | "combine" | "summary")
     }
 }
 
@@ -257,6 +269,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
             .filter(|c| c.hosted == hosted && phase.is_none_or(|p| c.phase() == p))
             .collect::<Vec<_>>()
     };
+    let by =
+        |orchestrator: bool| calls.iter().filter(|c| c.orchestrates() == orchestrator).collect::<Vec<_>>();
     json!({
         "calls": calls.len(),
         "failed_calls": calls.iter().filter(|c| !c.ok).count(),
@@ -266,6 +280,8 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
         "cost_usd": side(pick(true, None))["cost_usd"].clone(),
         "hosted": side(pick(true, None)),
         "local": side(pick(false, None)),
+        "orchestrator": side(by(true)),
+        "executors": side(by(false)),
         "phases": phases.iter().map(|p| json!({"phase": p, "hosted": side(pick(true, Some(p))), "local": side(pick(false, Some(p)))})).collect::<Vec<_>>(),
     })
 }
@@ -329,4 +345,50 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
         u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], l["calls"], l["queued_seconds"], l["seconds"]
     ));
     out
+}
+
+// The structured account of a run: the orchestrator, every step it performed or orchestrated with the agent that did it and the tokens in and out (reported by hosted agents, else the estimate of what was sent), and the totals of the orchestrator apart from the agents it delegated to.
+pub fn orchestration(orchestrator: Option<&str>, calls: &[Call]) -> Value {
+    let steps: Vec<Value> = calls
+        .iter()
+        .map(|c| {
+            let (agent, effort) = c.rung.rsplit_once(' ').unwrap_or((&c.rung, ""));
+            let reported = c.input > 0;
+            json!({
+                "step": c.role,
+                "by": if c.orchestrates() { "orchestrator" } else { "delegated" },
+                "agent": agent,
+                "effort": effort,
+                "hosted": c.hosted,
+                "input_tokens": if reported { c.input } else { c.sent.iter().map(|(_, n)| n).sum() },
+                "input_estimated": !reported,
+                "cached_tokens": c.cached,
+                "output_tokens": c.tokens,
+                "cost_usd": c.cost,
+                "seconds": tenth(c.secs),
+                "ok": c.ok,
+            })
+        })
+        .collect();
+    let u = usage(calls, 0.0);
+    let total = |by: &str, side: &Value| {
+        let sum = |field: &str| {
+            steps.iter().filter(|s| s["by"] == by).filter_map(|s| s[field].as_u64()).sum::<u64>()
+        };
+        json!({
+            "steps": side["calls"],
+            "input_tokens": sum("input_tokens"),
+            "cached_tokens": sum("cached_tokens"),
+            "output_tokens": sum("output_tokens"),
+            "cost_usd": side["cost_usd"],
+        })
+    };
+    json!({
+        "orchestrator": orchestrator,
+        "steps": steps,
+        "totals": {
+            "orchestrator": total("orchestrator", &u["orchestrator"]),
+            "delegated": total("delegated", &u["executors"]),
+        },
+    })
 }

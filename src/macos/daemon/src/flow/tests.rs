@@ -36,6 +36,7 @@ struct Fake {
     turns: Mutex<HashMap<String, VecDeque<Turn>>>,
     seen: Mutex<Vec<(String, String)>>,
     installed: Vec<String>,
+    records: Mutex<Vec<Value>>,
 }
 
 impl Fake {
@@ -107,6 +108,11 @@ impl Backend for Fake {
     // The scripted installed models.
     fn installed(&self) -> Vec<String> {
         self.installed.clone()
+    }
+
+    // Keeps the orchestration records for the tests to read.
+    fn record(&self, rec: &Value) {
+        self.records.lock().expect("lock").push(rec.clone());
     }
 }
 
@@ -550,6 +556,36 @@ fn test_deliver_push_and_pr() {
     t.write("src/lib.rs", b"// v3\n");
     let ahead = deliver::deliver(&root, &p, &deliver::Ask { pr: false, ..ask("v3") });
     assert!(ahead.unwrap_err().contains("has commits this branch lacks"), "never forced");
+}
+
+// Checks a flow command that called an agent is recorded, text-free, with each call and its tokens; the writer is a delegated agent, not the orchestrator.
+#[test]
+fn test_flow_record() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a.wrapping_add(b)\n}\n");
+    let f = Fake::new(vec![("local default low", say("Use wrapping add\n\nAvoids overflow panics."))]);
+    let (out, code) = flow(&root, &f, &["write", "commit", "--intent", "avoid overflow"]);
+    assert_eq!(code, 0, "{out}");
+    let records = f.records.lock().expect("lock").clone();
+    assert_eq!(records.len(), 1);
+    let r = &records[0];
+    assert_eq!(
+        (r["kind"].as_str(), r["command"].as_str(), r["v"].as_u64()),
+        (Some("flow"), Some("write"), Some(1))
+    );
+    assert_eq!(
+        (
+            r["calls"].as_array().map(Vec::len),
+            r["calls"][0]["phase"].as_str(),
+            r["calls"][0]["orchestrator"].as_bool()
+        ),
+        (Some(1), Some("write"), Some(false))
+    );
+    assert_eq!(r["usage"]["orchestrator"]["calls"], 0);
+    assert!(!r.to_string().contains("avoid overflow"), "no intent text is logged");
+    let (_, _) = flow(&root, &f, &["verify"]);
+    assert_eq!(f.records.lock().expect("lock").len(), 1, "a command that calls no agent writes no record");
 }
 
 // Checks the writer: the facts it needs, a valid commit message, a draft fixed on the second try, one still invalid, the template's headings, changelog sections and insertion, and drafts saved by --apply.
