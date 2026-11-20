@@ -53,7 +53,7 @@
         "name",
         "run",
         "dir",
-        "kind (build, test, coverage, format, lint, audit, generate, script)",
+        "kind (build, test, coverage, format, lint, audit, generate, upgrade, script)",
         "paths",
         "fix",
         "report",
@@ -264,6 +264,33 @@
         "lines",
         "paths",
         "skip"
+      ]
+    },
+    {
+      "id": "Bump",
+      "name": "Bump",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/deps.rs"
+      ],
+      "members": [
+        "name",
+        "from",
+        "to",
+        "major()"
+      ]
+    },
+    {
+      "id": "DepsAsk",
+      "name": "DepsAsk",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/deps.rs"
+      ],
+      "members": [
+        "branch",
+        "reviewer: Option<Rung>",
+        "limit"
       ]
     }
   ],

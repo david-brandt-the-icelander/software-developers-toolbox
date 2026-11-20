@@ -452,7 +452,7 @@ const PAGES: &[Page] = &[
         group: 4,
         brief: "flow SUBCOMMAND ..",
         summary: "Repository workflow: verify, write, deliver",
-        usage: &["zazzle flow preview|init|verify|tidy|coverage|audit|generate|headers|update|merge|write|deliver|test-first|ci ..", "zazzle flow help"],
+        usage: &["zazzle flow preview|init|verify|tidy|coverage|audit|deps|generate|headers|update|merge|write|deliver|test-first|ci ..", "zazzle flow help"],
         about: &["Opt in per repository with .zazzle/flow.json (zazzle flow init). verify runs the repository's own checks that apply to the change and keeps a receipt pinned to the exact tree; write has a cheap writer draft the commit message, changelog entry or pull request text from settled facts and validates it; deliver stages exactly the named paths, commits, pushes and opens or updates the pull request, safe to repeat; test-first has one agent write a test that fails for the stated reason and another make it pass; ci waits for the pull request's checks on its head and reports once. Runs in your environment."],
         options: &[
             ("preview", "What applies here and on whose authority, changing nothing"),
@@ -460,6 +460,7 @@ const PAGES: &[Page] = &[
             ("tidy", "Formatters' and linters' fixes; leftover lint to the local agent"),
             ("coverage [--author A]", "Uncovered lines and branches of the change; tests written for them"),
             ("audit [--fix]", "Dependency audits; advisories listed, fixes run where they exist"),
+            ("deps [--branch NAME]", "Dependency updates; major bumps reviewed, committed if checks pass"),
             ("update", "Merge the target in; conflicts resolved, complex merges reviewed"),
             ("generate, headers", "Generated code and license headers, by the tools"),
             ("merge", "Merge the pull request once checks are green and no finding is open"),

@@ -25,7 +25,8 @@ pub struct Check {
 }
 
 // The check kinds.
-pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "audit", "generate", "script"];
+pub const KINDS: &[&str] =
+    &["build", "test", "coverage", "format", "lint", "audit", "generate", "upgrade", "script"];
 // The effects delivery can have; merge is never on unless the policy lists it.
 pub const EFFECTS: &[&str] = &["commit", "push", "pr", "merge"];
 
@@ -336,6 +337,7 @@ pub fn discover(top: &Path) -> Vec<Check> {
             add("cargo", "cargo test --workspace".into(), "test", None, &[]);
             add("rustfmt", "cargo fmt --all --check".into(), "format", Some("cargo fmt --all"), &[]);
             add("cargo audit", "cargo-audit audit".into(), "audit", None, &["Cargo.toml", "Cargo.lock"]);
+            add("cargo update", "cargo update".into(), "upgrade", None, &["Cargo.toml", "Cargo.lock"]);
             add(
                 "clippy",
                 "cargo clippy --workspace --all-targets -- -D warnings".into(),
@@ -369,12 +371,23 @@ pub fn discover(top: &Path) -> Vec<Check> {
                 Some("npm audit fix"),
                 &["package.json", "package-lock.json"],
             );
+            add("npm update", "npm update".into(), "upgrade", None, &["package.json", "package-lock.json"]);
         }
         if has("go.mod") {
             add("go", "go test ./...".into(), "test", None, &[]);
             add("gofmt", "test -z \"$(gofmt -l .)\"".into(), "format", Some("gofmt -w ."), &[]);
             add("go vet", "go vet ./...".into(), "lint", None, &[]);
             add("govulncheck", "govulncheck ./...".into(), "audit", None, &["go.mod", "go.sum"]);
+            add(
+                "go get",
+                "go get -u=patch ./... && go mod tidy".into(),
+                "upgrade",
+                None,
+                &["go.mod", "go.sum"],
+            );
+        }
+        if has("poetry.lock") {
+            add("poetry update", "poetry update".into(), "upgrade", None, &["pyproject.toml", "poetry.lock"]);
         }
         if has("pyproject.toml") || has("pytest.ini") || has("setup.cfg") {
             add("pytest", "python3 -m pytest -q".into(), "test", None, &[]);

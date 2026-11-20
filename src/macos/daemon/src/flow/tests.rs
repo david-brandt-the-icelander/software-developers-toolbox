@@ -182,6 +182,7 @@ fn test_discover() {
     let expect: Vec<(String, String)> = [
         ("cargo", "cargo test --workspace"),
         ("cargo audit", "cargo-audit audit"),
+        ("cargo update", "cargo update"),
         ("clippy", "cargo clippy --workspace --all-targets -- -D warnings"),
         ("rustfmt", "cargo fmt --all --check"),
         ("make c", "make test"),
@@ -190,6 +191,7 @@ fn test_discover() {
         ("dotnet format cs", "dotnet format App.sln --verify-no-changes"),
         ("pip-audit py", "pip-audit"),
         ("pytest py", "python3 -m pytest -q"),
+        ("go get svc", "go get -u=patch ./... && go mod tidy"),
         ("go svc", "go test ./..."),
         ("go vet svc", "go vet ./..."),
         ("gofmt svc", "test -z \"$(gofmt -l .)\""),
@@ -212,7 +214,7 @@ fn test_discover() {
     let found = policy::discover(sub.path());
     assert_eq!(
         (found.len(), found[0].paths.clone()),
-        (4, vec!["rust/Cargo.toml".to_string(), "rust/Cargo.lock".to_string()]),
+        (5, vec!["rust/Cargo.toml".to_string(), "rust/Cargo.lock".to_string()]),
         "test, audit, rustfmt and clippy for the outer workspace only; the audit applies when its manifest or lockfile changes"
     );
 }
@@ -245,7 +247,7 @@ fn test_policy_file() {
     assert!(bad("{").contains(".zazzle/flow.json"));
     assert!(bad(r#"{"checks": [{"name": "x"}]}"#).contains("has no `run`"));
     assert!(bad(r#"{"checks": [{"run": "x", "kind": "deploy"}]}"#)
-        .contains("one of build, test, coverage, format, lint, audit, generate, script"));
+        .contains("one of build, test, coverage, format, lint, audit, generate, upgrade, script"));
     assert!(bad(r#"{"branches": {"levels": {"qa": "uat"}}}"#).contains("branches.levels.qa"));
     assert!(bad(r#"{"effects": ["deploy"]}"#).contains("not `deploy`"));
     t.write(".zazzle/flow.json", br#"{"branches": {"levels": {"qa": "staging"}, "protected": ["release"]}}"#);
@@ -1231,6 +1233,7 @@ fn test_parse_and_discover_variants() {
             "pip-audit b",
             "pytest b",
             "go c/d/e",
+            "go get c/d/e",
             "go vet c/d/e",
             "gofmt c/d/e",
             "govulncheck c/d/e"
@@ -2403,4 +2406,130 @@ fn test_complex_clean_merge() {
     let (out, code) = flow(&root, &Fake::new(vec![]), &["deliver", "--paths", "src", "-m", "Again", "--pr"]);
     std::env::remove_var("ZAZZLE_GH");
     assert!(code == 0 && out.contains("pr: https://x/pr/4 #4 (already open)\n"), "{out}");
+}
+
+// Checks reading version changes: Cargo.lock entries, package-lock.json packages and go.mod requirements, with major bumps told apart (a new major, or a new minor below 1.0).
+#[test]
+fn test_dependency_bumps() {
+    let lock = |v: &str| {
+        format!("[[package]]\nname = \"serde\"\nversion = \"{v}\"\n\n[[package]]\nname = \"old\"\nversion = \"0.1.0\"\n")
+    };
+    let after =
+        lock("1.0.3").replace("name = \"old\"\nversion = \"0.1.0\"", "name = \"new\"\nversion = \"0.2.0\"");
+    let b = deps::bumps("Cargo.lock", &lock("1.0.1"), &after);
+    assert_eq!(
+        b.iter().map(|x| x.line()).collect::<Vec<_>>(),
+        ["serde 1.0.1 → 1.0.3", "new added at 0.2.0", "old 0.1.0 removed"]
+    );
+    assert!(!b[0].major() && !b[1].major() && !b[2].major());
+    let npm = |v: &str| {
+        format!(
+            r#"{{"packages": {{"": {{"version": "1.0.0"}}, "node_modules/left-pad": {{"version": "{v}"}}, "node_modules/x": {{}}}}}}"#
+        )
+    };
+    let b = deps::bumps("package-lock.json", &npm("1.3.0"), &npm("2.0.0"));
+    assert_eq!((b.len(), b[0].line(), b[0].major()), (1, "left-pad 1.3.0 → 2.0.0".to_string(), true));
+    let gomod =
+        "module m\nrequire (\n\tgithub.com/a/b v0.3.1\n)\nrequire golang.org/x/c v1.2.0 // indirect\n";
+    let b = deps::bumps("go.mod", gomod, &gomod.replace("v0.3.1", "v0.4.0").replace("v1.2.0", "v1.2.5"));
+    assert_eq!(
+        b.iter().map(|x| (x.line(), x.major())).collect::<Vec<_>>(),
+        [
+            ("github.com/a/b v0.3.1 → v0.4.0".to_string(), true),
+            ("golang.org/x/c v1.2.0 → v1.2.5".to_string(), false)
+        ]
+    );
+    assert!(deps::bumps("x.txt", "a", "b").is_empty());
+}
+
+// Checks dependency updates: none configured, refused on a dirty tree, a protected branch or without the commit effect, nothing to update, a patch update committed with its bumps, a failing check or an advisory putting it back, and a major bump reviewed (refused, the review failing, accepted on a new branch).
+#[test]
+fn test_deps() {
+    let (t, root) = repo_on_feature();
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["deps"]).0.contains("no updater is configured or found"));
+    let lock = |v: &str| format!("[[package]]\nname = \"serde\"\nversion = \"{v}\"\n");
+    t.write("Cargo.lock", lock("1.0.1").as_bytes());
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "lock"]);
+    let cfg = |to: &str, unit: &str, audit: &str| {
+        serde_json::json!({"branches": {"target": "main"}, "checks": [
+            {"name": "up", "run": format!("sed -i.bak 's/1.0.1/{to}/' Cargo.lock && rm Cargo.lock.bak"), "kind": "upgrade"},
+            {"name": "unit", "run": unit},
+            {"name": "vulns", "run": audit, "kind": "audit", "paths": ["Cargo.lock"]}]}).to_string()
+    };
+    t.write(".zazzle/flow.json", cfg("1.0.3", "true", "true").as_bytes());
+    assert!(flow(&root, &none, &["deps"]).0.contains("working tree has changes"));
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "policy"]);
+    let (out, code) = flow(&root, &none, &["deps"]);
+    assert!(
+        code == 0
+            && out.contains("serde 1.0.1 → 1.0.3")
+            && out.contains("✓ vulns")
+            && out.contains("(Update serde 1.0.1 → 1.0.3)"),
+        "{out}"
+    );
+    assert_eq!(g(&root, &["log", "-1", "--format=%s"]), "Update serde 1.0.1 → 1.0.3");
+    let (out, code) = flow(&root, &none, &["deps"]);
+    assert!(code == 0 && out.contains("already at its newest allowed version"), "{out}");
+    g(&root, &["reset", "-q", "--hard", "HEAD~1"]);
+    let commit_cfg = |c: String| {
+        t.write(".zazzle/flow.json", c.as_bytes());
+        g(&root, &["commit", "-qam", "policy change"]);
+    };
+    commit_cfg(cfg("1.0.3", "exit 1", "true"));
+    let (out, code) = flow(&root, &none, &["deps"]);
+    assert!(
+        code == 1 && out.contains("the checks fail with the updated dependencies; the update was put back"),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(root.join("Cargo.lock")).expect("lock"), lock("1.0.1"));
+    commit_cfg(cfg("1.0.3", "true", "echo RUSTSEC-2025-0001; exit 1"));
+    let (out, code) = flow(&root, &none, &["deps"]);
+    assert!(
+        code == 1
+            && out.contains("RUSTSEC-2025-0001")
+            && out.contains("have advisories; the update was put back"),
+        "{out}"
+    );
+    commit_cfg(cfg("2.0.0", "true", "true"));
+    let f =
+        Fake::new(vec![("claude:r high", say("PROBLEM serde | derive macros moved | update the imports"))]);
+    let (out, code) = flow(&root, &f, &["deps", "--agents", "qwen-a,claude:r@high"]);
+    assert!(
+        code == 1
+            && out.contains("serde 1.0.1 → 2.0.0 (major)")
+            && out.contains("major bumps reviewed by claude:r high")
+            && out.contains("  PROBLEM serde | derive macros moved")
+            && out.contains("upgrading them is your decision"),
+        "{out}"
+    );
+    assert!(
+        f.prompts("claude:r high")[0].contains("- serde 1.0.1 → 2.0.0")
+            && f.prompts("claude:r high")[0].contains(TOOLS_NOTE)
+    );
+    let f = Fake::new(vec![("claude:r high", fails("offline"))]);
+    assert!(flow(&root, &f, &["deps", "--agents", "qwen-a,claude:r@high"])
+        .0
+        .contains("the review of the major bumps failed: offline"));
+    let f = Fake::new(vec![("claude:r high", say("OK serde | only the derive feature is used"))]);
+    let (out, code) =
+        flow(&root, &f, &["deps", "--agents", "qwen-a,claude:r@high", "--branch", "deps/serde"]);
+    assert!(code == 0 && out.starts_with("deps on deps/serde:") && out.contains("commit: "), "{out}");
+    g(&root, &["checkout", "-q", "main"]);
+    g(&root, &["merge", "-q", "deps/serde"]);
+    assert!(flow(&root, &none, &["deps"]).0.contains("main is a production branch"));
+    g(&root, &["checkout", "-q", "feature/x"]);
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "effects": ["push"], "checks": [{"name": "up", "run": "true", "kind": "upgrade"}]}"#);
+    g(&root, &["commit", "-qam", "no commit effect"]);
+    assert!(flow(&root, &none, &["deps"]).0.contains("allow `commit`"));
+    t.write("Cargo.lock", b"changed by hand\n");
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "up", "run": "echo x > other.txt", "kind": "upgrade"}]}"#);
+    g(&root, &["commit", "-qam", "other updater"]);
+    let (out, code) = flow(&root, &none, &["deps"]);
+    assert!(
+        code == 0 && out.contains("  other.txt changed") && out.contains("(Update dependencies)"),
+        "{out}"
+    );
 }

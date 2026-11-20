@@ -3,6 +3,7 @@ pub mod audit;
 pub mod ci;
 pub mod coverage;
 pub mod deliver;
+pub mod deps;
 pub mod docs;
 pub mod edit;
 pub mod generate;
@@ -22,7 +23,7 @@ use policy::Policy;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|generate|headers|update|merge|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
+pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|deps|generate|headers|update|merge|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
@@ -43,6 +44,9 @@ pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzl
                                      measure coverage and list the changed files' uncovered lines and branches with tests
                                      to model on; with --author a cheap agent writes tests for them, kept only if they pass
   audit [--all] [--fix] [--base B]   run the dependency audits that apply (a manifest or lockfile changed; --all: every one)
+  deps [--branch NAME] [--reviewer AGENT] [--no-review]
+                                     update dependencies with the package managers; major bumps reviewed, audits and checks
+                                     run, committed only if everything passes, else put back
   generate [--all] [--check] [--base B]
                                      run the generators whose inputs changed; --check reports stale outputs and puts them back
   headers [--all] [--fix] [--base B] check the license header in the changed (or all) source files; --fix adds it
@@ -61,7 +65,7 @@ zazzle review [--into BRANCH] [--level feature|development|staging|production] [
 AGENT is MODEL (local), claude:MODEL or codex:MODEL, optionally @EFFORT; --seconds S limits each agent call (default 300).";
 
 // What every execution agent is told it does not do: zazzle's tools and its cheap writer do those after it.
-pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests, measure coverage or audit dependencies, do not run code generators, edit generated files or add license headers, do not merge branches or pull requests, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
+pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests, measure coverage, audit or update dependencies, do not run code generators, edit generated files or add license headers, do not merge branches or pull requests, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
 
 // Agent calls' default time limit.
 const AGENT_SECS: u64 = 300;
@@ -402,6 +406,21 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             };
             let started = Instant::now();
             let (mut out, ok) = update::update(&top, &p, &ask, b, &log)?;
+            out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
+            Ok((out, if ok { 0 } else { 1 }))
+        }
+        "deps" => {
+            let a = Args::parse(rest, &["--no-review"])?;
+            a.only(&["--branch", "--reviewer", "--agents", "--seconds"])?;
+            let ladder = ladder(&p, &a, b)?;
+            let reviewer = one_agent(&a, "--reviewer", &p, "deps_review", ladder.last().expect("one rung"))?;
+            let ask = deps::DepsAsk {
+                branch: a.one("--branch"),
+                reviewer: (!a.on("--no-review")).then_some(reviewer),
+                limit: limit(&a, "--seconds", verify::CHECK_SECS)?,
+            };
+            let started = Instant::now();
+            let (mut out, ok) = deps::deps(&top, &p, &ask, b, &log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
