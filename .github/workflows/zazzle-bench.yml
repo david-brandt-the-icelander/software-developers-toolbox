@@ -13,14 +13,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   bench:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
-          - ubuntu-24.04
+        # macOS minutes cost ten times Linux's: macOS runs only when started by hand.
+        os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["macos-latest","ubuntu-24.04"]') || fromJSON('["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     # daemon links no grammar: every build here embeds the manifest of the outline modules built below and loads them from there.
     env:

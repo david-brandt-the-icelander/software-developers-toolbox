@@ -1,10 +1,13 @@
-# Lint, test and build the Rust tools on every push and pull request.
+# Lint, test and build the Rust tools on Linux (macOS is built by the release workflow only: its minutes cost ten times Linux's).
 name: CI
 
+# Only code changes start CI; docs and agent notes do not. (workflow_dispatch ignores the filters.)
 on:
   push:
     branches: [main]
+    paths: ["src/**", "release/**", ".github/workflows/ci.yml"]
   pull_request:
+    paths: ["src/**", "release/**", ".github/workflows/ci.yml"]
   workflow_dispatch:
 
 permissions:
@@ -52,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -98,7 +101,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -156,7 +159,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -182,7 +185,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-24.04]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
