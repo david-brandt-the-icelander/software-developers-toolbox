@@ -12,7 +12,7 @@ pub struct Answer {
 }
 
 // One cited claim as the model wrote it.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Claim {
     pub path: String,
     pub start: usize,

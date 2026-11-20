@@ -2,7 +2,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant};
 
 const MAX_INPUT: usize = 400_000;
@@ -180,7 +180,40 @@ pub fn ask_in(
     req: &serde_json::Value,
     limit: Duration,
 ) -> Result<Reply, String> {
-    let mut pool = POOL.lock().unwrap_or_else(|p| p.into_inner());
+    ask_in_until(program, model, req, limit, None)
+}
+
+// Takes the worker's lock, waiting no later than `deadline` (None waits as long as it takes), so a call with a deadline never queues past it behind other callers.
+fn lock_until(deadline: Option<Instant>) -> Result<MutexGuard<'static, Option<Live>>, String> {
+    let Some(d) = deadline else { return Ok(POOL.lock().unwrap_or_else(|p| p.into_inner())) };
+    loop {
+        match POOL.try_lock() {
+            Ok(g) => return Ok(g),
+            Err(TryLockError::Poisoned(p)) => return Ok(p.into_inner()),
+            Err(TryLockError::WouldBlock) if Instant::now() >= d => {
+                return Err("the time limit ran out while the local model was busy with other calls".into())
+            }
+            Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+// Asks like ask_in, finishing by `deadline` when one is given: the wait for the worker and the answer together get only the time left, and none left is an error.
+pub fn ask_in_until(
+    program: &Path,
+    model: Option<&str>,
+    req: &serde_json::Value,
+    limit: Duration,
+    deadline: Option<Instant>,
+) -> Result<Reply, String> {
+    let mut pool = lock_until(deadline)?;
+    let limit = match deadline.map(|d| d.saturating_duration_since(Instant::now())) {
+        Some(left) if left.is_zero() => {
+            return Err("the time limit ran out before the local model was asked".into())
+        }
+        Some(left) => left.min(limit),
+        None => limit,
+    };
     let fits = |l: &Live| {
         l.program == program && model.is_none_or(|m| l.session.model == m || l.session.model.starts_with(m))
     };
@@ -192,6 +225,7 @@ pub fn ask_in(
         *pool = Some(Live { session, program: program.to_path_buf(), last: Instant::now() });
     }
     let live = pool.as_mut().expect("started above");
+    live.session.limit = limit;
     let r = live.session.ask(req);
     live.last = Instant::now();
     if r.is_err() && !live.session.alive() {
@@ -243,6 +277,12 @@ pub fn fetch(model: Option<&str>) -> Result<String, String> {
 pub fn ask(model: Option<&str>, req: &serde_json::Value) -> Result<Reply, String> {
     start_reaper();
     ask_in(&program()?, model, req, timeout())
+}
+
+// Asks like ask, finishing by `deadline`: queueing behind other calls counts against it.
+pub fn ask_until(model: Option<&str>, req: &serde_json::Value, deadline: Instant) -> Result<Reply, String> {
+    start_reaper();
+    ask_in_until(&program()?, model, req, timeout(), Some(deadline))
 }
 
 // Formats a post-processed answer with a line saying how much it saved.
@@ -297,6 +337,36 @@ mod tests {
         std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).expect("write");
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).expect("chmod");
         p
+    }
+
+    // Checks a deadline bounds the whole call: none left is refused, a worker held by another caller past it is
+    // given up on, and with time left the call is answered.
+    #[test]
+    fn test_ask_until_deadline() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let worker = fake(&t, "echo '{\"ready\":\"m\"}'\nwhile read l; do echo '{\"text\":\"ok\"}'; done");
+        let (q, d) = (serde_json::json!({"user": "x"}), Duration::from_secs(10));
+        let past = Instant::now() - Duration::from_millis(1);
+        assert!(ask_in_until(&worker, None, &q, d, Some(past))
+            .expect_err("past")
+            .contains("before the local model"));
+        let (held, release) = (std::sync::mpsc::channel(), std::sync::mpsc::channel::<()>());
+        let holder = std::thread::spawn(move || {
+            let _pool = POOL.lock().unwrap_or_else(|p| p.into_inner());
+            held.0.send(()).expect("held");
+            let _ = release.1.recv();
+        });
+        held.1.recv().expect("lock taken");
+        let soon = Some(Instant::now() + Duration::from_millis(60));
+        assert!(ask_in_until(&worker, None, &q, d, soon)
+            .expect_err("busy")
+            .contains("busy with other calls"));
+        release.0.send(()).expect("release");
+        holder.join().expect("holder");
+        let later = Some(Instant::now() + Duration::from_secs(10));
+        assert_eq!(ask_in_until(&worker, None, &q, d, later).expect("answered").text, "ok");
+        assert!(reap(Duration::ZERO));
     }
 
     // Checks the shared worker: it starts once for many calls, `model` None reuses whatever is loaded, another model or program replaces it, a dead worker is dropped, and idle ones are reaped.

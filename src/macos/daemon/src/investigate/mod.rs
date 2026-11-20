@@ -4,21 +4,41 @@ mod seed;
 
 use crate::cmd::{Ctx, Output};
 use crate::llm::Reply;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
+// The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
+// timeout `zazzle setup` gives clients, so a client gets one result instead of timing out and polling.
+const DEFAULT_SECONDS: u64 = 90;
+const MAX_SECONDS: u64 = 600;
+// Declarations of each starting symbol read before the first turn.
+const SEED_DEFS: usize = 2;
+// The ranked excerpts returned when no finding is verified: their token cap and the lines kept around a match.
+const FALLBACK_TOKENS: usize = 3000;
+const CONTEXT_LINES: usize = 2;
+// Lines of a lookup with no matching line that the excerpts keep.
+const HEAD_LINES: usize = 12;
 const PER_TURN: usize = 3;
 const LOOKUP_BUDGET: &str = "1500";
 const LOOKUP_MAX: &str = "15";
 const SEEN_TOKENS: usize = 12_000;
 const REPLY_TOKENS: usize = 1500;
-const EVIDENCE_TOKENS: usize = 6000;
 
-// What the model is told when it answers with nothing after lookups that found something.
-const REPAIR: &str = "Your answer was empty, but the lookups above found evidence. Reply now with ANSWER, then FINDING path:A-B lines citing only lines shown above, and UNKNOWN lines for what the evidence does not show. No lookups.";
+// What the model is told on its one answer-only turn, after a reason the run could not go on.
+const FINAL: &str = "No more lookups will run. Reply now with ANSWER, then FINDING lines citing only lines shown above (path:A-B, or E1:A-B for lines A to B of excerpt E1), and UNKNOWN lines for what the evidence does not show. Nothing else.";
 
+// Words of a question too common to pick out its evidence.
+const COMMON: &[&str] = &[
+    "all", "and", "any", "are", "but", "can", "did", "for", "has", "how", "its", "not", "the", "was", "who",
+    "why", "you", "about", "after", "before", "between", "call", "called", "calls", "code", "could", "does",
+    "each", "explain", "file", "files", "find", "from", "happen", "happens", "have", "into", "make", "made",
+    "only", "path", "should", "show", "than", "that", "their", "them", "then", "there", "they", "this",
+    "through", "trace", "used", "uses", "using", "what", "when", "where", "which", "with", "work", "works",
+    "would",
+];
 // The system message: what the model may do each turn and how to answer.
 const SYSTEM: &str = "You investigate a code repository to answer one question, using read-only lookups. Each turn, reply with either lookups or the answer, nothing else.
 Lookups: up to 3 lines, each one of
@@ -29,12 +49,12 @@ FIND text            lines containing the text
 Answer: a line ANSWER, then one line per fact:
 FINDING path:A-B one sentence that the cited lines show
 UNKNOWN something the question needs that you could not establish
-Cite only lines you have seen, with the line numbers shown to you. Prefer a few exact findings over many vague ones. Stay inside the scope.";
+Cite only lines you have seen, with the line numbers shown to you. Lookups that found something are numbered E1, E2 and so on; E2:A-B cites lines A to B of E2's file. Prefer a few exact findings over many vague ones. Stay inside the scope.";
 
 // Something an investigation asks: the local model through ai-agent, or a script in tests.
 pub trait Local {
-    // Answers one turn: the system message and the transcript so far.
-    fn ask(&self, system: &str, transcript: &str) -> Result<Reply, String>;
+    // Answers one turn, the system message and the transcript so far, by the deadline (waiting for the model included).
+    fn ask(&self, system: &str, transcript: &str, deadline: Instant) -> Result<Reply, String>;
 }
 
 // The user's local model through daemon's shared worker, which stays loaded across the turns (and after the run until idle). Nothing is downloaded.
@@ -43,10 +63,10 @@ pub struct Model;
 
 impl Local for Model {
     // Asks at low effort and temperature 0, with whatever model is loaded, else the default.
-    fn ask(&self, system: &str, transcript: &str) -> Result<Reply, String> {
+    fn ask(&self, system: &str, transcript: &str, deadline: Instant) -> Result<Reply, String> {
         let user = format!("Reply with your next lookups, or ANSWER.\n\n---\n{transcript}");
         let req = serde_json::json!({"system": system, "user": user, "max_tokens": REPLY_TOKENS, "temp": 0, "effort": "low"});
-        crate::llm::ask(None, &req)
+        crate::llm::ask_until(None, &req, deadline)
     }
 }
 
@@ -56,12 +76,18 @@ struct Plan {
     scope: Vec<String>,
     symbols: Vec<String>,
     steps: usize,
+    seconds: u64,
 }
 
 // Parses the question words and the flags.
 fn parse(argv: &[String]) -> Result<Plan, String> {
-    let mut p =
-        Plan { question: String::new(), scope: Vec::new(), symbols: Vec::new(), steps: DEFAULT_STEPS };
+    let mut p = Plan {
+        question: String::new(),
+        scope: Vec::new(),
+        symbols: Vec::new(),
+        steps: DEFAULT_STEPS,
+        seconds: DEFAULT_SECONDS,
+    };
     let (mut words, mut it) = (Vec::new(), argv.iter());
     while let Some(a) = it.next() {
         let mut value = || it.next().cloned().ok_or_else(|| format!("{a} needs a value; {USAGE}"));
@@ -75,6 +101,14 @@ fn parse(argv: &[String]) -> Result<Plan, String> {
                     .ok()
                     .filter(|n| (1..=MAX_STEPS).contains(n))
                     .ok_or_else(|| format!("--steps takes 1 to {MAX_STEPS}, got '{v}'"))?;
+            }
+            "--seconds" => {
+                let v = value()?;
+                p.seconds = v
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| (1..=MAX_SECONDS).contains(n))
+                    .ok_or_else(|| format!("--seconds takes 1 to {MAX_SECONDS}, got '{v}'"))?;
             }
             f if f.starts_with("--") => return Err(format!("unknown flag {f}; {USAGE}")),
             w => words.push(w),
@@ -157,10 +191,23 @@ impl Trail {
         if self.seen.is_empty() {
             t.push_str("(nothing yet)\n");
         }
-        for (label, text) in &self.seen {
-            t.push_str(&format!("\n### {label}\n{}\n", text.trim_end()));
+        for (i, (label, text)) in self.seen.iter().enumerate() {
+            t.push_str(&format!("\n### {}{label}\n{}\n", self.id(i), text.trim_end()));
         }
         t
+    }
+
+    // The excerpt id of `seen[i]` with a space after it (`E2 `) when that lookup found something, else nothing.
+    fn id(&self, i: usize) -> String {
+        self.evidence.iter().position(|&e| e == i).map(|n| format!("E{} ", n + 1)).unwrap_or_default()
+    }
+
+    // The file excerpt `En` read, for a citation `En:A-B`: the path of a READ or OUTLINE that found something.
+    fn file_of(&self, id: &str) -> Option<String> {
+        let n: usize = id.strip_prefix('E')?.parse().ok()?;
+        let (label, _) = &self.seen[*self.evidence.get(n.checked_sub(1)?)?];
+        let arg = label.strip_prefix("READ ").or_else(|| label.strip_prefix("OUTLINE "))?;
+        Some(path_part(arg).0.to_string())
     }
 
     // Tokens of everything seen so far.
@@ -179,9 +226,12 @@ fn key(lctx: &Ctx, l: &Lookup) -> String {
     match l {
         Lookup::Read(p) | Lookup::Outline(p) => {
             let (file, range) = path_part(p);
-            let canon = std::fs::canonicalize(lctx.cwd.join(file)).unwrap_or_else(|_| lctx.cwd.join(file));
             let kind = if matches!(l, Lookup::Read(_)) { "read" } else { "outline" };
-            format!("{kind} {}:{range}", canon.display())
+            match std::fs::canonicalize(lctx.cwd.join(file)) {
+                Ok(canon) => format!("{kind} {}:{range}", canon.display()),
+                // A file that does not exist fails the same way for any range and either kind: one attempt is enough.
+                Err(_) => format!("missing {}", lctx.cwd.join(file).display()),
+            }
         }
         _ => l.label().split_whitespace().collect::<Vec<_>>().join(" "),
     }
@@ -226,12 +276,7 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
         std::fs::canonicalize(lctx.cwd.join(path_part(p).0)).is_ok_and(|f| cite::in_scope(&f, scope))
     };
     let args: Vec<String> = match l {
-        Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => {
-            return (
-                format!("refused: {p} is not an existing path inside the scope ({})", plan.scope.join(", ")),
-                0,
-            )
-        }
+        Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => return (refusal(lctx, scope, plan, p), 0),
         Lookup::Read(p) => vec!["read".into(), p.clone(), "--budget".into(), LOOKUP_BUDGET.into()],
         Lookup::Outline(p) => vec!["outline".into(), p.clone()],
         Lookup::Refs(n) => ["refs", n, "-m", LOOKUP_MAX, "--"]
@@ -252,11 +297,49 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     (o.text, o.status)
 }
 
-// Resolves the starting symbols before any inference: their refs inside the scope are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
+// Why a READ or OUTLINE of `p` is refused: outside the scope, or a file that does not exist there, with the real files and symbols in scope whose names resemble it.
+fn refusal(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, p: &str) -> String {
+    let file = path_part(p).0;
+    let within = plan.scope.join(", ");
+    if std::fs::canonicalize(lctx.cwd.join(file)).is_ok() {
+        return format!("refused: {p} is not an existing path inside the scope ({within})");
+    }
+    let stem = Path::new(file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let c = seed::candidates(lctx.engine, &lctx.cwd, scope, &stem);
+    match c.is_empty() {
+        true => format!("refused: {file} does not exist inside the scope ({within}), and nothing there resembles it"),
+        false => format!(
+            "refused: {file} does not exist inside the scope ({within}). Real files and symbols there that resemble it:\n{}",
+            c.join("\n")
+        ),
+    }
+}
+
+// The declarations a `refs` output lists under `defs` (`path:A-B kind name`), as `path:A-B`, at most SEED_DEFS.
+fn defs(refs: &str) -> Vec<String> {
+    refs.lines()
+        .skip_while(|l| l.trim() != "defs")
+        .skip(1)
+        .take_while(|l| l.trim() != "refs" && !l.starts_with("--"))
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|w| path_part(w).1.contains('-'))
+        .take(SEED_DEFS)
+        .map(str::to_string)
+        .collect()
+}
+
+// Resolves the starting symbols before any inference: their refs inside the scope and the bodies of their declarations are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
 fn seeds(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, trail: &mut Trail) -> Vec<(String, Vec<String>)> {
     let mut missed = Vec::new();
     for s in &plan.symbols {
-        if step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail) == Ok(false) {
+        let found = step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail);
+        if found == Ok(true) {
+            let refs = trail.seen.last().map(|(_, t)| t.clone()).unwrap_or_default();
+            for d in defs(&refs) {
+                let _ = step(lctx, scope, plan, &Lookup::Read(d), trail);
+            }
+        }
+        if found == Ok(false) {
             let c = seed::candidates(lctx.engine, &lctx.cwd, scope, s);
             let text = match c.is_empty() {
                 true => format!("{s} is not inside the scope, and nothing there resembles it."),
@@ -317,6 +400,7 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         evidence: Vec::new(),
         skipped: 0,
     };
+    let deadline = Instant::now() + Duration::from_secs(plan.seconds);
     let missed = seeds(&lctx, &scope, &plan, &mut trail);
     if !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
@@ -324,18 +408,18 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
     {
         return Ok(no_evidence(&plan));
     }
-    let mut st = Status { stop: String::new(), cut: false, turns: 0, partial: false, missed };
-    let (mut answer, mut strayed, mut stalled) = (None, false, false);
+    let mut st =
+        Status { stop: String::new(), cut: false, turns: 0, answer_only: false, recovered: None, missed };
+    let (mut answer, mut strayed, mut stalled, mut retry) = (None, false, false, None);
     for step_no in 1..=plan.steps {
         st.turns = step_no;
+        if Instant::now() >= deadline {
+            st.turns -= 1;
+            st.stop = format!("its {} s time limit ran out", plan.seconds);
+            break;
+        }
         let left = if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
-        let system = match trail.rules.trim() {
-            "" => SYSTEM.to_string(),
-            r => format!(
-                "{SYSTEM}\n\nRules that apply to these files (follow them; they are not evidence):\n{r}"
-            ),
-        };
-        let reply = match local.ask(&system, &trail.transcript(&plan, left)) {
+        let reply = match local.ask(&system(&trail), &trail.transcript(&plan, left), deadline) {
             Ok(r) => r,
             Err(e) if trail.seen.is_empty() => return Err(e),
             Err(e) => {
@@ -345,27 +429,9 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         };
         st.cut |= reply.truncated;
         if empty(&reply) && !trail.evidence.is_empty() {
-            trail.seen.push(("NOTE".into(), REPAIR.into()));
-            st.turns += 1;
-            match local.ask(&system, &trail.transcript(&plan, 0)) {
-                Ok(r) if !empty(&r) && cite::parse_answer(&r.text).is_some() => {
-                    st.cut |= r.truncated;
-                    answer = cite::parse_answer(&r.text);
-                }
-                Ok(r) => {
-                    st.partial = true;
-                    st.stop = format!(
-                        "the local model gave no answer after {} lookups that found evidence, and none after one repair turn (it began: {})",
-                        trail.evidence.len(),
-                        began(&r.text)
-                    );
-                }
-                Err(e) => {
-                    st.partial = true;
-                    st.stop =
-                        format!("the local model gave an empty answer, and the repair turn failed: {e}");
-                }
-            }
+            st.stop =
+                format!("its answer was empty after {} lookups that found evidence", trail.evidence.len());
+            retry = Some("Your answer was empty, but the lookups above found evidence.");
             break;
         }
         if let Some(a) = cite::parse_answer(&reply.text) {
@@ -380,14 +446,20 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
             continue;
         }
         if left == 0 || lookups.is_empty() {
-            st.stop = match left {
-                0 => format!(
-                    "it gave no ANSWER when its lookups ran out (its reply began: {})",
-                    began(&reply.text)
+            (st.stop, retry) = match left {
+                0 => (
+                    format!(
+                        "it gave no ANSWER when its lookups ran out (its reply began: {})",
+                        began(&reply.text)
+                    ),
+                    Some("You asked for more lookups, but none were left."),
                 ),
-                _ => format!(
-                    "it replied twice with neither lookups nor an ANSWER (the last began: {})",
-                    began(&reply.text)
+                _ => (
+                    format!(
+                        "it replied twice with neither lookups nor an ANSWER (the last began: {})",
+                        began(&reply.text)
+                    ),
+                    Some("Your replies had neither lookups nor an ANSWER."),
                 ),
             };
             break;
@@ -407,12 +479,62 @@ pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Outp
         if ran == 0 {
             if stalled {
                 st.stop = "it asked only for lookups it had already made, twice".into();
+                retry = Some("You asked only for lookups that had already run.");
                 break;
             }
             stalled = true;
         }
     }
+    if let Some(why) = retry.filter(|_| !trail.evidence.is_empty()) {
+        answer = final_turn(local, &plan, &mut trail, &mut st, why, deadline).or(answer);
+    }
     Ok(report(ctx, &plan, &scope, &trail, answer, st))
+}
+
+// The system message, with the rules that apply to what the lookups read, kept apart from the evidence.
+fn system(trail: &Trail) -> String {
+    match trail.rules.trim() {
+        "" => SYSTEM.to_string(),
+        r => {
+            format!("{SYSTEM}\n\nRules that apply to these files (follow them; they are not evidence):\n{r}")
+        }
+    }
+}
+
+// Gives the model one answer-only turn after a run that gathered evidence but stopped without an answer (`why` says
+// why, to the model); returns a usable answer, which clears the stop reason, or adds to the stop reason why there was none.
+fn final_turn(
+    local: &dyn Local,
+    plan: &Plan,
+    trail: &mut Trail,
+    st: &mut Status,
+    why: &str,
+    deadline: Instant,
+) -> Option<cite::Answer> {
+    trail.seen.push(("NOTE".into(), format!("{why} {FINAL}")));
+    st.answer_only = true;
+    match local.ask(&system(trail), &trail.transcript(plan, 0), deadline) {
+        Ok(r) => {
+            st.cut |= r.truncated;
+            match cite::parse_answer(&r.text).filter(|a| !a.findings.is_empty() || !a.unknowns.is_empty()) {
+                Some(a) => {
+                    st.recovered = Some(std::mem::take(&mut st.stop));
+                    Some(a)
+                }
+                None => {
+                    st.stop.push_str(&format!(
+                        ", and its answer-only turn gave none (it began: {})",
+                        began(&r.text)
+                    ));
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            st.stop.push_str(&format!(", and its answer-only turn failed: {e}"));
+            None
+        }
+    }
 }
 
 // Quotes the start of a reply on one line, for a note to the model or the report.
@@ -426,16 +548,17 @@ fn began(reply: &str) -> String {
     }
 }
 
-// How the run ended: why it stopped early, whether a reply was cut short, the turns used, whether only the evidence can be returned, and the starting symbols not found with their candidates.
+// How the run ended: why it stopped early, whether a reply was cut short, the turns used and whether an answer-only turn followed them, the stop that turn recovered from, and the starting symbols not found with their candidates.
 struct Status {
     stop: String,
     cut: bool,
     turns: usize,
-    partial: bool,
+    answer_only: bool,
+    recovered: Option<String>,
     missed: Vec<(String, Vec<String>)>,
 }
 
-// Formats the checked findings, rejected citations and unknowns, with the caller's rules for the files involved as notes.
+// Formats the checked findings, rejected citations and unknowns, with the caller's rules for the files involved as notes; when no finding is verified, ranked excerpts of the evidence and the lookups that found nothing come back instead.
 fn report(
     ctx: &Ctx,
     plan: &Plan,
@@ -448,6 +571,8 @@ fn report(
     let (mut found, mut rejected, mut files) = (String::new(), String::new(), Vec::new());
     let mut n = 0;
     for c in &answer.findings {
+        let file = trail.file_of(&c.path);
+        let c = &cite::Claim { path: file.clone().unwrap_or_else(|| c.path.clone()), ..c.clone() };
         let cited = format!(
             "{}:{}{}",
             c.path,
@@ -468,6 +593,7 @@ fn report(
             cite::Checked::Rejected(why) => rejected.push_str(&format!("- {cited} {}: {why}\n", c.text)),
         }
     }
+    let fallback = n == 0 && !trail.evidence.is_empty();
     let mut out = format!("investigate: {}\nscope: {}\n", plan.question, plan.scope.join(", "));
     out.push_str(&format!(
         "findings ({n} verified):\n{}",
@@ -490,21 +616,32 @@ fn report(
         let alts = if c.is_empty() { "nothing in scope resembles it".to_string() } else { c.join("; ") };
         out.push_str(&format!("starting symbol not in scope: {name} (candidates: {alts})\n"));
     }
-    if st.partial {
-        out.push_str(&evidence(trail));
+    if fallback {
+        out.push_str(&excerpts(trail, plan));
+        out.push_str(&gaps(trail));
     }
-    let state = match (st.stop.is_empty(), st.cut, st.partial) {
-        (_, _, true) => format!("PARTIAL: {}; the evidence it gathered is above, verbatim", st.stop),
-        (true, false, _) => "complete".to_string(),
+    let state = match (st.stop.is_empty(), st.cut, fallback) {
+        (false, _, true) => {
+            format!("PARTIAL: {}; ranked excerpts of its evidence are above, verbatim", st.stop)
+        }
+        (true, _, true) => {
+            "PARTIAL: no finding could be verified; ranked excerpts of its evidence are above, verbatim"
+                .to_string()
+        }
+        (true, false, _) => match &st.recovered {
+            Some(why) => format!("complete, on an answer-only turn after {why}"),
+            None => "complete".to_string(),
+        },
         (true, true, _) => "INCOMPLETE: a reply was cut short by the token limit".to_string(),
-        (false, _, _) => format!("INCOMPLETE: {}", st.stop),
+        (false, _, false) => format!("INCOMPLETE: {}", st.stop),
     };
     let skipped = match trail.skipped {
         0 => String::new(),
         n => format!(", {n} repeated lookups not run again"),
     };
+    let extra = if st.answer_only { " and an answer-only turn" } else { "" };
     out.push_str(&format!(
-        "-- local model, {} of {} turns, {} lookups ({}){skipped}; {state}. Excerpts are read from the files; claims are the model's.",
+        "-- local model, {} of {} turns{extra}, {} lookups ({}){skipped}; {state}. Excerpts are read from the files; claims are the model's.",
         st.turns,
         plan.steps,
         trail.lookups.len(),
@@ -521,24 +658,92 @@ fn report(
     o
 }
 
-// The lookups that found something, verbatim, up to a token cap at lookup boundaries; the rest are named.
-fn evidence(trail: &Trail) -> String {
-    let (mut out, mut used, mut left) =
-        (String::from("evidence gathered (lookup output, verbatim):\n"), 0, Vec::new());
-    for &i in &trail.evidence {
-        let (label, text) = &trail.seen[i];
-        let cost = crate::tokens::estimate(text);
-        if used + cost > EVIDENCE_TOKENS && used > 0 {
-            left.push(label.clone());
+// The lowercase words that pick out a question's evidence: the starting symbols and their words, and the question's
+// words of three letters or more that are not common.
+fn terms(plan: &Plan) -> Vec<String> {
+    let mut t: Vec<String> = plan.symbols.iter().map(|s| s.to_lowercase()).collect();
+    let words = plan.symbols.iter().flat_map(|s| seed::words(s)).chain(
+        plan.question
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .flat_map(|w| std::iter::once(w.to_lowercase()).chain(seed::words(w))),
+    );
+    for w in words {
+        if w.len() >= 3 && !COMMON.contains(&w.as_str()) && !t.contains(&w) {
+            t.push(w);
+        }
+    }
+    t
+}
+
+// The evidence as ranked verbatim excerpts within FALLBACK_TOKENS: from each lookup that found something, its first
+// line and the lines naming a term (with CONTEXT_LINES around them), or its first HEAD_LINES when none does; lookups
+// with more matching lines first, each line of a file shown once; the lookups left out are named.
+fn excerpts(trail: &Trail, plan: &Plan) -> String {
+    let terms = terms(plan);
+    let matches = |l: &str| {
+        let l = l.to_lowercase();
+        terms.iter().any(|t| l.contains(t.as_str()))
+    };
+    // The session's `[r:…]` markers mean nothing outside it; the first line left names the file and is always kept,
+    // but a match there (a file named after a term) does not count.
+    let body = |text: &str| -> Vec<String> {
+        text.lines().filter(|l| !(l.starts_with("[r:") && l.ends_with(']'))).map(str::to_string).collect()
+    };
+    let mut ranked: Vec<(usize, usize)> = trail
+        .evidence
+        .iter()
+        .enumerate()
+        .map(|(id, &i)| (body(&trail.seen[i].1).iter().skip(1).filter(|l| matches(l)).count(), id))
+        .collect();
+    ranked.sort_by_key(|&(hits, id)| (std::cmp::Reverse(hits), id));
+    let mut out = String::from("evidence (no finding verified; ranked excerpts of the lookups, verbatim):\n");
+    let (mut shown, mut used, mut left) = (std::collections::HashSet::new(), 0, Vec::new());
+    for (hits, id) in ranked {
+        let (label, text) = &trail.seen[trail.evidence[id]];
+        let file = label.split_once(' ').map(|(_, a)| path_part(a).0).unwrap_or_default();
+        let lines = body(text);
+        let hit = |j: usize| j > 0 && lines.get(j).is_some_and(|l| matches(l));
+        let keep = |k: usize| match hits {
+            0 => k < HEAD_LINES,
+            _ => k == 0 || (k.saturating_sub(CONTEXT_LINES)..=k + CONTEXT_LINES).any(hit),
+        };
+        let (mut body, mut last) = (String::new(), None);
+        for (k, line) in lines.iter().enumerate().filter(|&(k, _)| keep(k)) {
+            if !shown.insert((file.to_string(), line.clone())) {
+                continue;
+            }
+            if last.is_some_and(|p| p + 1 < k) {
+                body.push_str("…\n");
+            }
+            body.push_str(&format!("{line}\n"));
+            last = Some(k);
+        }
+        let cost = crate::tokens::estimate(&body);
+        if body.is_empty() || (used + cost > FALLBACK_TOKENS && used > 0) {
+            left.extend((!body.is_empty()).then(|| format!("E{} {label}", id + 1)));
             continue;
         }
         used += cost;
-        out.push_str(&format!("### {label}\n{}\n", text.trim_end()));
+        out.push_str(&format!("### E{} {label}\n{body}", id + 1));
     }
     if !left.is_empty() {
-        out.push_str(&format!("(over ~{EVIDENCE_TOKENS} tokens, not shown: {})\n", left.join("; ")));
+        out.push_str(&format!("(over ~{FALLBACK_TOKENS} tokens, not shown: {})\n", left.join("; ")));
     }
     out
+}
+
+// The lookups that found nothing, with why: what the caller need not try again.
+fn gaps(trail: &Trail) -> String {
+    let failed: Vec<String> = trail
+        .lookups
+        .iter()
+        .zip(&trail.done)
+        .filter_map(|(l, (_, why))| why.as_ref().map(|w| format!("- {l}: {w}\n")))
+        .collect();
+    match failed.is_empty() {
+        true => String::new(),
+        false => format!("lookups that found nothing:\n{}", failed.concat()),
+    }
 }
 
 // The MCP tool for investigate.
@@ -556,7 +761,8 @@ fn schema() -> serde_json::Value {
             "question": {"type": "string"},
             "paths": {"type": "array", "items": {"type": "string"}, "description": "Folders or files to stay inside (default: the working directory)"},
             "symbols": {"type": "array", "items": {"type": "string"}, "description": "Names to start from"},
-            "steps": {"type": "integer", "description": "Model turns, 1 to 12 (default 6)"}
+            "steps": {"type": "integer", "description": "Model turns, 1 to 12 (default 6)"},
+            "seconds": {"type": "integer", "description": "Time limit for the whole call, waiting for the local model included, 1 to 600 (default 90)"}
         }),
         &["question"],
     )
@@ -572,6 +778,7 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
         a.extend(["--symbol".to_string(), s]);
     }
     crate::mcp::push_num(&mut a, v, "steps", "--steps")?;
+    crate::mcp::push_num(&mut a, v, "seconds", "--seconds")?;
     a.push(crate::mcp::need_str(v, "question")?);
     Ok(a)
 }

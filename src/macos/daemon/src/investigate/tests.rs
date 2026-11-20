@@ -2,6 +2,7 @@
 use super::*;
 use crate::testutil::TempDir;
 use std::cell::RefCell;
+use std::time::{Duration, Instant};
 
 // A local model that replies from a script, one reply per turn, and records the system messages and transcripts it was given.
 struct Script {
@@ -23,7 +24,7 @@ impl Script {
 
 impl Local for Script {
     // Gives the next scripted reply.
-    fn ask(&self, system: &str, transcript: &str) -> Result<Reply, String> {
+    fn ask(&self, system: &str, transcript: &str, _deadline: Instant) -> Result<Reply, String> {
         self.seen.borrow_mut().push((system.into(), transcript.into()));
         self.replies.borrow_mut().pop().unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false }))
     }
@@ -61,7 +62,7 @@ fn go(
     investigate(&ctx, &argv.iter().map(|a| a.to_string()).collect::<Vec<_>>(), s)
 }
 
-// Checks a full run: the starting symbol's refs stay inside the scope, a lookup outside it is refused, a cited finding comes back with its literal lines, a bad citation is rejected, and the rules reach the model apart from the evidence and the caller as notes.
+// Checks a full run: the starting symbol's refs stay inside the scope and its declaration is read before the first turn, a lookup outside it is refused, a cited finding comes back with its literal lines, a bad citation is rejected, and the rules reach the model apart from the evidence and the caller as notes.
 #[test]
 fn test_investigate_cited_findings() {
     let (_t, root) = repo();
@@ -84,16 +85,20 @@ fn test_investigate_cited_findings() {
         "{text}"
     );
     assert!(text.contains("unknowns:\n- where Store writes\n"), "{text}");
-    assert!(text.ends_with("-- local model, 2 of 6 turns, 3 lookups (REFS Handle; READ api/Endpoint.cs; READ sim/Fake.cs); complete. Excerpts are read from the files; claims are the model's."), "{text}");
+    assert!(text.ends_with("-- local model, 2 of 6 turns, 4 lookups (REFS Handle; READ api/Endpoint.cs:2-5; READ api/Endpoint.cs; READ sim/Fake.cs); complete. Excerpts are read from the files; claims are the model's."), "{text}");
     let seen = s.seen.borrow();
     let (first_system, first) = &seen[0];
     assert!(
-        first.contains("### REFS Handle")
-            && first.contains("api/Endpoint.cs")
+        first.contains("### E1 REFS Handle")
+            && first.contains("### E2 READ api/Endpoint.cs:2-5\n")
+            && first.contains("if (r.Key == null) throw new Missing();")
             && !first.contains("sim/Fake.cs"),
-        "{first}"
+        "the declaration is read before the first turn: {first}"
     );
-    assert!(!first_system.contains("published contract"), "no rules before a read");
+    assert!(
+        first_system.contains("published contract"),
+        "the declaration's read brings its rules: {first_system}"
+    );
     let (system, second) = &seen[1];
     assert!(
         second.contains("refused: sim/Fake.cs is not an existing path inside the scope (api)"),
@@ -139,7 +144,13 @@ fn test_investigate_stops() {
         &["q", "--steps", "2"],
     )
     .expect("out");
-    assert!(o.text.contains("INCOMPLETE: it gave no ANSWER when its lookups ran out (its reply began: \"READ api/Endpoint.cs\")"), "{}", o.text);
+    assert!(o.text.contains("PARTIAL: it gave no ANSWER when its lookups ran out (its reply began: \"READ api/Endpoint.cs\"), and its answer-only turn gave none (it began: an empty reply); ranked excerpts of its evidence are above, verbatim"), "{}", o.text);
+    assert!(
+        o.text.contains("### E1 FIND Store\napi/Endpoint.cs\n4:     Store(r);\n"),
+        "the evidence comes back: {}",
+        o.text
+    );
+    assert!(o.text.contains("2 of 2 turns and an answer-only turn"), "{}", o.text);
     let o =
         go(&root, &e, &Script::new(vec![Ok("OUTLINE api/Endpoint.cs"), Err("local model: timeout")]), &["q"])
             .expect("fail");
@@ -213,7 +224,7 @@ fn test_investigate_through_zazzle() {
         "fake-llm",
         &[
             ("(nothing yet)", "READ api/Endpoint.cs"),
-            ("### READ", "ANSWER\nFINDING api/Endpoint.cs:3 the key is checked"),
+            ("### E1 READ", "ANSWER\nFINDING api/Endpoint.cs:3 the key is checked"),
         ],
     );
     std::env::set_var("ZAZZLE_LLM", &fake);
@@ -230,10 +241,10 @@ fn test_investigate_through_zazzle() {
     let n = crate::testutil::run_cmd(&root, &["investigate", "where?"]);
     std::env::remove_var("ZAZZLE_LLM");
     assert_eq!(n.text, "error: local model: qwen is not downloaded");
-    let v = serde_json::json!({"question": "where?", "paths": ["api"], "symbols": ["Handle"], "steps": 3});
+    let v = serde_json::json!({"question": "where?", "paths": ["api"], "symbols": ["Handle"], "steps": 3, "seconds": 60});
     assert_eq!(
         tool_args(&v).expect("args"),
-        ["investigate", "--path", "api", "--symbol", "Handle", "--steps", "3", "where?"]
+        ["investigate", "--path", "api", "--symbol", "Handle", "--steps", "3", "--seconds", "60", "where?"]
     );
     assert_eq!(schema()["required"][0], "question");
     assert!(tool_args(&serde_json::json!({})).is_err());
@@ -273,7 +284,15 @@ fn test_investigate_ranges_refusals_and_cap() {
     assert!(seen[1].1.contains("### READ api/Endpoint.cs:x\nrefused:"), "{}", seen[1].1);
     let last = &seen.last().expect("last").1;
     assert!(last.contains("No lookups left: reply with ANSWER now."), "the cap ends the lookups early");
-    assert!(seen.len() < 12 && o.text.contains("complete."), "{}", o.text);
+    assert!(seen.len() < 12, "{}", o.text);
+    assert!(
+        o.text.contains(
+            "PARTIAL: no finding could be verified; ranked excerpts of its evidence are above, verbatim"
+        ) && o.text.contains("### E1 READ api/Endpoint.cs:2-3\n"),
+        "an answer of only unknowns still returns the evidence: {}",
+        o.text
+    );
+    assert!(!o.text.contains("var value300 "), "the excerpts stay short: {}", o.text);
 }
 
 // Regression for the logged seed miss: the starting symbol is not in the scope, the model kept asking for it, and the run ended with nothing. Now the miss is resolved before inference with real candidates, repeated failed lookups are not run again, and a seed with nothing like it returns a clear no-evidence result without asking the model.
@@ -326,7 +345,7 @@ fn test_investigate_regression_seed_miss() {
     );
 }
 
-// Regression for the logged empty answer: the model read the right file, then answered with nothing, and the caller got no findings and no evidence. Now it gets one repair turn; if that is empty too, the report is PARTIAL and carries the evidence verbatim.
+// Regression for the logged empty answer: the model read the right file, then answered with nothing, and the caller got no findings and no evidence. Now it gets one answer-only turn; if that is empty too, the report is PARTIAL and carries ranked excerpts of the evidence verbatim, with the lookups that found nothing as gaps.
 #[test]
 fn test_investigate_regression_empty_answer() {
     let (_t, root) = repo();
@@ -334,7 +353,7 @@ fn test_investigate_regression_empty_answer() {
     let s = Script::new(vec![Ok("READ api/Endpoint.cs\nFIND Nowhere"), Ok("ANSWER"), Ok("")]);
     let o = go(&root, &e, &s, &["Where is the key checked?", "--path", "api"]).expect("run");
     let seen = s.seen.borrow();
-    assert_eq!(seen.len(), 3, "one repair turn, no more");
+    assert_eq!(seen.len(), 3, "one answer-only turn, no more");
     assert!(
         seen[2].1.contains("### NOTE\nYour answer was empty") && seen[2].1.contains("No lookups left"),
         "{}",
@@ -342,14 +361,15 @@ fn test_investigate_regression_empty_answer() {
     );
     let text = &o.text;
     assert!(
-        text.contains("evidence gathered (lookup output, verbatim):\n### READ api/Endpoint.cs\n"),
+        text.contains("evidence (no finding verified; ranked excerpts of the lookups, verbatim):\n### E1 READ api/Endpoint.cs\n"),
         "{text}"
     );
     assert!(
-        text.contains("throw new Missing();") && !text.contains("### FIND Nowhere"),
-        "only lookups that found something: {text}"
+        text.contains("3\t    if (r.Key == null) throw new Missing();") && !text.contains("### E2"),
+        "only lookups that found something, around the question's words: {text}"
     );
-    assert!(text.contains("3 of 6 turns") && text.contains("PARTIAL: the local model gave no answer after 1 lookups that found evidence, and none after one repair turn (it began: an empty reply); the evidence it gathered is above, verbatim"), "{text}");
+    assert!(text.contains("lookups that found nothing:\n- FIND Nowhere: no matches in"), "{text}");
+    assert!(text.contains("2 of 6 turns and an answer-only turn") && text.contains("PARTIAL: its answer was empty after 1 lookups that found evidence, and its answer-only turn gave none (it began: an empty reply); ranked excerpts of its evidence are above, verbatim"), "{text}");
     let fixed = Script::new(vec![
         Ok("READ api/Endpoint.cs"),
         Ok(""),
@@ -358,17 +378,15 @@ fn test_investigate_regression_empty_answer() {
     let o = go(&root, &e, &fixed, &["q", "--path", "api"]).expect("repaired");
     assert!(
         o.text.contains("findings (1 verified)")
-            && o.text.contains("complete.")
-            && !o.text.contains("evidence gathered"),
+            && o.text.contains("complete, on an answer-only turn after its answer was empty")
+            && !o.text.contains("ranked excerpts"),
         "{}",
         o.text
     );
     let failed = Script::new(vec![Ok("READ api/Endpoint.cs"), Ok("ANSWER"), Err("local model: timeout")]);
     let o = go(&root, &e, &failed, &["q", "--path", "api"]).expect("failed repair");
     assert!(
-        o.text.contains(
-            "PARTIAL: the local model gave an empty answer, and the repair turn failed: local model: timeout"
-        ),
+        o.text.contains("PARTIAL: its answer was empty after 1 lookups that found evidence, and its answer-only turn failed: local model: timeout"),
         "{}",
         o.text
     );
@@ -381,7 +399,7 @@ fn test_investigate_regression_empty_answer() {
     );
 }
 
-// Checks a repeated successful read is not run again, a lookup that errors counts as failed, a repair turn that asks for lookups ends PARTIAL, and the evidence is capped at whole lookups.
+// Checks a repeated successful read is not run again, a lookup that errors counts as failed, an answer-only turn that asks for lookups ends PARTIAL, and the excerpts are capped at whole lookups.
 #[test]
 fn test_investigate_repeats_errors_and_evidence_cap() {
     let (t, root) = repo();
@@ -406,13 +424,218 @@ fn test_investigate_repeats_errors_and_evidence_cap() {
         seen[2].1
     );
     let text = &o.text;
-    assert!(text.contains("PARTIAL: the local model gave no answer after 6 lookups that found evidence, and none after one repair turn (it began: \"READ api/Big.cs:1-10\")"), "{text}");
+    assert!(text.contains("PARTIAL: its answer was empty after 6 lookups that found evidence, and its answer-only turn gave none (it began: \"READ api/Big.cs:1-10\")"), "{text}");
     assert!(
-        text.contains("### READ api/Endpoint.cs\n") && text.contains("### READ api/Big.cs:1-150\n"),
+        text.contains("### E1 READ api/Endpoint.cs\n") && text.contains("### E2 READ api/Big.cs:1-150\n"),
         "{text}"
     );
     assert!(
-        text.contains("(over ~6000 tokens, not shown: ") && text.contains("READ api/Big.cs:601-750)"),
+        text.contains("### E6 READ api/Big.cs:601-750\n") && !text.contains("var value140 "),
+        "no line names the question, so each lookup gives only its first lines: {text}"
+    );
+    assert!(text.contains("lookups that found nothing:\n- REFS a|b: error:"), "{text}");
+}
+// Checks the excerpts: lookups whose lines name the question's words rank first and keep those lines with their
+// context, a file's line is shown once across lookups, session markers are dropped, a lookup with no matching line
+// gives its first lines, and the rest past the token cap is named.
+#[test]
+fn test_excerpts_rank_dedupe_and_cap() {
+    let plan =
+        parse(&["Where is the retry budget spent?".to_string(), "--symbol".into(), "SpendRetry".into()])
+            .expect("plan");
+    let numbered = |from: usize, to: usize, hit: usize| -> String {
+        let mut t = String::from("[r:abc12]\nsvc/Retry.cs 400 lines, sha 1\n");
+        for k in from..=to {
+            let word = if k == hit { "budget" } else { "other" };
+            t.push_str(&format!("{k}\t  let {word}{k} = {k};\n"));
+        }
+        t
+    };
+    let quiet: String = (1..=30).map(|k| format!("{k}\tnothing here {k}\n")).collect();
+    let mut trail = Trail {
+        seen: vec![
+            ("READ svc/Quiet.cs".into(), format!("svc/Quiet.cs 30 lines, sha 2\n{quiet}")),
+            ("READ svc/Retry.cs:1-40".into(), numbered(1, 40, 20)),
+            ("NOTE".into(), "ignored".into()),
+            ("READ svc/Retry.cs:15-25".into(), numbered(15, 25, 20)),
+        ],
+        rules: String::new(),
+        lookups: Vec::new(),
+        done: Vec::new(),
+        evidence: vec![0, 1, 3],
+        skipped: 0,
+    };
+    let out = excerpts(&trail, &plan);
+    assert!(out.starts_with("evidence (no finding verified; ranked excerpts of the lookups, verbatim):\n### E2 READ svc/Retry.cs:1-40\n"), "{out}");
+    assert!(
+        out.contains("…\n18\t  let other18 = 18;\n19\t")
+            && out.contains("20\t  let budget20 = 20;\n21\t")
+            && out.contains("22\t  let other22 = 22;\n"),
+        "{out}"
+    );
+    assert!(!out.contains("17\t") && !out.contains("23\t") && !out.contains("[r:abc12]"), "{out}");
+    assert!(
+        out.contains("### E1 READ svc/Quiet.cs\n")
+            && out.contains("11\tnothing here 11")
+            && !out.contains("12\tnothing here 12"),
+        "{out}"
+    );
+    assert!(!out.contains("### E3"), "its lines were all shown under E2: {out}");
+    let big: String =
+        (1..=4000).map(|k| format!("{k}\tbudget {k} of a long line that takes room\n")).collect();
+    trail.seen.push(("READ svc/Big.cs".into(), format!("svc/Big.cs 4000 lines\n{big}")));
+    trail.evidence.insert(0, 4);
+    let capped = excerpts(&trail, &plan);
+    assert!(capped.contains("(over ~3000 tokens, not shown: "), "{capped}");
+    assert_eq!(terms(&plan), ["spendretry", "spend", "retry", "budget", "spent"]);
+}
+
+// Regression for the logged idempotency run: the model guessed a file that does not exist, retried it with a line
+// range, and repeated lookups until the run stopped with no findings and no evidence. Now the guess gets the real files
+// that resemble it, the ranged retry counts as a repeat, and the stop gives one answer-only turn and then the evidence.
+#[test]
+fn test_investigate_regression_missing_path_and_repeats() {
+    let (t, root) = repo();
+    t.write(
+        "api/IdempotencyKeyFilter.cs",
+        b"class IdempotencyKeyFilter {\n  bool Seen(string key) => false;\n}\n",
+    );
+    let e = crate::engine::Engine::new();
+    let s = Script::new(vec![
+        Ok("READ api/Endpoint.cs\nREAD api/IdempotencyKeyRepository.cs"),
+        Ok("READ api/IdempotencyKeyRepository.cs:1-40"),
+        Ok("OUTLINE api/IdempotencyKeyRepository.cs\nREAD api/Endpoint.cs"),
+        Ok(""),
+    ]);
+    let o = go(&root, &e, &s, &["Where is the idempotency key checked?", "--path", "api"]).expect("run");
+    let seen = s.seen.borrow();
+    assert!(seen[1].1.contains("refused: api/IdempotencyKeyRepository.cs does not exist inside the scope (api). Real files and symbols there that resemble it:\n") && seen[1].1.contains("IdempotencyKeyFilter"), "{}", seen[1].1);
+    assert!(seen[2].1.contains("Not run again: READ api/IdempotencyKeyRepository.cs:1-40 (it already failed: refused: api/IdempotencyKeyRepository.cs does not exist"), "{}", seen[2].1);
+    assert_eq!(seen.len(), 4, "three turns and one answer-only turn");
+    assert!(
+        seen[3].1.contains("You asked only for lookups that had already run. No more lookups will run."),
+        "{}",
+        seen[3].1
+    );
+    let text = &o.text;
+    assert!(text.contains("### E1 READ api/Endpoint.cs\n") && text.contains("r.Key == null"), "{text}");
+    assert!(
+        text.contains("lookups that found nothing:\n- READ api/IdempotencyKeyRepository.cs: refused:"),
         "{text}"
     );
+    assert!(text.contains("PARTIAL: it asked only for lookups it had already made, twice, and its answer-only turn gave none"), "{text}");
+    assert!(text.contains("3 repeated lookups not run again"), "{text}");
+}
+
+// Regression for the logged trace run: on its last turn the model asked for another READ, and the run ended with no
+// findings. Now the answer-only turn after it can answer, citing an excerpt by its id.
+#[test]
+fn test_investigate_regression_final_turn_lookup() {
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let s = Script::new(vec![
+        Ok("READ api/Endpoint.cs"),
+        Ok("READ sim/Fake.cs"),
+        Ok("ANSWER\nFINDING E1:3 a request without a key is refused"),
+    ]);
+    let o = go(&root, &e, &s, &["q", "--path", "api", "--steps", "2"]).expect("run");
+    let seen = s.seen.borrow();
+    assert!(
+        seen[2]
+            .1
+            .contains("### NOTE\nYou asked for more lookups, but none were left. No more lookups will run."),
+        "{}",
+        seen[2].1
+    );
+    assert!(
+        o.text.contains("1. a request without a key is refused\n   api/Endpoint.cs:3\n"),
+        "E1 resolves to its file: {}",
+        o.text
+    );
+    assert!(
+        o.text.contains("complete, on an answer-only turn after it gave no ANSWER when its lookups ran out"),
+        "{}",
+        o.text
+    );
+    assert!(!o.text.contains("ranked excerpts"), "{}", o.text);
+    let stray = Script::new(vec![Ok("READ api/Endpoint.cs"), Ok("ANSWER\nFINDING E9:1 no such excerpt")]);
+    let o = go(&root, &e, &stray, &["q", "--path", "api"]).expect("stray id");
+    assert!(
+        o.text.contains("rejected citations:\n- E9:1 no such excerpt:") && o.text.contains("### E1 READ"),
+        "{}",
+        o.text
+    );
+}
+
+// A local model that takes longer than the investigation's time limit on its first turn.
+struct Slow;
+
+impl Local for Slow {
+    // Asks for a lookup after the deadline has passed.
+    fn ask(&self, _system: &str, _transcript: &str, deadline: Instant) -> Result<Reply, String> {
+        std::thread::sleep(deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(20));
+        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false })
+    }
+}
+
+// Checks the time limit: a turn that runs past it ends the run before the next one, without an answer-only turn, and the
+// evidence gathered so far (the starting symbol's refs and declaration) comes back.
+#[test]
+fn test_investigate_deadline() {
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let argv: Vec<String> = ["q", "--path", "api", "--symbol", "Handle", "--seconds", "1"]
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    let o = investigate(&ctx, &argv, &Slow).expect("run");
+    assert!(
+        o.text.contains("PARTIAL: its 1 s time limit ran out; ranked excerpts of its evidence are above"),
+        "{}",
+        o.text
+    );
+    assert!(o.text.contains("1 of 6 turns,") && o.text.contains("### E1 REFS Handle"), "{}", o.text);
+    assert!(parse(&["q".into(), "--seconds".into(), "0".into()]).is_err());
+}
+
+// Checks the declarations read for a seed come from the refs output's defs only, at most two, and that an excerpt id
+// names a file only for a READ or OUTLINE that found something.
+#[test]
+fn test_defs_and_excerpt_ids() {
+    let refs = "defs\napi/A.cs:3-9 method Handle\napi/B.cs:1-4 class B\napi/C.cs:2-3 field C\nrefs\napi/D.cs\n5 [x] Handle();\n";
+    assert_eq!(defs(refs), ["api/A.cs:3-9", "api/B.cs:1-4"]);
+    assert!(defs("refs\napi/D.cs\n5 [x] Handle();\n").is_empty());
+    assert!(
+        defs("defs\napi/A.cs:3 method Handle\n-- 1 defs").is_empty(),
+        "a def without a range is not read"
+    );
+    let trail = Trail {
+        seen: vec![
+            ("REFS Handle".into(), "defs".into()),
+            ("NOTE".into(), "x".into()),
+            ("OUTLINE api/A.cs".into(), "1-9 class A".into()),
+            ("READ api/B.cs:1-4".into(), "1\tclass B".into()),
+        ],
+        rules: String::new(),
+        lookups: Vec::new(),
+        done: Vec::new(),
+        evidence: vec![0, 2, 3],
+        skipped: 0,
+    };
+    assert_eq!(trail.file_of("E1"), None, "a REFS excerpt has no single file");
+    assert_eq!(trail.file_of("E2").as_deref(), Some("api/A.cs"));
+    assert_eq!(trail.file_of("E3").as_deref(), Some("api/B.cs"));
+    assert_eq!(
+        (trail.file_of("E0"), trail.file_of("E4"), trail.file_of("api/B.cs"), trail.file_of("Ex")),
+        (None, None, None, None)
+    );
+    assert_eq!((trail.id(1), trail.id(2)), (String::new(), "E2 ".to_string()));
 }

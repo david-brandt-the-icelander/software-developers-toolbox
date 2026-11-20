@@ -84,7 +84,7 @@
     {
       "id": "mcp",
       "name": "MCP server (mcp.rs, mcp_structure.rs, mcp_upgrade.rs)",
-      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the zazzle file tools (zazzle_prompt among them), zazzle_get_rules and zazzle_brief, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1); every tool that only reads takes an `llm` instruction, passed on as `--llm` after the command, with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed daemon on the same connection and announces tools/list_changed.",
+      "responsibility": "Answers newline-delimited JSON-RPC on standard input and output: initialize, ping, tools/list and tools/call for the zazzle file tools (zazzle_prompt among them), zazzle_get_rules and zazzle_brief, six structure tools answered by the indexer, and the seven zazz script tools the zazz module defines, listed only once a script is registered or ZAZZLE_MCP_ZAZZ=1); every tool that only reads takes an `llm` instruction, passed on as `--llm` after the command, with short server instructions since some clients repeat them per tool, each call forwarded to the daemon under one session per connection; after an upgrade it re-executes the installed daemon on the same connection and announces tools/list_changed; while a tools/call whose request carries a progress token runs, it sends that token's notifications/progress every 10 s (ZAZZLE_MCP_PROGRESS_SECS) before the one result, so a client that waits on progress keeps the call open instead of timing out and polling.",
       "folder": "src/macos/daemon/src"
     },
     {
@@ -234,7 +234,7 @@
     {
       "id": "investigate",
       "name": "Investigation (investigate/)",
-      "responsibility": "Answers `investigate`: resolves the starting symbols inside the scope before inference (real candidates for a miss, or a no-evidence report without the model), then asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs each distinct lookup once with zazzle's own commands under a separate rules ledger, gives an empty answer one repair turn before returning the evidence as PARTIAL, and checks and quotes each path:line the answer cites.",
+      "responsibility": "Answers `investigate`: resolves the starting symbols inside the scope before inference (real candidates for a miss, or a no-evidence report without the model), then asks the local model, turn by turn through llm, for read-only lookups inside the scope, runs each distinct lookup once with zazzle's own commands under a separate rules ledger, reads the starting symbols' declarations before the first turn, gives a run that stopped without an answer one answer-only turn and otherwise returns ranked excerpts of its evidence as PARTIAL, ends within its time limit (queueing for the shared model included), and checks and quotes each path:line the answer cites.",
       "folder": "src/macos/daemon/src/investigate"
     },
     {
@@ -246,7 +246,7 @@
     {
       "id": "brief",
       "name": "Brief (brief.rs)",
-      "responsibility": "Answers `brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` and the zazzle_brief MCP tool: lists the rule and skill files for the paths and purposes, prints every rule section that applies (split at headings inside the purpose ranges), has the local model rank only the skills under a GBNF grammar, adds the ranked skills whole within the budget, and reads and records the session's shared rule ledger so nothing is repeated and only what was printed is recorded.",
+      "responsibility": "Answers `brief INTENT [--path PATH].. [--purpose NAME].. [--budget N]` and the zazzle_brief MCP tool: lists the rule and skill files for the paths and purposes, prints every rule section that applies (split at headings inside the purpose ranges), has the local model rank only the skills under a GBNF grammar, adds the ranked skills whole within the budget, and reads and records the session's shared rule ledger so nothing is repeated and only what was printed is recorded; it asks the model only when a skill could still fit the budget after the rules, and gives ranking 30 s with the wait for the shared model included.",
       "folder": "src/macos/daemon/src"
     },
     {

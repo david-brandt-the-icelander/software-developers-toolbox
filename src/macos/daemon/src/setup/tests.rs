@@ -334,6 +334,17 @@ fn test_other_cases() {
     );
     let r = run(&opts(&["--no-wrap", "--client", "codex"]), &env).expect("plan");
     assert!(r.contains("\ncodex: ~/.codex/config.toml\n  + add zazzle") && !r.contains("~ wrap"), "{r}");
+    assert!(r.contains("  + let Codex call zazzle's tools directly with a 120 s tool timeout"), "{r}");
+    let codex = env.config_path(Client::Codex);
+    std::fs::create_dir_all(codex.parent().expect("parent")).expect("dir");
+    let older = "[mcp_servers.zazzle]\ncommand = \"/opt/z/daemon\"\nargs = [\"mcp\"]\n";
+    std::fs::write(&codex, older).expect("older install");
+    let r = run(&opts(&["--no-wrap", "--client", "codex"]), &env).expect("plan");
+    assert!(
+        !r.contains("+ add zazzle:") && r.contains("+ let Codex call zazzle's tools directly"),
+        "an older install gets the direct calls: {r}"
+    );
+    std::fs::remove_file(&codex).expect("rm");
     let r = run(&opts(&["--apply", "--no-wrap", "--client", "claude-desktop"]), &env).expect("apply");
     assert!(
         r.contains("= leave fs (stdio): --no-wrap") && r.contains("+ added zazzle: /opt/z/daemon mcp"),

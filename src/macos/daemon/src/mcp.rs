@@ -760,14 +760,18 @@ fn root_paths(result: &Value) -> Vec<String> {
 }
 
 // Serves newline-delimited JSON-RPC from the input until it closes; asks a client that offers roots for them, and again when they change.
-pub fn serve(input: &mut dyn BufRead, output: &mut dyn Write, backend: &dyn Backend) -> io::Result<()> {
+pub fn serve(
+    input: &mut dyn BufRead,
+    output: &mut (dyn Write + Send),
+    backend: &dyn Backend,
+) -> io::Result<()> {
     serve_resumed(input, output, backend, None)
 }
 
 // Serves like serve, first answering a request an earlier program handed over and telling the client the tool list changed.
 pub fn serve_resumed(
     input: &mut dyn BufRead,
-    output: &mut dyn Write,
+    output: &mut (dyn Write + Send),
     backend: &dyn Backend,
     resumed: Option<(String, bool)>,
 ) -> io::Result<()> {
@@ -809,10 +813,54 @@ pub fn serve_resumed(
             writeln!(output, "{}", json!({"jsonrpc": "2.0", "id": ROOTS_ID, "method": "roots/list"}))?;
             output.flush()?;
         }
-        if let Some(resp) = handle_line(&line, backend) {
+        answer(&line, &msg, backend, output)?;
+    }
+    Ok(())
+}
+
+// How often a long tool call reports progress to a client that asked for it: ZAZZLE_MCP_PROGRESS_SECS, default 10.
+fn progress_every() -> std::time::Duration {
+    let secs =
+        std::env::var("ZAZZLE_MCP_PROGRESS_SECS").ok().and_then(|v| v.parse().ok()).filter(|&n: &u64| n > 0);
+    std::time::Duration::from_secs(secs.unwrap_or(10))
+}
+
+// Answers one request; while a tool call whose request carries a progress token runs, sends that token's
+// `notifications/progress` every progress_every(), so a client that waits on progress keeps the call open and gets one
+// result instead of timing out and having its model poll. The last notification is written before the response.
+fn answer(line: &str, msg: &Value, backend: &dyn Backend, output: &mut (dyn Write + Send)) -> io::Result<()> {
+    let token = msg.pointer("/params/_meta/progressToken").filter(|_| msg["method"] == "tools/call").cloned();
+    let Some(token) = token else {
+        if let Some(resp) = handle_line(line, backend) {
             writeln!(output, "{resp}")?;
             output.flush()?;
         }
+        return Ok(());
+    };
+    let out = std::sync::Mutex::new(output);
+    let (done, wait) = std::sync::mpsc::channel::<()>();
+    let resp = std::thread::scope(|scope| {
+        let (out, token) = (&out, &token);
+        scope.spawn(move || {
+            let mut n = 0u64;
+            while wait.recv_timeout(progress_every()) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+                n += 1;
+                let note = json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {
+                    "progressToken": token, "progress": n, "message": "zazzle is still working on this call"}});
+                let mut o = out.lock().unwrap_or_else(|p| p.into_inner());
+                if writeln!(o, "{note}").and_then(|()| o.flush()).is_err() {
+                    break;
+                }
+            }
+        });
+        let resp = handle_line(line, backend);
+        drop(done);
+        resp
+    });
+    let o = out.into_inner().unwrap_or_else(|p| p.into_inner());
+    if let Some(resp) = resp {
+        writeln!(o, "{resp}")?;
+        o.flush()?;
     }
     Ok(())
 }
@@ -1463,5 +1511,45 @@ mod tests {
         );
         assert!(prompt_args(&json!({"text": "hi", "effort": 3})).is_err());
         assert!(prompt_args(&json!({})).is_err());
+    }
+
+    // Checks a slow tool call whose request asks for progress gets progress notifications for its token before its one
+    // result, and a call without a token gets none.
+    #[test]
+    fn test_progress_while_a_call_runs() {
+        struct Slow;
+        impl Backend for Slow {
+            // Answers after a while, like a long investigation.
+            fn call(&self, _args: Vec<String>, _session: Option<&str>) -> Result<(u8, String), String> {
+                std::thread::sleep(std::time::Duration::from_millis(2300));
+                Ok((0, "done".into()))
+            }
+        }
+        let _g = crate::testutil::env_lock();
+        std::env::set_var("ZAZZLE_MCP_PROGRESS_SECS", "1");
+        let req = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{},"_meta":{"progressToken":"t1"}}});
+        let mut out = Vec::new();
+        serve(&mut format!("{req}\n").as_bytes(), &mut out, &Slow).expect("serve");
+        let plain = json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"zazzle_ls","arguments":{}}});
+        let mut quiet = Vec::new();
+        serve(&mut format!("{plain}\n").as_bytes(), &mut quiet, &Slow).expect("serve");
+        std::env::remove_var("ZAZZLE_MCP_PROGRESS_SECS");
+        let lines: Vec<Value> = String::from_utf8(out)
+            .expect("utf8")
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("json"))
+            .collect();
+        let (last, notes) = lines.split_last().expect("lines");
+        assert_eq!(last["id"], 7, "the result comes last: {lines:?}");
+        assert_eq!(notes.len(), 2, "{lines:?}");
+        assert!(notes
+            .iter()
+            .all(|n| n["method"] == "notifications/progress" && n["params"]["progressToken"] == "t1"));
+        assert_eq!(
+            (notes[0]["params"]["progress"].as_u64(), notes[1]["params"]["progress"].as_u64()),
+            (Some(1), Some(2))
+        );
+        assert_eq!(String::from_utf8(quiet).expect("utf8").lines().count(), 1, "no token, no progress");
+        assert_eq!(progress_every(), std::time::Duration::from_secs(10));
     }
 }

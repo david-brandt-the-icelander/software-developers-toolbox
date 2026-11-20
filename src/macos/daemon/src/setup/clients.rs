@@ -240,6 +240,60 @@ impl ConfigFile {
         }
     }
 
+    // Tells whether Codex still polls zazzle's long calls: its entry has no tool timeout, or Code Mode does not call
+    // zazzle's tools directly (features.code_mode.direct_only_tool_namespaces lacks mcp__zazzle).
+    pub fn codex_polls(&self) -> bool {
+        let Doc::Toml(d) = &self.doc else { return false };
+        let timeout =
+            d.get("mcp_servers").and_then(|t| t.get(ZAZZLE)).and_then(|z| z.get("tool_timeout_sec"));
+        let direct = d
+            .get("features")
+            .and_then(|f| f.get("code_mode"))
+            .and_then(|c| c.get("direct_only_tool_namespaces"))
+            .and_then(Item::as_array)
+            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(DIRECT_NAMESPACE)));
+        timeout.is_none() || !direct
+    }
+
+    // Makes Codex call zazzle's tools directly and wait up to TOOL_TIMEOUT_SECS for one, so a long call returns one
+    // result instead of yielding to the model to poll; a timeout already set is kept.
+    pub fn set_codex_direct(&mut self) {
+        let Doc::Toml(d) = &mut self.doc else { return };
+        if let Some(z) = toml_table(d).get_mut(ZAZZLE).and_then(Item::as_table_like_mut) {
+            if z.get("tool_timeout_sec").is_none() {
+                z.insert("tool_timeout_sec", toml_edit::value(TOOL_TIMEOUT_SECS));
+            }
+        }
+        let list =
+            code_mode(d).entry("direct_only_tool_namespaces").or_insert(toml_edit::value(Array::new()));
+        if let Some(a) = list.as_array_mut() {
+            if !a.iter().any(|v| v.as_str() == Some(DIRECT_NAMESPACE)) {
+                a.push(DIRECT_NAMESPACE);
+            }
+        }
+    }
+
+    // Takes mcp__zazzle out of Codex's direct tool namespaces again (for --undo), leaving the rest of the list, and
+    // drops the list, `[features.code_mode]` and `[features]` when that leaves them empty, so the file reads as before.
+    pub fn unset_codex_direct(&mut self) {
+        let Doc::Toml(d) = &mut self.doc else { return };
+        let Some(features) = d.get_mut("features").and_then(Item::as_table_like_mut) else { return };
+        if let Some(code) = features.get_mut("code_mode").and_then(Item::as_table_like_mut) {
+            if let Some(a) = code.get_mut("direct_only_tool_namespaces").and_then(Item::as_array_mut) {
+                a.retain(|v| v.as_str() != Some(DIRECT_NAMESPACE));
+                if a.is_empty() {
+                    code.remove("direct_only_tool_namespaces");
+                }
+            }
+            if code.is_empty() {
+                features.remove("code_mode");
+            }
+        }
+        if features.is_empty() {
+            d.remove("features");
+        }
+    }
+
     // Returns the file's new text: indented JSON with a final newline, or the TOML document as edited.
     pub fn text(&self) -> String {
         match &self.doc {
@@ -268,6 +322,26 @@ fn json_table<'v>(v: &'v mut Value, path: &[String]) -> &'v mut Map<String, Valu
         *at = json!({});
     }
     at.as_object_mut().expect("an object")
+}
+
+// The server name `zazzle setup` writes, the Codex tool namespace its tools get, and how long Codex waits for one of
+// them: longer than investigate's 90 s limit, so it always gets the result.
+const ZAZZLE: &str = "zazzle";
+const DIRECT_NAMESPACE: &str = "mcp__zazzle";
+const TOOL_TIMEOUT_SECS: i64 = 120;
+
+// Returns Codex's `[features.code_mode]` table, creating it (and `[features]` as its plain parent) when missing.
+fn code_mode(d: &mut DocumentMut) -> &mut dyn toml_edit::TableLike {
+    if d.get("features").and_then(Item::as_table_like).is_none() {
+        let mut t = Table::new();
+        t.set_implicit(true);
+        d["features"] = Item::Table(t);
+    }
+    let features = d["features"].as_table_like_mut().expect("a table");
+    if features.get("code_mode").and_then(Item::as_table_like).is_none() {
+        features.insert("code_mode", Item::Table(Table::new()));
+    }
+    features.get_mut("code_mode").and_then(Item::as_table_like_mut).expect("a table")
 }
 
 // Returns Codex's `mcp_servers` table, creating it as a plain parent of `[mcp_servers.NAME]` tables.
@@ -389,6 +463,47 @@ mod tests {
         let mut w = json!(5);
         json_table(&mut w, &table);
         assert_eq!(w, json!({"mcpServers": {}}));
+    }
+
+    // Checks Codex's direct calls for zazzle: missing keys are added, a timeout and other namespaces already there are
+    // kept, applying twice changes nothing, and undoing restores the file exactly.
+    #[test]
+    fn test_codex_direct_calls() {
+        let t = TempDir::new();
+        let p = t.path().join("config.toml");
+        let before = "[mcp_servers.zazzle]\ncommand = \"/z/daemon\"\nargs = [\"mcp\"]\n";
+        std::fs::write(&p, before).expect("write");
+        let mut f = ConfigFile::load(Client::Codex, &p).expect("load");
+        assert!(f.codex_polls());
+        f.set_codex_direct();
+        assert!(!f.codex_polls());
+        let text = f.text();
+        assert!(
+            text.contains("tool_timeout_sec = 120")
+                && text.contains("direct_only_tool_namespaces = [\"mcp__zazzle\"]"),
+            "{text}"
+        );
+        f.set_codex_direct();
+        assert_eq!(f.text(), text, "applying again changes nothing");
+        f.unset_codex_direct();
+        assert!(!f.text().contains("features"), "{}", f.text());
+        let mine = "[mcp_servers.zazzle]\ncommand = \"z\"\ntool_timeout_sec = 300\n\n[features.code_mode]\ndirect_only_tool_namespaces = [\"mcp__other\"]\n";
+        std::fs::write(&p, mine).expect("write");
+        let mut f = ConfigFile::load(Client::Codex, &p).expect("load");
+        f.set_codex_direct();
+        let text = f.text();
+        assert!(
+            text.contains("tool_timeout_sec = 300") && text.contains("[\"mcp__other\", \"mcp__zazzle\"]"),
+            "{text}"
+        );
+        f.unset_codex_direct();
+        assert_eq!(f.text(), mine, "only zazzle's namespace is taken out");
+        let json = t.path().join("c.json");
+        std::fs::write(&json, "{}").expect("write");
+        let mut j = ConfigFile::load(Client::ClaudeCode, &json).expect("json");
+        j.set_codex_direct();
+        j.unset_codex_direct();
+        assert!(!j.codex_polls() && j.text().trim() == "{}");
     }
 
     // Checks Codex's TOML: reading stdio and HTTP servers with each auth form, editing them, and keeping comments.

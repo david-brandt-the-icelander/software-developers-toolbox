@@ -265,7 +265,7 @@ fn mcp_main() -> Result<(), String> {
     let backend = DaemonBackend { sock, cwd, session, roots: Default::default() };
     crate::mcp_upgrade::remember();
     let resumed = crate::mcp_upgrade::resumed();
-    mcp::serve_resumed(&mut std::io::stdin().lock(), &mut std::io::stdout().lock(), &backend, resumed)
+    mcp::serve_resumed(&mut std::io::stdin().lock(), &mut std::io::stdout(), &backend, resumed)
         .map_err(|e| e.to_string())
 }
 

@@ -231,6 +231,14 @@ fn rank(intent: &str, all: &[Section], optional: &[usize], used: usize, env: &En
     if optional.is_empty() {
         return Ok(Default::default());
     }
+    let cheapest =
+        optional.iter().map(|&i| crate::tokens::estimate(&block(&all[i], env.cwd))).min().unwrap_or(0);
+    if used + cheapest > env.budget {
+        return Err(format!(
+            "the rule sections use ~{used} of the {} token budget, so no skill fits (the smallest is ~{cheapest}); the local model was not asked",
+            env.budget
+        ));
+    }
     let refs: Vec<&Section> = optional.iter().map(|&i| &all[i]).collect();
     let input = format!("{}The task again: {intent}\nVerdicts:", menu(&refs, env.cwd));
     let order = ranked(&(env.ask)(&instruction(intent), &input, &verdicts(optional.len()))?, optional.len());
@@ -366,11 +374,14 @@ pub fn run(rest: &[String], env: Env) -> Result<String, String> {
     Ok(brief(&a.intent, &scope, &found, &env))
 }
 
-// Asks the real local model at low effort, held to the grammar.
+// How long ranking may take, waiting for the shared local model included: rules are sent either way, so a busy model only leaves the skills unranked.
+const RANK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+// Asks the real local model at low effort, held to the grammar, giving up after RANK_WAIT.
 pub fn ask_local(instruction: &str, input: &str, grammar: &str) -> Result<String, String> {
     let user = format!("{instruction}\n\n---\n{input}");
     let req = serde_json::json!({"user": user, "effort": "low", "temp": 0, "grammar": grammar});
-    crate::llm::ask(None, &req).map(|r| r.text)
+    crate::llm::ask_until(None, &req, std::time::Instant::now() + RANK_WAIT).map(|r| r.text)
 }
 
 #[cfg(test)]

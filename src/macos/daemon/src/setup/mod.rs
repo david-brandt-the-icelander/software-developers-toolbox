@@ -23,8 +23,8 @@ Find code precisely, then read it literally: zazzle_read with symbol when you kn
 - zazzle_read returns the literal source of a range (PATH:A-B) or one symbol with its comments and attributes, with line numbers and the sha zazzle_edit needs. If it says INCOMPLETE, read the range it names.
 - Put independent lookups in one call (several paths, or parallel calls); finish reading a command's output before starting another.
 - For a task's rules, zazzle_get_rules with the paths (and a purpose) gives the instructions that apply, once per session; rules already sent stay in force. Check a plan against them, e.g. frozen published contracts.
-- Before a task, zazzle_brief with your intent, paths and purpose gives every rule section that applies plus the skills it needs.
-- Local model: read short index results (find_symbol, refs, outline) yourself. Use zazzle_investigate for a question that needs several files: seed it with the entry point's symbol (the endpoint handler) and scope paths to the layers the call crosses and their tests; it returns checked path:line citations, candidates for a seed it cannot find, and PARTIAL with the evidence when the model gives no answer. Use `llm` only on large outputs. Never call it just to have used it.
+- Before a task, zazzle_brief with your intent, paths and purpose is your rule read: every rule section that applies plus the skills it needs. Do not read AGENTS.md or CLAUDE.md yourself first.
+- Local model: read short index results (find_symbol, refs, outline) yourself. Use zazzle_investigate for a question that needs several files: seed it with the entry point's symbol (the endpoint handler) and scope paths to the layers the call crosses and their tests; it returns checked path:line citations, candidates for a seed it cannot find, and PARTIAL with ranked excerpts of the evidence when no finding is verified. It returns one result within about 90 s: call it as a tool and wait, never from a script that yields, sleeps or polls. Use `llm` only on large outputs. Never call it just to have used it.
 - If the C# indexer fails, use zazzle_find, zazzle_read and zazzle_refs; zazzle_find_symbol needs the indexer.";
 
 // What agents are told in the instruction files setup writes (CLAUDE.md, AGENTS.md), read once per session.
@@ -37,9 +37,9 @@ zazzle (MCP server `zazzle`, or the `zazzle` command) reads, searches and edits 
 - Builds and tests: `zazzle run -- CMD` runs the command in the same shell with the same exit code and cleaned output. Collect a command's output before issuing the next command.
 - The user's local model (needs `zazzle agent llm`) does work that would otherwise fill your context; use it where that saves something, not early or by quota.
   - Short index results (find_symbol, refs, outline, a range) you read yourself: they are already small. `llm` passes output under ~400 tokens through unchanged.
-  - A question that needs evidence from several files: `zazzle_investigate` (`zazzle investigate QUESTION --path P --symbol S`). Seed it from the actual entry point (the endpoint's handler symbol, not a name you guess) and give one `--path` per layer the call crosses (the facade, the service, the handoff to the next system) and their tests. It returns findings whose `path:line` citations zazzle checked and quoted, plus what it could not establish. A seed not in the paths comes back with real candidates, or as no evidence without asking the model; PARTIAL means the model gave no answer and the evidence follows verbatim; INCOMPLETE means it stopped early. Verify anything you act on.
+  - A question that needs evidence from several files: `zazzle_investigate` (`zazzle investigate QUESTION --path P --symbol S`). Seed it from the actual entry point (the endpoint's handler symbol, not a name you guess) and give one `--path` per layer the call crosses (the facade, the service, the handoff to the next system) and their tests. It returns findings whose `path:line` citations zazzle checked and quoted, plus what it could not establish. A seed not in the paths comes back with real candidates, or as no evidence without asking the model; PARTIAL means no finding could be verified, and ranked verbatim excerpts of the evidence follow with the lookups that found nothing, so you need not repeat them; INCOMPLETE means it stopped early. It returns one result within about 90 s, waiting for the local model included (`seconds` changes that): call it as a tool and wait for it, never from a script or loop that yields, sleeps or polls. Verify anything you act on.
   - Large output you need only part of (API responses, logs, long test runs): give the tool `llm` (or `--llm 'INSTRUCTION'`, also `zazzle run --llm '..' -- CMD`); the answer is marked as post-processed, so drop `llm` when exact text matters.
-  - Before a task, `zazzle_brief` (`zazzle brief INTENT --path P --purpose NAME`) returns every rule section that applies to those paths and purposes, then the skills the local model ranks as needed, cut only between sections; what this session already has is named, not repeated.
+  - Before a task, `zazzle_brief` (`zazzle brief INTENT --path P --purpose NAME`) is your rule read: it returns every rule section that applies to those paths and purposes, then the skills the local model ranks as needed, cut only between sections; what this session already has is named, not repeated. Do not read AGENTS.md, CLAUDE.md or skill files yourself before it: it would only send them again.
   - Rules reach you apart from the source: on the command line on standard error, so `zazzle read X | zazzle agent prompt` sends the model only the source and you still get the rules you must follow.
 - `zazzle_diff` shows what changed with stats first; `zazzle_replace` changes a pattern across files (`dry_run` first).
 - When an answer must come from a particular commit, pass `commit` (a sha, or `HEAD`); the answer ends with `[commit SHA REPO]`.
@@ -225,6 +225,8 @@ pub fn stable_exe(p: &Path) -> PathBuf {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     AddZazzle { table: Vec<String>, command: String, args: Vec<String> },
+    DirectCalls,
+    UndoDirectCalls,
     Wrap { server: Server },
     Route { server: Server, port: u16 },
     Leave { server: Server, why: String },
@@ -417,9 +419,17 @@ fn plan_client(env: &Env, opts: &Opts, c: Client, routes: &mut Routes) -> Result
         if has_zazzle {
             ops.push(Op::RemoveZazzle { table: first.clone() });
         }
-    } else if !has_zazzle {
-        let (command, args) = zazzle_command(env, c, opts.repo.as_deref());
-        ops.push(Op::AddZazzle { table: first.clone(), command, args });
+        if c == Client::Codex && has_zazzle {
+            ops.push(Op::UndoDirectCalls);
+        }
+    } else {
+        if !has_zazzle {
+            let (command, args) = zazzle_command(env, c, opts.repo.as_deref());
+            ops.push(Op::AddZazzle { table: first.clone(), command, args });
+        }
+        if c == Client::Codex && (!has_zazzle || file.codex_polls()) {
+            ops.push(Op::DirectCalls);
+        }
     }
     for s in servers.into_iter().filter(|s| !is_zazzle(s)) {
         if let Some((command, args)) = wrapped(&s) {
@@ -542,6 +552,13 @@ fn report_ops(env: &Env, plan: &ClientPlan, done: bool, out: &mut String) {
             }
             Op::Unroute { server, url } => format!("~ {} {}: back to {url}", verb("unroute", "unrouted"), describe(server)),
             Op::RemoveZazzle { .. } => format!("- {} zazzle", verb("remove", "removed")),
+            Op::DirectCalls => format!(
+                "+ {} Codex call zazzle's tools directly with a 120 s tool timeout (features.code_mode.direct_only_tool_namespaces, mcp_servers.zazzle.tool_timeout_sec), so a long call returns one result instead of being polled",
+                verb("let", "let")
+            ),
+            Op::UndoDirectCalls => {
+                format!("- {} mcp__zazzle from features.code_mode.direct_only_tool_namespaces", verb("remove", "removed"))
+            }
         };
         out.push_str(&format!("  {line}\n"));
     }
@@ -1110,6 +1127,8 @@ fn apply_plan(env: &Env, plan: &mut ClientPlan, backups: &mut Vec<PathBuf>) -> R
         match op {
             Op::AddZazzle { table, command, args } => plan.file.put_stdio(table, "zazzle", command, args),
             Op::RemoveZazzle { table } => plan.file.remove(table, "zazzle"),
+            Op::DirectCalls => plan.file.set_codex_direct(),
+            Op::UndoDirectCalls => plan.file.unset_codex_direct(),
             Op::Wrap { server } => plan.file.set_command(&server.table, &server.name, &z, &wrap_args(server)),
             Op::Unwrap { server, command, args } => {
                 plan.file.set_command(&server.table, &server.name, command, args)

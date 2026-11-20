@@ -164,16 +164,27 @@ fn test_brief_shared_ledger() {
     assert!(r.expect("review").contains("0 rule sections"), "get-rules' range covers the section");
 }
 
-// Checks the budget: rules are always sent whole, skills that do not fit are left out whole and named, never cut mid-section.
+// Checks the budget: rules are always sent whole, skills that do not fit are left out whole and named, never cut mid-section, and the model is not asked when no skill could fit.
 #[test]
 fn test_brief_budget_cuts_between_sections() {
     let t = TempDir::new();
     let root = repo(&t);
-    let (out, _) = go(&root, &["ship", "--budget", "60"], None, &[], Ok("1:h 2:h"));
+    let (out, asked) = go(&root, &["ship", "--budget", "60"], None, &[], Ok("1:h 2:h"));
     let out = out.expect("brief");
+    assert_eq!(asked, 0, "the rules fill the budget, so no skill can fit and the model is not asked: {out}");
     assert!(out.contains("## Release\nTag it.") && out.contains("Check the contract."), "{out}");
     assert!(!out.contains("Run deploy.sh") && !out.contains("Use the brush"), "{out}");
-    assert!(out.contains("-- needed but over the budget, left out whole (raise --budget or read them): skill agents/skills/deploy/SKILL.md; skill agents/skills/paint/SKILL.md"), "{out}");
+    assert!(
+        out.contains("skills not ranked: the rule sections use ~67 of the 60 token budget, so no skill fits"),
+        "{out}"
+    );
+    let (out, asked) = go(&root, &["ship", "--budget", "100"], None, &[], Ok("1:h 2:h"));
+    let out = out.expect("brief");
+    assert_eq!(asked, 1, "{out}");
+    assert!(
+        out.contains("1 of 2 skills") && out.contains("-- needed but over the budget, left out whole"),
+        "{out}"
+    );
     let (tiny, _) = go(&root, &["ship", "--budget=5"], None, &[], Ok("1:n 2:n"));
     assert!(tiny.expect("tiny").contains("over the budget of 5; they are sent whole"));
     assert!(go(&root, &["x", "--budget", "0"], None, &[], Ok("")).0.is_err());
