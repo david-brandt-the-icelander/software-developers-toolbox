@@ -24,7 +24,7 @@ p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 # Randomness for generating signing keys.
 rand_core = { version = "0.6", features = ["getrandom"] }
 # The SHA-256 algorithm identifier that ECDSA certificates name (only the "oid" feature is needed).
-sha2 = { version = "0.10", features = ["oid"] }
+sha2 = { version = "0.11", features = ["oid"] }
 # X.509 certificates for zazz authorities: building, parsing and chain checks.
 x509-cert = { version = "0.2", features = ["builder", "pem"] }
 # Raw socket calls, SCM_RIGHTS, getpeereid and launchd activation.
