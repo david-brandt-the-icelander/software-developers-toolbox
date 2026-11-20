@@ -440,6 +440,7 @@ fn adaptive(
     let json = json!({
         "difficulty": score,
         "orchestrator": orchestrator.map(|r| r.label()),
+        "orchestration": calls::orchestration(orchestrator.or(planner.as_ref()).map(Rung::label).as_deref(), &calls),
         "planner": planner.as_ref().map(|r| r.label()),
         "parts": parts.iter().zip(&runs).map(|(p, a)| json!({
             "question": p.question,
@@ -938,6 +939,9 @@ fn text(main: &Run, bench: Option<&Run>, review: Option<&Review>) -> String {
     let mut out = main.text.trim_end().to_string();
     out.push_str(&format!("\nusage: {}\n", calls::usage_line(&main.calls, main.secs)));
     out.push_str(&calls::phases(&main.calls, main.secs));
+    if let Some(o) = main.json.get("orchestration") {
+        out.push_str(&format!("orchestration:\n{}\n", serde_json::to_string_pretty(o).unwrap_or_default()));
+    }
     if let Some(b) = bench {
         out.push_str(&compare(main, b));
         out.push_str(&format!("usage ({}): {}\n", b.label, calls::usage_line(&b.calls, b.secs)));
@@ -957,7 +961,7 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
     };
     v["question"] = plan.question.clone().into();
     if main.json.get("result").is_some() {
-        for k in ["difficulty", "orchestrator", "planner", "parts"] {
+        for k in ["difficulty", "orchestrator", "orchestration", "planner", "parts"] {
             v[k] = main.json[k].clone();
         }
     }

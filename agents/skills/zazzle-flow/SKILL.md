@@ -13,9 +13,6 @@ description: Verify, tidy, write up, deliver and review a change with zazzle ins
 - `zazzle flow preview` shows what applies: checks, the branch pull requests target and its review level, the effects delivery may have, and conflicts in the repository's guidance. Settle a conflict with the user before delivering.
 - Delivery needs the repository to opt in with `.zazzle/flow.json` (`zazzle flow init` prints a starter; `--write` saves it). Verify and review work without it.
 
-## Orchestrator
-- By default the local model does zazzle's own work (writer, lint fixer, test author, conflict resolver, CI triager, review briefs). `--orchestrator claude:MODEL|codex:MODEL [--orchestrator-effort E]` on any `zazzle flow` or `zazzle review` command, `agents.orchestrator` in `.zazzle/flow.json`, or `ZAZZLE_ORCHESTRATOR` / `ZAZZLE_ORCHESTRATOR_EFFORT` gives that work to an external model instead; reports show its tokens apart from the execution agents' (reviewers, final reviewer, fix agent). Use it only when the user asks or the policy sets it: it costs tokens and sends the diff to that model.
-
 ## Verify
 - `zazzle flow verify` runs the repository's own checks that apply to the change. The receipt names the tree it ran on; a changed tree has no receipt until you verify again.
 - A missing program, a skip or a check that does not apply is listed, never counted as a pass. Logs are cited by path; read them only for a failure.

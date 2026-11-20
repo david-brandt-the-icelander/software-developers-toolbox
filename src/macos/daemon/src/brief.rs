@@ -276,19 +276,19 @@ fn brief(intent: &str, scope: &str, found: &[Found], env: &Env) -> String {
     let rules: Vec<usize> = (0..all.len()).filter(|&i| !had[i] && all[i].mandatory()).collect();
     let optional: Vec<usize> = (0..all.len()).filter(|&i| !had[i] && !all[i].mandatory()).collect();
     let rule_tokens: usize = rules.iter().map(|&i| crate::tokens::estimate(&block(&all[i], env.cwd))).sum();
+    crate::orchestrator::take_step();
     let (skills, over, left, note) = match rank(intent, &all, &optional, rule_tokens, env) {
         Ok((t, o, r)) => (t, o, r, String::new()),
         Err(e) => (Vec::new(), Vec::new(), optional.clone(), format!("skills not ranked: {e}\n")),
     };
+    let who = crate::orchestrator::from_env().ok().flatten().map(|r| r.label());
+    let step = crate::orchestrator::take_step();
     let mut out = format!(
         "{head}\n{note}{} rule sections that apply (always sent); {} of {} skills, ranked by {}\n\n",
         rules.len(),
         skills.len(),
         optional.len(),
-        crate::orchestrator::from_env()
-            .ok()
-            .flatten()
-            .map_or("the local model".to_string(), |r| format!("the orchestrator {}", r.label()))
+        who.as_ref().map_or("the local model".to_string(), |w| format!("the orchestrator {w}"))
     );
     let sent: Vec<usize> = rules.iter().chain(&skills).copied().collect();
     sent.iter().for_each(|&i| out.push_str(&block(&all[i], env.cwd)));
@@ -310,6 +310,9 @@ fn brief(intent: &str, scope: &str, found: &[Found], env: &Env) -> String {
         if !v.is_empty() {
             out.push_str(&format!("-- {what}: {}\n", names(v)));
         }
+    }
+    if let Some(step) = step {
+        out.push_str(&format!("orchestration: {}\n", crate::orchestrator::report(who.as_deref(), step)));
     }
     out.trim_end().to_string()
 }

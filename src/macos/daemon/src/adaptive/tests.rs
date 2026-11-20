@@ -332,17 +332,7 @@ fn test_orchestrator() {
     assert!(out.contains("answer (combined by claude:opus high):"), "{out}");
     assert!(out.contains("summary (by claude:opus high):\nHandle checks the key [1]."), "{out}");
     assert!(f.prompts("claude:sonnet high").is_empty(), "the ladder did not plan");
-    assert!(out.contains("; orchestrator 33 output tokens, executors 14"), "{out}");
-    assert!(
-        out.contains(
-            "  orchestrator: 3 call(s) to claude:opus high; 300 in, 120 cached, 33 out, 6 rounds, $0.0300, "
-        ),
-        "{out}"
-    );
-    assert!(
-        out.contains("  executors: 2 call(s) to qwen-a low; 0 in, 0 cached, 14 out, 0 rounds, "),
-        "{out}"
-    );
+    assert!(out.contains("orchestration:\n{\n  \"orchestrator\": \"claude:opus high\""), "{out}");
 
     let records = f.records.lock().expect("lock").clone();
     assert_eq!(records.len(), 1);
@@ -367,8 +357,50 @@ fn test_orchestrator() {
     argv.push("--json");
     let v: Value = serde_json::from_str(&go(&root, &f, &argv).expect("json")).expect("parse");
     assert_eq!(v["orchestrator"], "claude:opus high");
-    assert_eq!(v["usage"]["orchestrator"]["output_tokens"], 33);
-    assert_eq!(v["usage"]["executors"]["output_tokens"], 14);
+    let o = &v["orchestration"];
+    assert_eq!(o["orchestrator"], "claude:opus high");
+    let steps: Vec<(&str, &str, &str)> = o["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|x| {
+            (
+                x["step"].as_str().unwrap_or_default(),
+                x["by"].as_str().unwrap_or_default(),
+                x["agent"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            ("planner", "orchestrator", "claude:opus"),
+            ("part P1", "delegated", "qwen-a"),
+            ("part P2", "delegated", "qwen-a"),
+            ("combine", "orchestrator", "claude:opus"),
+            ("summary", "orchestrator", "claude:opus"),
+        ]
+    );
+    assert_eq!(
+        (
+            o["steps"][0]["input_tokens"].as_u64(),
+            o["steps"][0]["output_tokens"].as_u64(),
+            o["steps"][0]["input_estimated"].as_bool()
+        ),
+        (Some(100), Some(11), Some(false))
+    );
+    assert_eq!(
+        (o["steps"][1]["input_estimated"].as_bool(), o["steps"][1]["output_tokens"].as_u64()),
+        (Some(true), Some(7))
+    );
+    assert_eq!(
+        (
+            o["totals"]["orchestrator"]["output_tokens"].as_u64(),
+            o["totals"]["delegated"]["output_tokens"].as_u64(),
+            o["totals"]["orchestrator"]["steps"].as_u64()
+        ),
+        (Some(33), Some(14), Some(3))
+    );
 
     let f = Fake::new(&[("claude:opus high", Err("down")), ("qwen-a low", Ok(KEY))]);
     let out = go(

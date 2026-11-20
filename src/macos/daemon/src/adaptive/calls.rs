@@ -93,22 +93,9 @@ impl Call {
         self.role.split_whitespace().next().unwrap_or_default()
     }
 
-    // Tells whether the call is the orchestrator's work (planning, combining and summarizing; writing commits, changelogs, pull requests and docs; lint fixes, test drafts and merge resolution; CI triage; review briefs) rather than an execution agent's.
+    // Tells whether the call is the orchestrator's own work (planning, combining, summarizing) rather than an agent it delegated to.
     pub fn orchestrates(&self) -> bool {
-        matches!(
-            self.phase(),
-            "planner"
-                | "combine"
-                | "summary"
-                | "write"
-                | "docs"
-                | "lint"
-                | "test"
-                | "coverage"
-                | "resolve"
-                | "ci"
-                | "briefing"
-        )
+        matches!(self.phase(), "planner" | "combine" | "summary")
     }
 }
 
@@ -309,35 +296,12 @@ pub fn usage_line(calls: &[Call], secs: f64) -> String {
         .map(|x| format!("{} {}", x["role"].as_str().unwrap_or_default(), x["calls"]))
         .collect();
     let cost = u["cost_usd"].as_f64().map(|c| format!(", ${c:.4} reported")).unwrap_or_default();
-    let split = match u["orchestrator"]["calls"].as_u64() > Some(0) {
-        true => format!(
-            "; orchestrator {} output tokens, executors {}",
-            u["orchestrator"]["output_tokens"], u["executors"]["output_tokens"]
-        ),
-        false => String::new(),
-    };
     format!(
-        "{} calls ({}), {} s, {} output tokens{cost}{split}",
+        "{} calls ({}), {} s, {} output tokens{cost}",
         u["calls"],
         roles.join(", "),
         u["seconds"],
         u["output_tokens"]
-    )
-}
-
-// One side of the orchestrator and executors split: its agents, calls, reported input, cached and output tokens, rounds, cost and seconds.
-fn side_line(name: &str, s: &Value) -> String {
-    let agents: Vec<&str> = s["agents"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-    let cost = s["cost_usd"].as_f64().map(|c| format!(", ${c:.4}")).unwrap_or_default();
-    format!(
-        "  {name}: {} call(s) to {}; {} in, {} cached, {} out, {} rounds{cost}, {} s\n",
-        s["calls"],
-        agents.join(", "),
-        s["input_tokens"],
-        s["cached_tokens"],
-        s["output_tokens"],
-        s["rounds"],
-        s["seconds"]
     )
 }
 
@@ -380,10 +344,51 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
         "  total: {} s; hosted {} calls, {} in, {} cached, {} out; local {} calls, {} s queued, {} s in all\n",
         u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], l["calls"], l["queued_seconds"], l["seconds"]
     ));
-    if u["orchestrator"]["calls"].as_u64() > Some(0) {
-        out.push_str("  tokens kept apart:\n");
-        out.push_str(&side_line("orchestrator", &u["orchestrator"]));
-        out.push_str(&side_line("executors", &u["executors"]));
-    }
     out
+}
+
+// The structured account of a run: the orchestrator, every step it performed or orchestrated with the agent that did it and the tokens in and out (reported by hosted agents, else the estimate of what was sent), and the totals of the orchestrator apart from the agents it delegated to.
+pub fn orchestration(orchestrator: Option<&str>, calls: &[Call]) -> Value {
+    let steps: Vec<Value> = calls
+        .iter()
+        .map(|c| {
+            let (agent, effort) = c.rung.rsplit_once(' ').unwrap_or((&c.rung, ""));
+            let reported = c.input > 0;
+            json!({
+                "step": c.role,
+                "by": if c.orchestrates() { "orchestrator" } else { "delegated" },
+                "agent": agent,
+                "effort": effort,
+                "hosted": c.hosted,
+                "input_tokens": if reported { c.input } else { c.sent.iter().map(|(_, n)| n).sum() },
+                "input_estimated": !reported,
+                "cached_tokens": c.cached,
+                "output_tokens": c.tokens,
+                "cost_usd": c.cost,
+                "seconds": tenth(c.secs),
+                "ok": c.ok,
+            })
+        })
+        .collect();
+    let u = usage(calls, 0.0);
+    let total = |by: &str, side: &Value| {
+        let sum = |field: &str| {
+            steps.iter().filter(|s| s["by"] == by).filter_map(|s| s[field].as_u64()).sum::<u64>()
+        };
+        json!({
+            "steps": side["calls"],
+            "input_tokens": sum("input_tokens"),
+            "cached_tokens": sum("cached_tokens"),
+            "output_tokens": sum("output_tokens"),
+            "cost_usd": side["cost_usd"],
+        })
+    };
+    json!({
+        "orchestrator": orchestrator,
+        "steps": steps,
+        "totals": {
+            "orchestrator": total("orchestrator", &u["orchestrator"]),
+            "delegated": total("delegated", &u["executors"]),
+        },
+    })
 }

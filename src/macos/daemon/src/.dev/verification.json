@@ -562,7 +562,8 @@
       "criteria": [
         "The record names the orchestrator, planner, plan and combine outcomes, each part's attempts and every call with its tokens and seconds.",
         "The orchestrator's calls are flagged and summed apart from the executors'.",
-        "Neither the question nor any reply text appears in the record."
+        "Neither the question nor any reply text appears in the record.",
+        "A report's `orchestration` object lists every step with its agent and tokens in and out, the orchestrator's steps apart from the delegated ones."
       ],
       "checks": [
         {
@@ -586,8 +587,8 @@
         {
           "type": "automated",
           "path": "src/macos/daemon/src/flow/tests.rs",
-          "symbol": "test_orchestrator",
-          "command": "cargo test -p daemon flow::tests::test_orchestrator (in src/macos)"
+          "symbol": "test_flow_record",
+          "command": "cargo test -p daemon flow::tests::test_flow_record (in src/macos)"
         }
       ],
       "evidenceStatus": "source-verified"

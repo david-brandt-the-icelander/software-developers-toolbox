@@ -295,10 +295,13 @@ pub fn ask_until(model: Option<&str>, req: &serde_json::Value, deadline: Instant
 pub fn mark(input: &str, reply: &crate::orchestrator::Answer) -> String {
     let (a, b) = (crate::tokens::estimate(input), crate::tokens::estimate(&reply.text));
     let cut = if reply.truncated { "; the answer was cut short" } else { "" };
+    let step = crate::orchestrator::take_step()
+        .map(|s| format!("\norchestration: {}", crate::orchestrator::report(reply.who.as_deref(), s)))
+        .unwrap_or_default();
     format!(
-        "{}\n[post-processed by {}: ~{a} → ~{b} tokens{cut}; run without --llm for the exact output]",
+        "{}\n[post-processed by {}: ~{a} → ~{b} tokens{cut}; run without --llm for the exact output]{step}",
         reply.text,
-        crate::orchestrator::note(reply)
+        reply.who.as_ref().map_or("the local model".to_string(), |w| format!("the orchestrator {w}"))
     )
 }
 

@@ -277,7 +277,7 @@ const PAGES: &[Page] = &[
             ("--seconds N", "Time limit, waiting for the model included (default 90); a benchmark and a review get as long again"),
             ("--adaptive", "Plan the question into parts, run each on the cheapest agent and effort that will do it, escalate unsettled parts with what they established"),
             ("--agents A,B..", "The adaptive ladder, cheapest first: MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: installed local models, each at low then high)"),
-            ("--orchestrator M, --orchestrator-effort E", "Adaptive: this agent (claude:MODEL, codex:MODEL or a local model, optionally @EFFORT) plans, combines and summarizes in place of the ladder; its tokens are reported apart from the executors'"),
+            ("--orchestrator M, --orchestrator-effort E", "Adaptive: this agent (claude:MODEL, codex:MODEL or a local model, optionally @EFFORT) plans, combines and summarizes in place of the ladder; the report lists each step, its agent and tokens in and out as JSON"),
             ("--prose", "Adaptive: the cheapest agent adds a short summary that keeps the citations"),
             ("--json", "The structured result: status, confidence, findings with evidence, gaps, escalation, usage"),
             ("--benchmark-model M, --benchmark-effort E", "Also answer with that agent alone and compare state, findings, calls, time, tokens and cost"),

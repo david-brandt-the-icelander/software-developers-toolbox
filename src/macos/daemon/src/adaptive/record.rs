@@ -66,7 +66,7 @@ pub fn build(f: &Facts, calls: &[Call], secs: f64) -> Value {
     })
 }
 
-// The record of one `zazzle flow` or `zazzle review` command: its name, seconds, every call and the usage with the orchestrator apart from the execution agents; the caller adds the orchestrator's label.
+// The record of one `zazzle flow` or `zazzle review` command: its name, seconds, every call and the usage.
 pub fn flow(command: &str, calls: &[Call], secs: f64) -> Value {
     let ts_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis());
     json!({

@@ -1,4 +1,4 @@
-// The orchestrator: the one agent, by default the local model, that does zazzle's own housekeeping (planning, combining, summaries, commit and docs writing, lint fixes, test drafts, merge resolution, CI triage, review briefs, skill ranking, `--llm` post-processing), set by flags, the flow policy or the environment to an external model and effort, with each call recorded apart from the execution agents'.
+// The orchestrator: the one agent, by default the local model, that decides and delegates for zazzle (planning, combining and summarizing an investigation, ranking skills for a brief, post-processing output for `--llm`), set by a flag or the environment to an external model and effort, with each step reported as JSON apart from the agents it delegates to.
 use crate::adaptive::agent::{self, Rung};
 use crate::adaptive::record;
 use serde_json::json;
@@ -18,6 +18,7 @@ pub struct Answer {
     pub cached: usize,
     pub tokens: usize,
     pub cost: Option<f64>,
+    pub sent: usize,
 }
 
 // Builds the orchestrator from a spec (`[local:|claude:|codex:]MODEL[@EFFORT]`) and an effort that wins over `@EFFORT`; none without a spec.
@@ -74,7 +75,12 @@ pub fn ask(
     };
     let r = orch.ok().flatten();
     let label = r.as_ref().map(Rung::label);
+    let sent = crate::tokens::estimate(&format!("{system}{user}"));
+    let res = res.map(|a| Answer { sent, ..a });
     let a = res.as_ref().ok();
+    if let Some(a) = a {
+        LAST.with(|l| *l.borrow_mut() = Some(step(kind, r.as_ref(), a, started.elapsed().as_secs_f64())));
+    }
     record::write(&json!({
         "v": 1,
         "kind": kind,
@@ -82,7 +88,7 @@ pub fn ask(
         "agent": label.clone().unwrap_or_else(|| "local default".into()),
         "orchestrator": label.is_some(),
         "hosted": r.as_ref().is_some_and(Rung::hosted),
-        "sent_tokens": crate::tokens::estimate(&format!("{system}{user}")),
+        "sent_tokens": sent,
         "input_tokens": a.map_or(0, |a| a.input),
         "cached_tokens": a.map_or(0, |a| a.cached),
         "output_tokens": a.map_or(0, |a| a.tokens),
@@ -118,6 +124,7 @@ fn ask_with(
             cached: s.cached,
             tokens: s.tokens,
             cost: s.cost,
+            sent: 0,
         });
     }
     let effort = r.map_or("low", |r| r.effort.as_str());
@@ -139,17 +146,41 @@ fn ask_with(
     })
 }
 
-// A one-line note on who answered and, for a hosted orchestrator, what it reported, for the footer of a post-processed or ranked result.
-pub fn note(a: &Answer) -> String {
-    let Some(who) = &a.who else { return "the local model".into() };
-    let cost = a.cost.map(|c| format!(", ${c:.4}")).unwrap_or_default();
-    match a.input + a.cached + a.tokens {
-        0 => format!("the orchestrator {who}"),
-        _ => format!(
-            "the orchestrator {who} (reported {} in, {} cached, {} out{cost})",
-            a.input, a.cached, a.tokens
-        ),
-    }
+// One step as the reports show it: the step, who ordered it, the agent and effort that did it, the tokens in (reported, else the estimate of what was sent) and out, and its cost and seconds.
+pub fn step(kind: &str, r: Option<&Rung>, a: &Answer, secs: f64) -> serde_json::Value {
+    let (agent, effort) = match r {
+        Some(r) => (r.agent(), r.effort.clone()),
+        None => ("local default".to_string(), "low".to_string()),
+    };
+    let reported = a.input > 0;
+    json!({
+        "step": kind,
+        "by": "orchestrator",
+        "agent": agent,
+        "effort": effort,
+        "hosted": r.is_some_and(Rung::hosted),
+        "input_tokens": if reported { a.input } else { a.sent },
+        "input_estimated": !reported,
+        "cached_tokens": a.cached,
+        "output_tokens": a.tokens,
+        "cost_usd": a.cost,
+        "seconds": (secs * 10.0).round() / 10.0,
+        "ok": true,
+    })
+}
+
+// The orchestration object for one step, the form every report uses.
+pub fn report(orchestrator: Option<&str>, step: serde_json::Value) -> serde_json::Value {
+    json!({"orchestrator": orchestrator.unwrap_or("local default"), "steps": [step]})
+}
+
+// Takes the step the last `ask` on this thread made, for a command that must show it beside its own output.
+pub fn take_step() -> Option<serde_json::Value> {
+    LAST.with(|l| l.borrow_mut().take())
+}
+
+thread_local! {
+    static LAST: std::cell::RefCell<Option<serde_json::Value>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -230,15 +261,34 @@ mod tests {
         let long = "line of output\n".repeat(200);
         let post = crate::llm::post(&long, "Keep the errors").expect("post");
         assert!(
-            post.starts_with("1:h 2:n\n[post-processed by the orchestrator claude:opus high (reported 50 in, 20 cached, 4 out, $0.0100)"),
+            post.starts_with("1:h 2:n\n[post-processed by the orchestrator claude:opus high: ~"),
             "{post}"
         );
+        let line = post.lines().last().and_then(|l| l.strip_prefix("orchestration: ")).expect("a JSON line");
+        let o: serde_json::Value = serde_json::from_str(line).expect("json");
+        let step = &o["steps"][0];
+        assert_eq!(o["orchestrator"], "claude:opus high");
+        assert_eq!(
+            (step["step"].as_str(), step["by"].as_str(), step["agent"].as_str(), step["effort"].as_str()),
+            (Some("post"), Some("orchestrator"), Some("claude:opus"), Some("high"))
+        );
+        assert_eq!(
+            (
+                step["input_tokens"].as_u64(),
+                step["cached_tokens"].as_u64(),
+                step["output_tokens"].as_u64(),
+                step["input_estimated"].as_bool()
+            ),
+            (Some(50), Some(20), Some(4), Some(false))
+        );
+        assert_eq!(step["cost_usd"], 0.01);
         let args = std::fs::read_to_string(format!("{}.args", program.display())).expect("args");
         assert!(args.contains("--model opus") && args.contains("--effort high"), "{args}");
         let prompt = std::fs::read_to_string(format!("{}.prompt", program.display())).expect("prompt");
         assert!(prompt.contains("Keep the errors") && prompt.contains("line of output"), "{prompt}");
         let ranked = crate::brief::ask_local("Rank them", "[1] a\n[2] b", "root ::= x").expect("rank");
         assert_eq!(ranked, "1:h 2:n");
+        assert_eq!(take_step().expect("a step")["step"], "brief rank");
         let prompt = std::fs::read_to_string(format!("{}.prompt", program.display())).expect("prompt");
         assert!(prompt.contains("like `1:h 2:n 3:m`"), "{prompt}");
         std::env::set_var("ZAZZLE_CLAUDE", t.path().join("missing"));
@@ -274,8 +324,18 @@ mod tests {
             .unwrap_err()
             .contains("unknown agent kind"));
         named(None, None);
-        assert_eq!(note(&local), "the orchestrator qwen-a high");
-        assert_eq!(note(&Answer::default()), "the local model");
+        let mine = take_step().expect("the local step");
+        assert_eq!(
+            (
+                mine["agent"].as_str(),
+                mine["effort"].as_str(),
+                mine["hosted"].as_bool(),
+                mine["input_estimated"].as_bool()
+            ),
+            (Some("qwen-a"), Some("high"), Some(false), Some(true))
+        );
+        assert!(take_step().is_none());
+        assert_eq!(report(None, mine)["orchestrator"], "local default");
         for k in ["ZAZZLE_CLAUDE", "ZAZZLE_ORCHESTRATION_LOG", "ZAZZLE_LLM"] {
             std::env::remove_var(k);
         }

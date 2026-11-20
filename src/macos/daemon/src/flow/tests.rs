@@ -558,72 +558,34 @@ fn test_deliver_push_and_pr() {
     assert!(ahead.unwrap_err().contains("has commits this branch lacks"), "never forced");
 }
 
-// Checks the orchestrator, from a flag or the policy, stands in for the local model in every orchestration role, its tokens are reported apart from the execution agents', the run is recorded, and a bad one fails only the commands that need it.
+// Checks a flow command that called an agent is recorded, text-free, with each call and its tokens; the writer is a delegated agent, not the orchestrator.
 #[test]
-fn test_orchestrator() {
+fn test_flow_record() {
     let (t, root) = repo_on_feature();
     opt_in(&t, "");
     t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a.wrapping_add(b)\n}\n");
-    let f = Fake::new(vec![("claude:opus high", say("Use wrapping add\n\nAvoids overflow panics."))]);
-    let (out, code) = flow(
-        &root,
-        &f,
-        &[
-            "write",
-            "commit",
-            "--intent",
-            "avoid overflow",
-            "--orchestrator",
-            "claude:opus",
-            "--orchestrator-effort",
-            "high",
-        ],
-    );
-    assert_eq!(code, 0, "{out}");
-    assert!(out.starts_with("Use wrapping add"), "{out}");
-    let r = f.records.lock().expect("lock")[0].clone();
-    assert_eq!(
-        (r["kind"].as_str(), r["command"].as_str(), r["orchestrator"].as_str()),
-        (Some("flow"), Some("write"), Some("claude:opus high"))
-    );
-    assert_eq!(
-        (r["usage"]["orchestrator"]["calls"].as_u64(), r["usage"]["orchestrator"]["output_tokens"].as_u64()),
-        (Some(1), Some(9))
-    );
-    assert_eq!(
-        (r["usage"]["executors"]["calls"].as_u64(), r["calls"][0]["orchestrator"].as_bool()),
-        (Some(0), Some(true))
-    );
-
-    t.write(
-        ".zazzle/flow.json",
-        br#"{"checks": [], "branches": {"target": "main"}, "agents": {"orchestrator": "codex:gpt@xhigh"}}"#,
-    );
-    let f = Fake::new(vec![("codex:gpt xhigh", say("Use wrapping add\n\nAvoids overflow panics."))]);
+    let f = Fake::new(vec![("local default low", say("Use wrapping add\n\nAvoids overflow panics."))]);
     let (out, code) = flow(&root, &f, &["write", "commit", "--intent", "avoid overflow"]);
     assert_eq!(code, 0, "{out}");
-    assert!(f.prompts("local default low").is_empty(), "the local model was not asked");
-    assert_eq!(f.records.lock().expect("lock")[0]["orchestrator"], "codex:gpt xhigh");
-
-    let f = Fake::new(vec![]);
-    let (out, code) = flow(
-        &root,
-        &f,
-        &[
-            "write",
-            "commit",
-            "--intent",
-            "x",
-            "--orchestrator",
-            "claude:opus",
-            "--orchestrator-effort",
-            "huge",
-        ],
+    let records = f.records.lock().expect("lock").clone();
+    assert_eq!(records.len(), 1);
+    let r = &records[0];
+    assert_eq!(
+        (r["kind"].as_str(), r["command"].as_str(), r["v"].as_u64()),
+        (Some("flow"), Some("write"), Some(1))
     );
-    assert!((out.as_str(), code).0.contains("takes effort") && code == 2, "{out}");
-    let (out, _) = flow(&root, &f, &["verify", "--orchestrator-effort", "high"]);
-    assert!(!out.contains("orchestrator effort"), "a command that needs no orchestrator ignores it: {out}");
-    assert!(f.records.lock().expect("lock").is_empty(), "no agent call, no record");
+    assert_eq!(
+        (
+            r["calls"].as_array().map(Vec::len),
+            r["calls"][0]["phase"].as_str(),
+            r["calls"][0]["orchestrator"].as_bool()
+        ),
+        (Some(1), Some("write"), Some(false))
+    );
+    assert_eq!(r["usage"]["orchestrator"]["calls"], 0);
+    assert!(!r.to_string().contains("avoid overflow"), "no intent text is logged");
+    let (_, _) = flow(&root, &f, &["verify"]);
+    assert_eq!(f.records.lock().expect("lock").len(), 1, "a command that calls no agent writes no record");
 }
 
 // Checks the writer: the facts it needs, a valid commit message, a draft fixed on the second try, one still invalid, the template's headings, changelog sections and insertion, and drafts saved by --apply.

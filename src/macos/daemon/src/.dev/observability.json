@@ -60,14 +60,14 @@
     {
       "id": "orchestration-log",
       "title": "Orchestration records",
-      "summary": "One text-free JSON line per adaptive investigation, per `zazzle flow` command that called an agent, and per `--llm` post-processing or brief ranking, with the orchestrator's usage apart from the execution agents'.",
+      "summary": "One text-free JSON line per adaptive investigation, per `zazzle flow` command that called an agent, and per `--llm` post-processing or brief ranking, with every call's agent and tokens and the orchestrator's calls flagged apart from the delegated agents'.",
       "signalType": "event",
       "name": "orchestration.jsonl",
       "meaning": "Shows which questions needed a planner, how often parts escalate and from which rung, what the orchestrator costs against the executors, and where time goes (queue or run), so the ladder, orchestrator and difficulty rating can be tuned.",
       "unit": "one record per run or call (kind: adaptive, flow, post, brief rank)",
       "dimensions": [
         "v: record version (1) and ts_ms",
-        "kind: adaptive, flow (command, orchestrator, usage, calls), post or brief rank (agent, orchestrator, hosted, sent_tokens, reported input, cached and output tokens, cost_usd, seconds, ok)",
+        "kind: adaptive, flow (command, usage, calls), post or brief rank (agent, orchestrator, hosted, sent_tokens, reported input, cached and output tokens, cost_usd, seconds, ok)",
         "question_hash (12-hex BLAKE3 prefix), question_words, scope_paths, symbols",
         "difficulty and reasons; ladder, orchestrator and planner labels",
         "plan: skipped, planned or fallback; combine: single, combined or merged",

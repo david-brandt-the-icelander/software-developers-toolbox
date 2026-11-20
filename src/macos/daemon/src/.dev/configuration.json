@@ -300,10 +300,10 @@
       "type": "string",
       "default": "unset (the local model)",
       "sensitive": false,
-      "scope": "Read by each command that can use an orchestrator: `investigate --adaptive`, `zazzle flow`, `zazzle review`, `zazzle brief` and `--llm` post-processing.",
+      "scope": "Read by `investigate --adaptive` (unless a flag names the orchestrator), `zazzle brief` and `--llm` post-processing.",
       "takesEffect": "on-next-run",
-      "validation": "Parsed as an agent spec; an unknown kind or effort fails the commands that use an orchestrator, no others. A flag or the flow policy's `agents.orchestrator` wins.",
-      "details": "A hosted agent (`claude`, `codex`) sees what zazzle sends it: for `--llm` and `zazzle brief` that is command output and the skill menu.",
+      "validation": "Parsed as an agent spec; an unknown kind or effort fails the commands that use an orchestrator, no others. A flag wins.",
+      "details": "A hosted agent (`claude`, `codex`) receives what zazzle sends it: for `--llm` and `zazzle brief` that is the command output and the skill menu.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -320,7 +320,7 @@
       "type": "string",
       "default": "the agent's default (low for a local model, medium for claude and codex)",
       "sensitive": false,
-      "scope": "Read by each command that can use an orchestrator: `investigate --adaptive`, `zazzle flow`, `zazzle review`, `zazzle brief` and `--llm` post-processing.",
+      "scope": "Read by `investigate --adaptive` (unless a flag names the orchestrator), `zazzle brief` and `--llm` post-processing.",
       "takesEffect": "on-next-run",
       "validation": "Must be an effort the agent takes; without ZAZZLE_ORCHESTRATOR it is refused where an orchestrator is used.",
       "details": "See ZAZZLE_ORCHESTRATOR.",
