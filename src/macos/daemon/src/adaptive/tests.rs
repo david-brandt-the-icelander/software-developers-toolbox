@@ -401,8 +401,11 @@ fn test_orchestration_log() {
     record::write(&json!({"v": 1}));
     assert_eq!(std::fs::read_to_string(t.path().join("o.jsonl")).expect("written").trim(), "{\"v\":1}");
     std::env::remove_var("ZAZZLE_ORCHESTRATION_LOG");
-    std::env::set_var("HOME", t.path());
-    assert_eq!(record::path(), Some(t.path().join(".zazzle/orchestration.jsonl")));
+    assert_eq!(record::path(), None, "tests never write to the real home");
+    assert_eq!(
+        record::locate(None, Some(t.path().into())),
+        Some(t.path().join(".zazzle/orchestration.jsonl"))
+    );
     match saved_log {
         Some(v) => std::env::set_var("ZAZZLE_ORCHESTRATION_LOG", v),
         None => std::env::remove_var("ZAZZLE_ORCHESTRATION_LOG"),

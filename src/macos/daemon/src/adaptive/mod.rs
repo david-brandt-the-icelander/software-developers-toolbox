@@ -160,7 +160,10 @@ struct Run {
 
 // Runs the adaptive mode, a review or a benchmark with the real agents.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
-    run_with(ctx, argv, &calls::Real)
+    match argv.iter().any(|a| a == "--adaptive") {
+        true => run_with(ctx, &crate::orchestrator::with_env(argv), &calls::Real),
+        false => run_with(ctx, argv, &calls::Real),
+    }
 }
 
 // Runs the command line with the given agents: the main run (adaptive, or the plain local investigation), then a benchmark (at the same time when its agent is hosted) and a review, each with its own time limit.

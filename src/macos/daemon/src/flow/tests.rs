@@ -36,6 +36,7 @@ struct Fake {
     turns: Mutex<HashMap<String, VecDeque<Turn>>>,
     seen: Mutex<Vec<(String, String)>>,
     installed: Vec<String>,
+    records: Mutex<Vec<Value>>,
 }
 
 impl Fake {
@@ -107,6 +108,11 @@ impl Backend for Fake {
     // The scripted installed models.
     fn installed(&self) -> Vec<String> {
         self.installed.clone()
+    }
+
+    // Keeps the orchestration records for the tests to read.
+    fn record(&self, rec: &Value) {
+        self.records.lock().expect("lock").push(rec.clone());
     }
 }
 
@@ -550,6 +556,74 @@ fn test_deliver_push_and_pr() {
     t.write("src/lib.rs", b"// v3\n");
     let ahead = deliver::deliver(&root, &p, &deliver::Ask { pr: false, ..ask("v3") });
     assert!(ahead.unwrap_err().contains("has commits this branch lacks"), "never forced");
+}
+
+// Checks the orchestrator, from a flag or the policy, stands in for the local model in every orchestration role, its tokens are reported apart from the execution agents', the run is recorded, and a bad one fails only the commands that need it.
+#[test]
+fn test_orchestrator() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a.wrapping_add(b)\n}\n");
+    let f = Fake::new(vec![("claude:opus high", say("Use wrapping add\n\nAvoids overflow panics."))]);
+    let (out, code) = flow(
+        &root,
+        &f,
+        &[
+            "write",
+            "commit",
+            "--intent",
+            "avoid overflow",
+            "--orchestrator",
+            "claude:opus",
+            "--orchestrator-effort",
+            "high",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("Use wrapping add"), "{out}");
+    let r = f.records.lock().expect("lock")[0].clone();
+    assert_eq!(
+        (r["kind"].as_str(), r["command"].as_str(), r["orchestrator"].as_str()),
+        (Some("flow"), Some("write"), Some("claude:opus high"))
+    );
+    assert_eq!(
+        (r["usage"]["orchestrator"]["calls"].as_u64(), r["usage"]["orchestrator"]["output_tokens"].as_u64()),
+        (Some(1), Some(9))
+    );
+    assert_eq!(
+        (r["usage"]["executors"]["calls"].as_u64(), r["calls"][0]["orchestrator"].as_bool()),
+        (Some(0), Some(true))
+    );
+
+    t.write(
+        ".zazzle/flow.json",
+        br#"{"checks": [], "branches": {"target": "main"}, "agents": {"orchestrator": "codex:gpt@xhigh"}}"#,
+    );
+    let f = Fake::new(vec![("codex:gpt xhigh", say("Use wrapping add\n\nAvoids overflow panics."))]);
+    let (out, code) = flow(&root, &f, &["write", "commit", "--intent", "avoid overflow"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(f.prompts("local default low").is_empty(), "the local model was not asked");
+    assert_eq!(f.records.lock().expect("lock")[0]["orchestrator"], "codex:gpt xhigh");
+
+    let f = Fake::new(vec![]);
+    let (out, code) = flow(
+        &root,
+        &f,
+        &[
+            "write",
+            "commit",
+            "--intent",
+            "x",
+            "--orchestrator",
+            "claude:opus",
+            "--orchestrator-effort",
+            "huge",
+        ],
+    );
+    assert!((out.as_str(), code).0.contains("takes effort") && code == 2, "{out}");
+    let (out, _) = flow(&root, &f, &["verify", "--orchestrator-effort", "high"]);
+    assert!(!out.contains("orchestrator effort"), "a command that needs no orchestrator ignores it: {out}");
+    assert!(f.records.lock().expect("lock").is_empty(), "no agent call, no record");
 }
 
 // Checks the writer: the facts it needs, a valid commit message, a draft fixed on the second try, one still invalid, the template's headings, changelog sections and insertion, and drafts saved by --apply.

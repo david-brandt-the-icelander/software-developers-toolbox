@@ -20,12 +20,14 @@ pub mod write;
 use crate::adaptive::agent::{self, Rung};
 use crate::adaptive::calls::{self, Backend, Log};
 use policy::Policy;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|deps|generate|headers|update|merge|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
+  --orchestrator AGENT [--orchestrator-effort E] (any subcommand; policy agents.orchestrator, or $ZAZZLE_ORCHESTRATOR and $ZAZZLE_ORCHESTRATOR_EFFORT)
+                                     the agent that does what the cheapest local rung would: writer, lint fixer, test author, conflict resolver, CI triager, review briefs; its tokens are reported apart
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
   init [--write]                     a starter .zazzle/flow.json from what zazzle finds (printed; --write saves it)
   verify [--only NAME].. [--all] [--timeout S] [--json]
@@ -163,7 +165,7 @@ fn limit(a: &Args, flag: &str, default: u64) -> Result<Duration, String> {
 
 // Runs `flow ARGS` in `cwd` with the real agents and returns its text and exit status.
 pub fn main(cwd: &Path, argv: &[String]) -> (String, i32) {
-    run(cwd, argv, &calls::Real)
+    run(cwd, &crate::orchestrator::with_env(argv), &calls::Real)
 }
 
 // Runs `flow ARGS` (or `review ARGS` as `flow review ARGS`) with the given agents.
@@ -183,7 +185,55 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
     let top = repo::top(cwd)?;
     let p = policy::load(&top)?;
     let log = Log::default();
-    match cmd.as_str() {
+    let (rest, named) = take_orchestrator(rest);
+    let chosen = crate::orchestrator::pick(
+        named.0.or_else(|| p.agent("orchestrator")).as_deref(),
+        named.1.or_else(|| p.agent("orchestrator_effort")).as_deref(),
+    );
+    let started = Instant::now();
+    let result = command(cmd, &rest, top, p, &log, b, &chosen);
+    let calls = log.calls();
+    if !calls.is_empty() {
+        let mut rec = crate::adaptive::record::flow(cmd, &calls, started.elapsed().as_secs_f64());
+        rec["orchestrator"] = chosen.as_ref().ok().and_then(|r| r.as_ref().map(Rung::label)).into();
+        b.record(&rec);
+    }
+    result
+}
+
+// Takes `--orchestrator MODEL` and `--orchestrator-effort E` out of a command line, whatever the subcommand.
+fn take_orchestrator(rest: &[String]) -> (Vec<String>, (Option<String>, Option<String>)) {
+    let (mut out, mut named, mut it) = (Vec::new(), (None, None), rest.iter());
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--orchestrator" => named.0 = it.next().cloned(),
+            "--orchestrator-effort" => named.1 = it.next().cloned(),
+            _ => out.push(a.clone()),
+        }
+    }
+    (out, named)
+}
+
+// The orchestrator when one is named (flag, policy or environment), else the cheapest rung.
+fn orch(o: &Result<Option<Rung>, String>, ladder: &[Rung]) -> Result<Rung, String> {
+    match o {
+        Ok(Some(r)) => Ok(r.clone()),
+        Ok(None) => Ok(ladder[0].clone()),
+        Err(e) => Err(e.clone()),
+    }
+}
+
+// Runs one subcommand of a repository, with its policy, the call log and the orchestrator chosen.
+fn command(
+    cmd: &str,
+    rest: &[String],
+    top: PathBuf,
+    p: Policy,
+    log: &Log,
+    b: &dyn Backend,
+    chosen: &Result<Option<Rung>, String>,
+) -> Result<(String, i32), String> {
+    match cmd {
         "preview" => {
             let a = Args::parse(rest, &[])?;
             a.only(&["--base"])?;
@@ -220,7 +270,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let a = Args::parse(&rest[1..], &[])?;
             a.only(&["--intent", "--writer", "--base", "--seconds", "--paths", "--agents"])?;
             let ladder = ladder(&p, &a, b)?;
-            let writer = one_agent(&a, "--writer", &p, "writer", &ladder[0])?;
+            let writer = one_agent(&a, "--writer", &p, "writer", &orch(chosen, &ladder)?)?;
             let base = match a.one("--base") {
                 Some(bb) => bb,
                 None => repo::base(&top, &p.target).unwrap_or_else(|_| "HEAD".into()),
@@ -235,7 +285,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 &a.all("--paths"),
                 b,
                 &writer,
-                &log,
+                log,
                 limit(&a, "--seconds", AGENT_SECS)?,
             )?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
@@ -256,7 +306,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 }
             };
             let ladder = ladder(&p, &a, b)?;
-            let writer = one_agent(&a, "--writer", &p, "writer", &ladder[0])?;
+            let writer = one_agent(&a, "--writer", &p, "writer", &orch(chosen, &ladder)?)?;
             let base = match a.one("--base") {
                 Some(bb) => bb,
                 None => repo::base(&top, &p.target).unwrap_or_else(|_| "HEAD".into()),
@@ -265,7 +315,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let compat = a.one("--compat");
             let f = write::Facts { kind, intent: &intent, compat: compat.as_deref(), base: &base };
             let deadline = Instant::now() + limit(&a, "--seconds", AGENT_SECS)?;
-            let (draft, left) = write::write(&top, &p, &f, b, &writer, &log, deadline)?;
+            let (draft, left) = write::write(&top, &p, &f, b, &writer, log, deadline)?;
             let mut out = draft.clone();
             if !left.is_empty() {
                 out.push_str(&format!(
@@ -284,7 +334,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let a = Args::parse(rest, &["--all", "--no-agent"])?;
             a.only(&["--base", "--fixer", "--agents", "--seconds"])?;
             let ladder = ladder(&p, &a, b)?;
-            let fixer = one_agent(&a, "--fixer", &p, "lint", &ladder[0])?;
+            let fixer = one_agent(&a, "--fixer", &p, "lint", &orch(chosen, &ladder)?)?;
             let base = match (a.on("--all"), a.one("--base")) {
                 (true, _) => None,
                 (false, Some(bb)) => Some(bb),
@@ -293,7 +343,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let started = Instant::now();
             let fixer = (!a.on("--no-agent")).then_some(&fixer);
             let (mut out, ok) =
-                tidy::tidy(&top, &p, base.as_deref(), b, &log, fixer, limit(&a, "--seconds", AGENT_SECS)?)?;
+                tidy::tidy(&top, &p, base.as_deref(), b, log, fixer, limit(&a, "--seconds", AGENT_SECS)?)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -336,7 +386,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 run: need("--run")?,
                 expect: need("--expect")?,
                 prod: a.all("--prod"),
-                test_agent: one_agent(&a, "--test-agent", &p, "tests", &ladder[0])?,
+                test_agent: one_agent(&a, "--test-agent", &p, "tests", &orch(chosen, &ladder)?)?,
                 fix_agent: match a.on("--no-fix") {
                     true => None,
                     false => Some(one_agent(&a, "--fix-agent", &p, "fix", ladder.last().expect("one rung"))?),
@@ -344,7 +394,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
             };
             let started = Instant::now();
-            let mut out = testfirst::run(&top, &p, &spec, b, &log)?;
+            let mut out = testfirst::run(&top, &p, &spec, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             let code = if out.contains("-- done:") || out.contains("-- test accepted") { 0 } else { 1 };
             Ok((out, code))
@@ -356,7 +406,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 ci::wait(&top, &a.one("--pr").unwrap_or_default(), limit(&a, "--timeout", 3600)?)?;
             if !failed.is_empty() && !a.on("--no-triage") {
                 let ladder = ladder(&p, &a, b)?;
-                let r = one_agent(&a, "--triager", &p, "triage", &ladder[0])?;
+                let r = one_agent(&a, "--triager", &p, "triage", &orch(chosen, &ladder)?)?;
                 let changed = repo::base(&top, &p.target)
                     .ok()
                     .and_then(|bb| repo::changed(&top, &bb, "HEAD").ok())
@@ -366,7 +416,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                     &failed,
                     &changed,
                     b,
-                    &log,
+                    log,
                     &r,
                     limit(&a, "--seconds", AGENT_SECS)?,
                 ));
@@ -394,7 +444,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let a = Args::parse(rest, &["--no-verify", "--push", "--no-agent", "--no-review"])?;
             a.only(&["--target", "--resolver", "--reviewer", "--agents", "--seconds"])?;
             let ladder = ladder(&p, &a, b)?;
-            let resolver = one_agent(&a, "--resolver", &p, "resolver", &ladder[0])?;
+            let resolver = one_agent(&a, "--resolver", &p, "resolver", &orch(chosen, &ladder)?)?;
             let reviewer = one_agent(&a, "--reviewer", &p, "merge_review", ladder.last().expect("one rung"))?;
             let ask = update::Ask {
                 target: a.one("--target"),
@@ -405,7 +455,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
             };
             let started = Instant::now();
-            let (mut out, ok) = update::update(&top, &p, &ask, b, &log)?;
+            let (mut out, ok) = update::update(&top, &p, &ask, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -420,7 +470,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 limit: limit(&a, "--seconds", verify::CHECK_SECS)?,
             };
             let started = Instant::now();
-            let (mut out, ok) = deps::deps(&top, &p, &ask, b, &log)?;
+            let (mut out, ok) = deps::deps(&top, &p, &ask, b, log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
         }
@@ -485,7 +535,7 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                 author.as_ref(),
                 &a.all("--tests"),
                 b,
-                &log,
+                log,
                 limit(&a, "--seconds", AGENT_SECS)?,
             )?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
@@ -533,16 +583,16 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
                     .one("--intent")
                     .unwrap_or_else(|| "not given: infer it from the diff and say so".into()),
                 reviewers,
-                planner: ladder[0].clone(),
+                planner: orch(chosen, &ladder)?,
                 last: one_agent(&a, "--final", &p, "final", &top_rung)?,
                 fixer: one_agent(&a, "--fix-agent", &p, "fix", &top_rung)?,
-                writer: one_agent(&a, "--writer", &p, "writer", &ladder[0])?,
+                writer: one_agent(&a, "--writer", &p, "writer", &orch(chosen, &ladder)?)?,
                 read_only: a.on("--read-only"),
                 rounds,
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
                 bench: a.on("--bench"),
             };
-            let out = review::run(&top, &p, &o, b, &log, a.on("--json"))?;
+            let out = review::run(&top, &p, &o, b, log, a.on("--json"))?;
             let code = if out.contains("still open") || out.contains("checks not green") { 1 } else { 0 };
             Ok((out, code))
         }

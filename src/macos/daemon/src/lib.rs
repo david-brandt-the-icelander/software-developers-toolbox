@@ -35,6 +35,7 @@ pub mod minified;
 pub mod modules;
 pub mod nested;
 pub mod nim;
+pub mod orchestrator;
 pub mod outline;
 pub mod outputs;
 pub mod params;

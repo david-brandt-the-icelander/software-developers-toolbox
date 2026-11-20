@@ -576,6 +576,18 @@
           "path": "src/macos/daemon/src/adaptive/tests.rs",
           "symbol": "test_orchestration_log",
           "command": "cargo test -p daemon adaptive::tests (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/orchestrator.rs",
+          "symbol": "test_ask_hosted_and_local",
+          "command": "cargo test -p daemon orchestrator::tests (in src/macos)"
+        },
+        {
+          "type": "automated",
+          "path": "src/macos/daemon/src/flow/tests.rs",
+          "symbol": "test_orchestrator",
+          "command": "cargo test -p daemon flow::tests::test_orchestrator (in src/macos)"
         }
       ],
       "evidenceStatus": "source-verified"

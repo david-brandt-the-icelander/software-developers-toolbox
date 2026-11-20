@@ -93,9 +93,22 @@ impl Call {
         self.role.split_whitespace().next().unwrap_or_default()
     }
 
-    // Tells whether the call is the orchestrator's work (planning, combining, summarizing) rather than an executor's.
+    // Tells whether the call is the orchestrator's work (planning, combining and summarizing; writing commits, changelogs, pull requests and docs; lint fixes, test drafts and merge resolution; CI triage; review briefs) rather than an execution agent's.
     pub fn orchestrates(&self) -> bool {
-        matches!(self.phase(), "planner" | "combine" | "summary")
+        matches!(
+            self.phase(),
+            "planner"
+                | "combine"
+                | "summary"
+                | "write"
+                | "docs"
+                | "lint"
+                | "test"
+                | "coverage"
+                | "resolve"
+                | "ci"
+                | "briefing"
+        )
     }
 }
 

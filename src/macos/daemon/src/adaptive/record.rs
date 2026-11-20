@@ -25,12 +25,17 @@ pub struct Facts {
     pub result: Value,
 }
 
-// Where the log goes: `$ZAZZLE_ORCHESTRATION_LOG`, else `~/.zazzle/orchestration.jsonl`; none when the variable is empty or there is no home.
+// Where the log goes: `$ZAZZLE_ORCHESTRATION_LOG`, else `~/.zazzle/orchestration.jsonl`; none when the variable is empty or there is no home (and none by default in this crate's own tests, which name a file when they want one).
 pub fn path() -> Option<PathBuf> {
-    match std::env::var_os("ZAZZLE_ORCHESTRATION_LOG") {
+    locate(std::env::var_os("ZAZZLE_ORCHESTRATION_LOG"), std::env::var_os("HOME").filter(|_| !cfg!(test)))
+}
+
+// Picks the log's path from the variable's value and the home folder.
+pub fn locate(var: Option<std::ffi::OsString>, home: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    match var {
         Some(p) if p.is_empty() => None,
         Some(p) => Some(PathBuf::from(p)),
-        None => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".zazzle/orchestration.jsonl")),
+        None => home.map(|h| PathBuf::from(h).join(".zazzle/orchestration.jsonl")),
     }
 }
 
@@ -40,6 +45,7 @@ pub fn build(f: &Facts, calls: &[Call], secs: f64) -> Value {
     let hash = blake3::hash(f.question.as_bytes()).to_hex().to_string();
     json!({
         "v": 1,
+        "kind": "adaptive",
         "ts_ms": ts_ms,
         "question_hash": &hash[..12],
         "question_words": f.question.split_whitespace().count(),
@@ -54,6 +60,20 @@ pub fn build(f: &Facts, calls: &[Call], secs: f64) -> Value {
         "parts": f.parts,
         "combine": f.combine,
         "result": f.result,
+        "seconds": (secs * 10.0).round() / 10.0,
+        "usage": calls::usage(calls, secs),
+        "calls": calls.iter().map(call).collect::<Vec<_>>(),
+    })
+}
+
+// The record of one `zazzle flow` or `zazzle review` command: its name, seconds, every call and the usage with the orchestrator apart from the execution agents; the caller adds the orchestrator's label.
+pub fn flow(command: &str, calls: &[Call], secs: f64) -> Value {
+    let ts_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    json!({
+        "v": 1,
+        "kind": "flow",
+        "ts_ms": ts_ms,
+        "command": command,
         "seconds": (secs * 10.0).round() / 10.0,
         "usage": calls::usage(calls, secs),
         "calls": calls.iter().map(call).collect::<Vec<_>>(),

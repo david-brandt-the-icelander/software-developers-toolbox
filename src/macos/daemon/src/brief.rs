@@ -281,10 +281,14 @@ fn brief(intent: &str, scope: &str, found: &[Found], env: &Env) -> String {
         Err(e) => (Vec::new(), Vec::new(), optional.clone(), format!("skills not ranked: {e}\n")),
     };
     let mut out = format!(
-        "{head}\n{note}{} rule sections that apply (always sent); {} of {} skills, ranked by the local model\n\n",
+        "{head}\n{note}{} rule sections that apply (always sent); {} of {} skills, ranked by {}\n\n",
         rules.len(),
         skills.len(),
-        optional.len()
+        optional.len(),
+        crate::orchestrator::from_env()
+            .ok()
+            .flatten()
+            .map_or("the local model".to_string(), |r| format!("the orchestrator {}", r.label()))
     );
     let sent: Vec<usize> = rules.iter().chain(&skills).copied().collect();
     sent.iter().for_each(|&i| out.push_str(&block(&all[i], env.cwd)));
@@ -377,11 +381,11 @@ pub fn run(rest: &[String], env: Env) -> Result<String, String> {
 // How long ranking may take, waiting for the shared local model included: rules are sent either way, so a busy model only leaves the skills unranked.
 const RANK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
-// Asks the real local model at low effort, held to the grammar, giving up after RANK_WAIT.
+// Asks the orchestrator (the local model at low effort unless one is named), held to the grammar or, for a hosted agent, told the form, giving up after RANK_WAIT.
 pub fn ask_local(instruction: &str, input: &str, grammar: &str) -> Result<String, String> {
     let user = format!("{instruction}\n\n---\n{input}");
-    let req = serde_json::json!({"user": user, "effort": "low", "temp": 0, "grammar": grammar});
-    crate::llm::ask_until(None, &req, std::time::Instant::now() + RANK_WAIT).map(|r| r.text)
+    let form = "Reply with only the verdicts, one per skill in order, separated by single spaces, like `1:h 2:n 3:m`.";
+    crate::orchestrator::ask("brief rank", "", &user, Some((grammar, form)), RANK_WAIT).map(|r| r.text)
 }
 
 #[cfg(test)]
