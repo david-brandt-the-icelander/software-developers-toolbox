@@ -38,6 +38,7 @@ zazzle: a launcher (`zazzle`, short name `z`) and the macOS tools it runs, in Ru
 - Keep one test file per method under test in repositories using `csharp-minifier --split-tests`: `agents/skills/csharp-minifier/SKILL.md`
 - Get the rules and skills that apply to a path with `zazzle agent get-rules PATH`, or ask a local open model with `zazzle agent prompt` (or `zazzle agent chat`): `agents/skills/zazzle-agent/SKILL.md`
 - Validate and maintain a repository's `.dev` files with `cyberspace-generator`: `agents/skills/cyberspace-generator/SKILL.md`
+- Verify, describe, deliver and review a change (`zazzle flow verify|write|deliver|test-first|ci`, `zazzle review`): `agents/skills/zazzle-flow/SKILL.md`
 
 ## Architecture diagrams and knowledge files
 - Each maintained folder documents itself in a `.dev/` directory as JSON following the skills in `Meta/Agents/Skills/` and the catalogue in `Meta/Agents/Knowledge/` (human-assisted software development). Read a folder's `.dev` files before changing it.

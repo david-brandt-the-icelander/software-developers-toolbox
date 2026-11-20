@@ -1,0 +1,266 @@
+{
+  "$schema": "../../../../../../Meta/Agents/Skills/describe-class-diagram/schema.json",
+  "kind": "class",
+  "title": "zazzle flow class diagram",
+  "folder": "src/macos/daemon/src/flow",
+  "description": "The policy and its checks (policy.rs), receipts (verify.rs), the delivery request (deliver.rs), the writer's facts (write.rs), an agent's edit (edit.rs), the test-first spec (testfirst.rs), and the review's options, findings and run (review.rs).",
+  "sources": [
+    {
+      "path": "src/macos/daemon/src/flow/mod.rs",
+      "symbol": "dispatch"
+    },
+    {
+      "path": "src/macos/daemon/src/flow/review.rs",
+      "symbol": "run"
+    }
+  ],
+  "types": [
+    {
+      "id": "Policy",
+      "name": "Policy",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/policy.rs"
+      ],
+      "members": [
+        "opted_in",
+        "checks: Vec<Check>",
+        "target, target_from",
+        "levels",
+        "protected",
+        "changelog, changelog_script",
+        "pr_template",
+        "effects",
+        "agents",
+        "conflicts",
+        "statements",
+        "level(branch)",
+        "is_protected(branch)",
+        "applicable(changed)"
+      ]
+    },
+    {
+      "id": "Check",
+      "name": "Check",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/policy.rs"
+      ],
+      "members": [
+        "name",
+        "run",
+        "dir",
+        "kind",
+        "paths"
+      ]
+    },
+    {
+      "id": "Receipt",
+      "name": "Receipt",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/verify.rs"
+      ],
+      "members": [
+        "tree",
+        "head",
+        "branch",
+        "at",
+        "checks: Vec<Outcome>",
+        "green()"
+      ]
+    },
+    {
+      "id": "Outcome",
+      "name": "Outcome",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/verify.rs"
+      ],
+      "members": [
+        "name, kind, run",
+        "status",
+        "passed, failed, skipped",
+        "coverage",
+        "failures",
+        "secs, code, log"
+      ]
+    },
+    {
+      "id": "DeliverAsk",
+      "name": "deliver::Ask",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/deliver.rs"
+      ],
+      "members": [
+        "paths",
+        "message",
+        "push, pr, draft",
+        "title, body, base",
+        "require_verified"
+      ]
+    },
+    {
+      "id": "Facts",
+      "name": "Facts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/write.rs"
+      ],
+      "members": [
+        "kind: Kind",
+        "intent",
+        "compat",
+        "base"
+      ]
+    },
+    {
+      "id": "Kind",
+      "name": "Kind",
+      "kind": "enum",
+      "sources": [
+        "src/macos/daemon/src/flow/write.rs"
+      ],
+      "members": [
+        "Commit",
+        "Changelog",
+        "Pr"
+      ]
+    },
+    {
+      "id": "Edited",
+      "name": "Edited",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/edit.rs"
+      ],
+      "members": [
+        "changed",
+        "reverted",
+        "reply"
+      ]
+    },
+    {
+      "id": "Spec",
+      "name": "Spec",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/testfirst.rs"
+      ],
+      "members": [
+        "behavior",
+        "tests",
+        "reference",
+        "run",
+        "expect",
+        "prod",
+        "test_agent, fix_agent",
+        "limit"
+      ]
+    },
+    {
+      "id": "Opts",
+      "name": "review::Opts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/review.rs"
+      ],
+      "members": [
+        "base, into, level",
+        "viewpoints",
+        "intent",
+        "reviewers, planner, last, fixer",
+        "read_only, rounds, limit, bench"
+      ]
+    },
+    {
+      "id": "Finding",
+      "name": "Finding",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/review.rs"
+      ],
+      "members": [
+        "id, viewpoint, severity",
+        "cite, issue, impact, fix",
+        "verified",
+        "status",
+        "found_on, fixed_on",
+        "note"
+      ]
+    },
+    {
+      "id": "Run",
+      "name": "review::Run",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/review.rs"
+      ],
+      "members": [
+        "base, branch, level",
+        "tree, diff, paths",
+        "receipt",
+        "findings, passes",
+        "gaps"
+      ]
+    },
+    {
+      "id": "Args",
+      "name": "Args",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/mod.rs"
+      ],
+      "members": [
+        "values",
+        "switches",
+        "words"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "Policy",
+      "to": "Check",
+      "kind": "depends-on",
+      "description": "The checks verify runs."
+    },
+    {
+      "from": "Receipt",
+      "to": "Outcome",
+      "kind": "depends-on",
+      "description": "Each check's outcome on the tree."
+    },
+    {
+      "from": "Facts",
+      "to": "Kind",
+      "kind": "depends-on",
+      "description": "What the writer drafts."
+    },
+    {
+      "from": "Run",
+      "to": "Finding",
+      "kind": "depends-on",
+      "description": "The ledger's findings across rounds."
+    },
+    {
+      "from": "Run",
+      "to": "Receipt",
+      "kind": "depends-on",
+      "description": "The verification of the pinned tree."
+    },
+    {
+      "from": "Run",
+      "to": "Opts",
+      "kind": "depends-on",
+      "description": "What the review was asked."
+    },
+    {
+      "from": "Spec",
+      "to": "Edited",
+      "kind": "depends-on",
+      "description": "Each agent's edit, scope enforced."
+    }
+  ]
+}

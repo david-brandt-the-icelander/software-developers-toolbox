@@ -1,14 +1,15 @@
 // `zazzle investigate .. --adaptive`: the cheapest planner sure to be overkill for the question splits it into parts and gives each the cheapest agent and effort that will do it; every executor answers in short structured lines that say how sure it is and whether to escalate, zazzle checks their citations and hands an unsettled part, with what it established, to the next rung; `--review-*` has another agent judge the results and `--benchmark-*` compares them with the question answered by one agent alone.
 pub mod agent;
+pub mod calls;
 pub mod work;
 
 use crate::cmd::{Ctx, Output};
 use crate::investigate::{self, Plan};
 use crate::llm::Reply;
-use agent::{Rung, Said};
+use agent::Rung;
+use calls::{Ask, Backend, Call, Log};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use work::Work;
 
@@ -27,8 +28,6 @@ const FLAGS: &[&str] = &[
 const MAX_PARTS: usize = 4;
 const MAX_ESCALATIONS: usize = 3;
 const PLANNERS: usize = 2;
-// Tokens the local model may write for a plan, a combined answer, a summary or a review.
-const SHORT_TOKENS: usize = 700;
 // The lines every executor answers in; the same words the local lookup loop's answer uses.
 const LINES: &str = "STATUS complete|partial|failed
 FINDING path:A-B one sentence that the cited lines show (one per fact, real line numbers)
@@ -37,125 +36,6 @@ CONFIDENCE understanding=high|medium|low result=high|medium|low (your understand
 ESCALATE the exact open question a stronger agent should take over (only if one should)
 CONTEXT what that agent would need (only with ESCALATE)
 BLOCKED access|decision what only the user can give (only if something is)";
-
-// Something that answers for the adaptive mode's agents: local models through the shared worker, hosted agents through their command lines, or scripts in tests.
-pub trait Backend: Sync {
-    // Asks a local model (empty: the loaded one, else the default) one request by the deadline.
-    fn local(&self, model: &str, req: &Value, deadline: Instant) -> Result<Reply, String>;
-    // Asks a hosted agent one prompt, working in `cwd`, by the deadline.
-    fn hosted(&self, rung: &Rung, prompt: &str, cwd: &Path, deadline: Instant) -> Result<Said, String>;
-    // The installed local models, smallest first.
-    fn installed(&self) -> Vec<String>;
-}
-
-// The real agents: daemon's shared local worker, and `claude` or `codex` found on this machine.
-struct Real;
-
-impl Backend for Real {
-    // Asks through the shared worker, never downloading a model.
-    fn local(&self, model: &str, req: &Value, deadline: Instant) -> Result<Reply, String> {
-        crate::llm::ask_until(Some(model).filter(|m| !m.is_empty()), req, deadline)
-    }
-
-    // Runs the hosted agent's command line read-only.
-    fn hosted(&self, rung: &Rung, prompt: &str, cwd: &Path, deadline: Instant) -> Result<Said, String> {
-        agent::ask_hosted(rung, &agent::program(rung.kind)?, prompt, cwd, deadline)
-    }
-
-    // Reads `ai-agent status --json`.
-    fn installed(&self) -> Vec<String> {
-        let Ok(program) = crate::llm::program() else { return Vec::new() };
-        let out = std::process::Command::new(program)
-            .args(["status", "--json"])
-            .stdin(std::process::Stdio::null())
-            .output();
-        let v = out.ok().and_then(|o| serde_json::from_slice::<Value>(&o.stdout).ok()).unwrap_or_default();
-        agent::installed_models(&v)
-    }
-}
-
-// One model call: its role (planner, part, escalation, combine, summary, review, benchmark), the rung, seconds, output tokens, reported cost and whether it answered.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Call {
-    pub role: String,
-    pub rung: String,
-    pub secs: f64,
-    pub tokens: usize,
-    pub cost: Option<f64>,
-    pub ok: bool,
-}
-
-// The calls one run made, shared by the threads that make them.
-#[derive(Default)]
-struct Log(Mutex<Vec<Call>>);
-
-impl Log {
-    // Times one local call and records it.
-    fn local(
-        &self,
-        b: &dyn Backend,
-        role: &str,
-        r: &Rung,
-        req: &Value,
-        deadline: Instant,
-    ) -> Result<Reply, String> {
-        let t = Instant::now();
-        let res = b.local(&r.model, req, deadline);
-        let tokens = res.as_ref().map_or(0, |x| x.tokens);
-        self.push(role, r, t, tokens, None, res.is_ok());
-        res
-    }
-
-    // Times one hosted call and records it.
-    fn hosted(
-        &self,
-        b: &dyn Backend,
-        role: &str,
-        r: &Rung,
-        prompt: &str,
-        cwd: &Path,
-        deadline: Instant,
-    ) -> Result<Said, String> {
-        let t = Instant::now();
-        let res = b.hosted(r, prompt, cwd, deadline);
-        let (tokens, cost) = res.as_ref().map_or((0, None), |s| (s.tokens, s.cost));
-        self.push(role, r, t, tokens, cost, res.is_ok());
-        res
-    }
-
-    // Asks either kind of agent a short text prompt (a plan, a combination, a summary or a review) with a system message for local models.
-    #[allow(clippy::too_many_arguments)]
-    fn text(
-        &self,
-        b: &dyn Backend,
-        role: &str,
-        r: &Rung,
-        system: &str,
-        prompt: &str,
-        cwd: &Path,
-        deadline: Instant,
-    ) -> Result<String, String> {
-        match r.hosted() {
-            true => self.hosted(b, role, r, &format!("{system}\n\n{prompt}"), cwd, deadline).map(|s| s.text),
-            false => {
-                let req = json!({"system": system, "user": prompt, "max_tokens": SHORT_TOKENS, "temp": 0, "effort": r.effort});
-                self.local(b, role, r, &req, deadline).map(|x| x.text)
-            }
-        }
-    }
-
-    // Records one call.
-    fn push(&self, role: &str, r: &Rung, t: Instant, tokens: usize, cost: Option<f64>, ok: bool) {
-        let c =
-            Call { role: role.into(), rung: r.label(), secs: t.elapsed().as_secs_f64(), tokens, cost, ok };
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).push(c);
-    }
-
-    // The calls so far.
-    fn calls(&self) -> Vec<Call> {
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).clone()
-    }
-}
 
 // One rung's local model as the lookup loop's model, each turn recorded under a role.
 struct OnRung<'a> {
@@ -169,7 +49,14 @@ impl investigate::Local for OnRung<'_> {
     // Asks the rung's model at the rung's effort.
     fn ask(&self, system: &str, transcript: &str, deadline: Instant) -> Result<Reply, String> {
         let req = investigate::request(system, transcript, &self.rung.effort);
-        self.log.local(self.b, self.role, self.rung, &req, deadline)
+        self.log.local(
+            self.b,
+            self.rung,
+            self.role,
+            &req,
+            &[("brief", system), ("evidence", transcript)],
+            deadline,
+        )
     }
 }
 
@@ -261,7 +148,7 @@ struct Run {
 
 // Runs the adaptive mode, a review or a benchmark with the real agents.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
-    run_with(ctx, argv, &Real)
+    run_with(ctx, argv, &calls::Real)
 }
 
 // Runs the command line with the given agents: the main run (adaptive, or the plain local investigation), then a benchmark (at the same time when its agent is hosted) and a review, each with its own time limit.
@@ -340,10 +227,11 @@ fn pure_hosted(
 ) -> Run {
     let (t, log) = (Instant::now(), Log::default());
     let prompt = executor_prompt(&plan.question, &plan.scope, &plan.symbols, &[]);
-    let work = match log.hosted(b, "benchmark", r, &prompt, cwd, deadline) {
-        Ok(s) => Work::from_reply(cwd, scope, &s.text),
-        Err(e) => Work::failed(&e),
-    };
+    let work =
+        match log.hosted(b, r, &Ask::new("benchmark", "", &prompt, &[("task", &prompt)]), cwd, deadline) {
+            Ok(s) => Work::from_reply(cwd, scope, &s.text),
+            Err(e) => Work::failed(&e),
+        };
     let text = work.render();
     Run {
         label: r.label(),
@@ -538,7 +426,13 @@ fn make_plan(
     let tries: Vec<usize> = (first..ladder.len()).take(PLANNERS).collect();
     for (k, &idx) in tries.iter().enumerate() {
         let r = &ladder[idx];
-        let reply = match log.text(b, "planner", r, &system, &prompt, cwd, deadline) {
+        let reply = match log.text(
+            b,
+            r,
+            &Ask::new("planner", &system, &prompt, &[("brief", &system), ("task", &prompt)]),
+            cwd,
+            deadline,
+        ) {
             Ok(t) => t,
             Err(e) => {
                 note.push_str(&format!("planner {} failed: {e}\n", r.label()));
@@ -640,9 +534,13 @@ fn part(
         let work = match r.hosted() {
             true => match log.hosted(
                 b,
-                &role,
                 r,
-                &executor_prompt(&question, &plan.scope, &p.symbols, &context),
+                &Ask::new(
+                    &role,
+                    "",
+                    &executor_prompt(&question, &plan.scope, &p.symbols, &context),
+                    &[("task", &question), ("context", &context.join("\n"))],
+                ),
                 &ctx.cwd,
                 deadline,
             ) {
@@ -720,7 +618,13 @@ fn combine(
     let system = format!("You combine the checked results of the parts of one task into its answer. Use only the findings listed, citing them with their path:A-B exactly. Be concise; reply only with lines:\nANSWER\n{LINES}");
     let prompt = format!("Question: {}\n\n{listing}", plan.question);
     let merged = merge(parts);
-    let reply = match log.text(b, "combine", r, &system, &prompt, cwd, deadline) {
+    let reply = match log.text(
+        b,
+        r,
+        &Ask::new("combine", &system, &prompt, &[("brief", &system), ("findings", &prompt)]),
+        cwd,
+        deadline,
+    ) {
         Ok(t) => t,
         Err(e) => return (merged, format!(" (the parts merged; combining with {} failed: {e})", r.label())),
     };
@@ -801,7 +705,13 @@ fn summary(
     let gaps: String = w.gaps.iter().map(|g| format!("- {g}\n")).collect();
     let system = "Write two to five plain sentences that answer the question from the checked findings given. Keep each [n] marker after the claim it supports, say what is uncertain or missing, and add nothing the findings do not show.";
     let prompt = format!("Question: {}\nFindings:\n{facts}Not established:\n{gaps}", plan.question);
-    match log.text(b, "summary", r, system, &prompt, cwd, deadline) {
+    match log.text(
+        b,
+        r,
+        &Ask::new("summary", system, &prompt, &[("brief", system), ("findings", &prompt)]),
+        cwd,
+        deadline,
+    ) {
         Ok(t) => format!("summary (by {}):\n{}\n", r.label(), t.trim()),
         Err(e) => format!("summary: {} failed: {e}\n", r.label()),
     }
@@ -839,7 +749,13 @@ fn review(
     if let Some(bn) = bench {
         prompt.push_str(&format!("\nResult B:\n{}", bn.work.listing("B", 6)));
     }
-    match log.text(b, "review", r, &system, &prompt, cwd, deadline) {
+    match log.text(
+        b,
+        r,
+        &Ask::new("review", &system, &prompt, &[("brief", &system), ("findings", &prompt)]),
+        cwd,
+        deadline,
+    ) {
         Ok(t) => parse_review(&r.label(), &t),
         Err(e) => Review { rung: r.label(), error: Some(e), ..Review::default() },
     }
@@ -902,49 +818,9 @@ fn review_text(v: &Review) -> String {
     out
 }
 
-// The usage of a run: calls, seconds, output tokens and cost where reported, with the calls per role.
-fn usage(r: &Run) -> Value {
-    let mut roles: Vec<(String, usize)> = Vec::new();
-    for c in &r.calls {
-        let role = c.role.split_whitespace().next().unwrap_or_default().to_string();
-        match roles.iter_mut().find(|(k, _)| *k == role) {
-            Some((_, n)) => *n += 1,
-            None => roles.push((role, 1)),
-        }
-    }
-    let costs: Vec<f64> = r.calls.iter().filter_map(|c| c.cost).collect();
-    json!({
-        "calls": r.calls.len(),
-        "failed_calls": r.calls.iter().filter(|c| !c.ok).count(),
-        "by_role": roles.into_iter().map(|(k, n)| json!({"role": k, "calls": n})).collect::<Vec<_>>(),
-        "seconds": (r.secs * 10.0).round() / 10.0,
-        "output_tokens": r.calls.iter().map(|c| c.tokens).sum::<usize>(),
-        "cost_usd": if costs.is_empty() { Value::Null } else { json!(costs.iter().sum::<f64>()) },
-    })
-}
-
-// One line of a run's usage.
-fn usage_line(r: &Run) -> String {
-    let u = usage(r);
-    let roles: Vec<String> = u["by_role"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|x| format!("{} {}", x["role"].as_str().unwrap_or_default(), x["calls"]))
-        .collect();
-    let cost = u["cost_usd"].as_f64().map(|c| format!(", ${c:.4} reported")).unwrap_or_default();
-    format!(
-        "{} calls ({}), {} s, {} output tokens{cost}",
-        u["calls"],
-        roles.join(", "),
-        u["seconds"],
-        u["output_tokens"]
-    )
-}
-
 // The benchmark's side-by-side table: state, findings, rejections, gaps, usage and the files both cited.
 fn compare(main: &Run, bench: &Run) -> String {
-    let (a, b) = (usage(main), usage(bench));
+    let (a, b) = (calls::usage(&main.calls, main.secs), calls::usage(&bench.calls, bench.secs));
     let files =
         |w: &Work| w.findings.iter().map(|f| f.path.clone()).collect::<std::collections::BTreeSet<_>>();
     let (fa, fb) = (files(&main.work), files(&bench.work));
@@ -980,10 +856,12 @@ fn compare(main: &Run, bench: &Run) -> String {
 // The text report: the main run with its usage, then the benchmark and the review.
 fn text(main: &Run, bench: Option<&Run>, review: Option<&Review>) -> String {
     let mut out = main.text.trim_end().to_string();
-    out.push_str(&format!("\nusage: {}\n", usage_line(main)));
+    out.push_str(&format!("\nusage: {}\n", calls::usage_line(&main.calls, main.secs)));
+    out.push_str(&calls::phases(&main.calls, main.secs));
     if let Some(b) = bench {
         out.push_str(&compare(main, b));
-        out.push_str(&format!("usage ({}): {}\n", b.label, usage_line(b)));
+        out.push_str(&format!("usage ({}): {}\n", b.label, calls::usage_line(&b.calls, b.secs)));
+        out.push_str(&calls::phases(&b.calls, b.secs));
     }
     if let Some(v) = review {
         out.push_str(&review_text(v));
@@ -1003,9 +881,9 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
             v[k] = main.json[k].clone();
         }
     }
-    v["usage"] = usage(main);
+    v["usage"] = calls::usage(&main.calls, main.secs);
     if let Some(b) = bench {
-        v["benchmark"] = json!({"agent": b.label, "result": b.json, "usage": usage(b)});
+        v["benchmark"] = json!({"agent": b.label, "result": b.json, "usage": calls::usage(&b.calls, b.secs)});
     }
     if let Some(r) = review {
         let triple =

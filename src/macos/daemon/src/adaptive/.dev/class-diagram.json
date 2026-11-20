@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzle investigate --adaptive class diagram",
   "folder": "src/macos/daemon/src/adaptive",
-  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs).",
+  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs), and the backend, call log and usage shared with zazzle flow (calls.rs).",
   "sources": [
     {
       "path": "src/macos/daemon/src/adaptive/mod.rs",
@@ -54,7 +54,7 @@
       ],
       "members": [
         "text: String",
-        "tokens: usize",
+        "tokens, input, cached, rounds: usize",
         "cost: Option<f64>"
       ]
     },
@@ -85,11 +85,11 @@
       "name": "Backend",
       "kind": "interface",
       "sources": [
-        "src/macos/daemon/src/adaptive/mod.rs"
+        "src/macos/daemon/src/adaptive/calls.rs"
       ],
       "members": [
         "local(model, req, deadline) -> Result<Reply, String>",
-        "hosted(rung, prompt, cwd, deadline) -> Result<Said, String>",
+        "hosted(rung, prompt, cwd, deadline, write) -> Result<Said, String>",
         "installed() -> Vec<String>"
       ]
     },
@@ -98,7 +98,7 @@
       "name": "Real",
       "kind": "struct",
       "sources": [
-        "src/macos/daemon/src/adaptive/mod.rs"
+        "src/macos/daemon/src/adaptive/calls.rs"
       ],
       "members": [
         "local: llm::ask_until",
@@ -111,14 +111,16 @@
       "name": "Call",
       "kind": "struct",
       "sources": [
-        "src/macos/daemon/src/adaptive/mod.rs"
+        "src/macos/daemon/src/adaptive/calls.rs"
       ],
       "members": [
-        "role: String",
+        "role: String (first word: the phase)",
         "rung: String",
-        "secs: f64",
-        "tokens: usize",
+        "hosted: bool",
+        "sent: Vec<(section, tokens)>",
+        "input, cached, tokens, rounds: usize",
         "cost: Option<f64>",
+        "queued, secs: f64",
         "ok: bool"
       ]
     },
@@ -127,7 +129,7 @@
       "name": "Log",
       "kind": "struct",
       "sources": [
-        "src/macos/daemon/src/adaptive/mod.rs"
+        "src/macos/daemon/src/adaptive/calls.rs"
       ],
       "members": [
         "Mutex<Vec<Call>>"
@@ -223,6 +225,22 @@
         "confidence",
         "error"
       ]
+    },
+    {
+      "id": "Ask",
+      "name": "Ask",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/calls.rs"
+      ],
+      "members": [
+        "role",
+        "system",
+        "prompt",
+        "sections: &[(name, text)]",
+        "write: bool",
+        "max_tokens"
+      ]
     }
   ],
   "relationships": [
@@ -273,6 +291,12 @@
       "to": "Said",
       "kind": "depends-on",
       "description": "What a hosted call returns."
+    },
+    {
+      "from": "Log",
+      "to": "Ask",
+      "kind": "depends-on",
+      "description": "What one call sends, by section, and whether it may edit."
     }
   ]
 }

@@ -21,11 +21,14 @@ pub struct Rung {
     pub effort: String,
 }
 
-// What a hosted agent said: its final text, the output tokens and the cost its command line reported.
+// What a hosted agent said: its final text, and the output, input and cached tokens, rounds and cost its command line reported.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Said {
     pub text: String,
     pub tokens: usize,
+    pub input: usize,
+    pub cached: usize,
+    pub rounds: usize,
     pub cost: Option<f64>,
 }
 
@@ -145,16 +148,20 @@ pub fn program(kind: Kind) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{name} is not installed (not on PATH; set ${var} to its path)"))
 }
 
-// The command line that asks a hosted agent one read-only question, the prompt on standard input; codex writes its last message to `out`.
-pub fn command(r: &Rung, program: &Path, out: &Path) -> Command {
+// The command line that asks a hosted agent one question, the prompt on standard input: read-only, or with `write` allowed to edit files in its working directory (never to run commands); codex writes its last message to `out`.
+pub fn command(r: &Rung, program: &Path, out: &Path, write: bool) -> Command {
     let mut c = Command::new(program);
+    let (tools, sandbox) = match write {
+        true => ("Read,Grep,Glob,Edit,Write", "workspace-write"),
+        false => ("Read,Grep,Glob", "read-only"),
+    };
     match r.kind {
         Kind::Claude => c
             .args(["-p", "--model", &r.model, "--effort", &r.effort, "--permission-mode", "dontAsk"])
-            .args(["--allowedTools", "Read,Grep,Glob", "--output-format", "json"]),
+            .args(["--allowedTools", tools, "--output-format", "json"]),
         _ => c
             .args(["exec", "--model", &r.model, "-c", &format!("model_reasoning_effort=\"{}\"", r.effort)])
-            .args(["--sandbox", "read-only", "--skip-git-repo-check", "--json", "--output-last-message"])
+            .args(["--sandbox", sandbox, "--skip-git-repo-check", "--json", "--output-last-message"])
             .arg(out)
             .arg("-"),
     };
@@ -170,30 +177,45 @@ pub fn said(kind: Kind, stdout: &str, out_text: &str) -> Result<Said, String> {
         if v["is_error"] == true {
             return Err(format!("claude failed: {}", one_line(&text)));
         }
-        let tokens = v["usage"]["output_tokens"].as_u64().unwrap_or_default() as usize;
-        return Ok(Said { text, tokens, cost: v["total_cost_usd"].as_f64() });
+        let n = |k: &str| v["usage"][k].as_u64().unwrap_or_default() as usize;
+        let input = n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens");
+        let rounds = v["num_turns"].as_u64().unwrap_or(1) as usize;
+        let cost = v["total_cost_usd"].as_f64();
+        return Ok(Said {
+            text,
+            tokens: n("output_tokens"),
+            input,
+            cached: n("cache_read_input_tokens"),
+            rounds,
+            cost,
+        });
     }
-    let (mut tokens, mut last) = (0, String::new());
+    let (mut said, mut last) = (Said::default(), String::new());
     for v in stdout.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()) {
-        tokens += v["usage"]["output_tokens"].as_u64().unwrap_or_default() as usize;
+        let n = |k: &str| v["usage"][k].as_u64().unwrap_or_default() as usize;
+        said.tokens += n("output_tokens");
+        said.input += n("input_tokens");
+        said.cached += n("cached_input_tokens");
+        said.rounds += usize::from(v["type"] == "turn.completed");
         if v["item"]["type"] == "agent_message" {
             last = v["item"]["text"].as_str().unwrap_or_default().to_string();
         }
     }
-    let text = if out_text.trim().is_empty() { last } else { out_text.to_string() };
-    match text.trim().is_empty() {
+    said.text = if out_text.trim().is_empty() { last } else { out_text.to_string() };
+    match said.text.trim().is_empty() {
         true => Err("codex gave no final message".into()),
-        false => Ok(Said { text, tokens, cost: None }),
+        false => Ok(said),
     }
 }
 
-// Runs a hosted agent in `cwd` with the prompt on its standard input, stopping it at the deadline.
+// Runs a hosted agent in `cwd` with the prompt on its standard input, stopping it at the deadline; `write` lets it edit files there.
 pub fn ask_hosted(
     r: &Rung,
     program: &Path,
     prompt: &str,
     cwd: &Path,
     deadline: Instant,
+    write: bool,
 ) -> Result<Said, String> {
     let dir = std::env::temp_dir().join(format!(
         "zazzle-adaptive-{}-{:?}",
@@ -203,7 +225,7 @@ pub fn ask_hosted(
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let out = dir.join("last-message");
     let _ = std::fs::remove_file(&out);
-    let mut child = command(r, program, &out)
+    let mut child = command(r, program, &out, write)
         .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

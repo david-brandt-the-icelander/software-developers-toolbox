@@ -149,7 +149,7 @@ mod tests {
             req["effort"].as_str().unwrap_or("-"),
             req["user"].as_str().unwrap_or("")
         );
-        Ok(Reply { text, truncated: req["user"] == "long", tokens: 0 })
+        Ok(Reply { text, truncated: req["user"] == "long", tokens: 0, queued_ms: 0 })
     }
 
     // Runs an operation with the echo model.
