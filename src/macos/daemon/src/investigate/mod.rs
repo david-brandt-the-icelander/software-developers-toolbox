@@ -7,7 +7,7 @@ use crate::llm::Reply;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID] [--context TEXT].. [--adaptive] [--agents A,B..] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--prose] [--json]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--adaptive] [--agents A,B..] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--prose] [--json]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
 // The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
@@ -360,17 +360,17 @@ fn seeds(
 ) -> Vec<(String, Vec<String>)> {
     let mut missed = Vec::new();
     for s in &plan.symbols {
-        if Instant::now() >= deadline {
+        if crate::budget::over(deadline) {
             break;
         }
         let found = step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail, deadline);
         if found == Ok(true) {
             let refs = trail.seen.last().map(|(_, t)| t.clone()).unwrap_or_default();
-            for d in defs(&refs).into_iter().filter(|_| Instant::now() < deadline) {
+            for d in defs(&refs).into_iter().filter(|_| !crate::budget::over(deadline)) {
                 let _ = step(lctx, scope, plan, &Lookup::Read(d), trail, deadline);
             }
         }
-        if found == Ok(false) && Instant::now() < deadline {
+        if found == Ok(false) && !crate::budget::over(deadline) {
             let c = seed::candidates(lctx.engine, &lctx.cwd, scope, s);
             let text = match c.is_empty() {
                 true => format!("{s} is not inside the scope, and nothing there resembles it."),
@@ -470,9 +470,9 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
     let (mut answer, mut strayed, mut stalled, mut retry) = (None, false, false, None);
     for step_no in 1..=plan.steps {
         st.turns = step_no;
-        if Instant::now() >= deadline {
+        if crate::budget::over(deadline) {
             st.turns -= 1;
-            st.stop = format!("its {} s time limit ran out", plan.seconds);
+            st.stop = stopped(&plan, "");
             break;
         }
         let left = if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
@@ -524,8 +524,8 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         let mut repeats = Vec::new();
         let mut ran = 0;
         for l in lookups {
-            if Instant::now() >= deadline {
-                st.stop = format!("its {} s time limit ran out before {}", plan.seconds, l.label());
+            if crate::budget::over(deadline) {
+                st.stop = stopped(&plan, &format!(" before {}", l.label()));
                 break;
             }
             match step(&lctx, &scope, &plan, &l, &mut trail, deadline) {
@@ -553,6 +553,14 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         answer = final_turn(local, &plan, &mut trail, &mut st, why, deadline).or(answer);
     }
     Ok(Explored { plan, scope, trail, answer, st, nothing })
+}
+
+// Why the loop stopped at its deadline or a cancel, with what it was about to do.
+fn stopped(plan: &Plan, before: &str) -> String {
+    match crate::budget::cancelled() {
+        true => format!("the run was cancelled{before}"),
+        false => format!("its {} s time limit ran out{before}", plan.seconds),
+    }
 }
 
 // The system message, with the rules that apply to what the lookups read, kept apart from the evidence.
@@ -902,6 +910,7 @@ fn schema() -> serde_json::Value {
         serde_json::json!({
             "question": {"type": "string", "description": "Required unless run_id names an earlier run to get back"},
             "run_id": {"type": "string", "description": "The run's id: the same id again returns the kept result (waiting while it runs) without asking any model again; with no question, looks the run up"},
+            "cancel": {"type": "boolean", "description": "With run_id alone: stop that run now and return what it had gathered"},
             "paths": {"type": "array", "items": {"type": "string"}, "description": "Folders or files to stay inside (default: the working directory)"},
             "symbols": {"type": "array", "items": {"type": "string"}, "description": "Names to start from"},
             "steps": {"type": "integer", "description": "Model turns, 1 to 12 (default 6)"},
@@ -944,6 +953,12 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     if let Some(id) = &run {
         a.extend(["--run-id".to_string(), id.clone()]);
     }
+    if v["cancel"] == true {
+        return match (&run, a.len(), v.get("question")) {
+            (Some(_), 3, None) => Ok([a, vec!["--cancel".to_string()]].concat()),
+            _ => Err("cancel takes run_id and nothing else".into()),
+        };
+    }
     match crate::mcp::get_str(v, "question")? {
         Some(q) => a.push(q),
         None if run.is_some() && a.len() == 3 => {}
@@ -952,16 +967,23 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     Ok(a)
 }
 
-// Runs `investigate` as a run the caller can recover: with the run store, the job gets a run id (`--run-id ID`, else a new one, said on the caller's standard error before the wait), its model calls' usage is kept as each ends, and its result is kept before it is returned; the same id again returns that result (waiting for it while it runs) without asking any model again, and `--run-id ID` alone looks it up.
+// Runs `investigate` as a run the caller can recover or cancel (`--run-id ID --cancel` stops it now and returns what it gathered): with the run store, the job gets a run id (`--run-id ID`, else a new one, said on the caller's standard error before the wait), its model calls' usage is kept as each ends, and its result is kept before it is returned; the same id again returns that result (waiting for it while it runs) without asking any model again, and `--run-id ID` alone looks it up.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let accepted = Instant::now();
     let (given, argv) = take_run_id(argv)?;
+    let (cancel, argv): (Vec<String>, Vec<String>) = argv.into_iter().partition(|a| a == "--cancel");
     let Some(root) = ctx.engine.runs.clone() else {
         return match given {
             Some(_) => Err("--run-id needs the run store (~/.zazzle/runs, or ZAZZLE_RUNS_DIR)".into()),
             None => job(ctx, &argv, accepted, &None),
         };
     };
+    if !cancel.is_empty() {
+        return match (given, argv.is_empty()) {
+            (Some(id), true) => crate::runs::cancel(&root, &id),
+            _ => Err("--cancel takes the run to stop with --run-id ID and nothing else".into()),
+        };
+    }
     if argv.is_empty() && given.is_none() {
         return Err(USAGE.into());
     }
@@ -976,7 +998,17 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         }),
         crate::runs::Begun::New(j) => {
             announce(ctx, &id);
-            let res = job(ctx, &argv, accepted, &Some(j.usage()));
+            let stop = j.stop();
+            let res = crate::budget::stopping(&stop, || job(ctx, &argv, accepted, &Some(j.usage()))).map(
+                |mut o| {
+                    if stop.cancelled() {
+                        o.notes.push_str(&format!(
+                            "\n-- run {id} was cancelled; this is what it had gathered\n"
+                        ));
+                    }
+                    o
+                },
+            );
             if let Err(e) = j.finish(&res) {
                 eprintln!("investigate: keeping run {id}: {e}");
             }

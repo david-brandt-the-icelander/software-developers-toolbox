@@ -157,14 +157,21 @@ pub struct Log {
     sink: Option<PathBuf>,
 }
 
-// Runs `f` on every item at the same time, one thread each (inline for a single item), and returns the results in the items' order; for calls that do not depend on each other, so the slowest sets the wall time instead of their sum (local requests still take turns on the one shared worker).
+// Runs `f` on every item at the same time, one thread each carrying the caller's job deadline and cancel (inline for a single item), and returns the results in the items' order; for calls that do not depend on each other, so the slowest sets the wall time instead of their sum (local requests still take turns on the one shared worker).
 pub fn all<T: Sync, R: Send>(items: &[T], f: impl Fn(usize, &T) -> R + Sync) -> Vec<R> {
     if items.len() < 2 {
         return items.iter().enumerate().map(|(i, x)| f(i, x)).collect();
     }
-    let f = &f;
+    let (f, job) = (&f, crate::budget::current());
     std::thread::scope(|s| {
-        let hs: Vec<_> = items.iter().enumerate().map(|(i, x)| s.spawn(move || f(i, x))).collect();
+        let hs: Vec<_> = items
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let job = job.clone();
+                s.spawn(move || crate::budget::carry(job, || f(i, x)))
+            })
+            .collect();
         hs.into_iter().map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
     })
 }
@@ -188,8 +195,8 @@ impl Log {
         sections: &[(&str, &str)],
         deadline: Instant,
     ) -> Result<Reply, String> {
-        if Instant::now() >= deadline {
-            return Err(format!("the time limit ran out before {role} could start"));
+        if crate::budget::over(deadline) {
+            return Err(format!("{} before {role} could start", crate::budget::why_over()));
         }
         let t = Instant::now();
         let res = b.local(&r.model, req, deadline);
@@ -222,8 +229,8 @@ impl Log {
         cwd: &Path,
         deadline: Instant,
     ) -> Result<Said, String> {
-        if Instant::now() >= deadline {
-            return Err(format!("the time limit ran out before {} could start", a.role));
+        if crate::budget::over(deadline) {
+            return Err(format!("{} before {} could start", crate::budget::why_over(), a.role));
         }
         let t = Instant::now();
         let prompt = match a.system.is_empty() {

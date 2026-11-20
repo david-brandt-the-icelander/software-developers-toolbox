@@ -17,11 +17,12 @@ const REQUEST: &str = "request.json";
 const USAGE: &str = "usage.jsonl";
 const RESULT: &str = "result.json";
 
-// A run working in this process: whether it ended, the signal its waiters sleep on, and when its job ends.
+// A run working in this process: whether it ended, the signal its waiters sleep on, when its job ends, and its cancel handle.
 struct Live {
     done: Mutex<bool>,
     ended: Condvar,
     until: Instant,
+    stop: crate::budget::Stop,
 }
 
 // The runs working in this process, by folder.
@@ -95,10 +96,15 @@ impl Job {
         self.folder.join(USAGE)
     }
 
-    // Keeps the terminal result with its usage, then wakes anyone waiting for it.
+    // The run's cancel handle, for the job's threads to watch.
+    pub fn stop(&self) -> crate::budget::Stop {
+        self.live.stop.clone()
+    }
+
+    // Keeps the terminal result with its usage (state `done`, or `cancelled` when it was), then wakes anyone waiting for it.
     pub fn finish(mut self, res: &Result<Output, String>) -> io::Result<()> {
         self.finished = true;
-        let kept = self.keep("done", res);
+        let kept = self.keep(if self.live.stop.cancelled() { "cancelled" } else { "done" }, res);
         self.end();
         kept
     }
@@ -181,9 +187,32 @@ pub fn begin(root: &Path, id: &str, argv: &[String], cwd: &Path, until: Instant)
         json!({"id": id, "argv": argv, "cwd": cwd, "started_ms": now_ms() as u64, "pid": std::process::id()});
     write_private(&folder.join(REQUEST), &request.to_string())
         .map_err(|e| format!("{}: {e}", folder.display()))?;
-    let live = Arc::new(Live { done: Mutex::new(false), ended: Condvar::new(), until });
+    let live =
+        Arc::new(Live { done: Mutex::new(false), ended: Condvar::new(), until, stop: Default::default() });
     running.insert(folder.clone(), Arc::clone(&live));
     Ok(Begun::New(Job { folder, live, started: Instant::now(), finished: false }))
+}
+
+// Cancels run `id`: a run working here stops starting new work and its waits end now, and its result (what it had gathered, with the cancel as its stop reason) is returned once it is kept; a run that already ended returns its result unchanged.
+pub fn cancel(root: &Path, id: &str) -> Result<Output, String> {
+    if !is_id(id) {
+        return Err(format!("--run-id takes 1 to 64 letters, digits, '-', '_' or '.', got '{id}'"));
+    }
+    let folder = root.join(id);
+    let live = RUNNING.lock().unwrap_or_else(|p| p.into_inner()).get(&folder).cloned();
+    match live {
+        Some(l) => {
+            l.stop.cancel();
+            wait(&folder, id, &l)
+        }
+        None if folder.join(REQUEST).is_file() => {
+            kept(&folder).unwrap_or_else(|| Ok(interrupted(&folder))).map(|mut o| {
+                o.notes.push_str(&format!("\n-- run {id} had already ended; nothing was cancelled\n"));
+                o
+            })
+        }
+        None => Err(format!("no investigate run {id}")),
+    }
 }
 
 // Waits, without polling, for a run working in this process to end (at most its deadline and a grace), then returns its kept result.

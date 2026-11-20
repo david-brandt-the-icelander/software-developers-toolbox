@@ -40,19 +40,21 @@ impl Fake {
     }
 }
 
-// Plays a scripted reply that begins `SLEEP MS` like a real agent: it takes that long, but is stopped at the deadline.
+// Plays a scripted reply that begins `SLEEP MS` like a real agent: it takes that long, but is stopped at the deadline or a cancel.
 fn paced(reply: Result<String, String>, deadline: Instant) -> Result<String, String> {
     let Some((ms, rest)) =
         reply.as_ref().ok().and_then(|t| t.strip_prefix("SLEEP ")).and_then(|t| t.split_once('\n'))
     else {
         return reply;
     };
-    let (want, left) =
-        (Duration::from_millis(ms.parse().unwrap_or(0)), deadline.saturating_duration_since(Instant::now()));
-    std::thread::sleep(want.min(left));
-    match want > left {
-        true => Err("stopped at the time limit".into()),
-        false => Ok(rest.to_string()),
+    let end = Instant::now() + Duration::from_millis(ms.parse().unwrap_or(0));
+    while Instant::now() < end.min(deadline) && !crate::budget::cancelled() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    match (crate::budget::cancelled(), end > deadline) {
+        (true, _) => Err("stopped at the cancel".into()),
+        (false, true) => Err("stopped at the time limit".into()),
+        (false, false) => Ok(rest.to_string()),
     }
 }
 
@@ -801,6 +803,20 @@ fn test_ask_hosted() {
     let err = agent::ask_hosted(&r, &slow, "p", t.path(), Instant::now() + Duration::from_millis(200), false)
         .unwrap_err();
     assert_eq!(err, "the time limit ran out while codex:gpt low worked");
+    let stop = crate::budget::Stop::default();
+    let canceller = {
+        let s = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            s.cancel();
+        })
+    };
+    let t1 = Instant::now();
+    let err = crate::budget::stopping(&stop, || agent::ask_hosted(&r, &slow, "p", t.path(), far, false))
+        .unwrap_err();
+    canceller.join().expect("cancel");
+    assert_eq!(err, "the run was cancelled while codex:gpt low worked");
+    assert!(t1.elapsed() < Duration::from_secs(2), "the agent was stopped at the cancel: {:?}", t1.elapsed());
     assert!(t0.elapsed() < Duration::from_secs(4));
     let w = Rung::parse("claude:sonnet@low", None).expect("rung");
     agent::ask_hosted(&w, &claude, "edit", t.path(), far, true).expect("write mode");
@@ -1016,4 +1032,36 @@ fn test_no_call_after_the_deadline() {
         .unwrap_err()
         .contains("before combine could start"));
     assert!(log.calls().is_empty() && f.prompts("a low").is_empty() && f.prompts("claude:b low").is_empty());
+}
+
+// Checks a cancel reaches every part running at the same time: each stops at once, nothing new starts after it (no escalation, no combining), and the run ends quickly with the cancel as the reason.
+#[test]
+fn test_cancel_reaches_parallel_parts() {
+    let (_t, root) = repo();
+    let f = Fake::new(&[
+        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
+        ("claude:sonnet high", Ok("SLEEP 5000\nSTATUS complete\nFINDING api/Endpoint.cs:2-3 too late")),
+    ]);
+    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let mut argv = q.to_vec();
+    argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "60"]);
+    let stop = crate::budget::Stop::default();
+    let canceller = {
+        let s = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            s.cancel();
+        })
+    };
+    let t0 = Instant::now();
+    let out = crate::budget::stopping(&stop, || go(&root, &f, &argv)).expect("run");
+    canceller.join().expect("cancel");
+    assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+    assert!(
+        out.contains("not escalated: the run was cancelled") && out.contains("stopped at the cancel"),
+        "{out}"
+    );
+    assert!(out.contains("the run was cancelled before combine could start"), "{out}");
+    assert!(f.prompts("qwen-a high").is_empty());
 }

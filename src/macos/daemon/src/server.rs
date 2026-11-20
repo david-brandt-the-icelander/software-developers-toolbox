@@ -682,6 +682,54 @@ pub mod tests {
         );
     }
 
+    // Checks `investigate --run-id ID --cancel` from another connection stops a running job at once: its local model wait ends, both callers get its result naming the cancel, and that result is kept.
+    #[test]
+    fn test_investigate_cancel_from_another_client() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let worker = t.write("ai-agent", b"#!/bin/sh\necho '{\"ready\":\"m\"}'\nwhile read l; do sleep 5; echo '{\"text\":\"late\"}'; done\n");
+        std::fs::set_permissions(&worker, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("chmod");
+        std::env::set_var("ZAZZLE_LLM", &worker);
+        crate::llm::reap(Duration::ZERO);
+        let work = TempDir::new();
+        work.write("a.txt", b"needle\n");
+        let runs = t.path().join("runs");
+        let req = |args: &[&str]| Request {
+            cwd: work.path().display().to_string(),
+            session: "s".into(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+        };
+        let srv = Running::start_with(Duration::from_secs(30), Engine::new().with_runs(Some(runs.clone())));
+        let sock = srv.sock.clone();
+        let job = req(&["investigate", "where?", "--path", ".", "--run-id", "c1", "--seconds", "60"]);
+        let t0 = Instant::now();
+        let first = std::thread::spawn(move || {
+            proto::roundtrip(&mut UnixStream::connect(&sock).expect("connect"), &job).expect("job")
+        });
+        std::thread::sleep(Duration::from_millis(400));
+        let (_, cancelled) = proto::roundtrip(
+            &mut UnixStream::connect(&srv.sock).expect("connect"),
+            &req(&["investigate", "--run-id", "c1", "--cancel"]),
+        )
+        .expect("cancel");
+        let (_, theirs) = first.join().expect("first");
+        srv.finish().expect("finish");
+        std::env::remove_var("ZAZZLE_LLM");
+        crate::llm::reap(Duration::ZERO);
+        assert!(
+            t0.elapsed() < Duration::from_secs(3),
+            "stopped at the cancel, not the 5 s answer: {:?}",
+            t0.elapsed()
+        );
+        assert!(cancelled.contains("the run was cancelled while the local model worked"), "{cancelled}");
+        assert_eq!(theirs, cancelled, "both callers get the one result");
+        let kept: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(runs.join("c1/result.json")).expect("result"))
+                .expect("json");
+        assert_eq!(kept["state"], "cancelled");
+    }
+
     // Checks bad requests are rejected without killing the server.
     #[test]
     fn test_bad_requests_are_survivable() {

@@ -756,6 +756,17 @@ fn test_run_ids_and_refusals() {
         caller: RefCell::new(None),
     };
     assert_eq!(run(&ctx, &[]).unwrap_err(), USAGE);
+    assert!(run(&ctx, &v(&["q", "--run-id", "x", "--cancel"]))
+        .unwrap_err()
+        .contains("--cancel takes the run to stop"));
+    assert!(run(&ctx, &v(&["--cancel"])).unwrap_err().contains("--cancel takes the run to stop"));
+    assert_eq!(run(&ctx, &v(&["--run-id", "gone", "--cancel"])).unwrap_err(), "no investigate run gone");
+    assert_eq!(
+        tool_args(&serde_json::json!({"run_id": "r1", "cancel": true})).expect("cancel"),
+        ["investigate", "--run-id", "r1", "--cancel"]
+    );
+    assert!(tool_args(&serde_json::json!({"run_id": "r1", "cancel": true, "question": "q"})).is_err());
+    assert!(tool_args(&serde_json::json!({"cancel": true})).is_err());
     let s = Script::new(vec![]);
     let e = explore(&ctx, &v(&["q", "--symbol", "Handle", "--path", "api"]), &s, Instant::now())
         .expect("explore");

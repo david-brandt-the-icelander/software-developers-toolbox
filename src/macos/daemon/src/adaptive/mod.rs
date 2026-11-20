@@ -191,8 +191,8 @@ pub fn run_at(
     let main_end = share(end, stages);
     let (main, bench_run) = std::thread::scope(|s| {
         let hosted = bench.as_ref().filter(|r| r.hosted()).map(|r| {
-            let (cwd, scope, plan) = (&ctx.cwd, &scope, &plan);
-            s.spawn(move || pure_hosted(b, r, plan, cwd, scope, main_end, sink))
+            let (cwd, scope, plan, job) = (&ctx.cwd, &scope, &plan, crate::budget::current());
+            s.spawn(move || crate::budget::carry(job, || pure_hosted(b, r, plan, cwd, scope, main_end, sink)))
         });
         let main = match o.adaptive {
             true => adaptive(ctx, b, &plan, &scope, &ladder, o.prose, main_end, sink),
@@ -558,7 +558,9 @@ fn part(
         let r = &ladder[idx];
         let role = if attempts.is_empty() { format!("part P{n}") } else { format!("escalation P{n}") };
         let work = match r.hosted() {
-            _ if Instant::now() >= deadline => Work::failed("the time limit ran out before it started"),
+            _ if crate::budget::over(deadline) => {
+                Work::failed(&format!("{} before it started", crate::budget::why_over()))
+            }
             true => match log.hosted(
                 b,
                 r,
@@ -594,7 +596,7 @@ fn part(
             Some(_) if attempts.len() >= MAX_ESCALATIONS => {
                 Some("the part was escalated as often as allowed")
             }
-            Some(_) if Instant::now() >= deadline => Some("the time limit ran out"),
+            Some(_) if crate::budget::over(deadline) => Some(crate::budget::why_over()),
             Some(_) => None,
         };
         match (trigger, stuck) {

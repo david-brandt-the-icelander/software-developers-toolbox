@@ -147,3 +147,33 @@ fn test_runs_dir() {
     std::env::remove_var("ZAZZLE_RUNS_DIR");
     assert!(home.is_some_and(|h| h.ends_with(".zazzle/runs")));
 }
+
+// Checks cancelling: a run working here is told to stop, ends with what it had, and is kept as cancelled; a run that already ended is returned unchanged with a note; an unknown or bad id is refused.
+#[test]
+fn test_runs_cancel() {
+    let t = TempDir::new();
+    let root = t.path().join("runs");
+    let argv = line(&["q"]);
+    let job = new_run(&root, "c1", &argv);
+    let worker = std::thread::spawn(move || {
+        let stop = job.stop();
+        crate::budget::stopping(&stop, || {
+            while !crate::budget::cancelled() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+        job.finish(&Ok(Output::plain("what it had".into()))).expect("finish");
+    });
+    assert_eq!(cancel(&root, "c1").expect("cancelled").text, "what it had");
+    worker.join().expect("worker");
+    let kept: Value = serde_json::from_str(&fs::read_to_string(root.join("c1/result.json")).expect("result"))
+        .expect("json");
+    assert_eq!(kept["state"], "cancelled");
+    let again = cancel(&root, "c1").expect("ended");
+    assert!(
+        again.text == "what it had" && again.notes.contains("had already ended; nothing was cancelled"),
+        "{again:?}"
+    );
+    assert_eq!(cancel(&root, "none"), Err("no investigate run none".into()));
+    assert!(cancel(&root, "../x").unwrap_err().contains("--run-id takes"));
+}

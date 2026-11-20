@@ -207,7 +207,7 @@ impl Indexer {
         failed.retain(|(state, _, _)| *state != self.state);
         let (mut w, mut r) = match opened {
             Ok(x) => x,
-            Err(e) if cut => {
+            Err(e) if cut || crate::budget::cancelled() => {
                 return Err(format!("{e} (within the job's time limit; the indexer keeps running)"))
             }
             Err(e) => {
@@ -216,6 +216,7 @@ impl Indexer {
             }
         };
         drop(failed);
+        let _watch = crate::budget::watch(&w);
         let mut args = args.clone();
         if let Some(rel) = args.get("path").and_then(Value::as_str).map(str::to_string) {
             args["path"] = json!(format!("{name}:{rel}"));
@@ -225,9 +226,10 @@ impl Indexer {
             &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}),
         )?;
         loop {
-            let msg = receive(&mut r).map_err(|e| match cut {
-                true => format!("the job's time limit ran out while the indexer answered ({e}); the indexer keeps running"),
-                false => e,
+            let msg = receive(&mut r).map_err(|e| match (crate::budget::cancelled(), cut) {
+                (true, _) => format!("the run was cancelled while the indexer answered ({e}); the indexer keeps running"),
+                (false, true) => format!("the job's time limit ran out while the indexer answered ({e}); the indexer keeps running"),
+                (false, false) => e,
             })?;
             if msg["id"] == json!(1) {
                 return result_text(&msg);
@@ -405,6 +407,37 @@ pub mod tests {
         assert!(fake.indexer().recent_failure().is_none(), "a deadline is not an indexer failure");
         let e = crate::budget::within(Instant::now(), || fake.indexer().view(&f, "s")).unwrap_err();
         assert!(e.contains("time limit ran out before"), "{e}");
+    }
+
+    // Checks a cancel shuts the job's own indexer connection at once (the indexer keeps running and is not marked broken), and no request starts after it.
+    #[test]
+    fn test_cancel_shuts_the_connection() {
+        let fake = FakeIndexer::start(|_, req| {
+            if !req.is_null() {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            viewing(&Value::Null, req)
+        });
+        let (_t, f) = repo();
+        let stop = crate::budget::Stop::default();
+        let canceller = {
+            let s = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(200));
+                s.cancel();
+            })
+        };
+        let t0 = Instant::now();
+        let e = crate::budget::stopping(&stop, || fake.indexer().view(&f, "s")).unwrap_err();
+        canceller.join().expect("cancel");
+        assert!(
+            e.contains("the run was cancelled while the indexer answered") && e.contains("keeps running"),
+            "{e}"
+        );
+        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+        assert!(fake.indexer().recent_failure().is_none());
+        let e = crate::budget::stopping(&stop, || fake.indexer().view(&f, "s")).unwrap_err();
+        assert!(e.contains("cancelled before"), "{e}");
     }
 
     // Checks a view round trip: handshake with the version and root, the tool call with root:path, and notifications skipped.

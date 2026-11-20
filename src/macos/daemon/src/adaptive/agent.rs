@@ -250,10 +250,10 @@ pub fn ask_hosted(
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break st,
-            Ok(None) if Instant::now() >= deadline => {
+            Ok(None) if crate::budget::over(deadline) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("the time limit ran out while {} worked", r.label()));
+                return Err(format!("{} while {} worked", crate::budget::why_over(), r.label()));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
             Err(e) => return Err(format!("waiting for {}: {e}", r.label())),

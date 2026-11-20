@@ -629,7 +629,8 @@
       "members": [
         "done: Mutex<bool>",
         "ended: Condvar",
-        "until: Instant"
+        "until: Instant",
+        "stop: Stop"
       ]
     },
     {
@@ -656,6 +657,42 @@
       "members": [
         "New(Job)",
         "Earlier(Result<Output, String>)"
+      ]
+    },
+    {
+      "id": "budget.Stop",
+      "name": "Stop",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/budget.rs"
+      ],
+      "members": [
+        "flag: Arc<AtomicBool>",
+        "open: Arc<Mutex<Vec<(u64, UnixStream)>>>"
+      ]
+    },
+    {
+      "id": "budget.Carried",
+      "name": "Carried",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/budget.rs"
+      ],
+      "members": [
+        "0: Option<Instant>",
+        "1: Option<Stop>"
+      ]
+    },
+    {
+      "id": "budget.Watch",
+      "name": "Watch",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/budget.rs"
+      ],
+      "members": [
+        "0: Option<Stop>",
+        "1: u64"
       ]
     },
     {
@@ -1440,6 +1477,24 @@
       "to": "runs.Job",
       "kind": "depends-on",
       "description": "A new run to work on."
+    },
+    {
+      "from": "runs.Live",
+      "to": "budget.Stop",
+      "kind": "depends-on",
+      "description": "The run's cancel handle."
+    },
+    {
+      "from": "budget.Carried",
+      "to": "budget.Stop",
+      "kind": "depends-on",
+      "description": "Carried into the job's threads."
+    },
+    {
+      "from": "budget.Watch",
+      "to": "budget.Stop",
+      "kind": "depends-on",
+      "description": "Its connection is shut when the job is cancelled."
     }
   ]
 }
