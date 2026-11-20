@@ -5,6 +5,8 @@ pub mod coverage;
 pub mod deliver;
 pub mod docs;
 pub mod edit;
+pub mod generate;
+pub mod headers;
 pub mod policy;
 pub mod repo;
 pub mod review;
@@ -20,7 +22,7 @@ use policy::Policy;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|update|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
+pub const USAGE: &str = "usage: zazzle flow preview|init [--write]|verify|tidy|coverage|audit|generate|headers|update|merge|write commit|changelog|pr|docs|deliver|test-first|ci .. (zazzle flow help)";
 // The help text.
 pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzle/flow.json
   preview [--base B]                 what applies here: checks, target branch and level, effects, agents, conflicts in the guidance
@@ -41,8 +43,14 @@ pub const HELP: &str = "zazzle flow: the repository workflow, opt-in with .zazzl
                                      measure coverage and list the changed files' uncovered lines and branches with tests
                                      to model on; with --author a cheap agent writes tests for them, kept only if they pass
   audit [--all] [--fix] [--base B]   run the dependency audits that apply (a manifest or lockfile changed; --all: every one)
-  update [--target B] [--resolver AGENT] [--no-agent] [--no-verify] [--push]
-                                     merge the target in; lockfiles regenerated, other conflicts to the local agent; committed only if checks pass
+  generate [--all] [--check] [--base B]
+                                     run the generators whose inputs changed; --check reports stale outputs and puts them back
+  headers [--all] [--fix] [--base B] check the license header in the changed (or all) source files; --fix adds it
+  update [--target B] [--resolver AGENT] [--reviewer AGENT] [--no-agent] [--no-review] [--no-verify] [--push]
+                                     merge the target in: lockfiles and generated files regenerated, other conflicts to the local agent,
+                                     a complex merge reviewed by the strong reviewer; committed only if it passes
+  merge [--pr N] [--method squash|merge|rebase]
+                                     merge the pull request when the policy allows it, its checks are green and no finding is open
   ci [--pr N] [--timeout S] [--triager AGENT] [--no-triage]
                                      wait for the pull request's checks on its head and report once; failed jobs' logs
                                      are cut to what matters and triaged by the local model
@@ -53,7 +61,7 @@ zazzle review [--into BRANCH] [--level feature|development|staging|production] [
 AGENT is MODEL (local), claude:MODEL or codex:MODEL, optionally @EFFORT; --seconds S limits each agent call (default 300).";
 
 // What every execution agent is told it does not do: zazzle's tools and its cheap writer do those after it.
-pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests, measure coverage or audit dependencies, do not merge the target branch in, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
+pub const TOOLS_NOTE: &str = "Do not format, lint, build, run tests, measure coverage or audit dependencies, do not run code generators, edit generated files or add license headers, do not merge branches or pull requests, and do not write documentation, changelogs, commit messages or pull request text, or wait for CI: zazzle runs those tools and its writer after you and sends back only what needs your judgment.";
 
 // Agent calls' default time limit.
 const AGENT_SECS: u64 = 300;
@@ -379,13 +387,15 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             Ok((out, if ok { 0 } else { 1 }))
         }
         "update" => {
-            let a = Args::parse(rest, &["--no-verify", "--push", "--no-agent"])?;
-            a.only(&["--target", "--resolver", "--agents", "--seconds"])?;
+            let a = Args::parse(rest, &["--no-verify", "--push", "--no-agent", "--no-review"])?;
+            a.only(&["--target", "--resolver", "--reviewer", "--agents", "--seconds"])?;
             let ladder = ladder(&p, &a, b)?;
             let resolver = one_agent(&a, "--resolver", &p, "resolver", &ladder[0])?;
+            let reviewer = one_agent(&a, "--reviewer", &p, "merge_review", ladder.last().expect("one rung"))?;
             let ask = update::Ask {
                 target: a.one("--target"),
                 resolver: (!a.on("--no-agent")).then_some(resolver),
+                reviewer: (!a.on("--no-review")).then_some(reviewer),
                 no_verify: a.on("--no-verify"),
                 push: a.on("--push"),
                 limit: limit(&a, "--seconds", AGENT_SECS)?,
@@ -394,6 +404,47 @@ fn dispatch(cwd: &Path, argv: &[String], b: &dyn Backend) -> Result<(String, i32
             let (mut out, ok) = update::update(&top, &p, &ask, b, &log)?;
             out.push_str(&calls::phases(&log.calls(), started.elapsed().as_secs_f64()));
             Ok((out, if ok { 0 } else { 1 }))
+        }
+        "generate" => {
+            let a = Args::parse(rest, &["--all", "--check"])?;
+            a.only(&["--base", "--timeout"])?;
+            let base = match (a.on("--all"), a.one("--base")) {
+                (true, _) => None,
+                (false, Some(bb)) => Some(bb),
+                (false, None) => repo::base(&top, &p.target).ok(),
+            };
+            let (out, ok) = generate::generate(
+                &top,
+                &p,
+                base.as_deref(),
+                a.on("--check"),
+                limit(&a, "--timeout", verify::CHECK_SECS)?,
+            )?;
+            Ok((out, if ok { 0 } else { 1 }))
+        }
+        "headers" => {
+            let a = Args::parse(rest, &["--all", "--fix"])?;
+            a.only(&["--base"])?;
+            let base = match (a.on("--all"), a.one("--base")) {
+                (true, _) => None,
+                (false, Some(bb)) => Some(bb),
+                (false, None) => repo::base(&top, &p.target).ok(),
+            };
+            let (out, ok) = headers::headers(&top, &p, base.as_deref(), a.on("--fix"))?;
+            Ok((out, if ok { 0 } else { 1 }))
+        }
+        "merge" => {
+            let a = Args::parse(rest, &[])?;
+            a.only(&["--pr", "--method", "--timeout"])?;
+            let method = a.one("--method").unwrap_or_else(|| "squash".into());
+            deliver::merge_pr(
+                &top,
+                &p,
+                &a.one("--pr").unwrap_or_default(),
+                &method,
+                limit(&a, "--timeout", 3600)?,
+            )
+            .map(|t| (t, 0))
         }
         "coverage" => {
             let a = Args::parse(rest, &["--all"])?;
@@ -500,6 +551,7 @@ fn apply(top: &Path, p: &Policy, kind: write::Kind, draft: &str) -> Result<Strin
                     paths: Vec::new(),
                     fix: None,
                     report: None,
+                    outputs: Vec::new(),
                 };
                 let o = verify::run_check(
                     top,

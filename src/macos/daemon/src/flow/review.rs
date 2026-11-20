@@ -294,6 +294,16 @@ fn from_fjson(v: &Value) -> Finding {
     }
 }
 
+// The open findings in a branch's review ledger, as `Fn [viewpoint] cite: issue`.
+pub fn open_findings(top: &Path, branch: &str) -> Vec<String> {
+    load_ledger(top, branch)
+        .0
+        .iter()
+        .filter(|f| f.status == "open" || f.status == "fixed-unverified")
+        .map(|f| format!("{} [{}] {}: {}", f.id, f.viewpoint, f.cite, f.issue))
+        .collect()
+}
+
 // The ledger: findings and the passes made (tree, level, viewpoints), as stored.
 fn load_ledger(top: &Path, branch: &str) -> (Vec<Finding>, Vec<Value>) {
     let v: Value = ledger_path(top, branch)
@@ -358,8 +368,19 @@ impl Run<'_> {
     // Re-pins the run to the working tree as it stands: tree, diff, paths and its verification (a fresh receipt for this tree, else a new run of the applicable checks).
     fn pin(&mut self) -> Result<(), String> {
         self.tree = repo::worktree_tree(self.top)?;
-        self.diff = repo::diff(self.top, &self.base, &self.tree)?;
-        self.paths = repo::changed(self.top, &self.base, &self.tree)?;
+        let p = self.p;
+        self.diff = super::testfirst::keep_patch(&repo::diff(self.top, &self.base, &self.tree)?, &|f| {
+            !p.is_generated(f)
+        });
+        let (paths, generated): (Vec<String>, Vec<String>) =
+            repo::changed(self.top, &self.base, &self.tree)?.into_iter().partition(|f| !p.is_generated(f));
+        self.paths = paths;
+        if !generated.is_empty() && !self.gaps.iter().any(|g| g.starts_with("generated files")) {
+            self.gaps.push(format!(
+                "generated files left out of the review (their generator is reviewed instead): {}",
+                generated.join(", ")
+            ));
+        }
         self.receipt = match verify::receipt_for(self.top, &self.tree) {
             Some(r) => Some(r),
             None if self.p.checks.is_empty() => None,
@@ -644,8 +665,11 @@ impl Run<'_> {
         if !code.is_empty() {
             let paths: Vec<String> = self.paths.iter().filter(|p| !self.p.is_doc(p)).cloned().collect();
             let p = self.p;
-            let allowed =
-                |x: &str| !p.is_doc(x) && (paths.iter().any(|y| y == x) || x.to_lowercase().contains("test"));
+            let allowed = |x: &str| {
+                !p.is_doc(x)
+                    && !p.is_generated(x)
+                    && (paths.iter().any(|y| y == x) || x.to_lowercase().contains("test"))
+            };
             let how = if self.o.fixer.hosted() {
                 "Reply with a line `FIXED Fn how` per finding, then STATUS and CONFIDENCE."
             } else {
@@ -657,7 +681,7 @@ impl Run<'_> {
         }
         if !docs.is_empty() {
             let p = self.p;
-            let allowed = |x: &str| p.is_doc(x);
+            let allowed = |x: &str| p.is_doc(x) && !p.is_generated(x);
             let how = if self.o.writer.hosted() {
                 "Edit the files directly, then reply with STATUS."
             } else {

@@ -32,6 +32,7 @@
         "pr_template",
         "docs, docs_checks",
         "lockfiles: Vec<(file, command)>",
+        "license: Option<License>",
         "effects",
         "agents",
         "conflicts",
@@ -52,10 +53,11 @@
         "name",
         "run",
         "dir",
-        "kind (build, test, coverage, format, lint, audit, script)",
+        "kind (build, test, coverage, format, lint, audit, generate, script)",
         "paths",
-        "fix: Option<String>",
-        "report: Option<String>"
+        "fix",
+        "report",
+        "outputs"
       ]
     },
     {
@@ -245,9 +247,23 @@
       "members": [
         "target",
         "resolver: Option<Rung>",
+        "reviewer: Option<Rung>",
         "no_verify",
         "push",
         "limit"
+      ]
+    },
+    {
+      "id": "License",
+      "name": "License",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/policy.rs"
+      ],
+      "members": [
+        "lines",
+        "paths",
+        "skip"
       ]
     }
   ],
@@ -293,6 +309,12 @@
       "to": "Edited",
       "kind": "depends-on",
       "description": "Each agent's edit, scope enforced."
+    },
+    {
+      "from": "Policy",
+      "to": "License",
+      "kind": "depends-on",
+      "description": "The header flow headers requires."
     }
   ]
 }

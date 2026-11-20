@@ -57,6 +57,7 @@ fn focused(top: &Path, s: &Spec, name: &str) -> Result<(Outcome, String), String
         paths: Vec::new(),
         fix: None,
         report: None,
+        outputs: Vec::new(),
     };
     let o = verify::run_check(top, &c, &log, s.limit);
     let out = std::fs::read_to_string(&log).unwrap_or_default();
@@ -187,7 +188,9 @@ pub fn run(top: &Path, p: &Policy, s: &Spec, b: &dyn Backend, log: &Log) -> Resu
         out.push_str("-- test accepted; no fix agent given, so production is unchanged\n");
         return Ok(out);
     };
-    let in_prod = |path: &str| !in_tests(path) && (s.prod.is_empty() || repo::under(path, &s.prod));
+    let in_prod = |path: &str| {
+        !in_tests(path) && !p.is_generated(path) && (s.prod.is_empty() || repo::under(path, &s.prod))
+    };
     let red_text = std::fs::read_to_string(&red_run.log).unwrap_or_default();
     let tail: String =
         red_text.lines().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
@@ -257,12 +260,17 @@ pub fn run(top: &Path, p: &Policy, s: &Spec, b: &dyn Backend, log: &Log) -> Resu
 
 // Keeps the parts of a diff that touch the given paths.
 pub fn filter_patch(diff: &str, paths: &[String]) -> String {
+    keep_patch(diff, &|f| repo::under(f, paths))
+}
+
+// Keeps the parts of a diff whose file `keep` accepts.
+pub fn keep_patch(diff: &str, keep_file: &dyn Fn(&str) -> bool) -> String {
     let mut out = String::new();
     let mut keep = false;
     for l in diff.lines() {
         if let Some(rest) = l.strip_prefix("diff --git a/") {
             let path = rest.split(" b/").next().unwrap_or_default();
-            keep = repo::under(path, paths);
+            keep = keep_file(path);
         }
         if keep {
             out.push_str(l);

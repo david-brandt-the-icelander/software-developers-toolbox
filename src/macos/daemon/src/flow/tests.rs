@@ -123,6 +123,8 @@ fn repo_on_feature() -> (TempDir, PathBuf) {
     g(&root, &["config", "user.email", "t@t"]);
     g(&root, &["config", "user.name", "t"]);
     g(&root, &["config", "commit.gpgsign", "false"]);
+    g(&root, &["config", "gc.auto", "0"]);
+    g(&root, &["config", "maintenance.auto", "false"]);
     t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
     t.write("tests/check.sh", b"exit 0\n");
     t.write("README.md", b"# demo\n");
@@ -243,7 +245,7 @@ fn test_policy_file() {
     assert!(bad("{").contains(".zazzle/flow.json"));
     assert!(bad(r#"{"checks": [{"name": "x"}]}"#).contains("has no `run`"));
     assert!(bad(r#"{"checks": [{"run": "x", "kind": "deploy"}]}"#)
-        .contains("one of build, test, coverage, format, lint, audit, script"));
+        .contains("one of build, test, coverage, format, lint, audit, generate, script"));
     assert!(bad(r#"{"branches": {"levels": {"qa": "uat"}}}"#).contains("branches.levels.qa"));
     assert!(bad(r#"{"effects": ["deploy"]}"#).contains("not `deploy`"));
     t.write(".zazzle/flow.json", br#"{"branches": {"levels": {"qa": "staging"}, "protected": ["release"]}}"#);
@@ -357,6 +359,7 @@ fn test_verify_and_receipts() {
         paths: Vec::new(),
         fix: None,
         report: None,
+        outputs: Vec::new(),
     };
     let log = root.join("c.log");
     let ok = verify::run_check(
@@ -392,6 +395,7 @@ fn test_verify_and_receipts() {
         paths: vec!["docs/".into()],
         fix: None,
         report: None,
+        outputs: Vec::new(),
     });
     let base = g(&root, &["rev-parse", "main"]);
     let r = verify::verify(&root, &p, Some(&base), &[], Duration::from_secs(10)).expect("verify");
@@ -1203,6 +1207,7 @@ fn test_parse_and_discover_variants() {
         paths: Vec::new(),
         fix: None,
         report: None,
+        outputs: Vec::new(),
     };
     let o = verify::run_check(&root, &c, &root.join("x.log"), Duration::from_secs(10));
     assert_eq!((o.status.as_str(), o.failed), ("failed", 1), "exit 0 with a failed test is a failure");
@@ -2030,13 +2035,26 @@ fn test_update() {
     assert!(flow(&root, &f, &["update", "--agents", "qwen-a"])
         .0
         .contains("says the sides contradict: one side adds 1"));
-    let f = Fake::new(vec![("qwen-a low", say("FILE src/lib.rs\n```\npub fn add(a: i32, b: i32) -> i32 { a.wrapping_add(b).wrapping_add(1) }\n```"))]);
-    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a"]);
+    let f = Fake::new(vec![
+        ("qwen-a low", say("FILE src/lib.rs\n```\npub fn add(a: i32, b: i32) -> i32 { a.wrapping_add(b).wrapping_add(1) }\n```")),
+        ("claude:big high", say("OK both intents kept")),
+    ]);
+    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a,claude:big@high"]);
     assert!(
         code == 0
             && out.contains("src/lib.rs: resolved by qwen-a low")
+            && out.contains(
+                "a complex merge (the local agent resolved src/lib.rs): reviewed by claude:big high"
+            )
             && out.contains("-- the branch is current"),
         "{out}"
+    );
+    let review = &f.prompts("claude:big high")[0];
+    assert!(
+        review.contains("Resolved by the local agent: src/lib.rs")
+            && review.contains("wrapping_add(1)")
+            && review.contains("You may read the files"),
+        "{review}"
     );
     let sent = &f.prompts("qwen-a low")[0];
     assert!(
@@ -2123,7 +2141,7 @@ fn test_tool_edges() {
     t.write("src/lib.rs", b"our side\n");
     g(&root, &["commit", "-qam", "our side"]);
     let f = Fake::new(vec![("claude:m medium", edits(&[("src/lib.rs", "both sides\n")], "STATUS complete"))]);
-    let (out, code) = flow(&root, &f, &["update", "--resolver", "claude:m"]);
+    let (out, code) = flow(&root, &f, &["update", "--resolver", "claude:m", "--no-review"]);
     assert!(
         code == 0
             && out.contains("src/lib.rs: resolved by claude:m medium")
@@ -2137,4 +2155,252 @@ fn test_tool_edges() {
         code == 1 && !out.contains("ran `") && out.contains("CVE-2024-12345"),
         "no fix command to run: {out}"
     );
+}
+
+// Checks generators: none configured, none applying until an input changes, regenerated outputs listed, stray files named, --check reporting stale outputs and putting them back, current outputs, a failing generator, and generated files kept from agents and reviews.
+#[test]
+fn test_generate() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["generate"]).0.contains("no generator is configured"));
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "api", "run": "cp schema/api.txt gen/api.rs; echo stray > stray.txt", "kind": "generate", "paths": ["schema/"], "outputs": ["gen/"]}]}"#);
+    t.write("schema/api.txt", b"v1\n");
+    t.write("gen/api.rs", b"v1\n");
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "generator"]);
+    assert!(flow(&root, &none, &["generate", "--base", "HEAD"]).0.contains("no generator's inputs changed"));
+    t.write("schema/api.txt", b"v2\n");
+    let (out, code) = flow(&root, &none, &["generate", "--check"]);
+    assert!(
+        code == 1
+            && out.contains("-- stale: regenerating changes gen/api.rs, stray.txt")
+            && out.contains("also changed files outside their outputs: stray.txt"),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("gen/api.rs")).expect("gen"),
+        "v1\n",
+        "--check puts the outputs back"
+    );
+    let (out, code) = flow(&root, &none, &["generate"]);
+    assert!(code == 0 && out.contains("-- regenerated gen/api.rs"), "{out}");
+    std::fs::remove_file(root.join("stray.txt")).expect("rm");
+    let (out, code) = flow(&root, &none, &["generate", "--all"]);
+    assert!(code == 0 && out.contains("current") || out.contains("stray.txt"), "{out}");
+    let p = policy::load(&root).expect("p");
+    assert!(p.is_generated("gen/api.rs") && !p.is_generated("schema/api.txt"));
+    std::fs::remove_file(root.join("stray.txt")).ok();
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "api", "run": "exit 3", "kind": "generate", "outputs": ["gen/"]}]}"#);
+    let (out, code) = flow(&root, &none, &["generate", "--all"]);
+    assert!(code == 1 && out.contains("✗ api: failed"), "{out}");
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "unit", "run": "true"}, {"name": "api", "run": "true", "kind": "generate", "outputs": ["gen/"]}]}"#);
+    t.write("gen/api.rs", b"v3 by hand\n");
+    t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a - b\n}\n");
+    let f =
+        Fake::new(vec![("qwen-a low", say("")), ("qwen-a low", say("SCOPE src")), ("qwen-a low", say(""))]);
+    let (out, _) = flow(&root, &f, &["review", "--agents", "qwen-a", "--read-only"]);
+    assert!(
+        out.contains(
+            "gap: generated files left out of the review (their generator is reviewed instead): gen/api.rs"
+        ),
+        "{out}"
+    );
+    assert!(!f.prompts("qwen-a low")[1].contains("v3 by hand"), "the reviewer is not sent generated code");
+}
+
+// Checks license headers: none configured, missing headers found and added after a shebang in each comment style, skipped extensions and generated files left alone, an existing header kept, tidy adding them, and the policy's errors.
+#[test]
+fn test_headers() {
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["headers"]).0.contains("no license header is configured"));
+    t.write("LICENSE-HEADER", b"Copyright Demo\n\nSPDX-License-Identifier: MIT\n");
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "license": {"file": "LICENSE-HEADER", "paths": ["src/", "tests/"], "skip": ["toml"]}, "checks": [{"name": "api", "run": "true", "kind": "generate", "outputs": ["src/gen/"]}]}"#);
+    t.write("src/run.sh", b"#!/bin/sh\necho hi\n");
+    t.write("src/conf.toml", b"a = 1\n");
+    t.write("src/gen/out.rs", b"// generated\n");
+    t.write("src/q.sql", b"select 1;\n");
+    t.write("src/notes.txt", b"no style\n");
+    let (out, code) = flow(&root, &none, &["headers"]);
+    assert!(
+        code == 1 && out.contains("missing in src/lib.rs, src/q.sql, src/run.sh")
+            || out.contains("missing in"),
+        "{out}"
+    );
+    assert!(!out.contains("conf.toml") && !out.contains("gen/out.rs") && !out.contains("notes.txt"), "{out}");
+    let (out, code) = flow(&root, &none, &["headers", "--fix"]);
+    assert!(code == 0 && out.contains("added the license header to"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("src/run.sh")).expect("sh"),
+        "#!/bin/sh\n# Copyright Demo\n#\n# SPDX-License-Identifier: MIT\n\necho hi\n"
+    );
+    assert!(std::fs::read_to_string(root.join("src/q.sql"))
+        .expect("sql")
+        .starts_with("-- Copyright Demo\n--\n"));
+    let (out, code) = flow(&root, &none, &["headers", "--all"]);
+    assert!(code == 1 && out.contains("tests/check.sh"), "every tracked file with --all: {out}");
+    let (out, _) = flow(&root, &none, &["tidy"]);
+    assert!(out.contains("headers: added the license header to") || out.contains("headers: all"), "{out}");
+    assert!(headers::style("a.unknown").is_none() && headers::style("Makefile").is_none());
+    let bad = |cfg: &str| {
+        t.write(".zazzle/flow.json", cfg.as_bytes());
+        policy::load(&root).unwrap_err()
+    };
+    assert!(bad(r#"{"license": {"paths": ["src/"]}}"#).contains("license needs `header` or `file`"));
+    assert!(bad(r#"{"license": {"file": "nope"}}"#).contains("license.file nope: no such file"));
+    t.write(".zazzle/flow.json", br#"{"license": {"header": "Demo"}}"#);
+    assert_eq!(policy::load(&root).expect("inline").license.expect("license").lines, ["Demo"]);
+}
+
+// Checks merging a pull request: refused unless the policy allows it, for a draft, a bad method, open review findings or red checks; merged with the head it checked otherwise.
+#[test]
+fn test_merge_pr() {
+    let _g = crate::testutil::env_lock();
+    let (t, root) = repo_on_feature();
+    opt_in(&t, "");
+    let none = Fake::new(vec![]);
+    assert!(flow(&root, &none, &["merge"]).0.contains("does not allow `merge`"));
+    t.write(
+        ".zazzle/flow.json",
+        br#"{"branches": {"target": "main"}, "effects": ["commit", "push", "pr", "merge"]}"#,
+    );
+    assert!(flow(&root, &none, &["merge", "--method", "yolo"])
+        .0
+        .contains("--method is squash, merge or rebase"));
+    let gh = |draft: bool, concl: &str| {
+        exe(&t, "gh", &format!("echo \"$@\" >> \"$0.log\"\ncase \"$2\" in\n view) echo '{{\"number\":9,\"url\":\"https://x/pr/9\",\"headRefOid\":\"abcdef1234\",\"headRefName\":\"feature/x\",\"isDraft\":{draft},\"statusCheckRollup\":[{{\"name\":\"t\",\"status\":\"COMPLETED\",\"conclusion\":\"{concl}\"}}]}}';;\n merge) echo merged;;\nesac\n"))
+    };
+    std::env::set_var("ZAZZLE_GH", gh(true, "SUCCESS"));
+    let draft = flow(&root, &none, &["merge"]);
+    std::env::set_var("ZAZZLE_GH", gh(false, "FAILURE"));
+    let red = flow(&root, &none, &["merge", "--pr", "9"]);
+    std::env::set_var("ZAZZLE_GH", gh(false, "SUCCESS"));
+    let merged = flow(&root, &none, &["merge", "--pr", "9", "--method", "merge"]);
+    let ledger = repo::state(&root, "reviews").expect("state").join("feature_x.json");
+    std::fs::write(&ledger, r#"{"findings": [{"id": "F1", "viewpoint": "correctness", "cite": "src/lib.rs:2", "issue": "wrong", "status": "open"}], "passes": []}"#).expect("ledger");
+    let open = flow(&root, &none, &["merge"]);
+    std::env::remove_var("ZAZZLE_GH");
+    assert!(draft.0.contains("is a draft"), "{}", draft.0);
+    assert!(red.0.contains("the checks are not green on abcdef12"), "{}", red.0);
+    assert!(
+        merged.1 == 0 && merged.0.contains("merged: https://x/pr/9 #9 at abcdef12 (merge)"),
+        "{}",
+        merged.0
+    );
+    let calls = std::fs::read_to_string(t.path().join("gh.log")).expect("log");
+    assert!(calls.contains("pr merge 9 --merge --match-head-commit abcdef1234"), "{calls}");
+    assert!(
+        open.0.contains("the review ledger has open findings: F1 [correctness] src/lib.rs:2: wrong"),
+        "{}",
+        open.0
+    );
+}
+
+// Checks the merge review in an update: a complex merge whose reviewer finds a problem is aborted, a conflicted generated file is regenerated, and a review that fails aborts the merge.
+#[test]
+fn test_update_review_and_generated() {
+    let (t, root) = repo_on_feature();
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "gen", "run": "echo regenerated > gen/out.txt", "kind": "generate", "outputs": ["gen/"]}]}"#);
+    t.write("gen/out.txt", b"base\n");
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "gen"]);
+    g(&root, &["checkout", "-q", "main"]);
+    g(&root, &["merge", "-q", "feature/x"]);
+    t.write("gen/out.txt", b"main\n");
+    t.write("src/lib.rs", b"main lib\n");
+    g(&root, &["commit", "-qam", "main side"]);
+    g(&root, &["checkout", "-q", "feature/x"]);
+    t.write("gen/out.txt", b"ours\n");
+    t.write("src/lib.rs", b"our lib\n");
+    g(&root, &["commit", "-qam", "our side"]);
+    let head = g(&root, &["rev-parse", "HEAD"]);
+    let f = Fake::new(vec![
+        ("qwen-a low", say("FILE src/lib.rs\n```\nmerged lib\n```")),
+        ("claude:r high", say("PROBLEM src/lib.rs:1 | main's change is lost | keep both\nOK nothing else")),
+    ]);
+    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a,claude:r@high"]);
+    assert!(
+        code == 1
+            && out.contains("gen/out.txt: regenerated by its generator")
+            && out.contains("  PROBLEM src/lib.rs:1 | main's change is lost")
+            && out.contains("deciding them is the orchestrator's"),
+        "{out}"
+    );
+    assert_eq!(g(&root, &["rev-parse", "HEAD"]), head, "aborted");
+    let f = Fake::new(vec![
+        ("qwen-a low", say("FILE src/lib.rs\n```\nmerged lib\n```")),
+        ("claude:r high", fails("reviewer offline")),
+    ]);
+    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a,claude:r@high"]);
+    if code != 2 || !out.contains("was aborted") {
+        let ls = std::process::Command::new("ls").arg("-la").arg(root.join(".git")).output().expect("ls");
+        eprintln!(
+            "DEBUG {}\nstatus={}",
+            String::from_utf8_lossy(&ls.stdout),
+            repo::git(&root, &["status"]).unwrap_or_else(|e| e)
+        );
+    }
+    assert!(
+        code == 2 && out.contains("reviewer offline; the merge was aborted and the branch is as it was"),
+        "{out}"
+    );
+    assert_eq!(g(&root, &["status", "--porcelain", "--untracked-files=no"]), "");
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "checks": [{"name": "gen", "run": "exit 1", "kind": "generate", "outputs": ["gen/"]}]}"#);
+    g(&root, &["commit", "-qam", "broken generator"]);
+    let (out, _) = flow(&root, &Fake::new(vec![]), &["update", "--no-agent"]);
+    assert!(out.contains("gen/out.txt: its generator failed"), "{out}");
+}
+
+// Checks a clean but complex merge (three files changed on both sides, touching authentication) reviewed and committed, a generator with no inputs listed, a license for every path, and an open non-draft pull request found again without a body.
+#[test]
+fn test_complex_clean_merge() {
+    let _g = crate::testutil::env_lock();
+    let (t, root) = repo_on_feature();
+    t.write(".zazzle/flow.json", br#"{"branches": {"target": "main"}, "license": {"header": "Demo"}, "checks": [{"name": "gen", "run": "true", "kind": "generate", "outputs": ["gen/"]}]}"#);
+    for f in ["a.txt", "b.txt", "c.txt"] {
+        t.write(f, b"1\n2\n3\n4\n5\n6\n");
+    }
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "files"]);
+    g(&root, &["checkout", "-q", "main"]);
+    g(&root, &["merge", "-q", "feature/x"]);
+    for f in ["a.txt", "b.txt", "c.txt"] {
+        t.write(f, b"main\n2\n3\n4\n5\n6\n");
+    }
+    t.write(
+        "api/auth.rs",
+        b"pub fn check_token(token: &str, password: &str) -> bool { token == password }\n",
+    );
+    g(&root, &["add", "-A"]);
+    g(&root, &["commit", "-qm", "main side"]);
+    g(&root, &["checkout", "-q", "feature/x"]);
+    for f in ["a.txt", "b.txt", "c.txt"] {
+        t.write(f, b"1\n2\n3\n4\n5\nours\n");
+    }
+    g(&root, &["commit", "-qam", "our side"]);
+    let f = Fake::new(vec![("claude:r high", say("OK all three files keep both changes"))]);
+    let (out, code) = flow(&root, &f, &["update", "--agents", "qwen-a,claude:r@high"]);
+    assert!(code == 0 && out.contains("a complex merge (3 files changed on both sides; it touches a security and compatibility boundary): reviewed by claude:r high"), "{out}");
+    let p = policy::load(&root).expect("p");
+    assert!(p.is_generated("gen/x") && p.license.as_ref().is_some_and(|l| l.paths.is_empty()));
+    assert!(
+        flow(&root, &Fake::new(vec![]), &["generate", "--base", "HEAD~1"]).0.contains("generated by zazzle"),
+        "a generator without inputs always applies"
+    );
+    assert!(
+        flow(&root, &Fake::new(vec![]), &["headers", "--all"]).0.contains("missing in"),
+        "every path is covered"
+    );
+    opt_in(&t, "");
+    let bare = TempDir::new();
+    g(bare.path(), &["init", "-q", "--bare"]);
+    g(&root, &["remote", "add", "origin", &bare.path().display().to_string()]);
+    let gh = exe(&t, "gh", "case \"$2\" in list) echo '[{\"number\":4,\"url\":\"https://x/pr/4\",\"isDraft\":false,\"baseRefName\":\"main\"}]';; esac\n");
+    std::env::set_var("ZAZZLE_GH", &gh);
+    t.write("src/lib.rs", b"// again\n");
+    let (out, code) = flow(&root, &Fake::new(vec![]), &["deliver", "--paths", "src", "-m", "Again", "--pr"]);
+    std::env::remove_var("ZAZZLE_GH");
+    assert!(code == 0 && out.contains("pr: https://x/pr/4 #4 (already open)\n"), "{out}");
 }

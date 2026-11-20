@@ -225,13 +225,9 @@ pub fn ask_hosted(
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let out = dir.join("last-message");
     let _ = std::fs::remove_file(&out);
-    let mut child = command(r, program, &out, write)
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("starting {}: {e}", program.display()))?;
+    let mut cmd = command(r, program, &out, write);
+    cmd.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = retry_busy(|| cmd.spawn()).map_err(|e| format!("starting {}: {e}", program.display()))?;
     let mut stdin = child.stdin.take().expect("piped");
     let input = prompt.to_string();
     let writer = std::thread::spawn(move || {
@@ -269,6 +265,20 @@ pub fn ask_hosted(
         return Err(format!("{} failed ({status}): {}", r.label(), one_line(last)));
     }
     said(r.kind, &stdout, &out_text)
+}
+
+// Runs a spawn again, up to ten times 20 ms apart, while it fails because the program file is still open for writing elsewhere (ETXTBSY, as right after a program is installed or written).
+pub fn retry_busy<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut tries = 0;
+    loop {
+        match f() {
+            Err(e) if e.raw_os_error() == Some(26) && tries < 10 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            r => return r,
+        }
+    }
 }
 
 // Shortens text to one line of at most 200 characters.

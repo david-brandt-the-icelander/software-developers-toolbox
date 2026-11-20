@@ -48,10 +48,14 @@ pub fn tidy(
     limit: Duration,
 ) -> Result<(String, bool), String> {
     let checks = applicable(top, p, base)?;
+    let headers = match p.license.is_some() {
+        true => super::headers::headers(top, p, base, true)?.0,
+        false => String::new(),
+    };
     if checks.is_empty() {
-        return Ok(("tidy: no format or lint check applies (add kind \"format\" or \"lint\" checks with a \"fix\" command to .zazzle/flow.json)\n".into(), true));
+        return Ok((format!("{headers}tidy: no format or lint check applies (add kind \"format\" or \"lint\" checks with a \"fix\" command to .zazzle/flow.json)\n"), true));
     }
-    let mut out = String::from("tidy:\n");
+    let mut out = format!("{headers}tidy:\n");
     for c in checks.iter().filter(|c| c.fix.is_some()) {
         let o = run(top, c, true, "fix", limit)?;
         out.push_str(&format!("  fixed with `{}`: {}\n", c.fix.as_deref().unwrap_or_default(), o.status));
@@ -99,7 +103,9 @@ pub fn tidy(
         })
         .collect();
     let prompt = format!("Fix only these lint findings, with the smallest edits; do not reformat or change anything else (zazzle runs the formatter and the linter after you). Change only: {}.\n{report}\n{}", if changed.is_empty() { "the files named in the findings".to_string() } else { changed.join(", ") }, if r.hosted() { "Edit the files, then reply with STATUS." } else { FILES });
-    let allowed = |x: &str| !p.is_doc(x) && (changed.is_empty() || changed.iter().any(|c| c == x));
+    let allowed = |x: &str| {
+        !p.is_doc(x) && !p.is_generated(x) && (changed.is_empty() || changed.iter().any(|c| c == x))
+    };
     let sections = [("evidence", report.as_str())];
     match edit::edit(top, b, log, r, "lint fix", &prompt, &sections, &allowed, Instant::now() + limit) {
         Ok(e) if !e.reverted.is_empty() => out.push_str(&format!(

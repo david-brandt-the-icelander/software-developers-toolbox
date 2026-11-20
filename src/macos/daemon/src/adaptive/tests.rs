@@ -893,3 +893,26 @@ fn test_failing_agents() {
     ]);
     assert!(go(&root, &f, &argv[..5]).expect("bare escalate").contains("escalate: who knows?\n"));
 }
+
+// Checks a spawn is retried while the program is busy, then given up, and other errors returned at once.
+#[test]
+fn test_retry_busy() {
+    let mut n = 0;
+    let r = agent::retry_busy(|| {
+        n += 1;
+        if n < 3 {
+            Err(std::io::Error::from_raw_os_error(26))
+        } else {
+            Ok(n)
+        }
+    });
+    assert_eq!(r.expect("third try"), 3);
+    let mut m = 0;
+    let busy: std::io::Result<()> = agent::retry_busy(|| {
+        m += 1;
+        Err(std::io::Error::from_raw_os_error(26))
+    });
+    assert!(busy.is_err() && m == 11);
+    let other: std::io::Result<()> = agent::retry_busy(|| Err(std::io::Error::other("no")));
+    assert_eq!(other.unwrap_err().to_string(), "no");
+}

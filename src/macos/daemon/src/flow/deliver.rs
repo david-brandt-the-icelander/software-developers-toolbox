@@ -26,11 +26,9 @@ fn gh() -> PathBuf {
 
 // Runs gh in `dir` and returns its standard output, or its last error line.
 pub fn run_gh(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(gh())
-        .args(args)
-        .current_dir(dir)
-        .stdin(std::process::Stdio::null())
-        .output()
+    let mut cmd = Command::new(gh());
+    cmd.args(args).current_dir(dir).stdin(std::process::Stdio::null());
+    let out = crate::adaptive::agent::retry_busy(|| cmd.output())
         .map_err(|e| format!("running gh: {e} (install the GitHub CLI or set $ZAZZLE_GH)"))?;
     match out.status.success() {
         true => Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()),
@@ -193,5 +191,51 @@ fn pull_request(top: &Path, a: &Ask, branch: &str, base: &str) -> Result<String,
         "pr: {} (opened{})\n",
         url.lines().last().unwrap_or_default(),
         if a.draft { ", draft" } else { "" }
+    ))
+}
+
+// Merges the pull request through gh, which is zazzle's job, not an agent's: only when the policy allows `merge`, the pull request is no draft, its checks on the head are green (waited for within `limit`), and the review ledger of its branch has no open finding; the merge names the head it checked, so a push in between makes gh refuse.
+pub fn merge_pr(
+    top: &Path,
+    p: &Policy,
+    pr: &str,
+    method: &str,
+    limit: std::time::Duration,
+) -> Result<String, String> {
+    if !p.effects.iter().any(|e| e == "merge") {
+        return Err(format!(
+            "{} does not allow `merge`: add it to effects to let zazzle merge pull requests",
+            super::policy::FILE
+        ));
+    }
+    if !["squash", "merge", "rebase"].contains(&method) {
+        return Err(format!("--method is squash, merge or rebase, not `{method}`"));
+    }
+    let mut args = vec!["pr", "view"];
+    if !pr.is_empty() {
+        args.push(pr);
+    }
+    args.extend(["--json", "number,url,headRefOid,headRefName,isDraft"]);
+    let v: serde_json::Value =
+        serde_json::from_str(&run_gh(top, &args)?).map_err(|e| format!("gh pr view: {e}"))?;
+    if v["isDraft"] == true {
+        return Err("the pull request is a draft: mark it ready first".into());
+    }
+    let n = v["number"].to_string();
+    let head = v["headRefOid"].as_str().unwrap_or_default().to_string();
+    let open = super::review::open_findings(top, v["headRefName"].as_str().unwrap_or_default());
+    if !open.is_empty() {
+        return Err(format!("the review ledger has open findings: {}", open.join("; ")));
+    }
+    let (ci, green, _) = super::ci::wait(top, &n, limit)?;
+    if !green {
+        return Err(format!("the checks are not green on {}:\n{ci}", verify::short(&head)));
+    }
+    let flag = format!("--{method}");
+    run_gh(top, &["pr", "merge", &n, &flag, "--match-head-commit", &head])?;
+    Ok(format!(
+        "{ci}merged: {} #{n} at {} ({method})\n",
+        v["url"].as_str().unwrap_or_default(),
+        verify::short(&head)
     ))
 }

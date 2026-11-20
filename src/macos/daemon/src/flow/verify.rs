@@ -226,7 +226,7 @@ pub fn parse(out: &str) -> (usize, usize, usize, Option<f64>, Vec<String>) {
 fn installed(run: &str) -> bool {
     const SHELL: &[&str] = &[
         "sh", "bash", "cd", "env", "make", "true", "false", "test", "[", "[[", "!", "(", "{", "if", "for",
-        "while", "exec", "echo", "printf", "set", "export",
+        "while", "exec", "echo", "printf", "set", "export", "exit", "return", ":", "cp", "cat",
     ];
     let first = run.split_whitespace().find(|w| !w.contains('=')).unwrap_or_default();
     if first.contains('/') || first.starts_with(['(', '{', '$']) || SHELL.contains(&first) {
@@ -317,7 +317,7 @@ pub fn receipt_for(top: &Path, tree: &str) -> Option<Receipt> {
     serde_json::from_str::<Value>(&text).ok().map(|v| Receipt::from_json(&v))
 }
 
-// Runs the checks that apply to what changed against `base` (all of them with no base, or those named in `only`) on the working tree as it stands, and keeps the receipt.
+// Runs the checks that apply to what changed against `base` (all of them with no base, or those named in `only`) on the working tree as it stands, and keeps the receipt; generators are not checks here, since they rewrite files (`flow generate` runs them).
 pub fn verify(
     top: &Path,
     p: &Policy,
@@ -342,7 +342,7 @@ pub fn verify(
         Some(_) => p.applicable(&changed),
         None => p.checks.iter().collect(),
     };
-    for c in &p.checks {
+    for c in p.checks.iter().filter(|c| c.kind != "generate") {
         if !only.is_empty() && !only.contains(&c.name) {
             continue;
         }

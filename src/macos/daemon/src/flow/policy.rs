@@ -11,7 +11,7 @@ pub const LEVELS: &[&str] = &["feature", "development", "staging", "production"]
 const BRANCHES: &[&str] =
     &["main", "master", "dev", "develop", "development", "staging", "stage", "production", "prod", "release"];
 
-// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage, format, lint or script), the paths whose change makes it apply (none: always), the command that fixes what it finds (formatters, linters' fix modes), and for coverage the report file it writes (lcov, Cobertura XML, a Go cover profile or coverage.py JSON), relative to its folder.
+// One check the repository runs: its name, the shell command, the folder it runs in (relative to the top), its kind (build, test, coverage, format, lint or script), the paths whose change makes it apply (none: always), the command that fixes what it finds (formatters, linters' fix modes), for coverage the report file it writes (lcov, Cobertura XML, a Go cover profile or coverage.py JSON), relative to its folder, and for a generator the files it writes (relative to the top), which agents never edit by hand.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Check {
     pub name: String,
@@ -21,12 +21,23 @@ pub struct Check {
     pub paths: Vec<String>,
     pub fix: Option<String>,
     pub report: Option<String>,
+    pub outputs: Vec<String>,
 }
 
 // The check kinds.
-pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "audit", "script"];
+pub const KINDS: &[&str] = &["build", "test", "coverage", "format", "lint", "audit", "generate", "script"];
+// The effects delivery can have; merge is never on unless the policy lists it.
+pub const EFFECTS: &[&str] = &["commit", "push", "pr", "merge"];
 
-// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the documentation paths and the commands that check documentation, the lockfiles' regeneration commands it adds to the usual ones, the effects deliver may have, the configured agents, and the conflicts found in guidance.
+// The license header a repository requires: its text (one line each), the paths it applies to (none: everywhere), and file extensions to skip.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct License {
+    pub lines: Vec<String>,
+    pub paths: Vec<String>,
+    pub skip: Vec<String>,
+}
+
+// The resolved policy: whether the repository opted in, its checks, the branch pull requests target and where that came from, the level of each named branch, protected branches, the changelog file and its check script, the pull request template, the documentation paths and the commands that check documentation, the lockfiles' regeneration commands it adds to the usual ones, the license header, the effects deliver may have, the configured agents, and the conflicts found in guidance.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Policy {
     pub opted_in: bool,
@@ -41,6 +52,7 @@ pub struct Policy {
     pub docs: Vec<String>,
     pub docs_checks: Vec<String>,
     pub lockfiles: Vec<(String, String)>,
+    pub license: Option<License>,
     pub effects: Vec<String>,
     pub agents: Value,
     pub conflicts: Vec<String>,
@@ -107,6 +119,11 @@ impl Policy {
             ("Gemfile.lock", "bundle lock"),
         ];
         usual.iter().find(|(f, _)| *f == name).map(|(_, c)| c.to_string())
+    }
+
+    // Tells whether a path is written by a generator, so agents leave it alone and reviews leave it out.
+    pub fn is_generated(&self, path: &str) -> bool {
+        self.checks.iter().any(|c| c.kind == "generate" && repo::under(path, &c.outputs))
     }
 
     // The checks that apply to a set of changed paths.
@@ -199,6 +216,7 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
             paths: strs(&c["paths"]),
             fix: c["fix"].as_str().map(str::to_string),
             report: c["report"].as_str().map(str::to_string),
+            outputs: strs(&c["outputs"]),
         });
     }
     if checks.is_empty() {
@@ -218,8 +236,8 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
         Some(e) => strs(e),
         None => vec!["commit".into(), "push".into(), "pr".into()],
     };
-    if let Some(bad) = effects.iter().find(|e| !["commit", "push", "pr"].contains(&e.as_str())) {
-        return Err(format!("{FILE}: effects are commit, push and pr, not `{bad}`"));
+    if let Some(bad) = effects.iter().find(|e| !EFFECTS.contains(&e.as_str())) {
+        return Err(format!("{FILE}: effects are {}, not `{bad}`", EFFECTS.join(", ")));
     }
     Ok(Policy {
         opted_in: true,
@@ -239,10 +257,32 @@ fn configured(top: &Path, v: &Value) -> Result<Policy, String> {
             .flatten()
             .filter_map(|(k, c)| Some((k.clone(), c.as_str()?.to_string())))
             .collect(),
+        license: license(top, &v["license"])?,
         effects,
         agents: v["agents"].clone(),
         ..Policy::default()
     })
+}
+
+// Reads the `license` setting: `header` (the text) or `file` (a file holding it), `paths` and `skip` (extensions); none when absent.
+fn license(top: &Path, v: &Value) -> Result<Option<License>, String> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    let text = match (v["header"].as_str(), v["file"].as_str()) {
+        (Some(h), _) => h.to_string(),
+        (None, Some(f)) => std::fs::read_to_string(top.join(f))
+            .map_err(|_| format!("{FILE}: license.file {f}: no such file"))?,
+        (None, None) => return Err(format!("{FILE}: license needs `header` or `file`")),
+    };
+    let strs = |x: &Value| {
+        x.as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect::<Vec<_>>()
+    };
+    Ok(Some(License {
+        lines: text.trim_end().lines().map(str::to_string).collect(),
+        paths: strs(&v["paths"]),
+        skip: strs(&v["skip"]),
+    }))
 }
 
 // The default branch: origin's HEAD when known, else main or master if they exist, else main.
@@ -289,6 +329,7 @@ pub fn discover(top: &Path) -> Vec<Check> {
                 paths,
                 fix: fix.map(str::to_string),
                 report: None,
+                outputs: Vec::new(),
             });
         };
         if has("Cargo.toml") && !inside {
