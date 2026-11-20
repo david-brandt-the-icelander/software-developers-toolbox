@@ -40,9 +40,25 @@ impl Fake {
     }
 }
 
+// Plays a scripted reply that begins `SLEEP MS` like a real agent: it takes that long, but is stopped at the deadline.
+fn paced(reply: Result<String, String>, deadline: Instant) -> Result<String, String> {
+    let Some((ms, rest)) =
+        reply.as_ref().ok().and_then(|t| t.strip_prefix("SLEEP ")).and_then(|t| t.split_once('\n'))
+    else {
+        return reply;
+    };
+    let (want, left) =
+        (Duration::from_millis(ms.parse().unwrap_or(0)), deadline.saturating_duration_since(Instant::now()));
+    std::thread::sleep(want.min(left));
+    match want > left {
+        true => Err("stopped at the time limit".into()),
+        false => Ok(rest.to_string()),
+    }
+}
+
 impl Backend for Fake {
     // Replies for `MODEL EFFORT`, with seven tokens.
-    fn local(&self, model: &str, req: &Value, _deadline: Instant) -> Result<Reply, String> {
+    fn local(&self, model: &str, req: &Value, deadline: Instant) -> Result<Reply, String> {
         let r = Rung {
             kind: agent::Kind::Local,
             model: model.into(),
@@ -53,7 +69,7 @@ impl Backend for Fake {
             req["system"].as_str().unwrap_or_default(),
             req["user"].as_str().unwrap_or_default()
         );
-        self.next(r.label(), prompt).map(|text| Reply {
+        paced(self.next(r.label(), prompt), deadline).map(|text| Reply {
             truncated: text.contains("CUT"),
             text,
             tokens: 7,
@@ -67,16 +83,17 @@ impl Backend for Fake {
         rung: &Rung,
         prompt: &str,
         _cwd: &Path,
-        _deadline: Instant,
+        deadline: Instant,
         _write: bool,
     ) -> Result<Said, String> {
-        self.next(rung.label(), prompt.into()).map(|text| Said {
+        paced(self.next(rung.label(), prompt.into()), deadline).map(|text| Said {
             text,
             tokens: 11,
             input: 100,
             cached: 40,
             rounds: 2,
             cost: Some(0.01),
+            counted: true,
         })
     }
 
@@ -431,8 +448,13 @@ fn test_part_escalation_limits() {
     let a = part(&ctx, &f, &Log::default(), &plan, &scope, &ladder, &top, 1, far);
     assert_eq!(a[0].why.as_deref(), Some("it verified nothing; not escalated: it was the top of the ladder"));
     let f = Fake::new(&[("a low", Ok("ANSWER\nUNKNOWN everything"))]);
-    let a = part(&ctx, &f, &Log::default(), &plan, &scope, &ladder, &p, 1, Instant::now());
-    assert_eq!(a[0].why.as_deref(), Some("it verified nothing; not escalated: the time limit ran out"));
+    let late = Log::default();
+    let a = part(&ctx, &f, &late, &plan, &scope, &ladder, &p, 1, Instant::now());
+    assert_eq!(
+        a[0].why.as_deref(),
+        Some("it failed: the time limit ran out before it started; not escalated: the time limit ran out")
+    );
+    assert!(late.calls().is_empty(), "no agent is asked after the deadline");
 }
 
 // Checks combining falls back to merging the parts when the combiner fails or verifies nothing from them, and how merging and overlap work.
@@ -719,7 +741,8 @@ fn test_said() {
             input: 25,
             cached: 20,
             rounds: 3,
-            cost: Some(0.5)
+            cost: Some(0.5),
+            counted: true
         }
     );
     assert_eq!(
@@ -730,7 +753,15 @@ fn test_said() {
     let events = "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"from events\"}}\nnoise\n{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":9,\"input_tokens\":30,\"cached_input_tokens\":12}}";
     assert_eq!(
         said(Kind::Codex, events, "from file").expect("file"),
-        Said { text: "from file".into(), tokens: 9, input: 30, cached: 12, rounds: 1, cost: None }
+        Said {
+            text: "from file".into(),
+            tokens: 9,
+            input: 30,
+            cached: 12,
+            rounds: 1,
+            cost: None,
+            counted: true
+        }
     );
     assert_eq!(said(Kind::Codex, events, " ").expect("events").text, "from events");
     assert_eq!(said(Kind::Codex, "", ""), Err("codex gave no final message".into()));
@@ -934,4 +965,55 @@ fn test_all_runs_together() {
     assert_eq!(got, [40, 10, 20]);
     assert_eq!(calls::all(&[7], |i, x| i + x), [7]);
     assert!(calls::all(&[] as &[usize], |_, x| *x).is_empty());
+}
+
+// Checks one deadline bounds the whole job: a part still working at the deadline is stopped, its escalation and the combining are not started after it, the other part's result is kept, and the job ends at the deadline rather than after the extra time each step used to get.
+#[test]
+fn test_deadline_between_parts() {
+    let (_t, root) = repo();
+    let f = Fake::new(&[
+        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
+        ("claude:sonnet high", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
+    ]);
+    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let mut argv = q.to_vec();
+    argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "2"]);
+    let t0 = Instant::now();
+    let out = go(&root, &f, &argv).expect("run");
+    assert!(t0.elapsed() < Duration::from_millis(2300), "ended by the deadline: {:?}", t0.elapsed());
+    assert!(
+        out.contains("  P1 qwen-a low: failed")
+            && out.contains("stopped at the time limit; not escalated: the time limit ran out"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "combining with claude:sonnet high failed: the time limit ran out before combine could start"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("the key is checked in Handle"), "the other part's result is kept: {out}");
+    assert!(f.prompts("qwen-a high").is_empty(), "no escalation after the deadline");
+    assert_eq!(
+        f.prompts("claude:sonnet high").len(),
+        2,
+        "planner and P2, no combining after the deadline: {out}"
+    );
+}
+
+// Checks no model call starts once the deadline has passed, local or hosted, and none is recorded.
+#[test]
+fn test_no_call_after_the_deadline() {
+    let (f, log) = (Fake::new(&[("a low", Ok("x")), ("claude:b low", Ok("y"))]), Log::default());
+    let past = Instant::now();
+    let local = Rung::parse("a", Some("low")).expect("rung");
+    let hosted = Rung::parse("claude:b", Some("low")).expect("rung");
+    let e = log.local(&f, &local, "part P1", &serde_json::json!({"user": "q"}), &[], past).unwrap_err();
+    assert_eq!(e, "the time limit ran out before part P1 could start");
+    assert!(log
+        .hosted(&f, &hosted, &Ask::new("combine", "", "q", &[]), Path::new("."), past)
+        .unwrap_err()
+        .contains("before combine could start"));
+    assert!(log.calls().is_empty() && f.prompts("a low").is_empty() && f.prompts("claude:b low").is_empty());
 }

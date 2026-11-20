@@ -326,6 +326,40 @@
         }
       ],
       "relationships": []
+    },
+    {
+      "id": "investigate-deadline-and-runs",
+      "title": "One job deadline, and investigate results kept by run id",
+      "summary": "An investigate job has one absolute deadline from when the daemon accepts it, and every job is kept as a run whose result and usage a caller recovers by id after its own wait was cut off.",
+      "status": "accepted",
+      "context": "In the 1.3.0 one-call benchmark three jobs asked for 90 seconds and answered after about 106, 208 and 179 seconds. The client stopped waiting at 105 seconds and lost all three answers and their model usage. In the code, each part re-derived whole seconds from the remaining time and added at least one, a model's startup and its answer each got the full remaining time, seed and indexer lookups had their own 45 s waits, the review and the benchmark each got another full --seconds, and a disconnected caller's result was written to a closed socket.",
+      "decision": "The deadline is created once and passed as an instant through planning, parts, escalation, combining, the summary, the benchmark and the review (stages share it), the lookup loop and the local worker (startup and answer share it); budget.rs carries it to the indexer bridge, which cuts its waits to it without stopping the shared indexer or marking it failed. Nothing new starts after the deadline, and a twentieth of the budget (at most 2 s) is kept for the partial result. runs.rs keeps each job's request, each call's usage as it ends and the result with its usage before the reply; the same run id returns the kept result (waiting without polling while it runs) and `--run-id ID` alone looks it up, also after a restart, when an unfinished run reads as interrupted with its recorded usage. Unreported token counts are null, never zero.",
+      "rationale": "A deadline the caller can rely on, and a result that survives the caller, keep paid hosted work from being lost or repeated; the one blocking call stays the normal path, and recovery needs no polling by a model.",
+      "origin": "A benchmarking agent's request after the 1.3.0 one-call benchmark.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/budget.rs",
+          "symbol": "cap"
+        },
+        {
+          "path": "src/macos/daemon/src/runs.rs",
+          "symbol": "begin"
+        },
+        {
+          "path": "src/macos/daemon/src/adaptive/mod.rs",
+          "symbol": "job_end"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask_in_until"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "test_investigate_kept_across_disconnect_and_restart"
+        }
+      ],
+      "relationships": []
     }
   ]
 }

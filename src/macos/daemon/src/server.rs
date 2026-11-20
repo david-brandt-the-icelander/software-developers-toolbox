@@ -267,10 +267,11 @@ fn check_peer(stream: &UnixStream, uid: u32) -> io::Result<()> {
     Ok(())
 }
 
-// True for requests that may run for a long time (script calls), which get their own thread.
+// True for requests that may run for a long time (investigate jobs and their lookups by run id, script calls), which get their own thread so they never hold a worker.
 fn long_running(args: &[String]) -> bool {
-    args.first().is_some_and(|a| a == "zazz")
-        && args.get(1).is_some_and(|a| matches!(a.as_str(), "call" | "run" | "exec-name"))
+    args.first().is_some_and(|a| a == "investigate")
+        || args.first().is_some_and(|a| a == "zazz")
+            && args.get(1).is_some_and(|a| matches!(a.as_str(), "call" | "run" | "exec-name"))
 }
 
 // Duplicates the invoker's three standard streams for a command that hands them to a script.
@@ -478,11 +479,16 @@ pub mod tests {
     impl Running {
         // Starts a server on a temporary socket.
         pub fn start(idle: Duration) -> Running {
+            Running::start_with(idle, Engine::new())
+        }
+
+        // Starts a server on its own socket with the given engine.
+        pub fn start_with(idle: Duration, engine: Engine) -> Running {
             let dir = TempDir::new();
             let sock = dir.path().join("s");
             let listener = bind(&sock).expect("bind");
             let stop = Arc::new(AtomicBool::new(false));
-            let (s2, engine) = (Arc::clone(&stop), Arc::new(Engine::new()));
+            let (s2, engine) = (Arc::clone(&stop), Arc::new(engine));
             let handle = std::thread::spawn(move || {
                 serve(listener, engine, &Config { idle, ..Config::default() }, &s2)
             });
@@ -606,6 +612,74 @@ pub mod tests {
         assert_eq!(status, 0);
         assert!(text.contains("a.txt 1"));
         srv.finish().expect("finish");
+    }
+
+    // Checks an investigate job outlives its caller: a client that sends the job and disconnects loses nothing, a fresh client submitting the same run id gets the one result without a second model call, and after a daemon restart the same result and its usage come back by id alone.
+    #[test]
+    fn test_investigate_kept_across_disconnect_and_restart() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let asked = t.path().join("asked");
+        let worker = t.write("ai-agent", format!("#!/bin/sh\necho '{{\"ready\":\"m\"}}'\nwhile read l; do echo x >> {}; sleep 0.4; printf '%s\\n' '{{\"text\":\"ANSWER\\nFINDING a.txt:1 the needle is here\",\"tokens\":7}}'; done\n", asked.display()).as_bytes());
+        std::fs::set_permissions(&worker, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("chmod");
+        std::env::set_var("ZAZZLE_LLM", &worker);
+        crate::llm::reap(Duration::ZERO);
+        let work = TempDir::new();
+        work.write("a.txt", b"needle\n");
+        let runs = t.path().join("runs");
+        let req = |args: &[&str]| Request {
+            cwd: work.path().display().to_string(),
+            session: "s".into(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+        };
+        let job = ["investigate", "where is the needle?", "--path", ".", "--run-id", "t1", "--seconds", "20"];
+        let srv = Running::start_with(Duration::from_secs(30), Engine::new().with_runs(Some(runs.clone())));
+        UnixStream::connect(&srv.sock)
+            .expect("connect")
+            .write_all(&encode(&req(&job)))
+            .expect("send and leave");
+        let (status, first) =
+            proto::roundtrip(&mut UnixStream::connect(&srv.sock).expect("connect"), &req(&job))
+                .expect("again");
+        assert_eq!(status, 0, "{first}");
+        assert!(first.contains("the needle is here") && first.contains("a.txt:1"), "{first}");
+        srv.finish().expect("finish");
+        let srv = Running::start_with(Duration::from_secs(30), Engine::new().with_runs(Some(runs.clone())));
+        let (status, later) = proto::roundtrip(
+            &mut UnixStream::connect(&srv.sock).expect("connect"),
+            &req(&["investigate", "--run-id", "t1"]),
+        )
+        .expect("lookup");
+        let (out, err, code) =
+            fd_call(&srv.sock, work.path(), &["investigate", "where?", "--path", ".", "--run-id", "t3"], b"");
+        srv.finish().expect("finish");
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(
+            err.starts_with(
+                "investigate: run t3 (if this wait is cut off: zazzle investigate --run-id t3)\n"
+            ),
+            "the id comes before the wait: {err}"
+        );
+        std::env::remove_var("ZAZZLE_LLM");
+        crate::llm::reap(Duration::ZERO);
+        assert_eq!(status, 0);
+        let body = |s: &str| s.split("\n-- the kept result").next().unwrap_or_default().to_string();
+        assert_eq!(body(&later), body(&first), "the same result after the restart");
+        assert!(later.contains("the kept result of investigate run t1; no model was asked again"), "{later}");
+        assert_eq!(
+            std::fs::read_to_string(&asked).expect("asked").lines().count(),
+            2,
+            "one model call for every submission of t1, one for t3"
+        );
+        let kept: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(runs.join("t1/result.json")).expect("result"))
+                .expect("json");
+        assert_eq!(
+            (kept["usage"]["calls"].as_u64(), kept["usage"]["output_tokens"].as_u64()),
+            (Some(1), Some(7)),
+            "{kept}"
+        );
     }
 
     // Checks bad requests are rejected without killing the server.

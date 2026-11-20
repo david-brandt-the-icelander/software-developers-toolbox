@@ -202,7 +202,7 @@ fn lock_until(deadline: Option<Instant>) -> Result<MutexGuard<'static, Option<Li
     }
 }
 
-// Asks like ask_in, finishing by `deadline` when one is given: the wait for the worker and the answer together get only the time left, and none left is an error.
+// Asks like ask_in, finishing by `deadline` when one is given: the wait for the worker, its startup and the answer together get only the time left (the answer what startup left), and none left is an error.
 pub fn ask_in_until(
     program: &Path,
     model: Option<&str>,
@@ -231,7 +231,13 @@ pub fn ask_in_until(
         *pool = Some(Live { session, program: program.to_path_buf(), last: Instant::now() });
     }
     let live = pool.as_mut().expect("started above");
-    live.session.limit = limit;
+    live.session.limit = match deadline.map(|d| d.saturating_duration_since(Instant::now())) {
+        Some(left) if left.is_zero() => {
+            return Err("starting the local model used the rest of the time limit".into())
+        }
+        Some(left) => left.min(limit),
+        None => limit,
+    };
     let r = live.session.ask(req).map(|r| Reply { queued_ms, ..r });
     live.last = Instant::now();
     if r.is_err() && !live.session.alive() {
@@ -373,6 +379,22 @@ mod tests {
         let later = Some(Instant::now() + Duration::from_secs(10));
         assert_eq!(ask_in_until(&worker, None, &q, d, later).expect("answered").text, "ok");
         assert!(reap(Duration::ZERO));
+    }
+
+    // Checks a slow startup leaves the answer only what is left of the deadline, not a fresh full limit: the call ends at the deadline instead of startup plus the whole limit after it.
+    #[test]
+    fn test_startup_counts_against_the_deadline() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let worker = fake(&t, "sleep 0.4\necho '{\"ready\":\"m\"}'\nwhile read l; do sleep 0.5; echo '{\"text\":\"late\"}'; done");
+        let (q, d) = (serde_json::json!({"user": "x"}), Duration::from_secs(10));
+        reap(Duration::ZERO);
+        let t0 = Instant::now();
+        let e = ask_in_until(&worker, None, &q, d, Some(t0 + Duration::from_millis(700)))
+            .expect_err("past the deadline");
+        assert!(e.contains("took longer"), "{e}");
+        assert!(t0.elapsed() < Duration::from_millis(850), "ended at the deadline: {:?}", t0.elapsed());
+        reap(Duration::ZERO);
     }
 
     // Checks the shared worker: it starts once for many calls, `model` None reuses whatever is loaded, another model or program replaces it, a dead worker is dropped, and idle ones are reaped.

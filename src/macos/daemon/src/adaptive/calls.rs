@@ -2,7 +2,7 @@
 use super::agent::{self, Rung, Said};
 use crate::llm::Reply;
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -62,17 +62,18 @@ impl Backend for Real {
 }
 
 // One model call: its role (its first word is the phase), the rung, whether it was hosted, the estimated tokens of
-// each section sent, the input, cached and output tokens and rounds the agent reported, the cost, the seconds queued
-// for the local worker and spent in all, and whether it answered.
+// each section sent, the input, cached and output tokens and rounds the agent reported (None when it reported none, as
+// for a call that failed or was stopped: unknown, never zero), the cost, the seconds queued for the local worker and
+// spent in all, and whether it answered.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Call {
     pub role: String,
     pub rung: String,
     pub hosted: bool,
     pub sent: Vec<(String, usize)>,
-    pub input: usize,
-    pub cached: usize,
-    pub tokens: usize,
+    pub input: Option<usize>,
+    pub cached: Option<usize>,
+    pub tokens: Option<usize>,
     pub rounds: usize,
     pub cost: Option<f64>,
     pub queued: f64,
@@ -84,6 +85,46 @@ impl Call {
     // The phase: the role's first word.
     pub fn phase(&self) -> &str {
         self.role.split_whitespace().next().unwrap_or_default()
+    }
+
+    // The call as one usage record: null counters are ones the agent did not report, and the tokens sent are estimates.
+    pub fn json(&self) -> Value {
+        json!({
+            "phase": self.phase(), "role": self.role, "agent": self.rung, "hosted": self.hosted,
+            "outcome": if self.ok { "answered" } else { "failed or stopped" },
+            "input_tokens": self.input, "cached_tokens": self.cached, "output_tokens": self.tokens, "rounds": self.rounds,
+            "cost_usd": self.cost, "sent_tokens_estimated": self.sent.iter().map(|(k, n)| json!({"section": k, "tokens": n})).collect::<Vec<_>>(),
+            "queued_seconds": self.queued, "seconds": self.secs,
+        })
+    }
+
+    // Reads a usage record back.
+    pub fn from_json(v: &Value) -> Call {
+        let n = |k: &str| v[k].as_u64().map(|x| x as usize);
+        Call {
+            role: v["role"].as_str().unwrap_or_default().into(),
+            rung: v["agent"].as_str().unwrap_or_default().into(),
+            hosted: v["hosted"] == true,
+            sent: v["sent_tokens_estimated"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|s| {
+                    (
+                        s["section"].as_str().unwrap_or_default().to_string(),
+                        s["tokens"].as_u64().unwrap_or(0) as usize,
+                    )
+                })
+                .collect(),
+            input: n("input_tokens"),
+            cached: n("cached_tokens"),
+            tokens: n("output_tokens"),
+            rounds: n("rounds").unwrap_or(0),
+            cost: v["cost_usd"].as_f64(),
+            queued: v["queued_seconds"].as_f64().unwrap_or(0.0),
+            secs: v["seconds"].as_f64().unwrap_or(0.0),
+            ok: v["outcome"] == "answered",
+        }
     }
 }
 
@@ -109,9 +150,12 @@ impl<'a> Ask<'a> {
     }
 }
 
-// The calls one run made, shared by the threads that make them.
+// The calls one run made, shared by the threads that make them; with a sink, each call is also appended there as one JSON line the moment it ends, so a run that is stopped or outlived by its caller keeps its accounting.
 #[derive(Default)]
-pub struct Log(Mutex<Vec<Call>>);
+pub struct Log {
+    calls: Mutex<Vec<Call>>,
+    sink: Option<PathBuf>,
+}
 
 // Runs `f` on every item at the same time, one thread each (inline for a single item), and returns the results in the items' order; for calls that do not depend on each other, so the slowest sets the wall time instead of their sum (local requests still take turns on the one shared worker).
 pub fn all<T: Sync, R: Send>(items: &[T], f: impl Fn(usize, &T) -> R + Sync) -> Vec<R> {
@@ -134,7 +178,7 @@ fn sizes(sections: &[(&str, &str)], whole: &str) -> Vec<(String, usize)> {
 }
 
 impl Log {
-    // Times one local request and records it with its sections.
+    // Times one local request and records it with its sections; none starts once the deadline has passed.
     pub fn local(
         &self,
         b: &dyn Backend,
@@ -144,6 +188,9 @@ impl Log {
         sections: &[(&str, &str)],
         deadline: Instant,
     ) -> Result<Reply, String> {
+        if Instant::now() >= deadline {
+            return Err(format!("the time limit ran out before {role} could start"));
+        }
         let t = Instant::now();
         let res = b.local(&r.model, req, deadline);
         let whole = format!(
@@ -151,7 +198,8 @@ impl Log {
             req["system"].as_str().unwrap_or_default(),
             req["user"].as_str().unwrap_or_default()
         );
-        let (tokens, queued) = res.as_ref().map_or((0, 0.0), |x| (x.tokens, x.queued_ms as f64 / 1000.0));
+        let (tokens, queued) =
+            res.as_ref().map_or((None, 0.0), |x| (Some(x.tokens), x.queued_ms as f64 / 1000.0));
         let c = Call {
             role: role.into(),
             rung: r.label(),
@@ -165,7 +213,7 @@ impl Log {
         res
     }
 
-    // Times one hosted call and records it with what was sent and what the agent reported.
+    // Times one hosted call and records it with what was sent and what the agent reported; none starts once the deadline has passed.
     pub fn hosted(
         &self,
         b: &dyn Backend,
@@ -174,6 +222,9 @@ impl Log {
         cwd: &Path,
         deadline: Instant,
     ) -> Result<Said, String> {
+        if Instant::now() >= deadline {
+            return Err(format!("the time limit ran out before {} could start", a.role));
+        }
         let t = Instant::now();
         let prompt = match a.system.is_empty() {
             true => a.prompt.to_string(),
@@ -181,14 +232,15 @@ impl Log {
         };
         let res = b.hosted(r, &prompt, cwd, deadline, a.write);
         let s = res.as_ref().cloned().unwrap_or_default();
+        let known = |n: usize| s.counted.then_some(n);
         let c = Call {
             role: a.role.into(),
             rung: r.label(),
             hosted: true,
             sent: sizes(a.sections, &prompt),
-            input: s.input,
-            cached: s.cached,
-            tokens: s.tokens,
+            input: known(s.input),
+            cached: known(s.cached),
+            tokens: known(s.tokens),
             rounds: s.rounds,
             cost: s.cost,
             ok: res.is_ok(),
@@ -219,12 +271,21 @@ impl Log {
     // Records one call with its elapsed time.
     fn push(&self, mut c: Call, t: Instant) {
         c.secs = t.elapsed().as_secs_f64();
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).push(c);
+        let mut calls = self.calls.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(sink) = &self.sink {
+            let _ = crate::runs::append(sink, &c.json());
+        }
+        calls.push(c);
+    }
+
+    // A log that also appends every call to `sink` as it ends.
+    pub fn to(sink: Option<PathBuf>) -> Log {
+        Log { calls: Mutex::default(), sink }
     }
 
     // The calls so far.
     pub fn calls(&self) -> Vec<Call> {
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.calls.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 }
 
@@ -253,10 +314,11 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
         json!({
             "calls": cs.len(),
             "agents": cs.iter().map(|c| c.rung.clone()).fold(Vec::<String>::new(), |mut v, r| { if !v.contains(&r) { v.push(r) } v }),
-            "sent_tokens": sent.iter().map(|(k, n)| json!({"section": k, "tokens": n})).collect::<Vec<_>>(),
-            "input_tokens": cs.iter().map(|c| c.input).sum::<usize>(),
-            "cached_tokens": cs.iter().map(|c| c.cached).sum::<usize>(),
-            "output_tokens": cs.iter().map(|c| c.tokens).sum::<usize>(),
+            "sent_tokens": sent.iter().map(|(k, n)| json!({"section": k, "tokens": n, "estimated": true})).collect::<Vec<_>>(),
+            "input_tokens": cs.iter().filter_map(|c| c.input).sum::<usize>(),
+            "cached_tokens": cs.iter().filter_map(|c| c.cached).sum::<usize>(),
+            "output_tokens": cs.iter().filter_map(|c| c.tokens).sum::<usize>(),
+            "uncounted_calls": cs.iter().filter(|c| c.tokens.is_none()).count(),
             "rounds": cs.iter().map(|c| c.rounds).sum::<usize>(),
             "cost_usd": if costs.is_empty() { Value::Null } else { json!(costs.iter().sum::<f64>()) },
             "queued_seconds": tenth(cs.iter().map(|c| c.queued).sum()),
@@ -274,12 +336,21 @@ pub fn usage(calls: &[Call], secs: f64) -> Value {
         "failed_calls": calls.iter().filter(|c| !c.ok).count(),
         "by_role": phases.iter().map(|p| json!({"role": p, "calls": calls.iter().filter(|c| c.phase() == p).count()})).collect::<Vec<_>>(),
         "seconds": tenth(secs),
-        "output_tokens": calls.iter().map(|c| c.tokens).sum::<usize>(),
+        "output_tokens": calls.iter().filter_map(|c| c.tokens).sum::<usize>(),
+        "uncounted_calls": calls.iter().filter(|c| c.tokens.is_none()).count(),
         "cost_usd": side(pick(true, None))["cost_usd"].clone(),
         "hosted": side(pick(true, None)),
         "local": side(pick(false, None)),
         "phases": phases.iter().map(|p| json!({"phase": p, "hosted": side(pick(true, Some(p))), "local": side(pick(false, Some(p)))})).collect::<Vec<_>>(),
     })
+}
+
+// Says how many of a usage's calls reported no token counts (failed or stopped calls), whose tokens the sums leave out as unknown.
+fn uncounted(u: &Value) -> String {
+    match u["uncounted_calls"].as_u64().unwrap_or(0) {
+        0 => String::new(),
+        n => format!(" (+ unknown for {n} call(s) that reported no counts)"),
+    }
 }
 
 // One line of usage: calls per role, seconds, output tokens and reported cost.
@@ -293,11 +364,12 @@ pub fn usage_line(calls: &[Call], secs: f64) -> String {
         .collect();
     let cost = u["cost_usd"].as_f64().map(|c| format!(", ${c:.4} reported")).unwrap_or_default();
     format!(
-        "{} calls ({}), {} s, {} output tokens{cost}",
+        "{} calls ({}), {} s, {} output tokens{}{cost}",
         u["calls"],
         roles.join(", "),
         u["seconds"],
-        u["output_tokens"]
+        u["output_tokens"],
+        uncounted(&u)
     )
 }
 
@@ -322,14 +394,18 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
                 h["agents"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
             let cost = h["cost_usd"].as_f64().map(|c| format!(", ${c:.4}")).unwrap_or_default();
             line.push_str(&format!(
-                " hosted {} call(s) to {} — sent ~{} tokens ({}); reported {} in, {} cached, {} out, {} rounds{cost};",
-                h["calls"], agents.join(", "), h["sent_tokens"].as_array().into_iter().flatten().map(|s| s["tokens"].as_u64().unwrap_or(0)).sum::<u64>(), sent(h), h["input_tokens"], h["cached_tokens"], h["output_tokens"], h["rounds"]
+                " hosted {} call(s) to {} — sent ~{} tokens ({}); reported {} in, {} cached, {} out{}, {} rounds{cost};",
+                h["calls"], agents.join(", "), h["sent_tokens"].as_array().into_iter().flatten().map(|s| s["tokens"].as_u64().unwrap_or(0)).sum::<u64>(), sent(h), h["input_tokens"], h["cached_tokens"], h["output_tokens"], uncounted(h), h["rounds"]
             ));
         }
         if l["calls"].as_u64() > Some(0) {
             line.push_str(&format!(
-                " local {} call(s), {} s queued, {} s in all, {} out;",
-                l["calls"], l["queued_seconds"], l["seconds"], l["output_tokens"]
+                " local {} call(s), {} s queued, {} s in all, {} out{};",
+                l["calls"],
+                l["queued_seconds"],
+                l["seconds"],
+                l["output_tokens"],
+                uncounted(l)
             ));
         }
         out.push_str(line.trim_end_matches(';'));
@@ -337,8 +413,8 @@ pub fn phases(calls: &[Call], secs: f64) -> String {
     }
     let (h, l) = (&u["hosted"], &u["local"]);
     out.push_str(&format!(
-        "  total: {} s; hosted {} calls, {} in, {} cached, {} out; local {} calls, {} s queued, {} s in all\n",
-        u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], l["calls"], l["queued_seconds"], l["seconds"]
+        "  total: {} s; hosted {} calls, {} in, {} cached, {} out{}; local {} calls, {} s queued, {} s in all\n",
+        u["seconds"], h["calls"], h["input_tokens"], h["cached_tokens"], h["output_tokens"], uncounted(h), l["calls"], l["queued_seconds"], l["seconds"]
     ));
     out
 }

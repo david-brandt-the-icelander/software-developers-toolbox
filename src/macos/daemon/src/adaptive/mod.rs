@@ -37,12 +37,15 @@ ESCALATE the exact open question a stronger agent should take over (only if one 
 CONTEXT what that agent would need (only with ESCALATE)
 BLOCKED access|decision what only the user can give (only if something is)";
 
+// Where a job appends each model call's usage as it ends, if anywhere.
+pub type Sink = Option<PathBuf>;
+
 // One rung's local model as the lookup loop's model, each turn recorded under a role.
-struct OnRung<'a> {
-    b: &'a dyn Backend,
-    rung: &'a Rung,
-    log: &'a Log,
-    role: &'a str,
+pub struct OnRung<'a> {
+    pub b: &'a dyn Backend,
+    pub rung: &'a Rung,
+    pub log: &'a Log,
+    pub role: &'a str,
 }
 
 impl investigate::Local for OnRung<'_> {
@@ -151,8 +154,19 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     run_with(ctx, argv, &calls::Real)
 }
 
-// Runs the command line with the given agents: the main run (adaptive, or the plain local investigation), then a benchmark (at the same time when its agent is hosted) and a review, each with its own time limit.
+// Runs the command line with the given agents under one deadline for the whole job: the main run (adaptive, or the plain local investigation) with a hosted benchmark beside it, then a local benchmark and a review, each stage ending by its share of the time left.
 pub fn run_with(ctx: &Ctx, argv: &[String], b: &dyn Backend) -> Result<Output, String> {
+    run_at(ctx, argv, b, Instant::now(), &None)
+}
+
+// Runs the command line for a job accepted at `accepted`, appending each model call's usage to `sink` as it ends.
+pub fn run_at(
+    ctx: &Ctx,
+    argv: &[String],
+    b: &dyn Backend,
+    accepted: Instant,
+    sink: &Sink,
+) -> Result<Output, String> {
     let o = options(argv)?;
     let plan = investigate::parse(&o.rest)?;
     let mut scope = Vec::new();
@@ -172,26 +186,27 @@ pub fn run_with(ctx: &Ctx, argv: &[String], b: &dyn Backend) -> Result<Output, S
     }
     let bench = o.bench.as_ref().map(|p| chosen(p, &ladder)).transpose()?;
     let reviewer = o.review.as_ref().map(|p| chosen(p, &ladder)).transpose()?;
-    let limit = Duration::from_secs(plan.seconds);
+    let end = job_end(accepted, plan.seconds);
+    let stages = 1 + u32::from(bench.as_ref().is_some_and(|r| !r.hosted())) + u32::from(reviewer.is_some());
+    let main_end = share(end, stages);
     let (main, bench_run) = std::thread::scope(|s| {
         let hosted = bench.as_ref().filter(|r| r.hosted()).map(|r| {
             let (cwd, scope, plan) = (&ctx.cwd, &scope, &plan);
-            s.spawn(move || pure_hosted(b, r, plan, cwd, scope, Instant::now() + limit))
+            s.spawn(move || pure_hosted(b, r, plan, cwd, scope, main_end, sink))
         });
         let main = match o.adaptive {
-            true => adaptive(ctx, b, &plan, &scope, &ladder, o.prose, Instant::now() + limit),
-            false => plain(ctx, b, &o.rest, Instant::now() + limit),
+            true => adaptive(ctx, b, &plan, &scope, &ladder, o.prose, main_end, sink),
+            false => plain(ctx, b, &o.rest, main_end, sink),
         };
         let bench_run = match (hosted, &bench) {
             (Some(h), _) => Some(h.join().expect("the benchmark thread")),
-            (None, Some(r)) => Some(pure_local(ctx, b, r, &o.rest, Instant::now() + limit)),
+            (None, Some(r)) => Some(pure_local(ctx, b, r, &o.rest, share(end, stages - 1), sink)),
             (None, None) => None,
         };
         (main, bench_run)
     });
     let main = main?;
-    let review =
-        reviewer.map(|r| review(b, &r, &plan, &ctx.cwd, &main, bench_run.as_ref(), Instant::now() + limit));
+    let review = reviewer.map(|r| review(b, &r, &plan, &ctx.cwd, &main, bench_run.as_ref(), end, sink));
     Ok(Output::plain(match o.json {
         true => serde_json::to_string_pretty(&joined(&plan, &main, bench_run.as_ref(), review.as_ref()))
             .unwrap_or_default(),
@@ -200,10 +215,14 @@ pub fn run_with(ctx: &Ctx, argv: &[String], b: &dyn Backend) -> Result<Output, S
 }
 
 // The plain local investigation, as zazzle runs it without --adaptive.
-fn plain(ctx: &Ctx, b: &dyn Backend, rest: &[String], deadline: Instant) -> Result<Run, String> {
-    let (t, log, rung) = (Instant::now(), Log::default(), Rung::parse("", None)?);
-    let argv = with_seconds(rest, deadline);
-    let e = investigate::explore(ctx, &argv, &OnRung { b, rung: &rung, log: &log, role: "investigate" })?;
+fn plain(ctx: &Ctx, b: &dyn Backend, rest: &[String], deadline: Instant, sink: &Sink) -> Result<Run, String> {
+    let (t, log, rung) = (Instant::now(), Log::to(sink.clone()), Rung::parse("", None)?);
+    let e = investigate::explore(
+        ctx,
+        rest,
+        &OnRung { b, rung: &rung, log: &log, role: "investigate" },
+        deadline,
+    )?;
     let (out, work) = investigate::finish(ctx, e)?;
     let json = work.json();
     Ok(Run {
@@ -224,8 +243,9 @@ fn pure_hosted(
     cwd: &Path,
     scope: &[PathBuf],
     deadline: Instant,
+    sink: &Sink,
 ) -> Run {
-    let (t, log) = (Instant::now(), Log::default());
+    let (t, log) = (Instant::now(), Log::to(sink.clone()));
     let prompt = executor_prompt(&plan.question, &plan.scope, &plan.symbols, &[]);
     let work =
         match log.hosted(b, r, &Ask::new("benchmark", "", &prompt, &[("task", &prompt)]), cwd, deadline) {
@@ -244,13 +264,14 @@ fn pure_hosted(
 }
 
 // The question answered by one local model and effort alone, through the lookup loop.
-fn pure_local(ctx: &Ctx, b: &dyn Backend, r: &Rung, rest: &[String], deadline: Instant) -> Run {
-    let (t, log) = (Instant::now(), Log::default());
-    let argv = with_seconds(rest, deadline);
-    let work = match investigate::explore(ctx, &argv, &OnRung { b, rung: r, log: &log, role: "benchmark" }) {
-        Ok(e) => investigate::work(ctx, &e),
-        Err(e) => Work::failed(&e),
-    };
+fn pure_local(ctx: &Ctx, b: &dyn Backend, r: &Rung, rest: &[String], deadline: Instant, sink: &Sink) -> Run {
+    let (t, log) = (Instant::now(), Log::to(sink.clone()));
+    let work =
+        match investigate::explore(ctx, rest, &OnRung { b, rung: r, log: &log, role: "benchmark" }, deadline)
+        {
+            Ok(e) => investigate::work(ctx, &e),
+            Err(e) => Work::failed(&e),
+        };
     let text = work.render();
     Run {
         label: r.label(),
@@ -262,21 +283,16 @@ fn pure_local(ctx: &Ctx, b: &dyn Backend, r: &Rung, rest: &[String], deadline: I
     }
 }
 
-// The investigate flags with `--seconds` set to the time left before the deadline (at least one).
-fn with_seconds(rest: &[String], deadline: Instant) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut it = rest.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--seconds" => {
-                it.next();
-            }
-            _ => out.push(a.clone()),
-        }
-    }
-    let left = deadline.saturating_duration_since(Instant::now()).as_secs().max(1);
-    out.extend(["--seconds".to_string(), left.to_string()]);
-    out
+// When the work of a job accepted at `start` with `seconds` must end: its deadline less a reserve (a twentieth, at most 2 s) for writing and keeping the report with what was gathered.
+pub fn job_end(start: Instant, seconds: u64) -> Instant {
+    let total = Duration::from_secs(seconds);
+    start + total - (total / 20).min(Duration::from_secs(2))
+}
+
+// The end of the next of `stages` stages that run one after another before `end`: an even share of the time left, so time a stage does not use goes to the ones after it.
+fn share(end: Instant, stages: u32) -> Instant {
+    let now = Instant::now();
+    now + end.saturating_duration_since(now) / stages.max(1)
 }
 
 // Rates how hard a question is to plan, 0 to 5, with the reasons; 0 needs no planner.
@@ -303,6 +319,7 @@ fn assess(plan: &Plan) -> (usize, Vec<&'static str>) {
 }
 
 // The adaptive run: assess, plan with a planner one rung above the difficulty (or skip planning for a simple question), run the parts at the same time (each with its own read session, so one part's reads never hide a file from another), each with escalation, combine the parts and, with --prose, have the cheapest rung write a summary.
+#[allow(clippy::too_many_arguments)]
 fn adaptive(
     ctx: &Ctx,
     b: &dyn Backend,
@@ -311,8 +328,9 @@ fn adaptive(
     ladder: &[Rung],
     prose: bool,
     deadline: Instant,
+    sink: &Sink,
 ) -> Result<Run, String> {
-    let (t, log) = (Instant::now(), Log::default());
+    let (t, log) = (Instant::now(), Log::to(sink.clone()));
     let (score, why) = assess(plan);
     let mut head = format!(
         "investigate (adaptive): {}\nscope: {}\nladder: {}\ndifficulty: {score} of 5 ({})\n",
@@ -540,6 +558,7 @@ fn part(
         let r = &ladder[idx];
         let role = if attempts.is_empty() { format!("part P{n}") } else { format!("escalation P{n}") };
         let work = match r.hosted() {
+            _ if Instant::now() >= deadline => Work::failed("the time limit ran out before it started"),
             true => match log.hosted(
                 b,
                 r,
@@ -560,9 +579,9 @@ fn part(
                 argv.extend(plan.scope.iter().flat_map(|s| ["--path".to_string(), s.clone()]));
                 argv.extend(p.symbols.iter().flat_map(|s| ["--symbol".to_string(), s.clone()]));
                 argv.extend(["--steps".to_string(), plan.steps.to_string()]);
+                argv.extend(["--seconds".to_string(), plan.seconds.to_string()]);
                 argv.extend(context.iter().flat_map(|c| ["--context".to_string(), c.clone()]));
-                let argv = with_seconds(&argv, deadline);
-                match investigate::explore(ctx, &argv, &OnRung { b, rung: r, log, role: &role }) {
+                match investigate::explore(ctx, &argv, &OnRung { b, rung: r, log, role: &role }, deadline) {
                     Ok(e) => investigate::work(ctx, &e),
                     Err(e) => Work::failed(&e),
                 }
@@ -575,9 +594,7 @@ fn part(
             Some(_) if attempts.len() >= MAX_ESCALATIONS => {
                 Some("the part was escalated as often as allowed")
             }
-            Some(_) if deadline.saturating_duration_since(Instant::now()) < Duration::from_secs(1) => {
-                Some("the time limit ran out")
-            }
+            Some(_) if Instant::now() >= deadline => Some("the time limit ran out"),
             Some(_) => None,
         };
         match (trigger, stuck) {
@@ -739,6 +756,7 @@ struct Review {
 }
 
 // Has the reviewer judge the main result (A) and the benchmark's (B) when there is one: quality, each finding, what is missing and which is better.
+#[allow(clippy::too_many_arguments)]
 fn review(
     b: &dyn Backend,
     r: &Rung,
@@ -747,8 +765,9 @@ fn review(
     main: &Run,
     bench: Option<&Run>,
     deadline: Instant,
+    sink: &Sink,
 ) -> Review {
-    let log = Log::default();
+    let log = Log::to(sink.clone());
     let reads = if r.hosted() { " You may read the files to check them; change nothing." } else { "" };
     let both = bench
         .map_or("", |_| "MISSING B ...\nQUALITY B ...\nFINDING B1 ...\nBETTER A|B|tie one-line reason\n");

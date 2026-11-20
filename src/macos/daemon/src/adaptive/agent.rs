@@ -21,7 +21,7 @@ pub struct Rung {
     pub effort: String,
 }
 
-// What a hosted agent said: its final text, and the output, input and cached tokens, rounds and cost its command line reported.
+// What a hosted agent said: its final text, and the output, input and cached tokens, rounds and cost its command line reported; `counted` is false when it reported no token counts, which are then unknown, not zero.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Said {
     pub text: String,
@@ -30,6 +30,7 @@ pub struct Said {
     pub cached: usize,
     pub rounds: usize,
     pub cost: Option<f64>,
+    pub counted: bool,
 }
 
 impl Kind {
@@ -188,6 +189,7 @@ pub fn said(kind: Kind, stdout: &str, out_text: &str) -> Result<Said, String> {
             cached: n("cache_read_input_tokens"),
             rounds,
             cost,
+            counted: v["usage"].is_object(),
         });
     }
     let (mut said, mut last) = (Said::default(), String::new());
@@ -196,6 +198,7 @@ pub fn said(kind: Kind, stdout: &str, out_text: &str) -> Result<Said, String> {
         said.tokens += n("output_tokens");
         said.input += n("input_tokens");
         said.cached += n("cached_input_tokens");
+        said.counted |= v["usage"].is_object();
         said.rounds += usize::from(v["type"] == "turn.completed");
         if v["item"]["type"] == "agent_message" {
             last = v["item"]["text"].as_str().unwrap_or_default().to_string();

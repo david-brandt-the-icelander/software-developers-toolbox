@@ -1019,7 +1019,7 @@ fn bench(
     out.push_str(&format!(
         "  1. local work: {} local call(s) ({}) cost no hosted tokens; {} hosted call(s) took {} input tokens ({} cached) and {} output; {} extra hosted round(s) were the executors fetching or rereading on their own\n",
         local.len(), if local_phases.is_empty() { "none".to_string() } else { local_phases.join(", ") }, hosted.len(),
-        hosted.iter().map(|c| c.input).sum::<usize>(), hosted.iter().map(|c| c.cached).sum::<usize>(), hosted.iter().map(|c| c.tokens).sum::<usize>(), fetched
+        hosted.iter().filter_map(|c| c.input).sum::<usize>(), hosted.iter().filter_map(|c| c.cached).sum::<usize>(), hosted.iter().filter_map(|c| c.tokens).sum::<usize>(), fetched
     ));
     let confirmed = findings.iter().filter(|f| !["dropped"].contains(&f.status.as_str())).count();
     let closed = findings.iter().filter(|f| f.status == "fixed").count();

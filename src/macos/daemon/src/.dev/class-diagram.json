@@ -620,6 +620,45 @@
       ]
     },
     {
+      "id": "runs.Live",
+      "name": "Live (runs)",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/runs.rs"
+      ],
+      "members": [
+        "done: Mutex<bool>",
+        "ended: Condvar",
+        "until: Instant"
+      ]
+    },
+    {
+      "id": "runs.Job",
+      "name": "Job (runs)",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/runs.rs"
+      ],
+      "members": [
+        "folder: PathBuf",
+        "live: Arc<Live>",
+        "started: Instant",
+        "finished: bool"
+      ]
+    },
+    {
+      "id": "runs.Begun",
+      "name": "Begun",
+      "kind": "enum",
+      "sources": [
+        "src/macos/daemon/src/runs.rs"
+      ],
+      "members": [
+        "New(Job)",
+        "Earlier(Result<Output, String>)"
+      ]
+    },
+    {
       "id": "Indexer",
       "name": "Indexer",
       "kind": "struct",
@@ -1389,6 +1428,18 @@
       "to": "chat_client.Key",
       "kind": "depends-on",
       "description": "Says what each byte means."
+    },
+    {
+      "from": "runs.Job",
+      "to": "runs.Live",
+      "kind": "depends-on",
+      "description": "Its entry among the runs working in this process, which waiters sleep on."
+    },
+    {
+      "from": "runs.Begun",
+      "to": "runs.Job",
+      "kind": "depends-on",
+      "description": "A new run to work on."
     }
   ]
 }

@@ -101,7 +101,15 @@ impl Backend for Fake {
                 std::fs::write(full, c).expect("write");
             }
         }
-        t.text.map(|text| Said { text, tokens: 9, input: 200, cached: 50, rounds: 3, cost: Some(0.02) })
+        t.text.map(|text| Said {
+            text,
+            tokens: 9,
+            input: 200,
+            cached: 50,
+            rounds: 3,
+            cost: Some(0.02),
+            counted: true,
+        })
     }
 
     // The scripted installed models.
@@ -1290,9 +1298,9 @@ fn test_dispatch_preview_init() {
             rung: "claude:a high".into(),
             hosted: true,
             sent: vec![("diff".into(), 100), ("brief".into(), 20)],
-            input: 300,
-            cached: 100,
-            tokens: 40,
+            input: Some(300),
+            cached: Some(100),
+            tokens: Some(40),
             rounds: 2,
             cost: Some(0.1),
             secs: 3.0,
@@ -1302,7 +1310,7 @@ fn test_dispatch_preview_init() {
         calls::Call {
             role: "briefing".into(),
             rung: "qwen low".into(),
-            tokens: 10,
+            tokens: Some(10),
             queued: 1.5,
             secs: 4.0,
             ok: true,
@@ -1311,6 +1319,31 @@ fn test_dispatch_preview_init() {
     ];
     let table = calls::phases(&calls, 7.0);
     assert!(table.contains("review: hosted 1 call(s) to claude:a high — sent ~120 tokens (diff 100, brief 20); reported 300 in, 100 cached, 40 out, 2 rounds, $0.1000") && table.contains("briefing: local 1 call(s), 1.5 s queued, 4.0 s in all, 10 out"), "{table}");
+    let mut stopped = calls.clone();
+    stopped.push(calls::Call {
+        role: "review y".into(),
+        rung: "claude:a high".into(),
+        hosted: true,
+        secs: 9.0,
+        ..Default::default()
+    });
+    let table = calls::phases(&stopped, 16.0);
+    assert!(
+        table.contains(
+            "reported 300 in, 100 cached, 40 out (+ unknown for 1 call(s) that reported no counts), 2 rounds"
+        ),
+        "a stopped call is unknown, not zero: {table}"
+    );
+    let u = calls::usage(&stopped, 16.0);
+    assert_eq!(
+        (u["uncounted_calls"].as_u64(), u["hosted"]["sent_tokens"][0]["estimated"].as_bool()),
+        (Some(1), Some(true))
+    );
+    assert!(
+        calls::usage_line(&stopped, 16.0).contains("50 output tokens (+ unknown for 1 call(s)"),
+        "{}",
+        calls::usage_line(&stopped, 16.0)
+    );
 }
 
 // Checks the less common shapes of tool output, discovery and guidance: dotnet and go variants, a failing test counted with exit 0, a check named with spaces, Python markers, deep folders, quoted branch names said twice, and an origin HEAD.

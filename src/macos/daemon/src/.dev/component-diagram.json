@@ -48,6 +48,14 @@
     {
       "path": "src/macos/daemon/src/brief.rs",
       "symbol": "run"
+    },
+    {
+      "path": "src/macos/daemon/src/runs.rs",
+      "symbol": "begin"
+    },
+    {
+      "path": "src/macos/daemon/src/budget.rs",
+      "symbol": "cap"
     }
   ],
   "components": [
@@ -303,6 +311,18 @@
       "id": "outputs",
       "name": "Output store (outputs.rs)",
       "responsibility": "Keeps outputs that cannot be produced again (clean, run, proxy) on disk under a ten-character id derived from their text: the text shown and the full input, in an owner-only directory; each save drops entries older than an hour and, past the size limit, the oldest until half the bytes remain.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "runs",
+      "name": "Run store (runs.rs)",
+      "responsibility": "Keeps each investigate job under its run id in an owner-only folder: the request, every model call's usage appended as the call ends (null counters for ones the agent never reported), and the terminal result with its usage, written before the reply. The same id again returns that result, waiting without polling for a run still working in this process; a run left by a stopped daemon or a panic reads as interrupted with the usage it recorded. Runs older than a day are reaped.",
+      "folder": "src/macos/daemon/src"
+    },
+    {
+      "id": "budget",
+      "name": "Job deadline (budget.rs)",
+      "responsibility": "Holds the deadline of the job a thread works for, so waits deep inside a command (the indexer's version check, start, retries and requests) are cut to the time the job has left; a cut request drops only its own connection.",
       "folder": "src/macos/daemon/src"
     },
     {
@@ -1363,6 +1383,42 @@
       "to": "investigate",
       "kind": "depends-on",
       "description": "Review findings' citations are checked with investigate's cite module."
+    },
+    {
+      "from": "src",
+      "to": "runs",
+      "kind": "contains",
+      "description": "Kept investigate runs."
+    },
+    {
+      "from": "src",
+      "to": "budget",
+      "kind": "contains",
+      "description": "The job deadline."
+    },
+    {
+      "from": "investigate",
+      "to": "runs",
+      "kind": "depends-on",
+      "description": "Every investigate job is a run: its usage and result are kept, and the same run id returns them."
+    },
+    {
+      "from": "investigate",
+      "to": "budget",
+      "kind": "depends-on",
+      "description": "Lookups run within the job's deadline."
+    },
+    {
+      "from": "indexer",
+      "to": "budget",
+      "kind": "depends-on",
+      "description": "Indexer waits end with the calling job's deadline."
+    },
+    {
+      "from": "cli",
+      "to": "runs",
+      "kind": "depends-on",
+      "description": "runs::dir gives the daemon's engine its run store."
     }
   ]
 }

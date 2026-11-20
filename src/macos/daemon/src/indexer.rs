@@ -139,8 +139,9 @@ impl Indexer {
         if let Some((_, v)) = known.iter().find(|(p, _)| *p == self.exe) {
             return Ok(v.clone());
         }
-        let out = output_within(Command::new(&self.exe).arg("--version"), VERSION_TIMEOUT)
-            .map_err(|e| format!("{BINARY} --version: {e}"))?;
+        let out =
+            output_within(Command::new(&self.exe).arg("--version"), crate::budget::cap(VERSION_TIMEOUT)?.0)
+                .map_err(|e| format!("{BINARY} --version: {e}"))?;
         let v = out
             .split_whitespace()
             .last()
@@ -172,7 +173,7 @@ impl Indexer {
             return Ok(s);
         }
         self.start_daemon()?;
-        let end = Instant::now() + START_WAIT;
+        let end = Instant::now() + crate::budget::cap(START_WAIT)?.0;
         loop {
             if let Ok(s) = UnixStream::connect(&sock) {
                 return Ok(s);
@@ -184,7 +185,7 @@ impl Indexer {
         }
     }
 
-    // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version.
+    // Asks the daemon to run one tool on a root, retrying while an older daemon restarts for a new version; every wait ends with the calling job's time limit, which drops this connection but never stops the shared indexer, and is not remembered as the indexer failing.
     fn call(
         &self,
         roots: &[Root],
@@ -196,6 +197,7 @@ impl Indexer {
         if let Some(msg) = self.recent_failure() {
             return Err(msg);
         }
+        let (timeout, cut) = crate::budget::cap(timeout)?;
         let name = &roots[0].0;
         let specs: Vec<String> = roots.iter().map(|(n, p)| format!("{n}={}", p.display())).collect();
         let opened = self
@@ -205,6 +207,9 @@ impl Indexer {
         failed.retain(|(state, _, _)| *state != self.state);
         let (mut w, mut r) = match opened {
             Ok(x) => x,
+            Err(e) if cut => {
+                return Err(format!("{e} (within the job's time limit; the indexer keeps running)"))
+            }
             Err(e) => {
                 failed.push((self.state.clone(), Instant::now(), e.clone()));
                 return Err(e);
@@ -220,7 +225,10 @@ impl Indexer {
             &json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}),
         )?;
         loop {
-            let msg = receive(&mut r)?;
+            let msg = receive(&mut r).map_err(|e| match cut {
+                true => format!("the job's time limit ran out while the indexer answered ({e}); the indexer keeps running"),
+                false => e,
+            })?;
             if msg["id"] == json!(1) {
                 return result_text(&msg);
             }
@@ -241,7 +249,7 @@ impl Indexer {
 
     // Connects and says hello, retrying with growing pauses while an older daemon makes way for this version.
     fn open(&self, hello: &Value, timeout: Duration) -> Result<(UnixStream, BufReader<UnixStream>), String> {
-        let end = Instant::now() + RESTART_WAIT;
+        let end = Instant::now() + crate::budget::cap(RESTART_WAIT).map_or(Duration::ZERO, |c| c.0);
         let mut pause = Duration::from_millis(50);
         loop {
             let mut w = self.connect()?;
@@ -374,6 +382,29 @@ pub mod tests {
         std::fs::create_dir_all(t.path().join(".git")).expect("git dir");
         let f = t.write("src/C.cs", b"using A;\nusing B;\n\npublic class C\n{\n}\n");
         (t, f)
+    }
+
+    // Checks a request is cut off at the calling job's deadline (the indexer itself keeps running), is not remembered as the indexer failing, and none starts once no time is left.
+    #[test]
+    fn test_calls_end_with_the_job_deadline() {
+        let fake = FakeIndexer::start(|_, req| {
+            if !req.is_null() {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            viewing(&Value::Null, req)
+        });
+        let (_t, f) = repo();
+        let t0 = Instant::now();
+        let e = crate::budget::within(t0 + Duration::from_millis(300), || fake.indexer().view(&f, "s"))
+            .unwrap_err();
+        assert!(
+            e.contains("time limit ran out while the indexer answered") && e.contains("keeps running"),
+            "{e}"
+        );
+        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+        assert!(fake.indexer().recent_failure().is_none(), "a deadline is not an indexer failure");
+        let e = crate::budget::within(Instant::now(), || fake.indexer().view(&f, "s")).unwrap_err();
+        assert!(e.contains("time limit ran out before"), "{e}");
     }
 
     // Checks a view round trip: handshake with the version and root, the tool call with root:path, and notifications skipped.
