@@ -21,6 +21,7 @@ const FLAGS: &[&str] = &[
     "--benchmark-effort",
     "--review-model",
     "--review-effort",
+    "--no-review",
     "--prose",
     "--json",
 ];
@@ -70,6 +71,7 @@ struct Opts {
     agents: Vec<String>,
     bench: Option<(Option<String>, Option<String>)>,
     review: Option<(Option<String>, Option<String>)>,
+    no_review: bool,
     prose: bool,
     json: bool,
     rest: Vec<String>,
@@ -98,11 +100,15 @@ fn options(argv: &[String]) -> Result<Opts, String> {
             "--benchmark-effort" => o.bench.get_or_insert((None, None)).1 = Some(value()?),
             "--review-model" => o.review.get_or_insert((None, None)).0 = Some(value()?),
             "--review-effort" => o.review.get_or_insert((None, None)).1 = Some(value()?),
+            "--no-review" => o.no_review = true,
             _ => o.rest.push(a.clone()),
         }
     }
     if !o.adaptive && !o.agents.is_empty() {
         return Err("--agents sets the adaptive mode's ladder: add --adaptive".into());
+    }
+    if o.no_review && o.review.is_some() {
+        return Err("--no-review and --review-model/--review-effort ask for opposite things: give one".into());
     }
     if o.prose && !o.adaptive {
         return Err("--prose summarizes the adaptive mode's result: add --adaptive".into());
@@ -185,7 +191,12 @@ pub fn run_at(
         ladder = vec![Rung::parse("", Some("low"))?, Rung::parse("", Some("high"))?];
     }
     let bench = o.bench.as_ref().map(|p| chosen(p, &ladder)).transpose()?;
-    let reviewer = o.review.as_ref().map(|p| chosen(p, &ladder)).transpose()?;
+    let picked = o.review.is_none() && bench.is_some() && !o.no_review;
+    let reviewer = match &o.review {
+        Some(p) => Some(chosen(p, &ladder)?),
+        None if picked => Some(default_judge(b, &ladder)),
+        None => None,
+    };
     let end = job_end(accepted, plan.seconds);
     let stages = 1 + u32::from(bench.as_ref().is_some_and(|r| !r.hosted())) + u32::from(reviewer.is_some());
     let main_end = share(end, stages);
@@ -206,7 +217,8 @@ pub fn run_at(
         (main, bench_run)
     });
     let main = main?;
-    let review = reviewer.map(|r| review(b, &r, &plan, &ctx.cwd, &main, bench_run.as_ref(), end, sink));
+    let review = reviewer
+        .map(|r| Review { picked, ..review(b, &r, &plan, &ctx.cwd, &main, bench_run.as_ref(), end, sink) });
     Ok(Output::plain(match o.json {
         true => serde_json::to_string_pretty(&joined(&plan, &main, bench_run.as_ref(), review.as_ref()))
             .unwrap_or_default(),
@@ -744,7 +756,7 @@ fn summary(
     }
 }
 
-// A reviewer's judgement: each result's quality, each finding's verdict, what each lacks, which is better, its own levels, or why it failed.
+// A reviewer's judgement: each result's quality, each finding's verdict, what each lacks, the comparison on quality, time and tokens, which is better, whether zazzle picked the reviewer for a benchmark, its own levels, or why it failed.
 #[derive(Debug, Default, PartialEq)]
 struct Review {
     rung: String,
@@ -754,6 +766,7 @@ struct Review {
     compared: Vec<(String, String, String)>,
     uncompared: Vec<&'static str>,
     better: Option<(String, String)>,
+    picked: bool,
     understanding: String,
     confidence: String,
     error: Option<String>,
@@ -865,7 +878,12 @@ fn parse_review(rung: &str, reply: &str, with_bench: bool) -> Review {
 
 // Renders the review for the text report.
 fn review_text(v: &Review) -> String {
-    let mut out = format!("review (by {}):\n", v.rung);
+    let picked = if v.picked {
+        ", the default judge for a benchmark: the strongest agent available (--review-model picks another, --no-review none)"
+    } else {
+        ""
+    };
+    let mut out = format!("review (by {}{picked}):\n", v.rung);
     if let Some(e) = &v.error {
         return format!("{out}- failed: {e}\n");
     }
@@ -935,6 +953,18 @@ fn compare(main: &Run, bench: &Run) -> String {
     out
 }
 
+// The judge a benchmark gets when none is named: the strongest agent this machine can run, so the comparison of the two results is not left to a weak one. Claude Opus at high effort when `claude` is installed, else the strongest hosted rung of the ladder this machine can run, at high effort, else the strongest local rung.
+fn default_judge(b: &dyn Backend, ladder: &[Rung]) -> Rung {
+    if b.can_host(agent::Kind::Claude) {
+        return Rung { kind: agent::Kind::Claude, model: "opus".into(), effort: "high".into() };
+    }
+    let hosted = ladder.iter().rev().find(|r| r.hosted() && b.can_host(r.kind));
+    match hosted.or_else(|| ladder.iter().rev().find(|r| !r.hosted())) {
+        Some(r) => Rung { effort: "high".into(), ..r.clone() },
+        None => Rung { kind: agent::Kind::Local, model: String::new(), effort: "high".into() },
+    }
+}
+
 // The text report: the main run with its usage, then the benchmark and the review.
 fn text(main: &Run, bench: Option<&Run>, review: Option<&Review>) -> String {
     let mut out = main.text.trim_end().to_string();
@@ -971,7 +1001,7 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
         let triple =
             |x: &[(String, String, String)]| x.iter().map(|(a, b, c)| json!([a, b, c])).collect::<Vec<_>>();
         v["review"] = json!({
-            "agent": r.rung, "error": r.error, "quality": triple(&r.quality), "findings": triple(&r.findings),
+            "agent": r.rung, "picked_by_default": r.picked, "error": r.error, "quality": triple(&r.quality), "findings": triple(&r.findings),
             "missing": r.missing.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
             "compared": triple(&r.compared), "not_compared": r.uncompared,
             "better": r.better.as_ref().map(|(a, b)| json!([a, b])),

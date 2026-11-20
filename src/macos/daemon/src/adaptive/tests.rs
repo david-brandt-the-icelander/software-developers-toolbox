@@ -12,6 +12,7 @@ struct Fake {
     replies: Mutex<HashMap<String, VecDeque<Result<String, String>>>>,
     seen: Mutex<Vec<(String, String)>>,
     installed: Vec<String>,
+    hosts: Vec<agent::Kind>,
 }
 
 impl Fake {
@@ -102,6 +103,11 @@ impl Backend for Fake {
     // The scripted installed models.
     fn installed(&self) -> Vec<String> {
         self.installed.clone()
+    }
+
+    // The scripted hosted command lines this machine has.
+    fn can_host(&self, kind: agent::Kind) -> bool {
+        self.hosts.contains(&kind)
     }
 }
 
@@ -1078,4 +1084,82 @@ fn test_cancel_reaches_parallel_parts() {
     );
     assert!(out.contains("the run was cancelled before combine could start"), "{out}");
     assert!(f.prompts("qwen-a high").is_empty());
+}
+
+// Checks a benchmark gets a judge by default: Claude Opus at high effort when `claude` is installed, comparing quality, time and tokens, and said to be zazzle's pick; else the strongest hosted rung it can run at high effort, else the strongest local rung; --no-review leaves it out, and asking for both is refused.
+#[test]
+fn test_benchmark_picks_a_judge() {
+    let (_t, root) = repo();
+    let judged = "QUALITY A good cites the check\nQUALITY B good also\nCOMPARE quality tie same finding\nCOMPARE time A fewer seconds\nCOMPARE tokens A no hosted tokens\nBETTER A cheaper for the same answer\nCONFIDENCE understanding=high result=high";
+    let script = |judge: &str| {
+        vec![
+            ("local default low".to_string(), Ok(KEY.to_string())),
+            ("claude:sonnet medium".to_string(), Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked\nCONFIDENCE understanding=high result=high".to_string())),
+            (judge.to_string(), Ok(judged.to_string())),
+        ]
+    };
+    let fake = |judge: &str, hosts: Vec<agent::Kind>| {
+        let s = script(judge);
+        let pairs: Vec<(&str, Result<&str, &str>)> =
+            s.iter().map(|(w, r)| (w.as_str(), r.as_deref().map_err(|e: &String| e.as_str()))).collect();
+        Fake { hosts, ..Fake::new(&pairs) }
+    };
+    let argv =
+        ["Where", "is", "the", "key", "checked?", "--path", "api", "--benchmark-model", "claude:sonnet"];
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let out = go(&root, &f, &argv).expect("run");
+    assert!(
+        out.contains(
+            "review (by claude:opus high, the default judge for a benchmark: the strongest agent available"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "- quality: TIE: same finding\n- time: A: fewer seconds\n- tokens: A: no hosted tokens\n"
+        ) && !out.contains("not compared"),
+        "{out}"
+    );
+    assert!(
+        f.prompts("claude:opus high")[0].contains("Measured by zazzle"),
+        "the judge gets the measurements"
+    );
+    let mut json_argv = argv.to_vec();
+    json_argv.push("--json");
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let v: Value = serde_json::from_str(&go(&root, &f, &json_argv).expect("json")).expect("parse");
+    assert_eq!(
+        (v["review"]["agent"].as_str(), v["review"]["picked_by_default"].as_bool()),
+        (Some("claude:opus high"), Some(true))
+    );
+
+    let f = fake("local default high", vec![]);
+    let out = go(&root, &f, &argv).expect("no hosted");
+    assert!(
+        out.contains("review (by local default high, the default judge"),
+        "no hosted agent: the top of the ladder judges: {out}"
+    );
+
+    let mut off = argv.to_vec();
+    off.push("--no-review");
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let out = go(&root, &f, &off).expect("off");
+    assert!(!out.contains("review (by") && f.prompts("claude:opus high").is_empty(), "{out}");
+    off.extend(["--review-model", "codex:gpt"]);
+    assert!(go(&root, &f, &off).unwrap_err().contains("--no-review and --review-model"));
+
+    let ladder = agent::ladder(&["qwen-a".into(), "codex:gpt@low".into()]).expect("ladder");
+    let f = Fake { hosts: vec![agent::Kind::Codex], ..Fake::default() };
+    assert_eq!(
+        default_judge(&f, &ladder).label(),
+        "codex:gpt high",
+        "the strongest hosted rung, at high effort"
+    );
+    let f = Fake::default();
+    assert_eq!(
+        default_judge(&f, &ladder).label(),
+        "qwen-a high",
+        "a hosted rung the machine cannot run is skipped: the strongest local rung"
+    );
+    assert_eq!(default_judge(&f, &[]).label(), "local default high");
 }

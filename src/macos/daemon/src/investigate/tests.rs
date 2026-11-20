@@ -282,6 +282,13 @@ fn test_investigate_through_zazzle() {
         ]
     );
     assert!(tool_args(&serde_json::json!({"question": "q", "review_model": 3})).is_err());
+    assert_eq!(
+        tool_args(
+            &serde_json::json!({"question": "q", "benchmark_model": "claude:sonnet", "no_review": true})
+        )
+        .expect("no review"),
+        ["investigate", "--no-review", "--benchmark-model", "claude:sonnet", "q"]
+    );
 }
 
 // Checks a refused outline, a range read, and that evidence past the cap leaves no lookups and asks for the answer.

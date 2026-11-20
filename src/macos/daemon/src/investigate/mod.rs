@@ -917,10 +917,11 @@ fn schema() -> serde_json::Value {
             "seconds": {"type": "integer", "description": "Time limit for the whole job, 1 to 600 (default 90): planning, waiting for and starting models, lookups, escalation, a benchmark and a review all end by it, and a partial result is kept"},
             "adaptive": {"type": "boolean", "description": "Plan the question into parts, give each the cheapest agent and effort that will do it, and escalate a part that is not settled"},
             "agents": {"type": "array", "items": {"type": "string"}, "description": "The adaptive ladder, cheapest first: MODEL, local:MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: the installed local models)"},
-            "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder)"},
+            "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder); a judge compares the two on quality, wall-clock time and tokens, by default claude:opus at high effort"},
             "benchmark_effort": {"type": "string"},
             "review_model": {"type": "string", "description": "Have this agent judge the results and each finding"},
             "review_effort": {"type": "string"},
+            "no_review": {"type": "boolean", "description": "With a benchmark: leave out the judge it gets by default (claude:opus at high effort when installed)"},
             "prose": {"type": "boolean", "description": "Adaptive only: the cheapest agent adds a short summary that keeps the citations"}
         }),
         &[],
@@ -940,6 +941,7 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     crate::mcp::push_num(&mut a, v, "seconds", "--seconds")?;
     crate::mcp::push_flag(&mut a, v, "adaptive", "--adaptive")?;
     crate::mcp::push_flag(&mut a, v, "prose", "--prose")?;
+    crate::mcp::push_flag(&mut a, v, "no_review", "--no-review")?;
     let agents = crate::mcp::get_list(v, "agents")?;
     if !agents.is_empty() {
         a.extend(["--agents".to_string(), agents.join(",")]);

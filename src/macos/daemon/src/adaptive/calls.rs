@@ -24,6 +24,10 @@ pub trait Backend: Sync {
     ) -> Result<Said, String>;
     // The installed local models, smallest first.
     fn installed(&self) -> Vec<String>;
+    // Whether this machine can run a hosted agent of that kind (its command line is installed).
+    fn can_host(&self, kind: agent::Kind) -> bool {
+        agent::program(kind).is_ok()
+    }
 }
 
 // The real agents: daemon's shared local worker, and `claude` or `codex` found on this machine.
