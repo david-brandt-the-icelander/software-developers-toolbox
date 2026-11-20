@@ -48,5 +48,5 @@ description: Verify, tidy, write up, deliver and review a change with zazzle ins
 
 ## Review
 - `zazzle review --into BRANCH --intent 'TEXT'` reviews at that branch's level (feature, development, staging, production; default: this branch's). Earlier levels are brief because each later merge gets a stricter pass.
-- It fixes confirmed findings, re-verifies and re-reviews before reporting. Documentation findings go to the cheap writer, code findings to the fixer, and the formatter runs after each fix. What is left is a decision for the user, missing access, or blocked verification. Use `--read-only` for findings without edits.
+- It fixes confirmed findings, re-verifies and re-reviews before reporting. Documentation findings go to the cheap writer, code findings to the fixer (the two at the same time, each kept to its own paths), and the formatter runs after each fix. What is left is a decision for the user, missing access, or blocked verification. Use `--read-only` for findings without edits.
 - `--bench` reports each phase with what went to hosted agents (charged) and what ran locally.

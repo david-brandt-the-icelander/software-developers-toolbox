@@ -345,6 +345,26 @@ fn cap(text: &str, tokens: usize) -> String {
     out
 }
 
+// One reviewer call of a pass: the viewpoints, the reviewer, their briefs, the open findings it checks and its role.
+struct Group {
+    views: Vec<String>,
+    r: Rung,
+    briefs: Vec<(String, String)>,
+    open: Vec<Finding>,
+    role: String,
+}
+
+// One remediation agent's task: the agent, its role, who it is in the report, the findings listing, the instructions, the whole prompt and the paths it may change.
+struct Fix<'a> {
+    r: Rung,
+    role: &'static str,
+    who: &'static str,
+    list: String,
+    intro: String,
+    prompt: String,
+    allowed: &'a (dyn Fn(&str) -> bool + Sync),
+}
+
 // The state of one review run: the pinned revision, the diff and its paths, the verification, the ledger and the report so far.
 struct Run<'a> {
     top: &'a Path,
@@ -595,29 +615,33 @@ impl Run<'_> {
         out
     }
 
-    // One review pass over the given briefs: every group reviewed (stronger and different reviewers at higher levels), new findings adjudicated, RESOLVED answers applied to earlier open findings; returns how many new findings are open.
+    // One review pass over the given briefs: every group reviewed at the same time (stronger and different reviewers at higher levels), then, in group order, new findings adjudicated and RESOLVED answers applied to earlier open findings; returns how many new findings are open.
     fn pass(&mut self, briefs: &[(String, String)], round: usize) -> usize {
         let views: Vec<String> = briefs.iter().map(|(v, _)| v.clone()).collect();
-        let gs = groups(&self.level, &views);
+        let jobs: Vec<Group> = groups(&self.level, &views)
+            .into_iter()
+            .enumerate()
+            .map(|(i, g)| Group {
+                briefs: briefs.iter().filter(|(v, _)| g.contains(v)).cloned().collect(),
+                open: self
+                    .findings
+                    .iter()
+                    .filter(|f| {
+                        f.status == "open" && g.iter().any(|v| f.viewpoint.split('+').any(|x| x == v))
+                    })
+                    .cloned()
+                    .collect(),
+                role: format!("{} {}", if round == 0 { "review" } else { "re-review" }, g.join("+")),
+                r: self.reviewer(i, round),
+                views: g,
+            })
+            .collect();
+        let this = &*self;
+        let done = calls::all(&jobs, |_, j| this.review(&j.briefs, &j.r, &j.role, &j.open));
         let mut raw = Vec::new();
         let mut agents = Vec::new();
-        for (i, g) in gs.iter().enumerate() {
-            let r = self.reviewer(i, round);
-            let group: Vec<(String, String)> =
-                briefs.iter().filter(|(v, _)| g.contains(v)).cloned().collect();
-            let open: Vec<Finding> = self
-                .findings
-                .iter()
-                .filter(|f| f.status == "open" && g.iter().any(|v| f.viewpoint.split('+').any(|x| x == v)))
-                .cloned()
-                .collect();
-            let role = if round == 0 {
-                format!("review {}", g.join("+"))
-            } else {
-                format!("re-review {}", g.join("+"))
-            };
-            let (found, resolved, err) = self.review(&group, &r, &role, &open);
-            agents.push(json!({"viewpoints": g, "agent": r.label()}));
+        for (j, (found, resolved, err)) in jobs.iter().zip(done) {
+            agents.push(json!({"viewpoints": j.views, "agent": j.r.label()}));
             if let Some(e) = err {
                 self.gaps.push(e);
             }
@@ -653,67 +677,96 @@ impl Run<'_> {
             .unwrap_or_else(|| self.o.planner.clone())
     }
 
-    // Fixes the open findings: documentation findings (cognitive load, or a cited documentation file) go to the cheap writer, limited to documentation paths; the rest go to the fixer, limited to the change's other files and test files, adding regression tests where they apply; returns whether anything changed.
+    // Fixes the open findings, the two kinds at the same time: documentation findings (cognitive load, or a cited documentation file) go to the cheap writer, limited to documentation paths; the rest go to the fixer, limited to the change's other files and test files, adding regression tests where they apply; returns whether anything changed.
     fn remediate(&mut self) -> Result<bool, String> {
         let open: Vec<Finding> = self.findings.iter().filter(|f| f.status == "open").cloned().collect();
+        let p = self.p;
         let is_doc = |f: &Finding| {
             f.viewpoint.split('+').all(|v| v == "cognitive-load")
-                || self.p.is_doc(f.cite.rsplit_once(':').map_or(f.cite.as_str(), |(p, _)| p))
+                || p.is_doc(f.cite.rsplit_once(':').map_or(f.cite.as_str(), |(x, _)| x))
         };
         let (docs, code): (Vec<Finding>, Vec<Finding>) = open.into_iter().partition(is_doc);
-        let mut changed = false;
+        let paths: Vec<String> = self.paths.iter().filter(|x| !p.is_doc(x)).cloned().collect();
+        let code_ok = |x: &str| {
+            !p.is_doc(x)
+                && !p.is_generated(x)
+                && (paths.iter().any(|y| y == x) || x.to_lowercase().contains("test"))
+        };
+        let docs_ok = |x: &str| p.is_doc(x) && !p.is_generated(x);
+        let code_how = if self.o.fixer.hosted() {
+            "Reply with a line `FIXED Fn how` per finding, then STATUS and CONFIDENCE."
+        } else {
+            FILES
+        };
+        let docs_how =
+            if self.o.writer.hosted() { "Edit the files directly, then reply with STATUS." } else { FILES };
+        let code_intro = format!("Fix these confirmed review findings in the repository. For each, make the smallest change that removes the defect and, where it applies, add a meaningful regression test. Change only these files of the change ({}) or test files; leave documentation alone, the writer updates it. {} Keep the intent: {}", paths.join(", "), super::TOOLS_NOTE, self.o.intent);
+        let docs_intro = format!("Fix these confirmed documentation findings. Shorten or correct the text while keeping decisions, constraints and useful rationale; change only documentation files. Keep the intent: {}", self.o.intent);
+        let mut fixes = Vec::new();
         if !code.is_empty() {
-            let paths: Vec<String> = self.paths.iter().filter(|p| !self.p.is_doc(p)).cloned().collect();
-            let p = self.p;
-            let allowed = |x: &str| {
-                !p.is_doc(x)
-                    && !p.is_generated(x)
-                    && (paths.iter().any(|y| y == x) || x.to_lowercase().contains("test"))
-            };
-            let how = if self.o.fixer.hosted() {
-                "Reply with a line `FIXED Fn how` per finding, then STATUS and CONFIDENCE."
-            } else {
-                FILES
-            };
-            let intro = format!("Fix these confirmed review findings in the repository. For each, make the smallest change that removes the defect and, where it applies, add a meaningful regression test. Change only these files of the change ({}) or test files; leave documentation alone, the writer updates it. {} Keep the intent: {}", paths.join(", "), super::TOOLS_NOTE, self.o.intent);
-            changed |=
-                self.fix_with(&code, &self.o.fixer.clone(), "remediate", &intro, how, &allowed, "the fixer")?;
+            let prompt = format!("{code_intro}\n{}{code_how}", self.listing(&code));
+            fixes.push(Fix {
+                r: self.o.fixer.clone(),
+                role: "remediate",
+                who: "the fixer",
+                list: self.listing(&code),
+                intro: code_intro,
+                prompt,
+                allowed: &code_ok,
+            });
         }
         if !docs.is_empty() {
-            let p = self.p;
-            let allowed = |x: &str| p.is_doc(x) && !p.is_generated(x);
-            let how = if self.o.writer.hosted() {
-                "Edit the files directly, then reply with STATUS."
-            } else {
-                FILES
-            };
-            let intro = format!("Fix these confirmed documentation findings. Shorten or correct the text while keeping decisions, constraints and useful rationale; change only documentation files. Keep the intent: {}", self.o.intent);
-            changed |= self.fix_with(
-                &docs,
-                &self.o.writer.clone(),
-                "remediate docs",
-                &intro,
-                how,
-                &allowed,
-                "the writer",
-            )?;
+            let prompt = format!("{docs_intro}\n{}{docs_how}", self.listing(&docs));
+            fixes.push(Fix {
+                r: self.o.writer.clone(),
+                role: "remediate docs",
+                who: "the writer",
+                list: self.listing(&docs),
+                intro: docs_intro,
+                prompt,
+                allowed: &docs_ok,
+            });
         }
+        let sections: Vec<[(&str, &str); 2]> =
+            fixes.iter().map(|f| [("brief", f.intro.as_str()), ("findings", f.list.as_str())]).collect();
+        let jobs: Vec<edit::Job> = fixes
+            .iter()
+            .zip(&sections)
+            .map(|(f, sections)| edit::Job {
+                r: &f.r,
+                role: f.role,
+                prompt: &f.prompt,
+                sections,
+                allowed: f.allowed,
+            })
+            .collect();
+        let done = edit::together(self.top, self.b, self.log, &jobs, Instant::now() + self.o.limit)?;
+        let (mut changed, mut failed) = (false, Vec::new());
+        for (f, e) in fixes.iter().zip(done) {
+            match e {
+                Ok(e) => {
+                    if !e.reverted.is_empty() {
+                        self.gaps.push(format!(
+                            "{} changed paths outside its scope, put back: {}",
+                            f.who,
+                            e.reverted.join(", ")
+                        ));
+                    }
+                    changed |= !e.changed.is_empty();
+                }
+                Err(e) => failed.push(format!("{} ({}) failed: {e}", f.who, f.r.label())),
+            }
+        }
+        if !failed.is_empty() && failed.len() == fixes.len() {
+            return Err(failed.join("; "));
+        }
+        self.gaps.extend(failed.into_iter().map(|e| format!("remediation by {e}")));
         Ok(changed)
     }
 
-    // Has one agent fix a set of findings within `allowed`, noting what it changed outside it; returns whether it changed anything.
-    #[allow(clippy::too_many_arguments)]
-    fn fix_with(
-        &mut self,
-        findings: &[Finding],
-        r: &Rung,
-        role: &str,
-        intro: &str,
-        how: &str,
-        allowed: &dyn Fn(&str) -> bool,
-        who: &str,
-    ) -> Result<bool, String> {
-        let list: String = findings
+    // The findings as a fixer reads them: id, viewpoint, severity, place, issue, impact, fix and the cited lines.
+    fn listing(&self, findings: &[Finding]) -> String {
+        findings
             .iter()
             .map(|f| {
                 format!(
@@ -728,25 +781,7 @@ impl Run<'_> {
                     evidence(self.top, &f.cite).unwrap_or_default()
                 )
             })
-            .collect();
-        let prompt = format!("{intro}\n{list}{how}");
-        let sections = [("brief", intro), ("findings", list.as_str())];
-        let e = edit::edit(
-            self.top,
-            self.b,
-            self.log,
-            r,
-            role,
-            &prompt,
-            &sections,
-            allowed,
-            Instant::now() + self.o.limit,
-        )?;
-        if !e.reverted.is_empty() {
-            self.gaps
-                .push(format!("{who} changed paths outside its scope, put back: {}", e.reverted.join(", ")));
-        }
-        Ok(!e.changed.is_empty())
+            .collect()
     }
 }
 
@@ -984,7 +1019,7 @@ fn bench(
     out.push_str(&format!(
         "  1. local work: {} local call(s) ({}) cost no hosted tokens; {} hosted call(s) took {} input tokens ({} cached) and {} output; {} extra hosted round(s) were the executors fetching or rereading on their own\n",
         local.len(), if local_phases.is_empty() { "none".to_string() } else { local_phases.join(", ") }, hosted.len(),
-        hosted.iter().map(|c| c.input).sum::<usize>(), hosted.iter().map(|c| c.cached).sum::<usize>(), hosted.iter().map(|c| c.tokens).sum::<usize>(), fetched
+        hosted.iter().filter_map(|c| c.input).sum::<usize>(), hosted.iter().filter_map(|c| c.cached).sum::<usize>(), hosted.iter().filter_map(|c| c.tokens).sum::<usize>(), fetched
     ));
     let confirmed = findings.iter().filter(|f| !["dropped"].contains(&f.status.as_str())).count();
     let closed = findings.iter().filter(|f| f.status == "fixed").count();

@@ -102,7 +102,15 @@ impl Backend for Fake {
                 std::fs::write(full, c).expect("write");
             }
         }
-        t.text.map(|text| Said { text, tokens: 9, input: 200, cached: 50, rounds: 3, cost: Some(0.02) })
+        t.text.map(|text| Said {
+            text,
+            tokens: 9,
+            input: 200,
+            cached: 50,
+            rounds: 3,
+            cost: Some(0.02),
+            counted: true,
+        })
     }
 
     // The scripted installed models.
@@ -762,6 +770,129 @@ fn test_edit() {
     let _ = t;
 }
 
+// Checks edits run together: a hosted fixer and a local writer each keep only their own scope (the fixer's documentation edit is put back, the writer's code file refused), a failed agent leaves the other's result, and two hosted agents run one after another.
+#[test]
+fn test_edit_together() {
+    let (t, root) = repo_on_feature();
+    let log = Log::default();
+    let (hosted, local) =
+        (Rung::parse("claude:x", None).expect("rung"), Rung::parse("qwen-a", None).expect("rung"));
+    let code = |p: &str| p.starts_with("src/");
+    let docs = |p: &str| p.ends_with(".md");
+    let far = Instant::now() + Duration::from_secs(30);
+    let f = Fake::new(vec![
+        ("claude:x medium", edits(&[("src/lib.rs", "fixed\n"), ("README.md", "sneaky\n")], "FIXED F1")),
+        ("qwen-a low", say("FILE README.md\n```\n# short\n```\nFILE src/other.rs\n```\nno\n```")),
+    ]);
+    let jobs = [
+        edit::Job { r: &local, role: "remediate docs", prompt: "docs", sections: &[], allowed: &docs },
+        edit::Job { r: &hosted, role: "remediate", prompt: "code", sections: &[], allowed: &code },
+    ];
+    let done = edit::together(&root, &f, &log, &jobs, far).expect("together");
+    let (writer, fixer) = (done[0].clone().expect("writer"), done[1].clone().expect("fixer"));
+    assert_eq!(
+        (writer.changed, writer.reverted),
+        (vec!["README.md".to_string()], vec!["src/other.rs".to_string()])
+    );
+    assert_eq!(
+        (fixer.changed, fixer.reverted),
+        (vec!["src/lib.rs".to_string()], vec!["README.md".to_string()])
+    );
+    assert_eq!(std::fs::read_to_string(root.join("README.md")).expect("readme"), "# short\n");
+    assert_eq!(std::fs::read_to_string(root.join("src/lib.rs")).expect("lib"), "fixed\n");
+    assert!(!root.join("src/other.rs").exists());
+    assert_eq!(log.calls().len(), 2);
+    let f = Fake::new(vec![
+        ("claude:x medium", edits(&[("src/lib.rs", "again\n")], "FIXED F1")),
+        ("qwen-a low", fails("down")),
+    ]);
+    let done = edit::together(&root, &f, &log, &jobs, far).expect("together");
+    assert!(
+        done[0].clone().unwrap_err().contains("down")
+            && done[1].clone().expect("fixer").changed == ["src/lib.rs"]
+    );
+    let f = Fake::new(vec![
+        ("claude:x medium", fails("timed out")),
+        ("qwen-a low", say("FILE README.md\n```\n# kept\n```")),
+    ]);
+    let done = edit::together(&root, &f, &log, &jobs, far).expect("together");
+    assert!(
+        done[1].clone().unwrap_err().contains("timed out")
+            && done[0].clone().expect("writer").changed == ["README.md"]
+    );
+    let other = Rung::parse("claude:y", None).expect("rung");
+    let f = Fake::new(vec![
+        ("claude:x medium", edits(&[("src/lib.rs", "x\n")], "ok")),
+        ("claude:y medium", edits(&[("README.md", "y\n"), ("src/lib.rs", "y\n")], "ok")),
+    ]);
+    let two = [
+        edit::Job { r: &hosted, role: "a", prompt: "a", sections: &[], allowed: &code },
+        edit::Job { r: &other, role: "b", prompt: "b", sections: &[], allowed: &docs },
+    ];
+    let done = edit::together(&root, &f, &log, &two, far).expect("one after another");
+    let (a, b) = (done[0].clone().expect("a"), done[1].clone().expect("b"));
+    assert_eq!(
+        (a.changed, b.changed, b.reverted),
+        (vec!["src/lib.rs".to_string()], vec!["README.md".to_string()], vec!["src/lib.rs".to_string()])
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("src/lib.rs")).expect("lib"),
+        "x\n",
+        "b's code edit put back"
+    );
+    let _ = t;
+}
+
+// Checks a review fixes code and documentation findings at the same time, the fixer and the writer each in its own scope, and that one failing leaves the other's fix and a gap.
+#[test]
+fn test_review_fixes_code_and_docs_together() {
+    for (writer_fails, fixer_fails) in [(false, false), (true, false), (true, true)] {
+        let (t, root) = repo_on_feature();
+        opt_in(&t, "");
+        t.write("src/lib.rs", b"pub fn add(a: i32, b: i32) -> i32 {\n    a + b + 0\n}\n");
+        t.write(
+            "README.md",
+            b"# demo\nThis README explains, at great and needless length, that the library adds numbers.\n",
+        );
+        let writer = match writer_fails {
+            false => say("FILE README.md\n```\n# demo\nAdds numbers.\n```"),
+            true => fails("the local model is busy"),
+        };
+        let f = Fake::new(vec![
+            ("qwen-a low", say("")),
+            ("qwen-a low", say("FINDING major | src/lib.rs:2 | adds a needless zero | confusing | drop it\nFINDING minor | README.md:2 | wordy | slows readers | shorten it")),
+            ("claude:z high", say("KEEP R1 | major | real\nKEEP R2 | minor | real")),
+            match fixer_fails {
+                false => ("claude:z high", edits(&[("src/lib.rs", "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"), ("README.md", "sneaky\n")], "FIXED F1")),
+                true => ("claude:z high", fails("out of credits")),
+            },
+            ("qwen-a low", writer),
+            ("qwen-a low", say("RESOLVED F1 yes | no zero\nRESOLVED F2 yes | short now")),
+        ]);
+        let (out, code) = flow(&root, &f, &["review", "--agents", "qwen-a,claude:z@high", "--rounds", "1"]);
+        if fixer_fails {
+            assert!(out.contains("gap: remediation failed: the fixer (claude:z high) failed: out of credits; the writer (qwen-a low) failed: the local model is busy"), "{out}");
+            continue;
+        }
+        assert_eq!(code, 0, "{out}");
+        assert!(out.contains("gap: the fixer changed paths outside its scope, put back: README.md"), "{out}");
+        assert!(std::fs::read_to_string(root.join("src/lib.rs")).expect("lib").contains("a + b\n"), "{out}");
+        let readme = std::fs::read_to_string(root.join("README.md")).expect("readme");
+        match writer_fails {
+            false => assert_eq!(readme, "# demo\nAdds numbers.\n", "{out}"),
+            true => {
+                assert!(readme.contains("needless length"), "{out}");
+                assert!(
+                    out.contains(
+                        "gap: remediation by the writer (qwen-a low) failed: the local model is busy"
+                    ),
+                    "{out}"
+                );
+            }
+        }
+    }
+}
+
 // Checks test-first end to end: A's test fails for the stated reason, B's production change makes it pass, the broader checks run, and the receipts and test patch are kept.
 #[test]
 fn test_test_first() {
@@ -1203,9 +1334,9 @@ fn test_dispatch_preview_init() {
             rung: "claude:a high".into(),
             hosted: true,
             sent: vec![("diff".into(), 100), ("brief".into(), 20)],
-            input: 300,
-            cached: 100,
-            tokens: 40,
+            input: Some(300),
+            cached: Some(100),
+            tokens: Some(40),
             rounds: 2,
             cost: Some(0.1),
             secs: 3.0,
@@ -1215,7 +1346,7 @@ fn test_dispatch_preview_init() {
         calls::Call {
             role: "briefing".into(),
             rung: "qwen low".into(),
-            tokens: 10,
+            tokens: Some(10),
             queued: 1.5,
             secs: 4.0,
             ok: true,
@@ -1224,6 +1355,31 @@ fn test_dispatch_preview_init() {
     ];
     let table = calls::phases(&calls, 7.0);
     assert!(table.contains("review: hosted 1 call(s) to claude:a high — sent ~120 tokens (diff 100, brief 20); reported 300 in, 100 cached, 40 out, 2 rounds, $0.1000") && table.contains("briefing: local 1 call(s), 1.5 s queued, 4.0 s in all, 10 out"), "{table}");
+    let mut stopped = calls.clone();
+    stopped.push(calls::Call {
+        role: "review y".into(),
+        rung: "claude:a high".into(),
+        hosted: true,
+        secs: 9.0,
+        ..Default::default()
+    });
+    let table = calls::phases(&stopped, 16.0);
+    assert!(
+        table.contains(
+            "reported 300 in, 100 cached, 40 out (+ unknown for 1 call(s) that reported no counts), 2 rounds"
+        ),
+        "a stopped call is unknown, not zero: {table}"
+    );
+    let u = calls::usage(&stopped, 16.0);
+    assert_eq!(
+        (u["uncounted_calls"].as_u64(), u["hosted"]["sent_tokens"][0]["estimated"].as_bool()),
+        (Some(1), Some(true))
+    );
+    assert!(
+        calls::usage_line(&stopped, 16.0).contains("50 output tokens (+ unknown for 1 call(s)"),
+        "{}",
+        calls::usage_line(&stopped, 16.0)
+    );
 }
 
 // Checks the less common shapes of tool output, discovery and guidance: dotnet and go variants, a failing test counted with exit 0, a check named with spaces, Python markers, deep folders, quoted branch names said twice, and an origin HEAD.

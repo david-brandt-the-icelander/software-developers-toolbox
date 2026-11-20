@@ -93,9 +93,21 @@ impl Session {
         }
     }
 
-    // Waits for the worker's next line, killing it past the time limit.
+    // Waits for the worker's next line, killing it past the time limit or when the calling job is cancelled (the next call starts a fresh worker).
     fn line(&mut self) -> Result<String, String> {
-        match self.lines.recv_timeout(self.limit) {
+        let end = Instant::now() + self.limit;
+        let got = loop {
+            let left = end.saturating_duration_since(Instant::now());
+            match self.lines.recv_timeout(left.min(Duration::from_millis(100))) {
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if crate::budget::cancelled() => {
+                    let _ = self.child.kill();
+                    return Err("the run was cancelled while the local model worked".into());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if !left.is_zero() => continue,
+                got => break got,
+            }
+        };
+        match got {
             Ok(l) => Ok(l),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 let _ = self.child.kill();
@@ -194,15 +206,18 @@ fn lock_until(deadline: Option<Instant>) -> Result<MutexGuard<'static, Option<Li
         match POOL.try_lock() {
             Ok(g) => return Ok(g),
             Err(TryLockError::Poisoned(p)) => return Ok(p.into_inner()),
-            Err(TryLockError::WouldBlock) if Instant::now() >= d => {
-                return Err("the time limit ran out while the local model was busy with other calls".into())
+            Err(TryLockError::WouldBlock) if Instant::now() >= d || crate::budget::cancelled() => {
+                return Err(format!(
+                    "{} while the local model was busy with other calls",
+                    crate::budget::why_over()
+                ))
             }
             Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(20)),
         }
     }
 }
 
-// Asks like ask_in, finishing by `deadline` when one is given: the wait for the worker and the answer together get only the time left, and none left is an error.
+// Asks like ask_in, finishing by `deadline` when one is given: the wait for the worker, its startup and the answer together get only the time left (the answer what startup left), and none left is an error.
 pub fn ask_in_until(
     program: &Path,
     model: Option<&str>,
@@ -231,7 +246,13 @@ pub fn ask_in_until(
         *pool = Some(Live { session, program: program.to_path_buf(), last: Instant::now() });
     }
     let live = pool.as_mut().expect("started above");
-    live.session.limit = limit;
+    live.session.limit = match deadline.map(|d| d.saturating_duration_since(Instant::now())) {
+        Some(left) if left.is_zero() => {
+            return Err("starting the local model used the rest of the time limit".into())
+        }
+        Some(left) => left.min(limit),
+        None => limit,
+    };
     let r = live.session.ask(req).map(|r| Reply { queued_ms, ..r });
     live.last = Instant::now();
     if r.is_err() && !live.session.alive() {
@@ -378,6 +399,51 @@ mod tests {
         assert!(reap(Duration::ZERO));
     }
 
+    // Checks a slow startup leaves the answer only what is left of the deadline, not a fresh full limit: the call ends at the deadline instead of startup plus the whole limit after it.
+    #[test]
+    fn test_startup_counts_against_the_deadline() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let worker = fake(&t, "sleep 0.4\necho '{\"ready\":\"m\"}'\nwhile read l; do sleep 0.5; echo '{\"text\":\"late\"}'; done");
+        let (q, d) = (serde_json::json!({"user": "x"}), Duration::from_secs(10));
+        reap(Duration::ZERO);
+        let t0 = Instant::now();
+        let e = ask_in_until(&worker, None, &q, d, Some(t0 + Duration::from_millis(700)))
+            .expect_err("past the deadline");
+        assert!(e.contains("took longer"), "{e}");
+        assert!(t0.elapsed() < Duration::from_millis(850), "ended at the deadline: {:?}", t0.elapsed());
+        reap(Duration::ZERO);
+    }
+
+    // Checks a cancel ends the wait for the local model's answer at once, stopping the worker so the next call starts a fresh one.
+    #[test]
+    fn test_cancel_ends_the_wait() {
+        let _g = crate::testutil::env_lock();
+        let t = TempDir::new();
+        let worker =
+            fake(&t, "echo '{\"ready\":\"m\"}'\nwhile read l; do sleep 5; echo '{\"text\":\"late\"}'; done");
+        let (q, d) = (serde_json::json!({"user": "x"}), Duration::from_secs(10));
+        reap(Duration::ZERO);
+        let stop = crate::budget::Stop::default();
+        let canceller = {
+            let s = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                s.cancel();
+            })
+        };
+        let t0 = Instant::now();
+        let e =
+            crate::budget::stopping(&stop, || ask_in_until(&worker, None, &q, d, Some(t0 + d))).unwrap_err();
+        canceller.join().expect("cancel");
+        assert_eq!(e, "the run was cancelled while the local model worked");
+        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+        let busy =
+            crate::budget::stopping(&stop, || ask_in_until(&worker, None, &q, d, Some(Instant::now() + d)));
+        assert!(busy.is_err());
+        reap(Duration::ZERO);
+    }
+
     // Checks the shared worker: it starts once for many calls, `model` None reuses whatever is loaded, another model or program replaces it, a dead worker is dropped, and idle ones are reaped.
     #[test]
     fn test_llm_pool() {
@@ -487,7 +553,8 @@ mod tests {
             Some("local model: the local model stopped")
         );
         let stall = fake(&t, "echo '{\"ready\":\"m\"}'\nsleep 30\n");
-        let mut s = Session::start_with(&stall, &[], Duration::from_millis(300)).expect("ready");
+        let mut s = Session::start_with(&stall, &[], d).expect("ready");
+        s.limit = Duration::from_millis(300);
         assert!(s.ask(&serde_json::json!({"user": "a"})).expect_err("stall").contains("took longer than"));
         drop(s);
         let junk = fake(&t, "echo not-json\n");

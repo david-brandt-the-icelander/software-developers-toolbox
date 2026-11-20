@@ -270,6 +270,34 @@
       ]
     },
     {
+      "id": "ZAZZLE_RUNS_DIR",
+      "title": "ZAZZLE_RUNS_DIR",
+      "summary": "Where investigate runs are kept by run id: the request, each model call's usage, and the result with its usage.",
+      "key": "ZAZZLE_RUNS_DIR",
+      "type": "path",
+      "default": "$HOME/.zazzle/runs",
+      "sensitive": false,
+      "scope": "Read when `zazzle daemon serve` or `zazzle daemon run` opens its engine; every investigate job there is kept under its run id, and `investigate --run-id ID` (MCP `run_id`) returns it.",
+      "takesEffect": "at-startup",
+      "validation": "An empty value counts as unset. Without it and without HOME nothing is kept and `--run-id` is refused. Run folders are created mode 0700 and their files 0600, since results quote source; runs older than a day are removed when a new one starts.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/runs.rs",
+          "symbol": "dir"
+        },
+        {
+          "path": "src/macos/daemon/src/runs.rs",
+          "symbol": "begin"
+        },
+        {
+          "path": "src/macos/daemon/src/cli.rs",
+          "symbol": "open_engine"
+        }
+      ],
+      "relationships": []
+    },
+    {
       "id": "ZAZZLE_OUTPUTS_MAX_GB",
       "title": "ZAZZLE_OUTPUTS_MAX_GB",
       "summary": "The output store's size limit in gigabytes.",

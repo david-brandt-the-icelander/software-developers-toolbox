@@ -296,6 +296,78 @@
         }
       ],
       "relationships": []
+    },
+    {
+      "id": "agent-calls-in-parallel",
+      "title": "Independent agent calls run at the same time, on threads of their own",
+      "summary": "zazzle runs the agent calls that do not depend on each other together: investigate's parts, a review's reviewer groups, the fixer and the writer in remediation, and CI triage's log fetches; dependent steps (plan, then parts, then combine; brief, then review, then adjudicate, then fix, then re-review; test-first's A, then B) stay in order.",
+      "status": "accepted",
+      "context": "A user asked that zazzle run its sub-sessions in parallel as far as their dependencies allow. Hosted agent calls take minutes each, so running independent ones one after another made the wall time their sum.",
+      "decision": "adaptive/calls.rs `all` runs each independent call on a scoped thread of its own (inline for one) and returns the results in order, which keeps reports and ledgers deterministic. Results are applied after all return, in their original order. investigate's parts each get their own read session, so one part's reads never mark a file as already seen for another. Edits with separate scopes run through flow/edit.rs `together`: at most one hosted agent may write the tree at once (more run one after another), its out-of-scope changes are put back first, then each local model's files are written and kept only in its own scope, so every change is attributed to the agent that made it.",
+      "rationale": "Agent calls block on child processes or the local worker for minutes, so they use their own threads rather than daemon's CPU pool, which would starve find, ls and refs. Local requests still take turns on the one shared worker, so local calls gain little; hosted calls gain most.",
+      "origin": "A user request to run zazzle's sub-sessions in parallel to the extent the dependencies allow.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/adaptive/calls.rs",
+          "symbol": "all"
+        },
+        {
+          "path": "src/macos/daemon/src/flow/edit.rs",
+          "symbol": "together"
+        },
+        {
+          "path": "src/macos/daemon/src/adaptive/tests.rs",
+          "symbol": "test_all_runs_together"
+        },
+        {
+          "path": "src/macos/daemon/src/flow/tests.rs",
+          "symbol": "test_edit_together"
+        }
+      ],
+      "relationships": []
+    },
+    {
+      "id": "investigate-deadline-and-runs",
+      "title": "One job deadline, and investigate results kept by run id",
+      "summary": "An investigate job has one absolute deadline from when the daemon accepts it, and every job is kept as a run whose result and usage a caller recovers by id after its own wait was cut off.",
+      "status": "accepted",
+      "context": "In the 1.3.0 one-call benchmark three jobs asked for 90 seconds and answered after about 106, 208 and 179 seconds. The client stopped waiting at 105 seconds and lost all three answers and their model usage. In the code, each part re-derived whole seconds from the remaining time and added at least one, a model's startup and its answer each got the full remaining time, seed and indexer lookups had their own 45 s waits, the review and the benchmark each got another full --seconds, and a disconnected caller's result was written to a closed socket.",
+      "decision": "The deadline is created once and passed as an instant through planning, parts, escalation, combining, the summary, the benchmark and the review (stages share it), the lookup loop and the local worker (startup and answer share it); budget.rs carries it to the indexer bridge, which cuts its waits to it without stopping the shared indexer or marking it failed. Nothing new starts after the deadline, and a twentieth of the budget (at most 2 s) is kept for the partial result. runs.rs keeps each job's request, each call's usage as it ends and the result with its usage before the reply; the same run id returns the kept result (waiting without polling while it runs) and `--run-id ID` alone looks it up, also after a restart, when an unfinished run reads as interrupted with its recorded usage. Unreported token counts are null, never zero. `--run-id ID --cancel` stops a run: budget.rs carries the run's cancel handle with its deadline into every thread of the job, so nothing new starts, a hosted agent is killed, the local model's wait ends and the job's indexer connection is shut (the indexer keeps running); the partial result is kept as cancelled. A disconnect never cancels.",
+      "rationale": "A deadline the caller can rely on, and a result that survives the caller, keep paid hosted work from being lost or repeated; the one blocking call stays the normal path, and recovery needs no polling by a model.",
+      "origin": "A benchmarking agent's request after the 1.3.0 one-call benchmark.",
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": "src/macos/daemon/src/budget.rs",
+          "symbol": "cap"
+        },
+        {
+          "path": "src/macos/daemon/src/runs.rs",
+          "symbol": "begin"
+        },
+        {
+          "path": "src/macos/daemon/src/adaptive/mod.rs",
+          "symbol": "job_end"
+        },
+        {
+          "path": "src/macos/daemon/src/llm.rs",
+          "symbol": "ask_in_until"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "test_investigate_kept_across_disconnect_and_restart"
+        },
+        {
+          "path": "src/macos/daemon/src/runs.rs",
+          "symbol": "cancel"
+        },
+        {
+          "path": "src/macos/daemon/src/server.rs",
+          "symbol": "test_investigate_cancel_from_another_client"
+        }
+      ],
+      "relationships": []
     }
   ]
 }

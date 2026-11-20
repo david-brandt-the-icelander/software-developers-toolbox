@@ -5,9 +5,9 @@ mod seed;
 use crate::cmd::{Ctx, Output};
 use crate::llm::Reply;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--context TEXT].. [--adaptive] [--agents A,B..] [--orchestrator M] [--orchestrator-effort E] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--prose] [--json]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--adaptive] [--agents A,B..] [--orchestrator M] [--orchestrator-effort E] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--no-review] [--prose] [--json]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
 // The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
@@ -264,7 +264,14 @@ fn failure(text: &str, status: u8) -> Option<String> {
 }
 
 // Runs a lookup unless the same one already ran: records it and its output, and returns whether it found something; a repeat returns the reason it is not run again.
-fn step(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trail) -> Result<bool, String> {
+fn step(
+    lctx: &Ctx,
+    scope: &[PathBuf],
+    plan: &Plan,
+    l: &Lookup,
+    trail: &mut Trail,
+    deadline: Instant,
+) -> Result<bool, String> {
     let k = key(lctx, l);
     if let Some((_, why)) = trail.done.iter().find(|(d, _)| *d == k) {
         trail.skipped += 1;
@@ -273,7 +280,7 @@ fn step(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
             Some(w) => format!("{} (it already failed: {w})", l.label()),
         });
     }
-    let (text, status) = look(lctx, scope, plan, l, trail);
+    let (text, status) = crate::budget::within(deadline, || look(lctx, scope, plan, l, trail));
     let why = failure(&text, status);
     let ok = why.is_none();
     trail.done.push((k, why));
@@ -343,18 +350,27 @@ fn defs(refs: &str) -> Vec<String> {
         .collect()
 }
 
-// Resolves the starting symbols before any inference: their refs inside the scope and the bodies of their declarations are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
-fn seeds(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, trail: &mut Trail) -> Vec<(String, Vec<String>)> {
+// Resolves the starting symbols before any inference, none started after the deadline: their refs inside the scope and the bodies of their declarations are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
+fn seeds(
+    lctx: &Ctx,
+    scope: &[PathBuf],
+    plan: &Plan,
+    trail: &mut Trail,
+    deadline: Instant,
+) -> Vec<(String, Vec<String>)> {
     let mut missed = Vec::new();
     for s in &plan.symbols {
-        let found = step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail);
+        if crate::budget::over(deadline) {
+            break;
+        }
+        let found = step(lctx, scope, plan, &Lookup::Refs(s.clone()), trail, deadline);
         if found == Ok(true) {
             let refs = trail.seen.last().map(|(_, t)| t.clone()).unwrap_or_default();
-            for d in defs(&refs) {
-                let _ = step(lctx, scope, plan, &Lookup::Read(d), trail);
+            for d in defs(&refs).into_iter().filter(|_| !crate::budget::over(deadline)) {
+                let _ = step(lctx, scope, plan, &Lookup::Read(d), trail, deadline);
             }
         }
-        if found == Ok(false) {
+        if found == Ok(false) && !crate::budget::over(deadline) {
             let c = seed::candidates(lctx.engine, &lctx.cwd, scope, s);
             let text = match c.is_empty() {
                 true => format!("{s} is not inside the scope, and nothing there resembles it."),
@@ -399,8 +415,13 @@ pub struct Explored {
 }
 
 // Investigates with the given local model and returns the report, with the rules for the cited and read files as notes for the caller.
-pub fn investigate(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Output, String> {
-    finish(ctx, explore(ctx, argv, local)?).map(|(o, _)| o)
+pub fn investigate(
+    ctx: &Ctx,
+    argv: &[String],
+    local: &dyn Local,
+    deadline: Instant,
+) -> Result<Output, String> {
+    finish(ctx, explore(ctx, argv, local, deadline)?).map(|(o, _)| o)
 }
 
 // The report of a run and its structured result.
@@ -409,8 +430,8 @@ pub fn finish(ctx: &Ctx, e: Explored) -> Result<(Output, crate::adaptive::work::
     Ok((if e.nothing { no_evidence(&e.plan) } else { report(ctx, e) }, w))
 }
 
-// Runs the lookup loop for a command line with the given model, up to its answer or a stop.
-pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored, String> {
+// Runs the lookup loop for a command line with the given model, up to its answer, a stop or `deadline` (the job's, never extended): no lookup or model turn starts after it, and the lookups it runs end with it.
+pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant) -> Result<Explored, String> {
     let plan = parse(argv)?;
     let mut scope = Vec::new();
     for s in &plan.scope {
@@ -436,8 +457,7 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored
         evidence: Vec::new(),
         skipped: 0,
     };
-    let deadline = Instant::now() + Duration::from_secs(plan.seconds);
-    let missed = seeds(&lctx, &scope, &plan, &mut trail);
+    let missed = seeds(&lctx, &scope, &plan, &mut trail, deadline);
     let nothing = !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
         && missed.iter().all(|(_, c)| c.is_empty());
@@ -450,9 +470,9 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored
     let (mut answer, mut strayed, mut stalled, mut retry) = (None, false, false, None);
     for step_no in 1..=plan.steps {
         st.turns = step_no;
-        if Instant::now() >= deadline {
+        if crate::budget::over(deadline) {
             st.turns -= 1;
-            st.stop = format!("its {} s time limit ran out", plan.seconds);
+            st.stop = stopped(&plan, "");
             break;
         }
         let left = if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
@@ -504,10 +524,17 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored
         let mut repeats = Vec::new();
         let mut ran = 0;
         for l in lookups {
-            match step(&lctx, &scope, &plan, &l, &mut trail) {
+            if crate::budget::over(deadline) {
+                st.stop = stopped(&plan, &format!(" before {}", l.label()));
+                break;
+            }
+            match step(&lctx, &scope, &plan, &l, &mut trail, deadline) {
                 Ok(_) => ran += 1,
                 Err(why) => repeats.push(why),
             }
+        }
+        if !st.stop.is_empty() {
+            break;
         }
         if !repeats.is_empty() {
             let note = format!("Not run again: {}. Ask for something new, or ANSWER.", repeats.join("; "));
@@ -526,6 +553,14 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local) -> Result<Explored
         answer = final_turn(local, &plan, &mut trail, &mut st, why, deadline).or(answer);
     }
     Ok(Explored { plan, scope, trail, answer, st, nothing })
+}
+
+// Why the loop stopped at its deadline or a cancel, with what it was about to do.
+fn stopped(plan: &Plan, before: &str) -> String {
+    match crate::budget::cancelled() {
+        true => format!("the run was cancelled{before}"),
+        false => format!("its {} s time limit ran out{before}", plan.seconds),
+    }
 }
 
 // The system message, with the rules that apply to what the lookups read, kept apart from the evidence.
@@ -873,22 +908,25 @@ pub(crate) const TOOLS: &[crate::mcp::Tool] = &[crate::mcp::Tool {
 fn schema() -> serde_json::Value {
     crate::mcp::object(
         serde_json::json!({
-            "question": {"type": "string"},
+            "question": {"type": "string", "description": "Required unless run_id names an earlier run to get back"},
+            "run_id": {"type": "string", "description": "The run's id: the same id again returns the kept result (waiting while it runs) without asking any model again; with no question, looks the run up"},
+            "cancel": {"type": "boolean", "description": "With run_id alone: stop that run now and return what it had gathered"},
             "paths": {"type": "array", "items": {"type": "string"}, "description": "Folders or files to stay inside (default: the working directory)"},
             "symbols": {"type": "array", "items": {"type": "string"}, "description": "Names to start from"},
             "steps": {"type": "integer", "description": "Model turns, 1 to 12 (default 6)"},
-            "seconds": {"type": "integer", "description": "Time limit for the whole call, waiting for the local model included, 1 to 600 (default 90); a benchmark and a review each get as long again"},
+            "seconds": {"type": "integer", "description": "Time limit for the whole job, 1 to 600 (default 90): planning, waiting for and starting models, lookups, escalation, a benchmark and a review all end by it, and a partial result is kept"},
             "adaptive": {"type": "boolean", "description": "Plan the question into parts, give each the cheapest agent and effort that will do it, and escalate a part that is not settled"},
             "agents": {"type": "array", "items": {"type": "string"}, "description": "The adaptive ladder, cheapest first: MODEL, local:MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: the installed local models)"},
             "orchestrator": {"type": "string", "description": "Adaptive only: the agent that plans, combines and summarizes, instead of the ladder: MODEL, local:MODEL, claude:MODEL or codex:MODEL, optionally @EFFORT; the report lists each step, its agent and tokens as JSON"},
             "orchestrator_effort": {"type": "string"},
-            "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder)"},
+            "benchmark_model": {"type": "string", "description": "Also answer the question with this agent alone and compare (default: the top of the ladder); a judge compares the two on quality, wall-clock time and tokens, by default claude:opus at high effort"},
             "benchmark_effort": {"type": "string"},
             "review_model": {"type": "string", "description": "Have this agent judge the results and each finding"},
             "review_effort": {"type": "string"},
+            "no_review": {"type": "boolean", "description": "With a benchmark: leave out the judge it gets by default (claude:opus at high effort when installed)"},
             "prose": {"type": "boolean", "description": "Adaptive only: the cheapest agent adds a short summary that keeps the citations"}
         }),
-        &["question"],
+        &[],
     )
 }
 
@@ -905,6 +943,7 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
     crate::mcp::push_num(&mut a, v, "seconds", "--seconds")?;
     crate::mcp::push_flag(&mut a, v, "adaptive", "--adaptive")?;
     crate::mcp::push_flag(&mut a, v, "prose", "--prose")?;
+    crate::mcp::push_flag(&mut a, v, "no_review", "--no-review")?;
     let agents = crate::mcp::get_list(v, "agents")?;
     if !agents.is_empty() {
         a.extend(["--agents".to_string(), agents.join(",")]);
@@ -921,16 +960,126 @@ fn tool_args(v: &serde_json::Value) -> Result<Vec<String>, String> {
             a.extend([format!("--{}", key.replace('_', "-")), x]);
         }
     }
-    a.push(crate::mcp::need_str(v, "question")?);
+    let run = crate::mcp::get_str(v, "run_id")?;
+    if let Some(id) = &run {
+        a.extend(["--run-id".to_string(), id.clone()]);
+    }
+    if v["cancel"] == true {
+        return match (&run, a.len(), v.get("question")) {
+            (Some(_), 3, None) => Ok([a, vec!["--cancel".to_string()]].concat()),
+            _ => Err("cancel takes run_id and nothing else".into()),
+        };
+    }
+    match crate::mcp::get_str(v, "question")? {
+        Some(q) => a.push(q),
+        None if run.is_some() && a.len() == 3 => {}
+        None => return Err("question is required unless run_id alone names an earlier run".into()),
+    }
     Ok(a)
 }
 
-// Runs `investigate` with the user's local model, or in the adaptive mode when any of its flags is given.
+// Runs `investigate` as a run the caller can recover or cancel (`--run-id ID --cancel` stops it now and returns what it gathered): with the run store, the job gets a run id (`--run-id ID`, else a new one, said on the caller's standard error before the wait), its model calls' usage is kept as each ends, and its result is kept before it is returned; the same id again returns that result (waiting for it while it runs) without asking any model again, and `--run-id ID` alone looks it up.
 pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
-    if crate::adaptive::wanted(argv) {
-        return crate::adaptive::run(ctx, argv);
+    let accepted = Instant::now();
+    let (given, argv) = take_run_id(argv)?;
+    let (cancel, argv): (Vec<String>, Vec<String>) = argv.into_iter().partition(|a| a == "--cancel");
+    let Some(root) = ctx.engine.runs.clone() else {
+        return match given {
+            Some(_) => Err("--run-id needs the run store (~/.zazzle/runs, or ZAZZLE_RUNS_DIR)".into()),
+            None => job(ctx, &argv, accepted, &None),
+        };
+    };
+    if !cancel.is_empty() {
+        return match (given, argv.is_empty()) {
+            (Some(id), true) => crate::runs::cancel(&root, &id),
+            _ => Err("--cancel takes the run to stop with --run-id ID and nothing else".into()),
+        };
     }
-    investigate(ctx, argv, &Model)
+    if argv.is_empty() && given.is_none() {
+        return Err(USAGE.into());
+    }
+    let id = given.unwrap_or_else(crate::runs::new_id);
+    let until = accepted + std::time::Duration::from_secs(seconds_of(&argv));
+    match crate::runs::begin(&root, &id, &argv, &ctx.cwd, until)? {
+        crate::runs::Begun::Earlier(res) => res.map(|mut o| {
+            o.notes.push_str(&format!(
+                "\n-- the kept result of investigate run {id}; no model was asked again\n"
+            ));
+            o
+        }),
+        crate::runs::Begun::New(j) => {
+            announce(ctx, &id);
+            let stop = j.stop();
+            let res = crate::budget::stopping(&stop, || job(ctx, &argv, accepted, &Some(j.usage()))).map(
+                |mut o| {
+                    if stop.cancelled() {
+                        o.notes.push_str(&format!(
+                            "\n-- run {id} was cancelled; this is what it had gathered\n"
+                        ));
+                    }
+                    o
+                },
+            );
+            if let Err(e) = j.finish(&res) {
+                eprintln!("investigate: keeping run {id}: {e}");
+            }
+            res
+        }
+    }
+}
+
+// Runs the job: the adaptive mode when any of its flags is given, else the user's local model, each call's usage appended to `sink`.
+fn job(
+    ctx: &Ctx,
+    argv: &[String],
+    accepted: Instant,
+    sink: &crate::adaptive::Sink,
+) -> Result<Output, String> {
+    use crate::adaptive::{agent::Rung, calls, OnRung};
+    if crate::adaptive::wanted(argv) {
+        return crate::adaptive::run_at(ctx, argv, &calls::Real, accepted, sink);
+    }
+    let plan = parse(argv)?;
+    let (log, rung) = (calls::Log::to(sink.clone()), Rung::parse("", Some("low"))?);
+    let local = OnRung { b: &calls::Real, rung: &rung, log: &log, role: "investigate" };
+    investigate(ctx, argv, &local, crate::adaptive::job_end(accepted, plan.seconds))
+}
+
+// Splits `--run-id ID` (or `--run-id=ID`) off a command line.
+fn take_run_id(argv: &[String]) -> Result<(Option<String>, Vec<String>), String> {
+    let (mut id, mut rest, mut it) = (None, Vec::new(), argv.iter());
+    while let Some(a) = it.next() {
+        match a.strip_prefix("--run-id") {
+            Some("") => id = Some(it.next().ok_or("--run-id takes an id")?.clone()),
+            Some(v) if v.starts_with('=') => id = Some(v[1..].to_string()),
+            _ => rest.push(a.clone()),
+        }
+    }
+    Ok((id, rest))
+}
+
+// The time limit a command line asks for, in seconds (the default when it names none it can use).
+fn seconds_of(argv: &[String]) -> u64 {
+    argv.iter()
+        .position(|a| a == "--seconds")
+        .and_then(|i| argv.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_SECONDS)
+}
+
+// Tells a command-line caller the run id before the wait, on its standard error, so a wait cut short can be recovered.
+fn announce(ctx: &Ctx, id: &str) {
+    use std::io::Write;
+    if let Some(c) = ctx.caller.borrow().as_ref() {
+        if let Ok(fd) = c.stdio[2].try_clone() {
+            let _ = std::fs::File::from(fd).write_all(
+                format!(
+                    "investigate: run {id} (if this wait is cut off: zazzle investigate --run-id {id})\n"
+                )
+                .as_bytes(),
+            );
+        }
+    }
 }
 
 #[cfg(test)]

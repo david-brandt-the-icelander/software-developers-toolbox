@@ -54,6 +54,7 @@ pub struct Engine {
     pub misses: AtomicU64,
     pub zazz: crate::zazz::Zazz,
     pub outputs: Option<PathBuf>,
+    pub runs: Option<PathBuf>,
     pub deliveries: crate::delivery::DeliveryLog,
     pub calls: Mutex<shell_tools::engine::Engine>,
 }
@@ -85,6 +86,7 @@ impl Engine {
             misses: AtomicU64::new(0),
             zazz: crate::zazz::Zazz::default(),
             outputs: None,
+            runs: None,
             deliveries: crate::delivery::DeliveryLog::default(),
             calls: Mutex::new(shell_tools::engine::Engine::default()),
         }
@@ -98,6 +100,11 @@ impl Engine {
     // Returns the engine with an output store directory for clean, run and proxy outputs.
     pub fn with_outputs(self, dir: Option<PathBuf>) -> Engine {
         Engine { outputs: dir, ..self }
+    }
+
+    // Returns the engine with a run store for investigate jobs that callers can recover by id.
+    pub fn with_runs(self, dir: Option<PathBuf>) -> Engine {
+        Engine { runs: dir, ..self }
     }
 
     // Returns the engine with a persistent final-response metrics log.

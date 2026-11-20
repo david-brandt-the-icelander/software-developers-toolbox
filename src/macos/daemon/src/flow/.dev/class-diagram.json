@@ -148,6 +148,21 @@
       ]
     },
     {
+      "id": "Job",
+      "name": "Job",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/edit.rs"
+      ],
+      "members": [
+        "r",
+        "role",
+        "prompt",
+        "sections",
+        "allowed"
+      ]
+    },
+    {
       "id": "Spec",
       "name": "Spec",
       "kind": "struct",
@@ -209,6 +224,38 @@
         "receipt",
         "findings, passes",
         "gaps"
+      ]
+    },
+    {
+      "id": "Group",
+      "name": "Group",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/review.rs"
+      ],
+      "members": [
+        "views",
+        "r",
+        "briefs",
+        "open",
+        "role"
+      ]
+    },
+    {
+      "id": "Fix",
+      "name": "Fix",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/flow/review.rs"
+      ],
+      "members": [
+        "r",
+        "role",
+        "who",
+        "list",
+        "intro",
+        "prompt",
+        "allowed"
       ]
     },
     {
@@ -342,6 +389,30 @@
       "to": "License",
       "kind": "depends-on",
       "description": "The header flow headers requires."
+    },
+    {
+      "from": "Job",
+      "to": "Edited",
+      "kind": "depends-on",
+      "description": "What each edit run with others did, attributed to its agent."
+    },
+    {
+      "from": "Run",
+      "to": "Fix",
+      "kind": "depends-on",
+      "description": "The fixer's and the writer's tasks, run together."
+    },
+    {
+      "from": "Fix",
+      "to": "Job",
+      "kind": "depends-on",
+      "description": "Each task as an edit with its own scope."
+    },
+    {
+      "from": "Run",
+      "to": "Group",
+      "kind": "depends-on",
+      "description": "The reviewer calls of a pass, run together."
     }
   ]
 }

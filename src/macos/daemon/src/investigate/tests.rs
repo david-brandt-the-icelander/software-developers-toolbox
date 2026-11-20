@@ -65,7 +65,9 @@ fn go(
         stdin: RefCell::new(None),
         caller: RefCell::new(None),
     };
-    investigate(&ctx, &argv.iter().map(|a| a.to_string()).collect::<Vec<_>>(), s)
+    let argv: Vec<String> = argv.iter().map(|a| a.to_string()).collect();
+    let deadline = Instant::now() + Duration::from_secs(parse(&argv)?.seconds);
+    investigate(&ctx, &argv, s, deadline)
 }
 
 // Checks a full run: the starting symbol's refs stay inside the scope and its declaration is read before the first turn, a lookup outside it is refused, a cited finding comes back with its literal lines, a bad citation is rejected, and the rules reach the model apart from the evidence and the caller as notes.
@@ -252,8 +254,17 @@ fn test_investigate_through_zazzle() {
         tool_args(&v).expect("args"),
         ["investigate", "--path", "api", "--symbol", "Handle", "--steps", "3", "--seconds", "60", "where?"]
     );
-    assert_eq!(schema()["required"][0], "question");
+    assert!(schema()["properties"]["run_id"].is_object());
     assert!(tool_args(&serde_json::json!({})).is_err());
+    assert_eq!(
+        tool_args(&serde_json::json!({"run_id": "r1"})).expect("lookup"),
+        ["investigate", "--run-id", "r1"]
+    );
+    assert_eq!(
+        tool_args(&serde_json::json!({"run_id": "r1", "question": "q"})).expect("resubmit"),
+        ["investigate", "--run-id", "r1", "q"]
+    );
+    assert!(tool_args(&serde_json::json!({"run_id": "r1", "steps": 2})).is_err());
     let v = serde_json::json!({"question": "q", "adaptive": true, "prose": true, "agents": ["qwen", "claude:opus@high"], "benchmark_model": "codex:gpt", "review_effort": "high"});
     assert_eq!(
         tool_args(&v).expect("adaptive args"),
@@ -276,6 +287,13 @@ fn test_investigate_through_zazzle() {
         ["investigate", "--adaptive", "--orchestrator", "claude:opus", "--orchestrator-effort", "high", "q"]
     );
     assert!(tool_args(&serde_json::json!({"question": "q", "review_model": 3})).is_err());
+    assert_eq!(
+        tool_args(
+            &serde_json::json!({"question": "q", "benchmark_model": "claude:sonnet", "no_review": true})
+        )
+        .expect("no review"),
+        ["investigate", "--no-review", "--benchmark-model", "claude:sonnet", "q"]
+    );
 }
 
 // Checks a refused outline, a range read, and that evidence past the cap leaves no lookups and asks for the answer.
@@ -606,7 +624,7 @@ impl Local for Slow {
     }
 }
 
-// Checks the time limit: a turn that runs past it ends the run before the next one, without an answer-only turn, and the
+// Checks the time limit: a turn that runs past it ends the run before the lookup it asked for and the next turn, without an answer-only turn, and the
 // evidence gathered so far (the starting symbol's refs and declaration) comes back.
 #[test]
 fn test_investigate_deadline() {
@@ -624,9 +642,9 @@ fn test_investigate_deadline() {
         .iter()
         .map(|a| a.to_string())
         .collect();
-    let o = investigate(&ctx, &argv, &Slow).expect("run");
+    let o = investigate(&ctx, &argv, &Slow, Instant::now() + Duration::from_secs(1)).expect("run");
     assert!(
-        o.text.contains("PARTIAL: its 1 s time limit ran out; ranked excerpts of its evidence are above"),
+        o.text.contains("PARTIAL: its 1 s time limit ran out before READ api/Endpoint.cs; ranked excerpts of its evidence are above"),
         "{}",
         o.text
     );
@@ -666,4 +684,107 @@ fn test_defs_and_excerpt_ids() {
         (None, None, None, None)
     );
     assert_eq!((trail.id(1), trail.id(2)), (String::new(), "E2 ".to_string()));
+}
+
+// Checks a slow exact-reference lookup during seed resolution ends with the job's deadline: the indexer request is cut off (the shared indexer is left running and not marked broken), the text search answers instead, and no model turn starts after the deadline.
+#[test]
+fn test_slow_seed_lookup_ends_at_the_deadline() {
+    let _g = crate::testutil::env_lock();
+    let fake = crate::indexer::tests::FakeIndexer::start(|_, req| {
+        if !req.is_null() {
+            std::thread::sleep(Duration::from_secs(5));
+        }
+        let text = serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "late"}]}});
+        (serde_json::json!({"ok": true}), Some(text))
+    });
+    std::env::set_var("ZAZZLE_INDEXER", &fake.exe);
+    std::env::set_var("ZAZZLE_INDEXER_STATE_DIR", fake.dir.path());
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let s = Script::new(vec![Ok("ANSWER\nUNKNOWN nothing")]);
+    let argv: Vec<String> = ["where?", "--path", "api", "--symbol", "Handle", "--seconds", "60"]
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    let t0 = Instant::now();
+    let o = investigate(&ctx, &argv, &s, t0 + Duration::from_millis(600));
+    std::env::remove_var("ZAZZLE_INDEXER");
+    std::env::remove_var("ZAZZLE_INDEXER_STATE_DIR");
+    let o = o.expect("run");
+    assert!(
+        t0.elapsed() < Duration::from_millis(1500),
+        "ended at the deadline, not the indexer's 45 s: {:?}",
+        t0.elapsed()
+    );
+    assert!(s.seen.borrow().is_empty(), "no model turn starts after the deadline");
+    assert!(
+        o.text.contains("exact C# refs unavailable")
+            && o.text.contains("the job's time limit ran out while the indexer answered")
+            && o.text.contains("the indexer keeps running"),
+        "{}",
+        o.text
+    );
+    assert!(o.text.contains("time limit ran out") && o.text.contains("api/Endpoint.cs:2"), "{}", o.text);
+}
+
+// Checks run ids on the command line (`--run-id ID`, `--run-id=ID`), the refusals that need no model (no id value, no store, an unknown id, nothing asked), and that no seed lookup starts after the deadline.
+#[test]
+fn test_run_ids_and_refusals() {
+    let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(take_run_id(&v(&["q", "--run-id=a1"])).expect("eq"), (Some("a1".to_string()), v(&["q"])));
+    assert_eq!(take_run_id(&v(&["--run-id", "b2", "q"])).expect("sep"), (Some("b2".to_string()), v(&["q"])));
+    assert!(take_run_id(&v(&["q", "--run-id"])).is_err());
+    assert_eq!(seconds_of(&v(&["q", "--seconds", "7"])), 7);
+    assert_eq!(seconds_of(&v(&["q", "--seconds", "x"])), DEFAULT_SECONDS);
+    let (t, root) = repo();
+    let ctx_with = |e: &crate::engine::Engine| -> Result<Output, String> {
+        let ctx = Ctx {
+            engine: e,
+            cwd: root.clone(),
+            session: String::new(),
+            roots: Vec::new(),
+            stdin: RefCell::new(None),
+            caller: RefCell::new(None),
+        };
+        run(&ctx, &v(&["--run-id", "nope"]))
+    };
+    let stored = crate::engine::Engine::new().with_runs(Some(t.path().join("runs")));
+    assert_eq!(ctx_with(&stored).unwrap_err(), "no investigate run nope");
+    assert!(ctx_with(&crate::engine::Engine::new()).unwrap_err().contains("--run-id needs the run store"));
+    let ctx = Ctx {
+        engine: &stored,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    assert_eq!(run(&ctx, &[]).unwrap_err(), USAGE);
+    assert!(run(&ctx, &v(&["q", "--run-id", "x", "--cancel"]))
+        .unwrap_err()
+        .contains("--cancel takes the run to stop"));
+    assert!(run(&ctx, &v(&["--cancel"])).unwrap_err().contains("--cancel takes the run to stop"));
+    assert_eq!(run(&ctx, &v(&["--run-id", "gone", "--cancel"])).unwrap_err(), "no investigate run gone");
+    assert_eq!(
+        tool_args(&serde_json::json!({"run_id": "r1", "cancel": true})).expect("cancel"),
+        ["investigate", "--run-id", "r1", "--cancel"]
+    );
+    assert!(tool_args(&serde_json::json!({"run_id": "r1", "cancel": true, "question": "q"})).is_err());
+    assert!(tool_args(&serde_json::json!({"cancel": true})).is_err());
+    let s = Script::new(vec![]);
+    let e = explore(&ctx, &v(&["q", "--symbol", "Handle", "--path", "api"]), &s, Instant::now())
+        .expect("explore");
+    assert!(
+        e.trail.lookups.is_empty() && s.seen.borrow().is_empty(),
+        "nothing starts after the deadline: {:?}",
+        e.trail.lookups
+    );
 }

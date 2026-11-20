@@ -208,7 +208,10 @@ fn open_engine() -> Engine {
             Engine::new()
         }
     };
-    engine.with_outputs(crate::outputs::dir()).with_deliveries(crate::delivery::DeliveryLog::open())
+    engine
+        .with_outputs(crate::outputs::dir())
+        .with_runs(crate::runs::dir())
+        .with_deliveries(crate::delivery::DeliveryLog::open())
 }
 
 // Watches the binary that will start the next daemon: the one launchd's plist names when launchd owns the socket (so
@@ -449,7 +452,7 @@ pub fn main(args: Vec<String>) -> ExitCode {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
             let session = std::env::var("ZAZZLE_SESSION").unwrap_or_default();
             let status = run_in_process(
-                &Engine::new().with_outputs(crate::outputs::dir()),
+                &Engine::new().with_outputs(crate::outputs::dir()).with_runs(crate::runs::dir()),
                 &cwd,
                 &session,
                 &rest,

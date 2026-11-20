@@ -829,6 +829,8 @@ fn progress_every() -> std::time::Duration {
 // `notifications/progress` every progress_every(), so a client that waits on progress keeps the call open and gets one
 // result instead of timing out and having its model poll. The last notification is written before the response.
 fn answer(line: &str, msg: &Value, backend: &dyn Backend, output: &mut (dyn Write + Send)) -> io::Result<()> {
+    let (owned, run) = with_run_id(msg);
+    let line = owned.as_deref().unwrap_or(line);
     let token = msg.pointer("/params/_meta/progressToken").filter(|_| msg["method"] == "tools/call").cloned();
     let Some(token) = token else {
         if let Some(resp) = handle_line(line, backend) {
@@ -840,13 +842,17 @@ fn answer(line: &str, msg: &Value, backend: &dyn Backend, output: &mut (dyn Writ
     let out = std::sync::Mutex::new(output);
     let (done, wait) = std::sync::mpsc::channel::<()>();
     let resp = std::thread::scope(|scope| {
-        let (out, token) = (&out, &token);
+        let (out, token, run) = (&out, &token, &run);
         scope.spawn(move || {
             let mut n = 0u64;
             while wait.recv_timeout(progress_every()) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
                 n += 1;
+                let message = match run {
+                    Some(id) => format!("zazzle is still working on this call (investigate run {id}: if this call is cut off, call zazzle_investigate with run_id {id} to get its result)"),
+                    None => "zazzle is still working on this call".to_string(),
+                };
                 let note = json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {
-                    "progressToken": token, "progress": n, "message": "zazzle is still working on this call"}});
+                    "progressToken": token, "progress": n, "message": message}});
                 let mut o = out.lock().unwrap_or_else(|p| p.into_inner());
                 if writeln!(o, "{note}").and_then(|()| o.flush()).is_err() {
                     break;
@@ -865,6 +871,21 @@ fn answer(line: &str, msg: &Value, backend: &dyn Backend, output: &mut (dyn Writ
     Ok(())
 }
 
+// Gives a zazzle_investigate call that names no run id a new one, so its progress can name it before the result: the rewritten request and the id, or no change.
+fn with_run_id(msg: &Value) -> (Option<String>, Option<String>) {
+    let args = msg.pointer("/params/arguments");
+    if msg["method"] != "tools/call" || msg.pointer("/params/name") != Some(&json!("zazzle_investigate")) {
+        return (None, None);
+    }
+    if let Some(id) = args.and_then(|a| a["run_id"].as_str()) {
+        return (None, Some(id.to_string()));
+    }
+    let id = crate::runs::new_id();
+    let mut m = msg.clone();
+    m["params"]["arguments"]["run_id"] = json!(id);
+    (Some(m.to_string()), Some(id))
+}
+
 // Reads six random bytes from the operating system.
 fn random_bytes() -> io::Result<[u8; 6]> {
     use std::io::Read;
@@ -879,14 +900,19 @@ fn fallback_bytes(nanos: u128, pid: u32) -> [u8; 6] {
     [mixed[0], mixed[1], mixed[2], mixed[3], mixed[4], mixed[5]]
 }
 
-// Makes a short random session id for this MCP connection.
-pub fn new_session_id() -> String {
+// Makes twelve random hex digits, from the clock and process id when the system has no randomness.
+pub fn random_hex() -> String {
     let bytes = random_bytes().unwrap_or_else(|_| {
         let t =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
         fallback_bytes(t, std::process::id())
     });
-    format!("mcp-{}", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// Makes a short random session id for this MCP connection.
+pub fn new_session_id() -> String {
+    format!("mcp-{}", random_hex())
 }
 
 #[cfg(test)]
@@ -1551,5 +1577,39 @@ mod tests {
         );
         assert_eq!(String::from_utf8(quiet).expect("utf8").lines().count(), 1, "no token, no progress");
         assert_eq!(progress_every(), std::time::Duration::from_secs(10));
+    }
+
+    // Checks an investigate call gets a run id its progress names before the result, and keeps one the caller gave; other tools are left alone.
+    #[test]
+    fn test_investigate_gets_a_run_id() {
+        struct Seen(std::sync::Mutex<Vec<String>>);
+        impl Backend for Seen {
+            // Records the command line, then answers after a while.
+            fn call(&self, args: Vec<String>, _session: Option<&str>) -> Result<(u8, String), String> {
+                self.0.lock().expect("seen").extend(args);
+                std::thread::sleep(std::time::Duration::from_millis(1300));
+                Ok((0, "done".into()))
+            }
+        }
+        let _g = crate::testutil::env_lock();
+        std::env::set_var("ZAZZLE_MCP_PROGRESS_SECS", "1");
+        let req = json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"zazzle_investigate","arguments":{"question":"q"},"_meta":{"progressToken":"p"}}});
+        let (b, mut out) = (Seen(std::sync::Mutex::default()), Vec::new());
+        serve(&mut format!("{req}\n").as_bytes(), &mut out, &b).expect("serve");
+        std::env::remove_var("ZAZZLE_MCP_PROGRESS_SECS");
+        let args = b.0.lock().expect("seen").clone();
+        let id = args.iter().skip_while(|a| *a != "--run-id").nth(1).cloned().expect("a run id was added");
+        assert!(id.starts_with("run-"), "{args:?}");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(
+            text.contains(&format!(
+                "investigate run {id}: if this call is cut off, call zazzle_investigate with run_id {id}"
+            )),
+            "{text}"
+        );
+        let given = json!({"method":"tools/call","params":{"name":"zazzle_investigate","arguments":{"question":"q","run_id":"mine"}}});
+        assert_eq!(with_run_id(&given), (None, Some("mine".to_string())));
+        let other = json!({"method":"tools/call","params":{"name":"zazzle_ls","arguments":{}}});
+        assert_eq!(with_run_id(&other), (None, None));
     }
 }

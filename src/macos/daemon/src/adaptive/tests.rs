@@ -12,6 +12,7 @@ struct Fake {
     replies: Mutex<HashMap<String, VecDeque<Result<String, String>>>>,
     seen: Mutex<Vec<(String, String)>>,
     installed: Vec<String>,
+    hosts: Vec<agent::Kind>,
     records: Mutex<Vec<Value>>,
 }
 
@@ -41,9 +42,27 @@ impl Fake {
     }
 }
 
+// Plays a scripted reply that begins `SLEEP MS` like a real agent: it takes that long, but is stopped at the deadline or a cancel.
+fn paced(reply: Result<String, String>, deadline: Instant) -> Result<String, String> {
+    let Some((ms, rest)) =
+        reply.as_ref().ok().and_then(|t| t.strip_prefix("SLEEP ")).and_then(|t| t.split_once('\n'))
+    else {
+        return reply;
+    };
+    let end = Instant::now() + Duration::from_millis(ms.parse().unwrap_or(0));
+    while Instant::now() < end.min(deadline) && !crate::budget::cancelled() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    match (crate::budget::cancelled(), end > deadline) {
+        (true, _) => Err("stopped at the cancel".into()),
+        (false, true) => Err("stopped at the time limit".into()),
+        (false, false) => Ok(rest.to_string()),
+    }
+}
+
 impl Backend for Fake {
     // Replies for `MODEL EFFORT`, with seven tokens.
-    fn local(&self, model: &str, req: &Value, _deadline: Instant) -> Result<Reply, String> {
+    fn local(&self, model: &str, req: &Value, deadline: Instant) -> Result<Reply, String> {
         let r = Rung {
             kind: agent::Kind::Local,
             model: model.into(),
@@ -54,7 +73,7 @@ impl Backend for Fake {
             req["system"].as_str().unwrap_or_default(),
             req["user"].as_str().unwrap_or_default()
         );
-        self.next(r.label(), prompt).map(|text| Reply {
+        paced(self.next(r.label(), prompt), deadline).map(|text| Reply {
             truncated: text.contains("CUT"),
             text,
             tokens: 7,
@@ -68,22 +87,28 @@ impl Backend for Fake {
         rung: &Rung,
         prompt: &str,
         _cwd: &Path,
-        _deadline: Instant,
+        deadline: Instant,
         _write: bool,
     ) -> Result<Said, String> {
-        self.next(rung.label(), prompt.into()).map(|text| Said {
+        paced(self.next(rung.label(), prompt.into()), deadline).map(|text| Said {
             text,
             tokens: 11,
             input: 100,
             cached: 40,
             rounds: 2,
             cost: Some(0.01),
+            counted: true,
         })
     }
 
     // The scripted installed models.
     fn installed(&self) -> Vec<String> {
         self.installed.clone()
+    }
+
+    // The scripted hosted command lines this machine has.
+    fn can_host(&self, kind: agent::Kind) -> bool {
+        self.hosts.contains(&kind)
     }
 
     // Keeps the orchestration records for the tests to read.
@@ -591,8 +616,13 @@ fn test_part_escalation_limits() {
     let a = part(&ctx, &f, &Log::default(), &plan, &scope, &ladder, &top, 1, far);
     assert_eq!(a[0].why.as_deref(), Some("it verified nothing; not escalated: it was the top of the ladder"));
     let f = Fake::new(&[("a low", Ok("ANSWER\nUNKNOWN everything"))]);
-    let a = part(&ctx, &f, &Log::default(), &plan, &scope, &ladder, &p, 1, Instant::now());
-    assert_eq!(a[0].why.as_deref(), Some("it verified nothing; not escalated: the time limit ran out"));
+    let late = Log::default();
+    let a = part(&ctx, &f, &late, &plan, &scope, &ladder, &p, 1, Instant::now());
+    assert_eq!(
+        a[0].why.as_deref(),
+        Some("it failed: the time limit ran out before it started; not escalated: the time limit ran out")
+    );
+    assert!(late.calls().is_empty(), "no agent is asked after the deadline");
 }
 
 // Checks combining falls back to merging the parts when the combiner fails or verifies nothing from them, and how merging and overlap work.
@@ -664,7 +694,7 @@ fn test_review_and_hosted_benchmark() {
     let script = [
         ("local default low", Ok(KEY)),
         ("claude:opus medium", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked\nFINDING api/Endpoint.cs:40 beyond the file\nCONFIDENCE understanding=high result=high")),
-        ("codex:gpt high", Ok("QUALITY A good cites the check\nQUALITY B fair one bad citation\nFINDING A1 supported matches line 3\nFINDING B1 unclear\nMISSING A nothing\nBETTER A more precise\nCONFIDENCE understanding=high result=medium")),
+        ("codex:gpt high", Ok("QUALITY A good cites the check\nQUALITY B fair one bad citation\nFINDING A1 supported matches line 3\nFINDING B1 unclear\nMISSING A nothing\nCOMPARE quality A no bad citation\nCOMPARE time b fewer seconds\nBETTER A more precise\nCONFIDENCE understanding=high result=medium")),
     ];
     let f = Fake::new(&script);
     let argv = [
@@ -700,12 +730,24 @@ fn test_review_and_hosted_benchmark() {
         out.contains("usage (claude:opus medium): 1 calls (benchmark 1), ") && out.contains("$0.0100"),
         "{out}"
     );
-    assert!(out.contains("review (by codex:gpt high):\n- A quality good: cites the check\n- B quality fair: one bad citation\n- finding A1 supported: matches line 3\n- finding B1 unclear: \n- A misses: nothing\n- better: A: more precise\n"), "{out}");
+    assert!(out.contains("review (by codex:gpt high):\n- A quality good: cites the check\n- B quality fair: one bad citation\n- finding A1 supported: matches line 3\n- finding B1 unclear: \n- A misses: nothing\n- quality: A: no bad citation\n- time: B: fewer seconds\n- not compared by the reviewer: tokens\n- better: A: more precise\n"), "{out}");
+    assert!(
+        out.contains("  wall seconds ")
+            && out.contains("  input tokens   0                      100\n")
+            && out.contains("  cached tokens  0                      40\n"),
+        "{out}"
+    );
     let rp = &f.prompts("codex:gpt high")[0];
     assert!(
         rp.contains("You may read the files")
             && rp.contains("A1 api/Endpoint.cs:2-3")
-            && rp.contains("Result B:\nB1 "),
+            && rp.contains("Result B:\nB1 ")
+            && rp.contains("COMPARE quality A|B|tie")
+            && rp.contains("COMPARE time A|B|tie")
+            && rp.contains("COMPARE tokens A|B|tie")
+            && rp.contains("Measured by zazzle, not estimated:\nA (zazzle): ")
+            && rp.contains("s wall clock, 1 calls, 0 input, 0 cached and 7 output tokens, cost not reported\nB (claude:opus medium): ")
+            && rp.contains("100 input, 40 cached and 11 output tokens, cost $0.0100"),
         "{rp}"
     );
     assert!(
@@ -725,6 +767,8 @@ fn test_review_and_hosted_benchmark() {
     assert_eq!(v["benchmark"]["result"]["rejected"].as_array().map(Vec::len), Some(1));
     assert_eq!(v["benchmark"]["usage"]["cost_usd"], 0.01);
     assert_eq!(v["review"]["better"], json!(["A", "more precise"]));
+    assert_eq!(v["review"]["compared"][1], json!(["time", "b", "fewer seconds"]));
+    assert_eq!(v["review"]["not_compared"], json!(["tokens"]));
     assert_eq!(v["review"]["result_confidence"], "medium");
 }
 
@@ -879,7 +923,8 @@ fn test_said() {
             input: 25,
             cached: 20,
             rounds: 3,
-            cost: Some(0.5)
+            cost: Some(0.5),
+            counted: true
         }
     );
     assert_eq!(
@@ -890,7 +935,15 @@ fn test_said() {
     let events = "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"from events\"}}\nnoise\n{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":9,\"input_tokens\":30,\"cached_input_tokens\":12}}";
     assert_eq!(
         said(Kind::Codex, events, "from file").expect("file"),
-        Said { text: "from file".into(), tokens: 9, input: 30, cached: 12, rounds: 1, cost: None }
+        Said {
+            text: "from file".into(),
+            tokens: 9,
+            input: 30,
+            cached: 12,
+            rounds: 1,
+            cost: None,
+            counted: true
+        }
     );
     assert_eq!(said(Kind::Codex, events, " ").expect("events").text, "from events");
     assert_eq!(said(Kind::Codex, "", ""), Err("codex gave no final message".into()));
@@ -930,6 +983,20 @@ fn test_ask_hosted() {
     let err = agent::ask_hosted(&r, &slow, "p", t.path(), Instant::now() + Duration::from_millis(200), false)
         .unwrap_err();
     assert_eq!(err, "the time limit ran out while codex:gpt low worked");
+    let stop = crate::budget::Stop::default();
+    let canceller = {
+        let s = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            s.cancel();
+        })
+    };
+    let t1 = Instant::now();
+    let err = crate::budget::stopping(&stop, || agent::ask_hosted(&r, &slow, "p", t.path(), far, false))
+        .unwrap_err();
+    canceller.join().expect("cancel");
+    assert_eq!(err, "the run was cancelled while codex:gpt low worked");
+    assert!(t1.elapsed() < Duration::from_secs(2), "the agent was stopped at the cancel: {:?}", t1.elapsed());
     assert!(t0.elapsed() < Duration::from_secs(4));
     let w = Rung::parse("claude:sonnet@low", None).expect("rung");
     agent::ask_hosted(&w, &claude, "edit", t.path(), far, true).expect("write mode");
@@ -1079,4 +1146,184 @@ fn test_retry_busy() {
     assert!(busy.is_err() && m == 11);
     let other: std::io::Result<()> = agent::retry_busy(|| Err(std::io::Error::other("no")));
     assert_eq!(other.unwrap_err().to_string(), "no");
+}
+
+// Checks independent calls run at the same time and come back in order: the first waits for a message only the second sends, which one after another would never arrive.
+#[test]
+fn test_all_runs_together() {
+    let (tx, rx) = std::sync::mpsc::channel::<usize>();
+    let (tx, rx) = (Mutex::new(Some(tx)), Mutex::new(rx));
+    let got = calls::all(&[0usize, 1, 2], |i, x| match i {
+        0 => rx.lock().expect("rx").recv_timeout(Duration::from_secs(20)).map_or(99, |v| v + x),
+        _ => {
+            if let Some(t) = tx.lock().expect("tx").take() {
+                t.send(40).expect("send");
+            }
+            x * 10
+        }
+    });
+    assert_eq!(got, [40, 10, 20]);
+    assert_eq!(calls::all(&[7], |i, x| i + x), [7]);
+    assert!(calls::all(&[] as &[usize], |_, x| *x).is_empty());
+}
+
+// Checks one deadline bounds the whole job: a part still working at the deadline is stopped, its escalation and the combining are not started after it, the other part's result is kept, and the job ends at the deadline rather than after the extra time each step used to get.
+#[test]
+fn test_deadline_between_parts() {
+    let (_t, root) = repo();
+    let f = Fake::new(&[
+        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
+        ("claude:sonnet high", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
+    ]);
+    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let mut argv = q.to_vec();
+    argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "2"]);
+    let t0 = Instant::now();
+    let out = go(&root, &f, &argv).expect("run");
+    assert!(t0.elapsed() < Duration::from_millis(2300), "ended by the deadline: {:?}", t0.elapsed());
+    assert!(
+        out.contains("  P1 qwen-a low: failed")
+            && out.contains("stopped at the time limit; not escalated: the time limit ran out"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "combining with claude:sonnet high failed: the time limit ran out before combine could start"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("the key is checked in Handle"), "the other part's result is kept: {out}");
+    assert!(f.prompts("qwen-a high").is_empty(), "no escalation after the deadline");
+    assert_eq!(
+        f.prompts("claude:sonnet high").len(),
+        2,
+        "planner and P2, no combining after the deadline: {out}"
+    );
+}
+
+// Checks no model call starts once the deadline has passed, local or hosted, and none is recorded.
+#[test]
+fn test_no_call_after_the_deadline() {
+    let (f, log) = (Fake::new(&[("a low", Ok("x")), ("claude:b low", Ok("y"))]), Log::default());
+    let past = Instant::now();
+    let local = Rung::parse("a", Some("low")).expect("rung");
+    let hosted = Rung::parse("claude:b", Some("low")).expect("rung");
+    let e = log.local(&f, &local, "part P1", &serde_json::json!({"user": "q"}), &[], past).unwrap_err();
+    assert_eq!(e, "the time limit ran out before part P1 could start");
+    assert!(log
+        .hosted(&f, &hosted, &Ask::new("combine", "", "q", &[]), Path::new("."), past)
+        .unwrap_err()
+        .contains("before combine could start"));
+    assert!(log.calls().is_empty() && f.prompts("a low").is_empty() && f.prompts("claude:b low").is_empty());
+}
+
+// Checks a cancel reaches every part running at the same time: each stops at once, nothing new starts after it (no escalation, no combining), and the run ends quickly with the cancel as the reason.
+#[test]
+fn test_cancel_reaches_parallel_parts() {
+    let (_t, root) = repo();
+    let f = Fake::new(&[
+        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
+        ("claude:sonnet high", Ok("SLEEP 5000\nSTATUS complete\nFINDING api/Endpoint.cs:2-3 too late")),
+    ]);
+    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let mut argv = q.to_vec();
+    argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "60"]);
+    let stop = crate::budget::Stop::default();
+    let canceller = {
+        let s = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            s.cancel();
+        })
+    };
+    let t0 = Instant::now();
+    let out = crate::budget::stopping(&stop, || go(&root, &f, &argv)).expect("run");
+    canceller.join().expect("cancel");
+    assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
+    assert!(
+        out.contains("not escalated: the run was cancelled") && out.contains("stopped at the cancel"),
+        "{out}"
+    );
+    assert!(out.contains("the run was cancelled before combine could start"), "{out}");
+    assert!(f.prompts("qwen-a high").is_empty());
+}
+
+// Checks a benchmark gets a judge by default: Claude Opus at high effort when `claude` is installed, comparing quality, time and tokens, and said to be zazzle's pick; else the strongest hosted rung it can run at high effort, else the strongest local rung; --no-review leaves it out, and asking for both is refused.
+#[test]
+fn test_benchmark_picks_a_judge() {
+    let (_t, root) = repo();
+    let judged = "QUALITY A good cites the check\nQUALITY B good also\nCOMPARE quality tie same finding\nCOMPARE time A fewer seconds\nCOMPARE tokens A no hosted tokens\nBETTER A cheaper for the same answer\nCONFIDENCE understanding=high result=high";
+    let script = |judge: &str| {
+        vec![
+            ("local default low".to_string(), Ok(KEY.to_string())),
+            ("claude:sonnet medium".to_string(), Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked\nCONFIDENCE understanding=high result=high".to_string())),
+            (judge.to_string(), Ok(judged.to_string())),
+        ]
+    };
+    let fake = |judge: &str, hosts: Vec<agent::Kind>| {
+        let s = script(judge);
+        let pairs: Vec<(&str, Result<&str, &str>)> =
+            s.iter().map(|(w, r)| (w.as_str(), r.as_deref().map_err(|e: &String| e.as_str()))).collect();
+        Fake { hosts, ..Fake::new(&pairs) }
+    };
+    let argv =
+        ["Where", "is", "the", "key", "checked?", "--path", "api", "--benchmark-model", "claude:sonnet"];
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let out = go(&root, &f, &argv).expect("run");
+    assert!(
+        out.contains(
+            "review (by claude:opus high, the default judge for a benchmark: the strongest agent available"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "- quality: TIE: same finding\n- time: A: fewer seconds\n- tokens: A: no hosted tokens\n"
+        ) && !out.contains("not compared"),
+        "{out}"
+    );
+    assert!(
+        f.prompts("claude:opus high")[0].contains("Measured by zazzle"),
+        "the judge gets the measurements"
+    );
+    let mut json_argv = argv.to_vec();
+    json_argv.push("--json");
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let v: Value = serde_json::from_str(&go(&root, &f, &json_argv).expect("json")).expect("parse");
+    assert_eq!(
+        (v["review"]["agent"].as_str(), v["review"]["picked_by_default"].as_bool()),
+        (Some("claude:opus high"), Some(true))
+    );
+
+    let f = fake("local default high", vec![]);
+    let out = go(&root, &f, &argv).expect("no hosted");
+    assert!(
+        out.contains("review (by local default high, the default judge"),
+        "no hosted agent: the top of the ladder judges: {out}"
+    );
+
+    let mut off = argv.to_vec();
+    off.push("--no-review");
+    let f = fake("claude:opus high", vec![agent::Kind::Claude]);
+    let out = go(&root, &f, &off).expect("off");
+    assert!(!out.contains("review (by") && f.prompts("claude:opus high").is_empty(), "{out}");
+    off.extend(["--review-model", "codex:gpt"]);
+    assert!(go(&root, &f, &off).unwrap_err().contains("--no-review and --review-model"));
+
+    let ladder = agent::ladder(&["qwen-a".into(), "codex:gpt@low".into()]).expect("ladder");
+    let f = Fake { hosts: vec![agent::Kind::Codex], ..Fake::default() };
+    assert_eq!(
+        default_judge(&f, &ladder).label(),
+        "codex:gpt high",
+        "the strongest hosted rung, at high effort"
+    );
+    let f = Fake::default();
+    assert_eq!(
+        default_judge(&f, &ladder).label(),
+        "qwen-a high",
+        "a hosted rung the machine cannot run is skipped: the strongest local rung"
+    );
+    assert_eq!(default_judge(&f, &[]).label(), "local default high");
 }
