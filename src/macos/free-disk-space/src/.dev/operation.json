@@ -275,6 +275,33 @@
       ]
     },
     {
+      "id": "saved",
+      "name": "Measure compression savings",
+      "description": "Reports how much space transparent compression saves now, for the files compress recorded or under the given paths.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/main.rs",
+          "symbol": "SavedArgs"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/saved.rs",
+          "symbol": "cmd_saved"
+        }
+      ],
+      "entrypoint": {
+        "path": "src/macos/free-disk-space/src/saved.rs",
+        "symbol": "cmd_saved"
+      },
+      "action": "query",
+      "transport": "free-disk-space saved [PATH...] [--json] [--state FILE]",
+      "authorization": "None checked beyond the file system; it only reads metadata and the state file.",
+      "result": "Files, plain size, size on disk and the saving with its share of the plain size; without paths also the saving verified at compress time and the counts no longer compressed and gone, with paths the split between free-disk-space's files and others'. --json prints one object.",
+      "failures": [
+        "A state file that cannot be opened: reported in problems, ok is false, and nothing recorded is counted.",
+        "A path that is missing or unreadable, or a folder on another volume: a warning (skipped in JSON), and the rest goes on."
+      ]
+    },
+    {
       "id": "dedupe",
       "name": "Replace duplicates with clones",
       "description": "Finds byte-identical same-named, same-sized files the scan recorded and, with --apply, replaces all but one with copy-on-write clones of the kept copy.",

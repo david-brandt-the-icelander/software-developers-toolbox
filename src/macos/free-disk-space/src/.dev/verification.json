@@ -334,6 +334,37 @@
       ]
     },
     {
+      "id": "saved",
+      "title": "Compression savings",
+      "summary": "saved's tallies, both scopes, text and JSON; on Linux the BSD flags are scripted, on macOS a file the library compressed is measured for real.",
+      "subject": [
+        {"path": "src/macos/free-disk-space/src/.dev/feature.json", "entityId": "compression-savings"},
+        {"path": "src/macos/free-disk-space/src/.dev/operation.json", "entityId": "saved"}
+      ],
+      "criteria": [
+        "A tally's saving is plain minus on disk, and the share is shown only with a plain size",
+        "No state file means nothing recorded; one that cannot be opened is a problem and makes ok false",
+        "Recorded files are counted as still compressed (a hard link once), no longer compressed or gone, with the savings verified at compress time summed",
+        "Under paths every compressed file counts once, a recorded file counts as free-disk-space's under any of its names, and unreadable paths are noted",
+        "The command prints text with warnings, or JSON",
+        "On macOS a file compressed by the library and recorded as done is measured as saving space"
+      ],
+      "checks": [
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_tally", "command": "cargo test -p free-disk-space saved::tests::test_tally"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_tally_line", "command": "cargo test -p free-disk-space saved::tests::test_tally_line"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_recorded_missing_and_unreadable", "command": "cargo test -p free-disk-space saved::tests::test_recorded_missing_and_unreadable"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_measure_recorded", "command": "cargo test -p free-disk-space saved::tests::test_measure_recorded"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_measure_paths", "command": "cargo test -p free-disk-space saved::tests::test_measure_paths"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_gather_and_text", "command": "cargo test -p free-disk-space saved::tests::test_gather_and_text"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_cmd_saved", "command": "cargo test -p free-disk-space saved::tests::test_cmd_saved"},
+        {"type": "automated", "path": "src/macos/free-disk-space/src/saved.rs", "symbol": "test_saved_macos", "command": "cargo test -p free-disk-space saved::tests::test_saved_macos"}
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {"path": "src/macos/free-disk-space/src/saved.rs", "symbol": "tests"}
+      ]
+    },
+    {
       "id": "status",
       "title": "Status",
       "summary": "status's gathering, text and JSON against a sandbox state file and fake launchctl.",

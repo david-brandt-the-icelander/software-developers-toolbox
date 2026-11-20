@@ -338,6 +338,42 @@
       ]
     },
     {
+      "id": "compression-savings",
+      "name": "Measured compression savings",
+      "description": "How much space transparent compression saves now, for the files compress did or for every compressed file under chosen paths.",
+      "sources": [
+        {
+          "path": "src/macos/free-disk-space/src/saved.rs",
+          "symbol": "cmd_saved"
+        }
+      ],
+      "behavior": "Without paths, every candidate the state file records as done is looked at as it is now: one that still carries the compressed flag counts its length rounded up to 4 KiB blocks (plain) against its allocated size (on disk), once per inode; one that does not is counted as no longer compressed, and a missing one as gone; the savings compress verified when it compressed them are summed alongside. With paths, every flagged regular file under them is collected as decompress collects them and counted once per inode, and the ones whose inode a done candidate has are reported apart from the rest. The result is text, or one JSON object with tool, version, ok and problems.",
+      "outcome": "The user sees what compression saves on the disk today, not only what it saved when it ran, and how much of it is free-disk-space's.",
+      "constraints": [
+        "Read-only: it changes no file and never creates a state file.",
+        "Off macOS no file carries the compressed flag, so nothing is counted.",
+        "A file's saving is an estimate of the plain size in whole 4 KiB blocks; a sparse or cloned plain file could take less."
+      ],
+      "implementation": [
+        {
+          "path": "src/macos/free-disk-space/src/saved.rs",
+          "symbol": "measure_recorded"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/saved.rs",
+          "symbol": "measure_paths"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/saved.rs",
+          "symbol": "gather"
+        },
+        {
+          "path": "src/macos/free-disk-space/src/decompress.rs",
+          "symbol": "collect"
+        }
+      ]
+    },
+    {
       "id": "clone-dedupe",
       "name": "Copy-on-write dedupe",
       "description": "Identical same-named files become clones of one kept copy, each keeping its own metadata.",
