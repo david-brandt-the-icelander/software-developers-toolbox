@@ -67,7 +67,7 @@ pub fn candidates(engine: &crate::engine::Engine, cwd: &Path, scope: &[PathBuf],
     by_file.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     let ident = regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]{3,}").expect("valid regex");
     let mut syms: Vec<(usize, String, String)> = Vec::new();
-    for f in files.iter().take(MAX_FILES) {
+    for f in files.iter().take(MAX_FILES).take_while(|_| !crate::budget::spent()) {
         if f.metadata().map_or(true, |m| m.len() > MAX_BYTES) {
             continue;
         }

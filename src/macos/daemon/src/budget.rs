@@ -10,6 +10,8 @@ thread_local! {
     static UNTIL: Cell<Option<Instant>> = const { Cell::new(None) };
     // The current thread's job's cancel handle, if it has one.
     static STOP: RefCell<Option<Stop>> = const { RefCell::new(None) };
+    // What the current thread's job shares across its threads (its lookups and evidence), if it has any.
+    static SHARED: RefCell<Option<Arc<crate::investigate::cache::Shared>>> = const { RefCell::new(None) };
 }
 
 // A job's cancel handle: a flag every thread of the job sees, and the connections to shut when it is set.
@@ -39,20 +41,46 @@ impl Stop {
 
 // What a thread carries for its job, to hand to the threads it starts.
 #[derive(Clone, Default)]
-pub struct Carried(Option<Instant>, Option<Stop>);
+pub struct Carried(Option<Instant>, Option<Stop>, Option<Arc<crate::investigate::cache::Shared>>);
+
+impl Carried {
+    // Whether the carried job may start no new work: it was cancelled or its deadline passed (for threads that do not carry it).
+    pub fn spent(&self) -> bool {
+        self.1.as_ref().is_some_and(Stop::cancelled) || self.0.is_some_and(|d| Instant::now() >= d)
+    }
+}
 
 // The current thread's job, to carry into a thread it starts.
 pub fn current() -> Carried {
-    Carried(UNTIL.get(), STOP.with_borrow(Clone::clone))
+    Carried(UNTIL.get(), STOP.with_borrow(Clone::clone), SHARED.with_borrow(Clone::clone))
 }
 
 // Runs `f` as part of the carried job.
 pub fn carry<R>(c: Carried, f: impl FnOnce() -> R) -> R {
-    let (prev_until, prev_stop) = (UNTIL.replace(c.0), STOP.replace(c.1));
+    let (prev_until, prev_stop, prev_shared) = (UNTIL.replace(c.0), STOP.replace(c.1), SHARED.replace(c.2));
     let r = f();
     UNTIL.set(prev_until);
     STOP.set(prev_stop);
+    SHARED.set(prev_shared);
     r
+}
+
+// Runs `f` with `shared` as what the current job's threads share.
+pub fn sharing<R>(shared: Arc<crate::investigate::cache::Shared>, f: impl FnOnce() -> R) -> R {
+    let prev = SHARED.replace(Some(shared));
+    let r = f();
+    SHARED.set(prev);
+    r
+}
+
+// What the current job's threads share, if it shares anything.
+pub fn shared() -> Option<Arc<crate::investigate::cache::Shared>> {
+    SHARED.with_borrow(Clone::clone)
+}
+
+// Whether the current job may start no new work: it was cancelled or its deadline passed.
+pub fn spent() -> bool {
+    current().spent()
 }
 
 // Runs `f` with `deadline` as this thread's job deadline (an earlier one already set stays), restoring the previous one after.

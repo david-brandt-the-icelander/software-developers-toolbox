@@ -275,7 +275,7 @@ const PAGES: &[Page] = &[
             ("-s, --symbol S", "A name to start from (repeatable)"),
             ("--steps N", "Model turns, 1 to 12 (default 6)"),
             ("--seconds N", "Time limit for the whole job (default 90): models, lookups, escalation, a benchmark and a review all end by it, and a partial result is kept"),
-            ("--run-id ID", "Name the run (default: a new id, said on standard error before the wait). The same id again returns the kept result and usage, waiting while it runs, without asking any model again; alone, it looks the run up, also after a daemon restart"),
+            ("--run-id ID", "Name the run (default: a new id, said on standard error before the wait). The same id again returns the kept result and usage, waiting while it runs, without asking any model again; alone, it looks the run up, also after a daemon restart (an interrupted run lists the evidence it kept); the same id from another checkout, or after the checkout changed, is refused"),
             ("--cancel", "With --run-id ID alone: stop that run now (nothing new starts, its model, agent and indexer waits end) and return what it had gathered; a caller that only disconnects does not cancel"),
             ("--adaptive", "Plan the question into parts, run them at the same time, each on the cheapest agent and effort that will do it, escalate unsettled parts with what they established"),
             ("--agents A,B..", "The adaptive ladder, cheapest first: MODEL, claude:MODEL or codex:MODEL, each optionally @EFFORT (default: installed local models, each at low then high)"),

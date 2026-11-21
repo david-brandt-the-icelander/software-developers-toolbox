@@ -99,7 +99,11 @@ fn test_runs_wait_and_interrupt() {
 
     let gone = root.join("r1");
     fs::create_dir_all(&gone).expect("folder");
-    fs::write(gone.join(REQUEST), json!({"argv": ["q"]}).to_string()).expect("request");
+    fs::write(
+        gone.join(REQUEST),
+        json!({"argv": ["q"], "cwd": root, "snapshot": snapshot(&root)}).to_string(),
+    )
+    .expect("request");
     append(&gone.join(USAGE), &call(false)).expect("local");
     append(&gone.join(USAGE), &call(true)).expect("hosted");
     let o = earlier(&root, "r1", &argv).expect("interrupted");
@@ -176,4 +180,86 @@ fn test_runs_cancel() {
     );
     assert_eq!(cancel(&root, "none"), Err("no investigate run none".into()));
     assert!(cancel(&root, "../x").unwrap_err().contains("--run-id takes"));
+}
+
+// Runs git in `dir` with a throwaway identity, for the checkout tests.
+fn git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-C"])
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git")
+        .status
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+// Checks a run id names one request in one checkout at one state: the same command line from another checkout, after an uncommitted change or after a new commit is refused, the id alone still looks it up, and a directory outside git reads as such.
+#[test]
+fn test_runs_identity() {
+    let t = TempDir::new();
+    let (root, repo, other) = (t.path().join("runs"), t.path().join("repo"), t.path().join("other"));
+    fs::create_dir_all(&repo).expect("repo");
+    fs::create_dir_all(&other).expect("other");
+    git(&repo, &["init", "-q"]);
+    assert_eq!(snapshot(&repo), "no git checkout", "no commit yet");
+    fs::write(repo.join("a.cs"), "class A {}\n").expect("file");
+    git(&repo, &["add", "a.cs"]);
+    git(&repo, &["commit", "-q", "-m", "a"]);
+    let head = snapshot(&repo);
+    assert_eq!(head.len(), 40, "{head}");
+    let argv = line(&["q"]);
+    let until = || Instant::now() + Duration::from_secs(30);
+    match begin(&root, "c1", &argv, &repo, until()).expect("begin") {
+        Begun::New(j) => j.finish(&Ok(Output::plain("answer".into()))).expect("finish"),
+        Begun::Earlier(_) => panic!("new"),
+    }
+    let again = |cwd: &Path, argv: &[String]| match begin(&root, "c1", argv, cwd, until()) {
+        Ok(Begun::Earlier(r)) => r,
+        Ok(Begun::New(_)) => panic!("started again"),
+        Err(e) => Err(e),
+    };
+    assert_eq!(again(&repo, &argv).expect("same").text, "answer");
+    let moved = again(&other, &argv).unwrap_err();
+    assert!(
+        moved.contains("was started in another checkout (") && moved.contains("--run-id c1` alone"),
+        "{moved}"
+    );
+    fs::write(repo.join("a.cs"), "class A { int x; }\n").expect("edit");
+    let dirty = snapshot(&repo);
+    assert!(dirty.starts_with(&format!("{head} with changes ")), "{dirty}");
+    let changed = again(&repo, &argv).unwrap_err();
+    assert!(
+        changed.contains(&format!("on another state of this checkout ({head} then, {dirty} now)")),
+        "{changed}"
+    );
+    assert_eq!(again(&other, &[]).expect("id alone").text, "answer");
+    git(&repo, &["commit", "-q", "-am", "b"]);
+    assert!(again(&repo, &argv).unwrap_err().contains("another state"), "a new commit");
+}
+
+// Checks the evidence a run keeps as it works is listed when it stops without a result.
+#[test]
+fn test_runs_keep_evidence() {
+    let t = TempDir::new();
+    let root = t.path().join("runs");
+    let job = new_run(&root, "e1", &line(&["q"]));
+    append(&job.evidence(), &json!({"lookup": "READ a.cs:1-4", "excerpt": "   1\tclass A"})).expect("lookup");
+    append(&job.evidence(), &json!({"finding": "A is a class", "citation": "a.cs:1", "by": "qwen low"}))
+        .expect("finding");
+    append(&job.evidence(), &json!({"other": 1})).expect("other");
+    drop(job);
+    let o = earlier(&root, "e1", &[]).expect("interrupted");
+    assert!(
+        o.text.contains("evidence kept before it stopped (3 records, in ")
+            && o.text.contains(
+                "- READ a.cs:1-4 found something\n- verified by qwen low: A is a class (a.cs:1)\nusage"
+            ),
+        "{}",
+        o.text
+    );
+    let none = new_run(&root, "e2", &line(&["q"]));
+    drop(none);
+    assert!(!earlier(&root, "e2", &[]).expect("interrupted").text.contains("evidence kept"));
 }

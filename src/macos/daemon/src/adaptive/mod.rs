@@ -693,6 +693,7 @@ fn part(
                 }
             }
         };
+        work.checkpoint(&r.label());
         let trigger = work.trigger();
         let stuck = match &trigger {
             None => None,

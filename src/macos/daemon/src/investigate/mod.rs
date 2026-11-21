@@ -1,4 +1,5 @@
 // `zazzle investigate QUESTION --path P.. --symbol S..`: the local model resolves a repository question with bounded read-only lookups inside the scope, and its answer comes back as findings whose `path:line` citations zazzle has checked and quoted, plus what it could not establish.
+pub(crate) mod cache;
 pub mod cite;
 pub(crate) mod discover;
 mod seed;
@@ -23,6 +24,8 @@ const CONTEXT_LINES: usize = 2;
 // Lines of a lookup with no matching line that the excerpts keep.
 const HEAD_LINES: usize = 12;
 const PER_TURN: usize = 3;
+// How much of a lookup's output an evidence checkpoint keeps.
+const CHECKPOINT_CHARS: usize = 4000;
 const LOOKUP_BUDGET: &str = "1500";
 const LOOKUP_MAX: &str = "15";
 const SEEN_TOKENS: usize = 12_000;
@@ -188,6 +191,8 @@ struct Trail {
     // Indexes into `seen` of the lookups that found something.
     evidence: Vec<usize>,
     skipped: usize,
+    // Lookups whose output another part or turn of the job had already got.
+    shared: usize,
     // The declarations discovery and SYMBOL lookups listed, by handle: D1 is the first.
     handles: Vec<discover::Candidate>,
 }
@@ -263,11 +268,7 @@ fn key(lctx: &Ctx, l: &Lookup) -> String {
 fn failure(text: &str, status: u8) -> Option<String> {
     let first =
         text.lines().map(str::trim).find(|l| !(l.starts_with("[r:") && l.ends_with(']'))).unwrap_or("");
-    let empty = first.starts_with("refused:")
-        || first.starts_with("no declarations match ")
-        || first.starts_with("no references to ")
-        || first.starts_with("no matches in ")
-        || first.is_empty();
+    let empty = miss(first) || first.is_empty();
     (status != 0 || empty).then(|| first.chars().take(160).collect())
 }
 
@@ -295,6 +296,9 @@ fn step(
     trail.lookups.push(l.label());
     if ok {
         trail.evidence.push(trail.seen.len());
+        cache::checkpoint(
+            serde_json::json!({"lookup": l.label(), "excerpt": text.chars().take(CHECKPOINT_CHARS).collect::<String>()}),
+        );
     }
     trail.seen.push((l.label(), text));
     Ok(ok)
@@ -322,7 +326,11 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     };
     let args: Vec<String> = match l {
         Lookup::Symbol(words) => return symbols(lctx, scope, words, trail),
-        Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => return (refusal(lctx, scope, plan, p), 0),
+        Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => {
+            let key = format!("refusal\0{}\0{:?}\0{p}", lctx.cwd.display(), plan.scope);
+            let run = || ((refusal(lctx, scope, plan, p), 0, String::new()), !crate::budget::spent());
+            return shared_lookup(&key, trail, run);
+        }
         Lookup::Read(p) => vec!["read".into(), p.clone(), "--budget".into(), LOOKUP_BUDGET.into()],
         Lookup::Outline(p) => vec!["outline".into(), p.clone()],
         Lookup::Refs(n) => ["refs", n, "-m", LOOKUP_MAX, "--"]
@@ -338,9 +346,46 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     };
     let mut args = args;
     args.insert(1, "--disable-session-deduping".into());
-    let o = crate::cmd::run(lctx, &args);
-    trail.rules.push_str(&o.notes);
-    (o.text, o.status)
+    let key = format!("{}\0{}", lctx.cwd.display(), args.join("\0"));
+    let run = || {
+        let o = crate::cmd::run(lctx, &args);
+        let keep = definitive(&o.text, o.status) && !crate::budget::spent();
+        ((o.text, o.status, o.notes), keep)
+    };
+    shared_lookup(&key, trail, run)
+}
+
+// Runs a lookup once per job: the output another part (or an earlier turn) already got for the same key, else `run`'s, kept for the job when definitive; the rules notes go to the trail. Without a job it just runs.
+fn shared_lookup(
+    key: &str,
+    trail: &mut Trail,
+    run: impl FnOnce() -> ((String, u8, String), bool),
+) -> (String, u8) {
+    let got = match crate::budget::shared() {
+        Some(s) => s.lookups.get_or(key, run),
+        None => Ok((run().0, false)),
+    };
+    match got {
+        Ok(((text, status, notes), shared)) => {
+            trail.shared += usize::from(shared);
+            trail.rules.push_str(&notes);
+            (text, status)
+        }
+        Err(e) => (format!("{e} (waiting for the same lookup in another part)"), 1),
+    }
+}
+
+// Whether a lookup's output holds for the rest of the job: it succeeded, or it is a definitive miss (a refusal, no matches, no references); errors such as a time-out or an unreachable indexer are tried again.
+fn definitive(text: &str, status: u8) -> bool {
+    status == 0 || miss(text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or(""))
+}
+
+// Whether a lookup's first line says it found nothing.
+fn miss(first: &str) -> bool {
+    first.starts_with("refused:")
+        || first.starts_with("no declarations match ")
+        || first.starts_with("no references to ")
+        || first.starts_with("no matches in ")
 }
 
 // The range a declaration handle (`D2`) names, as `path:A-B`.
@@ -565,6 +610,7 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         done: Vec::new(),
         evidence: Vec::new(),
         skipped: 0,
+        shared: 0,
         handles: Vec::new(),
     };
     let missed = seeds(&lctx, &scope, &plan, &mut trail, deadline);
@@ -807,10 +853,13 @@ fn report(ctx: &Ctx, e: Explored) -> Output {
         (true, true, _) => "INCOMPLETE: a reply was cut short by the token limit".to_string(),
         (false, _, false) => format!("INCOMPLETE: {}", st.stop),
     };
-    let skipped = match trail.skipped {
+    let mut skipped = match trail.skipped {
         0 => String::new(),
         n => format!(", {n} repeated lookups not run again"),
     };
+    if trail.shared > 0 {
+        skipped.push_str(&format!(", {} answered from the job's earlier lookups", trail.shared));
+    }
     let extra = if st.answer_only { " and an answer-only turn" } else { "" };
     out.push_str(&format!(
         "-- local model, {} of {} turns{extra}, {} lookups ({}){skipped}; {state}. Excerpts are read from the files; claims are the model's.",
@@ -1103,7 +1152,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     let Some(root) = ctx.engine.runs.clone() else {
         return match given {
             Some(_) => Err("--run-id needs the run store (~/.zazzle/runs, or ZAZZLE_RUNS_DIR)".into()),
-            None => job(ctx, &argv, accepted, &None),
+            None => job(ctx, &argv, accepted, &None, None),
         };
     };
     if !cancel.is_empty() {
@@ -1127,16 +1176,15 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
         crate::runs::Begun::New(j) => {
             announce(ctx, &id);
             let stop = j.stop();
-            let res = crate::budget::stopping(&stop, || job(ctx, &argv, accepted, &Some(j.usage()))).map(
-                |mut o| {
-                    if stop.cancelled() {
-                        o.notes.push_str(&format!(
-                            "\n-- run {id} was cancelled; this is what it had gathered\n"
-                        ));
-                    }
-                    o
-                },
-            );
+            let res = crate::budget::stopping(&stop, || {
+                job(ctx, &argv, accepted, &Some(j.usage()), Some(j.evidence()))
+            })
+            .map(|mut o| {
+                if stop.cancelled() {
+                    o.notes.push_str(&format!("\n-- run {id} was cancelled; this is what it had gathered\n"));
+                }
+                o
+            });
             if let Err(e) = j.finish(&res) {
                 eprintln!("investigate: keeping run {id}: {e}");
             }
@@ -1145,21 +1193,24 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> Result<Output, String> {
     }
 }
 
-// Runs the job: the adaptive mode when any of its flags is given, else the user's local model, each call's usage appended to `sink`.
+// Runs the job: the adaptive mode when any of its flags is given, else the user's local model, each call's usage appended to `sink`; its threads share their lookups, and its evidence goes to `evidence` as it is found.
 fn job(
     ctx: &Ctx,
     argv: &[String],
     accepted: Instant,
     sink: &crate::adaptive::Sink,
+    evidence: Option<PathBuf>,
 ) -> Result<Output, String> {
     use crate::adaptive::{agent::Rung, calls, OnRung};
-    if crate::adaptive::wanted(argv) {
-        return crate::adaptive::run_at(ctx, argv, &calls::Real, accepted, sink);
-    }
-    let plan = parse(argv)?;
-    let (log, rung) = (calls::Log::to(sink.clone()), Rung::parse("", Some("low"))?);
-    let local = OnRung { b: &calls::Real, rung: &rung, log: &log, role: "investigate" };
-    investigate(ctx, argv, &local, crate::adaptive::job_end(accepted, plan.seconds))
+    crate::budget::sharing(std::sync::Arc::new(cache::Shared::new(evidence)), || {
+        if crate::adaptive::wanted(argv) {
+            return crate::adaptive::run_at(ctx, argv, &calls::Real, accepted, sink);
+        }
+        let plan = parse(argv)?;
+        let (log, rung) = (calls::Log::to(sink.clone()), Rung::parse("", Some("low"))?);
+        let local = OnRung { b: &calls::Real, rung: &rung, log: &log, role: "investigate" };
+        investigate(ctx, argv, &local, crate::adaptive::job_end(accepted, plan.seconds))
+    })
 }
 
 // Splits `--run-id ID` (or `--run-id=ID`) off a command line.
