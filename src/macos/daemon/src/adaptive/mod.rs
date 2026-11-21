@@ -502,7 +502,7 @@ fn adaptive(
     Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs, json })
 }
 
-// A result for the orchestration log, which keeps no question text: each item's coverage as its id, whether it is covered and how many things it lacks, and no diagnostics.
+// A result for the orchestration log, which keeps no question text: each item's coverage as its id, whether it is covered and how many things it lacks, and its diagnostics left out.
 fn private(mut v: Value) -> Value {
     let cov: Vec<Value> = v["coverage"]
         .as_array()
@@ -511,9 +511,7 @@ fn private(mut v: Value) -> Value {
         .map(|c| json!({"item": c["item"], "covered": c["covered"], "missing": c["missing"].as_array().map_or(0, Vec::len)}))
         .collect();
     v["coverage"] = cov.into();
-    if let Some(o) = v.as_object_mut() {
-        o.remove("diagnostics");
-    }
+    v["diagnostics"] = Value::Null;
     v
 }
 

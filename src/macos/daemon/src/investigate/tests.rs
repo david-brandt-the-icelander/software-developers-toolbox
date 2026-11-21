@@ -1159,7 +1159,11 @@ fn test_find_arguments() {
     let o = go(
         &root,
         &e,
-        &Script::new(vec![Ok("FIND \"key\" .\nFIND key sim/\nFIND x /etc"), Ok("FIND \"open"), Ok("ANSWER")]),
+        &Script::new(vec![
+            Ok("FIND \"key\" .\nFIND key sim/\nFIND x /etc"),
+            Ok("FIND \"open\nFIND y nowhere/"),
+            Ok("ANSWER"),
+        ]),
         &["q", "--path", "api", "--steps", "3"],
     )
     .expect("out");
@@ -1175,6 +1179,11 @@ fn test_find_arguments() {
     );
     assert!(o.text.contains("FIND x /etc: refused: FIND path /etc is outside the scope (api)"), "{}", o.text);
     assert!(o.text.contains("FIND \"open: FIND syntax: the quote is not closed"), "{}", o.text);
+    assert!(
+        o.text.contains("FIND y nowhere/: refused: FIND path nowhere/ does not exist inside the scope (api)"),
+        "{}",
+        o.text
+    );
     let s = Script::new(vec![Ok("FIND Nowhere\nREAD sim/Fake.cs:1-2"), Ok("ANSWER")]);
     let o = go(
         &root,
