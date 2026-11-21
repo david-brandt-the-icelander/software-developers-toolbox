@@ -385,6 +385,15 @@ fn test_investigate_regression_seed_miss() {
         "{}",
         none.text
     );
+    let found = Script::new(vec![Ok("ANSWER\nUNKNOWN who authorizes")]);
+    go(&root, &e, &found, &["how is a wash authorized?", "--path", "api", "--symbol", "Zebra"])
+        .expect("found");
+    let seen = found.seen.borrow();
+    assert!(
+        seen.first().is_some_and(|(_, t)| t.contains("D1 api/WashSubscriptionService.cs")),
+        "a missing symbol with discovered declarations still asks the model, starting from them: {seen:?}"
+    );
+    drop(seen);
     let both = Script::new(vec![Ok("ANSWER\nFINDING api/Endpoint.cs:2 Handle is here")]);
     let o = go(&root, &e, &both, &["q", "--path", "api", "--symbol", "Zebra", "--symbol", "Handle"])
         .expect("both");
@@ -919,18 +928,38 @@ fn test_quoted_literals() {
         ["Idempotency-Key", "Save", "X-Operation-Id"]
     );
     let lines = "7 \tHeaders[\"Idempotency-Key\"]\n8\t?? Headers[\"X-Operation-Id\"]";
-    assert!(cite::literals_hold("reads `Idempotency-Key`, falling back to `X-Operation-Id`", lines).is_ok());
-    assert!(cite::literals_hold("reads `X-Operation-Id`, falling back to `Idempotency-Key`", lines)
-        .unwrap_err()
-        .contains("another order"));
+    assert!(cite::literals_hold(
+        "reads `Idempotency-Key`, falling back to `X-Operation-Id`",
+        lines,
+        "Api/Keys.cs"
+    )
+    .is_ok());
+    assert!(cite::literals_hold(
+        "reads `X-Operation-Id`, falling back to `Idempotency-Key`",
+        lines,
+        "Api/Keys.cs"
+    )
+    .unwrap_err()
+    .contains("another order"));
     assert!(
-        cite::literals_hold("reads `X-Operation-Id` and `Idempotency-Key`", lines).is_ok(),
+        cite::literals_hold("reads `X-Operation-Id` and `Idempotency-Key`", lines, "Api/Keys.cs").is_ok(),
         "no fallback claimed: order is free"
     );
     assert_eq!(
-        cite::literals_hold("reads `Operation-Key`", lines),
+        cite::literals_hold("reads `Operation-Key`", lines, "Api/Keys.cs"),
         Err("the cited lines do not contain `Operation-Key`".into())
     );
+    let body = "40\tpublic Item Get(string key)\n41\t{\n42\t    return _items.TryGetValue(key, out var v) ? v : null;";
+    for claim in [
+        "`StationCache.Get` returns null on a miss",
+        "`Get(key)` returns null on a miss",
+        "`Cache::Get` returns null",
+        "`StationCache.cs` returns null from `TryGetValue`",
+        "`return _items.TryGetValue(key,  out var v)` reads the map",
+    ] {
+        assert_eq!(cite::literals_hold(claim, body, "src/StationCache.cs"), Ok(()), "{claim}");
+    }
+    assert!(cite::literals_hold("`StationCache.Put` stores it", body, "src/StationCache.cs").is_err());
     assert!(cite::quoted("a `x` b").is_empty(), "one character is no code name");
     let reply = "ESCALATE\nBLOCKED\nFINDING api/Endpoint.cs:3 a null key throws";
     let a = cite::parse_answer(reply).expect("answer");

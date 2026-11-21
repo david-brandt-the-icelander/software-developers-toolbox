@@ -95,21 +95,42 @@ pub fn quoted(claim: &str) -> Vec<String> {
     out
 }
 
-// Checks the names a claim quotes against its cited lines: each must appear there, and a claim that one name falls back to another must cite them in that order; returns why not.
-pub fn literals_hold(claim: &str, excerpt: &str) -> Result<(), String> {
+// Where the cited lines show a quoted name: the name itself, else without its call arguments (`Get(key)`), else its last segment (`StationCache.Get`, `Cache::get`), else with whitespace ignored (position unknown); `Some(None)` also for the cited file's own name, which the lines need not hold. None when the lines do not show it.
+fn shown(name: &str, excerpt: &str, path: &str) -> Option<Option<usize>> {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    if name == path || name == file {
+        return Some(None);
+    }
+    let bare = name.split_once('(').map_or(name, |(n, _)| n);
+    let last = bare.rsplit(['.', ':', '#']).next().unwrap_or(bare).trim_start_matches('>');
+    let last = last.rsplit("->").next().unwrap_or(last);
+    for form in [name, bare, last] {
+        if form.len() >= 2 {
+            if let Some(at) = excerpt.find(form) {
+                return Some(Some(at));
+            }
+        }
+    }
+    let squeeze = |t: &str| t.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    squeeze(excerpt).contains(&squeeze(name)).then_some(None)
+}
+
+// Checks the names a claim quotes against its cited lines of `path`: each must appear there (see `shown`), and a claim that one name falls back to another must cite them in that order; returns why not.
+pub fn literals_hold(claim: &str, excerpt: &str, path: &str) -> Result<(), String> {
     let names = quoted(claim);
-    if let Some(missing) = names.iter().find(|n| !excerpt.contains(n.as_str())) {
-        return Err(format!("the cited lines do not contain `{missing}`"));
+    let mut at = Vec::new();
+    for n in &names {
+        match shown(n, excerpt, path) {
+            None => return Err(format!("the cited lines do not contain `{n}`")),
+            Some(pos) => at.extend(pos),
+        }
     }
     let lower = claim.to_lowercase();
-    if names.len() >= 2 && FALLBACK.iter().any(|w| lower.contains(w)) {
-        let at: Vec<usize> = names.iter().filter_map(|n| excerpt.find(n.as_str())).collect();
-        if at.windows(2).any(|w| w[0] > w[1]) {
-            return Err(format!(
-                "the cited lines use {} in another order than the claim says",
-                names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
-            ));
-        }
+    if names.len() >= 2 && FALLBACK.iter().any(|w| lower.contains(w)) && at.windows(2).any(|w| w[0] > w[1]) {
+        return Err(format!(
+            "the cited lines use {} in another order than the claim says",
+            names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
+        ));
     }
     Ok(())
 }

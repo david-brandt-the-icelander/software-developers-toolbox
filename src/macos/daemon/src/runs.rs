@@ -176,10 +176,11 @@ pub fn begin(root: &Path, id: &str, argv: &[String], cwd: &Path, until: Instant)
         let other = match () {
             _ if argv.is_empty() => None,
             _ if !same => Some("for another command line".to_string()),
-            _ if asked["cwd"].as_str() != Some(&*cwd.to_string_lossy()) => {
+            _ if asked["cwd"].as_str().is_some_and(|c| !same_dir(Path::new(c), cwd)) => {
                 Some(format!("in another checkout ({})", asked["cwd"].as_str().unwrap_or("unknown")))
             }
-            _ if asked["snapshot"].as_str() != Some(snap.as_str()) => Some(format!(
+            // A run kept before checkout states were recorded has none to compare, so it is not refused for it.
+            _ if asked["snapshot"].as_str().is_some_and(|s| s != snap) => Some(format!(
                 "on another state of this checkout ({} then, {snap} now)",
                 asked["snapshot"].as_str().unwrap_or("unknown")
             )),
@@ -308,6 +309,12 @@ fn gathered(folder: &Path) -> String {
     );
     out.extend(kept.iter().take(SHOW_EVIDENCE).map(line));
     out
+}
+
+// Whether two paths are the same folder, also when one is reached through a symlink or written differently.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    canon(a) == canon(b)
 }
 
 // The state of the checkout a run reads: the commit, with a hash of the uncommitted changes (tracked diffs and the list of changed and untracked files) when there are any, or `no git checkout` outside a git work tree.

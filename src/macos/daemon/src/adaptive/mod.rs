@@ -380,7 +380,7 @@ fn adaptive(
     );
     let whole = Part { question: plan.question.clone(), symbols: plan.symbols.clone(), rung: 0 };
     let task = items::task(&plan.question);
-    let component = one_component(ctx, scope, plan, &task);
+    let component = (score > 0 && ladder.len() > 1).then(|| one_component(ctx, scope, plan, &task)).flatten();
     let skipped = score == 0 || ladder.len() == 1 || task.items.len() < 2 || component.is_some();
     let (parts, planner, planned) = match skipped {
         true => {
@@ -400,8 +400,8 @@ fn adaptive(
                 }
             };
             let leads = investigate::leads(ctx, scope, &plan.question, &plan.symbols);
-            let (parts, planner, note) =
-                make_plan(b, &log, plan, &task, &ctx.cwd, ladder, &planners, &leads, deadline);
+            let planning = Planning { plan, task: &task, ladder, planners: &planners, leads: &leads };
+            let (parts, planner, note) = make_plan(b, &log, &planning, &ctx.cwd, deadline);
             head.push_str(&note);
             match parts.is_empty() {
                 true => (vec![whole], planner, false),
@@ -488,19 +488,24 @@ fn adaptive(
     Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs, json })
 }
 
-// Asks the planner to assign the task's items to parts, holding a local planner to the plan grammar and checking any plan before dispatch (agents on the ladder, known items, symbols that are names, every item covered, not cut short); a refused plan gets one repair, and a repair refused too runs the task as one assignment; moves to the next planner when one fails, rates its understanding low or asks to escalate. Returns the parts (each with its items' own words), the planner that made them and the report lines.
-#[allow(clippy::too_many_arguments)]
+// What a planner works from: the run's plan, the task's items, the ladder, the planners to try in turn and the declarations discovery found.
+struct Planning<'a> {
+    plan: &'a Plan,
+    task: &'a items::Task,
+    ladder: &'a [Rung],
+    planners: &'a [Rung],
+    leads: &'a [String],
+}
+
+// Asks the planner to assign the task's items to parts, holding a local planner to the plan grammar and checking any plan before dispatch (agents on the ladder, known items, symbols that are names, at most MAX_PARTS parts, every item covered, not cut short); a refused plan gets one repair that shows it the refused plan, and a repair refused too runs the task as one assignment; moves to the next planner when one fails, rates its understanding low or asks to escalate. Returns the parts (each with its items' own words), the planner that made them and the report lines.
 fn make_plan(
     b: &dyn Backend,
     log: &Log,
-    plan: &Plan,
-    task: &items::Task,
+    planning: &Planning,
     cwd: &Path,
-    ladder: &[Rung],
-    planners: &[Rung],
-    leads: &[String],
     deadline: Instant,
 ) -> (Vec<Part>, Option<Rung>, String) {
+    let Planning { plan, task, ladder, planners, leads } = *planning;
     let menu: String = ladder
         .iter()
         .enumerate()
@@ -542,7 +547,7 @@ fn make_plan(
                 continue;
             }
         };
-        let checked = match items::check(&reply, task, ladder.len(), cut) {
+        let checked = match items::check(&reply, task, ladder.len(), MAX_PARTS, cut) {
             Ok(a) => Ok((a, reply)),
             Err(problems) => {
                 note.push_str(&format!(
@@ -551,11 +556,14 @@ fn make_plan(
                     problems.join("; ")
                 ));
                 let again = format!(
-                    "{prompt}\nYour plan was refused: {}. Reply again with the corrected lines only.",
+                    "{prompt}\nYour plan was:\n{}\nIt was refused: {}. Reply again with the corrected lines only.",
+                    reply.trim(),
                     problems.join("; ")
                 );
                 match ask("planner repair", &again) {
-                    Ok((reply, cut)) => items::check(&reply, task, ladder.len(), cut).map(|a| (a, reply)),
+                    Ok((reply, cut)) => {
+                        items::check(&reply, task, ladder.len(), MAX_PARTS, cut).map(|a| (a, reply))
+                    }
                     Err(e) => Err(vec![e]),
                 }
             }
@@ -574,7 +582,6 @@ fn make_plan(
         };
         let parts: Vec<Part> = assigned
             .iter()
-            .take(MAX_PARTS)
             .map(|a| Part {
                 question: task.text_of(&a.items),
                 symbols: if a.seeds.is_empty() { plan.symbols.clone() } else { a.seeds.clone() },

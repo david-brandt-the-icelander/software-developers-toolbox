@@ -218,7 +218,7 @@ fn shared(terms: &[String], words: &[String]) -> Vec<String> {
     terms.iter().filter(|t| stems.contains(&stem(t))).cloned().collect()
 }
 
-// Ranks the declarations inside the scope against the terms (a web question favours those with routes), best first, at most `limit`; once per job for the same arguments (a scan the job's stop cut short is not kept).
+// Ranks the declarations inside the scope against the terms (a web question favours those with routes), best first, at most `limit`; scanned once per job for the same scope and terms whatever the limit (a scan the job's stop cut short is not kept).
 pub fn discover(
     engine: &crate::engine::Engine,
     cwd: &Path,
@@ -231,22 +231,27 @@ pub fn discover(
         return Vec::new();
     }
     let run = || {
-        let found = scan(engine, cwd, scope, terms, web, limit);
+        let found = scan(engine, cwd, scope, terms, web);
         (found, !crate::budget::spent())
     };
-    let Some(shared) = crate::budget::shared() else { return run().0 };
-    let key = format!("{}\0{scope:?}\0{terms:?}\0{web}\0{limit}", cwd.display());
-    shared.decls.get_or(&key, run).map(|(found, _)| found).unwrap_or_default()
+    let mut found = match crate::budget::shared() {
+        None => run().0,
+        Some(shared) => {
+            let key = format!("{}\0{scope:?}\0{terms:?}\0{web}", cwd.display());
+            shared.decls.get_or(&key, run).map(|(found, _)| found).unwrap_or_default()
+        }
+    };
+    found.truncate(limit);
+    found
 }
 
-// The scan behind `discover`: every code file in the scope outlined, its declarations scored; files not yet read when the job is stopped are skipped.
+// The scan behind `discover`: every code file in the scope outlined, its declarations scored, best first; files not yet read when the job is stopped are skipped.
 fn scan(
     engine: &crate::engine::Engine,
     cwd: &Path,
     scope: &[PathBuf],
     terms: &[String],
     web: bool,
-    limit: usize,
 ) -> Vec<Candidate> {
     let opts = crate::walk::WalkOpts { no_ignore: false, globs: Vec::new() };
     let Ok(files) = crate::walk::collect(scope, &opts, &engine.walks) else { return Vec::new() };
@@ -337,7 +342,6 @@ fn scan(
     });
     let mut all: Vec<Candidate> = per_file.into_iter().flatten().collect();
     all.sort_by(|a, b| b.score.cmp(&a.score).then(a.path.cmp(&b.path)).then(a.start.cmp(&b.start)));
-    all.truncate(limit);
     all
 }
 

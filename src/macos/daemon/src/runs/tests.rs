@@ -221,6 +221,9 @@ fn test_runs_identity() {
         Err(e) => Err(e),
     };
     assert_eq!(again(&repo, &argv).expect("same").text, "answer");
+    let link = t.path().join("link");
+    std::os::unix::fs::symlink(&repo, &link).expect("symlink");
+    assert_eq!(again(&link, &argv).expect("through a symlink").text, "answer", "the same checkout");
     let moved = again(&other, &argv).unwrap_err();
     assert!(
         moved.contains("was started in another checkout (") && moved.contains("--run-id c1` alone"),
@@ -237,6 +240,16 @@ fn test_runs_identity() {
     assert_eq!(again(&other, &[]).expect("id alone").text, "answer");
     git(&repo, &["commit", "-q", "-am", "b"]);
     assert!(again(&repo, &argv).unwrap_err().contains("another state"), "a new commit");
+    let request = root.join("c1").join("request.json");
+    let mut old: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&request).expect("request")).expect("json");
+    old.as_object_mut().expect("object").remove("snapshot");
+    fs::write(&request, old.to_string()).expect("legacy request");
+    assert_eq!(
+        again(&repo, &argv).expect("legacy").text,
+        "answer",
+        "a run kept before snapshots is not refused for one"
+    );
 }
 
 // Checks the evidence a run keeps as it works is listed when it stops without a result.

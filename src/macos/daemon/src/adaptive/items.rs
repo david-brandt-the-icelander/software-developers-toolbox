@@ -74,7 +74,7 @@ fn sentences(text: &str) -> Vec<String> {
     out
 }
 
-// Reads a task: marked list lines are its items when there are two or more (other lines are context or constraints); else each question sentence is an item, and other sentences are constraints when they set the format or length, else items too; with nothing found, the whole text is the one item.
+// Reads a task: marked list lines are its items when there are two or more (other lines are items too when they ask a question, else context or constraints); else each question sentence is an item, and other sentences are constraints when they set the format or length, else items too; with nothing found, the whole text is the one item.
 pub fn task(question: &str) -> Task {
     let lines: Vec<&str> = question.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
     let marked: Vec<&str> = lines.iter().copied().filter(|l| MARKER.is_match(l)).collect();
@@ -83,6 +83,7 @@ pub fn task(question: &str) -> Task {
         for l in &lines {
             match MARKER.is_match(l) {
                 true => items.push(MARKER.replace(l, "").trim().to_string()),
+                false if l.ends_with('?') => items.push(l.to_string()),
                 false => constraints.push(l.to_string()),
             }
         }
@@ -149,11 +150,12 @@ conf ::= "CONFIDENCE understanding=" lvl " result=" lvl "\n"?
 lvl ::= "high" | "medium" | "low"
 "#;
 
-// Checks a planner's reply against the task and the ladder before anything is dispatched: each PART line must name an agent on the ladder, only known items and starting symbols that are names, and every item must be in some part; a reply cut short is refused. Returns the assignments, or every problem found.
+// Checks a planner's reply against the task and the ladder before anything is dispatched: each PART line must name an agent on the ladder, only known items and starting symbols that are names, there are at most `max_parts` parts, and every item must be in some part; a reply cut short is refused. Returns the assignments, or every problem found.
 pub fn check(
     reply: &str,
     task: &Task,
     rungs: usize,
+    max_parts: usize,
     truncated: bool,
 ) -> Result<Vec<Assignment>, Vec<String>> {
     let mut problems = Vec::new();
@@ -205,6 +207,9 @@ pub fn check(
         }
         out.push(Assignment { rung, items: ids, seeds });
     }
+    if out.len() > max_parts {
+        problems.push(format!("the plan has {} parts; at most {max_parts} are allowed", out.len()));
+    }
     if out.is_empty() && problems.is_empty() {
         problems.push("the reply had no PART lines".into());
     }
@@ -238,6 +243,13 @@ mod tests {
             ]
         );
         assert_eq!(t.constraints, ["For the station cache:", "Answer as a table."]);
+        let t =
+            task("1. What is the key?\n2. When is it compared?\nAlso, why is the cache cleared on restart?");
+        assert_eq!(
+            (t.items.len(), t.items[2].text.as_str()),
+            (3, "Also, why is the cache cleared on restart?"),
+            "an unmarked question is still an item"
+        );
         let t = task("Where is the key checked? Should a blank key be rejected? Give a test matrix in at most 200 words.");
         assert_eq!(t.items.len(), 2);
         assert_eq!(t.constraints, ["Give a test matrix in at most 200 words."]);
@@ -270,6 +282,7 @@ mod tests {
             "PART 1 | I1, I2 | StationCache\nPART 2 | I3 |\nCONFIDENCE understanding=high result=high",
             &t,
             2,
+            4,
             false,
         )
         .expect("valid");
@@ -278,7 +291,7 @@ mod tests {
             Assignment { rung: 0, items: vec!["I1".into(), "I2".into()], seeds: vec!["StationCache".into()] }
         );
         assert_eq!((ok[1].rung, ok[1].seeds.len()), (1, 0));
-        let bad = check("PART 1 | 2 | x\nPART 1 | qwen3.5-4b low | Where?\nPART 7 | I1 |\nPART x | I1 |\nPART 1 | I9 |\nPART 1 | |\nPART 1 | I2 | the cache key", &t, 2, true).unwrap_err();
+        let bad = check("PART 1 | 2 | x\nPART 1 | qwen3.5-4b low | Where?\nPART 7 | I1 |\nPART x | I1 |\nPART 1 | I9 |\nPART 1 | |\nPART 1 | I2 | the cache key", &t, 2, 4, true).unwrap_err();
         for want in [
             "cut short",
             "`2` is not an item",
@@ -293,6 +306,11 @@ mod tests {
         ] {
             assert!(bad.iter().any(|p| p.contains(want)), "{want}: {bad:?}");
         }
-        assert_eq!(check("no plan here", &t, 2, false).unwrap_err(), ["the reply had no PART lines"]);
+        assert_eq!(check("no plan here", &t, 2, 4, false).unwrap_err(), ["the reply had no PART lines"]);
+        assert_eq!(
+            check("PART 1 | I1 |\nPART 1 | I2 |\nPART 2 | I3 |", &t, 2, 2, false).unwrap_err(),
+            ["the plan has 3 parts; at most 2 are allowed"],
+            "a part past the limit would never run, so its items would go unanswered"
+        );
     }
 }
