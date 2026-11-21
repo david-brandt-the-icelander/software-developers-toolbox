@@ -7,7 +7,7 @@
     {
       "id": "tests-and-coverage",
       "title": "Unit tests and the branch-coverage gate",
-      "summary": "zazz-script-runner's unit tests run with the workspace's; CI fails unless its branch coverage, test code excluded, reaches 95%. daemon's zazz tests also use the release build of zazz-script-runner.",
+      "summary": "zazz-script-runner's unit tests run with the workspace's; CI's coverage stage fails unless its branch coverage, test code excluded, reaches 95%. daemon's zazz tests also use the release build of zazz-script-runner.",
       "subject": [
         { "path": "src/macos/zazz-script/runner/.dev/folder.json", "entityId": "folder" }
       ],
@@ -20,26 +20,22 @@
         {
           "type": "automated",
           "command": "cargo test -p zazz-script-runner (in src/macos)",
-          "description": "CI runs it within `cargo test --workspace` on macOS and Linux, after `cargo build --release -p zazz-script-runner`, which daemon's zazz tests need."
+          "description": "CI's test stage runs it within `cargo test --workspace` on Linux, and the release on the owner's Mac, after `cargo build --release -p zazz-script-runner`, which daemon's zazz tests need."
         },
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "zazz crates branch coverage (at least 95%)",
+          "path": "src/macos/daemon/coverage.sh",
           "command": "sh daemon/coverage.sh 95 zazz-script-runner (in src/macos; nightly with cargo-llvm-cov and the wasm32-wasip1 target)",
-          "description": "Reads the branch percentage from cargo llvm-cov's summary and fails below 95. Test modules are marked coverage(off)."
+          "description": "Reads the branch percentage from cargo llvm-cov's summary and fails below 95; CI's coverage stage runs it. Test modules are marked coverage(off)."
         },
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "msrv",
-          "description": "Checks the workspace on Rust 1.85 with zazz-script-runner excluded, since wasmtime needs a newer Rust."
+          "command": "cargo +1.85.0 check --workspace --exclude zazz-script-runner --locked",
+          "description": "CI's msrv stage checks the workspace on Rust 1.85 with zazz-script-runner excluded, since wasmtime needs a newer Rust."
         }
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": ".github/workflows/ci.yml", "symbol": "test" },
-        { "path": ".github/workflows/ci.yml", "symbol": "coverage" },
         { "path": "src/macos/daemon/coverage.sh", "symbol": "crate" },
         { "path": "src/macos/zazz-script/runner/src/main.rs", "symbol": "tests" },
         { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "[dev-dependencies]" }

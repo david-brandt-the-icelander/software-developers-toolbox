@@ -11,36 +11,20 @@
       "summary": "Each release publishes the indexer inside the toolbox's release tarballs, built with the release's version: gzipped for arm64 and x64 in the macOS tarball, and as a plain linux-x64 or linux-arm64 binary in each Linux tarball.",
       "environment": "The toolbox's GitHub release for each vX.Y.Z tag, and the same tarballs on icelander.net/downloads under zazzle/<tag>/ and zazzle/latest/",
       "purpose": "Carries the indexer to the Homebrew formula on macOS and to people who install from a Linux tarball.",
-      "deployedBy": ".github/workflows/release.yml runs for a pushed v* tag, or by hand (workflow_dispatch) with bump patch, minor or major, in which case its version job tags the commit with the next version and the run publishes it; bump none only builds. The version job's release/version.sh gives the version (0.0.0-dev when nothing is published). The macos job runs dotnet test tests, then dotnet publish src -c Release for osx-arm64 and osx-x64 with -p:Version set to that version, and gzips each binary as csharp-indexer-arm64.gz and csharp-indexer-x64.gz into zazzle-macos-universal.tar.gz beside the universal Rust and C binaries; the indexer is not universal and is not among the binaries the optional signing step signs. Each linux matrix job runs dotnet test tests and dotnet publish src -c Release -r linux-x64 or linux-arm64 with the same -p:Version, and puts the binary in zazzle-linux-<arch>.tar.gz with zazzle and daemon. Every run uploads the tarballs as workflow artifacts; the GitHub release (created without notes), download and formula steps run only when the version job says to publish.",
+      "deployedBy": "release.sh in the continuous_integration_and_delivery repository, which the owner runs with --bump patch, minor or major or with --version X.Y.Z; release/version.sh gives the version. On the owner's Mac it runs dotnet test tests (not for the alpha), then dotnet publish src -c Release for osx-arm64 and osx-x64 with -p:Version set to that version, and gzips each binary as csharp-indexer-arm64.gz and csharp-indexer-x64.gz into zazzle-macos-universal.tar.gz beside the universal Rust and C binaries; the indexer is not universal and is not among the binaries the optional signing step signs. In the Linux container, for each architecture, it runs dotnet test tests and dotnet publish src -c Release -r linux-x64 or linux-arm64 with the same -p:Version, and puts the binary in zazzle-linux-<arch>.tar.gz with zazzle and daemon. The GitHub release (created without notes), the downloads and the formula are published only once every tarball has built, and not at all with --dry-run.",
       "approvals": [
-        "None in the workflow: anyone who can push a tag matching v* or run the workflow by hand with a bump releases."
+        "None: release.sh asks for no approval, so whoever runs it with the release credentials and a gh login that can create releases on the repository releases."
       ],
-      "rollback": "No rollback is recorded. The workflow creates releases and uploads to them but never deletes one, so earlier tags' tarballs stay on the GitHub release and under their tag on icelander.net; going back means installing from an earlier tarball (see user-machine).",
-      "evidenceStatus": "source-verified",
+      "rollback": "No rollback is recorded. release.sh creates releases and uploads to them but never deletes one, so earlier tags' tarballs stay on the GitHub release and under their tag on icelander.net; going back means installing from an earlier tarball (see user-machine).",
+      "evidenceStatus": "documented",
       "sources": [
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "version"
-        },
         {
           "path": "release/version.sh",
           "symbol": "next"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Build the C# indexer for both CPU types"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Sign and notarize"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Build the C# indexer"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Package"
+          "path": "release/pack.sh",
+          "symbol": "libexec/indexer"
         },
         {
           "path": "release/README.md",
@@ -67,7 +51,7 @@
       "environment": "macOS machines that install the zazzle formula",
       "purpose": "The macOS install path: one formula installs the indexer with zazzle, daemon and the other tools.",
       "promotedFrom": "github-release",
-      "deployedBy": "The release workflow's homebrew job writes zazzle.rb into the tap's formula folder with release/formula.sh. Its install step puts csharp-indexer-arm64.gz and csharp-indexer-x64.gz in libexec/indexer; post_install_steps then gunzips the file for uname -m (arm64, else x64) into libexec/zazzle/csharp-indexer. Nothing is linked onto PATH. The formula's test checks that zazzle csharp-indexer --version prints the tool's name.",
+      "deployedBy": "release.sh writes zazzle.rb into the tap's formula folder with release/formula.sh. Its install step puts csharp-indexer-arm64.gz and csharp-indexer-x64.gz in libexec/indexer; post_install_steps then gunzips the file for uname -m (arm64, else x64) into libexec/zazzle/csharp-indexer. Nothing is linked onto PATH. The formula's test checks that zazzle csharp-indexer --version prints the tool's name.",
       "rollback": "No rollback is recorded. Each release overwrites the formula in the tap; brew postinstall zazzle repeats the expansion if it failed.",
       "evidenceStatus": "source-verified",
       "sources": [

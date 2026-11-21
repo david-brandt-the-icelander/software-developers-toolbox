@@ -3,7 +3,7 @@
   "kind": "delivery",
   "title": "Where a release goes",
   "folder": "release",
-  "description": "Every tool (zazzle, the launcher, and the tools it runs: the daemon with zazz-script-runner, csharp-indexer, fix-network, free-disk-space, git-tools, ai-agent-rules) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in release/cyberspace-generator.version, by the release workflow on a v* tag. It runs on each developer's own machine; these are the places a version is installed from. Only zazzle (and z) goes on PATH; the tools sit in libexec/zazzle. ai-agent is not in the tarballs or the formula: it is a JIT tool that the daemon downloads from icelander.net on first use.",
+  "description": "Every tool (zazzle, the launcher, and the tools it runs: the daemon with zazz-script-runner, csharp-indexer, fix-network, free-disk-space, git-tools, ai-agent-rules) is released together, one version for all, with cyberspace-generator, which is built in the cyberspace-explorer repository and shipped at the release pinned in release/cyberspace-generator.version, by release.sh in the continuous_integration_and_delivery repository, which the owner runs by hand (pipeline.json). It runs on each developer's own machine; these are the places a version is installed from. Only zazzle (and z) goes on PATH; the tools sit in libexec/zazzle. ai-agent is not in the tarballs or the formula: it is a JIT tool that the daemon downloads from icelander.net on first use.",
   "entities": [
     {
       "id": "github-release",
@@ -11,25 +11,21 @@
       "summary": "One release per vX.Y.Z tag, with no release notes, holding zazzle-macos-universal.tar.gz (bin/zazzle with bin/z as a relative link to it; libexec/zazzle with nine universal binaries, among them zazz-script-runner and the three git-tools programs; libexec/indexer with the C# indexer gzipped for arm64 and x64), the Linux tarballs for x86_64 and aarch64 in the same layout (zazzle and z; daemon, zazz-script-runner, csharp-indexer and cyberspace-generator), their checksums and the Homebrew bottle.",
       "environment": "GitHub releases of this repository",
       "purpose": "The canonical copy of each version; the formula's bottle and its source fallback download from it.",
-      "deployedBy": "The release workflow (macos, linux-publish and homebrew jobs)",
+      "deployedBy": "release.sh, through gh with the owner's login, once every tarball has built: it creates the release on the commit with the macOS tarball, then uploads the Linux tarballs and the bottle",
       "rollback": "No rollback is automated or documented. Each tag keeps its own release, so an earlier version stays downloadable.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Publish release"
+          "path": "release/pack.sh",
+          "symbol": "pack.sh DIST OUT.tar.gz FILE..."
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux: Attach to the GitHub release"
+          "path": "release/bottle.sh",
+          "symbol": "root"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew: Build the bottle and add it to the release"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux: Package"
+          "path": "release/formula.sh",
+          "symbol": "bottle_block"
         }
       ],
       "relationships": [
@@ -83,19 +79,11 @@
       "summary": "The same tarballs and checksums, copied to the download bucket under zazzle/<tag>/ and zazzle/latest/, served at https://icelander.net/downloads/zazzle/.",
       "environment": "The icelander-downloads bucket on Cloudflare R2",
       "purpose": "A stable latest/ link for the README's curl install, and one folder per version.",
-      "deployedBy": "The release workflow, with the secret CLOUDFLARE_R2_TOKEN, through r2-put.sh, which retries each upload up to five times",
-      "promotedFrom": "The same job's build; there is no staging.",
+      "deployedBy": "release.sh, with the owner's CLOUDFLARE_R2_TOKEN, through r2-put.sh, which retries each upload up to five times",
+      "promotedFrom": "The same release.sh run's build; there is no staging.",
       "rollback": "No rollback is automated or documented. latest/ is overwritten by each release; zazzle/<tag>/ keeps every version.",
       "evidenceStatus": "source-verified",
       "sources": [
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Publish to icelander.net"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux: Publish to icelander.net"
-        },
         {
           "path": "README.md",
           "symbol": "Tools (macOS, Rust)"
@@ -112,14 +100,10 @@
       "summary": "One formula, zazzle, in the external tap zazzcat/homebrew-z, pointing at the release's tarball and bottle; it installs every macOS binary and expands the C# indexer for the Mac's CPU after install. Users run brew install zazzcat/z/zazzle, which adds the tap on first use.",
       "environment": "Formula/zazzle.rb on the default branch of zazzcat/homebrew-z, read by brew",
       "purpose": "Installs and upgrades without a Gatekeeper prompt, since Homebrew does not quarantine what a formula installs.",
-      "deployedBy": "The release workflow's homebrew job, pushing to the tap with the secret HOMEBREW_TAP_TOKEN",
+      "deployedBy": "release.sh, last, pushing to the tap with the owner's git credentials or HOMEBREW_TAP_TOKEN",
       "rollback": "No rollback is automated or documented. Each release moves the formula to the new tag; the tap's git history keeps the earlier formulas.",
       "evidenceStatus": "source-verified",
       "sources": [
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew: Write and push the formula"
-        },
         {
           "path": "release/formula.sh",
           "symbol": "bottle_block"
@@ -152,18 +136,10 @@
       "summary": "Each release's language modules (one .dylib per language, universal, on macOS; one .so per language and Linux architecture) and their manifest, under icelander.net/downloads/zazzle/vX.Y.Z/languages/{macos-universal,linux-x86_64,linux-aarch64}/. Only the tag's directory gets them, not latest, because a daemon accepts only its own release's modules.",
       "environment": "Cloudflare R2 bucket icelander-downloads, served as icelander.net/downloads",
       "purpose": "The daemon downloads a module from here the first time a file needs it, or on `zazzle languages fetch`.",
-      "deployedBy": "The release workflow (macos and linux-publish jobs, Publish to icelander.net)",
+      "deployedBy": "release.sh, after the macOS and Linux builds, through r2-put.sh",
       "rollback": "No rollback; each tag keeps its own directory, which its daemon keeps using.",
       "evidenceStatus": "source-verified",
       "sources": [
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Publish to icelander.net"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux: Publish to icelander.net"
-        },
         {
           "path": "release/language-modules.sh",
           "symbol": "--manifest"
@@ -184,18 +160,10 @@
       "summary": "Each release's JIT tools (ai-agent: universal on macOS, signed when configured, with Metal for Apple Silicon; one per Linux architecture) and their manifest, under icelander.net/downloads/zazzle/vX.Y.Z/tools/{macos-universal,linux-x86_64,linux-aarch64}/. Only the tag's directory gets them, not latest, because a daemon accepts only the tools whose SHA-256s were compiled into it (ZAZZLE_TOOLS_MANIFEST). They are not in the tarballs, the bottle or the formula.",
       "environment": "Cloudflare R2 bucket icelander-downloads, served as icelander.net/downloads",
       "purpose": "`zazzle daemon llm` downloads ai-agent from here the first time `zazzle agent llm` or `zazzle agent prompt` runs. The models ai-agent runs come from huggingface.co, not from a release.",
-      "deployedBy": "The release workflow: tools.sh builds them in the alpha, macos-languages and linux jobs; the alpha, macos and linux-publish jobs upload them (Publish to icelander.net)",
+      "deployedBy": "release.sh: tools.sh builds them in the alpha and macOS builds on the Mac and in each Linux build in the container; release.sh uploads them through r2-put.sh",
       "rollback": "No rollback; each tag keeps its own directory, which its daemon keeps using.",
       "evidenceStatus": "source-verified",
       "sources": [
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Publish to icelander.net"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux-publish: Publish to icelander.net"
-        },
         {
           "path": "release/tools.sh",
           "symbol": "--manifest"

@@ -7,7 +7,7 @@
     {
       "id": "tests-and-coverage",
       "title": "Unit tests and the branch-coverage gate",
-      "summary": "All daemon tests run with `cargo test -p daemon`, the zazz tests against a release zazz-script-runner; coverage.sh fails unless branch coverage of non-test code reaches a threshold, 95 in CI, for daemon and for each zazz crate.",
+      "summary": "All daemon tests run with `cargo test -p daemon`, the zazz tests against a release zazz-script-runner; coverage.sh fails unless branch coverage of non-test code reaches a threshold, 95 in CI's coverage stage, for daemon and for each zazz crate.",
       "subject": [
         {
           "path": "src/macos/daemon/src/.dev/verification.json"
@@ -33,13 +33,7 @@
         {
           "type": "automated",
           "command": "cargo test -p daemon (in src/macos)",
-          "description": "Runs every unit test; CI runs it on macOS and Linux, and the release runs it again on Linux. The zazz tests build real scripts, so they need the wasm32-wasip1 target, and use the release zazz-script-runner, which testutil::worker_bin builds with cargo on first use."
-        },
-        {
-          "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "zazz tests one at a time (macOS, 15 minute limit)",
-          "description": "On macOS CI first runs the zazz:: tests on one thread under a hard time limit, so a test that hangs under the macOS sandbox shows up by name."
+          "description": "Runs every unit test; CI runs it on Linux within cargo test --workspace, and the release runs it on the owner's Mac (within cargo test --workspace) and again in each Linux build. The zazz tests build real scripts, so they need the wasm32-wasip1 target, and use the release zazz-script-runner, which testutil::worker_bin builds with cargo on first use."
         },
         {
           "type": "automated",
@@ -49,15 +43,8 @@
         },
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "Rust branch coverage (at least 95%)",
-          "description": "CI's coverage job runs coverage.sh with 95."
-        },
-        {
-          "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "zazz crates branch coverage (at least 95%)",
-          "description": "The same job runs coverage.sh 95 for zazz-script-packaging, zazz-script-engine and zazz-script-runner."
+          "command": "./ci.sh coverage (in continuous_integration_and_delivery/zazzle)",
+          "description": "CI's coverage stage, run by hand in the Linux container, runs coverage.sh 95 for daemon, then for zazz-script-packaging, zazz-script-engine and zazz-script-runner."
         }
       ],
       "evidenceStatus": "source-verified",
@@ -73,14 +60,6 @@
         {
           "path": "src/macos/daemon/src/testutil.rs",
           "symbol": "worker_bin"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "coverage"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Test daemon"
         }
       ]
     }

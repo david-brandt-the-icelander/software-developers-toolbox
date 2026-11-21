@@ -12,7 +12,7 @@
       "boundaries": [
         "It is a JIT tool: not in the release tarball, the bottle or the formula. The zazzle invoker (src/macos/zazzle) execs `zazzle daemon llm llm|prompt ..`, and daemon (src/macos/daemon/src/tools.rs) uses a ai-agent beside itself or downloads it from icelander.net, checks it against the manifest compiled into daemon and execs it.",
         "It downloads model files itself, from huggingface.co at the commit and SHA-256 its catalogue pins, into its own directory (~/.zazzle/v1/llm by default); the daemon never sees a model.",
-        "release/tools.sh builds it (universal on macOS, with Metal for Apple Silicon) and writes the tool manifest; the release workflow signs and uploads it. Workspace release builds leave it out (`--exclude ai-agent`)."
+        "release/tools.sh builds it (universal on macOS, with Metal for Apple Silicon) and writes the tool manifest; release.sh in the continuous_integration_and_delivery repository signs and uploads it. Workspace release builds leave it out (`--exclude ai-agent`)."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

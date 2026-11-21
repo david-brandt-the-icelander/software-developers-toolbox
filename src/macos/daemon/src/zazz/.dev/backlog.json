@@ -54,7 +54,7 @@
       "summary": "On macOS trust also reads the root-owned /etc/zazzle/trust.d; the Keychain path (SecTrust evaluation, and trust settings on `trust add`) compiles but is not exercised by CI.",
       "type": "chore",
       "status": "open",
-      "details": "trust.rs keychain_trusts runs only when Zazz uses the system trust locations, which tests replace with their own, so CI never reaches SecTrust; signing.rs add_to_os likewise.",
+      "details": "trust.rs keychain_trusts runs only when Zazz uses the system trust locations, which tests replace with their own, so CI never reaches SecTrust; signing.rs add_to_os likewise. CI (ci.sh) now runs on Linux only; the only macOS tests are the ones the release runs on the owner's Mac.",
       "origin": {
         "kind": "document",
         "reference": "src/macos/daemon/ZAZZ-PLAN.md, Implementation status (second item)"

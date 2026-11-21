@@ -7,7 +7,7 @@
     {
       "id": "tests-on-both-platforms",
       "title": "Tests on Linux and macOS",
-      "summary": "The unit tests run in CI on Linux and macOS with the rest of the workspace.",
+      "summary": "The unit tests run with the rest of the workspace in CI, on Linux, and in the release's macOS build on the owner's Mac.",
       "subject": [
         {
           "path": "src/macos/shell-tools/src/.dev/verification.json"
@@ -19,9 +19,8 @@
       "checks": [
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "cargo test",
-          "command": "cargo test -p shell-tools (in src/macos)"
+          "command": "cargo test -p shell-tools (in src/macos)",
+          "description": "CI's test stage and the release's macOS build run it within cargo test --workspace."
         }
       ],
       "evidenceStatus": "documented"
@@ -29,7 +28,7 @@
     {
       "id": "coverage-gate",
       "title": "Coverage gate",
-      "summary": "CI gates the library at 95% of lines and 95% of branches, test code excluded.",
+      "summary": "CI's coverage stage gates the library at 95% of lines and 95% of branches, test code excluded.",
       "subject": [
         {
           "path": "src/macos/shell-tools/src/.dev/verification.json"
@@ -42,9 +41,8 @@
       "checks": [
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "llvm-cov",
-          "command": "cargo +nightly llvm-cov --branch -p shell-tools --summary-only (in src/macos)"
+          "command": "cargo +nightly llvm-cov --branch -p shell-tools --summary-only (in src/macos)",
+          "description": "The coverage stage of ci.sh (continuous_integration_and_delivery) runs it with a 95% line and branch gate, by hand, on Linux."
         }
       ],
       "evidenceStatus": "documented"

@@ -46,7 +46,7 @@ The parts are in [.dev/component-diagram.json](.dev/component-diagram.json) and 
 `~/Library/Application Support/csharp-indexer/usage.jsonl` on macOS, `$XDG_STATE_HOME/csharp-indexer/usage.jsonl` elsewhere (`ZAZZLE_INDEXER_STATE_DIR` overrides; the store and socket live there too). Text arguments are hashed unless `ZAZZLE_INDEXER_LOG_PLAIN=1`; answers are represented only by sizes and hashes. The daemon also records the final response after session dedupe in `~/.zazzle/usage.jsonl` (`ZAZZLE_USAGE_LOG` overrides; set it empty to disable). `report` combines both logs to show source-to-view compaction and final-delivery savings. Fields and rotation: [src/.dev/observability.json](src/.dev/observability.json). All settings: [src/.dev/configuration.json](src/.dev/configuration.json).
 
 ## Known limits
-- macOS is the primary target. FSEvents replay is implemented and covered by a macOS-only test that runs in CI, but was not run on a Mac when written. Linux uses `FileSystemWatcher` without replay (full reconcile at start). Windows is untested.
+- macOS is the primary target. FSEvents replay is implemented and covered by a macOS-only test, which CI (Linux only) skips and only the release runs, on the owner's Mac; it was not run on a Mac when written. Linux uses `FileSystemWatcher` without replay (full reconcile at start). Windows is untested.
 - Local filesystems only.
 - The stat key has no ctime (not exposed by .NET): an in-place rewrite that keeps size, mtime and birth time is caught by the watcher but not by a restart reconcile.
 - Ranking is path order; there is no relevance ranking and no import/dependency graph.
@@ -58,4 +58,4 @@ The parts are in [.dev/component-diagram.json](.dev/component-diagram.json) and 
 - Test: `dotnet test tests`
 - Single test: `dotnet test tests --filter test_find_symbol`
 - Publish: `dotnet publish src -c Release -r osx-arm64 -o out` (also `osx-x64`, `linux-x64`, `linux-arm64`)
-- Release: it ships inside the main `v*` release (`.github/workflows/release.yml`), gzipped per CPU type in the `zazzle` Homebrew formula, which expands the right one on install; the Linux tarballs carry it too. Binaries are unsigned apart from the SDK's ad-hoc signature on macOS.
+- Release: it ships inside the main `v*` release (`release.sh` in [continuous_integration_and_delivery](https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/tree/main/zazzle)), gzipped per CPU type in the `zazzle` Homebrew formula, which expands the right one on install; the Linux tarballs carry it too. Binaries are unsigned apart from the SDK's ad-hoc signature on macOS.

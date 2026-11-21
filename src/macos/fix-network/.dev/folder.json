@@ -11,7 +11,7 @@
       "purpose": "The crate of the fix-network binary: Cargo.toml, the user README, and the sources in src/. It is one member of the Cargo workspace in src/macos and builds one binary.",
       "boundaries": [
         "It stands alone: it uses no other tool in the repository, and nothing in the repository's code calls it. The agent skill in agents/skills/fix-network tells coding agents how to run it.",
-        "Building, testing in CI and publishing the binary are the workspace's and the release workflow's concern, not this folder's."
+        "Building, testing in CI and publishing the binary are the workspace's and the continuous_integration_and_delivery repository's concern, not this folder's."
       ],
       "evidenceStatus": "source-verified",
       "sources": [

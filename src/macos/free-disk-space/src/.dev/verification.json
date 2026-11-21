@@ -3,7 +3,7 @@
   "kind": "verification",
   "title": "free-disk-space verification",
   "folder": "src/macos/free-disk-space/src",
-  "description": "How the binary's behavior is checked. The unit tests sit at the end of each module and run on macOS and Linux in CI (cargo test --workspace). Each test runs in a testkit::Sandbox: a private HOME and state file, and a bin directory that FDS_TOOLS points the absolute tool paths at, so xattr, lsof, ps, launchctl and the rest are shell-script fakes. Several compress and dedupe tests are compiled only off macOS and so run only on the Linux CI runner (see their entities). Run them as a non-root user, or the permission tests cannot fail the way they should. Run one with `cargo test -p free-disk-space <test name>` in src/macos.",
+  "description": "How the binary's behavior is checked. The unit tests sit at the end of each module and run within cargo test --workspace in CI, on Linux, and in the release's macOS build on the owner's Mac. Each test runs in a testkit::Sandbox: a private HOME and state file, and a bin directory that FDS_TOOLS points the absolute tool paths at, so xattr, lsof, ps, launchctl and the rest are shell-script fakes. Several compress and dedupe tests are compiled only off macOS and so run only on Linux, in CI (see their entities). Run them as a non-root user, or the permission tests cannot fail the way they should. Run one with `cargo test -p free-disk-space <test name>` in src/macos.",
   "entities": [
     {
       "id": "scan",
@@ -270,12 +270,11 @@
         {"type": "automated", "path": "src/macos/free-disk-space/src/main.rs", "symbol": "test_default_state_paths", "command": "cargo test -p free-disk-space test_default_state_paths"},
         {"type": "automated", "path": "src/macos/free-disk-space/src/main.rs", "symbol": "test_cli_rejects_bad_arguments", "command": "cargo test -p free-disk-space test_cli_rejects_bad_arguments"},
         {"type": "automated", "path": "src/macos/free-disk-space/src/main.rs", "symbol": "test_run_dispatches_every_command", "command": "cargo test -p free-disk-space test_run_dispatches_every_command"},
-        {"type": "automated", "path": ".github/workflows/ci.yml", "symbol": "Smoke test CLIs", "command": "./target/release/free-disk-space --help && ./target/release/free-disk-space clean caches", "description": "CI runs the release build's help and a dry-run clean of caches on macOS and Linux."}
+        {"type": "automated", "command": "./target/release/free-disk-space --help && ./target/release/free-disk-space clean caches", "description": "CI's test stage runs the release build's help and a dry-run clean of caches, on Linux."}
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        {"path": "src/macos/free-disk-space/src/main.rs", "symbol": "tests"},
-        {"path": ".github/workflows/ci.yml", "symbol": "test"}
+        {"path": "src/macos/free-disk-space/src/main.rs", "symbol": "tests"}
       ]
     },
     {
@@ -411,7 +410,7 @@
         {"type": "manual", "command": "free-disk-space dedupe --sample 5 --apply", "description": "After a scan, check each cloned file's content, mode, owner, times and xattrs, and the free-space change."},
         {"type": "manual", "command": "free-disk-space clean trash docker --apply", "description": "With something in the Trash and Docker Desktop running, check both are cleaned and Docker has quit."}
       ],
-      "details": "The README's Caveats say the tool is unit-tested in CI on macOS and Linux and smoke-tested on Linux only for the scan and dry-run paths, and that compress, dedupe --apply, the Finder trash and the Docker steps are untested on a real Mac. The agent skill tells agents to stop on any failure for the same reason. Compress no longer uses ditto --hfsCompression, which on macOS 26/27 reports success but writes uncompressed copies; it writes the compression itself through the vendored lempel-ziv-finite-state-entropy-compression library, which has not yet been run through free-disk-space on a real Mac.",
+      "details": "The README's Caveats say the tool is unit-tested in CI on Linux and on macOS before each release, and smoke-tested on Linux only for the scan and dry-run paths, and that compress, dedupe --apply, the Finder trash and the Docker steps are untested on a real Mac. The agent skill tells agents to stop on any failure for the same reason. Compress no longer uses ditto --hfsCompression, which on macOS 26/27 reports success but writes uncompressed copies; it writes the compression itself through the vendored lempel-ziv-finite-state-entropy-compression library, which has not yet been run through free-disk-space on a real Mac.",
       "evidenceStatus": "documented",
       "sources": [
         {"path": "src/macos/free-disk-space/README.md", "symbol": "Caveats"},
@@ -422,7 +421,7 @@
     {
       "id": "branch-coverage",
       "title": "Branch coverage",
-      "summary": "The repository's target is 95% of non-test branches and lines; for this crate CI does not enforce it.",
+      "summary": "The repository's target is 95% of non-test branches and lines; for this crate CI's coverage stage does not enforce it.",
       "criteria": [
         "At least 95% of non-test branches and lines are covered"
       ],
@@ -431,8 +430,7 @@
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        {"path": "AGENTS.md", "symbol": "Commands (run in `src/macos/`)"},
-        {"path": ".github/workflows/ci.yml", "symbol": "coverage"}
+        {"path": "AGENTS.md", "symbol": "Commands (run in `src/macos/`)"}
       ]
     }
   ]

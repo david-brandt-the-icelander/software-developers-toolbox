@@ -151,7 +151,7 @@
       "consumers": [
         "People in a terminal",
         "agents/skills/free-disk-space/SKILL.md, which tells coding agents which commands to run",
-        ".github/workflows/ci.yml, which runs --help and clean caches as a smoke test",
+        "CI's test stage (ci.sh in the continuous_integration_and_delivery repository), which runs --help and clean caches as a smoke test",
         "The zazzle Homebrew formula written by release/formula.sh for the external tap zazzcat/homebrew-z, whose test runs free-disk-space --version",
         "The zazzle invoker (src/macos/zazzle/), which runs `zazzle free-disk-space ARGS` by replacing itself with this binary and passing ARGS on unchanged",
         "launchd, through the arguments in the plist"
@@ -176,10 +176,6 @@
         {
           "path": "src/macos/free-disk-space/src/util.rs",
           "symbol": "die"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "Smoke test CLIs"
         },
         {
           "path": "release/formula.sh",

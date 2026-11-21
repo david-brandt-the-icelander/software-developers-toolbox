@@ -1,0 +1,137 @@
+{
+  "$schema": "../Meta/Agents/Knowledge/schemas/pipeline.schema.json",
+  "kind": "pipeline",
+  "title": "Continuous integration",
+  "folder": ".",
+  "description": "CI for the whole repository is not kept here: it is ci.sh in the zazzle folder of the continuous_integration_and_delivery repository, which a person runs by hand. Nothing runs on a push or a pull request. The release pipeline is in release/.dev/pipeline.json.",
+  "entities": [
+    {
+      "id": "ci",
+      "title": "CI, run by hand in a Linux container",
+      "summary": "Lints, checks the .dev files, tests and builds every tool, checks the minimum Rust version, gates line and branch coverage and tests the C# tools, on Linux only, in a Docker container with pinned toolchains.",
+      "trigger": "A person runs ./ci.sh in continuous_integration_and_delivery/zazzle on a commit of a local zazzle checkout: HEAD by default, another branch, tag, commit or fetched pull request with --ref, or HEAD with the uncommitted changes with --working-tree. --arch picks x86_64 or aarch64 (default the host's; the other runs emulated). Named stages run alone; with none, every stage but bench runs. bump-cyberspace-generator.sh also runs it on its branch.",
+      "checks": [
+        "Every stage works on a fresh clone of the commit in the container, with RUSTFLAGS=-D warnings; every stage runs even when an earlier one failed, and each prints pass or FAIL",
+        "lint: cargo fmt --all --check; shellcheck of the release scripts and their tests, pgo.sh and the version scripts included; release/sign-and-notarize.test.sh, formula.test.sh, version.test.sh, fetch-cyberspace-generator.test.sh, language-modules.test.sh, tools.test.sh and r2-put.test.sh; cargo clippy --workspace --all-targets",
+        "docs: Meta/Agents/Skills/validate_diagrams.py and Meta/Agents/Knowledge/validate_knowledge.py",
+        "test (stable Rust with the wasm32-wasip1 target): a release build of zazz-script-runner for the zazz tests; cargo test --workspace, with a single-threaded rerun of the daemon tests to name a failure; a release build of the workspace, and a smoke run of fix-network --help, free-disk-space --help, free-disk-space clean caches (a dry run), git-tools --version, git-tools help commit, ai-agent-rules --version and ai-agent-rules get-rules . --name-only",
+        "msrv: cargo check --workspace --exclude zazz-script-runner with Rust 1.85, the workspace's rust-version",
+        "zazzle-c: a release build of daemon, then make, make unit and test/smoke.sh for the C launcher",
+        "coverage (nightly with the wasm32-wasip1 target): shell-tools (a library the daemon links), git-tools (with its pseudo-terminal tests), ai-agent-rules and fix-network fail below 95% of lines and of branches; daemon/coverage.sh 95 for daemon, then for zazz-script-packaging, zazz-script-engine and zazz-script-runner; make coverage for the C launcher",
+        "dotnet: dotnet test tests, dotnet publish, and a smoke run of csharp-indexer serve (initialize, an empty tools/list and the overview tool called by name) and csharp-indexer report",
+        "minifier: dotnet test tests, dotnet publish, then csharp-minifier on one copy of csharp-indexer: --split-tests, a --check that must find nothing, dotnet build of the tests, --list-identifiers and --rename of the Daemon namespace, and dotnet test of the copy's tests"
+      ],
+      "blocks": "Nothing on its own: it reports to the person who ran it and records nothing on GitHub. Only bump-cyberspace-generator.sh waits for it, before it pushes its branch.",
+      "notChecked": [
+        "Pushes and pull requests: nothing runs unless a person runs ci.sh.",
+        "macOS: CI runs on Linux only. release.sh's macOS build runs cargo test --workspace, make unit, the launcher smoke test and the indexer's dotnet test on the owner's Mac before a release.",
+        "zazz-script-runner's own minimum Rust version (1.97): the msrv stage leaves it out, and the other stages use the pinned stable or nightly.",
+        "free-disk-space line and branch coverage: no coverage gate runs for it.",
+        "macOS Keychain trust for signed zazz scripts: the tests use their own trust directory, so the Keychain path compiles but is not exercised.",
+        "The macOS-only behaviour that needs a real Mac (fix-network repairs, free-disk-space compress, dedupe --apply, Finder trash and Docker steps): the tests run against stand-ins.",
+        "pgo.sh itself: the lint stage only shellchecks it; the release and the bench stage run it."
+      ],
+      "evidenceStatus": "documented",
+      "details": "Read from ci.sh, lib/stages.sh and the Dockerfile in continuous_integration_and_delivery/zazzle, which this repository cannot cite as sources. The sources below are the files here that the stages run or read.",
+      "sources": [
+        {
+          "path": "src/macos/Cargo.toml",
+          "symbol": "workspace.package.rust-version"
+        },
+        {
+          "path": "src/macos/zazz-script/runner/Cargo.toml",
+          "symbol": "rust-version"
+        },
+        {
+          "path": "src/macos/daemon/coverage.sh"
+        },
+        {
+          "path": "src/macos/zazzle/Makefile",
+          "symbol": "coverage"
+        },
+        {
+          "path": "Meta/Agents/Skills/validate_diagrams.py"
+        },
+        {
+          "path": "Meta/Agents/Knowledge/validate_knowledge.py"
+        },
+        {
+          "path": "src/macos/daemon/src/zazz/mod.rs",
+          "symbol": "uses_os_store"
+        },
+        {
+          "path": "src/macos/daemon/ZAZZ-PLAN.md",
+          "symbol": "Implementation status"
+        }
+      ],
+      "links": [
+        {
+          "label": "continuous_integration_and_delivery/zazzle: README",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/README.md"
+        },
+        {
+          "label": "ci.sh",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/ci.sh"
+        },
+        {
+          "label": "lib/stages.sh",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/lib/stages.sh"
+        }
+      ]
+    },
+    {
+      "id": "zazzle-bench",
+      "title": "zazzle benchmarks",
+      "summary": "CI's bench stage builds daemon and the zazzle launcher, smoke tests them, prints spawn latencies and times refs over the crate sources, without and with the PGO profile, in the Linux container. The daemon links no grammar, so the stage first builds the seven language modules outlines use (Rust, Python, C, C#, JavaScript, TypeScript, TSX), embeds their manifest in every daemon it builds and loads them from that directory, PGO training included.",
+      "trigger": "./ci.sh bench, by hand; it is not among the stages ci.sh runs by default. BENCH_RUNS sets the spawns per row.",
+      "checks": [
+        "cargo build --release -p daemon; make; test/smoke.sh; bench/run.sh; bench/refs.sh",
+        "pgo.sh, a daemon build with the profile, and bench/refs.sh against it"
+      ],
+      "blocks": "Nothing: the benchmark prints readings and has no threshold.",
+      "notChecked": [
+        "Its PGO numbers are an upper bound: it trains and measures on the same crate sources.",
+        "macOS: the stage runs on Linux only."
+      ],
+      "evidenceStatus": "documented",
+      "details": "Read from stage_bench in continuous_integration_and_delivery/zazzle/lib/stages.sh.",
+      "sources": [
+        {
+          "path": "src/macos/zazzle/bench/run.sh"
+        },
+        {
+          "path": "src/macos/zazzle/bench/refs.sh"
+        },
+        {
+          "path": "release/pgo.sh"
+        }
+      ],
+      "links": [
+        {
+          "label": "lib/stages.sh",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/lib/stages.sh"
+        }
+      ]
+    },
+    {
+      "id": "dependency-updates",
+      "title": "Weekly dependency updates",
+      "summary": "Dependabot opens pull requests for the Cargo workspace's crates, weekly.",
+      "trigger": "Weekly (.github/dependabot.yml).",
+      "checks": [
+        "None of its own, and nothing runs on its pull requests by itself; ci.sh --ref tests one once it is fetched."
+      ],
+      "blocks": "Nothing.",
+      "notChecked": [
+        "The .NET packages of csharp-indexer and csharp-minifier: dependabot.yml has no nuget entry."
+      ],
+      "evidenceStatus": "source-verified",
+      "sources": [
+        {
+          "path": ".github/dependabot.yml",
+          "symbol": "updates"
+        }
+      ]
+    }
+  ]
+}

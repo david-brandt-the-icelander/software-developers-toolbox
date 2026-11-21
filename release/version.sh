@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints this release run's tag, version and whether to publish, as GitHub step outputs: a pushed v* tag as is, else an
+# Prints this release run's tag, version and whether to publish, as KEY=VALUE lines: a pushed v* tag as is, else an
 # exact VERSION when given, else the next version after the latest v* tag for a bump, else a development build.
 # With CHANNEL it also prints the alpha tag (vX.Y.Z-alpha.N, N one past this version's alpha tags) and whether the
 # stable release runs: CHANNEL both builds the alpha and the release, alpha only the alpha (then the exact VERSION may

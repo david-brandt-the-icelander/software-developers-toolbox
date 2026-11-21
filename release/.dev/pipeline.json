@@ -1,0 +1,129 @@
+{
+  "$schema": "../../Meta/Agents/Knowledge/schemas/pipeline.schema.json",
+  "kind": "pipeline",
+  "title": "Release pipelines",
+  "folder": "release",
+  "description": "The release and the cyberspace-generator pin bump are not kept here: they are release.sh and bump-cyberspace-generator.sh in the zazzle folder of the continuous_integration_and_delivery repository, run by hand, and they call the scripts in this folder. CI is in .dev/pipeline.json at the repository root.",
+  "entities": [
+    {
+      "id": "release",
+      "title": "A release, run by hand on the owner's Mac",
+      "summary": "First publishes an alpha (vX.Y.Z-alpha.N) from a quick macOS build without tests or the PGO profile, as a GitHub pre-release, at icelander.net zazzle/<alpha tag>/ and zazzle/alpha/ and as the zazzle-alpha formula; then stamps the version into every binary, tests and builds the macOS tarball on the Mac and the Linux tarballs in the toolchain container, signs the macOS binaries when configured, and only once everything has built publishes the tarballs, the language modules and JIT tools (ai-agent) the daemon downloads, the Homebrew bottle and the zazzle formula.",
+      "trigger": "The owner runs ./release.sh in continuous_integration_and_delivery/zazzle on an Apple Silicon Mac: with --bump patch, minor or major, which releases the next version after the latest vX.Y.Z tag, or with --version X.Y.Z, which releases exactly that version when its tag does not exist yet. --channel alpha publishes only the alpha, and --version may then name an already released version. --ref releases another branch or commit than main (it must be on GitHub); --linux limits the Linux tarballs; --dry-run builds and tests everything and publishes nothing. Pushing a tag releases nothing.",
+      "checks": [
+        "version: a fresh clone of zazzle with every tag; version.sh prints the tag, the version, the alpha tag and whether the stable release runs. Unless it is a dry run, it then fails early when gh is not signed in, npx is missing, CLOUDFLARE_R2_TOKEN is not set or the commit is not on GitHub",
+        "Every build runs set-version.sh, which writes the version into every crate's manifest and Cargo.lock entry; the indexer is published with -p:Version",
+        "alpha, on the Mac: language-modules.sh and tools.sh (ai-agent, with Metal on aarch64) build universal modules and tools, sign-and-notarize.sh signs them when configured and their manifests are written; a release build of the workspace without ai-agent for each CPU type with both manifests embedded, joined with lipo; the launcher; the indexer for osx-arm64 and osx-x64, gzipped; cyberspace-generator; signing; the tarball. It publishes the pre-release, the bucket folders and Formula/zazzle-alpha.rb with its bottle before the release build starts",
+        "macOS release, on the Mac: the same language modules and JIT tools; a release build of zazz-script-runner, then cargo test --workspace; pgo.sh trains a clang profile for daemon's C code, loading those modules; a release build of the workspace without ai-agent for each CPU type with that profile and both manifests; lipo into universal binaries (daemon, zazz-script-runner, fix-network, free-disk-space, git-tools, git-tools-commit, git-tools-commit-message-editor, ai-agent-rules); make, make unit and test/smoke.sh for the launcher (arm64 only); dotnet test, then the indexer published for both CPU types and gzipped",
+        "macOS release: sign-and-notarize.sh on zazzle, daemon, zazz-script-runner (with entitlements/zazz-script-runner.plist), fix-network, free-disk-space, the three git-tools programs, ai-agent-rules and cyberspace-generator (fetched by fetch-cyberspace-generator.sh and merged with lipo); it skips with a warning when the Apple credentials are missing, and fails when REQUIRE_SIGNING is true; then pack.sh packs zazzle-macos-universal.tar.gz (bin/zazzle and the link bin/z; the nine tools in libexec/zazzle; the two gzipped indexers in libexec/indexer) with its .sha256",
+        "Linux release, in the toolchain container for x86_64 and aarch64 (the one that is not the Mac's runs emulated): a release build of zazz-script-runner and cargo test -p daemon; the language modules and the JIT tools with their manifests; daemon built with a PGO profile and both manifests; make, make unit and test/smoke.sh for the launcher; dotnet test and publish of the indexer; pack.sh packs zazzle-linux-<arch>.tar.gz (bin/zazzle and bin/z; daemon, zazz-script-runner, csharp-indexer and cyberspace-generator in libexec/zazzle) with its .sha256",
+        "publish, after every build: gh creates the GitHub release on the commit, which creates the tag, with no release notes (or uploads to the release when it exists); the macOS tarball and each Linux tarball with their checksums go to the release and, through r2-put.sh, to the download bucket under zazzle/<tag>/ and zazzle/latest/, and their language modules and JIT tools under zazzle/<tag>/languages/<platform>/ and zazzle/<tag>/tools/<platform>/ only",
+        "homebrew, last: bottle.sh in the container, the bottle uploaded to the release, formula.sh writes Formula/zazzle.rb into a clone of the zazzcat/homebrew-z tap, which is committed and pushed unless it did not change"
+      ],
+      "blocks": "The release: a failed test, build, smoke test, profile training, signing step (when required) or notarization stops release.sh before the release publishes anything. The alpha, published first, stays.",
+      "notChecked": [
+        "What CI checks: release.sh does not run ci.sh, so formatting, clippy, the minimum Rust version, coverage, the .dev files and csharp-minifier are checked only when someone runs CI.",
+        "The whole workspace's tests on Linux: the Linux builds run cargo test -p daemon only.",
+        "Signing and notarization against Apple: nothing has signed a real binary until a release runs with the credentials in place.",
+        "That the published formula installs: formula.test.sh runs it under a stand-in Formula class in CI's lint stage, not under Homebrew."
+      ],
+      "secrets": [
+        "CLOUDFLARE_R2_TOKEN",
+        "HOMEBREW_TAP_TOKEN (optional when the owner's git credentials can push to the tap)",
+        "MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD, APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID (optional)",
+        "The owner's gh login, for the GitHub release"
+      ],
+      "evidenceStatus": "documented",
+      "details": "Read from release.sh, lib/macos-release.sh, lib/linux-release.sh and lib/publish.sh in continuous_integration_and_delivery/zazzle, which this repository cannot cite as sources. They take the credentials from the environment or from ~/.config/zazzle-release/env. The sources below are the scripts here that they run.",
+      "sources": [
+        {
+          "path": "release/version.sh",
+          "symbol": "next"
+        },
+        {
+          "path": "release/set-version.sh"
+        },
+        {
+          "path": "release/pgo.sh"
+        },
+        {
+          "path": "release/tools.sh",
+          "symbol": "features"
+        },
+        {
+          "path": "release/language-modules.sh",
+          "symbol": "--manifest"
+        },
+        {
+          "path": "release/sign-and-notarize.sh"
+        },
+        {
+          "path": "release/pack.sh"
+        },
+        {
+          "path": "release/r2-put.sh",
+          "symbol": "attempt"
+        },
+        {
+          "path": "release/bottle.sh"
+        },
+        {
+          "path": "release/formula.sh",
+          "symbol": "bottle_block"
+        },
+        {
+          "path": "release/entitlements/zazz-script-runner.plist",
+          "symbol": "com.apple.security.cs.allow-jit"
+        }
+      ],
+      "links": [
+        {
+          "label": "continuous_integration_and_delivery/zazzle: README, Releases",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/README.md"
+        },
+        {
+          "label": "release.sh",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/release.sh"
+        }
+      ],
+      "relationships": [
+        {
+          "relation": "relates-to",
+          "path": "release/.dev/delivery.json",
+          "description": "Where the release puts each version."
+        }
+      ]
+    },
+    {
+      "id": "bump-cyberspace-generator",
+      "title": "cyberspace-generator pin bump, run by hand",
+      "summary": "Opens a pull request that moves release/cyberspace-generator.version to the newest generator-v* release of cyberspace-explorer, so the next zazzle release ships it, once CI has passed on the branch.",
+      "trigger": "A person runs ./bump-cyberspace-generator.sh in continuous_integration_and_delivery/zazzle, with a local zazzle checkout and gh signed in.",
+      "checks": [
+        "The newest generator-v* release that is neither a draft nor a pre-release has all four binaries (both macOS CPU types, static Linux x86_64 and aarch64) and they match its SHA256SUMS (fetch-cyberspace-generator.sh).",
+        "CI (ci.sh, every default stage) on the new branch bump/cyberspace-generator-<tag>; the branch is pushed and the pull request opened only when it passes."
+      ],
+      "blocks": "Nothing: it only opens a pull request; it skips when the pin on main is current or the branch already exists, and pushes nothing when CI fails.",
+      "notChecked": [
+        "That the new release passes the zazzle formula's test block: only a zazzle release runs it."
+      ],
+      "evidenceStatus": "documented",
+      "details": "Read from bump-cyberspace-generator.sh in continuous_integration_and_delivery/zazzle.",
+      "sources": [
+        {
+          "path": "release/fetch-cyberspace-generator.sh",
+          "symbol": "fetch-cyberspace-generator.sh"
+        },
+        {
+          "path": "release/cyberspace-generator.version"
+        }
+      ],
+      "links": [
+        {
+          "label": "bump-cyberspace-generator.sh",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/blob/main/zazzle/bump-cyberspace-generator.sh"
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 # installs: bin/zazzle, the only file brew links, and the tools in libexec/zazzle. The expanded C# indexer is
 # not in it: the formula's post_install_steps writes libexec/zazzle/csharp-indexer for this CPU from the two
 # compressed ones in libexec/indexer, and links z (outside the keg) when nothing else uses it.
-# Needs GNU tar (the release job runs it on Ubuntu).
+# Needs GNU tar (release.sh runs it in its Linux container).
 set -euo pipefail
 
 tag=${1:-}

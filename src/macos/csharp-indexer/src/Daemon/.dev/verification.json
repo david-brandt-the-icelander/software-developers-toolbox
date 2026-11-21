@@ -68,7 +68,7 @@
           "command": "dotnet test tests --filter test_hello_reply_utf8"
         }
       ],
-      "details": "Spawning a detached daemon (Proxy.SpawnDaemon) is covered by the daemon-commands checks, which run the built executable; the stdio pump (Proxy.Pump) is not covered by these tests, and the CI smoke step in .github/workflows/ci.yml runs the published binary's serve command, which goes through it.",
+      "details": "Spawning a detached daemon (Proxy.SpawnDaemon) is covered by the daemon-commands checks, which run the built executable; the stdio pump (Proxy.Pump) is not covered by these tests, and the smoke run in CI's dotnet stage (ci.sh in the continuous_integration_and_delivery repository) runs the published binary's serve command, which goes through it.",
       "evidenceStatus": "source-verified"
     },
     {

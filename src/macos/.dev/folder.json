@@ -33,10 +33,6 @@
         {
           "path": "src/macos/.gitignore",
           "symbol": "target/"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "linux"
         }
       ],
       "links": [

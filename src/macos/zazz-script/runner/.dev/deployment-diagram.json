@@ -13,7 +13,7 @@
     { "path": "src/macos/daemon/src/zazz/pipeline.rs", "symbol": "run_tests" },
     { "path": "src/macos/daemon/src/zazz/tools.rs", "symbol": "worker_from" },
     { "path": "src/macos/daemon/src/zazz/registry.rs", "symbol": "default_root" },
-    { "path": ".github/workflows/release.yml", "symbol": "Make universal binaries" },
+    { "path": "release/pack.sh", "symbol": "libexec/zazzle" },
     { "path": "release/entitlements/zazz-script-runner.plist", "symbol": "com.apple.security.cs.allow-jit" },
     { "path": "release/sign-and-notarize.sh", "symbol": "entitlements" },
     { "path": "release/formula.sh", "symbol": "bin.install" }

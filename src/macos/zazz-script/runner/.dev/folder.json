@@ -20,8 +20,7 @@
         { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "[dependencies]" },
         { "path": "src/macos/zazz-script/runner/Cargo.toml", "symbol": "rust-version" },
         { "path": "src/macos/zazz-script/runner/src/main.rs", "symbol": "dispatch" },
-        { "path": "src/macos/daemon/src/zazz/tools.rs", "symbol": "worker_from" },
-        { "path": ".github/workflows/ci.yml", "symbol": "msrv" }
+        { "path": "src/macos/daemon/src/zazz/tools.rs", "symbol": "worker_from" }
       ],
       "relationships": [
         {

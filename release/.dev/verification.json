@@ -28,17 +28,13 @@
         }
       ],
       "notChecked": [
-        "The universal (lipo) build with Metal and its signing: only the release on macOS runs them."
+        "The universal (lipo) build with Metal and its signing: only the release on the Mac runs them."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "release/tools.test.sh",
           "symbol": "tools.test.sh"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "lint"
         }
       ]
     },
@@ -67,17 +63,13 @@
         }
       ],
       "notChecked": [
-        "set-version.sh has no test of its own; only shellcheck runs on it in CI."
+        "set-version.sh has no test of its own; only shellcheck runs on it, in CI's lint stage."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "release/version.test.sh",
           "symbol": "run"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "lint"
         }
       ]
     },
@@ -103,7 +95,7 @@
         "Bad arguments are refused and write nothing",
         "One formula, valid Ruby, with the release's url, version, sha256, license, depends_on :macos and a description",
         "It installs only bin/zazzle, the nine tools into libexec/zazzle and both gzipped indexers; the indexer step, run for real against a fake keg and a fake uname, expands the indexer for arm64 and for x64 into libexec/zazzle and leaves no temporary file; the z steps, run against a fake prefix, link z when free, keep zazzle's own link, replace the other channel's, never touch another program's z or link beside zoxide or z.sh, and remove z on opt-out",
-        "Its test block runs one command per binary, and release.yml builds every binary",
+        "Its test block runs one command per binary",
         "One reproducible bottle with exactly the expected files, only zazzle in bin and no z, the binaries mode 0755 and root-owned; pack.sh's tarball holds bin/zazzle, bin/z and libexec/",
         "With the bottle, the formula's bottle block matches its name and checksum; a missing bottle or bottle folder is refused"
       ],
@@ -115,7 +107,8 @@
         }
       ],
       "notChecked": [
-        "Homebrew itself: the stand-in is not Homebrew, and nothing has pulled a real bottle until a tag runs.",
+        "Homebrew itself: the stand-in is not Homebrew, and nothing has pulled a real bottle until a release runs.",
+        "That the release builds every binary the formula installs: the build lists are in continuous_integration_and_delivery's release scripts, which this test cannot read.",
         "What the binaries really print for their version: the stand-in answers for them."
       ],
       "evidenceStatus": "source-verified",
@@ -123,10 +116,6 @@
         {
           "path": "release/formula.test.sh",
           "symbol": "check"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "lint"
         }
       ]
     },
@@ -141,8 +130,8 @@
         }
       ],
       "criteria": [
-        "Without secrets it warns, runs no tool and succeeds; with REQUIRE_SIGNING=true it fails, naming only the missing secrets",
-        "With every secret it signs each binary with hardened runtime and a timestamp, verifies it, notarizes with the API key and waits, and removes the keychain",
+        "Without the credentials it warns, runs no tool and succeeds; with REQUIRE_SIGNING=true it fails, naming only the missing ones",
+        "With every credential it signs each binary with hardened runtime and a timestamp, verifies it, notarizes with the API key and waits, and removes the keychain",
         "A rejected or failed notarization fails the run, prints Apple's log when there is a submission, and still removes the keychain",
         "A certificate that is not a Developer ID Application one fails before anything is signed",
         "Missing arguments are a usage error"
@@ -155,11 +144,11 @@
         },
         {
           "type": "manual",
-          "description": "After a release with the secrets in place, codesign -dv on a downloaded binary shows the Developer ID authority, the runtime flag and a timestamp, and it starts from a browser download without a warning (README, Checking a signed release)."
+          "description": "After a release with the credentials in place, codesign -dv on a downloaded binary shows the Developer ID authority, the runtime flag and a timestamp, and it starts from a browser download without a warning (README, Checking a signed release)."
         }
       ],
       "notChecked": [
-        "Signing with a real certificate and notarizing with Apple: nothing has signed a real binary until a tag runs with the secrets in place.",
+        "Signing with a real certificate and notarizing with Apple: nothing has signed a real binary until a release runs with the credentials in place.",
         "That zazz-script-runner gets entitlements/zazz-script-runner.plist: the test signs two stand-in binaries, neither with an entitlements file."
       ],
       "evidenceStatus": "source-verified",
@@ -177,7 +166,7 @@
     {
       "id": "pgo",
       "title": "PGO training",
-      "summary": "pgo.sh has no test of its own: CI shellchecks it, and the release and zazzle-bench workflows run it, failing when training writes no profile.",
+      "summary": "pgo.sh has no test of its own: CI's lint stage shellchecks it, and the release and CI's bench stage run it, failing when training writes no profile.",
       "subject": [
         {
           "path": "release/.dev/decisions.json",
@@ -191,13 +180,8 @@
       "checks": [
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "lint"
-        },
-        {
-          "type": "automated",
-          "path": ".github/workflows/zazzle-bench.yml",
-          "symbol": "bench"
+          "command": "./ci.sh lint bench",
+          "description": "Run by hand in continuous_integration_and_delivery/zazzle: the lint stage shellchecks pgo.sh and the bench stage trains a profile with it, on Linux."
         }
       ],
       "evidenceStatus": "source-verified",
@@ -231,17 +215,13 @@
       ],
       "notChecked": [
         "The real Cloudflare API and the waits between attempts (the test sets them to zero).",
-        "That re-running the macos job uploads to an existing GitHub release; that needs a real release."
+        "That publishing uploads to an existing GitHub release when it is run again; that needs a real release."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "release/r2-put.test.sh",
           "symbol": "run"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "lint"
         }
       ]
     }

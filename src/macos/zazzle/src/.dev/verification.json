@@ -70,7 +70,7 @@
           "type": "automated",
           "path": "src/macos/zazzle/test/coverage.sh",
           "command": "make coverage (in src/macos/zazzle)",
-          "description": "Reads gcov's \"Taken at least once\" for zazzle_core.h; CI runs it in the coverage job."
+          "description": "Reads gcov's \"Taken at least once\" for zazzle_core.h; CI runs it in its coverage stage, on Linux."
         }
       ]
     },
@@ -103,7 +103,7 @@
           "type": "automated",
           "path": "src/macos/zazzle/test/smoke.sh",
           "command": "make && sh test/smoke.sh (in src/macos/zazzle, after `cargo build --release -p daemon` in src/macos; DAEMON names another daemon)",
-          "description": "CI's zazzle-c job runs it on macos-latest and ubuntu-24.04; the release workflow runs it again on macOS and on Linux x86_64 and aarch64."
+          "description": "CI's zazzle-c stage runs it on Linux; the release runs it again on the owner's Mac and in each Linux build, for x86_64 and aarch64."
         }
       ]
     }

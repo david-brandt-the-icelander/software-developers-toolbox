@@ -26,8 +26,8 @@
       "symbol": "Init.FindDaemon"
     },
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "Build the C# indexer for both CPU types"
+      "path": "release/pack.sh",
+      "symbol": "libexec/indexer"
     },
     {
       "path": "src/macos/csharp-indexer/README.md",

@@ -67,7 +67,7 @@
           "type": "automated",
           "path": "src/macos/csharp-indexer/tests/tests.csproj",
           "command": "dotnet test tests",
-          "description": "Run in src/macos/csharp-indexer/. CI and the release workflow run it on macOS and Linux."
+          "description": "Run in src/macos/csharp-indexer/. CI's dotnet stage runs it on Linux; the release runs it on the owner's Mac and in the Linux container."
         }
       ],
       "evidenceStatus": "source-verified",
@@ -75,14 +75,6 @@
         {
           "path": "src/macos/csharp-style.md",
           "symbol": "Testing"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "dotnet"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "dotnet test tests"
         }
       ]
     }

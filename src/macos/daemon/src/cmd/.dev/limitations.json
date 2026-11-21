@@ -212,8 +212,8 @@
           "symbol": "language"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Sign the language modules"
+          "path": "release/README.md",
+          "symbol": "Language modules (`language-modules.sh`)"
         }
       ]
     },
