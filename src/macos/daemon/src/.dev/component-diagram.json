@@ -316,13 +316,13 @@
     {
       "id": "runs",
       "name": "Run store (runs.rs)",
-      "responsibility": "Keeps each investigate job under its run id in an owner-only folder: the request, every model call's usage appended as the call ends (null counters for ones the agent never reported), and the terminal result with its usage, written before the reply. The same id again returns that result, waiting without polling for a run still working in this process; a run left by a stopped daemon or a panic reads as interrupted with the usage it recorded. Runs older than a day are reaped. Cancelling an id sets its run's cancel handle and returns the partial result, kept as cancelled.",
+      "responsibility": "Keeps each investigate job under its run id in an owner-only folder: the request, every model call's usage appended as the call ends (null counters for ones the agent never reported), and the terminal result with its usage, written before the reply. The same id again returns that result, waiting without polling for a run still working in this process; a run left by a stopped daemon or a panic reads as interrupted with the usage and the evidence (lookups that found something, verified findings) it recorded as it went. The request records the command line, the directory and the checkout's state (its commit and a hash of uncommitted changes): the same id from another checkout or state is refused, the id alone still looks it up. Runs older than a day are reaped. Cancelling an id sets its run's cancel handle and returns the partial result, kept as cancelled.",
       "folder": "src/macos/daemon/src"
     },
     {
       "id": "budget",
       "name": "Job deadline and cancel (budget.rs)",
-      "responsibility": "Holds, per thread, the deadline and the cancel handle of the job it works for, carried into the threads a job starts: waits deep inside a command (the indexer's version check, start, retries and requests, a hosted agent, the local model's answer) are cut to the time left and end at a cancel, which also shuts the job's own indexer connections; nothing new starts once either is reached.",
+      "responsibility": "Holds, per thread, the deadline and the cancel handle of the job it works for, carried into the threads a job starts: waits deep inside a command (the indexer's version check, start, retries and requests, a hosted agent, the local model's answer) are cut to the time left and end at a cancel, which also shuts the job's own indexer connections; nothing new starts once either is reached. It also carries what the job's threads share (investigate's lookup cache and evidence file), and scans on pool threads that do not carry it check the carried job instead.",
       "folder": "src/macos/daemon/src"
     },
     {

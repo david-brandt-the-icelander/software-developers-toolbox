@@ -218,7 +218,7 @@ fn shared(terms: &[String], words: &[String]) -> Vec<String> {
     terms.iter().filter(|t| stems.contains(&stem(t))).cloned().collect()
 }
 
-// Ranks the declarations inside the scope against the terms (a web question favours those with routes), best first, at most `limit`.
+// Ranks the declarations inside the scope against the terms (a web question favours those with routes), best first, at most `limit`; once per job for the same arguments (a scan the job's stop cut short is not kept).
 pub fn discover(
     engine: &crate::engine::Engine,
     cwd: &Path,
@@ -230,6 +230,24 @@ pub fn discover(
     if terms.is_empty() {
         return Vec::new();
     }
+    let run = || {
+        let found = scan(engine, cwd, scope, terms, web, limit);
+        (found, !crate::budget::spent())
+    };
+    let Some(shared) = crate::budget::shared() else { return run().0 };
+    let key = format!("{}\0{scope:?}\0{terms:?}\0{web}\0{limit}", cwd.display());
+    shared.decls.get_or(&key, run).map(|(found, _)| found).unwrap_or_default()
+}
+
+// The scan behind `discover`: every code file in the scope outlined, its declarations scored; files not yet read when the job is stopped are skipped.
+fn scan(
+    engine: &crate::engine::Engine,
+    cwd: &Path,
+    scope: &[PathBuf],
+    terms: &[String],
+    web: bool,
+    limit: usize,
+) -> Vec<Candidate> {
     let opts = crate::walk::WalkOpts { no_ignore: false, globs: Vec::new() };
     let Ok(files) = crate::walk::collect(scope, &opts, &engine.walks) else { return Vec::new() };
     let code: Vec<PathBuf> = files
@@ -241,7 +259,11 @@ pub fn discover(
         .take(MAX_FILES)
         .collect();
     let rel = |p: &Path| p.strip_prefix(cwd).unwrap_or(p).display().to_string();
+    let job = crate::budget::current();
     let per_file = crate::pool::par_map(&code, crate::pool::cpus(), |_, f| {
+        if job.spent() {
+            return Vec::new();
+        }
         let Ok(loaded) = engine.load(f) else { return Vec::new() };
         if loaded.data.len() > outline::MAX_PARSE_BYTES {
             return Vec::new();

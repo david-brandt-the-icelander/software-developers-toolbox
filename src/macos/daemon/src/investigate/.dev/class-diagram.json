@@ -86,7 +86,8 @@
         "done: Vec<(String, Option<String>)>",
         "evidence: Vec<usize>",
         "skipped: usize",
-        "handles: Vec<Candidate>"
+        "handles: Vec<Candidate>",
+        "shared: usize"
       ]
     },
     {
@@ -195,6 +196,58 @@
         "score: usize",
         "why: Vec<String>"
       ]
+    },
+    {
+      "id": "Shared",
+      "name": "Shared",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/cache.rs"
+      ],
+      "members": [
+        "lookups: Cache<(String, u8, String)>",
+        "decls: Cache<Vec<Candidate>>",
+        "evidence: Option<PathBuf>",
+        "checkpoint(v)"
+      ]
+    },
+    {
+      "id": "Cache",
+      "name": "Cache<V>",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/cache.rs"
+      ],
+      "members": [
+        "slots: Mutex<HashMap<String, Slot<V>>>",
+        "ready: Condvar",
+        "get_or(key, run) -> Result<(V, bool), String>"
+      ]
+    },
+    {
+      "id": "Slot",
+      "name": "Slot<V>",
+      "kind": "enum",
+      "sources": [
+        "src/macos/daemon/src/investigate/cache.rs"
+      ],
+      "members": [
+        "Running",
+        "Done(V)"
+      ]
+    },
+    {
+      "id": "Pending",
+      "name": "Pending<V>",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/cache.rs"
+      ],
+      "members": [
+        "cache: &Cache<V>",
+        "key: &str",
+        "kept: Option<V>"
+      ]
     }
   ],
   "relationships": [
@@ -239,6 +292,30 @@
       "to": "Candidate",
       "kind": "depends-on",
       "description": "The declarations discovery and SYMBOL lookups listed, by handle."
+    },
+    {
+      "from": "Shared",
+      "to": "Cache",
+      "kind": "depends-on",
+      "description": "The job's lookups and declaration scans."
+    },
+    {
+      "from": "Cache",
+      "to": "Slot",
+      "kind": "depends-on",
+      "description": "Each key's state: in flight or kept."
+    },
+    {
+      "from": "Pending",
+      "to": "Cache",
+      "kind": "depends-on",
+      "description": "Keeps or frees the key it computes and wakes the waiters, also on a panic."
+    },
+    {
+      "from": "Shared",
+      "to": "Candidate",
+      "kind": "depends-on",
+      "description": "Keeps the declaration scans' results."
     }
   ]
 }

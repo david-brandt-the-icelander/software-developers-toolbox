@@ -98,6 +98,13 @@ impl Work {
         out
     }
 
+    // Keeps each verified finding in the job's evidence as soon as the agent `by` returns it, so a run that stops before its answer still has them.
+    pub fn checkpoint(&self, by: &str) {
+        for f in &self.findings {
+            crate::investigate::cache::checkpoint(json!({"finding": f.claim, "citation": f.cite, "by": by}));
+        }
+    }
+
     // The structured result for a caller: status, the two levels, findings with evidence, gaps, the escalation and what only the user can give.
     pub fn json(&self) -> Value {
         let findings: Vec<Value> = self

@@ -16,6 +16,9 @@ const GRACE: Duration = if cfg!(test) { Duration::from_millis(300) } else { Dura
 const REQUEST: &str = "request.json";
 const USAGE: &str = "usage.jsonl";
 const RESULT: &str = "result.json";
+const EVIDENCE: &str = "evidence.jsonl";
+// How many kept evidence records an interrupted run's report lists.
+const SHOW_EVIDENCE: usize = 12;
 
 // A run working in this process: whether it ended, the signal its waiters sleep on, when its job ends, and its cancel handle.
 struct Live {
@@ -96,6 +99,11 @@ impl Job {
         self.folder.join(USAGE)
     }
 
+    // Where the job's evidence is appended as it is found: each lookup that found something and each finding verified.
+    pub fn evidence(&self) -> PathBuf {
+        self.folder.join(EVIDENCE)
+    }
+
     // The run's cancel handle, for the job's threads to watch.
     pub fn stop(&self) -> crate::budget::Stop {
         self.live.stop.clone()
@@ -150,12 +158,13 @@ pub enum Begun {
     Earlier(Result<Output, String>),
 }
 
-// Starts run `id` for `argv` in `cwd`, ending by `until`, or returns what that id already holds: its kept result, the result of the same run still working here once it ends (no polling), or, when it was working in a daemon that stopped, an interrupted result with the usage it recorded. An empty `argv` only looks the run up; another command line under the same id is refused.
+// Starts run `id` for `argv` in `cwd`, ending by `until`, or returns what that id already holds: its kept result, the result of the same run still working here once it ends (no polling), or, when it was working in a daemon that stopped, an interrupted result with the usage and evidence it recorded. An empty `argv` only looks the run up; under the same id, another command line, another checkout or another state of the checkout is refused.
 pub fn begin(root: &Path, id: &str, argv: &[String], cwd: &Path, until: Instant) -> Result<Begun, String> {
     if !is_id(id) {
         return Err(format!("--run-id takes 1 to 64 letters, digits, '-', '_' or '.', got '{id}'"));
     }
     let folder = root.join(id);
+    let snap = if argv.is_empty() { String::new() } else { snapshot(cwd) };
     let mut running = RUNNING.lock().unwrap_or_else(|p| p.into_inner());
     if folder.join(REQUEST).is_file() {
         let asked: Value =
@@ -164,8 +173,20 @@ pub fn begin(root: &Path, id: &str, argv: &[String], cwd: &Path, until: Instant)
         let same = asked["argv"].as_array().is_some_and(|a| {
             a.iter().map(|x| x.as_str().unwrap_or_default()).eq(argv.iter().map(String::as_str))
         });
-        if !argv.is_empty() && !same {
-            return Err(format!("run {id} was started for another command line; look it up with `--run-id {id}` alone, or start a new run with another id"));
+        let other = match () {
+            _ if argv.is_empty() => None,
+            _ if !same => Some("for another command line".to_string()),
+            _ if asked["cwd"].as_str() != Some(&*cwd.to_string_lossy()) => {
+                Some(format!("in another checkout ({})", asked["cwd"].as_str().unwrap_or("unknown")))
+            }
+            _ if asked["snapshot"].as_str() != Some(snap.as_str()) => Some(format!(
+                "on another state of this checkout ({} then, {snap} now)",
+                asked["snapshot"].as_str().unwrap_or("unknown")
+            )),
+            _ => None,
+        };
+        if let Some(how) = other {
+            return Err(format!("run {id} was started {how}; look it up with `--run-id {id}` alone, or start a new run with another id"));
         }
         let live = running.get(&folder).cloned();
         drop(running);
@@ -183,8 +204,7 @@ pub fn begin(root: &Path, id: &str, argv: &[String], cwd: &Path, until: Instant)
         .mode(0o700)
         .create(&folder)
         .map_err(|e| format!("{}: {e}", folder.display()))?;
-    let request =
-        json!({"id": id, "argv": argv, "cwd": cwd, "started_ms": now_ms() as u64, "pid": std::process::id()});
+    let request = json!({"id": id, "argv": argv, "cwd": cwd, "snapshot": snap, "started_ms": now_ms() as u64, "pid": std::process::id()});
     write_private(&folder.join(REQUEST), &request.to_string())
         .map_err(|e| format!("{}: {e}", folder.display()))?;
     let live =
@@ -244,14 +264,15 @@ fn kept(folder: &Path) -> Option<Result<Output, String>> {
     })
 }
 
-// The report of a run that stopped without a result: no answer, and the usage its model calls recorded before it stopped (unreported counters stay unknown).
+// The report of a run that stopped without a result: no answer, the evidence it kept and the usage its model calls recorded before it stopped (unreported counters stay unknown).
 fn interrupted(folder: &Path) -> Output {
     let calls = recorded(folder);
     let secs = calls.iter().map(|c| c.secs).sum();
     let id = folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     Output {
         text: format!(
-            "investigate run {id} was interrupted before it finished (the daemon stopped, or the run failed); no answer was kept.\nusage recorded before it stopped: {}\n-- ask again with a new run id to start over.",
+            "investigate run {id} was interrupted before it finished (the daemon stopped, or the run failed); no answer was kept.\n{}usage recorded before it stopped: {}\n-- ask again with a new run id to start over.",
+            gathered(folder),
             calls::usage_line(&calls, secs)
         ),
         status: 1,
@@ -259,6 +280,60 @@ fn interrupted(folder: &Path) -> Output {
         raw: false,
         notes: String::new(),
     }
+}
+
+// The evidence a run kept before it stopped, one line each (a finding with its citation, else a lookup that found something), for its interrupted report; nothing when it kept none.
+fn gathered(folder: &Path) -> String {
+    let kept: Vec<Value> = fs::read_to_string(folder.join(EVIDENCE))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    if kept.is_empty() {
+        return String::new();
+    }
+    let line = |v: &Value| match (v["finding"].as_str(), v["lookup"].as_str()) {
+        (Some(f), _) => format!(
+            "- verified by {}: {f} ({})\n",
+            v["by"].as_str().unwrap_or("?"),
+            v["citation"].as_str().unwrap_or("?")
+        ),
+        (None, Some(l)) => format!("- {l} found something\n"),
+        _ => String::new(),
+    };
+    let mut out = format!(
+        "evidence kept before it stopped ({} records, in {}):\n",
+        kept.len(),
+        folder.join(EVIDENCE).display()
+    );
+    out.extend(kept.iter().take(SHOW_EVIDENCE).map(line));
+    out
+}
+
+// The state of the checkout a run reads: the commit, with a hash of the uncommitted changes (tracked diffs and the list of changed and untracked files) when there are any, or `no git checkout` outside a git work tree.
+pub fn snapshot(cwd: &Path) -> String {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| o.stdout)
+    };
+    let Some(head) = git(&["rev-parse", "--verify", "-q", "HEAD"]) else { return "no git checkout".into() };
+    let head = String::from_utf8_lossy(&head).trim().to_string();
+    let status = git(&["status", "--porcelain=v1", "-z", "--untracked-files=all"]).unwrap_or_default();
+    if status.is_empty() {
+        return head;
+    }
+    let mut h = blake3::Hasher::new();
+    h.update(&status);
+    h.update(&git(&["diff", "HEAD", "--binary"]).unwrap_or_default());
+    format!("{head} with changes {}", &h.finalize().to_hex()[..16])
 }
 
 // Removes runs older than MAX_AGE that are not working here.

@@ -510,6 +510,7 @@ fn test_excerpts_rank_dedupe_and_cap() {
         done: Vec::new(),
         evidence: vec![0, 1, 3],
         skipped: 0,
+        shared: 0,
         handles: Vec::new(),
     };
     let out = excerpts(&trail, &plan);
@@ -680,6 +681,7 @@ fn test_defs_and_excerpt_ids() {
         done: Vec::new(),
         evidence: vec![0, 2, 3],
         skipped: 0,
+        shared: 0,
         handles: Vec::new(),
     };
     assert_eq!(trail.file_of("E1"), None, "a REFS excerpt has no single file");
@@ -971,4 +973,54 @@ fn test_declaration_lookups() {
         ["Key"],
         "once each, and an unpaired quote names nothing"
     );
+}
+
+// Checks two parts of one job share their lookups: the second gets the first's outputs without running them again (its report says how many), each lookup that found something is kept as evidence, and only definitive outputs are kept for the job.
+#[test]
+fn test_job_shares_lookups() {
+    let (t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let evidence = t.path().join("evidence.jsonl");
+    let shared = std::sync::Arc::new(cache::Shared::new(Some(evidence.clone())));
+    let script = || {
+        Script::new(vec![
+            Ok("READ api/Endpoint.cs\nFIND Store\nREAD api/Missing.cs"),
+            Ok("ANSWER\nFINDING api/Endpoint.cs:3 a null key throws\nCONFIDENCE understanding=high result=high"),
+        ])
+    };
+    let argv = ["Where is the key checked?", "--path", "api", "--symbol", "Handle"];
+    let (first, second) = crate::budget::sharing(shared, || {
+        let (s1, s2) = (script(), script());
+        (go(&root, &e, &s1, &argv).expect("first"), go(&root, &e, &s2, &argv).expect("second"))
+    });
+    assert!(!first.text.contains("answered from the job's earlier lookups"), "{}", first.text);
+    assert!(second.text.contains("answered from the job's earlier lookups"), "{}", second.text);
+    let kept = std::fs::read_to_string(&evidence).expect("evidence");
+    assert!(
+        kept.contains("\"lookup\":\"READ api/Endpoint.cs\"") && kept.contains("class Endpoint"),
+        "{kept}"
+    );
+    assert!(definitive("no matches in api", 1) && definitive("anything", 0));
+    assert!(!definitive("the indexer did not answer in time", 1), "a transient failure is tried again");
+}
+
+// Checks the scans behind discovery and missing-name suggestions stop once the job is cancelled, and a scan the cancel cut short is not kept for the job while a full one is.
+#[test]
+fn test_scans_observe_cancel() {
+    let (_t, root) = wash_repo();
+    let e = crate::engine::Engine::new();
+    let scope = vec![root.clone()];
+    let terms = discover::terms("Where is a wash queued?");
+    let stop = crate::budget::Stop::default();
+    stop.cancel();
+    crate::budget::sharing(std::sync::Arc::new(cache::Shared::new(None)), || {
+        let scan = || discover::discover(&e, &root, &scope, &terms, true, discover::SHOW);
+        assert!(crate::budget::stopping(&stop, scan).is_empty(), "cancelled: no file is read");
+        let found = scan();
+        assert!(!found.is_empty(), "the cut-short scan was not kept");
+        assert!(crate::budget::stopping(&stop, scan) == found, "a full scan is kept for the job");
+        let names = crate::budget::stopping(&stop, || seed::candidates(&e, &root, &scope, "QueueWashNow"));
+        assert!(names.iter().all(|l| l.starts_with("file ")), "no file is searched for symbols: {names:?}");
+        assert!(seed::candidates(&e, &root, &scope, "QueueWashNow").iter().any(|l| l.starts_with("symbol ")));
+    });
 }
