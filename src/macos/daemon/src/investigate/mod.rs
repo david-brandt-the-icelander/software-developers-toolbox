@@ -630,9 +630,11 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
     if (plan.symbols.is_empty() || trail.evidence.is_empty()) && !crate::budget::over(deadline) {
         discovery(&lctx, &scope, &plan, &mut trail, deadline);
     }
+    // Stops early only when the symbols are not there and discovery found nothing to start from either.
     let nothing = !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
-        && missed.iter().all(|(_, c)| c.is_empty());
+        && missed.iter().all(|(_, c)| c.is_empty())
+        && trail.handles.is_empty();
     let mut st = Status {
         stop: String::new(),
         cut: false,
@@ -944,7 +946,7 @@ pub fn verify(cwd: &Path, scope: &[PathBuf], c: &cite::Claim) -> (Option<Found>,
     let tail = if c.end > c.start { format!("-{}", c.end) } else { String::new() };
     let cite = format!("{}:{}{tail}", c.path, c.start);
     match cite::check(cwd, scope, c) {
-        cite::Checked::Verified { excerpt } => match cite::literals_hold(&c.text, &excerpt) {
+        cite::Checked::Verified { excerpt } => match cite::literals_hold(&c.text, &excerpt, &c.path) {
             Err(why) => (None, Some(format!("{cite} {}: {why}", c.text))),
             Ok(()) => (Some(Found { claim: c.text.clone(), path: c.path.clone(), cite, excerpt }), None),
         },
