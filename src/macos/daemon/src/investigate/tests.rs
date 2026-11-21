@@ -1,6 +1,7 @@
 // Tests for investigate with a scripted local model: lookups, scope, citations, rules kept apart, and the ways a run stops.
 use super::*;
 use crate::testutil::TempDir;
+use search::Search;
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
@@ -527,6 +528,7 @@ fn test_excerpts_rank_dedupe_and_cap() {
         shared: 0,
         rule_keys: Vec::new(),
         handles: Vec::new(),
+        prior: Vec::new(),
     };
     let out = excerpts(&trail, &plan);
     assert!(out.starts_with("evidence (no finding verified; ranked excerpts of the lookups, verbatim):\n### E2 READ svc/Retry.cs:1-40\n"), "{out}");
@@ -705,6 +707,7 @@ fn test_defs_and_excerpt_ids() {
         shared: 0,
         rule_keys: Vec::new(),
         handles: Vec::new(),
+        prior: Vec::new(),
     };
     assert_eq!(trail.file_of("E1"), None, "a REFS excerpt has no single file");
     assert_eq!(trail.file_of("E2").as_deref(), Some("api/A.cs"));
@@ -1116,4 +1119,93 @@ fn test_answer_turn_reserved_before_the_deadline() {
     assert!(o.text.contains(", the last kept for the answer before the time limit"), "{}", o.text);
     assert!(o.text.contains("a null key throws"), "{}", o.text);
     assert!(!last_turn(Instant::now() + Duration::from_secs(60), Duration::ZERO), "no turn measured yet");
+}
+
+// Checks a FIND is read into its text, path and case rule before anything is searched: the quoted legacy form `FIND "x" .` loses its quotes and its path, lowercase text matches any case, a path outside the scope or one that does not exist is refused, and a quote left open is a syntax error that says how to write it; a tried lookup that found nothing, or a file whose citations were about nothing asked, is not run again.
+#[test]
+fn test_find_arguments() {
+    let s = |raw: &str| search(raw);
+    assert_eq!(
+        s("\"idempotency\" ."),
+        Ok(Search { needle: "idempotency".into(), within: Some(".".into()), exact: false })
+    );
+    assert_eq!(
+        s("'Idempotency-Key' in api"),
+        Ok(Search { needle: "Idempotency-Key".into(), within: Some("api".into()), exact: true })
+    );
+    assert_eq!(s("Store"), Ok(Search { needle: "Store".into(), within: None, exact: true }));
+    assert_eq!(
+        s("blank key api/"),
+        Ok(Search { needle: "blank key".into(), within: Some("api/".into()), exact: false })
+    );
+    assert_eq!(
+        s("x in ./api"),
+        Ok(Search { needle: "x".into(), within: Some("./api".into()), exact: false })
+    );
+    assert_eq!(
+        s("\"a b\""),
+        Ok(Search { needle: "a b".into(), within: None, exact: false }),
+        "a quoted literal keeps its space"
+    );
+    assert!(s("\"idempotency .")
+        .unwrap_err()
+        .starts_with("FIND syntax: the quote is not closed; nothing was searched. Write FIND text"));
+    assert!(s("\"\" api").unwrap_err().contains("there is no text to find"));
+    assert!(s("\"x\" one two")
+        .unwrap_err()
+        .contains("only a path may follow the quoted text, not `one two`"));
+    assert_eq!(s("blank key").map(|x| x.within), Ok(None), "a last word that is no path is text");
+    assert_eq!(s("x Route(\"a/b\")").map(|x| x.within), Ok(None), "code with a slash is text");
+    assert_eq!(s("x a/b").map(|x| x.within), Ok(Some("a/b".into())));
+    assert!(search::place(".") && search::place("./a") && search::place("a/") && !search::place("a=b/c"));
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let o = go(
+        &root,
+        &e,
+        &Script::new(vec![
+            Ok("FIND \"key\" .\nFIND key sim/\nFIND x /etc"),
+            Ok("FIND \"open\nFIND y nowhere/"),
+            Ok("ANSWER"),
+        ]),
+        &["q", "--path", "api", "--steps", "3"],
+    )
+    .expect("out");
+    assert!(
+        o.text.contains("### E1 FIND \"key\" .\napi/Endpoint.cs\n3:     if (r.Key == null)"),
+        "any case inside the scope: {}",
+        o.text
+    );
+    assert!(
+        o.text.contains("FIND key sim/: refused: FIND path sim/ is outside the scope (api)"),
+        "{}",
+        o.text
+    );
+    assert!(o.text.contains("FIND x /etc: refused: FIND path /etc is outside the scope (api)"), "{}", o.text);
+    assert!(o.text.contains("FIND \"open: FIND syntax: the quote is not closed"), "{}", o.text);
+    assert!(
+        o.text.contains("FIND y nowhere/: refused: FIND path nowhere/ does not exist inside the scope (api)"),
+        "{}",
+        o.text
+    );
+    let s = Script::new(vec![Ok("FIND Nowhere\nREAD sim/Fake.cs:1-2"), Ok("ANSWER")]);
+    let o = go(
+        &root,
+        &e,
+        &s,
+        &[
+            "q",
+            "--tried",
+            "not a lookup — found nothing: x",
+            "--tried",
+            "FIND Nowhere — found nothing: no matches in 2 files",
+            "--tried",
+            &format!("READ sim/Fake.cs{NOTHING}{UNRELATED}"),
+        ],
+    )
+    .expect("tried");
+    let second = &s.seen.borrow()[1].1;
+    assert!(second.contains("Lookups an earlier attempt already made (ask for different ones):\n- not a lookup — found nothing: x\n- FIND Nowhere — found nothing: no matches in 2 files\n"), "{second}");
+    assert!(second.contains("Not run again: FIND Nowhere (an earlier attempt already made it, and it found nothing: no matches in 2 files); READ sim/Fake.cs:1-2 (an earlier attempt already made it, and it found nothing: what it cited there is about none of the items asked)"), "{second}");
+    assert!(o.text.contains("0 lookups"), "{}", o.text);
 }

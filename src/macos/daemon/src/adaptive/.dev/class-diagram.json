@@ -3,7 +3,7 @@
   "kind": "class",
   "title": "zazzle investigate --adaptive class diagram",
   "folder": "src/macos/daemon/src/adaptive",
-  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs), the backend, call log and usage shared with zazzle flow (calls.rs), and the text-free orchestration log of each run (record.rs).",
+  "description": "The agents (agent.rs), the structured result every executor returns (work.rs), the coverage zazzle checks of each requested item (coverage.rs), and the orchestration's backend, call log, options, parts, attempts, runs and review (mod.rs), the backend, call log and usage shared with zazzle flow (calls.rs), and the text-free orchestration log of each run (record.rs).",
   "sources": [
     {
       "path": "src/macos/daemon/src/adaptive/mod.rs",
@@ -78,7 +78,14 @@
         "turns: usize",
         "trigger() -> Option<String>",
         "handoff(who, why) -> Vec<String>",
-        "lines: Vec<Line>"
+        "lines: Vec<Line>",
+        "tried: Vec<String>",
+        "diagnostics: Value",
+        "coverage: Vec<Cover>",
+        "unrelated: Vec<String>",
+        "follow: Vec<String>",
+        "missing() -> Vec<String>",
+        "hold_to_coverage()"
       ]
     },
     {
@@ -180,7 +187,9 @@
       "members": [
         "question: String",
         "symbols: Vec<String>",
-        "rung: usize"
+        "rung: usize",
+        "items: Vec<String>",
+        "subject: String"
       ]
     },
     {
@@ -258,6 +267,7 @@
         "question, scope, symbols, difficulty, reasons",
         "ladder, orchestrator, planner: labels",
         "plan, combine: outcomes",
+        "refusals: usize",
         "parts: Vec<Value>, result: Value",
         "build(calls, secs) -> Value",
         "write(rec), append(path, rec)"
@@ -284,7 +294,11 @@
       ],
       "members": [
         "items: Vec<Item>",
-        "constraints: Vec<String>"
+        "context: Vec<String>",
+        "constraints: Vec<String>",
+        "subject() -> String",
+        "subject_of(ids) -> String",
+        "ids() -> Vec<String>"
       ]
     },
     {
@@ -311,6 +325,34 @@
         "kind: String",
         "text: String",
         "ids: Vec<usize>"
+      ]
+    },
+    {
+      "id": "Cover",
+      "name": "Cover",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/coverage.rs"
+      ],
+      "members": [
+        "id: String",
+        "text: String",
+        "findings: Vec<String> (citations)",
+        "missing: Vec<String>"
+      ]
+    },
+    {
+      "id": "Coverage",
+      "name": "Coverage",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/coverage.rs"
+      ],
+      "members": [
+        "items: Vec<Cover>",
+        "unrelated: Vec<String>",
+        "follow: Vec<String> (lookups for the next attempt)",
+        "check(ctx, scope, task, ids, findings) -> Coverage"
       ]
     }
   ],
@@ -392,6 +434,30 @@
       "to": "Line",
       "kind": "depends-on",
       "description": "The synthesized answer's lines, each resting on findings by id."
+    },
+    {
+      "from": "Work",
+      "to": "Cover",
+      "kind": "depends-on",
+      "description": "Each requested item's coverage: the citations about it and what it still lacks."
+    },
+    {
+      "from": "Coverage",
+      "to": "Cover",
+      "kind": "depends-on",
+      "description": "One cover per item of the part."
+    },
+    {
+      "from": "Coverage",
+      "to": "Task",
+      "kind": "depends-on",
+      "description": "Reads the items' words and context for what evidence each needs."
+    },
+    {
+      "from": "Part",
+      "to": "Item",
+      "kind": "depends-on",
+      "description": "The items a part must answer, by id."
     }
   ]
 }

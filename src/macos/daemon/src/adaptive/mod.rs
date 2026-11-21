@@ -1,6 +1,7 @@
 // `zazzle investigate .. --adaptive`: the cheapest planner sure to be overkill for the question splits it into parts and gives each the cheapest agent and effort that will do it; every executor answers in short structured lines that say how sure it is and whether to escalate, zazzle checks their citations and hands an unsettled part, with what it established, to the next rung; `--review-*` has another agent judge the results and `--benchmark-*` compares them with the question answered by one agent alone.
 pub mod agent;
 pub mod calls;
+pub mod coverage;
 pub mod items;
 pub mod record;
 pub mod work;
@@ -143,12 +144,14 @@ fn chosen(pick: &(Option<String>, Option<String>), ladder: &[Rung]) -> Result<Ru
     }
 }
 
-// One part of a plan: its question, starting symbols and the ladder rung it starts on.
+// One part of a plan: its question, starting symbols, the ladder rung it starts on, the task's items it must answer and what they are about.
 #[derive(Debug, Clone, PartialEq)]
 struct Part {
     question: String,
     symbols: Vec<String>,
     rung: usize,
+    items: Vec<String>,
+    subject: String,
 }
 
 // One attempt at a part: the rung, its checked result and why it was escalated (None for the last attempt that settled it or the attempt left standing).
@@ -378,9 +381,16 @@ fn adaptive(
             .join(", "),
         if why.is_empty() { "a short question about named symbols".to_string() } else { why.join(", ") }
     );
-    let whole = Part { question: plan.question.clone(), symbols: plan.symbols.clone(), rung: 0 };
     let task = items::task(&plan.question);
-    let component = (score > 0 && ladder.len() > 1).then(|| one_component(ctx, scope, plan, &task)).flatten();
+    // The deterministic fallback keeps every requested item by id, so each still gets an outcome; one item keeps the prompt as given.
+    let whole = Part {
+        question: if task.items.len() > 1 { task.text_of(&task.ids()) } else { plan.question.clone() },
+        symbols: plan.symbols.clone(),
+        rung: 0,
+        items: task.ids(),
+        subject: task.subject(),
+    };
+    let component = (score > 0 && ladder.len() > 1).then(|| one_component(ctx, scope, &task)).flatten();
     let skipped = score == 0 || ladder.len() == 1 || task.items.len() < 2 || component.is_some();
     let (parts, planner, planned) = match skipped {
         true => {
@@ -399,7 +409,7 @@ fn adaptive(
                     ladder.iter().skip((score + 1).min(ladder.len() - 1)).take(PLANNERS).cloned().collect()
                 }
             };
-            let leads = investigate::leads(ctx, scope, &plan.question, &plan.symbols);
+            let leads = investigate::leads(ctx, scope, &task.subject(), &plan.symbols);
             let planning = Planning { plan, task: &task, ladder, planners: &planners, leads: &leads };
             let (parts, planner, note) = make_plan(b, &log, &planning, &ctx.cwd, deadline);
             head.push_str(&note);
@@ -426,8 +436,9 @@ fn adaptive(
             stdin: std::cell::RefCell::new(None),
             caller: std::cell::RefCell::new(None),
         };
-        part(&own, b, &log, plan, scope, ladder, p, i + 1, deadline)
+        part(&own, b, &log, plan, &task, scope, ladder, p, i + 1, deadline)
     });
+    let notes: Vec<String> = head.lines().filter(|l| l.starts_with("plan")).map(str::to_string).collect();
     let mut out = head;
     out.push_str("parts:\n");
     for (i, attempts) in runs.iter().enumerate() {
@@ -465,13 +476,14 @@ fn adaptive(
             (false, true) => "planned",
             (false, false) => "fallback",
         },
+        refusals: notes.iter().filter(|n| n.contains(" was refused") || n.contains("refused too")).count(),
         parts: parts.iter().zip(&runs).map(|(p, a)| attempts_record(p, a, ladder)).collect(),
         combine: match by.as_str() {
             "" => "single",
             s if s.starts_with(" (combined") => "combined",
             _ => "merged",
         },
-        result: work.json(),
+        result: private(work.json()),
     };
     b.record(&record::build(&facts, &calls, secs));
     let json = json!({
@@ -479,13 +491,28 @@ fn adaptive(
         "orchestrator": orchestrator.map(|r| r.label()),
         "orchestration": calls::orchestration(orchestrator.or(planner.as_ref()).map(Rung::label).as_deref(), &calls),
         "planner": planner.as_ref().map(|r| r.label()),
+        "plan": {"state": match (skipped, planned) { (true, _) => "skipped", (false, true) => "planned", (false, false) => "fallback" }, "notes": notes},
         "parts": parts.iter().zip(&runs).map(|(p, a)| json!({
             "question": p.question,
+            "items": p.items,
             "attempts": a.iter().map(|x| json!({"agent": x.rung.agent(), "effort": x.rung.effort, "escalated_because": x.why, "result": x.work.json()})).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "result": work.json(),
     });
     Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs, json })
+}
+
+// A result for the orchestration log, which keeps no question text: each item's coverage as its id, whether it is covered and how many things it lacks, and its diagnostics left out.
+fn private(mut v: Value) -> Value {
+    let cov: Vec<Value> = v["coverage"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| json!({"item": c["item"], "covered": c["covered"], "missing": c["missing"].as_array().map_or(0, Vec::len)}))
+        .collect();
+    v["coverage"] = cov.into();
+    v["diagnostics"] = Value::Null;
+    v
 }
 
 // What a planner works from: the run's plan, the task's items, the ladder, the planners to try in turn and the declarations discovery found.
@@ -586,6 +613,8 @@ fn make_plan(
                 question: task.text_of(&a.items),
                 symbols: if a.seeds.is_empty() { plan.symbols.clone() } else { a.seeds.clone() },
                 rung: a.rung,
+                items: a.items.clone(),
+                subject: task.subject_of(&a.items),
             })
             .collect();
         let a = investigate::cite::parse_answer(&reply).unwrap_or_default();
@@ -610,14 +639,14 @@ fn make_plan(
 }
 
 // The one component every item of a task is about, when there is one: the best declaration discovery finds for the whole task, if each item's terms match its name or path; such a task needs no planner and no combiner.
-fn one_component(ctx: &Ctx, scope: &[PathBuf], plan: &Plan, task: &items::Task) -> Option<String> {
+fn one_component(ctx: &Ctx, scope: &[PathBuf], task: &items::Task) -> Option<String> {
     use investigate::discover;
     if task.items.len() < 2 {
         return None;
     }
-    let terms = discover::terms(&plan.question);
-    let top =
-        discover::discover(ctx.engine, &ctx.cwd, scope, &terms, discover::web(&plan.question), 1).pop()?;
+    let subject = task.subject();
+    let terms = discover::terms(&subject);
+    let top = discover::discover(ctx.engine, &ctx.cwd, scope, &terms, discover::web(&subject), 1).pop()?;
     task.items.iter().all(|i| top.touches(&discover::terms(&i.text))).then(|| top.name.clone())
 }
 
@@ -644,13 +673,14 @@ fn executor_prompt(
     p
 }
 
-// Runs one part from its rung, escalating to the next rung on a trigger (keeping what was established) until it settles, is blocked on the user, reaches the top or runs out of time.
+// Runs one part from its rung until it settles, is blocked on the user, runs out of escalations or time: after each attempt zazzle checks the coverage of the part's items against everything verified so far, and an unsettled part (a failure, a low rating, or an item left unresolved however sure the agent was) goes to the next rung with what was established, the lookups already made and the lookups zazzle chose to settle what is missing; at the top of the ladder the same agent gets one more attempt while those lookups are new.
 #[allow(clippy::too_many_arguments)]
 fn part(
     ctx: &Ctx,
     b: &dyn Backend,
     log: &Log,
     plan: &Plan,
+    task: &items::Task,
     scope: &[PathBuf],
     ladder: &[Rung],
     p: &Part,
@@ -658,42 +688,55 @@ fn part(
     deadline: Instant,
 ) -> Vec<Attempt> {
     let (mut idx, mut question, mut context, mut attempts) =
-        (p.rung, p.question.clone(), Vec::<String>::new(), Vec::new());
+        (p.rung, p.question.clone(), Vec::<String>::new(), Vec::<Attempt>::new());
+    let (mut tried, mut follow, mut asked) =
+        (Vec::<String>::new(), Vec::<String>::new(), Vec::<String>::new());
     loop {
         let r = &ladder[idx];
         let role = if attempts.is_empty() { format!("part P{n}") } else { format!("escalation P{n}") };
-        let work = match r.hosted() {
+        let mut work = match r.hosted() {
             _ if crate::budget::over(deadline) => {
                 Work::failed(&format!("{} before it started", crate::budget::why_over()))
             }
-            true => match log.hosted(
-                b,
-                r,
-                &Ask::new(
-                    &role,
-                    "",
-                    &executor_prompt(
-                        &question,
-                        &plan.scope,
-                        &p.symbols,
-                        &investigate::leads(ctx, scope, &question, &p.symbols),
-                        &context,
+            true => {
+                let mut ctx_lines = context.clone();
+                ctx_lines.extend(
+                    tried
+                        .iter()
+                        .filter(|t| t.contains(investigate::NOTHING))
+                        .map(|t| format!("already tried: {t}")),
+                );
+                match log.hosted(
+                    b,
+                    r,
+                    &Ask::new(
+                        &role,
+                        "",
+                        &executor_prompt(
+                            &question,
+                            &plan.scope,
+                            &p.symbols,
+                            &investigate::leads(ctx, scope, &p.subject, &p.symbols),
+                            &ctx_lines,
+                        ),
+                        &[("task", &question), ("context", &ctx_lines.join("\n"))],
                     ),
-                    &[("task", &question), ("context", &context.join("\n"))],
-                ),
-                &ctx.cwd,
-                deadline,
-            ) {
-                Ok(s) => Work::from_reply(&ctx.cwd, scope, &s.text),
-                Err(e) => Work::failed(&e),
-            },
+                    &ctx.cwd,
+                    deadline,
+                ) {
+                    Ok(s) => Work::from_reply(&ctx.cwd, scope, &s.text),
+                    Err(e) => Work::failed(&e),
+                }
+            }
             false => {
-                let mut argv = vec![question.clone()];
+                let mut argv = vec![question.clone(), "--subject".to_string(), p.subject.clone()];
                 argv.extend(plan.scope.iter().flat_map(|s| ["--path".to_string(), s.clone()]));
                 argv.extend(p.symbols.iter().flat_map(|s| ["--symbol".to_string(), s.clone()]));
                 argv.extend(["--steps".to_string(), plan.steps.to_string()]);
                 argv.extend(["--seconds".to_string(), plan.seconds.to_string()]);
                 argv.extend(context.iter().flat_map(|c| ["--context".to_string(), c.clone()]));
+                argv.extend(tried.iter().flat_map(|c| ["--tried".to_string(), c.clone()]));
+                argv.extend(follow.iter().flat_map(|c| ["--lookup".to_string(), c.clone()]));
                 // Local parts take turns on the one local model, so each reuses its own prompt prefix; hosted parts go on meanwhile.
                 let explored = investigate::cache::local_turn().and_then(|_turn| {
                     investigate::explore(ctx, &argv, &OnRung { b, rung: r, log, role: &role }, deadline)
@@ -705,10 +748,38 @@ fn part(
             }
         };
         work.checkpoint(&r.label());
+        let mut known = work.findings.clone();
+        for f in attempts.iter().flat_map(|a| &a.work.findings) {
+            if !known.iter().any(|g| g.cite == f.cite && g.claim == f.claim) {
+                known.push(f.clone());
+            }
+        }
+        let cov = coverage::check(ctx, scope, task, &p.items, &known);
+        (work.coverage, work.unrelated) = (cov.items, cov.unrelated);
+        work.follow = cov.follow.into_iter().filter(|l| !asked.contains(l)).collect();
+        work.hold_to_coverage();
+        // A file whose citations were about none of the items is not read again by the next attempt.
+        let about: Vec<&str> =
+            known.iter().filter(|f| !work.unrelated.contains(&f.cite)).map(|f| f.path.as_str()).collect();
+        for f in
+            known.iter().filter(|f| work.unrelated.contains(&f.cite) && !about.contains(&f.path.as_str()))
+        {
+            let t = format!("READ {}{}{}", f.path, investigate::NOTHING, investigate::UNRELATED);
+            if !tried.contains(&t) {
+                tried.push(t);
+            }
+        }
+        for t in &work.tried {
+            if !tried.contains(t) {
+                tried.push(t.clone());
+            }
+        }
         let trigger = work.trigger();
+        // The same agent is asked again only when it verified something and zazzle has new lookups for what it left open.
+        let targeted = !work.follow.is_empty() && !work.missing().is_empty() && !work.findings.is_empty();
         let stuck = match &trigger {
             None => None,
-            Some(_) if idx + 1 >= ladder.len() => Some("it was the top of the ladder"),
+            Some(_) if idx + 1 >= ladder.len() && !targeted => Some("it was the top of the ladder"),
             Some(_) if attempts.len() >= MAX_ESCALATIONS => {
                 Some("the part was escalated as often as allowed")
             }
@@ -718,9 +789,13 @@ fn part(
         match (trigger, stuck) {
             (Some(t), None) => {
                 context = work.handoff(&r.label(), &t);
+                follow = work.follow.clone();
+                asked.extend(follow.iter().cloned());
                 question = work.escalate.clone().unwrap_or(question);
-                attempts.push(Attempt { rung: r.clone(), work, why: Some(t) });
-                idx += 1;
+                let same = idx + 1 >= ladder.len();
+                let why = if same { format!("{t}; asked again with zazzle's lookups") } else { t };
+                attempts.push(Attempt { rung: r.clone(), work, why: Some(why) });
+                idx = (idx + 1).min(ladder.len() - 1);
             }
             (t, stuck) => {
                 let why = t.map(|t| format!("{t}; not escalated: {}", stuck.unwrap_or_default()));
@@ -747,6 +822,13 @@ fn attempts_record(p: &Part, attempts: &[Attempt], ladder: &[Rung]) -> Value {
             "gaps": a.work.gaps.len(),
             "turns": a.work.turns,
             "needs_user": a.work.blocked.is_some(),
+            "items": a.work.coverage.len(),
+            "covered": a.work.coverage.iter().filter(|c| c.missing.is_empty()).count(),
+            "unrelated_citations": a.work.unrelated.len(),
+            "candidates": a.work.diagnostics["candidates"].as_array().map_or(0, Vec::len),
+            "lookups": a.work.diagnostics["lookups"].as_array().map_or(0, Vec::len),
+            "lookups_found": a.work.diagnostics["lookups"].as_array().map_or(0, |l| l.iter().filter(|x| x["found"] == true).count()),
+            "zazzle_lookups_next": a.work.follow.len(),
             "escalated_because": a.why.as_deref().and_then(|w| w.split([':', ';']).next()),
         })).collect::<Vec<_>>(),
     })
@@ -796,7 +878,7 @@ fn combine(
         .enumerate()
         .map(|(i, f)| format!("F{} {} ({})\n{}", i + 1, f.claim, f.cite, f.excerpt))
         .collect();
-    let open: String = merged.gaps.iter().map(|g| format!("- {g}\n")).collect();
+    let open: String = merged.missing().iter().chain(&merged.gaps).map(|g| format!("- {g}\n")).collect();
     let system = "You write the answer to a task from checked findings. Each finding has an id, a claim and the exact lines it rests on. Answer the task as asked (its items in order, in the format and length it asks for; one row or step per line for a table, a call chain or a test matrix), using only these findings. Reply only with lines:\nANSWER\nSUPPORTED F1,F3 | a sentence the cited findings' lines show\nINFERENCE F2 | a conclusion they point to but do not show\nPROPOSAL | a change or a test the task asks for\nUNKNOWN | what the findings do not settle\nCite findings only by their ids; never write a path or line numbers.";
     let mut prompt = format!("Task:\n{}\nFindings:\n{listing}", task.listing());
     if !open.is_empty() {
@@ -922,6 +1004,9 @@ fn merge(parts: &[Work]) -> Work {
         w.blocked = w.blocked.clone().or(p.blocked.clone());
         w.escalate = w.escalate.clone().or(p.escalate.clone());
         w.turns += p.turns;
+        w.coverage.extend(p.coverage.iter().cloned());
+        w.unrelated
+            .extend(p.unrelated.iter().filter(|u| !w.unrelated.contains(u)).cloned().collect::<Vec<_>>());
         if p.status != "complete" {
             w.status = "partial".into();
         }
@@ -1199,7 +1284,7 @@ fn joined(plan: &Plan, main: &Run, bench: Option<&Run>, review: Option<&Review>)
     };
     v["question"] = plan.question.clone().into();
     if main.json.get("result").is_some() {
-        for k in ["difficulty", "orchestrator", "orchestration", "planner", "parts"] {
+        for k in ["difficulty", "orchestrator", "orchestration", "planner", "plan", "parts"] {
             v[k] = main.json[k].clone();
         }
     }

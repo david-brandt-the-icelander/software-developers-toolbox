@@ -1,11 +1,13 @@
-// The structured result every delegated call in the adaptive mode returns, checked by zazzle: status, how sure the executor is, verified findings, gaps and its request to escalate, plus the triggers that hand it to a stronger agent.
+// The structured result every delegated call in the adaptive mode returns, checked by zazzle: status, how sure the executor is, verified findings, gaps and its request to escalate, the coverage of the items it was asked, plus the triggers that hand it to a stronger agent.
 use crate::investigate::{cite, verify, Found};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 // What one executor returned, checked: status (complete, partial or failed), its understanding of the task and the
 // support for its results (high, medium, low or empty when not given), findings whose citations zazzle verified, the
-// citations it rejected, gaps, the question it would escalate with context, what only the user can give, and turns.
+// citations it rejected, gaps, the question it would escalate with context, what only the user can give, turns, the
+// answer's lines, the lookups it made (`LOOKUP` or `LOOKUP — found nothing: WHY`), what the run did, each item's
+// coverage, the citations about no item and the lookups that would settle what is missing.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Work {
     pub status: String,
@@ -19,6 +21,11 @@ pub struct Work {
     pub blocked: Option<String>,
     pub turns: usize,
     pub lines: Vec<Line>,
+    pub tried: Vec<String>,
+    pub diagnostics: Value,
+    pub coverage: Vec<super::coverage::Cover>,
+    pub unrelated: Vec<String>,
+    pub follow: Vec<String>,
 }
 
 // One line of a synthesized answer: what kind of statement it is (supported, inference, proposal or unknown), its words, and the findings it rests on (indexes into the findings).
@@ -68,12 +75,18 @@ impl Work {
     }
 
     // Why this result's open question should go to a stronger agent, or None: a failure, a request to escalate, a
-    // low rating, citations that all failed or nothing verified; never when only the user can unblock it.
+    // low rating, citations that all failed, nothing verified or an item left unresolved, however sure the executor
+    // was; never when only the user can unblock it.
     pub fn trigger(&self) -> Option<String> {
         if self.blocked.is_some() {
             return None;
         }
         let first = self.gaps.first().map(|g| format!(": {g}")).unwrap_or_default();
+        let open = self
+            .coverage
+            .iter()
+            .find(|c| !c.missing.is_empty())
+            .map(|c| format!("it left {} unresolved: {}", c.id, c.missing[0]));
         Some(match () {
             _ if self.status == "failed" => format!("it failed{first}"),
             _ if self.escalate.is_some() => "it asked to escalate".into(),
@@ -83,19 +96,41 @@ impl Work {
                 "none of its citations checked out".into()
             }
             _ if self.findings.is_empty() => "it verified nothing".into(),
-            _ => return None,
+            _ => return open,
         })
     }
 
-    // What the next agent gets after this attempt: the verified findings, what failed and the executor's own context.
+    // What the next agent gets after this attempt: the verified findings, what failed, each item still unresolved, the citations about no item, the lookups zazzle runs for it first and the executor's own context.
     pub fn handoff(&self, who: &str, why: &str) -> Vec<String> {
-        let mut out: Vec<String> =
-            self.findings.iter().map(|f| format!("verified: {} ({})", f.claim, f.cite)).collect();
+        let mut out: Vec<String> = self
+            .findings
+            .iter()
+            .filter(|f| !self.unrelated.contains(&f.cite))
+            .map(|f| format!("verified: {} ({})", f.claim, f.cite))
+            .collect();
         out.push(format!("{who} did not settle it: {why}"));
         out.extend(self.rejected.iter().map(|r| format!("rejected citation: {r}")));
+        out.extend(self.missing().into_iter().map(|m| format!("unresolved: {m}")));
+        out.extend(self.unrelated.iter().map(|u| format!("about none of the items (look elsewhere): {u}")));
         out.extend(self.gaps.iter().take(4).map(|g| format!("open: {g}")));
+        out.extend(self.follow.iter().map(|l| format!("zazzle looks up next: {l}")));
         out.extend(self.context.iter().cloned());
         out
+    }
+
+    // Each item still unresolved, as `I2 (its words): what it lacks`.
+    pub fn missing(&self) -> Vec<String> {
+        self.coverage
+            .iter()
+            .flat_map(|c| c.missing.iter().map(move |m| format!("{} ({}): {m}", c.id, c.text)))
+            .collect()
+    }
+
+    // Lowers a complete status to partial when an item is unresolved.
+    pub fn hold_to_coverage(&mut self) {
+        if self.status == "complete" && !self.missing().is_empty() {
+            self.status = "partial".into();
+        }
     }
 
     // Keeps each verified finding in the job's evidence as soon as the agent `by` returns it, so a run that stops before its answer still has them.
@@ -127,18 +162,31 @@ impl Work {
                 "context": self.context,
             },
             "needs_user": self.blocked,
+            "coverage": self.coverage.iter().map(|c| json!({
+                "item": c.id, "text": c.text, "covered": c.missing.is_empty(), "evidence": c.findings, "missing": c.missing,
+            })).collect::<Vec<_>>(),
+            "unrelated_citations": self.unrelated,
+            "diagnostics": self.diagnostics,
         })
     }
 
     // The answer as the caller asked for it: each verified finding with its citation and the exact lines it rests on, then what is still unresolved, as text and as fields.
     pub fn answer(&self) -> Value {
         let mut text: String = match self.lines.is_empty() {
-            true => self.findings.iter().map(|f| format!("- {} ({})\n", f.claim, f.cite)).collect(),
+            true => self
+                .findings
+                .iter()
+                .map(|f| match self.unrelated.contains(&f.cite) {
+                    true => format!("- About none of the items: {} ({})\n", f.claim, f.cite),
+                    false => format!("- {} ({})\n", f.claim, f.cite),
+                })
+                .collect(),
             false => self.lines.iter().map(|l| format!("- {}\n", self.line_text(l))).collect(),
         };
-        if !self.gaps.is_empty() {
+        let unresolved: Vec<String> = self.missing().into_iter().chain(self.gaps.iter().cloned()).collect();
+        if !unresolved.is_empty() {
             text.push_str("Unresolved:\n");
-            text.extend(self.gaps.iter().map(|g| format!("- {g}\n")));
+            text.extend(unresolved.iter().map(|g| format!("- {g}\n")));
         }
         json!({
             "text": text,
@@ -148,7 +196,7 @@ impl Work {
                 "findings": l.ids.iter().map(|i| json!({"id": format!("F{}", i + 1), "citation": self.findings[*i].cite})).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
             "findings": self.findings.iter().enumerate().map(|(i, f)| json!({"id": format!("F{}", i + 1), "claim": f.claim, "citation": f.cite, "excerpt": f.excerpt})).collect::<Vec<_>>(),
-            "unresolved": self.gaps,
+            "unresolved": unresolved,
         })
     }
 
@@ -184,6 +232,16 @@ impl Work {
         };
         out.push_str(&list("rejected citations", &self.rejected));
         out.push_str(&list("gaps", &self.gaps));
+        if !self.coverage.is_empty() {
+            let open = self.coverage.iter().filter(|c| !c.missing.is_empty()).count();
+            out.push_str(&format!(
+                "coverage: {} of {} items covered\n",
+                self.coverage.len() - open,
+                self.coverage.len()
+            ));
+            out.push_str(&list("unresolved items", &self.missing()));
+            out.push_str(&list("citations about none of the items", &self.unrelated));
+        }
         let or = |s: &str| if s.is_empty() { "not given".to_string() } else { s.to_string() };
         out.push_str(&format!(
             "confidence: understanding {}, result {}\n",

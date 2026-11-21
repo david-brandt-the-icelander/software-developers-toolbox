@@ -54,7 +54,10 @@
         "symbols: Vec<String>",
         "steps: usize",
         "seconds: u64",
-        "context: Vec<String>"
+        "context: Vec<String>",
+        "subject: String",
+        "tried: Vec<String>",
+        "lookups: Vec<String>"
       ]
     },
     {
@@ -88,7 +91,8 @@
         "skipped: usize",
         "handles: Vec<Candidate>",
         "shared: usize",
-        "rule_keys: Vec<String>"
+        "rule_keys: Vec<String>",
+        "prior: Vec<(String, String)>"
       ]
     },
     {
@@ -263,6 +267,20 @@
       "members": [
         "0: Arc<Shared>"
       ]
+    },
+    {
+      "id": "Search",
+      "name": "Search",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/search.rs"
+      ],
+      "members": [
+        "needle: String",
+        "within: Option<String>",
+        "exact: bool (only for text with capitals)",
+        "describe() -> Value"
+      ]
     }
   ],
   "relationships": [
@@ -337,6 +355,12 @@
       "to": "Shared",
       "kind": "depends-on",
       "description": "A local part's hold on the job's local model, freed on drop."
+    },
+    {
+      "from": "Lookup",
+      "to": "Search",
+      "kind": "depends-on",
+      "description": "A FIND's argument read into its text, path and case rule before it runs."
     }
   ]
 }

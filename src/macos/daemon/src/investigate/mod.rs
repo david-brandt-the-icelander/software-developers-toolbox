@@ -2,14 +2,16 @@
 pub(crate) mod cache;
 pub mod cite;
 pub(crate) mod discover;
-mod seed;
+mod search;
+pub(crate) mod seed;
 
 use crate::cmd::{Ctx, Output};
 use crate::llm::Reply;
+use search::{search, within};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--adaptive] [--agents A,B..] [--orchestrator M] [--orchestrator-effort E] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--no-review] [--prose] [--json]";
+pub const USAGE: &str = "usage: investigate QUESTION.. [--path P].. [--symbol S].. [--steps N] [--seconds N] [--run-id ID [--cancel]] [--context TEXT].. [--subject TEXT] [--tried LOOKUP].. [--lookup LOOKUP].. [--adaptive] [--agents A,B..] [--orchestrator M] [--orchestrator-effort E] [--benchmark-model M] [--benchmark-effort E] [--review-model M] [--review-effort E] [--no-review] [--prose] [--json]";
 const DEFAULT_STEPS: usize = 6;
 const MAX_STEPS: usize = 12;
 // The whole call, waiting for the shared local model included, ends by this many seconds: under the 120 s tool
@@ -49,7 +51,7 @@ Lookups: up to 3 lines, each one of
 READ path            (or READ path:A-B for lines A to B)
 REFS name            where a symbol is defined and used
 OUTLINE path         the symbols of a file with their line ranges
-FIND text            lines containing the text
+FIND text            lines containing the text (any case unless it has capitals; quote text with spaces: FIND \"a b\"; FIND text path searches inside path)
 SYMBOL words         declarations whose names or routes match the words, each with a handle D1, D2 (READ D1 reads it)
 Answer: a line ANSWER, then one line per fact:
 FINDING path:A-B one sentence that the cited lines show
@@ -81,7 +83,7 @@ pub fn request(system: &str, transcript: &str, effort: &str) -> serde_json::Valu
     serde_json::json!({"system": system, "user": user, "max_tokens": REPLY_TOKENS, "temp": 0, "effort": effort})
 }
 
-// The parsed command line; `context` is what an earlier attempt established, shown to the model apart from the question.
+// The parsed command line; `context` is what an earlier attempt established, shown to the model apart from the question; `subject` is what discovery ranks code by (the question's context and items, never its instructions on how to run); `tried` are an earlier attempt's lookups (`LOOKUP` or `LOOKUP — found nothing: WHY`), and `lookups` run before the first turn.
 pub struct Plan {
     pub question: String,
     pub scope: Vec<String>,
@@ -89,7 +91,15 @@ pub struct Plan {
     pub steps: usize,
     pub seconds: u64,
     pub context: Vec<String>,
+    pub subject: String,
+    pub tried: Vec<String>,
+    pub lookups: Vec<String>,
 }
+
+// How a tried lookup that found nothing is written in `--tried`.
+pub const NOTHING: &str = " — found nothing: ";
+// The most lookups run before the first turn.
+const PRE_LOOKUPS: usize = 6;
 
 // Parses the question words and the flags.
 pub fn parse(argv: &[String]) -> Result<Plan, String> {
@@ -100,6 +110,9 @@ pub fn parse(argv: &[String]) -> Result<Plan, String> {
         steps: DEFAULT_STEPS,
         seconds: DEFAULT_SECONDS,
         context: Vec::new(),
+        subject: String::new(),
+        tried: Vec::new(),
+        lookups: Vec::new(),
     };
     let (mut words, mut it) = (Vec::new(), argv.iter());
     while let Some(a) = it.next() {
@@ -108,6 +121,9 @@ pub fn parse(argv: &[String]) -> Result<Plan, String> {
             "--path" | "-p" => p.scope.push(value()?),
             "--symbol" | "-s" => p.symbols.push(value()?),
             "--context" => p.context.push(value()?),
+            "--subject" => p.subject = value()?,
+            "--tried" => p.tried.push(value()?),
+            "--lookup" => p.lookups.push(value()?),
             "--steps" => {
                 let v = value()?;
                 p.steps = v
@@ -134,6 +150,9 @@ pub fn parse(argv: &[String]) -> Result<Plan, String> {
     }
     if p.scope.is_empty() {
         p.scope.push(".".into());
+    }
+    if p.subject.trim().is_empty() {
+        p.subject = crate::adaptive::items::task(&p.question).subject();
     }
     Ok(p)
 }
@@ -197,6 +216,8 @@ struct Trail {
     rule_keys: Vec<String>,
     // The declarations discovery and SYMBOL lookups listed, by handle: D1 is the first.
     handles: Vec<discover::Candidate>,
+    // An earlier attempt's lookups that found nothing, by key, with why, so they are not run again.
+    prior: Vec<(String, String)>,
 }
 
 impl Trail {
@@ -211,6 +232,10 @@ impl Trail {
                 "Established by an earlier attempt (build on it; cite lines only once you have seen them):\n",
             );
             t.push_str(&plan.context.iter().map(|c| format!("- {c}\n")).collect::<String>());
+        }
+        if !plan.tried.is_empty() {
+            t.push_str("Lookups an earlier attempt already made (ask for different ones):\n");
+            t.push_str(&plan.tried.iter().map(|c| format!("- {c}\n")).collect::<String>());
         }
         t.push_str(&match left {
             0 => "No lookups left: reply with ANSWER now.\n".to_string(),
@@ -273,9 +298,34 @@ fn key(lctx: &Ctx, l: &Lookup) -> String {
                 Err(_) => format!("missing {}", lctx.cwd.join(file).display()),
             }
         }
+        Lookup::Find(raw) => match search(raw) {
+            Ok(s) => format!("find {}\0{:?}\0{}", s.needle, s.within, s.exact),
+            Err(_) => l.label(),
+        },
         _ => l.label().split_whitespace().collect::<Vec<_>>().join(" "),
     }
 }
+
+// The key of the whole file a READ or OUTLINE looks at, whatever its range: an earlier attempt's file whose citations were about nothing asked is refused at any range.
+fn file_key(lctx: &Ctx, l: &Lookup) -> Option<String> {
+    match l {
+        Lookup::Read(p) | Lookup::Outline(p) => {
+            std::fs::canonicalize(lctx.cwd.join(path_part(p).0)).ok().map(|c| format!("file {}", c.display()))
+        }
+        _ => None,
+    }
+}
+
+// How an earlier attempt's lookup that found nothing is keyed: by its whole file for a READ whose citations were about none of the items, else like the lookup itself.
+fn prior_key(lctx: &Ctx, l: &Lookup, why: &str) -> String {
+    match (why == UNRELATED, file_key(lctx, l)) {
+        (true, Some(f)) => f,
+        _ => key(lctx, l),
+    }
+}
+
+// Why an earlier attempt's READ of a file is not run again: what it cited there was about none of the items.
+pub const UNRELATED: &str = "what it cited there is about none of the items asked";
 
 // Tells why a lookup's output found nothing (a refusal, an error, no references or no matches), or None when it found something.
 fn failure(text: &str, status: u8) -> Option<String> {
@@ -295,6 +345,14 @@ fn step(
     deadline: Instant,
 ) -> Result<bool, String> {
     let k = key(lctx, l);
+    let whole = file_key(lctx, l);
+    if let Some((_, why)) = trail.prior.iter().find(|(d, _)| *d == k || Some(d) == whole.as_ref()) {
+        trail.skipped += 1;
+        return Err(format!(
+            "{} (an earlier attempt already made it, and it found nothing: {why})",
+            l.label()
+        ));
+    }
     if let Some((_, why)) = trail.done.iter().find(|(d, _)| *d == k) {
         trail.skipped += 1;
         return Err(match why {
@@ -351,11 +409,27 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
             .map(|s| s.to_string())
             .chain(plan.scope.iter().cloned())
             .collect(),
-        Lookup::Find(t) => ["find", "-F", "-m", LOOKUP_MAX, "--", t]
-            .iter()
-            .map(|s| s.to_string())
-            .chain(plan.scope.iter().cloned())
-            .collect(),
+        Lookup::Find(raw) => {
+            let s = match search(raw) {
+                Ok(s) => s,
+                Err(e) => return (e, 1),
+            };
+            let paths = match &s.within {
+                None => plan.scope.clone(),
+                Some(p) => match within(lctx, scope, plan, p) {
+                    Ok(v) => v,
+                    Err(e) => return (e, 0),
+                },
+            };
+            let case = if s.exact { None } else { Some("-i") };
+            ["find", "-F", "-m", LOOKUP_MAX]
+                .into_iter()
+                .chain(case)
+                .chain(["--", &s.needle])
+                .map(str::to_string)
+                .chain(paths)
+                .collect()
+        }
     };
     let mut args = args;
     args.insert(1, "--disable-session-deduping".into());
@@ -469,18 +543,29 @@ fn defs(refs: &str) -> Vec<String> {
         .collect()
 }
 
-// Seedless discovery, before any inference: the declarations inside the scope whose names, routes or paths match the question's terms, listed with handles (production code before tests and simulators), and the best one read with its attributes, so the model starts from real code instead of guessed names.
+// Seedless discovery, before any inference: the declarations inside the scope whose names, routes or paths match the terms of what the question is about (its subject, not its instructions on how to run), listed with handles (production code before tests and simulators), and the best one an earlier attempt did not read (in another file when there is one) read with its attributes, so the model starts from real code instead of guessed names.
 fn discovery(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, trail: &mut Trail, deadline: Instant) {
-    let terms = discover::terms(&plan.question);
+    let terms = discover::terms(&plan.subject);
     let found = discover::discover(
         lctx.engine,
         &lctx.cwd,
         scope,
         &terms,
-        discover::web(&plan.question),
+        discover::web(&plan.subject),
         discover::SHOW,
     );
-    let Some(best) = found.first().cloned() else { return };
+    let read_before: Vec<&str> = plan
+        .tried
+        .iter()
+        .filter_map(|t| t.strip_prefix("READ "))
+        .map(|t| path_part(t.split(NOTHING).next().unwrap_or(t)).0)
+        .collect();
+    let fresh = |c: &&discover::Candidate| !read_before.contains(&c.path.as_str());
+    let Some(best) = found.iter().find(fresh).or(found.first().filter(|_| read_before.is_empty())).cloned()
+    else {
+        trail.handles = found;
+        return;
+    };
     let list: String =
         found.iter().enumerate().map(|(i, c)| format!("{}\n", c.line(&format!("D{}", i + 1)))).collect();
     trail.handles = found;
@@ -625,10 +710,22 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         shared: 0,
         rule_keys: Vec::new(),
         handles: Vec::new(),
+        prior: Vec::new(),
     };
+    for t in &plan.tried {
+        if let Some((label, why)) = t.split_once(NOTHING) {
+            if let Some(l) = parse_lookups(label).pop() {
+                trail.prior.push((prior_key(&lctx, &l, why), why.to_string()));
+            }
+        }
+    }
     let missed = seeds(&lctx, &scope, &plan, &mut trail, deadline);
     if (plan.symbols.is_empty() || trail.evidence.is_empty()) && !crate::budget::over(deadline) {
         discovery(&lctx, &scope, &plan, &mut trail, deadline);
+    }
+    let first: Vec<Lookup> = plan.lookups.iter().flat_map(|l| parse_lookups(l)).take(PRE_LOOKUPS).collect();
+    for l in first.iter().filter(|_| !crate::budget::over(deadline)) {
+        let _ = step(&lctx, &scope, &plan, l, &mut trail, deadline);
     }
     // Stops early only when the symbols are not there and discovery found nothing to start from either.
     let nothing = !plan.symbols.is_empty()
@@ -991,7 +1088,9 @@ pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
         gaps.push(format!("the run stopped early: {}", e.st.stop));
     }
     let failed = e.trail.lookups.iter().zip(&e.trail.done);
-    gaps.extend(failed.filter_map(|(l, (_, why))| why.as_ref().map(|w| format!("{l} found nothing: {w}"))));
+    gaps.extend(
+        failed.clone().filter_map(|(l, (_, why))| why.as_ref().map(|w| format!("{l} found nothing: {w}"))),
+    );
     // Complete only with a verified finding: a model's own STATUS can lower it, never raise it.
     let status = match (e.answer.is_some() && e.st.stop.is_empty() && !e.st.cut, findings.is_empty()) {
         (true, false) if ["partial", "failed"].contains(&answer.status.as_str()) => answer.status.clone(),
@@ -999,6 +1098,13 @@ pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
         (true, true) | (false, false) => "partial".into(),
         (false, true) => "failed".into(),
     };
+    let tried = failed
+        .clone()
+        .map(|(l, (_, why))| match why {
+            Some(w) => format!("{l}{NOTHING}{w}"),
+            None => l.clone(),
+        })
+        .collect();
     crate::adaptive::work::Work {
         status,
         understanding: answer.understanding,
@@ -1010,8 +1116,37 @@ pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
         context: answer.context,
         blocked: answer.blocked,
         turns: e.st.turns + usize::from(e.st.answer_only),
-        lines: Vec::new(),
+        tried,
+        diagnostics: diagnostics(e),
+        ..Default::default()
     }
+}
+
+// What a run did, for the kept result: the candidates discovery ranked with the terms they matched, each lookup with how its FIND was read and what it found, and why the run stopped.
+fn diagnostics(e: &Explored) -> serde_json::Value {
+    let lookups: Vec<serde_json::Value> = e
+        .trail
+        .lookups
+        .iter()
+        .zip(&e.trail.done)
+        .map(|(l, (_, why))| {
+            let mut v = serde_json::json!({"lookup": l, "found": why.is_none(), "why": why});
+            if let Some(raw) = l.strip_prefix("FIND ") {
+                v["search"] = match search(raw) {
+                    Ok(s) => s.describe(),
+                    Err(e) => serde_json::json!({"error": e}),
+                };
+            }
+            v
+        })
+        .collect();
+    serde_json::json!({
+        "subject_terms": discover::terms(&e.plan.subject),
+        "candidates": e.trail.handles.iter().map(discover::Candidate::brief).collect::<Vec<_>>(),
+        "lookups": lookups,
+        "skipped_repeats": e.trail.skipped,
+        "stop": if e.st.stop.is_empty() { "answered" } else { e.st.stop.as_str() },
+    })
 }
 
 // The lowercase words that pick out a question's evidence: the starting symbols and their words, and the question's
