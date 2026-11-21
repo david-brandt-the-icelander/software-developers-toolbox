@@ -45,6 +45,16 @@ pub fn reusable<T: PartialEq>(kept: &[T], prompt: &[T]) -> usize {
     kept.iter().zip(prompt).take_while(|(a, b)| a == b).count().min(prompt.len().saturating_sub(1))
 }
 
+// The context sizes to try for a prompt that needs `need` tokens, largest first: room for the conversation to grow, then exactly the need, so a machine short of memory still answers.
+fn sizes(need: usize, limit: usize) -> Vec<usize> {
+    let roomy = (need + ROOM).min(limit);
+    if roomy > need {
+        vec![roomy, need]
+    } else {
+        vec![need]
+    }
+}
+
 // Returns the text of a special token such as BOS, or an empty string.
 fn token_text(model: &LlamaModel, t: llama_cpp_2::token::LlamaToken) -> String {
     String::from_utf8_lossy(&model.vocab().token_to_piece(t, true, None)).into_owned()
@@ -133,18 +143,26 @@ impl Loaded {
         let need = (tokens.len() + ask.max_tokens).min(limit);
         let fits = kept.as_ref().is_some_and(|k| k.ctx.n_ctx() as usize >= need);
         if !fits {
-            let n_ctx = (need + ROOM).min(limit);
             let threads = std::thread::available_parallelism().map_or(4, |n| n.get()) as i32;
-            let cparams = LlamaContextParams::default()
-                .with_n_ctx(NonZeroU32::new(n_ctx as u32))
-                .with_n_batch(BATCH as u32)
-                .with_n_threads(threads)
-                .with_n_threads_batch(threads);
             *kept = None;
-            let ctx = crate::quiet::run(|| {
-                model.new_context(backend, cparams).map_err(|e| format!("creating a context: {e}"))
-            })?;
-            *kept = Some(Kept { ctx, tokens: Vec::new() });
+            let mut failed = String::new();
+            for n_ctx in sizes(need, limit) {
+                let cparams = LlamaContextParams::default()
+                    .with_n_ctx(NonZeroU32::new(n_ctx as u32))
+                    .with_n_batch(BATCH as u32)
+                    .with_n_threads(threads)
+                    .with_n_threads_batch(threads);
+                match crate::quiet::run(|| model.new_context(backend, cparams).map_err(|e| e.to_string())) {
+                    Ok(ctx) => {
+                        *kept = Some(Kept { ctx, tokens: Vec::new() });
+                        break;
+                    }
+                    Err(e) => failed = format!("creating a context: {e}"),
+                }
+            }
+            if kept.is_none() {
+                return Err(failed);
+            }
         }
         let k = kept.as_mut().ok_or("no context")?;
         let mut from = reusable(&k.tokens, &tokens);
@@ -221,6 +239,14 @@ mod tests {
         let mut bad = vec![b'x', 0xff, b'y'];
         assert_eq!(take_utf8(&mut bad), "x\u{fffd}y");
         assert!(bad.is_empty());
+    }
+
+    // Checks a context is first tried with room to grow, then at exactly the prompt's need, and never past the model's limit.
+    #[test]
+    fn test_engine_sizes() {
+        assert_eq!(sizes(1000, 32768), [1000 + ROOM, 1000]);
+        assert_eq!(sizes(30000, 32768), [32768, 30000]);
+        assert_eq!(sizes(4096, 4096), [4096], "no room left: one size");
     }
 
     // Checks the reusable prefix is the shared leading tokens, never the whole prompt.
