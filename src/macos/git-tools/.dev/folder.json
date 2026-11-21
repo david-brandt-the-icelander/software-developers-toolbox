@@ -12,7 +12,7 @@
       "boundaries": [
         "It uses no other crate in the repository. The zazzle invoker (src/macos/zazzle) runs it for `zazzle git ARGS` by exec'ing the git-tools binary from the tools' folder (libexec/zazzle); it never goes through the zazzle daemon.",
         "Everything except help, version, `message`, `commit`, `amend` and `undo` is handed to the real git unchanged; the crate only runs git as a separate program.",
-        "Building, CI (including its 95% line and branch coverage gate) and publishing the binaries are the workspace's and the workflows' concern, not this folder's."
+        "Building, CI (including its 95% line and branch coverage gate, in the coverage stage of ci.sh) and publishing the binaries are the workspace's and the continuous_integration_and_delivery repository's concern, not this folder's (.dev/pipeline.json, release/.dev/pipeline.json)."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
@@ -20,8 +20,7 @@
         { "path": "src/macos/git-tools/README.md", "symbol": "Programs" },
         { "path": "src/macos/git-tools/src/lib.rs", "symbol": "args" },
         { "path": "src/macos/git-tools/src/router.rs", "symbol": "route" },
-        { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "tool_binary" },
-        { "path": ".github/workflows/ci.yml", "symbol": "coverage" }
+        { "path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "tool_binary" }
       ],
       "relationships": [
         { "relation": "relates-to", "path": "src/macos/zazzle/.dev/folder.json", "entityId": "folder", "description": "The invoker that execs git-tools for `zazzle git`." }

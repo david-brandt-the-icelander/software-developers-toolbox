@@ -3,13 +3,13 @@
 #
 #   sign-and-notarize.sh DIR BINARY...     signs DIR/BINARY in place, then notarizes them together
 #
-# Credentials come from the environment (GitHub secrets in release.yml):
+# Credentials come from the environment (release.sh in continuous_integration_and_delivery passes them on):
 #   MACOS_CERTIFICATE_P12        base64 of the "Developer ID Application" certificate exported as .p12
 #   MACOS_CERTIFICATE_PASSWORD   the .p12 export password
 #   APPLE_API_KEY_P8             contents of the App Store Connect API key (AuthKey_XXXX.p8)
 #   APPLE_API_KEY_ID             that key's ID
 #   APPLE_API_ISSUER_ID          the issuer ID shown above the keys in App Store Connect
-# Without them it skips with a warning, unless REQUIRE_SIGNING=true (the repository variable), where it fails.
+# Without them it skips with a warning, unless REQUIRE_SIGNING=true, where it fails.
 set -euo pipefail
 
 if [ "$#" -lt 2 ]; then

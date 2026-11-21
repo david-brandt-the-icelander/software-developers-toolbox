@@ -26,16 +26,16 @@
       "symbol": "is_llm"
     },
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "Build and smoke test the zazzle invoker"
+      "path": "src/macos/zazzle/test/smoke.sh",
+      "symbol": "smoke"
     },
     {
       "path": "src/macos/zazzle/src/zazzle_core.h",
       "symbol": "own_name"
     },
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "cp ../c/zazzle/build/zazzle dist/zazz"
+      "path": "release/pack.sh",
+      "symbol": "bin/z"
     }
   ],
   "nodes": [

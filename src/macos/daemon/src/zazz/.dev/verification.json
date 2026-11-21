@@ -7,7 +7,7 @@
     {
       "id": "zazz-tests",
       "title": "zazz unit tests with real builds",
-      "summary": "The zazz module's tests build and run real scripts, so they need the wasm32-wasip1 target and a release build of zazz-script-runner; on macOS CI runs them one at a time under a 15-minute limit.",
+      "summary": "The zazz module's tests build and run real scripts, so they need the wasm32-wasip1 target and a release build of zazz-script-runner; CI runs them on Linux and the release on the owner's Mac, within cargo test --workspace.",
       "subject": [
         { "path": "src/macos/daemon/src/zazz/.dev/feature.json" },
         { "path": "src/macos/daemon/src/zazz/.dev/operation.json" }
@@ -19,10 +19,8 @@
       "checks": [
         {
           "type": "automated",
-          "path": ".github/workflows/ci.yml",
-          "symbol": "zazz tests one at a time (macOS, 15 minute limit)",
           "command": "cargo build --release -p zazz-script-runner && cargo test -p daemon zazz:: -- --test-threads=1 (in src/macos)",
-          "description": "Single-threaded so a test that hangs under the macOS sandbox shows up by name; the workspace tests run afterwards on both systems."
+          "description": "Single-threaded, so a test that hangs under the macOS sandbox shows up by name. CI's test stage (Linux) and the release's macOS build run these tests within cargo test --workspace, not on their own."
         },
         {
           "type": "automated",
@@ -32,7 +30,6 @@
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": ".github/workflows/ci.yml", "symbol": "test" },
         { "path": "src/macos/daemon/src/zazz/tools.rs", "symbol": "worker_from" }
       ],
       "relationships": [

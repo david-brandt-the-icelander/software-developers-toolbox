@@ -50,8 +50,8 @@
       "symbol": "Setup"
     },
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "Package"
+      "path": "release/pack.sh",
+      "symbol": "libexec/zazzle"
     },
     {
       "path": "src/macos/daemon/src/zazz/pool.rs",

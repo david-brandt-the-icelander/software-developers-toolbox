@@ -1,0 +1,240 @@
+{
+  "$schema": "../../Meta/Agents/Skills/describe-use-case/schema.json",
+  "kind": "use-case",
+  "title": "Release use cases",
+  "folder": "release",
+  "description": "How a version of the tools gets from a commit on GitHub to the places people install it from. The steps are run by release.sh in the zazzle folder of the continuous_integration_and_delivery repository, which this repository cannot cite; each step cites the scripts in this folder it runs.",
+  "sources": [
+    {
+      "path": "release/README.md",
+      "symbol": "Version numbers (`version.sh`, `set-version.sh`)"
+    }
+  ],
+  "entities": [
+    {
+      "id": "publish-a-release",
+      "name": "Publish a release",
+      "description": "The owner runs release.sh on an Apple Silicon Mac with a version bump or an exact version; it works out the version, publishes an alpha, stamps the version into every binary, tests and builds every tool on the Mac and in the Linux container, and only then publishes the tarballs and the bottle and pushes the zazzle formula to the Homebrew tap.",
+      "sources": [
+        {
+          "path": "release/README.md",
+          "symbol": "Version numbers (`version.sh`, `set-version.sh`)"
+        },
+        {
+          "path": "release/README.md",
+          "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
+        }
+      ],
+      "actor": "Owner",
+      "actorDocument": "Actors/owner.md",
+      "goal": "Make a new version of zazzle, daemon with zazz-script-runner, csharp-indexer, fix-network, free-disk-space, git-tools, ai-agent-rules and cyberspace-generator installable from the GitHub release, icelander.net/downloads and the zazzcat/homebrew-z tap.",
+      "preconditions": [
+        "The commit to release is on GitHub (main by default).",
+        "The Mac has the Xcode Command Line Tools, rustup with both Apple targets and wasm32-wasip1, the .NET 8 SDK, Node.js, Docker and gh signed in.",
+        "CLOUDFLARE_R2_TOKEN is in the environment or in the release env file; the owner's git credentials or HOMEBREW_TAP_TOKEN can push to the tap; the Apple signing credentials are optional.",
+        "The tap repository zazzcat/homebrew-z has at least one commit on its default branch."
+      ],
+      "postconditions": [
+        "The commit carries the tag vX.Y.Z and an alpha tag vX.Y.Z-alpha.N, and every published binary reports its tag's version.",
+        "A GitHub release named after the tag, with no release notes, holds zazzle-macos-universal.tar.gz, the two Linux tarballs, their .sha256 files and the zazzle bottle.",
+        "The download bucket holds the same tarballs under zazzle/<tag>/ and zazzle/latest/.",
+        "Formula/zazzle.rb in the tap names the tag as its version, unless it was already identical."
+      ],
+      "flow": [
+        {
+          "id": "tag",
+          "actor": "Owner",
+          "participantKind": "actor",
+          "actorDocument": "Actors/owner.md",
+          "action": "Runs release.sh with --bump patch, minor or major, or with --version X.Y.Z.",
+          "sources": [
+            {
+              "path": "release/README.md",
+              "symbol": "Version numbers (`version.sh`, `set-version.sh`)"
+            }
+          ]
+        },
+        {
+          "id": "version",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "Clones the commit with every tag and works out the tag and version: the next version after the latest vX.Y.Z tag for the bump (counting from v0.0.0 when there is none), or the exact version, and the alpha tag; then checks that it can publish before it builds anything.",
+          "sources": [
+            {
+              "path": "release/version.sh",
+              "symbol": "next"
+            },
+            {
+              "path": "release/version.sh",
+              "symbol": "alpha_tag"
+            }
+          ]
+        },
+        {
+          "id": "alpha",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "Builds the alpha quickly on the Mac, without tests or the PGO profile, signs it when the Apple credentials are set, and publishes it as a GitHub pre-release, under zazzle/<alpha tag>/ and zazzle/alpha/ on icelander.net and as the zazzle-alpha formula.",
+          "sources": [
+            {
+              "path": "release/README.md",
+              "symbol": "Alpha channel"
+            }
+          ]
+        },
+        {
+          "id": "macos",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "On the Mac: stamps the version into every crate, builds and signs the language modules and the JIT tools (ai-agent) and writes their manifests, builds zazz-script-runner and tests the workspace, trains the PGO profile, builds both architectures with the profile and the manifests embedded, makes universal binaries, builds and smoke tests the zazzle launcher, tests and builds the C# indexer for both CPU types, signs and notarizes when the Apple credentials are set (zazz-script-runner with its entitlements) and packs the tarball.",
+          "sources": [
+            {
+              "path": "release/pgo.sh",
+              "symbol": "profdata"
+            },
+            {
+              "path": "release/sign-and-notarize.sh",
+              "symbol": "cleanup"
+            },
+            {
+              "path": "release/pack.sh",
+              "symbol": "pack.sh DIST OUT.tar.gz FILE..."
+            }
+          ]
+        },
+        {
+          "id": "linux",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "In the toolchain container, for Linux x86_64 and aarch64: builds zazz-script-runner and tests daemon, builds the language modules and the JIT tools with their manifests, builds daemon with a PGO profile and both manifests, builds and tests the launcher, tests and publishes the indexer, and packs zazzle-linux-<arch>.tar.gz.",
+          "sources": [
+            {
+              "path": "release/language-modules.sh",
+              "symbol": "--manifest"
+            },
+            {
+              "path": "release/tools.sh",
+              "symbol": "--manifest"
+            }
+          ]
+        },
+        {
+          "id": "publish",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "Once everything has built: creates the GitHub release on the commit, which creates the tag, and uploads every tarball with its checksum to it and to the download bucket, and the language modules and JIT tools under the tag only.",
+          "sources": [
+            {
+              "path": "release/r2-put.sh",
+              "symbol": "attempt"
+            }
+          ]
+        },
+        {
+          "id": "homebrew",
+          "actor": "release.sh",
+          "participantKind": "system",
+          "action": "Builds the bottle in the container, uploads it to the release, writes Formula/zazzle.rb into a clone of zazzcat/homebrew-z and pushes it to the tap.",
+          "sources": [
+            {
+              "path": "release/bottle.sh",
+              "symbol": "root"
+            },
+            {
+              "path": "release/formula.sh",
+              "symbol": "bottle_block"
+            }
+          ]
+        }
+      ],
+      "alternatives": [
+        {
+          "atStep": "tag",
+          "condition": "The owner passes --dry-run.",
+          "outcome": "Everything is built and tested, nothing is tagged or published, and release.sh prints what it would have published.",
+          "sources": [
+            {
+              "path": "release/README.md",
+              "symbol": "Version numbers (`version.sh`, `set-version.sh`)"
+            }
+          ]
+        },
+        {
+          "atStep": "tag",
+          "condition": "The owner passes --channel alpha.",
+          "outcome": "Only the alpha is built and published; --version may then name a version that is already released.",
+          "sources": [
+            {
+              "path": "release/README.md",
+              "symbol": "Alpha channel"
+            }
+          ]
+        },
+        {
+          "atStep": "version",
+          "condition": "The exact version is not X.Y.Z, or its tag already exists.",
+          "outcome": "version.sh refuses it and nothing is built or published.",
+          "sources": [
+            {
+              "path": "release/version.sh",
+              "symbol": "is not X.Y.Z"
+            },
+            {
+              "path": "release/version.sh",
+              "symbol": "already exists"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "An Apple credential is missing.",
+          "outcome": "The binaries are released unsigned with a warning; when REQUIRE_SIGNING is true, the build fails and nothing more is published.",
+          "sources": [
+            {
+              "path": "release/sign-and-notarize.sh",
+              "symbol": "missing"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "Apple does not accept the notarization.",
+          "outcome": "The build fails, prints Apple's log, and nothing more is published.",
+          "sources": [
+            {
+              "path": "release/sign-and-notarize.sh",
+              "symbol": "status"
+            }
+          ]
+        },
+        {
+          "atStep": "macos",
+          "condition": "The PGO training writes no profile.",
+          "outcome": "pgo.sh fails, so the build and everything after it do not run.",
+          "sources": [
+            {
+              "path": "release/pgo.sh",
+              "symbol": "training wrote no profile"
+            }
+          ]
+        },
+        {
+          "atStep": "publish",
+          "condition": "An upload to icelander.net fails, for example because Cloudflare's API times out.",
+          "outcome": "Each file is tried up to five times, waiting 15, 30, 60 and 120 seconds in between. If every attempt fails, release.sh stops; its tag then exists, so version.sh refuses to release that version again.",
+          "sources": [
+            {
+              "path": "release/r2-put.sh",
+              "symbol": "attempt"
+            },
+            {
+              "path": "release/version.sh",
+              "symbol": "already exists"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "relatedViews": []
+}

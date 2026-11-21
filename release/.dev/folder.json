@@ -7,10 +7,10 @@
     {
       "id": "folder",
       "title": "Release scripts",
-      "summary": "The scripts the release workflow runs to work out and stamp the version, train the PGO profile for daemon's C code, build the JIT tools the daemon downloads (tools.sh, ai-agent) and the language modules, pack the Homebrew bottle, write the zazzle formula and, when configured, sign and notarize the macOS binaries; the version, bottle, formula and signing scripts have tests that run in CI.",
+      "summary": "The scripts the release (release.sh in continuous_integration_and_delivery) runs to work out and stamp the version, train the PGO profile for daemon's C code, build the JIT tools the daemon downloads (tools.sh, ai-agent) and the language modules, pack the Homebrew bottle, write the zazzle formula and, when configured, sign and notarize the macOS binaries; the version, bottle, formula and signing scripts have tests that CI's lint stage runs.",
       "purpose": "Holds version.sh (the release's tag, version and whether to publish, from the tags and the bump), set-version.sh (writes the version into every crate's manifest and Cargo.lock entry), pgo.sh (a clang profile for tree-sitter's C code in daemon), bottle.sh (the zazzle bottle from the release files), formula.sh (Formula/zazzle.rb for the tap), sign-and-notarize.sh (Developer ID signature and Apple notarization, with entitlements/NAME.plist for a binary that needs them: zazz-script-runner's executable memory for WebAssembly), tools.sh (builds the JIT tools, ai-agent, universal on macOS, and writes their `NAME SHA256 FILE` manifest for daemon), their tests version.test.sh, formula.test.sh, sign-and-notarize.test.sh and tools.test.sh, and README.md, the owner's guide to version numbers, the formula, PGO and signing.",
       "boundaries": [
-        "The workflows that run these scripts are .github/workflows/release.yml and, for pgo.sh, zazzle-bench.yml.",
+        "The scripts that run these are release.sh and, for pgo.sh, ci.sh's bench stage, in the zazzle folder of the continuous_integration_and_delivery repository; this folder's pipeline.json records what they do.",
         "The formula is written into a checkout of the external tap zazzcat/homebrew-z, not into this repository."
       ],
       "evidenceStatus": "source-verified",
@@ -43,10 +43,6 @@
           "symbol": "cleanup"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew"
-        },
-        {
           "path": "release/entitlements/zazz-script-runner.plist",
           "symbol": "com.apple.security.cs.allow-jit"
         }
@@ -55,6 +51,10 @@
         {
           "label": "Release: Homebrew formula and optional signing",
           "path": "release/README.md"
+        },
+        {
+          "label": "CI and releases (continuous_integration_and_delivery)",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/tree/main/zazzle"
         }
       ]
     }

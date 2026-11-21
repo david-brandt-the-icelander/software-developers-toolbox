@@ -218,17 +218,16 @@
     {
       "id": "coverage-gate",
       "title": "Branch and line coverage gate",
-      "summary": "CI fails when fix-network's non-test line or branch coverage drops below 95%; test modules are kept out of the figures.",
+      "summary": "CI's coverage stage fails when fix-network's non-test line or branch coverage drops below 95%; test modules are kept out of the figures.",
       "criteria": [
         "At least 95% of lines and of branches are covered, test code excluded"
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "fix-network needs 95% line and branch coverage", "command": "cargo +nightly llvm-cov --branch -p fix-network --summary-only" }
+        { "type": "automated", "command": "cargo +nightly llvm-cov --branch -p fix-network --summary-only", "description": "The coverage stage of ci.sh (continuous_integration_and_delivery) fails below 95% of lines or of branches; it is run by hand, on Linux." }
       ],
       "details": "Each test module carries `#[cfg_attr(coverage_nightly, coverage(off))]`, and `Cargo.toml` declares the `coverage_nightly` cfg that cargo llvm-cov sets.",
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": ".github/workflows/ci.yml", "symbol": "coverage" },
         { "path": "src/macos/fix-network/Cargo.toml", "symbol": "lints.rust" },
         { "path": "src/macos/fix-network/src/main.rs", "symbol": "coverage_attribute" }
       ]

@@ -22,8 +22,8 @@
       "symbol": "Build"
     },
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "macos"
+      "path": "release/pack.sh",
+      "symbol": "libexec/zazzle"
     },
     {
       "path": "release/formula.sh",

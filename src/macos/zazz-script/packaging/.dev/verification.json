@@ -16,7 +16,7 @@
         "Every test in zazz-script-packaging passes on macOS and on Linux"
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.test", "command": "cargo test --workspace --locked", "description": "Matrix of macos-latest and ubuntu-24.04." },
+        { "type": "automated", "command": "cargo test --workspace --locked", "description": "CI's test stage runs it on Linux; the release runs it on the owner's Mac." },
         { "type": "automated", "path": "src/macos/zazz-script/packaging/src/zip.rs", "symbol": "tests" },
         { "type": "automated", "path": "src/macos/zazz-script/packaging/src/manifest.rs", "symbol": "tests" },
         { "type": "automated", "path": "src/macos/zazz-script/packaging/src/pack.rs", "symbol": "tests" },
@@ -24,7 +24,7 @@
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": ".github/workflows/ci.yml", "symbol": "jobs.test" }
+        { "path": "src/macos/Cargo.toml", "symbol": "workspace.members" }
       ]
     },
     {
@@ -35,11 +35,10 @@
         "cargo llvm-cov reports at least 95% branch coverage for -p zazz-script-packaging"
       ],
       "checks": [
-        { "type": "automated", "path": "src/macos/daemon/coverage.sh", "symbol": "min", "command": "sh daemon/coverage.sh 95 zazz-script-packaging", "description": "Run in src/macos by the coverage job (nightly toolchain); test modules carry coverage(off)." }
+        { "type": "automated", "path": "src/macos/daemon/coverage.sh", "symbol": "min", "command": "sh daemon/coverage.sh 95 zazz-script-packaging", "description": "Run in src/macos by CI's coverage stage (nightly toolchain); test modules carry coverage(off)." }
       ],
       "evidenceStatus": "source-verified",
       "sources": [
-        { "path": ".github/workflows/ci.yml", "symbol": "jobs.coverage" },
         { "path": "src/macos/daemon/coverage.sh", "symbol": "crate" }
       ]
     },
@@ -51,7 +50,7 @@
         "cargo check succeeds with the 1.85 toolchain"
       ],
       "checks": [
-        { "type": "automated", "path": ".github/workflows/ci.yml", "symbol": "jobs.msrv", "command": "cargo check --workspace --exclude zazz-script-runner --locked" }
+        { "type": "automated", "command": "cargo check --workspace --exclude zazz-script-runner --locked", "description": "CI's msrv stage runs it with Rust 1.85." }
       ],
       "evidenceStatus": "source-verified",
       "sources": [

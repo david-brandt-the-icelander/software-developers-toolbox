@@ -38,7 +38,7 @@
       "title": "No replay outside macOS",
       "summary": "Linux (and any non-macOS system) uses FileSystemWatcher, which cannot replay, so every start runs a full reconcile.",
       "impact": "Startup on Linux re-stats every file of every root.",
-      "details": "Listed in the README's Known limits, which also says FSEvents replay is covered by a macOS-only test in CI but was not run on a Mac when written, and that Windows is untested.",
+      "details": "Listed in the README's Known limits, which also says FSEvents replay is covered by a macOS-only test that only the release runs, on the owner's Mac, and was not run on a Mac when written, and that Windows is untested.",
       "evidenceStatus": "source-verified",
       "sources": [
         {

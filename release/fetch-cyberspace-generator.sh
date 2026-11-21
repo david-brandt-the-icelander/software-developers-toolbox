@@ -2,7 +2,7 @@
 # Download the pinned cyberspace-generator release for some Rust targets and check its checksums: fetch-cyberspace-generator.sh OUT_DIR TARGET...
 #
 # cyberspace-generator is built in david-brandt-the-icelander/cyberspace-explorer; cyberspace-generator.version
-# names the release tag zazzle ships (the bump-cyberspace-generator workflow moves it). The repository is
+# names the release tag zazzle ships (bump-cyberspace-generator.sh in continuous_integration_and_delivery moves it). The repository is
 # public, so no token is needed. Writes OUT_DIR/cyberspace-generator-TARGET, mode 0755.
 set -euo pipefail
 

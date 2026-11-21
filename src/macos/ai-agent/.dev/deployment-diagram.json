@@ -13,8 +13,7 @@
     { "path": "src/macos/ai-agent/src/store.rs", "symbol": "fetch" },
     { "path": "src/macos/ai-agent/src/catalog.rs", "symbol": "url" },
     { "path": "src/macos/ai-agent/src/engine.rs", "symbol": "generate" },
-    { "path": "release/tools.sh", "symbol": "features" },
-    { "path": ".github/workflows/release.yml", "symbol": "Build, sign and list the JIT tools" }
+    { "path": "release/tools.sh", "symbol": "features" }
   ],
   "nodes": [
     {

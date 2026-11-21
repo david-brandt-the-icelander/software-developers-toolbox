@@ -8,12 +8,13 @@
       "id": "folder",
       "title": "zazzle",
       "summary": "zazzle, a launcher for coding agents and developers, and the tools it runs, mostly for macOS: the daemon and Rust tools, the C launcher, and the C# tools.",
-      "purpose": "Holds the tools (src/macos), the release scripts (release), the workflows that test and release them, and the agent skills and instructions for using them. The tools share a repository, a Cargo workspace and one release, not an architecture. Only zazzle (and its short name z) goes on PATH; every other tool runs as `zazzle TOOL`. Where one uses another, the code says so: the zazzle launcher is the client of the daemon and execs the other tools from libexec/zazzle, and the daemon asks csharp-indexer's daemon for the terse view of C# files. fix-network and free-disk-space call no other tool, and shell-tools is a library inside the daemon.",
+      "purpose": "Holds the tools (src/macos), the release scripts (release) that the CI and release scripts of the continuous_integration_and_delivery repository run, and the agent skills and instructions for using them. The tools share a repository, a Cargo workspace and one release, not an architecture. Only zazzle (and its short name z) goes on PATH; every other tool runs as `zazzle TOOL`. Where one uses another, the code says so: the zazzle launcher is the client of the daemon and execs the other tools from libexec/zazzle, and the daemon asks csharp-indexer's daemon for the terse view of C# files. fix-network and free-disk-space call no other tool, and shell-tools is a library inside the daemon.",
       "boundaries": [
         "Each tool is documented in its own folder under src/macos: fix-network, free-disk-space, git-tools, ai-agent, ai-agent-rules, daemon with zazzle and the shell-tools library it links, csharp-indexer and csharp-minifier.",
         "The Homebrew formula is not kept here: the release writes it into the external tap zazzcat/homebrew-z; release/README.md documents how.",
         "Meta/Agents/ is a copy of human-assisted-software-development's Agents/Skills and Agents/Knowledge. It is changed in that repository and copied here, and has no .dev folder.",
-        "The download site icelander.net/downloads, the GitHub releases and the tap are outside the repository; the release workflow publishes to them."
+        "The download site icelander.net/downloads, the GitHub releases and the tap are outside the repository; release.sh in continuous_integration_and_delivery publishes to them.",
+        "CI and the release pipeline are not here: they are the zazzle folder of the continuous_integration_and_delivery repository, run by hand. .dev/pipeline.json records CI, release/.dev/pipeline.json the release."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
@@ -37,14 +38,18 @@
           "path": "src/macos/daemon/src/indexer.rs"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew"
+          "path": "release/README.md",
+          "symbol": "Homebrew formula (`formula.sh`, `bottle.sh`)"
         }
       ],
       "links": [
         {
           "label": "Agent instructions",
           "path": "AGENTS.md"
+        },
+        {
+          "label": "CI and releases (continuous_integration_and_delivery)",
+          "url": "https://github.com/david-brandt-the-icelander/continuous_integration_and_delivery/tree/main/zazzle"
         },
         {
           "label": "Human-assisted software development",

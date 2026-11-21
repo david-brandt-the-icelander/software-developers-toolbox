@@ -1,6 +1,6 @@
 #!/bin/sh
 # Trains a clang profile for daemon's C code (tree-sitter) on crate sources and prints PGO_CFLAGS=... for the optimized build.
-# Usage: PGO_LANGUAGES=DIR sh release/pgo.sh [CORPUS_DIR] >> "$GITHUB_ENV"; then build with CC=clang and CFLAGS="$PGO_CFLAGS".
+# Usage: PGO_LANGUAGES=DIR sh release/pgo.sh [CORPUS_DIR]; then build with CC=clang and CFLAGS="$PGO_CFLAGS".
 # PGO_LANGUAGES is a directory of built language modules with their manifest (language-modules.sh): daemon has no grammars of its own, so training loads them from there.
 # Progress goes to stderr. The default corpus is the cargo registry sources that building daemon downloads.
 set -eu

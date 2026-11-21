@@ -10,7 +10,7 @@
     {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "cmd_install"},
     {"path": "src/macos/free-disk-space/src/daemon.rs", "symbol": "plist"},
     {"path": "src/macos/free-disk-space/src/main.rs", "symbol": "default_state"},
-    {"path": ".github/workflows/release.yml", "symbol": "Make universal binaries"},
+    {"path": "release/pack.sh", "symbol": "libexec/zazzle"},
     {"path": "release/formula.sh", "symbol": "install"},
     {"path": "src/macos/zazzle/src/zazzle_core.h", "symbol": "exec_tool"},
     {"path": "src/macos/free-disk-space/src/clean.rs", "symbol": "Progress::load"}

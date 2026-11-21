@@ -78,7 +78,7 @@
       "title": "Program names and version line",
       "summary": "The package builds git-tools, git-tools-commit and git-tools-commit-message-editor, and `git-tools --version` prints `git-tools VERSION` followed by git's version.",
       "contractType": "cli",
-      "consumers": ["The zazzle invoker, which execs git-tools for `zazzle git`", "The release workflow, bottle.sh and formula.sh, which ship the three binaries", "The formula's test block and CI's smoke test, which run git-tools --version"],
+      "consumers": ["The zazzle invoker, which execs git-tools for `zazzle git`", "The release (release.sh in continuous_integration_and_delivery), bottle.sh and formula.sh, which ship the three binaries", "The formula's test block and CI's smoke test, which run git-tools --version"],
       "guarantees": [
         "git-tools takes the arguments that followed `zazzle git`.",
         "git-tools-commit takes the same arguments as `zazzle git commit`, and git-tools-commit-message-editor the same as `zazzle git message`."

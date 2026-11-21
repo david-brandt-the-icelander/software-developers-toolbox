@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Test formula.sh and bottle.sh: valid Ruby, correct DSL values under a stand-in Formula class, the post-install steps run against a fake prefix, and consistency with release.yml.
+# Test formula.sh and bottle.sh: valid Ruby, correct DSL values under a stand-in Formula class, and the post-install steps run against a fake prefix.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failures=0
@@ -225,15 +224,12 @@ end
 puts "ok"
 RUBY
 
-# Check the formula for both CPU types: valid Ruby, DSL values, and that release.yml builds every binary.
+# Check the formula for both CPU types: valid Ruby and DSL values.
 check() {
   local file="$tmp/Formula/zazzle.rb" arch
   ruby -c "$file" >/dev/null || fail "zazzle.rb is not valid Ruby"
   for arch in arm64 x64; do
     ARCH=$arch PREFIX="$tmp/prefix" BREW="$tmp/brew" TOOLS="$tools" BOTTLES="${bottles:-}" ruby "$tmp/check.rb" "$file" "$sha" || fail "zazzle.rb failed the DSL check ($arch)"
-  done
-  for b in $bins; do
-    grep -q "for bin in .*\b$b\b" "$root/.github/workflows/release.yml" || grep -q "dist/$b\b" "$root/.github/workflows/release.yml" || fail "release.yml does not build $b"
   done
 }
 check

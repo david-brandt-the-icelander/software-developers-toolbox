@@ -8,10 +8,10 @@
       "id": "folder",
       "title": "csharp-minifier",
       "summary": "A single-file C# command-line tool that groups tests by method under test, lists and renames identifiers, sets up repository guidance and pre-commit checks, and records agent token benchmarks.",
-      "purpose": "Holds the whole tool: the project in src/, the xunit tests in tests/, the build settings both share (Directory.Build.props, version 0.0.0-dev) and the README. It has its own build (dotnet) and its own CI job; it is not part of the v* release.",
+      "purpose": "Holds the whole tool: the project in src/, the xunit tests in tests/, the build settings both share (Directory.Build.props, version 0.0.0-dev) and the README. It has its own build (dotnet) and its own CI stage (minifier); it is not part of the v* release.",
       "boundaries": [
         "The skill it copies into repositories is agents/skills/csharp-minifier/SKILL.md in this repository, embedded into the binary at build time.",
-        "The pipeline that tests it is recorded in .github/.dev.",
+        "The pipeline that tests it is ci.sh in the continuous_integration_and_delivery repository, recorded in .dev/pipeline.json.",
         "Code rules for this folder are in src/macos/csharp-style.md."
       ],
       "evidenceStatus": "source-verified",
@@ -27,10 +27,6 @@
         {
           "path": "src/macos/csharp-minifier/src/csharp-minifier.csproj",
           "symbol": "EmbeddedResource"
-        },
-        {
-          "path": ".github/workflows/ci.yml",
-          "symbol": "dotnet-minifier"
         }
       ]
     }

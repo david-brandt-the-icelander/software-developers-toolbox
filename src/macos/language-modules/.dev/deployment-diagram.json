@@ -6,10 +6,6 @@
   "description": "Each release builds one module per language (a universal .dylib on macOS, signed when signing is configured; a .so per Linux architecture), writes their SHA-256s into a manifest that daemon embeds, and uploads them to icelander.net/downloads/zazzle/vX.Y.Z/languages/PLATFORM/. On a developer's machine the daemon downloads a module the first time a file needs it (JIT, on unless `zazzle languages jit off`) or on `zazzle languages fetch`, checks its hash, stores it in ~/.zazzle/v1/languages and loads it with dlopen.",
   "sources": [
     {
-      "path": ".github/workflows/release.yml",
-      "symbol": "Build the language modules"
-    },
-    {
       "path": "release/language-modules.sh",
       "symbol": "--manifest"
     },

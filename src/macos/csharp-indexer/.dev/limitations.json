@@ -17,12 +17,8 @@
           "symbol": "Known limits"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Build the C# indexer for both CPU types"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "rid: linux-arm64"
+          "path": "release/formula.sh",
+          "symbol": "post_install_steps"
         },
         {
           "path": "src/macos/csharp-indexer/src/Daemon/Proxy.cs",
@@ -43,10 +39,6 @@
           "symbol": "PublishReadyToRun"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "Sign and notarize"
-        },
-        {
           "path": "release/README.md",
           "symbol": "quarantine"
         },
@@ -59,7 +51,7 @@
     {
       "id": "dev-builds-share-version",
       "title": "Builds outside a release all say 0.0.0-dev",
-      "summary": "Only the release workflow passes a version to the build, so every local or CI build reports 0.0.0-dev, and the daemon handshake sees two such builds as the same version.",
+      "summary": "Only the release passes a version to the build, so every local or CI build reports 0.0.0-dev, and the daemon handshake sees two such builds as the same version.",
       "impact": "A daemon started by one development build keeps serving serve and daemon clients of a newer development build until it is idle for the idle period; the new code is not used meanwhile. A release build and a development build differ, so either replaces an idle daemon of the other.",
       "workaround": "End the running daemon process before trying a development build. serve --no-daemon (ZAZZLE_INDEXER_NO_DAEMON=1) avoids the daemon for MCP sessions, but the daemon always goes through it.",
       "evidenceStatus": "source-verified",

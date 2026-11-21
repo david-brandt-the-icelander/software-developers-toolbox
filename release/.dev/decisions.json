@@ -10,7 +10,7 @@
       "summary": "The repository's crates and the indexer say 0.0.0-dev; a release takes its version from its vX.Y.Z tag and stamps it into every binary at build time.",
       "status": "accepted",
       "context": "Every tool ships in one release, and its --version should report that release.",
-      "decision": "version.sh takes a pushed vX.Y.Z tag as it is, or takes a manual run's exact version input (X.Y.Z, refused when the tag exists), or computes the next version after the latest vX.Y.Z tag for a manual run's bump (patch, minor or major; none only builds), and the run tags the commit itself. set-version.sh writes that version into every crate's manifest and Cargo.lock entry without resolving anything, so --locked still holds, and the indexer is published with -p:Version. Releases are created with no release notes.",
+      "decision": "version.sh takes an exact version (X.Y.Z, refused when the tag exists), or computes the next version after the latest vX.Y.Z tag for a bump (patch, minor or major; none only builds), and the release creates the tag on the commit when it creates the GitHub release; it also still takes a vX.Y.Z tag as it is, though release.sh never passes one. set-version.sh writes that version into every crate's manifest and Cargo.lock entry without resolving anything, so --locked still holds, and the indexer is published with -p:Version. Releases are created with no release notes.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
@@ -19,10 +19,6 @@
         },
         {
           "path": "release/set-version.sh"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "version"
         },
         {
           "path": "release/README.md",
@@ -36,7 +32,7 @@
       "summary": "The formula carries a bottle block, so brew install pours the prebuilt binaries and skips Homebrew's build-from-source checks.",
       "status": "accepted",
       "context": "Homebrew's build-from-source path demands up-to-date Command Line Tools, though the formula only copies prebuilt binaries.",
-      "decision": "bottle.sh packs one bottle, tagged all because the binaries are universal and the formula macOS-only; the release job uploads it to the GitHub release and formula.sh points the formula's bottle block there. The release tarball stays the formula's source fallback.",
+      "decision": "bottle.sh packs one bottle, tagged all because the binaries are universal and the formula macOS-only; release.sh uploads it to the GitHub release and formula.sh points the formula's bottle block there. The release tarball stays the formula's source fallback.",
       "rationale": "Installs succeed without current Command Line Tools.",
       "evidenceStatus": "source-verified",
       "sources": [
@@ -47,10 +43,6 @@
         {
           "path": "release/formula.sh",
           "symbol": "bottle_block"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew: Build the bottle and add it to the release"
         }
       ],
       "links": [
@@ -89,8 +81,8 @@
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Build the C# indexer for both CPU types"
+          "path": "release/pack.sh",
+          "symbol": "pack.sh DIST OUT.tar.gz FILE..."
         },
         {
           "path": "release/formula.sh"
@@ -104,15 +96,15 @@
     {
       "id": "external-tap",
       "title": "Publish the formula to the zazzcat/homebrew-z tap",
-      "summary": "The release pushes Formula/zazzle.rb to the external tap repository zazzcat/homebrew-z with a fine-grained token, instead of committing formulas to this repository.",
+      "summary": "The release pushes Formula/zazzle.rb to the external tap repository zazzcat/homebrew-z, instead of committing formulas to this repository.",
       "status": "accepted",
-      "context": "brew taps a repository named homebrew-<tap> by itself, so brew install zazzcat/z/zazzle works without a separate tap command; GITHUB_TOKEN cannot push to another account's repository.",
-      "decision": "The homebrew job checks out zazzcat/homebrew-z with HOMEBREW_TAP_TOKEN (Contents: read and write on that repository only), writes the formula there and pushes to its default branch.",
+      "context": "brew taps a repository named homebrew-<tap> by itself, so brew install zazzcat/z/zazzle works without a separate tap command.",
+      "decision": "release.sh clones zazzcat/homebrew-z with the owner's git credentials, or with HOMEBREW_TAP_TOKEN (Contents: read and write on that repository only) when it is set, writes the formula there with formula.sh and pushes to its default branch.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "homebrew"
+          "path": "release/formula.sh",
+          "symbol": "bottle_block"
         },
         {
           "path": "release/README.md",
@@ -134,10 +126,6 @@
           "symbol": "runtime_flags"
         },
         {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Train the PGO profile for daemon's C code"
-        },
-        {
           "path": "release/README.md",
           "symbol": "Profile-guided optimization of daemon's C code (`pgo.sh`)"
         }
@@ -146,19 +134,15 @@
     {
       "id": "optional-signing",
       "title": "Signing and notarization are optional",
-      "summary": "The release signs and notarizes the macOS binaries only when the Apple secrets are set, and otherwise releases them unsigned with a warning.",
+      "summary": "The release signs and notarizes the macOS binaries only when the Apple credentials are set, and otherwise releases them unsigned with a warning.",
       "status": "accepted",
       "context": "Only browser downloads need a signature: Homebrew does not quarantine what a formula installs, and a file downloaded with curl runs as is.",
-      "decision": "sign-and-notarize.sh skips with a warning when a secret is missing, unless the repository variable REQUIRE_SIGNING is true, where it fails the release.",
+      "decision": "sign-and-notarize.sh skips with a warning when a credential is missing, unless REQUIRE_SIGNING is true, where it fails the release.",
       "evidenceStatus": "source-verified",
       "sources": [
         {
           "path": "release/sign-and-notarize.sh",
           "symbol": "missing"
-        },
-        {
-          "path": ".github/workflows/release.yml",
-          "symbol": "macos: Sign and notarize"
         },
         {
           "path": "release/formula.sh"

@@ -14,7 +14,7 @@
         "The terse C# view and the structure tools' answers come from csharp-indexer (src/macos/csharp-indexer), a separate program reached over its own socket.",
         "zazz scripts run in zazz-script-runner (src/macos/zazz-script/runner), a separate binary found beside the daemon, or natively when signed by an authority trusted for native code; the daemon builds them with the user's rustc. The .zazz format comes from src/macos/zazz-script/packaging and the script protocol from src/macos/zazz-script/engine, whose sources the daemon also embeds and compiles for scripts.",
         "`zazzle daemon llm` runs ai-agent (src/macos/ai-agent), a separate binary found beside the daemon or downloaded on first use and checked against the tool manifest compiled in from ZAZZLE_TOOLS_MANIFEST (src/tools.rs).",
-        "Builds and releases run from the workspace and the repository's workflows, not from this folder."
+        "Builds and releases run from the workspace and the scripts of the continuous_integration_and_delivery repository, not from this folder."
       ],
       "evidenceStatus": "source-verified",
       "sources": [
