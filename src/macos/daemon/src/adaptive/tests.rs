@@ -1327,3 +1327,39 @@ fn test_benchmark_picks_a_judge() {
     );
     assert_eq!(default_judge(&f, &[]).label(), "local default high");
 }
+
+// Checks a hosted part of a question with no starting symbol is told the declarations zazzle found for it, so it starts from real code, while the benchmark's agent alone is not.
+#[test]
+fn test_hosted_parts_get_discovered_leads() {
+    let (_t, root) = repo();
+    let f = Fake::new(&[
+        ("claude:sonnet high", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
+        ("claude:opus medium", Ok("STATUS complete\nCONFIDENCE understanding=high result=high")),
+    ]);
+    let argv = [
+        "Where",
+        "does",
+        "the",
+        "endpoint",
+        "handle",
+        "a",
+        "request?",
+        "--adaptive",
+        "--agents",
+        "claude:sonnet@high",
+        "--benchmark-model",
+        "claude:opus",
+        "--no-review",
+    ];
+    go(&root, &f, &argv).expect("run");
+    let asked = &f.prompts("claude:sonnet high")[0];
+    assert!(
+        asked.contains("Declarations zazzle found in the files that match the question")
+            && asked.contains("api/Endpoint.cs:2-5 method Handle"),
+        "{asked}"
+    );
+    assert!(
+        !f.prompts("claude:opus medium")[0].contains("Declarations zazzle found"),
+        "the agent alone gets no help from zazzle"
+    );
+}

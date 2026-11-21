@@ -277,7 +277,7 @@ fn pure_hosted(
     sink: &Sink,
 ) -> Run {
     let (t, log) = (Instant::now(), Log::to(sink.clone()));
-    let prompt = executor_prompt(&plan.question, &plan.scope, &plan.symbols, &[]);
+    let prompt = executor_prompt(&plan.question, &plan.scope, &plan.symbols, &[], &[]);
     let work =
         match log.hosted(b, r, &Ask::new("benchmark", "", &prompt, &[("task", &prompt)]), cwd, deadline) {
             Ok(s) => Work::from_reply(cwd, scope, &s.text),
@@ -589,10 +589,20 @@ fn parse_parts(reply: &str, rungs: usize, symbols: &[String]) -> Vec<Part> {
 }
 
 // The prompt a hosted executor gets: the required lines, the question, the scope, the starting symbols and what earlier attempts established.
-fn executor_prompt(question: &str, scope: &[String], symbols: &[String], context: &[String]) -> String {
+fn executor_prompt(
+    question: &str,
+    scope: &[String],
+    symbols: &[String],
+    leads: &[String],
+    context: &[String],
+) -> String {
     let mut p = format!("Answer one question about the repository in the current directory. Read the files you need; change nothing. Be concise: reply only with these lines, no prose:\n{LINES}\n\nQuestion: {question}\nScope (stay inside): {}\n", scope.join(", "));
     if !symbols.is_empty() {
         p.push_str(&format!("Starting symbols: {}\n", symbols.join(", ")));
+    }
+    if !leads.is_empty() {
+        p.push_str("Declarations zazzle found in the files that match the question, best first (check them before you cite):\n");
+        p.push_str(&leads.iter().map(|c| format!("- {c}\n")).collect::<String>());
     }
     if !context.is_empty() {
         p.push_str("Established by an earlier attempt (build on it; do not repeat it):\n");
@@ -629,7 +639,13 @@ fn part(
                 &Ask::new(
                     &role,
                     "",
-                    &executor_prompt(&question, &plan.scope, &p.symbols, &context),
+                    &executor_prompt(
+                        &question,
+                        &plan.scope,
+                        &p.symbols,
+                        &investigate::leads(ctx, scope, &question, &p.symbols),
+                        &context,
+                    ),
                     &[("task", &question), ("context", &context.join("\n"))],
                 ),
                 &ctx.cwd,

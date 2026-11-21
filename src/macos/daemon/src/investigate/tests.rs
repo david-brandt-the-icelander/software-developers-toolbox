@@ -510,6 +510,7 @@ fn test_excerpts_rank_dedupe_and_cap() {
         done: Vec::new(),
         evidence: vec![0, 1, 3],
         skipped: 0,
+        handles: Vec::new(),
     };
     let out = excerpts(&trail, &plan);
     assert!(out.starts_with("evidence (no finding verified; ranked excerpts of the lookups, verbatim):\n### E2 READ svc/Retry.cs:1-40\n"), "{out}");
@@ -564,7 +565,11 @@ fn test_investigate_regression_missing_path_and_repeats() {
         seen[3].1
     );
     let text = &o.text;
-    assert!(text.contains("### E1 READ api/Endpoint.cs\n") && text.contains("r.Key == null"), "{text}");
+    assert!(
+        text.contains("### E1 READ api/IdempotencyKeyFilter.cs:1-3\n"),
+        "discovery read the matching declaration first: {text}"
+    );
+    assert!(text.contains("### E2 READ api/Endpoint.cs\n") && text.contains("r.Key == null"), "{text}");
     assert!(
         text.contains("lookups that found nothing:\n- READ api/IdempotencyKeyRepository.cs: refused:"),
         "{text}"
@@ -675,6 +680,7 @@ fn test_defs_and_excerpt_ids() {
         done: Vec::new(),
         evidence: vec![0, 2, 3],
         skipped: 0,
+        handles: Vec::new(),
     };
     assert_eq!(trail.file_of("E1"), None, "a REFS excerpt has no single file");
     assert_eq!(trail.file_of("E2").as_deref(), Some("api/A.cs"));
@@ -786,5 +792,177 @@ fn test_run_ids_and_refusals() {
         e.trail.lookups.is_empty() && s.seen.borrow().is_empty(),
         "nothing starts after the deadline: {:?}",
         e.trail.lookups
+    );
+}
+
+// The production controller of the wash fixture: its handler's name does not say what it does, its route does.
+const WASH_CONTROLLER: &str = "using Microsoft.AspNetCore.Mvc;\n\nnamespace Wash.Api.Controllers;\n\n[ApiController]\n[Route(\"api/subscriptions\")]\npublic class SubscriptionWashesController : ControllerBase\n{\n    private readonly WashService _service;\n\n    public SubscriptionWashesController(WashService service) => _service = service;\n\n    [HttpPost(\"{subscriptionId}/washes\")]\n    [ServiceFilter(typeof(IdempotencyFilter))]\n    public async Task<IActionResult> QueueWash(string subscriptionId, [FromHeader(Name = \"OperationId\")][Required] string operationId)\n    {\n        var result = await _service.StartSubscriptionWash(subscriptionId, operationId);\n        return Accepted(result);\n    }\n}\n";
+// The wash fixture's idempotency filter: the key comes from one header, else another, and without either the request goes on.
+const WASH_FILTER: &str = "namespace Wash.Api.Filters;\n\npublic class IdempotencyFilter : IAsyncActionFilter\n{\n    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)\n    {\n        var key = context.HttpContext.Request.Headers[\"Idempotency-Key\"].FirstOrDefault()\n            ?? context.HttpContext.Request.Headers[\"X-Operation-Id\"].FirstOrDefault();\n        if (string.IsNullOrWhiteSpace(key))\n        {\n            await next();\n            return;\n        }\n        await next();\n    }\n}\n";
+// The wash trace question, with no starting symbol.
+const WASH_TASK: &str = "Trace a subscription wash request from its Django-facing HTTP endpoint through eligibility, authorization, persistence and wash workflow handoff";
+
+// A C# repository for the wash trace: the controller, the filter, the service the handler calls, a simulator whose handler has the telling name, and a test.
+fn wash_repo() -> (TempDir, PathBuf) {
+    let t = TempDir::new();
+    let root = t.path().canonicalize().expect("root");
+    std::fs::create_dir_all(root.join(".git")).expect("git");
+    t.write("Api/Controllers/SubscriptionWashesController.cs", WASH_CONTROLLER.as_bytes());
+    t.write("Api/Filters/IdempotencyFilter.cs", WASH_FILTER.as_bytes());
+    t.write("Api/Services/WashService.cs", b"namespace Wash.Api.Services;\n\npublic class WashService\n{\n    public async Task<WashResult> StartSubscriptionWash(string subscriptionId, string operationId)\n    {\n        await _eligibility.Check(subscriptionId);\n        await _authorization.Authorize(subscriptionId);\n        await _store.Save(subscriptionId, operationId);\n        return await _workflow.HandOff(subscriptionId);\n    }\n}\n");
+    t.write("Simulator/FakeSubscriptionWashController.cs", b"namespace Wash.Simulator;\n\npublic class FakeSubscriptionWashController\n{\n    [HttpPost(\"subscriptions/{id}/wash\")]\n    public IActionResult StartSubscriptionWash(string id) => Ok();\n}\n");
+    t.write("Tests/SubscriptionWashTests.cs", b"public class SubscriptionWashTests\n{\n    public void StartSubscriptionWash_requires_operation_id() { }\n}\n");
+    (t, root)
+}
+
+// The 1-based line of the first line of `text` holding `needle`.
+fn line_of(text: &str, needle: &str) -> usize {
+    text.lines().position(|l| l.contains(needle)).expect("needle") + 1
+}
+
+// Checks the milestone: from the full wash question and no starting symbol, discovery lists the production handler first (by its route) above the simulator, and reads it with its attributes before any turn; a lookup sent with a confidence line runs instead of ending the turn; the answer keeps the endpoint's `OperationId` and the filter's `Idempotency-Key` with its `X-Operation-Id` fallback, each with its exact lines, and the same claim with the headers swapped is rejected.
+#[test]
+fn test_discovers_the_wash_endpoint_without_a_seed() {
+    let (_t, root) = wash_repo();
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let header = line_of(WASH_CONTROLLER, "FromHeader");
+    let (key, fallback) = (line_of(WASH_FILTER, "Idempotency-Key"), line_of(WASH_FILTER, "X-Operation-Id"));
+    let answer = format!(
+        "ANSWER\nFINDING Api/Controllers/SubscriptionWashesController.cs:{header} the handler `QueueWash` requires the `OperationId` header\nFINDING Api/Filters/IdempotencyFilter.cs:{key}-{fallback} the filter reads `Idempotency-Key` and falls back to `X-Operation-Id`\nFINDING Api/Filters/IdempotencyFilter.cs:{key}-{fallback} the filter reads `X-Operation-Id` and falls back to `Idempotency-Key`\nUNKNOWN eligibility, authorization, persistence and the workflow handoff are not traced yet\nCONFIDENCE understanding=high result=medium"
+    );
+    let s = Script::new(vec![
+        Ok("SYMBOL idempotency filter\nCONFIDENCE understanding=medium result=low"),
+        Ok("READ Api/Filters/IdempotencyFilter.cs"),
+        Ok(&answer),
+    ]);
+    let argv = vec![WASH_TASK.to_string()];
+    let ex = explore(&ctx, &argv, &s, Instant::now() + Duration::from_secs(60)).expect("explore");
+    let seen = s.seen.borrow();
+    let first = &seen[0].1;
+    let listing = first.split("### ").find(|b| b.contains("DISCOVER")).unwrap_or(first);
+    let at = |needle: &str| listing.find(needle).unwrap_or(usize::MAX);
+    assert!(
+        at("D1 Api/Controllers/SubscriptionWashesController.cs:13-19 method QueueWash") < at("Simulator/"),
+        "the production handler ranks first, by its route: {first}"
+    );
+    assert!(listing.contains("a test, simulator or fake path"), "{first}");
+    assert!(
+        first.contains("[FromHeader(Name = \"OperationId\")]")
+            && first.contains("[HttpPost(\"{subscriptionId}/washes\")]"),
+        "read with its attributes before any turn: {first}"
+    );
+    assert!(
+        seen[1].1.contains("SYMBOL idempotency filter") && seen[1].1.contains("class IdempotencyFilter"),
+        "the lookup ran though a confidence line came with it: {}",
+        seen[1].1
+    );
+    let w = work(&ctx, &ex);
+    let v = w.json();
+    let found = v["answer"]["findings"].as_array().expect("findings");
+    assert_eq!(found.len(), 2, "{v:#}");
+    assert!(found[0]["excerpt"].as_str().is_some_and(|x| x.contains("Name = \"OperationId\"")), "{v:#}");
+    assert!(
+        found[1]["excerpt"]
+            .as_str()
+            .is_some_and(|x| x.contains("Idempotency-Key") && x.contains("X-Operation-Id")),
+        "{v:#}"
+    );
+    assert!(
+        w.rejected.iter().any(|r| r.contains("in another order than the claim says")),
+        "the swapped headers are rejected: {:?}",
+        w.rejected
+    );
+    assert_eq!(v["status"], "complete");
+    assert!(
+        v["answer"]["unresolved"]
+            .as_array()
+            .is_some_and(|u| u.iter().any(|g| g.as_str().is_some_and(|g| g.contains("workflow handoff")))),
+        "the partial answer names the remaining stages: {v:#}"
+    );
+    assert!(
+        v["answer"]["text"].as_str().is_some_and(|t| t
+            .contains("requires the `OperationId` header (Api/Controllers/SubscriptionWashesController.cs:")),
+        "{v:#}"
+    );
+}
+
+// Checks the claim literal checks: a quoted name missing from the cited lines is refused, a fallback claim must cite its names in order, and prose quotes with spaces are not treated as names.
+#[test]
+fn test_quoted_literals() {
+    assert_eq!(
+        cite::quoted("reads `Idempotency-Key`, then \"X-Operation-Id\" and calls `Save()` \"a phrase here\""),
+        ["Idempotency-Key", "Save", "X-Operation-Id"]
+    );
+    let lines = "7 \tHeaders[\"Idempotency-Key\"]\n8\t?? Headers[\"X-Operation-Id\"]";
+    assert!(cite::literals_hold("reads `Idempotency-Key`, falling back to `X-Operation-Id`", lines).is_ok());
+    assert!(cite::literals_hold("reads `X-Operation-Id`, falling back to `Idempotency-Key`", lines)
+        .unwrap_err()
+        .contains("another order"));
+    assert!(
+        cite::literals_hold("reads `X-Operation-Id` and `Idempotency-Key`", lines).is_ok(),
+        "no fallback claimed: order is free"
+    );
+    assert_eq!(
+        cite::literals_hold("reads `Operation-Key`", lines),
+        Err("the cited lines do not contain `Operation-Key`".into())
+    );
+}
+
+// Checks the lookups around declarations: a READ of a bare name (or a dotted type name) is looked up as declarations, a READ of a handle reads that declaration and an unknown handle is a missing file, a SYMBOL that matches nothing is a miss, one listing a known declaration again keeps its handle, and a confidence line alone is not an answer.
+#[test]
+fn test_declaration_lookups() {
+    let (_t, root) = wash_repo();
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let s = Script::new(vec![
+        Ok("READ QueueWash\nREAD Wash.Api.Services.WashService\nREAD D2"),
+        Ok("SYMBOL zebra crossing\nSYMBOL subscription wash\nREAD D99"),
+        Ok("CONFIDENCE understanding=high result=high"),
+        Ok("ANSWER\nUNKNOWN nothing more"),
+    ]);
+    let argv = vec!["Where is QueueWash?".to_string(), "--symbol".into(), "QueueWash".into()];
+    explore(&ctx, &argv, &s, Instant::now() + Duration::from_secs(60)).expect("explore");
+    let seen = s.seen.borrow();
+    let second = &seen[1].1;
+    assert!(second.contains("SYMBOL QueueWash") || second.contains("READ QueueWash"), "{second}");
+    assert!(second.contains("method QueueWash"), "a bare name is looked up as declarations: {second}");
+    assert!(second.contains("class WashService"), "so is a dotted type name: {second}");
+    let third = &seen[2].1;
+    assert!(third.contains("no declarations match zebra crossing"), "{third}");
+    assert!(third.contains("D99"), "{third}");
+    assert_eq!(seen.len(), 4, "a confidence line alone is not an answer: the model was asked again");
+    assert!(
+        !identifier("Api/X.cs")
+            && !identifier("X.cs")
+            && identifier("Wash.Api.WashService")
+            && identifier("QueueWash")
+            && !identifier("")
+    );
+    let a = cite::parse_answer("UNKNOWN the cache").expect("answer");
+    assert!(
+        a.answers("UNKNOWN the cache")
+            && !cite::parse_answer("CONFIDENCE understanding=high result=high")
+                .expect("self-report")
+                .answers("CONFIDENCE understanding=high result=high")
+    );
+    assert_eq!(
+        cite::quoted("`Key` and `Key` and `odd"),
+        ["Key"],
+        "once each, and an unpaired quote names nothing"
     );
 }
