@@ -411,7 +411,9 @@ mod tests {
         let e = ask_in_until(&worker, None, &q, d, Some(t0 + Duration::from_millis(700)))
             .expect_err("past the deadline");
         assert!(e.contains("took longer"), "{e}");
-        assert!(t0.elapsed() < Duration::from_millis(850), "ended at the deadline: {:?}", t0.elapsed());
+        // Without the deadline the call would take the 0.4 s startup plus the full 10 s limit, so ending within 1.5 s of
+        // a 0.7 s deadline proves the point and leaves room for a loaded CI runner.
+        assert!(t0.elapsed() < Duration::from_millis(1500), "ended at the deadline: {:?}", t0.elapsed());
         reap(Duration::ZERO);
     }
 

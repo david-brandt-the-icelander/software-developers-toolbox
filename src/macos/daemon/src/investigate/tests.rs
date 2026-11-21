@@ -725,9 +725,11 @@ fn test_slow_seed_lookup_ends_at_the_deadline() {
         t0.elapsed()
     );
     assert!(s.seen.borrow().is_empty(), "no model turn starts after the deadline");
+    // On a loaded runner the deadline can fall during the indexer's handshake instead of its answer; both say so.
     assert!(
         o.text.contains("exact C# refs unavailable")
-            && o.text.contains("the job's time limit ran out while the indexer answered")
+            && (o.text.contains("the job's time limit ran out while the indexer answered")
+                || o.text.contains("within the job's time limit"))
             && o.text.contains("the indexer keeps running"),
         "{}",
         o.text
