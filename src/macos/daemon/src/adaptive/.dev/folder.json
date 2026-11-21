@@ -13,7 +13,7 @@
         "Read-only: hosted agents run with Read, Grep and Glob only (claude, dontAsk) or a read-only sandbox (codex); local rungs use investigate's read-only lookups.",
         "Only citations are checked, never claims; the report says the claims are the models'.",
         "Hosted agents run only when --agents, --review-model or --benchmark-model names them; nothing is downloaded.",
-        "Local calls share daemon's one worker, so local parts take turns on it while hosted parts run beside them; the dedicated threads keep minutes-long agent calls off daemon's CPU pool."
+        "Local calls share daemon's one worker, so local parts take turns on it (a local part waits for the job's local turn and keeps it for all its calls, so its prompts follow each other and reuse their prefix in the worker) while hosted parts run beside them; the dedicated threads keep minutes-long agent calls off daemon's CPU pool."
       ]
     }
   ]

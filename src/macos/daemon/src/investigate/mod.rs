@@ -193,6 +193,8 @@ struct Trail {
     skipped: usize,
     // Lookups whose output another part or turn of the job had already got.
     shared: usize,
+    // The rule files (and ranges) already in `rules`, so each is given once, whatever other parts of the job were given.
+    rule_keys: Vec<String>,
     // The declarations discovery and SYMBOL lookups listed, by handle: D1 is the first.
     handles: Vec<discover::Candidate>,
 }
@@ -235,6 +237,17 @@ impl Trail {
         let (label, _) = &self.seen[*self.evidence.get(n.checked_sub(1)?)?];
         let arg = label.strip_prefix("READ ").or_else(|| label.strip_prefix("OUTLINE "))?;
         Some(path_part(arg).0.to_string())
+    }
+
+    // Adds the rules for a file this trail read that are not in its rules section yet, each rule file or range once.
+    fn add_rules(&mut self, lctx: &Ctx, file: &str) {
+        let keys = std::cell::RefCell::new(std::mem::take(&mut self.rule_keys));
+        let has = |k: &str| keys.borrow().iter().any(|x| x == k);
+        let mark = |k: &str| keys.borrow_mut().push(k.to_string());
+        let ledger = crate::rules::Ledger { has: &has, mark: &mark };
+        let purposes = lctx.engine.sessions.purposes(&lctx.session);
+        self.rules.push_str(&crate::nested::for_paths(&lctx.cwd, &[lctx.cwd.join(file)], &purposes, &ledger));
+        self.rule_keys = keys.into_inner();
     }
 
     // Tokens of everything seen so far.
@@ -304,7 +317,7 @@ fn step(
     Ok(ok)
 }
 
-// Runs one lookup through zazzle's own commands, confined to the scope, returning its text and status; the rules that apply to what it read go to the trail's rules, not into the evidence.
+// Runs one lookup through zazzle's own commands, confined to the scope, returning its text and status; the rules that apply to a file it read go to the trail's own rules section, not into the evidence.
 fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trail) -> (String, u8) {
     let path_ok = |p: &str| {
         std::fs::canonicalize(lctx.cwd.join(path_part(p).0)).is_ok_and(|f| cite::in_scope(&f, scope))
@@ -328,7 +341,7 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
         Lookup::Symbol(words) => return symbols(lctx, scope, words, trail),
         Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => {
             let key = format!("refusal\0{}\0{:?}\0{p}", lctx.cwd.display(), plan.scope);
-            let run = || ((refusal(lctx, scope, plan, p), 0, String::new()), !crate::budget::spent());
+            let run = || ((refusal(lctx, scope, plan, p), 0), !crate::budget::spent());
             return shared_lookup(&key, trail, run);
         }
         Lookup::Read(p) => vec!["read".into(), p.clone(), "--budget".into(), LOOKUP_BUDGET.into()],
@@ -350,25 +363,24 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     let run = || {
         let o = crate::cmd::run(lctx, &args);
         let keep = definitive(&o.text, o.status) && !crate::budget::spent();
-        ((o.text, o.status, o.notes), keep)
+        ((o.text, o.status), keep)
     };
-    shared_lookup(&key, trail, run)
+    let (text, status) = shared_lookup(&key, trail, run);
+    if let (Lookup::Read(p), 0) = (l, status) {
+        trail.add_rules(lctx, path_part(p).0);
+    }
+    (text, status)
 }
 
-// Runs a lookup once per job: the output another part (or an earlier turn) already got for the same key, else `run`'s, kept for the job when definitive; the rules notes go to the trail. Without a job it just runs.
-fn shared_lookup(
-    key: &str,
-    trail: &mut Trail,
-    run: impl FnOnce() -> ((String, u8, String), bool),
-) -> (String, u8) {
+// Runs a lookup once per job: the output another part (or an earlier turn) already got for the same key, else `run`'s, kept for the job when definitive. Without a job it just runs.
+fn shared_lookup(key: &str, trail: &mut Trail, run: impl FnOnce() -> ((String, u8), bool)) -> (String, u8) {
     let got = match crate::budget::shared() {
         Some(s) => s.lookups.get_or(key, run),
         None => Ok((run().0, false)),
     };
     match got {
-        Ok(((text, status, notes), shared)) => {
+        Ok(((text, status), shared)) => {
             trail.shared += usize::from(shared);
-            trail.rules.push_str(&notes);
             (text, status)
         }
         Err(e) => (format!("{e} (waiting for the same lookup in another part)"), 1),
@@ -611,6 +623,7 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         evidence: Vec::new(),
         skipped: 0,
         shared: 0,
+        rule_keys: Vec::new(),
         handles: Vec::new(),
     };
     let missed = seeds(&lctx, &scope, &plan, &mut trail, deadline);
@@ -620,13 +633,21 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
     let nothing = !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
         && missed.iter().all(|(_, c)| c.is_empty());
-    let mut st =
-        Status { stop: String::new(), cut: false, turns: 0, answer_only: false, recovered: None, missed };
+    let mut st = Status {
+        stop: String::new(),
+        cut: false,
+        turns: 0,
+        answer_only: false,
+        recovered: None,
+        missed,
+        reserved: false,
+    };
     if nothing {
         st.stop = "none of the starting symbols occurs inside the scope".into();
         return Ok(Explored { plan, scope, trail, answer: None, st, nothing });
     }
     let (mut answer, mut strayed, mut stalled, mut retry) = (None, false, false, None);
+    let mut slowest = std::time::Duration::ZERO;
     for step_no in 1..=plan.steps {
         st.turns = step_no;
         if crate::budget::over(deadline) {
@@ -634,8 +655,15 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
             st.stop = stopped(&plan, "");
             break;
         }
-        let left = if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
-        let reply = match local.ask(&system(&trail), &trail.transcript(&plan, left), deadline) {
+        let mut left =
+            if step_no == plan.steps || trail.size() > SEEN_TOKENS { 0 } else { plan.steps - step_no };
+        if left > 0 && !trail.evidence.is_empty() && last_turn(deadline, slowest) {
+            (left, st.reserved) = (0, true);
+        }
+        let asked = Instant::now();
+        let reply = local.ask(&system(&trail), &trail.transcript(&plan, left), deadline);
+        slowest = slowest.max(asked.elapsed());
+        let reply = match reply {
             Ok(r) => r,
             Err(e) if trail.seen.is_empty() => return Err(e),
             Err(e) => {
@@ -715,6 +743,11 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
     Ok(Explored { plan, scope, trail, answer, st, nothing })
 }
 
+// Whether the time left fits one more turn like the slowest so far but not two, so the next turn must be the answer.
+fn last_turn(deadline: Instant, slowest: std::time::Duration) -> bool {
+    !slowest.is_zero() && deadline.saturating_duration_since(Instant::now()) < slowest * 2
+}
+
 // Why the loop stopped at its deadline or a cancel, with what it was about to do.
 fn stopped(plan: &Plan, before: &str) -> String {
     match crate::budget::cancelled() {
@@ -788,6 +821,8 @@ struct Status {
     answer_only: bool,
     recovered: Option<String>,
     missed: Vec<(String, Vec<String>)>,
+    // Whether a turn was kept for the answer because the time left fit only one more.
+    reserved: bool,
 }
 
 // Formats the checked findings, rejected citations and unknowns, with the caller's rules for the files involved as notes; when no finding is verified, ranked excerpts of the evidence and the lookups that found nothing come back instead.
@@ -860,7 +895,10 @@ fn report(ctx: &Ctx, e: Explored) -> Output {
     if trail.shared > 0 {
         skipped.push_str(&format!(", {} answered from the job's earlier lookups", trail.shared));
     }
-    let extra = if st.answer_only { " and an answer-only turn" } else { "" };
+    let mut extra = if st.answer_only { " and an answer-only turn" } else { "" }.to_string();
+    if st.reserved {
+        extra.push_str(", the last kept for the answer before the time limit");
+    }
     out.push_str(&format!(
         "-- local model, {} of {} turns{extra}, {} lookups ({}){skipped}; {state}. Excerpts are read from the files; claims are the model's.",
         st.turns,

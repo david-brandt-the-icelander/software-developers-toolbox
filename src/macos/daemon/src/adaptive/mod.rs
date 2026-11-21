@@ -687,7 +687,11 @@ fn part(
                 argv.extend(["--steps".to_string(), plan.steps.to_string()]);
                 argv.extend(["--seconds".to_string(), plan.seconds.to_string()]);
                 argv.extend(context.iter().flat_map(|c| ["--context".to_string(), c.clone()]));
-                match investigate::explore(ctx, &argv, &OnRung { b, rung: r, log, role: &role }, deadline) {
+                // Local parts take turns on the one local model, so each reuses its own prompt prefix; hosted parts go on meanwhile.
+                let explored = investigate::cache::local_turn().and_then(|_turn| {
+                    investigate::explore(ctx, &argv, &OnRung { b, rung: r, log, role: &role }, deadline)
+                });
+                match explored {
                     Ok(e) => investigate::work(ctx, &e),
                     Err(e) => Work::failed(&e),
                 }

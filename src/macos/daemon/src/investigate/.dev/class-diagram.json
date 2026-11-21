@@ -87,7 +87,8 @@
         "evidence: Vec<usize>",
         "skipped: usize",
         "handles: Vec<Candidate>",
-        "shared: usize"
+        "shared: usize",
+        "rule_keys: Vec<String>"
       ]
     },
     {
@@ -103,7 +104,8 @@
         "turns: usize",
         "answer_only: bool",
         "recovered: Option<String>",
-        "missed: Vec<(String, Vec<String>)>"
+        "missed: Vec<(String, Vec<String>)>",
+        "reserved: bool"
       ]
     },
     {
@@ -205,8 +207,10 @@
         "src/macos/daemon/src/investigate/cache.rs"
       ],
       "members": [
-        "lookups: Cache<(String, u8, String)>",
+        "lookups: Cache<(String, u8)>",
         "decls: Cache<Vec<Candidate>>",
+        "local: Mutex<bool>",
+        "free: Condvar",
         "evidence: Option<PathBuf>",
         "checkpoint(v)"
       ]
@@ -247,6 +251,17 @@
         "cache: &Cache<V>",
         "key: &str",
         "kept: Option<V>"
+      ]
+    },
+    {
+      "id": "Turn",
+      "name": "Turn",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/cache.rs"
+      ],
+      "members": [
+        "0: Arc<Shared>"
       ]
     }
   ],
@@ -316,6 +331,12 @@
       "to": "Candidate",
       "kind": "depends-on",
       "description": "Keeps the declaration scans' results."
+    },
+    {
+      "from": "Turn",
+      "to": "Shared",
+      "kind": "depends-on",
+      "description": "A local part's hold on the job's local model, freed on drop."
     }
   ]
 }

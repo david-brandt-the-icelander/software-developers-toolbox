@@ -108,7 +108,7 @@
       "name": "Loaded",
       "kind": "struct",
       "sources": ["src/macos/ai-agent/src/engine.rs"],
-      "members": ["backend: LlamaBackend", "model: LlamaModel", "path: PathBuf", "generate(ask, out) -> Result<Done, String>"]
+      "members": ["kept: Mutex<Option<Kept>>", "backend: LlamaBackend", "model: &'static LlamaModel", "path: PathBuf", "generate(ask, out) -> Result<Done, String>"]
     },
     {
       "id": "Request",
@@ -143,7 +143,14 @@
       "name": "Done",
       "kind": "struct",
       "sources": ["src/macos/ai-agent/src/engine.rs"],
-      "members": ["prompt_tokens: usize", "tokens: usize", "truncated: bool"]
+      "members": ["tokens: usize", "truncated: bool", "prompt: usize", "reused: usize"]
+    },
+    {
+      "id": "Kept",
+      "name": "Kept",
+      "kind": "struct",
+      "sources": ["src/macos/ai-agent/src/engine.rs"],
+      "members": ["ctx: LlamaContext<'static>", "tokens: Vec<LlamaToken>"]
     }
   ],
   "relationships": [
@@ -154,6 +161,7 @@
     { "from": "Ask", "to": "Turn", "kind": "depends-on", "description": "generate renders the template with a Turn made from the Ask." },
     { "from": "Ask", "to": "Event", "kind": "depends-on", "description": "generate reports the rendered prompt and each piece of text as Events." },
     { "from": "Ask", "to": "Done", "kind": "depends-on", "description": "generate returns how the run ended." },
+    { "from": "Loaded", "to": "Kept", "kind": "depends-on", "description": "The context kept from the last prompt, reused for a shared prefix." },
     { "from": "Filter", "to": "Piece", "kind": "depends-on", "description": "push and finish return the pieces that can be shown." },
     { "from": "Gone", "to": "Item", "kind": "depends-on", "description": "plan turns an Item's files into the Gone list prune removes." },
     { "from": "Item", "to": "Lock", "kind": "depends-on", "description": "prune holds the Item's Lock exclusively while it deletes its files." }

@@ -59,13 +59,13 @@
     {
       "id": "worker",
       "name": "Worker (worker.rs)",
-      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does. Requests may carry `history` (earlier turns as role and content), rendered before the new message, for daemon's per-terminal chats. The hidden `fetch [--model]` command downloads a model unless it is here and prints its full name.",
+      "responsibility": "The hidden `worker [--model] [--effort] [--no-download]` command: loads the model once, prints a `{\"ready\": MODEL}` line, then answers each JSON-line prompt on standard input (`user`, optional `system`, `effort`, `max_tokens`, `temp`, `grammar`) with one `{\"text\", \"tokens\", \"truncated\", \"prompt_tokens\", \"cached_tokens\"}` or `{\"error\"}` line until standard input closes; with --no-download a missing model exits 4 as prompt does. Requests may carry `history` (earlier turns as role and content), rendered before the new message, for daemon's per-terminal chats. The hidden `fetch [--model]` command downloads a model unless it is here and prints its full name.",
       "folder": "src/macos/ai-agent/src"
     },
     {
       "id": "engine",
       "name": "Engine (engine.rs)",
-      "responsibility": "Loads the GGUF model once (load, kept as Loaded for any number of generate calls; holding back the routine startup logs of llama.cpp and the GPU backend, quiet.rs, and showing only their error lines when loading fails) with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, decodes it in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
+      "responsibility": "Loads the GGUF model once (load, kept as Loaded for any number of generate calls; holding back the routine startup logs of llama.cpp and the GPU backend, quiet.rs, and showing only their error lines when loading fails) with every layer offloaded to the GPU where there is one, renders the prompt, refuses one longer than the model's training context, keeps the context between prompts and decodes only the part of a prompt after the prefix it shares with the cached tokens (clearing the cache when a model cannot drop just its tail, and dropping the context after a failure), in 512-token batches, samples (an optional GBNF grammar first, then greedy at temperature 0, else top-k, top-p, min-p and the temperature) until an end token or the limit, and reports the prompt and each complete UTF-8 piece of text.",
       "folder": "src/macos/ai-agent/src"
     },
     {
