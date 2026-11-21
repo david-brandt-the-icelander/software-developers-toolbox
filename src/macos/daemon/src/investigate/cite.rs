@@ -64,6 +64,56 @@ pub fn parse_answer(reply: &str) -> Option<Answer> {
     Some(a)
 }
 
+// Whether a reply starts its answer with an ANSWER line.
+pub fn headed(reply: &str) -> bool {
+    reply.lines().any(|l| strip_word(l.trim(), "ANSWER").is_some())
+}
+
+impl Answer {
+    // Whether a reply is an answer, not just a self-report: an ANSWER line, or findings or unknowns; a confidence or status line alone answers nothing.
+    pub fn answers(&self, reply: &str) -> bool {
+        headed(reply) || !self.findings.is_empty() || !self.unknowns.is_empty()
+    }
+}
+
+// Words in a claim that say one name is used only when another is missing, so the names must appear in that order in the cited lines.
+const FALLBACK: &[&str] =
+    &["fall back", "falls back", "falling back", "fallback", "otherwise", "if missing", "when missing"];
+
+// The code names a claim quotes: each `backticked` text, and each "double-quoted" text without spaces, without a trailing `()`.
+pub fn quoted(claim: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (open, spaced) in [('`', true), ('"', false)] {
+        let parts: Vec<&str> = claim.split(open).collect();
+        for q in parts.iter().skip(1).step_by(2).take(parts.len().saturating_sub(1) / 2) {
+            let q = q.trim().trim_end_matches("()").trim_matches(|c: char| ",.;:".contains(c));
+            if q.len() >= 2 && (spaced || !q.contains(char::is_whitespace)) && !out.iter().any(|o| o == q) {
+                out.push(q.to_string());
+            }
+        }
+    }
+    out
+}
+
+// Checks the names a claim quotes against its cited lines: each must appear there, and a claim that one name falls back to another must cite them in that order; returns why not.
+pub fn literals_hold(claim: &str, excerpt: &str) -> Result<(), String> {
+    let names = quoted(claim);
+    if let Some(missing) = names.iter().find(|n| !excerpt.contains(n.as_str())) {
+        return Err(format!("the cited lines do not contain `{missing}`"));
+    }
+    let lower = claim.to_lowercase();
+    if names.len() >= 2 && FALLBACK.iter().any(|w| lower.contains(w)) {
+        let at: Vec<usize> = names.iter().filter_map(|n| excerpt.find(n.as_str())).collect();
+        if at.windows(2).any(|w| w[0] > w[1]) {
+            return Err(format!(
+                "the cited lines use {} in another order than the claim says",
+                names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+    Ok(())
+}
+
 // The first word of `s` when it is one of `allowed` (any case), lowercased; else empty.
 fn word_of(s: &str, allowed: &[&str]) -> String {
     let w = s.split_whitespace().next().unwrap_or_default().to_lowercase();

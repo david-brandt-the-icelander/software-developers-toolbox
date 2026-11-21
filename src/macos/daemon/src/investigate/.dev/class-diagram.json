@@ -12,6 +12,10 @@
     {
       "path": "src/macos/daemon/src/investigate/cite.rs",
       "symbol": "check"
+    },
+    {
+      "path": "src/macos/daemon/src/investigate/discover.rs",
+      "symbol": "discover"
     }
   ],
   "types": [
@@ -64,7 +68,8 @@
         "Read(String)",
         "Refs(String)",
         "Outline(String)",
-        "Find(String)"
+        "Find(String)",
+        "Symbol(String)"
       ]
     },
     {
@@ -80,7 +85,8 @@
         "lookups: Vec<String>",
         "done: Vec<(String, Option<String>)>",
         "evidence: Vec<usize>",
-        "skipped: usize"
+        "skipped: usize",
+        "handles: Vec<Candidate>"
       ]
     },
     {
@@ -172,6 +178,23 @@
         "cite: String",
         "excerpt: String"
       ]
+    },
+    {
+      "id": "Candidate",
+      "name": "Candidate",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/investigate/discover.rs"
+      ],
+      "members": [
+        "path: String",
+        "kind: String",
+        "name: String",
+        "start: usize",
+        "end: usize",
+        "score: usize",
+        "why: Vec<String>"
+      ]
     }
   ],
   "relationships": [
@@ -210,6 +233,12 @@
       "to": "Checked",
       "kind": "depends-on",
       "description": "verify turns a verified claim into a Found."
+    },
+    {
+      "from": "Trail",
+      "to": "Candidate",
+      "kind": "depends-on",
+      "description": "The declarations discovery and SYMBOL lookups listed, by handle."
     }
   ]
 }

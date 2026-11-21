@@ -91,10 +91,14 @@ impl Work {
 
     // The structured result for a caller: status, the two levels, findings with evidence, gaps, the escalation and what only the user can give.
     pub fn json(&self) -> Value {
-        let findings: Vec<Value> =
-            self.findings.iter().map(|f| json!({"claim": f.claim, "evidence": [f.cite]})).collect();
+        let findings: Vec<Value> = self
+            .findings
+            .iter()
+            .map(|f| json!({"claim": f.claim, "evidence": [f.cite], "excerpt": f.excerpt}))
+            .collect();
         let level = |s: &str| if s.is_empty() { Value::Null } else { s.into() };
         json!({
+            "answer": self.answer(),
             "status": self.status,
             "task_understanding": level(&self.understanding),
             "result_confidence": level(&self.confidence),
@@ -107,6 +111,21 @@ impl Work {
                 "context": self.context,
             },
             "needs_user": self.blocked,
+        })
+    }
+
+    // The answer as the caller asked for it: each verified finding with its citation and the exact lines it rests on, then what is still unresolved, as text and as fields.
+    pub fn answer(&self) -> Value {
+        let mut text: String =
+            self.findings.iter().map(|f| format!("- {} ({})\n", f.claim, f.cite)).collect();
+        if !self.gaps.is_empty() {
+            text.push_str("Unresolved:\n");
+            text.extend(self.gaps.iter().map(|g| format!("- {g}\n")));
+        }
+        json!({
+            "text": text,
+            "findings": self.findings.iter().map(|f| json!({"claim": f.claim, "citation": f.cite, "excerpt": f.excerpt})).collect::<Vec<_>>(),
+            "unresolved": self.gaps,
         })
     }
 

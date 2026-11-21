@@ -1,5 +1,6 @@
 // `zazzle investigate QUESTION --path P.. --symbol S..`: the local model resolves a repository question with bounded read-only lookups inside the scope, and its answer comes back as findings whose `path:line` citations zazzle has checked and quoted, plus what it could not establish.
 pub mod cite;
+pub(crate) mod discover;
 mod seed;
 
 use crate::cmd::{Ctx, Output};
@@ -46,12 +47,13 @@ READ path            (or READ path:A-B for lines A to B)
 REFS name            where a symbol is defined and used
 OUTLINE path         the symbols of a file with their line ranges
 FIND text            lines containing the text
+SYMBOL words         declarations whose names or routes match the words, each with a handle D1, D2 (READ D1 reads it)
 Answer: a line ANSWER, then one line per fact:
 FINDING path:A-B one sentence that the cited lines show
 UNKNOWN something the question needs that you could not establish
 CONFIDENCE understanding=high|medium|low result=high|medium|low
 and only when needed: ESCALATE the exact open question a stronger model should take over, CONTEXT lines it would need, BLOCKED access|decision what only the user can give.
-Cite only lines you have seen, with the line numbers shown to you. Lookups that found something are numbered E1, E2 and so on; E2:A-B cites lines A to B of E2's file. Prefer a few exact findings over many vague ones. Stay inside the scope.";
+Cite only lines you have seen, with the line numbers shown to you. A reply with any lookup line is a lookup turn: its lookups run and nothing else in it counts; an answer starts with the ANSWER line. Lookups that found something are numbered E1, E2 and so on; E2:A-B cites lines A to B of E2's file. Prefer a few exact findings over many vague ones. Stay inside the scope.";
 
 // Something an investigation asks: the local model through ai-agent, or a script in tests.
 pub trait Local {
@@ -140,6 +142,7 @@ enum Lookup {
     Refs(String),
     Outline(String),
     Find(String),
+    Symbol(String),
 }
 
 impl Lookup {
@@ -150,6 +153,7 @@ impl Lookup {
             Lookup::Refs(a) => format!("REFS {a}"),
             Lookup::Outline(a) => format!("OUTLINE {a}"),
             Lookup::Find(a) => format!("FIND {a}"),
+            Lookup::Symbol(a) => format!("SYMBOL {a}"),
         }
     }
 }
@@ -165,6 +169,7 @@ fn parse_lookups(reply: &str) -> Vec<Lookup> {
             .or_else(|| arg("REFS").map(Lookup::Refs))
             .or_else(|| arg("OUTLINE").map(Lookup::Outline))
             .or_else(|| arg("FIND").map(Lookup::Find))
+            .or_else(|| arg("SYMBOL").map(Lookup::Symbol))
         {
             out.push(found);
         }
@@ -183,6 +188,8 @@ struct Trail {
     // Indexes into `seen` of the lookups that found something.
     evidence: Vec<usize>,
     skipped: usize,
+    // The declarations discovery and SYMBOL lookups listed, by handle: D1 is the first.
+    handles: Vec<discover::Candidate>,
 }
 
 impl Trail {
@@ -257,6 +264,7 @@ fn failure(text: &str, status: u8) -> Option<String> {
     let first =
         text.lines().map(str::trim).find(|l| !(l.starts_with("[r:") && l.ends_with(']'))).unwrap_or("");
     let empty = first.starts_with("refused:")
+        || first.starts_with("no declarations match ")
         || first.starts_with("no references to ")
         || first.starts_with("no matches in ")
         || first.is_empty();
@@ -297,7 +305,23 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     let path_ok = |p: &str| {
         std::fs::canonicalize(lctx.cwd.join(path_part(p).0)).is_ok_and(|f| cite::in_scope(&f, scope))
     };
+    let resolved;
+    let l = match l {
+        Lookup::Read(p) => match handle(trail, p) {
+            Some(range) => {
+                resolved = Lookup::Read(range);
+                &resolved
+            }
+            None if !path_ok(p) && identifier(p) => {
+                resolved = Lookup::Symbol(p.clone());
+                &resolved
+            }
+            None => l,
+        },
+        _ => l,
+    };
     let args: Vec<String> = match l {
+        Lookup::Symbol(words) => return symbols(lctx, scope, words, trail),
         Lookup::Read(p) | Lookup::Outline(p) if !path_ok(p) => return (refusal(lctx, scope, plan, p), 0),
         Lookup::Read(p) => vec!["read".into(), p.clone(), "--budget".into(), LOOKUP_BUDGET.into()],
         Lookup::Outline(p) => vec!["outline".into(), p.clone()],
@@ -317,6 +341,44 @@ fn look(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, l: &Lookup, trail: &mut Trai
     let o = crate::cmd::run(lctx, &args);
     trail.rules.push_str(&o.notes);
     (o.text, o.status)
+}
+
+// The range a declaration handle (`D2`) names, as `path:A-B`.
+fn handle(trail: &Trail, p: &str) -> Option<String> {
+    let n: usize = p.trim().strip_prefix('D')?.parse().ok()?;
+    let c = trail.handles.get(n.checked_sub(1)?)?;
+    Some(format!("{}:{}-{}", c.path, c.start, c.end))
+}
+
+// Whether a READ argument is a bare name rather than a path, so it is looked up as a declaration instead.
+fn identifier(p: &str) -> bool {
+    let tail = p.rsplit('.').next().unwrap_or_default();
+    !p.is_empty()
+        && !p.contains('/')
+        && p.chars().all(|c| c.is_alphanumeric() || "_.:".contains(c))
+        && (!p.contains('.') || tail.starts_with(char::is_uppercase))
+}
+
+// Lists the declarations whose names or routes match the words, adding them to the trail's handles.
+fn symbols(lctx: &Ctx, scope: &[PathBuf], words: &str, trail: &mut Trail) -> (String, u8) {
+    let found =
+        discover::discover(lctx.engine, &lctx.cwd, scope, &discover::terms(words), false, discover::SHOW);
+    if found.is_empty() {
+        return (format!("no declarations match {words} inside the scope"), 0);
+    }
+    let mut out = String::new();
+    for c in found {
+        let at = match trail.handles.iter().position(|h| *h == c) {
+            Some(i) => i + 1,
+            None => {
+                trail.handles.push(c.clone());
+                trail.handles.len()
+            }
+        };
+        out.push_str(&c.line(&format!("D{at}")));
+        out.push('\n');
+    }
+    (out, 0)
 }
 
 // Why a READ or OUTLINE of `p` is refused: outside the scope, or a file that does not exist there, with the real files and symbols in scope whose names resemble it.
@@ -348,6 +410,53 @@ fn defs(refs: &str) -> Vec<String> {
         .take(SEED_DEFS)
         .map(str::to_string)
         .collect()
+}
+
+// Seedless discovery, before any inference: the declarations inside the scope whose names, routes or paths match the question's terms, listed with handles (production code before tests and simulators), and the best one read with its attributes, so the model starts from real code instead of guessed names.
+fn discovery(lctx: &Ctx, scope: &[PathBuf], plan: &Plan, trail: &mut Trail, deadline: Instant) {
+    let terms = discover::terms(&plan.question);
+    let found = discover::discover(
+        lctx.engine,
+        &lctx.cwd,
+        scope,
+        &terms,
+        discover::web(&plan.question),
+        discover::SHOW,
+    );
+    let Some(best) = found.first().cloned() else { return };
+    let list: String =
+        found.iter().enumerate().map(|(i, c)| format!("{}\n", c.line(&format!("D{}", i + 1)))).collect();
+    trail.handles = found;
+    trail.seen.push((
+        "DISCOVER".into(),
+        format!("Declarations inside the scope that match the question ({}), best first; READ a handle to read one:\n{list}", terms.join(", ")),
+    ));
+    let _ = step(
+        lctx,
+        scope,
+        plan,
+        &Lookup::Read(format!("{}:{}-{}", best.path, best.start, best.end)),
+        trail,
+        deadline,
+    );
+}
+
+// The declarations a question with no starting symbol should start from, as listing lines for a hosted agent that reads the files itself; none when symbols were given.
+pub fn leads(ctx: &Ctx, scope: &[PathBuf], question: &str, symbols: &[String]) -> Vec<String> {
+    if !symbols.is_empty() {
+        return Vec::new();
+    }
+    discover::discover(
+        ctx.engine,
+        &ctx.cwd,
+        scope,
+        &discover::terms(question),
+        discover::web(question),
+        discover::SHOW,
+    )
+    .iter()
+    .map(discover::Candidate::brief)
+    .collect()
 }
 
 // Resolves the starting symbols before any inference, none started after the deadline: their refs inside the scope and the bodies of their declarations are the first evidence; a symbol that is not there gets the real files and symbols in scope that resemble it. Returns the misses with their candidates.
@@ -456,8 +565,12 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
         done: Vec::new(),
         evidence: Vec::new(),
         skipped: 0,
+        handles: Vec::new(),
     };
     let missed = seeds(&lctx, &scope, &plan, &mut trail, deadline);
+    if (plan.symbols.is_empty() || trail.evidence.is_empty()) && !crate::budget::over(deadline) {
+        discovery(&lctx, &scope, &plan, &mut trail, deadline);
+    }
     let nothing = !plan.symbols.is_empty()
         && missed.len() == plan.symbols.len()
         && missed.iter().all(|(_, c)| c.is_empty());
@@ -485,17 +598,18 @@ pub fn explore(ctx: &Ctx, argv: &[String], local: &dyn Local, deadline: Instant)
             }
         };
         st.cut |= reply.truncated;
-        if empty(&reply) && !trail.evidence.is_empty() {
+        let lookups = parse_lookups(&reply.text);
+        let answering = lookups.is_empty() || cite::headed(&reply.text);
+        if answering && empty(&reply) && !trail.evidence.is_empty() {
             st.stop =
                 format!("its answer was empty after {} lookups that found evidence", trail.evidence.len());
             retry = Some("Your answer was empty, but the lookups above found evidence.");
             break;
         }
-        if let Some(a) = cite::parse_answer(&reply.text) {
+        if let Some(a) = cite::parse_answer(&reply.text).filter(|a| answering && a.answers(&reply.text)) {
             answer = Some(a);
             break;
         }
-        let lookups = parse_lookups(&reply.text);
         if lookups.is_empty() && left > 0 && !strayed {
             strayed = true;
             let note = format!("Your last reply had neither lookups nor ANSWER (it began: {}). Reply only with lookup lines or with ANSWER and FINDING/UNKNOWN lines.", began(&reply.text));
@@ -743,9 +857,10 @@ pub fn verify(cwd: &Path, scope: &[PathBuf], c: &cite::Claim) -> (Option<Found>,
     let tail = if c.end > c.start { format!("-{}", c.end) } else { String::new() };
     let cite = format!("{}:{}{tail}", c.path, c.start);
     match cite::check(cwd, scope, c) {
-        cite::Checked::Verified { excerpt } => {
-            (Some(Found { claim: c.text.clone(), path: c.path.clone(), cite, excerpt }), None)
-        }
+        cite::Checked::Verified { excerpt } => match cite::literals_hold(&c.text, &excerpt) {
+            Err(why) => (None, Some(format!("{cite} {}: {why}", c.text))),
+            Ok(()) => (Some(Found { claim: c.text.clone(), path: c.path.clone(), cite, excerpt }), None),
+        },
         cite::Checked::Rejected(why) => (None, Some(format!("{cite} {}: {why}", c.text))),
     }
 }
@@ -788,10 +903,11 @@ pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
     }
     let failed = e.trail.lookups.iter().zip(&e.trail.done);
     gaps.extend(failed.filter_map(|(l, (_, why))| why.as_ref().map(|w| format!("{l} found nothing: {w}"))));
+    // Complete only with a verified finding: a model's own STATUS can lower it, never raise it.
     let status = match (e.answer.is_some() && e.st.stop.is_empty() && !e.st.cut, findings.is_empty()) {
-        (true, _) if !answer.status.is_empty() => answer.status.clone(),
-        (true, _) => "complete".into(),
-        (false, false) => "partial".into(),
+        (true, false) if ["partial", "failed"].contains(&answer.status.as_str()) => answer.status.clone(),
+        (true, false) => "complete".into(),
+        (true, true) | (false, false) => "partial".into(),
         (false, true) => "failed".into(),
     };
     crate::adaptive::work::Work {
