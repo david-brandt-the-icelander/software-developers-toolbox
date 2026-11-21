@@ -1154,6 +1154,10 @@ fn test_find_arguments() {
     assert!(s("\"x\" one two")
         .unwrap_err()
         .contains("only a path may follow the quoted text, not `one two`"));
+    assert_eq!(s("blank key").map(|x| x.within), Ok(None), "a last word that is no path is text");
+    assert_eq!(s("x Route(\"a/b\")").map(|x| x.within), Ok(None), "code with a slash is text");
+    assert_eq!(s("x a/b").map(|x| x.within), Ok(Some("a/b".into())));
+    assert!(search::place(".") && search::place("./a") && search::place("a/") && !search::place("a=b/c"));
     let (_t, root) = repo();
     let e = crate::engine::Engine::new();
     let o = go(
@@ -1192,6 +1196,8 @@ fn test_find_arguments() {
         &[
             "q",
             "--tried",
+            "not a lookup — found nothing: x",
+            "--tried",
             "FIND Nowhere — found nothing: no matches in 2 files",
             "--tried",
             &format!("READ sim/Fake.cs{NOTHING}{UNRELATED}"),
@@ -1199,7 +1205,7 @@ fn test_find_arguments() {
     )
     .expect("tried");
     let second = &s.seen.borrow()[1].1;
-    assert!(second.contains("Lookups an earlier attempt already made (ask for different ones):\n- FIND Nowhere — found nothing: no matches in 2 files\n"), "{second}");
+    assert!(second.contains("Lookups an earlier attempt already made (ask for different ones):\n- not a lookup — found nothing: x\n- FIND Nowhere — found nothing: no matches in 2 files\n"), "{second}");
     assert!(second.contains("Not run again: FIND Nowhere (an earlier attempt already made it, and it found nothing: no matches in 2 files); READ sim/Fake.cs:1-2 (an earlier attempt already made it, and it found nothing: what it cited there is about none of the items asked)"), "{second}");
     assert!(o.text.contains("0 lookups"), "{}", o.text);
 }

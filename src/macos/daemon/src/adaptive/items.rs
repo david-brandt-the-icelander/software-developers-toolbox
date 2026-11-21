@@ -102,10 +102,8 @@ fn operational(s: &str) -> bool {
 fn inline(text: &str) -> Option<(String, Vec<String>)> {
     let mut marks: Vec<(usize, usize)> = Vec::new();
     for c in INLINE.captures_iter(text) {
-        let (Some(all), Some(n)) = (c.get(0), c.get(1).and_then(|n| n.as_str().parse::<usize>().ok())) else {
-            continue;
-        };
-        if n == marks.len() + 1 {
+        let all = c.get(0).expect("a whole match");
+        if c[1].parse::<usize>().expect("one or two digits") == marks.len() + 1 {
             marks.push((all.start(), all.end()));
         }
     }
@@ -431,6 +429,19 @@ mod tests {
         assert!(
             operational("Is /home/me/app the repository?"),
             "a question naming a machine path is about the run"
+        );
+        let t = task("See (3) below. (1) where is the key read; (2) where is it stored?");
+        assert_eq!(
+            (t.items.len(), t.context.clone()),
+            (2, vec!["See (3) below.".to_string()]),
+            "a number out of the run is text"
+        );
+        assert_eq!(sentences("a. . b"), ["a.", ".", "b"]);
+        let t = task("1. Where is the key?\n2. Where is it stored?\nIs /home/me/app the checkout?");
+        assert_eq!(
+            (t.items.len(), t.constraints.len()),
+            (2, 1),
+            "an unmarked question about the run is a constraint"
         );
     }
 

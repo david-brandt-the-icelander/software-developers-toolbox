@@ -12,7 +12,7 @@ pub struct Search {
 }
 
 // Whether the last word of an unquoted FIND names where to search rather than what.
-fn place(w: &str) -> bool {
+pub fn place(w: &str) -> bool {
     w == "."
         || w.starts_with("./")
         || w.ends_with('/')

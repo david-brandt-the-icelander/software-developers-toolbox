@@ -494,6 +494,8 @@ fn test_top_rung_retries_with_lookups() {
         at("Core/Workflow/WashWorkflow.cs", "Queue.Publish"),
     );
     let low = trace_low();
+    let again = low.lines().find(|l| l.starts_with("FINDING")).expect("a finding");
+    let second = second.replacen("ANSWER\n", &format!("ANSWER\n{again}\n"), 1);
     let f = Fake::new(&[("qwen-a low", Ok(low.as_str())), ("qwen-a low", Ok(second.as_str()))]);
     let argv = [trace_prompt(), "--adaptive".into(), "--agents".into(), "qwen-a@low".into(), "--json".into()];
     let v: Value = serde_json::from_str(
@@ -560,4 +562,25 @@ fn test_coverage_shortfalls() {
     );
     let tests = one(3, Vec::new());
     assert!(tests.items[0].missing.iter().any(|m| m.contains("no test evidence")), "{tests:?}");
+    let decoy = one(1, vec![found(dc, at(dc, "[HttpPost"), at(dc, "public string"))]);
+    assert!(
+        !decoy.items[0].missing.iter().any(|m| m.contains("prefix")),
+        "a file with no class route has no prefix to cite: {decoy:?}"
+    );
+    let prefix = found(c, at(c, "[Route("), at(c, "[Route("));
+    let routed = one(1, vec![found(c, at(c, "[HttpPost"), at(c, "public async")), prefix]);
+    assert!(routed.items[0].missing.is_empty(), "{routed:?}");
+    let task = items::task("1. Which tests cover the terminal poll response cache?\n2. Which tests cover the terminal poll response cache recall?");
+    let t1 = "Tests/Core.Tests/TerminalPollResponseCacheTests.cs";
+    let both = coverage::check(
+        &ctx,
+        &scope,
+        &task,
+        &task.ids(),
+        &[found(t1, at(t1, "cache.Remember"), at(t1, "cache.Remember"))],
+    );
+    assert!(both.items.iter().all(|i| i.missing.is_empty()), "{both:?}");
+    let none = coverage::check(&ctx, &scope, &task, &task.ids(), &[]);
+    let reads = none.follow.iter().filter(|l| l.contains(t1)).count();
+    assert_eq!(reads, 1, "a lookup two items need is asked once: {none:?}");
 }

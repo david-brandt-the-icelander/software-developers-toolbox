@@ -479,6 +479,21 @@ mod tests {
         );
         assert_eq!(declares("        var w = StartSubscriptionWash(c);", "StartSubscriptionWash"), None);
         assert_eq!(declares("        await StartSubscriptionWash(c);", "StartSubscriptionWash"), None);
+        assert_eq!(declares("    public T Get<T>(string key)", "Get"), Some(true), "a generic method");
+        assert_eq!(
+            declares("    void TryGet(int k) => x_Get(k) + y.Get(k);", "Get"),
+            None,
+            "a longer name or a call is no declaration"
+        );
+        assert_eq!(declares("    int Get = (Get(1));", "Get"), None);
+        assert_eq!(declares("    int Gets;", "Get"), None);
+        assert_eq!(field_calls(&[(1, "_a.Save(x); _b.Save(y);")]).len(), 1, "one method is followed once");
+        assert_eq!(
+            types("class A : I, Ix, IReal<T>, Base { }"),
+            [("A".to_string(), false, vec!["IReal".to_string()])],
+            "only interface names count as bases"
+        );
+        assert_eq!(class_route("[ApiController]\n[Authorize]\npublic class A { }\n"), None);
         let calls = field_calls(&[(
             4,
             "await _store.Save(x); _logger.LogInformation(\"x\"); this.queue.Enqueue<T>(y);",
