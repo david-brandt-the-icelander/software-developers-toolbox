@@ -153,6 +153,7 @@ pub struct Ask<'a> {
     pub sections: &'a [(&'a str, &'a str)],
     pub write: bool,
     pub max_tokens: usize,
+    pub grammar: Option<&'a str>,
 }
 
 impl<'a> Ask<'a> {
@@ -163,7 +164,7 @@ impl<'a> Ask<'a> {
         prompt: &'a str,
         sections: &'a [(&'a str, &'a str)],
     ) -> Ask<'a> {
-        Ask { role, system, prompt, sections, write: false, max_tokens: SHORT_TOKENS }
+        Ask { role, system, prompt, sections, write: false, max_tokens: SHORT_TOKENS, grammar: None }
     }
 }
 
@@ -283,11 +284,26 @@ impl Log {
         cwd: &Path,
         deadline: Instant,
     ) -> Result<String, String> {
+        self.text_cut(b, r, a, cwd, deadline).map(|(t, _)| t)
+    }
+
+    // Asks like text and also says whether a local model's answer was cut short; a local model is held to the ask's grammar when it has one.
+    pub fn text_cut(
+        &self,
+        b: &dyn Backend,
+        r: &Rung,
+        a: &Ask,
+        cwd: &Path,
+        deadline: Instant,
+    ) -> Result<(String, bool), String> {
         match r.hosted() {
-            true => self.hosted(b, r, a, cwd, deadline).map(|s| s.text),
+            true => self.hosted(b, r, a, cwd, deadline).map(|s| (s.text, false)),
             false => {
-                let req = json!({"system": a.system, "user": a.prompt, "max_tokens": a.max_tokens, "temp": 0, "effort": r.effort});
-                self.local(b, r, a.role, &req, a.sections, deadline).map(|x| x.text)
+                let mut req = json!({"system": a.system, "user": a.prompt, "max_tokens": a.max_tokens, "temp": 0, "effort": r.effort});
+                if let Some(g) = a.grammar {
+                    req["grammar"] = g.into();
+                }
+                self.local(b, r, a.role, &req, a.sections, deadline).map(|x| (x.text, x.truncated))
             }
         }
     }

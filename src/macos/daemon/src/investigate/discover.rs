@@ -135,6 +135,12 @@ impl Candidate {
         format!("{handle} {}", self.brief())
     }
 
+    // Whether some of the terms match the candidate's name or path.
+    pub fn touches(&self, terms: &[String]) -> bool {
+        let words: Vec<String> = seed::words(&self.name).into_iter().chain(seed::words(&self.path)).collect();
+        !shared(terms, &words).is_empty()
+    }
+
     // Where the candidate is, what it is and why it matched.
     pub fn brief(&self) -> String {
         format!(

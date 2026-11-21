@@ -97,6 +97,7 @@ pub fn together(
                 sections: j.sections,
                 write: true,
                 max_tokens: 0,
+                grammar: None,
             };
             log.hosted(b, j.r, &ask, top, deadline).map(|s| s.text)
         }
@@ -109,6 +110,7 @@ pub fn together(
                 sections: j.sections,
                 write: false,
                 max_tokens: 4000,
+                grammar: None,
             };
             log.text(b, j.r, &ask, top, deadline)
         }
