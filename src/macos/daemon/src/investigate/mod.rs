@@ -921,6 +921,7 @@ pub fn work(ctx: &Ctx, e: &Explored) -> crate::adaptive::work::Work {
         context: answer.context,
         blocked: answer.blocked,
         turns: e.st.turns + usize::from(e.st.answer_only),
+        lines: Vec::new(),
     }
 }
 

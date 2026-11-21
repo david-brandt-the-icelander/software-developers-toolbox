@@ -298,8 +298,9 @@ fn test_adaptive_plan_escalate_combine() {
         handoff.contains("qwen-a low did not settle it: it rated the support for its results low"),
         "{handoff}"
     );
-    assert!(out.contains("answer (combined by claude:sonnet high):\nfindings (1 verified):\n1. the key is checked in Handle"), "{out}");
-    assert!(out.contains("- sim/Fake.cs:2 a stray claim: no part verified these lines"), "{out}");
+    assert!(out.contains("answer (combined by claude:sonnet high):\n- the key is checked in Handle ([1] api/Endpoint.cs:2-3)\nfindings (3 verified):\n1. Handle rejects a request without a key"), "every part's finding stays, the first attempt's too: {out}");
+    assert!(out.contains("a null key throws") && out.contains("the request is stored"), "{out}");
+    assert!(out.contains("- sim/Fake.cs:2 a stray claim: no finding has exactly these lines"), "{out}");
     assert!(out.contains("summary (by qwen-a low):\nHandle checks the key [1]"), "{out}");
     assert!(
         out.contains("usage: 6 calls (planner 1, part 2, escalation 1, combine 1, summary 1), "),
@@ -308,15 +309,22 @@ fn test_adaptive_plan_escalate_combine() {
     assert!(out.contains("output tokens, $0.0300 reported"), "{out}");
     let combine = &f.prompts("claude:sonnet high")[2];
     assert!(
-        combine.contains("F1 api/Endpoint.cs:2-3 Handle rejects") && combine.contains("GAP compatibility"),
+        combine.contains("F1 Handle rejects a request without a key (api/Endpoint.cs:2-3)\n   2\t")
+            && combine.contains("Still unresolved in the parts:\n")
+            && combine.contains("compatibility with published versions"),
         "{combine}"
     );
 
     let f = Fake::new(&script);
     argv.push("--json");
     let v: Value = serde_json::from_str(&go(&root, &f, &argv).expect("json")).expect("parse");
-    assert_eq!(v["status"], "complete");
+    assert_eq!(v["status"], "partial", "P2 was partial: the answer does not claim more");
     assert_eq!(v["findings"][0]["evidence"][0], "api/Endpoint.cs:2-3");
+    assert_eq!(
+        v["answer"]["lines"][0],
+        json!({"kind": "supported", "text": "the key is checked in Handle", "findings": [{"id": "F1", "citation": "api/Endpoint.cs:2-3"}]})
+    );
+    assert_eq!(v["answer"]["findings"].as_array().map(Vec::len), Some(3));
     assert_eq!(v["planner"], "claude:sonnet high");
     assert_eq!(v["parts"][0]["attempts"][0]["escalated_because"], "it rated the support for its results low");
     assert_eq!(v["parts"][1]["attempts"][0]["result"]["needs_user"], "decision which version may enforce it");
@@ -639,7 +647,6 @@ fn test_part_escalation_limits() {
 fn test_combine_fallbacks() {
     let (_t, root) = repo();
     let plan = investigate::parse(&["q".to_string()]).expect("plan");
-    let scope = vec![root.clone()];
     let found = |c: &str| investigate::Found {
         claim: "c".into(),
         path: "api/Endpoint.cs".into(),
@@ -674,7 +681,6 @@ fn test_combine_fallbacks() {
         (Some("x"), Some("e"), vec!["g".to_string()])
     );
     assert_eq!(merge(&[Work::failed("no")]).status, "failed");
-    assert!(overlaps("a:2-3", "a:3") && !overlaps("a:2-3", "a:4-9") && !overlaps("a", "a:1"));
     let r = Rung::parse("qwen-a", None).expect("rung");
     let f = Fake::new(&[
         ("qwen-a low", Err("gone")),
@@ -682,16 +688,29 @@ fn test_combine_fallbacks() {
     ]);
     let log = Log::default();
     let far = Instant::now() + Duration::from_secs(60);
-    let (w, by) = combine(&f, &log, &plan, &root, &scope, &[a.clone(), b.clone()], &r, far);
+    let task = items::task("q");
+    let (w, by) = combine(&f, &log, &task, &root, &[a.clone(), b.clone()], &r, far);
     assert_eq!(
         (w.findings.len(), by),
         (1, " (the parts merged; combining with qwen-a low failed: gone)".to_string())
     );
-    let (w, by) = combine(&f, &log, &plan, &root, &scope, &[a, b], &r, far);
+    let (w, by) = combine(&f, &log, &task, &root, &[a.clone(), b.clone()], &r, far);
     assert_eq!(
         (w.status.as_str(), by.as_str()),
-        ("partial", " (the parts merged; qwen-a low verified nothing from them)")
+        ("partial", " (the parts merged; qwen-a low gave no answer line resting on a finding)")
     );
+    assert!(
+        w.rejected.iter().any(|x| x == "sim/Fake.cs:2 elsewhere: no finding has exactly these lines"),
+        "{:?}",
+        w.rejected
+    );
+    let none = Fake::new(&[]);
+    let (w0, by0) = combine(&none, &log, &task, &root, &[Work::failed("x"), Work::failed("y")], &r, far);
+    assert_eq!(
+        (w0.findings.len(), by0.as_str()),
+        (0, " (the parts merged; nothing was verified to combine)")
+    );
+    assert!(none.prompts("qwen-a low").is_empty(), "no call with nothing to combine");
     let s = summary(&f, &log, &plan, &root, &r, &w, far);
     assert_eq!(s, "summary: qwen-a low failed: no reply scripted for qwen-a low\n");
 }
@@ -1258,7 +1277,7 @@ fn test_cancel_reaches_parallel_parts() {
         out.contains("not escalated: the run was cancelled") && out.contains("stopped at the cancel"),
         "{out}"
     );
-    assert!(out.contains("the run was cancelled before combine could start"), "{out}");
+    assert!(out.contains("nothing was verified to combine"), "no combining after the cancel: {out}");
     assert!(f.prompts("qwen-a high").is_empty());
 }
 
@@ -1455,4 +1474,87 @@ fn test_one_component_needs_no_planner() {
     );
     assert!(f.prompts("claude:opus high").is_empty(), "no planner and no combiner");
     assert!(out.contains("answer:\n") && !out.contains("combined by"), "{out}");
+}
+
+// Checks the answer is written from findings by id: supported, inference, proposal and unknown lines; an unknown id, a supported line resting on nothing and a widened path citation refused; two claims on one range both kept; a word limit retried once, then cut; and the JSON answer carrying the lines with their findings.
+#[test]
+fn test_answer_by_finding_id() {
+    let (_t, root) = repo();
+    let found = |claim: &str, cite: &str| investigate::Found {
+        claim: claim.into(),
+        path: "api/Endpoint.cs".into(),
+        cite: cite.into(),
+        excerpt: "   3\t    if (r.Key == null) throw new Missing();\n".into(),
+    };
+    let a = Work {
+        status: "complete".into(),
+        findings: vec![found("a null key throws", "api/Endpoint.cs:3")],
+        ..Work::default()
+    };
+    let b = Work {
+        status: "complete".into(),
+        findings: vec![
+            found("the check runs before Store", "api/Endpoint.cs:3"),
+            found("a null key throws", "api/Endpoint.cs:3"),
+        ],
+        gaps: vec!["the blank key".into()],
+        ..Work::default()
+    };
+    let m = merge(&[a.clone(), b.clone()]);
+    assert_eq!(m.findings.len(), 2, "two claims on one range are both kept, a repeat once");
+    let (lines, refused) = synthesis("ANSWER\nSUPPORTED F1 | a null key is refused\nINFERENCE F2 | the check guards Store\nPROPOSAL | add a test for a blank key\nUNKNOWN | whether a blank key passes\nSUPPORTED F9 | made up\nSUPPORTED | nothing behind it\nFINDING api/Endpoint.cs:2-4 widened\nnoise", &m.findings);
+    assert_eq!(
+        lines.iter().map(|l| (l.kind.as_str(), l.ids.clone())).collect::<Vec<_>>(),
+        [("supported", vec![0]), ("inference", vec![1]), ("proposal", vec![]), ("unknown", vec![])]
+    );
+    assert_eq!(
+        refused,
+        [
+            "answer line `made up`: it cites F9, which no part found",
+            "answer line `nothing behind it`: it rests on no finding",
+            "api/Endpoint.cs:2-4 widened: no finding has exactly these lines"
+        ]
+    );
+
+    let task = items::task("Is a null key refused? Should a blank key be? Answer in at most 6 words.");
+    let long =
+        "ANSWER\nSUPPORTED F1 | a null key is refused before anything is stored\nUNKNOWN | the blank key";
+    let still = "ANSWER\nSUPPORTED F1 | a null key is refused\nUNKNOWN | whether blank keys pass today";
+    let f = Fake::new(&[("qwen-a low", Ok(long)), ("qwen-a low", Ok(still))]);
+    let r = Rung::parse("qwen-a", None).expect("rung");
+    let (w, by) =
+        combine(&f, &Log::default(), &task, &root, &[a, b], &r, Instant::now() + Duration::from_secs(60));
+    assert_eq!(by, " (combined by qwen-a low; cut to its first lines to stay within 6 words)");
+    assert!(f.prompts("qwen-a low")[1]
+        .contains("Your answer had 12 words; the task allows at most 6. Shorten it."));
+    assert_eq!(w.lines.len(), 1, "cut to the lines that fit");
+    assert_eq!(w.findings.len(), 2, "every finding stays");
+    assert!(w.gaps.contains(&"the blank key".to_string()), "the parts' gaps stay");
+    let v = w.json();
+    assert_eq!(v["answer"]["lines"][0]["findings"][0], json!({"id": "F1", "citation": "api/Endpoint.cs:3"}));
+    assert!(
+        v["answer"]["text"]
+            .as_str()
+            .is_some_and(|t| t.starts_with("- a null key is refused ([1] api/Endpoint.cs:3)\n")),
+        "{v:#}"
+    );
+    let labelled = Work { lines: lines.clone(), ..m.clone() };
+    assert_eq!(labelled.line_text(&lines[1]), "Inference: the check guards Store ([2] api/Endpoint.cs:3)");
+    assert_eq!(labelled.line_text(&lines[2]), "Proposal: add a test for a blank key");
+    assert_eq!(labelled.line_text(&lines[3]), "Unknown: whether a blank key passes");
+    assert_eq!(items::word_limit(&["Use no more than 40 words.".into()]), Some(40));
+    assert_eq!(items::word_limit(&["Answer as a table.".into()]), None);
+    let one = "ANSWER\nSUPPORTED F1 | a null key is refused before anything at all is stored\nPROPOSAL |";
+    let f = Fake::new(&[("qwen-a low", Ok(one)), ("qwen-a low", Ok("ANSWER\nnothing usable"))]);
+    let far = Instant::now() + Duration::from_secs(60);
+    let parts = [m.clone()];
+    let (w, by) = combine(&f, &Log::default(), &task, &root, &parts, &r, far);
+    assert_eq!((w.lines.len(), by.as_str()), (1, " (combined by qwen-a low)"), "one line is never cut");
+    let f = Fake::new(&[("qwen-a low", Ok(one)), ("qwen-a low", Err("gone"))]);
+    let (w, _) = combine(&f, &Log::default(), &task, &root, &parts, &r, far);
+    assert_eq!(w.lines[0].ids, [0], "a failed retry keeps the first answer");
+    let attempt = |w: &Work| Attempt { rung: r.clone(), work: w.clone(), why: None };
+    let kept =
+        settled(&[attempt(&m), attempt(&Work { findings: vec![m.findings[0].clone()], ..Work::default() })]);
+    assert_eq!(kept.findings.len(), 2, "an escalation keeps earlier findings once");
 }
