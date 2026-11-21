@@ -82,6 +82,8 @@ impl Backend for Fake {
             text,
             tokens: 7,
             queued_ms: 0,
+            input: Some(40),
+            cached: None,
         })
     }
 
@@ -414,8 +416,13 @@ fn test_orchestrator() {
         (Some(100), Some(11), Some(false))
     );
     assert_eq!(
-        (o["steps"][1]["input_estimated"].as_bool(), o["steps"][1]["output_tokens"].as_u64()),
-        (Some(true), Some(7))
+        (
+            o["steps"][1]["input_estimated"].as_bool(),
+            o["steps"][1]["input_tokens"].as_u64(),
+            o["steps"][1]["output_tokens"].as_u64()
+        ),
+        (Some(false), Some(40), Some(7)),
+        "a local call's input is what the worker measured"
     );
     assert_eq!(
         (

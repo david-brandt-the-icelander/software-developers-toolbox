@@ -203,7 +203,7 @@ fn sizes(sections: &[(&str, &str)], whole: &str) -> Vec<(String, usize)> {
 }
 
 impl Log {
-    // Times one local request and records it with its sections; none starts once the deadline has passed.
+    // Times one local request and records it with its sections and the input the worker measured; none starts once the deadline has passed.
     pub fn local(
         &self,
         b: &dyn Backend,
@@ -225,10 +225,13 @@ impl Log {
         );
         let (tokens, queued) =
             res.as_ref().map_or((None, 0.0), |x| (Some(x.tokens), x.queued_ms as f64 / 1000.0));
+        let (input, cached) = res.as_ref().map_or((None, None), |x| (x.input, x.cached));
         let c = Call {
             role: role.into(),
             rung: r.label(),
             sent: sizes(sections, &whole),
+            input,
+            cached,
             tokens,
             queued,
             ok: res.is_ok(),

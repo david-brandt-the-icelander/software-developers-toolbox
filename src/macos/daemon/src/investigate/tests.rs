@@ -17,8 +17,14 @@ impl Script {
             .into_iter()
             .rev()
             .map(|r| {
-                r.map(|t| Reply { text: t.into(), truncated: t.contains("CUT"), tokens: 0, queued_ms: 0 })
-                    .map_err(String::from)
+                r.map(|t| Reply {
+                    text: t.into(),
+                    truncated: t.contains("CUT"),
+                    tokens: 0,
+                    queued_ms: 0,
+                    ..Default::default()
+                })
+                .map_err(String::from)
             })
             .collect();
         Script { replies: RefCell::new(replies), seen: RefCell::new(Vec::new()) }
@@ -29,10 +35,9 @@ impl Local for Script {
     // Gives the next scripted reply.
     fn ask(&self, system: &str, transcript: &str, _deadline: Instant) -> Result<Reply, String> {
         self.seen.borrow_mut().push((system.into(), transcript.into()));
-        self.replies
-            .borrow_mut()
-            .pop()
-            .unwrap_or_else(|| Ok(Reply { text: String::new(), truncated: false, tokens: 0, queued_ms: 0 }))
+        self.replies.borrow_mut().pop().unwrap_or_else(|| {
+            Ok(Reply { text: String::new(), truncated: false, tokens: 0, queued_ms: 0, ..Default::default() })
+        })
     }
 }
 
@@ -511,6 +516,7 @@ fn test_excerpts_rank_dedupe_and_cap() {
         evidence: vec![0, 1, 3],
         skipped: 0,
         shared: 0,
+        rule_keys: Vec::new(),
         handles: Vec::new(),
     };
     let out = excerpts(&trail, &plan);
@@ -626,7 +632,13 @@ impl Local for Slow {
     // Asks for a lookup after the deadline has passed.
     fn ask(&self, _system: &str, _transcript: &str, deadline: Instant) -> Result<Reply, String> {
         std::thread::sleep(deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(20));
-        Ok(Reply { text: "READ api/Endpoint.cs".into(), truncated: false, tokens: 0, queued_ms: 0 })
+        Ok(Reply {
+            text: "READ api/Endpoint.cs".into(),
+            truncated: false,
+            tokens: 0,
+            queued_ms: 0,
+            ..Default::default()
+        })
     }
 }
 
@@ -682,6 +694,7 @@ fn test_defs_and_excerpt_ids() {
         evidence: vec![0, 2, 3],
         skipped: 0,
         shared: 0,
+        rule_keys: Vec::new(),
         handles: Vec::new(),
     };
     assert_eq!(trail.file_of("E1"), None, "a REFS excerpt has no single file");
@@ -989,10 +1002,18 @@ fn test_job_shares_lookups() {
         ])
     };
     let argv = ["Where is the key checked?", "--path", "api", "--symbol", "Handle"];
+    let (s1, s2) = (script(), script());
     let (first, second) = crate::budget::sharing(shared, || {
-        let (s1, s2) = (script(), script());
         (go(&root, &e, &s1, &argv).expect("first"), go(&root, &e, &s2, &argv).expect("second"))
     });
+    for s in [&s1, &s2] {
+        let system = &s.seen.borrow()[1].0;
+        assert_eq!(
+            system.matches("Never change the published contract.").count(),
+            1,
+            "each part gets the rules for what it read, once: {system}"
+        );
+    }
     assert!(!first.text.contains("answered from the job's earlier lookups"), "{}", first.text);
     assert!(second.text.contains("answered from the job's earlier lookups"), "{}", second.text);
     let kept = std::fs::read_to_string(&evidence).expect("evidence");
@@ -1023,4 +1044,47 @@ fn test_scans_observe_cancel() {
         assert!(names.iter().all(|l| l.starts_with("file ")), "no file is searched for symbols: {names:?}");
         assert!(seed::candidates(&e, &root, &scope, "QueueWashNow").iter().any(|l| l.starts_with("symbol ")));
     });
+}
+
+// A scripted local model that takes a while per turn.
+struct Paced(Script, Duration);
+
+impl Local for Paced {
+    // Waits, then gives the next scripted reply.
+    fn ask(&self, system: &str, transcript: &str, deadline: Instant) -> Result<Reply, String> {
+        std::thread::sleep(self.1);
+        self.0.ask(system, transcript, deadline)
+    }
+}
+
+// Checks a turn is kept for the answer when the time left fits only one more turn like the slowest so far: the model is told no lookups are left, and the report says why.
+#[test]
+fn test_answer_turn_reserved_before_the_deadline() {
+    let (_t, root) = repo();
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: "s1".into(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let slow = Paced(
+        Script::new(vec![
+            Ok("READ api/Endpoint.cs"),
+            Ok("ANSWER\nFINDING api/Endpoint.cs:3 a null key throws\nCONFIDENCE understanding=high result=high"),
+        ]),
+        Duration::from_millis(300),
+    );
+    let argv: Vec<String> = ["Where is the key checked?", "--path", "api", "--symbol", "Handle"]
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    let o = investigate(&ctx, &argv, &slow, Instant::now() + Duration::from_millis(800)).expect("run");
+    let seen = slow.0.seen.borrow();
+    assert!(seen[1].1.contains("No lookups left: reply with ANSWER now."), "{}", seen[1].1);
+    assert!(o.text.contains(", the last kept for the answer before the time limit"), "{}", o.text);
+    assert!(o.text.contains("a null key throws"), "{}", o.text);
+    assert!(!last_turn(Instant::now() + Duration::from_secs(60), Duration::ZERO), "no turn measured yet");
 }

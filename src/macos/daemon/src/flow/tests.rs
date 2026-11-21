@@ -82,6 +82,7 @@ impl Backend for Fake {
             truncated: false,
             tokens: 5,
             queued_ms: 100,
+            ..Default::default()
         })
     }
 

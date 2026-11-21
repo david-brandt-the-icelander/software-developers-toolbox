@@ -10,6 +10,8 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 const BATCH: usize = 512;
+// Room a kept context leaves past a prompt's own need, so the next, longer turn of the same conversation still fits and reuses it.
+const ROOM: usize = 8192;
 
 // One prompt: the model file, the messages (system, earlier turns, user), the effort, the most tokens to generate, an optional GBNF grammar the answer must follow and the sampling temperature.
 pub struct Ask<'a> {
@@ -29,10 +31,18 @@ pub enum Event<'a> {
     Text(&'a str),
 }
 
-// How a generation ended: tokens written, and whether it stopped at the token limit.
+// How a generation ended: tokens written, whether it stopped at the token limit, the prompt's tokens and how many of them the kept context already held.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Done {
     pub tokens: usize,
     pub truncated: bool,
+    pub prompt: usize,
+    pub reused: usize,
+}
+
+// How many leading prompt tokens a kept context can serve again: the prefix it shares with the new prompt, leaving at least the last token to decode for its logits.
+pub fn reusable<T: PartialEq>(kept: &[T], prompt: &[T]) -> usize {
+    kept.iter().zip(prompt).take_while(|(a, b)| a == b).count().min(prompt.len().saturating_sub(1))
 }
 
 // Returns the text of a special token such as BOS, or an empty string.
@@ -52,11 +62,19 @@ fn take_utf8(bytes: &mut Vec<u8>) -> String {
     text
 }
 
-// A model loaded once and asked many times, as the worker does for daemon's chats and agents' calls.
+// A model loaded once and asked many times, as the worker does for daemon's chats and agents' calls; the model is leaked (a process loads one for its life) so the context it keeps between prompts can borrow it.
 pub struct Loaded {
+    // Declared first so the kept context is freed before the backend.
+    kept: std::sync::Mutex<Option<Kept>>,
     backend: LlamaBackend,
-    model: LlamaModel,
+    model: &'static LlamaModel,
     path: std::path::PathBuf,
+}
+
+// The context kept from the last prompt and the tokens its cache holds, so a prompt sharing their prefix decodes only the rest.
+struct Kept {
+    ctx: llama_cpp_2::context::LlamaContext<'static>,
+    tokens: Vec<llama_cpp_2::token::LlamaToken>,
 }
 
 // Starts llama.cpp and loads the model onto the GPU when there is one, with its routine startup logs held back.
@@ -69,7 +87,8 @@ pub fn load(path: &Path) -> Result<Loaded, String> {
         let params = LlamaModelParams::default().with_n_gpu_layers(u32::MAX);
         let model = LlamaModel::load_from_file(&backend, path, &params)
             .map_err(|e| format!("loading {}: {e}", path.display()))?;
-        Ok(Loaded { backend, model, path: path.to_path_buf() })
+        let model: &'static LlamaModel = Box::leak(Box::new(model));
+        Ok(Loaded { backend, model, path: path.to_path_buf(), kept: Default::default() })
     })
 }
 
@@ -79,9 +98,19 @@ pub fn generate(ask: &Ask, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
 }
 
 impl Loaded {
-    // Renders and decodes the prompt, and reports the prompt and each piece of generated text to `out` until an end token or the limit; `ask.path` is not read again.
+    // Renders and decodes the prompt, and reports the prompt and each piece of generated text to `out` until an end token or the limit; `ask.path` is not read again. The context is kept for the next prompt, which decodes only what follows the prefix they share; a failure drops it.
     pub fn generate(&self, ask: &Ask, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
-        let (backend, model, path) = (&self.backend, &self.model, &self.path);
+        let mut kept = self.kept.lock().unwrap_or_else(|p| p.into_inner());
+        let done = self.run(ask, &mut kept, out);
+        if done.is_err() {
+            *kept = None;
+        }
+        done
+    }
+
+    // One generation with the kept context: reuses or replaces it, decodes the new part of the prompt, then samples.
+    fn run(&self, ask: &Ask, kept: &mut Option<Kept>, out: &mut dyn FnMut(Event)) -> Result<Done, String> {
+        let (backend, model, path) = (&self.backend, self.model, &self.path);
         let tmpl =
             model.chat_template(None).map_err(|e| format!("{}: no chat template: {e}", path.display()))?;
         let vocab = model.vocab();
@@ -101,25 +130,41 @@ impl Loaded {
         if tokens.len() >= limit {
             return Err(format!("the prompt is {} tokens; this model reads at most {limit}", tokens.len()));
         }
-        let n_ctx = (tokens.len() + ask.max_tokens).min(limit);
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get()) as i32;
-        let cparams = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(n_ctx as u32))
-            .with_n_batch(BATCH as u32)
-            .with_n_threads(threads)
-            .with_n_threads_batch(threads);
-        let mut ctx = crate::quiet::run(|| {
-            model.new_context(backend, cparams).map_err(|e| format!("creating a context: {e}"))
-        })?;
+        let need = (tokens.len() + ask.max_tokens).min(limit);
+        let fits = kept.as_ref().is_some_and(|k| k.ctx.n_ctx() as usize >= need);
+        if !fits {
+            let n_ctx = (need + ROOM).min(limit);
+            let threads = std::thread::available_parallelism().map_or(4, |n| n.get()) as i32;
+            let cparams = LlamaContextParams::default()
+                .with_n_ctx(NonZeroU32::new(n_ctx as u32))
+                .with_n_batch(BATCH as u32)
+                .with_n_threads(threads)
+                .with_n_threads_batch(threads);
+            *kept = None;
+            let ctx = crate::quiet::run(|| {
+                model.new_context(backend, cparams).map_err(|e| format!("creating a context: {e}"))
+            })?;
+            *kept = Some(Kept { ctx, tokens: Vec::new() });
+        }
+        let k = kept.as_mut().ok_or("no context")?;
+        let mut from = reusable(&k.tokens, &tokens);
+        // A cache that cannot drop just its tail (a recurrent model's) is cleared and the prompt read whole.
+        if !k.ctx.clear_kv_cache_seq(Some(0), Some(from as u32), None).unwrap_or(false) {
+            k.ctx.clear_kv_cache();
+            from = 0;
+        }
+        k.tokens.truncate(from);
+        let ctx = &mut k.ctx;
         let mut batch = LlamaBatch::new(BATCH, 1);
-        for (i, chunk) in tokens.chunks(BATCH).enumerate() {
+        for (i, chunk) in tokens[from..].chunks(BATCH).enumerate() {
             batch.clear();
             for (j, t) in chunk.iter().enumerate() {
-                let pos = i * BATCH + j;
+                let pos = from + i * BATCH + j;
                 batch.add(*t, pos as i32, &[0], pos + 1 == tokens.len()).map_err(|e| e.to_string())?;
             }
             ctx.decode(&mut batch).map_err(|e| format!("reading the prompt: {e}"))?;
         }
+        k.tokens.extend_from_slice(&tokens[from..]);
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos());
@@ -141,8 +186,8 @@ impl Loaded {
         let mut sampler = LlamaSampler::chain_simple(chain);
         let (mut pos, mut made, mut pending) = (tokens.len(), 0, Vec::new());
         out(Event::Prompt(&prompt));
-        while pos < n_ctx && made < ask.max_tokens {
-            let t = sampler.sample(&ctx, batch.n_tokens() - 1);
+        while pos < need && made < ask.max_tokens {
+            let t = sampler.sample(ctx, batch.n_tokens() - 1);
             if vocab.is_eog(t) {
                 break;
             }
@@ -154,10 +199,11 @@ impl Loaded {
             batch.clear();
             batch.add(t, pos as i32, &[0], true).map_err(|e| e.to_string())?;
             ctx.decode(&mut batch).map_err(|e| format!("generating: {e}"))?;
+            k.tokens.push(t);
             (pos, made) = (pos + 1, made + 1);
         }
-        let truncated = made >= ask.max_tokens || pos >= n_ctx;
-        Ok(Done { tokens: made, truncated })
+        let truncated = made >= ask.max_tokens || pos >= need;
+        Ok(Done { tokens: made, truncated, prompt: tokens.len(), reused: from })
     }
 }
 
@@ -175,5 +221,14 @@ mod tests {
         let mut bad = vec![b'x', 0xff, b'y'];
         assert_eq!(take_utf8(&mut bad), "x\u{fffd}y");
         assert!(bad.is_empty());
+    }
+
+    // Checks the reusable prefix is the shared leading tokens, never the whole prompt.
+    #[test]
+    fn test_engine_reusable() {
+        assert_eq!(reusable(&[1, 2, 3, 9], &[1, 2, 3, 4, 5]), 3);
+        assert_eq!(reusable(&[1, 2, 3], &[1, 2, 3]), 2, "the last token is decoded again for its logits");
+        assert_eq!(reusable::<u8>(&[], &[1]), 0);
+        assert_eq!(reusable(&[7], &[1, 2]), 0);
     }
 }

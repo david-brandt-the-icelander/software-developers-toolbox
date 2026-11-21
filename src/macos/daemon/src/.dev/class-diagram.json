@@ -185,7 +185,11 @@
       ],
       "members": [
         "text: String",
-        "truncated: bool"
+        "truncated: bool",
+        "tokens: usize",
+        "queued_ms: u64",
+        "input: Option<usize>",
+        "cached: Option<usize>"
       ]
     },
     {

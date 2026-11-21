@@ -1,19 +1,21 @@
-// What one investigate job's threads share: the lookups and declaration scans already run, so parallel parts and later turns never run one twice (a caller asking for one still running waits for it), and where the job's evidence is kept in the run store as it is found.
+// What one investigate job's threads share: the lookups and declaration scans already run, so parallel parts and later turns never run one twice (a caller asking for one still running waits for it), the turn of the local model (its parts run one at a time, so each reuses its own prompt prefix), and where the job's evidence is kept in the run store as it is found.
 use super::discover::Candidate;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 // How long a wait for another thread's lookup sleeps before it checks whether the job was stopped.
 const WAIT_STEP: Duration = Duration::from_millis(50);
 
-// One job's shared state: its lookups' outputs (text, status and the rules notes), its declaration scans, and its evidence file.
+// One job's shared state: its lookups' outputs (text and status), its declaration scans, whether a local part holds the local model, and its evidence file.
 #[derive(Default)]
 pub struct Shared {
-    pub lookups: Cache<(String, u8, String)>,
+    pub lookups: Cache<(String, u8)>,
     pub decls: Cache<Vec<Candidate>>,
+    local: Mutex<bool>,
+    free: Condvar,
     evidence: Option<PathBuf>,
 }
 
@@ -29,6 +31,30 @@ impl Shared {
             let _ = crate::runs::append(p, v);
         }
     }
+}
+
+// A local part's hold on the local model; dropping it lets the next local part start.
+pub struct Turn(Arc<Shared>);
+
+impl Drop for Turn {
+    // Frees the local model for the next local part.
+    fn drop(&mut self) {
+        *self.0.local.lock().unwrap_or_else(|p| p.into_inner()) = false;
+        self.0.free.notify_one();
+    }
+}
+
+// Waits until no other local part of the current job is working, then holds the local model for this one (None outside a job); an error when the job is stopped during the wait. Hosted parts never wait.
+pub fn local_turn() -> Result<Option<Turn>, String> {
+    let Some(s) = crate::budget::shared() else { return Ok(None) };
+    let mut busy = s.local.lock().unwrap_or_else(|p| p.into_inner());
+    while *busy {
+        let (wait, _) = crate::budget::cap(WAIT_STEP)?;
+        busy = s.free.wait_timeout(busy, wait).unwrap_or_else(|p| p.into_inner()).0;
+    }
+    *busy = true;
+    drop(busy);
+    Ok(Some(Turn(s)))
 }
 
 // Appends one evidence record for the current job, when it keeps any.
@@ -172,6 +198,37 @@ mod tests {
             stop.cancel();
             assert!(waiter.join().expect("waiter").unwrap_err().contains("cancelled"));
             assert!(started.elapsed() < Duration::from_millis(350), "the wait ended with the cancel");
+        });
+    }
+
+    // Checks local parts take turns: a second waits while the first holds the model, starts when it is done, and a wait ends when the job is cancelled.
+    #[test]
+    fn test_local_turns() {
+        assert!(local_turn().expect("outside a job").is_none());
+        let shared = Arc::new(Shared::default());
+        let order = Mutex::new(Vec::new());
+        let job = crate::budget::sharing(Arc::clone(&shared), crate::budget::current);
+        std::thread::scope(|s| {
+            for n in 0..2 {
+                let (job, order) = (job.clone(), &order);
+                s.spawn(move || {
+                    crate::budget::carry(job, || {
+                        let _turn = local_turn().expect("turn");
+                        order.lock().expect("order").push(format!("start {n}"));
+                        std::thread::sleep(Duration::from_millis(80));
+                        order.lock().expect("order").push(format!("end {n}"));
+                    })
+                });
+            }
+        });
+        let order = order.into_inner().expect("order");
+        assert!(order[0].starts_with("start") && order[1].starts_with("end"), "one at a time: {order:?}");
+        let stop = crate::budget::Stop::default();
+        crate::budget::sharing(shared, || {
+            let _held = local_turn().expect("turn");
+            stop.cancel();
+            let waited = crate::budget::stopping(&stop, local_turn);
+            assert!(waited.is_err_and(|e| e.contains("cancelled")));
         });
     }
 

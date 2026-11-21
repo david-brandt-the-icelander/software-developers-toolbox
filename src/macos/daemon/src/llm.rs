@@ -9,13 +9,15 @@ const MAX_INPUT: usize = 400_000;
 const DEFAULT_TIMEOUT: u64 = 300;
 const DEFAULT_IDLE: u64 = 600;
 
-// The local model's answer, whether its token limit cut it short, the tokens it generated and how long it waited for the shared worker.
-#[derive(Debug, PartialEq)]
+// The local model's answer, whether its token limit cut it short, the tokens it generated, how long it waited for the shared worker, and the prompt's tokens and how many of them the worker's kept context reused (unknown from a worker that does not say).
+#[derive(Debug, Default, PartialEq)]
 pub struct Reply {
     pub text: String,
     pub truncated: bool,
     pub tokens: usize,
     pub queued_ms: u64,
+    pub input: Option<usize>,
+    pub cached: Option<usize>,
 }
 
 // Returns how long one local model call may take: ZAZZLE_LLM_TIMEOUT seconds, default 300.
@@ -52,15 +54,15 @@ pub struct Session {
 }
 
 impl Session {
-    // Starts `PROGRAM worker --no-download FLAGS` and waits for its ready line, each wait bounded by `limit`.
+    // Starts `PROGRAM worker --no-download FLAGS` (again while the program file is still being written) and waits for its ready line, each wait bounded by `limit`.
     pub fn start_with(program: &Path, flags: &[&str], limit: Duration) -> Result<Session, String> {
-        let mut child = Command::new(program)
-            .args(["worker", "--no-download"])
+        let mut cmd = Command::new(program);
+        cmd.args(["worker", "--no-download"])
             .args(flags)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        let mut child = crate::adaptive::agent::retry_busy(|| cmd.spawn())
             .map_err(|e| format!("starting {}: {e}", program.display()))?;
         let (tx, lines) = std::sync::mpsc::channel();
         let out = child.stdout.take().ok_or("no stdout pipe")?;
@@ -150,6 +152,8 @@ impl Session {
                 truncated: v["truncated"] == true,
                 tokens: v["tokens"].as_u64().unwrap_or_default() as usize,
                 queued_ms: 0,
+                input: v["prompt_tokens"].as_u64().map(|n| n as usize),
+                cached: v["cached_tokens"].as_u64().map(|n| n as usize),
             }),
         }
     }
@@ -523,11 +527,11 @@ mod tests {
         let mut s = Session::start_with(&worker, &["--effort", "low"], d).expect("start");
         assert_eq!(
             s.ask(&serde_json::json!({"user": "a"})),
-            Ok(Reply { text: "ok".into(), truncated: false, tokens: 0, queued_ms: 0 })
+            Ok(Reply { text: "ok".into(), truncated: false, tokens: 0, queued_ms: 0, ..Default::default() })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "long"})),
-            Ok(Reply { text: "half".into(), truncated: true, tokens: 0, queued_ms: 0 })
+            Ok(Reply { text: "half".into(), truncated: true, tokens: 0, queued_ms: 0, ..Default::default() })
         );
         assert_eq!(
             s.ask(&serde_json::json!({"user": "fail"})).err().as_deref(),

@@ -14,9 +14,9 @@ pub struct Request<'a> {
     pub temp: f32,
 }
 
-// Something that answers one prompt: the answer text without thinking, the tokens generated and whether the limit cut it short.
+// Something that answers one prompt: the answer text without thinking, and how it ended (tokens generated, whether the limit cut it short, the prompt's tokens and how many the kept context reused).
 pub trait Gen {
-    fn ask(&self, r: &Request) -> Result<(String, usize, bool), String>;
+    fn ask(&self, r: &Request) -> Result<(String, engine::Done), String>;
 }
 
 // A loaded model answering prompts.
@@ -24,7 +24,7 @@ pub struct Model(pub engine::Loaded);
 
 impl Gen for Model {
     // Generates an answer, keeping only the text after the model's thinking.
-    fn ask(&self, r: &Request) -> Result<(String, usize, bool), String> {
+    fn ask(&self, r: &Request) -> Result<(String, engine::Done), String> {
         let ask = engine::Ask {
             path: std::path::Path::new(""),
             system: r.system,
@@ -48,7 +48,7 @@ impl Gen for Model {
             engine::Event::Text(t) => keep(filter.push(t)),
         })?;
         keep(filter.finish());
-        Ok((answer, done.tokens, done.truncated))
+        Ok((answer, done))
     }
 }
 
@@ -68,7 +68,7 @@ fn history(v: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
-// Answers one request line `{"user", "history"?, "system"?, "effort"?, "max_tokens"?, "temp"?, "grammar"?}` with `{"text", "tokens", "truncated"}`, or `{"error"}`.
+// Answers one request line `{"user", "history"?, "system"?, "effort"?, "max_tokens"?, "temp"?, "grammar"?}` with `{"text", "tokens", "truncated", "prompt_tokens", "cached_tokens"}`, or `{"error"}`.
 pub fn answer(gen: &dyn Gen, line: &str, d: &Defaults) -> Value {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -91,7 +91,13 @@ pub fn answer(gen: &dyn Gen, line: &str, d: &Defaults) -> Value {
         temp: req["temp"].as_f64().map_or(d.temp, |t| t as f32),
     };
     match gen.ask(&r) {
-        Ok((text, tokens, truncated)) => json!({"text": text, "tokens": tokens, "truncated": truncated}),
+        Ok((text, d)) => json!({
+            "text": text,
+            "tokens": d.tokens,
+            "truncated": d.truncated,
+            "prompt_tokens": d.prompt,
+            "cached_tokens": d.reused,
+        }),
         Err(e) => json!({"error": e}),
     }
 }
@@ -127,7 +133,7 @@ mod tests {
 
     impl Gen for Echo {
         // Echoes the request.
-        fn ask(&self, r: &Request) -> Result<(String, usize, bool), String> {
+        fn ask(&self, r: &Request) -> Result<(String, engine::Done), String> {
             if r.user == "fail" {
                 return Err("boom".into());
             }
@@ -141,7 +147,8 @@ mod tests {
                 r.temp,
                 r.grammar.unwrap_or("-")
             );
-            Ok((text, 3, r.max_tokens < 10))
+            let done = engine::Done { tokens: 3, truncated: r.max_tokens < 10, prompt: 20, reused: 12 };
+            Ok((text, done))
         }
     }
 
@@ -158,8 +165,14 @@ mod tests {
             .map(|l| serde_json::from_str(l).expect("json"))
             .collect();
         assert_eq!(lines[0], json!({"ready": "m", "effort": "low"}));
-        assert_eq!(lines[1], json!({"text": "-|q|low|100|0.5|-", "tokens": 3, "truncated": false}));
-        assert_eq!(lines[2], json!({"text": "s|q|high|5|0|g", "tokens": 3, "truncated": true}));
+        assert_eq!(
+            lines[1],
+            json!({"text": "-|q|low|100|0.5|-", "tokens": 3, "truncated": false, "prompt_tokens": 20, "cached_tokens": 12})
+        );
+        assert_eq!(
+            lines[2],
+            json!({"text": "s|q|high|5|0|g", "tokens": 3, "truncated": true, "prompt_tokens": 20, "cached_tokens": 12})
+        );
         assert_eq!(lines[3], json!({"error": "boom"}));
         assert!(lines[4]["error"].as_str().expect("e").starts_with("not a JSON request"));
         assert_eq!(lines[5], json!({"error": "the request has no `user` text"}));
