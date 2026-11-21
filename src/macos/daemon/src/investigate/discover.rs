@@ -201,7 +201,7 @@ fn verb(route: &str) -> bool {
 }
 
 // A word without a plural ending, so `washes` matches `wash` and `subscriptions` matches `subscription`.
-fn stem(w: &str) -> String {
+pub(crate) fn stem(w: &str) -> String {
     match w.len() > 4 {
         true if w.ends_with("ies") => format!("{}y", &w[..w.len() - 3]),
         true if w.ends_with("shes") || w.ends_with("ches") || w.ends_with("sses") || w.ends_with("xes") => {
@@ -213,12 +213,17 @@ fn stem(w: &str) -> String {
 }
 
 // The terms found among some words.
-fn shared(terms: &[String], words: &[String]) -> Vec<String> {
+pub(crate) fn shared(terms: &[String], words: &[String]) -> Vec<String> {
     let stems: Vec<String> = words.iter().map(|w| stem(w)).collect();
     terms.iter().filter(|t| stems.contains(&stem(t))).cloned().collect()
 }
 
-// Ranks the declarations inside the scope against the terms (a web question favours those with routes), best first, at most `limit`; scanned once per job for the same scope and terms whatever the limit (a scan the job's stop cut short is not kept).
+// Whether terms ask about tests, so test code is not ranked below production code.
+pub(crate) fn wants_tests(terms: &[String]) -> bool {
+    terms.iter().any(|t| matches!(t.as_str(), "test" | "tests" | "tested" | "testing" | "spec" | "specs"))
+}
+
+// Ranks the declarations inside the scope against the terms (a web question favours those with routes; tests rank with production code when the terms ask for tests), best first, at most `limit`; scanned once per job for the same scope and terms whatever the limit (a scan the job's stop cut short is not kept).
 pub fn discover(
     engine: &crate::engine::Engine,
     cwd: &Path,
@@ -265,6 +270,7 @@ fn scan(
         .collect();
     let rel = |p: &Path| p.strip_prefix(cwd).unwrap_or(p).display().to_string();
     let job = crate::budget::current();
+    let tests = wants_tests(terms);
     let per_file = crate::pool::par_map(&code, crate::pool::cpus(), |_, f| {
         if job.spent() {
             return Vec::new();
@@ -278,7 +284,7 @@ fn scan(
         let symbols = engine.outline(f, &loaded);
         let path = rel(f);
         let path_words = seed::words(&path);
-        let side = path_words.iter().any(|w| SIDE.contains(&w.as_str()));
+        let side = path_words.iter().any(|w| SIDE.contains(&w.as_str())) && !tests;
         let in_path: Vec<String> =
             shared(terms, &path_words).into_iter().filter(|t| !SIDE.contains(&t.as_str())).collect();
         let lang = outline::lang_of(f);

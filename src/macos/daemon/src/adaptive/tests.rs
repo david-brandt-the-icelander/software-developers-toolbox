@@ -151,6 +151,8 @@ fn go(root: &Path, f: &Fake, argv: &[&str]) -> Result<String, String> {
 }
 
 const KEY: &str = "ANSWER\nFINDING api/Endpoint.cs:2-3 Handle rejects a request without a key\nCONFIDENCE understanding=high result=high";
+// An answer that covers both the key check and where the request is stored.
+const BOTH: &str = "ANSWER\nFINDING api/Endpoint.cs:2-4 Handle rejects a request without a key, then stores it\nCONFIDENCE understanding=high result=high";
 
 // Checks the flags are told apart from investigate's, need --adaptive where they shape it, and need their values.
 #[test]
@@ -339,7 +341,7 @@ fn test_adaptive_plan_escalate_combine() {
 fn test_orchestrator() {
     let (_t, root) = repo();
     let other =
-        "ANSWER\nFINDING api/Endpoint.cs:4 the request is stored\nCONFIDENCE understanding=high result=high";
+        "ANSWER\nFINDING api/Endpoint.cs:3 a null key is rejected\nCONFIDENCE understanding=high result=high";
     let script = [
         ("claude:opus high", Ok("PART 1 | I1 | Handle\nPART 1 | I2 | Store\nCONFIDENCE understanding=high result=high")),
         ("qwen-a low", Ok(KEY)),
@@ -511,7 +513,7 @@ fn test_planner_failures() {
         ("qwen-b high", Err("busy")),
         ("qwen-c low", Ok("no plan here")),
         ("qwen-c low", Ok("PART 1 | I1 |")),
-        ("qwen-a low", Ok(KEY)),
+        ("qwen-a low", Ok(BOTH)),
     ]);
     let out = go(&root, &f, &argv).expect("run");
     assert!(out.contains("planner qwen-b high failed: busy\nplanner qwen-c low's plan was refused: the reply had no PART lines\nplanner qwen-c low's repaired plan was refused too (I2 is in no part); the task runs as one assignment on qwen-a low\n"), "{out}");
@@ -527,7 +529,7 @@ fn test_planner_failures() {
     let f = Fake::new(&[
         ("qwen-b low", Ok("PART 1 | I1, I2 |\nESCALATE I do not know the code")),
         ("qwen-b high", Ok("PART 1 | I1, I2 |\nCONFIDENCE understanding=low result=low")),
-        ("qwen-a low", Ok(KEY)),
+        ("qwen-a low", Ok(BOTH)),
     ]);
     let out = go(
         &root,
@@ -560,7 +562,7 @@ fn test_planner_failures() {
     );
     assert!(out.contains("plan: 1 parts by qwen-b high, kept although it rated its understanding low\n  P1 qwen-a low: I1: Why is the key checked?\nI2: Where is it stored?\n"), "{out}");
 
-    let f = Fake::new(&[("qwen-a low", Ok(KEY))]);
+    let f = Fake::new(&[("qwen-a low", Ok(BOTH))]);
     let out = go(
         &root,
         &f,
@@ -616,9 +618,11 @@ fn test_part_escalation_limits() {
         ("c low", Ok("ANSWER\nFINDING api/Endpoint.cs:99 nowhere")),
         ("d low", Ok("ANSWER\nUNKNOWN everything")),
     ]);
-    let (log, p) = (Log::default(), Part { question: "q".into(), symbols: vec![], rung: 0 });
+    let task = items::task("q");
+    let p = Part { question: "q".into(), symbols: vec![], rung: 0, items: task.ids(), subject: "q".into() };
+    let log = Log::default();
     let far = Instant::now() + Duration::from_secs(60);
-    let a = part(&ctx, &f, &log, &plan, &scope, &ladder, &p, 1, far);
+    let a = part(&ctx, &f, &log, &plan, &task, &scope, &ladder, &p, 1, far);
     let whys: Vec<String> = a.iter().map(|x| x.why.clone().unwrap_or_default()).collect();
     assert!(
         whys[0].starts_with("it failed: local model") || whys[0].starts_with("it failed: the model"),
@@ -638,11 +642,11 @@ fn test_part_escalation_limits() {
 
     let f = Fake::new(&[("e low", Ok("ANSWER\nUNKNOWN everything"))]);
     let top = Part { rung: 4, ..p.clone() };
-    let a = part(&ctx, &f, &Log::default(), &plan, &scope, &ladder, &top, 1, far);
+    let a = part(&ctx, &f, &Log::default(), &plan, &task, &scope, &ladder, &top, 1, far);
     assert_eq!(a[0].why.as_deref(), Some("it verified nothing; not escalated: it was the top of the ladder"));
     let f = Fake::new(&[("a low", Ok("ANSWER\nUNKNOWN everything"))]);
     let late = Log::default();
-    let a = part(&ctx, &f, &late, &plan, &scope, &ladder, &p, 1, Instant::now());
+    let a = part(&ctx, &f, &late, &plan, &task, &scope, &ladder, &p, 1, Instant::now());
     assert_eq!(
         a[0].why.as_deref(),
         Some("it failed: the time limit ran out before it started; not escalated: the time limit ran out")
@@ -1428,7 +1432,7 @@ fn test_invalid_plans_dispatch_nothing() {
             Ok("PART 1 | 1 |\nPART 1 | qwen-a low | Where?\nCONFIDENCE understanding=high result=high"),
         ),
         ("qwen-c high", Ok("PART 9 | I1, I2 |\nCUT")),
-        ("qwen-a low", Ok(KEY)),
+        ("qwen-a low", Ok(BOTH)),
     ]);
     let out = go(&root, &f, &q).expect("run");
     assert!(out.contains("planner qwen-c high's plan was refused: `PART 1 | 1 |`: `1` is not an item of the task; `PART 1 | qwen-a low | Where?`: `qwen-a low` is not an item of the task"), "{out}");
@@ -1442,7 +1446,7 @@ fn test_invalid_plans_dispatch_nothing() {
     let asked = f.prompts("qwen-a low");
     assert_eq!(asked.len(), 1, "one executor call, nothing invalid dispatched");
     assert!(
-        asked[0].contains("Question: Why is the key checked? Where is the request stored?"),
+        asked[0].contains("Question: I1: Why is the key checked?\nI2: Where is the request stored?\n"),
         "the original task, in its own words: {}",
         asked[0]
     );
@@ -1566,3 +1570,6 @@ fn test_answer_by_finding_id() {
         settled(&[attempt(&m), attempt(&Work { findings: vec![m.findings[0].clone()], ..Work::default() })]);
     assert_eq!(kept.findings.len(), 2, "an escalation keeps earlier findings once");
 }
+
+// The acceptance scenarios on a multi-project C# fixture.
+mod scenarios;
