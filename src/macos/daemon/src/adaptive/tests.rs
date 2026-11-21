@@ -516,8 +516,9 @@ fn test_planner_failures() {
     let out = go(&root, &f, &argv).expect("run");
     assert!(out.contains("planner qwen-b high failed: busy\nplanner qwen-c low's plan was refused: the reply had no PART lines\nplanner qwen-c low's repaired plan was refused too (I2 is in no part); the task runs as one assignment on qwen-a low\n"), "{out}");
     assert!(
-        f.prompts("qwen-c low")[1]
-            .contains("Your plan was:\nno plan here\nIt was refused: the reply had no PART lines. Reply again"),
+        f.prompts("qwen-c low")[1].contains(
+            "Your plan was:\nno plan here\nIt was refused: the reply had no PART lines. Reply again"
+        ),
         "one repair, told why"
     );
     assert!(out.contains("  P1 qwen-a low: complete"), "{out}");
