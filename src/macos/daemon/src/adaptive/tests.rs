@@ -73,6 +73,10 @@ impl Backend for Fake {
             req["system"].as_str().unwrap_or_default(),
             req["user"].as_str().unwrap_or_default()
         );
+        let prompt = match req.get("grammar") {
+            Some(_) => format!("{prompt}\n[held to a grammar]"),
+            None => prompt,
+        };
         paced(self.next(r.label(), prompt), deadline).map(|text| Reply {
             truncated: text.contains("CUT"),
             text,
@@ -212,25 +216,6 @@ fn test_assess() {
     );
 }
 
-// Checks PART lines with and without separators, rung clamping, inherited symbols, junk and the part limit.
-#[test]
-fn test_parse_parts() {
-    let sym = vec!["Handle".to_string()];
-    let parts = parse_parts("PART 1 | Where is the key checked? | Handle, Store\nPART 9 | Should it be? |\nPART 2: Who calls it?\nPART x | junk\nPART 3 |\nnoise", 3, &sym);
-    assert_eq!(
-        parts[0],
-        Part {
-            question: "Where is the key checked?".into(),
-            symbols: vec!["Handle".into(), "Store".into()],
-            rung: 0
-        }
-    );
-    assert_eq!((parts[1].rung, parts[1].symbols.clone()), (2, sym.clone()));
-    assert_eq!((parts[2].question.as_str(), parts[2].rung), ("Who calls it?", 1));
-    assert_eq!(parts.len(), 3);
-    assert_eq!(parse_parts(&"PART 0 | q |\n".repeat(6), 2, &[]).len(), MAX_PARTS);
-}
-
 // Checks a simple question skips the planner and runs as one part on the cheapest rung.
 #[test]
 fn test_adaptive_simple_question() {
@@ -271,7 +256,7 @@ fn test_adaptive_simple_question() {
 fn test_adaptive_plan_escalate_combine() {
     let (_t, root) = repo();
     let script = [
-        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=medium")),
+        ("claude:sonnet high", Ok("PART 1 | I1 | Handle\nPART 3 | I2 |\nCONFIDENCE understanding=high result=medium")),
         ("qwen-a low", Ok("ANSWER\nFINDING api/Endpoint.cs:3 a null key throws\nCONFIDENCE understanding=high result=low")),
         ("qwen-a high", Ok(KEY)),
         ("claude:sonnet high", Ok("STATUS partial\nFINDING api/Endpoint.cs:4 the request is stored\nGAP compatibility with published versions\nBLOCKED decision which version may enforce it")),
@@ -279,17 +264,23 @@ fn test_adaptive_plan_escalate_combine() {
         ("qwen-a low", Ok("Handle checks the key [1]; which version may enforce it is open.")),
     ];
     let f = Fake::new(&script);
-    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let q = ["Why", "is", "the", "key", "checked?", "Should", "a", "blank", "key", "be", "rejected?"];
     let mut argv = q.to_vec();
     argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--prose"]);
     let out = go(&root, &f, &argv).expect("run");
     assert!(
         out.contains(
-            "difficulty: 3 of 5 (the whole repository, no starting symbol, it asks for judgement)\n"
+            "difficulty: 4 of 5 (several questions, the whole repository, no starting symbol, it asks for judgement)\n"
         ),
         "{out}"
     );
-    assert!(out.contains("plan: 2 parts by claude:sonnet high\n  P1 qwen-a low: Where is the key checked?\n  P2 claude:sonnet high: Should a blank key be rejected?\n"), "{out}");
+    assert!(out.contains("plan: 2 parts by claude:sonnet high\n  P1 qwen-a low: I1: Why is the key checked?\n  P2 claude:sonnet high: I2: Should a blank key be rejected?\n"), "the parts keep the items' own words: {out}");
+    let planned = &f.prompts("claude:sonnet high")[0];
+    assert!(
+        planned.contains("Items:\nI1: Why is the key checked?\nI2: Should a blank key be rejected?\n")
+            && planned.contains("PART agent-number | item ids"),
+        "{planned}"
+    );
     assert!(
         out.contains(
             "  P1 qwen-a low (it rated the support for its results low) → qwen-a high: complete, 1 verified"
@@ -340,14 +331,14 @@ fn test_orchestrator() {
     let other =
         "ANSWER\nFINDING api/Endpoint.cs:4 the request is stored\nCONFIDENCE understanding=high result=high";
     let script = [
-        ("claude:opus high", Ok("PART 1 | Where is the key checked? | Handle\nPART 1 | Where is it stored? | Store\nCONFIDENCE understanding=high result=high")),
+        ("claude:opus high", Ok("PART 1 | I1 | Handle\nPART 1 | I2 | Store\nCONFIDENCE understanding=high result=high")),
         ("qwen-a low", Ok(KEY)),
         ("qwen-a low", Ok(other)),
         ("claude:opus high", Ok("ANSWER\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
         ("claude:opus high", Ok("Handle checks the key [1].")),
     ];
     let f = Fake::new(&script);
-    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let q = ["Why", "is", "the", "key", "checked?", "Should", "a", "blank", "key", "be", "rejected?"];
     let mut argv = q.to_vec();
     argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--prose"]);
     argv.extend(["--orchestrator", "claude:opus", "--orchestrator-effort", "high"]);
@@ -368,7 +359,7 @@ fn test_orchestrator() {
     );
     assert_eq!(
         (r["v"].as_u64(), r["difficulty"].as_u64(), r["parts"].as_array().map(Vec::len)),
-        (Some(1), Some(3), Some(2))
+        (Some(1), Some(4), Some(2))
     );
     assert_eq!(r["calls"].as_array().map(Vec::len), Some(5));
     assert_eq!(r["calls"][0]["orchestrator"], true);
@@ -376,7 +367,7 @@ fn test_orchestrator() {
     assert_eq!(r["usage"]["orchestrator"]["output_tokens"], 33);
     assert_eq!(r["parts"][0]["attempts"][0]["findings"], 1);
     assert_eq!(r["question_hash"].as_str().map(str::len), Some(12));
-    assert!(!r.to_string().contains("checked and should"), "no question text is logged");
+    assert!(!r.to_string().contains("blank key"), "no question text is logged");
 
     let f = Fake::new(&script);
     argv.push("--json");
@@ -489,27 +480,37 @@ fn test_planner_failures() {
         "the",
         "key",
         "checked?",
+        "Where",
+        "is",
+        "it",
+        "stored?",
         "--path",
         "api",
         "--symbol",
         "Handle",
         "--adaptive",
         "--agents",
-        "qwen-a,qwen-b",
+        "qwen-a,qwen-b,qwen-c",
     ];
     let f = Fake::new(&[
-        ("qwen-b low", Err("busy")),
-        ("qwen-b high", Ok("no plan here")),
+        ("qwen-b high", Err("busy")),
+        ("qwen-c low", Ok("no plan here")),
+        ("qwen-c low", Ok("PART 1 | I1 |")),
         ("qwen-a low", Ok(KEY)),
     ]);
     let out = go(&root, &f, &argv).expect("run");
-    assert!(out.contains("planner qwen-b low failed: busy\nplanner qwen-b high gave no plan (it gave no PART lines); one part on qwen-a low\n"), "{out}");
+    assert!(out.contains("planner qwen-b high failed: busy\nplanner qwen-c low's plan was refused: the reply had no PART lines\nplanner qwen-c low's repaired plan was refused too (I2 is in no part); the task runs as one assignment on qwen-a low\n"), "{out}");
+    assert!(
+        f.prompts("qwen-c low")[1]
+            .contains("Your plan was refused: the reply had no PART lines. Reply again"),
+        "one repair, told why"
+    );
     assert!(out.contains("  P1 qwen-a low: complete"), "{out}");
     assert!(out.contains("answer:\n"), "one part needs no combining: {out}");
 
     let f = Fake::new(&[
-        ("qwen-b low", Ok("PART 1 | q1 |\nESCALATE I do not know the code")),
-        ("qwen-b high", Ok("PART 1 | q1 |\nCONFIDENCE understanding=low result=low")),
+        ("qwen-b low", Ok("PART 1 | I1, I2 |\nESCALATE I do not know the code")),
+        ("qwen-b high", Ok("PART 1 | I1, I2 |\nCONFIDENCE understanding=low result=low")),
         ("qwen-a low", Ok(KEY)),
     ]);
     let out = go(
@@ -521,13 +522,17 @@ fn test_planner_failures() {
             "the",
             "key",
             "checked?",
+            "Where",
+            "is",
+            "it",
+            "stored?",
             "--path",
             "api",
             "--symbol",
             "Handle",
             "--adaptive",
             "--agents",
-            "qwen-a@low,qwen-a@medium,qwen-b",
+            "qwen-a@low,qwen-a@medium,qwen-a@high,qwen-b",
         ],
     )
     .expect("run");
@@ -537,7 +542,7 @@ fn test_planner_failures() {
         ),
         "{out}"
     );
-    assert!(out.contains("plan: 1 parts by qwen-b high, kept although it rated its understanding low\n  P1 qwen-a low: q1\n"), "{out}");
+    assert!(out.contains("plan: 1 parts by qwen-b high, kept although it rated its understanding low\n  P1 qwen-a low: I1: Why is the key checked?\nI2: Where is it stored?\n"), "{out}");
 
     let f = Fake::new(&[("qwen-a low", Ok(KEY))]);
     let out = go(
@@ -549,6 +554,10 @@ fn test_planner_failures() {
             "the",
             "key",
             "checked?",
+            "Where",
+            "is",
+            "it",
+            "stored?",
             "--path",
             "api",
             "--symbol",
@@ -1172,11 +1181,11 @@ fn test_all_runs_together() {
 fn test_deadline_between_parts() {
     let (_t, root) = repo();
     let f = Fake::new(&[
-        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        ("claude:sonnet high", Ok("PART 1 | I1 | Handle\nPART 3 | I2 |\nCONFIDENCE understanding=high result=high")),
         ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
         ("claude:sonnet high", Ok("STATUS complete\nFINDING api/Endpoint.cs:2-3 the key is checked in Handle\nCONFIDENCE understanding=high result=high")),
     ]);
-    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let q = ["Why", "is", "the", "key", "checked?", "Should", "a", "blank", "key", "be", "rejected?"];
     let mut argv = q.to_vec();
     argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "2"]);
     let t0 = Instant::now();
@@ -1223,11 +1232,14 @@ fn test_no_call_after_the_deadline() {
 fn test_cancel_reaches_parallel_parts() {
     let (_t, root) = repo();
     let f = Fake::new(&[
-        ("claude:sonnet high", Ok("PART 1 | Where is the key checked? | Handle\nPART 3 | Should a blank key be rejected? |\nCONFIDENCE understanding=high result=high")),
+        (
+            "claude:sonnet high",
+            Ok("PART 1 | I1 | Handle\nPART 3 | I2 |\nCONFIDENCE understanding=high result=high"),
+        ),
         ("qwen-a low", Ok("SLEEP 5000\nANSWER\nFINDING api/Endpoint.cs:3 too late")),
         ("claude:sonnet high", Ok("SLEEP 5000\nSTATUS complete\nFINDING api/Endpoint.cs:2-3 too late")),
     ]);
-    let q = ["Why", "is", "the", "key", "checked", "and", "should", "it", "be?"];
+    let q = ["Why", "is", "the", "key", "checked?", "Should", "a", "blank", "key", "be", "rejected?"];
     let mut argv = q.to_vec();
     argv.extend(["--adaptive", "--agents", "qwen-a,claude:sonnet@high", "--seconds", "60"]);
     let stop = crate::budget::Stop::default();
@@ -1362,4 +1374,85 @@ fn test_hosted_parts_get_discovered_leads() {
         !f.prompts("claude:opus medium")[0].contains("Declarations zazzle found"),
         "the agent alone gets no help from zazzle"
     );
+}
+
+// Checks a plan with numeric or model-label questions, an agent off the ladder or a reply cut short is never dispatched: the planner gets one repair, a local planner is held to the plan grammar, and when the repair is refused too the task runs as one assignment with its own words.
+#[test]
+fn test_invalid_plans_dispatch_nothing() {
+    let (_t, root) = repo();
+    let q = [
+        "Why",
+        "is",
+        "the",
+        "key",
+        "checked?",
+        "Where",
+        "is",
+        "the",
+        "request",
+        "stored?",
+        "--adaptive",
+        "--agents",
+        "qwen-a,qwen-b,qwen-c",
+    ];
+    let f = Fake::new(&[
+        (
+            "qwen-c high",
+            Ok("PART 1 | 1 |\nPART 1 | qwen-a low | Where?\nCONFIDENCE understanding=high result=high"),
+        ),
+        ("qwen-c high", Ok("PART 9 | I1, I2 |\nCUT")),
+        ("qwen-a low", Ok(KEY)),
+    ]);
+    let out = go(&root, &f, &q).expect("run");
+    assert!(out.contains("planner qwen-c high's plan was refused: `PART 1 | 1 |`: `1` is not an item of the task; `PART 1 | qwen-a low | Where?`: `qwen-a low` is not an item of the task"), "{out}");
+    assert!(out.contains("planner qwen-c high's repaired plan was refused too (the plan was cut short; `PART 9 | I1, I2 |`: agent 9 is not on the ladder (1 to 6)"), "{out}");
+    assert!(out.contains("the task runs as one assignment on qwen-a low"), "{out}");
+    let planned = f.prompts("qwen-c high");
+    assert!(
+        planned.iter().all(|p| p.ends_with("[held to a grammar]")),
+        "a local planner is held to the plan grammar"
+    );
+    let asked = f.prompts("qwen-a low");
+    assert_eq!(asked.len(), 1, "one executor call, nothing invalid dispatched");
+    assert!(
+        asked[0].contains("Question: Why is the key checked? Where is the request stored?"),
+        "the original task, in its own words: {}",
+        asked[0]
+    );
+    assert!(!asked.iter().any(|p| p.contains("Question: 1\n") || p.contains("Question: qwen-a low")));
+}
+
+// Checks several questions about one component (the cache) run as one investigation with no planner and no combiner call.
+#[test]
+fn test_one_component_needs_no_planner() {
+    let (t, root) = repo();
+    t.write("api/StationCache.cs", b"class StationCache {\n  string Key(string station, int bay, string terminal) => $\"{station}:{bay}:{terminal}\";\n  bool Recall(string question) => question == stored;\n}\n");
+    let f = Fake::new(&[("qwen-a low", Ok("ANSWER\nFINDING api/StationCache.cs:2 the key holds station, bay and terminal\nCONFIDENCE understanding=high result=high"))]);
+    let q = [
+        "What",
+        "is",
+        "the",
+        "station",
+        "cache",
+        "key?",
+        "When",
+        "does",
+        "the",
+        "station",
+        "cache",
+        "compare",
+        "the",
+        "stored",
+        "question?",
+        "--adaptive",
+        "--agents",
+        "qwen-a,claude:opus@high",
+    ];
+    let out = go(&root, &f, &q).expect("run");
+    assert!(
+        out.contains("plan: one part on qwen-a low, no planner call (every item is about StationCache)\n"),
+        "{out}"
+    );
+    assert!(f.prompts("claude:opus high").is_empty(), "no planner and no combiner");
+    assert!(out.contains("answer:\n") && !out.contains("combined by"), "{out}");
 }

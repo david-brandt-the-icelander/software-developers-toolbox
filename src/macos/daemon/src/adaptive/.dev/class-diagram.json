@@ -242,7 +242,8 @@
         "prompt",
         "sections: &[(name, text)]",
         "write: bool",
-        "max_tokens"
+        "max_tokens",
+        "grammar: Option<&str>"
       ]
     },
     {
@@ -259,6 +260,43 @@
         "parts: Vec<Value>, result: Value",
         "build(calls, secs) -> Value",
         "write(rec), append(path, rec)"
+      ]
+    },
+    {
+      "id": "Item",
+      "name": "Item",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/items.rs"
+      ],
+      "members": [
+        "id: String",
+        "text: String"
+      ]
+    },
+    {
+      "id": "Task",
+      "name": "Task",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/items.rs"
+      ],
+      "members": [
+        "items: Vec<Item>",
+        "constraints: Vec<String>"
+      ]
+    },
+    {
+      "id": "Assignment",
+      "name": "Assignment",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/items.rs"
+      ],
+      "members": [
+        "rung: usize",
+        "items: Vec<String>",
+        "seeds: Vec<String>"
       ]
     }
   ],
@@ -322,6 +360,18 @@
       "to": "Call",
       "kind": "depends-on",
       "description": "A record joins a run's facts with every call's tokens and seconds."
+    },
+    {
+      "from": "Task",
+      "to": "Item",
+      "kind": "depends-on",
+      "description": "The requested items, by id."
+    },
+    {
+      "from": "Assignment",
+      "to": "Item",
+      "kind": "depends-on",
+      "description": "The items a validated plan line answers."
     }
   ]
 }

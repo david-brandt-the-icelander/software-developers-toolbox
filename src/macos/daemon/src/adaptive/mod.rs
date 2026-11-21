@@ -1,6 +1,7 @@
 // `zazzle investigate .. --adaptive`: the cheapest planner sure to be overkill for the question splits it into parts and gives each the cheapest agent and effort that will do it; every executor answers in short structured lines that say how sure it is and whether to escalate, zazzle checks their citations and hands an unsettled part, with what it established, to the next rung; `--review-*` has another agent judge the results and `--benchmark-*` compares them with the question answered by one agent alone.
 pub mod agent;
 pub mod calls;
+pub mod items;
 pub mod record;
 pub mod work;
 
@@ -378,10 +379,17 @@ fn adaptive(
         if why.is_empty() { "a short question about named symbols".to_string() } else { why.join(", ") }
     );
     let whole = Part { question: plan.question.clone(), symbols: plan.symbols.clone(), rung: 0 };
-    let skipped = score == 0 || ladder.len() == 1;
+    let task = items::task(&plan.question);
+    let component = one_component(ctx, scope, plan, &task);
+    let skipped = score == 0 || ladder.len() == 1 || task.items.len() < 2 || component.is_some();
     let (parts, planner, planned) = match skipped {
         true => {
-            head.push_str(&format!("plan: one part on {}, no planner call\n", ladder[0].label()));
+            let why = match (&component, task.items.len() < 2 && score > 0 && ladder.len() > 1) {
+                (Some(c), _) => format!(" (every item is about {c})"),
+                (None, true) => " (one requested item)".into(),
+                (None, false) => String::new(),
+            };
+            head.push_str(&format!("plan: one part on {}, no planner call{why}\n", ladder[0].label()));
             (vec![whole], None, false)
         }
         false => {
@@ -391,7 +399,9 @@ fn adaptive(
                     ladder.iter().skip((score + 1).min(ladder.len() - 1)).take(PLANNERS).cloned().collect()
                 }
             };
-            let (parts, planner, note) = make_plan(b, &log, plan, &ctx.cwd, ladder, &planners, deadline);
+            let leads = investigate::leads(ctx, scope, &plan.question, &plan.symbols);
+            let (parts, planner, note) =
+                make_plan(b, &log, plan, &task, &ctx.cwd, ladder, &planners, &leads, deadline);
             head.push_str(&note);
             match parts.is_empty() {
                 true => (vec![whole], planner, false),
@@ -479,14 +489,17 @@ fn adaptive(
     Ok(Run { label: "zazzle adaptive".into(), work, text: out, calls, secs, json })
 }
 
-// Asks the planner for parts, moving to the next rung when it fails, gives no parts, rates its understanding low or asks to escalate; returns the parts, the planner that made them and the report lines.
+// Asks the planner to assign the task's items to parts, holding a local planner to the plan grammar and checking any plan before dispatch (agents on the ladder, known items, symbols that are names, every item covered, not cut short); a refused plan gets one repair, and a repair refused too runs the task as one assignment; moves to the next planner when one fails, rates its understanding low or asks to escalate. Returns the parts (each with its items' own words), the planner that made them and the report lines.
+#[allow(clippy::too_many_arguments)]
 fn make_plan(
     b: &dyn Backend,
     log: &Log,
     plan: &Plan,
+    task: &items::Task,
     cwd: &Path,
     ladder: &[Rung],
     planners: &[Rung],
+    leads: &[String],
     deadline: Instant,
 ) -> (Vec<Part>, Option<Rung>, String) {
     let menu: String = ladder
@@ -505,32 +518,72 @@ fn make_plan(
             )
         })
         .collect();
-    let system = format!("You plan how to answer a question about a code repository. Agents, cheapest first:\n{menu}Split the question into at most {MAX_PARTS} parts that can be answered separately (one part when it cannot be split) and give each the cheapest agent that will do it well: source lookups and mapping tests to code suit cheap agents; judgement over the whole task suits stronger ones. You combine the parts' results yourself afterwards. Do not answer the question. Be concise; reply only with lines:\nPART agent-number | the part's question | starting symbols, comma-separated (may be empty)\nCONFIDENCE understanding=high|medium|low result=high|medium|low\nESCALATE why a stronger planner is needed (only if one is)");
-    let prompt = format!(
-        "Question: {}\nScope: {}\nStarting symbols: {}",
-        plan.question,
+    let system = format!("You plan how to answer a task about a code repository. Agents, cheapest first:\n{menu}Assign the task's items (listed by id) to at most {MAX_PARTS} parts that can be answered separately: put items that share an entry point and evidence in one part, put every item in some part, and give each part the cheapest agent that will do it well: source lookups and mapping tests to code suit cheap agents; judgement over the whole task suits stronger ones. You combine the parts' results yourself afterwards. Do not reword or answer the items. Be concise; reply only with lines:\nPART agent-number | item ids, comma-separated | starting symbols, comma-separated names (may be empty)\nCONFIDENCE understanding=high|medium|low result=high|medium|low\nESCALATE why a stronger planner is needed (only if one is)");
+    let mut prompt = format!(
+        "Items:\n{}Scope: {}\nStarting symbols: {}\n",
+        task.listing(),
         plan.scope.join(", "),
         plan.symbols.join(", ")
     );
+    if !leads.is_empty() {
+        prompt.push_str("Declarations found in the files that match the task:\n");
+        prompt.push_str(&leads.iter().map(|l| format!("- {l}\n")).collect::<String>());
+    }
     let mut note = String::new();
     for (k, r) in planners.iter().enumerate() {
-        let reply = match log.text(
-            b,
-            r,
-            &Ask::new("planner", &system, &prompt, &[("brief", &system), ("task", &prompt)]),
-            cwd,
-            deadline,
-        ) {
-            Ok(t) => t,
+        let grammar = (!r.hosted()).then_some(items::GRAMMAR);
+        let ask = |role: &'static str, prompt: &str| {
+            let sections = [("brief", system.as_str()), ("task", prompt)];
+            log.text_cut(b, r, &Ask { grammar, ..Ask::new(role, &system, prompt, &sections) }, cwd, deadline)
+        };
+        let (reply, cut) = match ask("planner", &prompt) {
+            Ok(x) => x,
             Err(e) => {
                 note.push_str(&format!("planner {} failed: {e}\n", r.label()));
                 continue;
             }
         };
-        let parts = parse_parts(&reply, ladder.len(), &plan.symbols);
+        let checked = match items::check(&reply, task, ladder.len(), cut) {
+            Ok(a) => Ok((a, reply)),
+            Err(problems) => {
+                note.push_str(&format!(
+                    "planner {}'s plan was refused: {}\n",
+                    r.label(),
+                    problems.join("; ")
+                ));
+                let again = format!(
+                    "{prompt}\nYour plan was refused: {}. Reply again with the corrected lines only.",
+                    problems.join("; ")
+                );
+                match ask("planner repair", &again) {
+                    Ok((reply, cut)) => items::check(&reply, task, ladder.len(), cut).map(|a| (a, reply)),
+                    Err(e) => Err(vec![e]),
+                }
+            }
+        };
+        let (assigned, reply) = match checked {
+            Ok(x) => x,
+            Err(problems) => {
+                note.push_str(&format!(
+                    "planner {}'s repaired plan was refused too ({}); the task runs as one assignment on {}\n",
+                    r.label(),
+                    problems.join("; "),
+                    ladder[0].label()
+                ));
+                return (Vec::new(), Some(r.clone()), note);
+            }
+        };
+        let parts: Vec<Part> = assigned
+            .iter()
+            .take(MAX_PARTS)
+            .map(|a| Part {
+                question: task.text_of(&a.items),
+                symbols: if a.seeds.is_empty() { plan.symbols.clone() } else { a.seeds.clone() },
+                rung: a.rung,
+            })
+            .collect();
         let a = investigate::cite::parse_answer(&reply).unwrap_or_default();
         let why = match () {
-            _ if parts.is_empty() => Some("it gave no PART lines".to_string()),
             _ if a.understanding == "low" => Some("it rated its understanding low".to_string()),
             _ if a.escalate.is_some() => {
                 Some(format!("it asked for a stronger planner: {}", a.escalate.clone().unwrap_or_default()))
@@ -539,14 +592,6 @@ fn make_plan(
         };
         match (why, k + 1 == planners.len()) {
             (Some(w), false) => note.push_str(&format!("planner {} escalated: {w}\n", r.label())),
-            (Some(w), true) if parts.is_empty() => {
-                note.push_str(&format!(
-                    "planner {} gave no plan ({w}); one part on {}\n",
-                    r.label(),
-                    ladder[0].label()
-                ));
-                return (Vec::new(), Some(r.clone()), note);
-            }
             (w, _) => {
                 let kept = w.map(|w| format!(", kept although {w}")).unwrap_or_default();
                 note.push_str(&format!("plan: {} parts by {}{kept}\n", parts.len(), r.label()));
@@ -558,34 +603,16 @@ fn make_plan(
     (Vec::new(), None, note)
 }
 
-// Reads `PART n | question | symbols` lines, clamping the rung to the ladder and taking the run's symbols when a part names none.
-fn parse_parts(reply: &str, rungs: usize, symbols: &[String]) -> Vec<Part> {
-    let mut out = Vec::new();
-    for l in reply.lines() {
-        let Some(rest) = investigate::cite::strip_word(l.trim(), "PART") else { continue };
-        let mut fields = rest.split('|').map(str::trim);
-        let head = fields.next().unwrap_or_default();
-        let (n, q) = head.split_once(char::is_whitespace).unwrap_or((head, ""));
-        let Ok(n) = n.trim_end_matches(['.', ':']).parse::<usize>() else { continue };
-        let question = match q.trim() {
-            "" => fields.next().unwrap_or_default().to_string(),
-            q => q.to_string(),
-        };
-        if question.is_empty() {
-            continue;
-        }
-        let named: Vec<String> = fields
-            .next()
-            .unwrap_or_default()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        let symbols = if named.is_empty() { symbols.to_vec() } else { named };
-        out.push(Part { question, symbols, rung: n.clamp(1, rungs) - 1 });
+// The one component every item of a task is about, when there is one: the best declaration discovery finds for the whole task, if each item's terms match its name or path; such a task needs no planner and no combiner.
+fn one_component(ctx: &Ctx, scope: &[PathBuf], plan: &Plan, task: &items::Task) -> Option<String> {
+    use investigate::discover;
+    if task.items.len() < 2 {
+        return None;
     }
-    out.truncate(MAX_PARTS);
-    out
+    let terms = discover::terms(&plan.question);
+    let top =
+        discover::discover(ctx.engine, &ctx.cwd, scope, &terms, discover::web(&plan.question), 1).pop()?;
+    task.items.iter().all(|i| top.touches(&discover::terms(&i.text))).then(|| top.name.clone())
 }
 
 // The prompt a hosted executor gets: the required lines, the question, the scope, the starting symbols and what earlier attempts established.
