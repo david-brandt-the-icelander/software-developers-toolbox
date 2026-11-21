@@ -18,6 +18,15 @@ pub struct Work {
     pub context: Vec<String>,
     pub blocked: Option<String>,
     pub turns: usize,
+    pub lines: Vec<Line>,
+}
+
+// One line of a synthesized answer: what kind of statement it is (supported, inference, proposal or unknown), its words, and the findings it rests on (indexes into the findings).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Line {
+    pub kind: String,
+    pub text: String,
+    pub ids: Vec<usize>,
 }
 
 impl Work {
@@ -116,22 +125,46 @@ impl Work {
 
     // The answer as the caller asked for it: each verified finding with its citation and the exact lines it rests on, then what is still unresolved, as text and as fields.
     pub fn answer(&self) -> Value {
-        let mut text: String =
-            self.findings.iter().map(|f| format!("- {} ({})\n", f.claim, f.cite)).collect();
+        let mut text: String = match self.lines.is_empty() {
+            true => self.findings.iter().map(|f| format!("- {} ({})\n", f.claim, f.cite)).collect(),
+            false => self.lines.iter().map(|l| format!("- {}\n", self.line_text(l))).collect(),
+        };
         if !self.gaps.is_empty() {
             text.push_str("Unresolved:\n");
             text.extend(self.gaps.iter().map(|g| format!("- {g}\n")));
         }
         json!({
             "text": text,
-            "findings": self.findings.iter().map(|f| json!({"claim": f.claim, "citation": f.cite, "excerpt": f.excerpt})).collect::<Vec<_>>(),
+            "lines": self.lines.iter().map(|l| json!({
+                "kind": l.kind,
+                "text": l.text,
+                "findings": l.ids.iter().map(|i| json!({"id": format!("F{}", i + 1), "citation": self.findings[*i].cite})).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "findings": self.findings.iter().enumerate().map(|(i, f)| json!({"id": format!("F{}", i + 1), "claim": f.claim, "citation": f.cite, "excerpt": f.excerpt})).collect::<Vec<_>>(),
             "unresolved": self.gaps,
         })
     }
 
+    // One answer line as text: a label for what is not supported, its words, and the citations of its findings.
+    pub fn line_text(&self, l: &Line) -> String {
+        let label = match l.kind.as_str() {
+            "supported" => "",
+            "inference" => "Inference: ",
+            "proposal" => "Proposal: ",
+            _ => "Unknown: ",
+        };
+        let cites: Vec<String> =
+            l.ids.iter().map(|i| format!("[{}] {}", i + 1, self.findings[*i].cite)).collect();
+        match cites.is_empty() {
+            true => format!("{label}{}", l.text),
+            false => format!("{label}{} ({})", l.text, cites.join("; ")),
+        }
+    }
+
     // Renders the findings with their cited lines and the rest of the result, for the text report.
     pub fn render(&self) -> String {
-        let mut out = format!("findings ({} verified):\n", self.findings.len());
+        let mut out: String = self.lines.iter().map(|l| format!("- {}\n", self.line_text(l))).collect();
+        out.push_str(&format!("findings ({} verified):\n", self.findings.len()));
         if self.findings.is_empty() {
             out.push_str("(none)\n");
         }

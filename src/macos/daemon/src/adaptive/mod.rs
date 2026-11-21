@@ -433,11 +433,10 @@ fn adaptive(
     for (i, attempts) in runs.iter().enumerate() {
         out.push_str(&format!("  P{} {}\n", i + 1, story(attempts)));
     }
-    let finals: Vec<Work> =
-        runs.iter().map(|a| a.last().map(|x| x.work.clone()).unwrap_or_default()).collect();
+    let finals: Vec<Work> = runs.iter().map(|a| settled(a)).collect();
     let (work, by) = match finals.len() {
         1 => (finals[0].clone(), String::new()),
-        _ => combine(b, &log, plan, &ctx.cwd, scope, &finals, orchestrating, deadline),
+        _ => combine(b, &log, &task, &ctx.cwd, &finals, orchestrating, deadline),
     };
     out.push_str(&format!("answer{by}:\n{}", work.render()));
     if prose && !work.findings.is_empty() {
@@ -754,61 +753,143 @@ fn story(attempts: &[Attempt]) -> String {
     s
 }
 
-// Combines the parts' results with the planner: its claims must cite lines a part verified, else they are rejected; when it fails or verifies nothing, the parts' findings are merged without it.
-#[allow(clippy::too_many_arguments)]
+// A part's result: its last attempt, keeping the findings its earlier attempts verified (an escalation must not lose them).
+fn settled(attempts: &[Attempt]) -> Work {
+    let mut w = attempts.last().map(|x| x.work.clone()).unwrap_or_default();
+    for f in attempts.iter().rev().skip(1).flat_map(|a| &a.work.findings) {
+        if !w.findings.iter().any(|g| g.cite == f.cite && g.claim == f.claim) {
+            w.findings.push(f.clone());
+        }
+    }
+    w
+}
+
+// Writes the task's answer from the parts' checked findings by id. Every finding and gap of the parts stays in the result; the writer sees each finding's id, claim and exact lines and answers the task as asked (its items in order, its format and length) in lines that cite findings only by id, each marked supported, inference, proposal or unknown. Lines citing no finding or an unknown one, and any path citation that is not exactly a finding's, are refused, so no citation can be widened. With nothing verified there is no call; when the call fails or leaves no usable line, the findings and gaps are the answer. A word limit gets one retry, then the answer is cut to it.
 fn combine(
     b: &dyn Backend,
     log: &Log,
-    plan: &Plan,
+    task: &items::Task,
     cwd: &Path,
-    scope: &[PathBuf],
     parts: &[Work],
     r: &Rung,
     deadline: Instant,
 ) -> (Work, String) {
-    let listing: String =
-        parts.iter().enumerate().map(|(i, w)| format!("Part {}:\n{}", i + 1, w.listing("F", 0))).collect();
-    let system = format!("You combine the checked results of the parts of one task into its answer. Use only the findings listed, citing them with their path:A-B exactly. Be concise; reply only with lines:\nANSWER\n{LINES}");
-    let prompt = format!("Question: {}\n\n{listing}", plan.question);
-    let merged = merge(parts);
-    let reply = match log.text(
-        b,
-        r,
-        &Ask::new("combine", &system, &prompt, &[("brief", &system), ("findings", &prompt)]),
-        cwd,
-        deadline,
-    ) {
+    let mut merged = merge(parts);
+    if merged.findings.is_empty() {
+        return (merged, " (the parts merged; nothing was verified to combine)".into());
+    }
+    let listing: String = merged
+        .findings
+        .iter()
+        .enumerate()
+        .map(|(i, f)| format!("F{} {} ({})\n{}", i + 1, f.claim, f.cite, f.excerpt))
+        .collect();
+    let open: String = merged.gaps.iter().map(|g| format!("- {g}\n")).collect();
+    let system = "You write the answer to a task from checked findings. Each finding has an id, a claim and the exact lines it rests on. Answer the task as asked (its items in order, in the format and length it asks for; one row or step per line for a table, a call chain or a test matrix), using only these findings. Reply only with lines:\nANSWER\nSUPPORTED F1,F3 | a sentence the cited findings' lines show\nINFERENCE F2 | a conclusion they point to but do not show\nPROPOSAL | a change or a test the task asks for\nUNKNOWN | what the findings do not settle\nCite findings only by their ids; never write a path or line numbers.";
+    let mut prompt = format!("Task:\n{}\nFindings:\n{listing}", task.listing());
+    if !open.is_empty() {
+        prompt.push_str(&format!("Still unresolved in the parts:\n{open}"));
+    }
+    let ask = |prompt: &str| {
+        log.text(
+            b,
+            r,
+            &Ask::new("combine", system, prompt, &[("brief", system), ("findings", prompt)]),
+            cwd,
+            deadline,
+        )
+    };
+    let reply = match ask(&prompt) {
         Ok(t) => t,
         Err(e) => return (merged, format!(" (the parts merged; combining with {} failed: {e})", r.label())),
     };
-    let mut w = Work::from_reply(cwd, scope, &reply);
-    let known: Vec<&investigate::Found> = parts.iter().flat_map(|p| &p.findings).collect();
-    let (kept, strays): (Vec<_>, Vec<_>) = w
-        .findings
-        .drain(..)
-        .partition(|f| known.iter().any(|k| k.path == f.path && overlaps(&k.cite, &f.cite)));
-    w.findings = kept;
-    w.rejected.extend(strays.iter().map(|f| format!("{} {}: no part verified these lines", f.cite, f.claim)));
-    match w.findings.is_empty() {
-        true => (merged, format!(" (the parts merged; {} verified nothing from them)", r.label())),
-        false => {
-            w.gaps.extend(merged.gaps.into_iter().filter(|g| g.starts_with("the run stopped")));
-            (w, format!(" (combined by {})", r.label()))
+    let (mut lines, mut refused) = synthesis(&reply, &merged.findings);
+    let limit = items::word_limit(&task.constraints);
+    let words = |ls: &[work::Line]| ls.iter().map(|l| l.text.split_whitespace().count()).sum::<usize>();
+    let mut cut = String::new();
+    if let Some(n) = limit.filter(|n| words(&lines) > *n) {
+        let again = format!(
+            "{prompt}\nYour answer had {} words; the task allows at most {n}. Shorten it.",
+            words(&lines)
+        );
+        if let Ok(t) = ask(&again) {
+            let (l2, r2) = synthesis(&t, &merged.findings);
+            if !l2.is_empty() {
+                (lines, refused) = (l2, r2);
+            }
+        }
+        while words(&lines) > n && lines.len() > 1 {
+            lines.pop();
+            cut = format!("; cut to its first lines to stay within {n} words");
         }
     }
+    merged.rejected.extend(refused);
+    if !lines.iter().any(|l| !l.ids.is_empty()) {
+        return (
+            merged,
+            format!(" (the parts merged; {} gave no answer line resting on a finding)", r.label()),
+        );
+    }
+    merged.gaps.extend(lines.iter().filter(|l| l.kind == "unknown").map(|l| l.text.clone()));
+    merged.lines = lines;
+    (merged, format!(" (combined by {}{cut})", r.label()))
 }
 
-// Tells whether two citations `path:A-B` of one file share a line.
-fn overlaps(a: &str, b: &str) -> bool {
-    let range = |c: &str| {
-        let (_, r) = c.rsplit_once(':')?;
-        let (x, y) = r.split_once('-').unwrap_or((r, r));
-        Some((x.parse::<usize>().ok()?, y.parse::<usize>().ok()?))
-    };
-    matches!((range(a), range(b)), (Some((a1, a2)), Some((b1, b2))) if a1 <= b2 && b1 <= a2)
+// Reads the writer's answer lines against the findings: SUPPORTED and INFERENCE lines must cite known finding ids, PROPOSAL and UNKNOWN lines may cite none, and a FINDING line counts only when its path citation is exactly a finding's. Returns the lines and why the others were refused.
+fn synthesis(reply: &str, findings: &[investigate::Found]) -> (Vec<work::Line>, Vec<String>) {
+    let (mut lines, mut refused) = (Vec::new(), Vec::new());
+    for l in reply.lines().map(str::trim) {
+        let (word, rest) = l.split_once(char::is_whitespace).unwrap_or((l, ""));
+        let kind = match word.to_uppercase().as_str() {
+            "SUPPORTED" => "supported",
+            "INFERENCE" => "inference",
+            "PROPOSAL" => "proposal",
+            "UNKNOWN" => "unknown",
+            "FINDING" => {
+                let (cite, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+                match findings.iter().position(|f| f.cite == cite) {
+                    Some(i) => lines.push(work::Line {
+                        kind: "supported".into(),
+                        text: text.trim().into(),
+                        ids: vec![i],
+                    }),
+                    None => {
+                        refused.push(format!("{cite} {}: no finding has exactly these lines", text.trim()))
+                    }
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        let (head, text) = rest.split_once('|').unwrap_or(("", rest));
+        let text = text.trim().to_string();
+        let mut ids = Vec::new();
+        let mut unknown = None;
+        for id in head.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            match id
+                .strip_prefix('F')
+                .and_then(|n| n.parse::<usize>().ok())
+                .filter(|n| (1..=findings.len()).contains(n))
+            {
+                Some(n) => ids.push(n - 1),
+                None => unknown = Some(id.to_string()),
+            }
+        }
+        match (kind, unknown, ids.is_empty()) {
+            (_, Some(id), _) => {
+                refused.push(format!("answer line `{text}`: it cites {id}, which no part found"))
+            }
+            ("supported" | "inference", None, true) => {
+                refused.push(format!("answer line `{text}`: it rests on no finding"))
+            }
+            _ if text.is_empty() => {}
+            _ => lines.push(work::Line { kind: kind.into(), text, ids }),
+        }
+    }
+    (lines, refused)
 }
 
-// Merges the parts' results without a model: findings once per citation, all gaps, the lowest levels, and complete only when every part was.
+// Merges the parts' results without a model: each distinct finding once (two claims on one range are both kept), all gaps, the lowest levels, and complete only when every part was.
 fn merge(parts: &[Work]) -> Work {
     let mut w = Work {
         status: "complete".into(),
@@ -818,7 +899,7 @@ fn merge(parts: &[Work]) -> Work {
     };
     for p in parts {
         for f in &p.findings {
-            if !w.findings.iter().any(|g| g.cite == f.cite) {
+            if !w.findings.iter().any(|g| g.cite == f.cite && g.claim == f.claim) {
                 w.findings.push(f.clone());
             }
         }

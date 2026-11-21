@@ -77,7 +77,8 @@
         "blocked: Option<String>",
         "turns: usize",
         "trigger() -> Option<String>",
-        "handoff(who, why) -> Vec<String>"
+        "handoff(who, why) -> Vec<String>",
+        "lines: Vec<Line>"
       ]
     },
     {
@@ -298,6 +299,19 @@
         "items: Vec<String>",
         "seeds: Vec<String>"
       ]
+    },
+    {
+      "id": "Line",
+      "name": "Line",
+      "kind": "struct",
+      "sources": [
+        "src/macos/daemon/src/adaptive/work.rs"
+      ],
+      "members": [
+        "kind: String",
+        "text: String",
+        "ids: Vec<usize>"
+      ]
     }
   ],
   "relationships": [
@@ -372,6 +386,12 @@
       "to": "Item",
       "kind": "depends-on",
       "description": "The items a validated plan line answers."
+    },
+    {
+      "from": "Work",
+      "to": "Line",
+      "kind": "depends-on",
+      "description": "The synthesized answer's lines, each resting on findings by id."
     }
   ]
 }

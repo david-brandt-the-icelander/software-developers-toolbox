@@ -132,6 +132,14 @@ impl Task {
     }
 }
 
+// The word limit the constraints set, if any: "at most N words", "no more than N words", "under N words", "in N words".
+pub fn word_limit(constraints: &[String]) -> Option<usize> {
+    static LIMIT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)(?:at most|no more than|under|within|in)\s+(\d+)\s+words").expect("valid regex")
+    });
+    constraints.iter().find_map(|c| LIMIT.captures(c).and_then(|m| m[1].parse().ok()))
+}
+
 // The grammar a local planner is held to: PART lines naming an agent number, item ids and starting symbols, then the CONFIDENCE line.
 pub const GRAMMAR: &str = r#"root ::= part+ conf
 part ::= "PART " [1-9] " | " item ("," " "? item)* " | " seeds "\n"

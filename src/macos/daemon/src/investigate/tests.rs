@@ -916,6 +916,10 @@ fn test_quoted_literals() {
         cite::literals_hold("reads `Operation-Key`", lines),
         Err("the cited lines do not contain `Operation-Key`".into())
     );
+    assert!(cite::quoted("a `x` b").is_empty(), "one character is no code name");
+    let reply = "ESCALATE\nBLOCKED\nFINDING api/Endpoint.cs:3 a null key throws";
+    let a = cite::parse_answer(reply).expect("answer");
+    assert!(a.answers(reply) && a.escalate.is_none() && a.blocked.is_none(), "{a:?}");
 }
 
 // Checks the lookups around declarations: a READ of a bare name (or a dotted type name) is looked up as declarations, a READ of a handle reads that declaration and an unknown handle is a missing file, a SYMBOL that matches nothing is a miss, one listing a known declaration again keeps its handle, and a confidence line alone is not an answer.
