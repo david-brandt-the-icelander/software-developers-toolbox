@@ -7,6 +7,7 @@ mod dedupe;
 mod lzfse;
 mod meta;
 mod repair;
+mod saved;
 mod scan;
 mod status;
 #[cfg(test)]
@@ -39,6 +40,8 @@ const EXAMPLES: &str = "examples:
   free-disk-space compress --sample 5          # verify on 5 files first
   free-disk-space compress --limit 20G --yes   # then go bigger
   free-disk-space decompress ~/dev/app         # dry run: what reversing compress would take
+  free-disk-space saved                        # space compression saves now, for the files compress did
+  free-disk-space saved ~ --json               # ... or for every compressed file under a path, as JSON
   free-disk-space daemon install               # clean caches+dev below 30G free, checked every 15m awake
   free-disk-space daemon install --threshold 10% --cadence 1h --targets caches dev trash
 
@@ -99,6 +102,14 @@ enum Cmd {
     /// hard-linked, open, immutable, iCloud-placeholder files and files without a provenance. Refuses when the
     /// volume lacks the space the plain files take. Decompressed files are recorded so compress leaves them alone.
     Decompress(DecompressArgs),
+    /// measure the disk space transparent compression saves now (read-only)
+    ///
+    /// Without PATH: the files compress recorded as done, measured as they are on disk now, next to the saving
+    /// verified when each was compressed. With PATH: every transparently compressed file under the given files or
+    /// folders (on their own volume, symlinks not followed), split into the ones compress recorded and the rest
+    /// (macOS's own, other tools'). A file saves what it would take plain, in whole 4 KiB blocks, minus what it takes
+    /// now; hard links count once.
+    Saved(SavedArgs),
     /// replace identical same-named files with APFS clones (dry run unless --apply)
     ///
     /// Files recorded by the scan that share a leaf name and size are SHA-256 hashed when at least
@@ -302,6 +313,19 @@ struct DecompressArgs {
     include_no_provenance: bool,
 }
 
+// Options for saved.
+#[derive(Args)]
+struct SavedArgs {
+    #[command(flatten)]
+    state: StateArg,
+    /// files or folders to measure (default: the files compress recorded)
+    #[arg(value_name = "PATH")]
+    paths: Vec<String>,
+    /// print JSON
+    #[arg(long)]
+    json: bool,
+}
+
 // Options for repair.
 #[derive(Args)]
 struct RepairArgs {
@@ -426,6 +450,9 @@ fn run(cli: Cli) {
             reserve: a.reserve,
             include_no_provenance: a.include_no_provenance,
         }),
+        Cmd::Saved(a) => {
+            saved::cmd_saved(&saved::SavedOpts { state: a.state.state, paths: a.paths, json: a.json })
+        }
         Cmd::List(a) => scan::cmd_list(&a.state.state, &value_name(a.status), a.top),
         Cmd::Compress(a) => compress::cmd_compress(&compress::CompressOpts {
             state: a.state.state,
@@ -553,6 +580,8 @@ mod tests {
         go(&["status", "--json"]);
         go(&["top", root, "--count", "3", "--depth", "1", "--json"]);
         go(&["decompress", root, "--reserve", "0"]);
+        go(&["saved"]);
+        go(&["saved", root, "--json"]);
         go(&["list", "--top", "3", "--status", "done"]);
         go(&["compress", "--dry-run", "--sample", "1", "--yes", "--min-gain", "1", "--reserve", "0"]);
         go(&["dedupe", "--min-size", "1", "--sample", "1", "--include-system"]);

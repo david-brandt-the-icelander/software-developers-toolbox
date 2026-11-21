@@ -106,6 +106,12 @@
       "folder": "src/macos/free-disk-space/src"
     },
     {
+      "id": "saved",
+      "name": "Compression savings (saved.rs)",
+      "responsibility": "Measures what transparent compression saves now, for the files compress recorded as done or for every compressed file under the given paths, counting each inode once and telling free-disk-space's files from others'; read-only.",
+      "folder": "src/macos/free-disk-space/src"
+    },
+    {
       "id": "top",
       "name": "Largest entries (top.rs)",
       "responsibility": "Walks a folder on several threads without following symlinks or leaving its volume and lists the largest folders and files by allocated size, counting hard-linked files once and noting what it cannot read.",
@@ -544,6 +550,36 @@
       "to": "util",
       "kind": "depends-on",
       "description": "Free space on the data volume."
+    },
+    {
+      "from": "source",
+      "to": "saved",
+      "kind": "contains",
+      "description": "Compression savings."
+    },
+    {
+      "from": "cli",
+      "to": "saved",
+      "kind": "depends-on",
+      "description": "saved calls cmd_saved with SavedOpts."
+    },
+    {
+      "from": "saved",
+      "to": "decompress",
+      "kind": "depends-on",
+      "description": "collect finds the compressed files under the paths; found and plain_alloc measure one."
+    },
+    {
+      "from": "saved",
+      "to": "state",
+      "kind": "depends-on",
+      "description": "Reads the candidates recorded as done when the state file exists; never creates one."
+    },
+    {
+      "from": "saved",
+      "to": "util",
+      "kind": "depends-on",
+      "description": "BSD flags, allocated size and sizes for people."
     }
   ]
 }

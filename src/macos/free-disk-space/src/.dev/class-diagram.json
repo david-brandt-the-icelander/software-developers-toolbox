@@ -420,9 +420,10 @@
         "src/macos/free-disk-space/src/decompress.rs"
       ],
       "members": [
-        "path: PathBuf",
-        "alloc: i64",
-        "plain: i64"
+        "pub path: PathBuf",
+        "pub id: (u64, u64)",
+        "pub alloc: i64",
+        "pub plain: i64"
       ]
     },
     {
@@ -705,6 +706,62 @@
         "Unfinished",
         "Finished(f64)"
       ]
+    },
+    {
+      "id": "main::SavedArgs",
+      "name": "SavedArgs",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/main.rs"
+      ],
+      "members": [
+        "state: StateArg",
+        "paths: Vec<String>",
+        "json: bool"
+      ]
+    },
+    {
+      "id": "saved::SavedOpts",
+      "name": "SavedOpts",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/saved.rs"
+      ],
+      "members": [
+        "pub state: String",
+        "pub paths: Vec<String>",
+        "pub json: bool"
+      ]
+    },
+    {
+      "id": "saved::Tally",
+      "name": "Tally",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/saved.rs"
+      ],
+      "members": [
+        "files: i64",
+        "plain: i64",
+        "on_disk: i64",
+        "fn add(&mut self, f: &Found)",
+        "fn saved(&self) -> i64",
+        "fn json(&self) -> Value"
+      ]
+    },
+    {
+      "id": "saved::Recorded",
+      "name": "Recorded",
+      "kind": "struct",
+      "sources": [
+        "src/macos/free-disk-space/src/saved.rs"
+      ],
+      "members": [
+        "still: Tally",
+        "saved_when_compressed: i64",
+        "plain_now: i64",
+        "gone: i64"
+      ]
     }
   ],
   "relationships": [
@@ -953,6 +1010,24 @@
       "to": "top::Row",
       "kind": "depends-on",
       "description": "The merged rows, biggest first."
+    },
+    {
+      "from": "main::SavedArgs",
+      "to": "saved::SavedOpts",
+      "kind": "depends-on",
+      "description": "run copies the arguments into SavedOpts."
+    },
+    {
+      "from": "saved::Recorded",
+      "to": "saved::Tally",
+      "kind": "depends-on",
+      "description": "The recorded files still compressed."
+    },
+    {
+      "from": "saved::Tally",
+      "to": "decompress::Found",
+      "kind": "depends-on",
+      "description": "add counts one found file."
     }
   ]
 }

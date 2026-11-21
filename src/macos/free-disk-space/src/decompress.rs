@@ -20,21 +20,32 @@ pub struct DecompressOpts {
 // The note recorded in the state file for a decompressed file, so compress and the daemon leave it alone.
 const NOTE: &str = "decompressed on request";
 
-// A compressed file under the given paths, with the disk space it takes now and would take plain.
-struct Found {
-    path: PathBuf,
-    alloc: i64,
-    plain: i64,
+// A compressed file under the given paths, with its volume and inode and the disk space it takes now and plain.
+pub struct Found {
+    pub path: PathBuf,
+    pub id: (u64, u64),
+    pub alloc: i64,
+    pub plain: i64,
 }
 
 // Return the disk space a plain file of this length takes, in whole 4 KiB allocation blocks.
-fn plain_alloc(len: u64) -> i64 {
+pub fn plain_alloc(len: u64) -> i64 {
     (len.div_ceil(4096) * 4096) as i64
+}
+
+// Describe a compressed file found at a path from its metadata.
+pub fn found(path: &Path, md: &fs::Metadata) -> Found {
+    Found {
+        path: path.to_path_buf(),
+        id: (md.dev(), md.ino()),
+        alloc: util::alloc(md),
+        plain: plain_alloc(md.len()),
+    }
 }
 
 // Collect the compressed regular files under a path, without following symlinks or entering another volume than
 // `dev`; note what cannot be read.
-fn collect(path: &Path, dev: Option<u64>, out: &mut Vec<Found>, notes: &mut Vec<String>) {
+pub fn collect(path: &Path, dev: Option<u64>, out: &mut Vec<Found>, notes: &mut Vec<String>) {
     let md = match fs::symlink_metadata(path) {
         Ok(md) => md,
         Err(e) => return notes.push(format!("{}: {e}", path.display())),
@@ -50,7 +61,7 @@ fn collect(path: &Path, dev: Option<u64>, out: &mut Vec<Found>, notes: &mut Vec<
         return;
     }
     if md.is_file() && util::flags(&md) & util::UF_COMPRESSED != 0 {
-        out.push(Found { path: path.to_path_buf(), alloc: util::alloc(&md), plain: plain_alloc(md.len()) });
+        out.push(found(path, &md));
     }
 }
 
@@ -290,7 +301,7 @@ mod tests {
     #[test]
     fn test_preview_gone() {
         let sb = Sandbox::new();
-        let gone = Found { path: sb.path("gone"), alloc: 0, plain: 4096 };
+        let gone = Found { path: sb.path("gone"), id: (0, 0), alloc: 0, plain: 4096 };
         preview(&[gone], &compress_opts(&opts(&sb, &[], false)));
     }
 

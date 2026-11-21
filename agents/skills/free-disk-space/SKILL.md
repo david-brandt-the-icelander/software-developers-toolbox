@@ -33,6 +33,10 @@ Binary: `free-disk-space`, or `zazzle free-disk-space ...` (same program, starte
 1. Preview: `... decompress PATH...` lists each compressed file under the files or folders with the space it would add, or why it would be skipped, and the free space needed; nothing changes.
 2. `... decompress PATH... --apply` rewrites each one plain through a verified copy (same skips as compress: hard-linked, open, immutable, iCloud placeholders; `--include-no-provenance` for Apple's and system files) and records it so `compress` and the daemon leave it alone. It refuses when free space is below what the plain files need plus `--reserve` (2G).
 
+## Saved (how much compression saves)
+1. `... saved` measures the files `compress` recorded, as they are now: files, plain size, size on disk and the saving, next to the saving verified when they were compressed, and how many are no longer compressed or gone. Read-only.
+2. `... saved PATH...` measures every compressed file under the paths, split into `compress`'s and the rest (macOS's own, other tools'); add `--json` for scripts.
+
 ## Dedupe (after a scan, before compress)
 1. Preview: `... dedupe` hashes same-named, same-sized files and lists identical ones; nothing changes.
 2. Verify first: `... dedupe --sample 5 --apply`, check the files and the free-space change, then `... dedupe --apply`.
