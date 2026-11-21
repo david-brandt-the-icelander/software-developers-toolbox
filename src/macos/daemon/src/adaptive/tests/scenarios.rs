@@ -474,3 +474,90 @@ fn test_cache_finds_callers_and_tests() {
         v["usage"]
     );
 }
+
+// Checks a one-rung ladder asks the same agent again with zazzle's lookups when it verified something but left the trace open, and that the second answer settles it.
+#[test]
+fn test_top_rung_retries_with_lookups() {
+    let (_t, root) = fixture(&[]);
+    let (c, svc) =
+        ("Api/Controllers/DjangoCarWashesFacadeV1Controller.cs", "Core/Services/DjangoFacadeService.cs");
+    let second = format!(
+        "ANSWER\nFINDING {c}:{} the controller's routes start with `api/v1/DjangoCarWashesFacade`\nFINDING {c}:{}-{} POST calls `_djangoFacadeService.StartSubscriptionWash`\nFINDING {svc}:{}-{} the service inserts and enqueues the wash\nFINDING Core/Persistence/WashRepository.cs:{}-{} the repository saves it\nFINDING Core/Workflow/WashWorkflow.cs:{}-{} the workflow publishes it\nCONFIDENCE understanding=high result=high",
+        at(c, "[Route("),
+        at(c, "[HttpPost"),
+        at(c, "_djangoFacadeService.StartSubscriptionWash"),
+        at(svc, "public async Task<WashResult>"),
+        at(svc, "EnqueueWash"),
+        at("Core/Persistence/WashRepository.cs", "public async Task<Wash>"),
+        at("Core/Persistence/WashRepository.cs", "SaveChangesAsync"),
+        at("Core/Workflow/WashWorkflow.cs", "public Task EnqueueWash"),
+        at("Core/Workflow/WashWorkflow.cs", "Queue.Publish"),
+    );
+    let low = trace_low();
+    let f = Fake::new(&[("qwen-a low", Ok(low.as_str())), ("qwen-a low", Ok(second.as_str()))]);
+    let argv = [trace_prompt(), "--adaptive".into(), "--agents".into(), "qwen-a@low".into(), "--json".into()];
+    let v: Value = serde_json::from_str(
+        &go(&root, &f, &argv.iter().map(String::as_str).collect::<Vec<_>>()).expect("run"),
+    )
+    .expect("json");
+    let why = v["parts"][0]["attempts"][0]["escalated_because"].as_str().unwrap_or_default().to_string();
+    assert!(why.ends_with("; asked again with zazzle's lookups"), "{why}");
+    assert!(
+        f.prompts("qwen-a low")[1].contains(&format!("READ {svc}:")),
+        "the retry starts from zazzle's lookups"
+    );
+    assert_eq!(v["status"], "complete", "{v:#}");
+}
+
+// Checks the coverage of items whose evidence falls short in other ways: a trace that stays in one file, a route with no attribute cited, callers of a class with no interface, and tests with nothing verified.
+#[test]
+fn test_coverage_shortfalls() {
+    let (_t, root) = fixture(&[]);
+    let e = crate::engine::Engine::new();
+    let ctx = Ctx {
+        engine: &e,
+        cwd: root.clone(),
+        session: String::new(),
+        roots: Vec::new(),
+        stdin: RefCell::new(None),
+        caller: RefCell::new(None),
+    };
+    let scope = [root.clone()];
+    let found = |path: &str, from: usize, to: usize| {
+        let c = investigate::cite::Claim { path: path.into(), start: from, end: to, text: "a claim".into() };
+        investigate::verify(&root, &scope, &c).0.expect("a verified finding")
+    };
+    let (svc, c, dc) = (
+        "Core/Services/DjangoFacadeService.cs",
+        "Api/Controllers/DjangoCarWashesFacadeV1Controller.cs",
+        "Mcp/Tools/FenixLogsReadMachineLogFileTool.cs",
+    );
+    let task = items::task("1. Trace the Django facade service flow\n2. Which endpoint routes the subscription wash?\n3. Which code calls the Fenix logs read machine log file tool?\n4. Which tests cover the blank wash bay timer?");
+    let one = |i: usize, f: Vec<investigate::Found>| {
+        coverage::check(&ctx, &scope, &task, &[task.items[i].id.clone()], &f)
+    };
+    let trace = one(0, vec![found(svc, at(svc, "return new WashResult"), at(svc, "return new WashResult"))]);
+    assert!(
+        trace.items[0]
+            .missing
+            .join("; ")
+            .starts_with(&format!("the trace stays in {svc}; the calls it makes are not followed")),
+        "{trace:?}"
+    );
+    assert!(
+        trace.follow.iter().any(|l| l.starts_with("READ Core/Persistence/WashRepository.cs:")),
+        "{trace:?}"
+    );
+    let route = one(1, vec![found(c, at(c, "var commandContext"), at(c, "var commandContext"))]);
+    assert!(route.items[0].missing.contains(&"no route attribute is cited".to_string()), "{route:?}");
+    let callers = one(2, vec![found(dc, at(dc, "return Fenix.Logs.Read"), at(dc, "return Fenix.Logs.Read"))]);
+    let missing = callers.items[0].missing.join("; ");
+    assert!(
+        missing
+            .contains("no caller: no finding in production code that uses FenixLogsReadMachineLogFileTool")
+            && !missing.contains("interface"),
+        "{missing}"
+    );
+    let tests = one(3, Vec::new());
+    assert!(tests.items[0].missing.iter().any(|m| m.contains("no test evidence")), "{tests:?}");
+}
